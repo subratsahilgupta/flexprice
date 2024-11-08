@@ -4,16 +4,17 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill-kafka/v2/pkg/kafka"
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/flexprice/flexprice/internal/config"
 )
 
 type Producer struct {
 	publisher message.Publisher
 }
 
-func NewProducer(brokers []string) (*Producer, error) {
+func NewProducer(cfg *config.Configuration) (*Producer, error) {
 	publisher, err := kafka.NewPublisher(
 		kafka.PublisherConfig{
-			Brokers:   brokers,
+			Brokers:   cfg.Kafka.Brokers,
 			Marshaler: kafka.DefaultMarshaler{},
 		},
 		watermill.NewStdLogger(false, false),

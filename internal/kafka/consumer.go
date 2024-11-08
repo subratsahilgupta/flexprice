@@ -6,19 +6,19 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill-kafka/v2/pkg/kafka"
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/flexprice/flexprice/internal/config"
 )
 
 type Consumer struct {
 	subscriber message.Subscriber
 }
 
-func NewConsumer(brokers []string, consumerGroup string) (*Consumer, error) {
+func NewConsumer(cfg *config.Configuration) (*Consumer, error) {
 	subscriber, err := kafka.NewSubscriber(
 		kafka.SubscriberConfig{
-			Brokers:               brokers,
-			Unmarshaler:           kafka.DefaultMarshaler{},
-			OverwriteSaramaConfig: kafka.DefaultSaramaSubscriberConfig(),
-			ConsumerGroup:         consumerGroup,
+			Brokers:       cfg.Kafka.Brokers,
+			ConsumerGroup: cfg.Kafka.ConsumerGroup,
+			Unmarshaler:   kafka.DefaultMarshaler{},
 		},
 		watermill.NewStdLogger(false, false),
 	)

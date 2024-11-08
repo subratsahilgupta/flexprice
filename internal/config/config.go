@@ -18,6 +18,7 @@ type Configuration struct {
 	ClickHouse ClickHouseConfig `validate:"required"`
 	Meters     []MeterConfig    `validate:"required,dive"`
 	Logging    LoggingConfig    `validate:"required"`
+	Postgres   PostgresConfig   `validate:"required"`
 }
 
 type ServerConfig struct {
@@ -48,7 +49,16 @@ type LoggingConfig struct {
 	Level string `validate:"required"`
 }
 
-func Load() (*Configuration, error) {
+type PostgresConfig struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	DBName   string
+	SSLMode  string
+}
+
+func NewConfig() (*Configuration, error) {
 	v := viper.New()
 
 	// Modify config paths to ensure config.yaml is found
@@ -116,4 +126,16 @@ func (c ClickHouseConfig) GetClientOptions() *clickhouse.Options {
 		options.TLS = &tls.Config{}
 	}
 	return options
+}
+
+func (c PostgresConfig) GetDSN() string {
+	return fmt.Sprintf(
+		"user=%s password=%s dbname=%s host=%s port=%d sslmode=%s",
+		c.User,
+		c.Password,
+		c.DBName,
+		c.Host,
+		c.Port,
+		c.SSLMode,
+	)
 }

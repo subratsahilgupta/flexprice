@@ -8,6 +8,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/flexprice/flexprice/internal/config"
 )
 
 type ClickHouseStorage struct {
@@ -22,8 +23,9 @@ type Event struct {
 	Value      float64   `json:"value"`
 }
 
-func NewClickHouseStorage(opt *clickhouse.Options) (*ClickHouseStorage, error) {
-	conn, err := clickhouse.Open(opt)
+func NewClickHouseStorage(config *config.Configuration) (*ClickHouseStorage, error) {
+	options := config.ClickHouse.GetClientOptions()
+	conn, err := clickhouse.Open(options)
 	if err != nil {
 		return nil, fmt.Errorf("init clickhouse client: %w", err)
 	}

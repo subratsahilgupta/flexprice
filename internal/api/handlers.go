@@ -7,48 +7,51 @@ import (
 
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/meter"
 	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
 	producer *kafka.Producer
-	registry *meter.MeterRegistry
 	storage  *storage.ClickHouseStorage
+	log      *logger.Logger
 }
 
-func NewHandler(producer *kafka.Producer, registry *meter.MeterRegistry, storage *storage.ClickHouseStorage) *Handler {
+func NewHandler(
+	producer *kafka.Producer,
+	storage *storage.ClickHouseStorage,
+	log *logger.Logger,
+) *Handler {
 	return &Handler{
 		producer: producer,
-		registry: registry,
 		storage:  storage,
+		log:      log,
 	}
 }
 
 func (h *Handler) IngestEvent(c *gin.Context) {
 	var event storage.Event
 	if err := c.ShouldBindJSON(&event); err != nil {
-		logger.Log.Error("Failed to bind JSON", "error", err)
+		h.log.Error("Failed to bind JSON", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
 		return
 	}
 
 	// if _, ok := h.registry.GetMeter(event.FeatureID); !ok {
-	// 	logger.Log.Error("Invalid feature ID", "feature_id", event.FeatureID)
+	// 	h.log.Error("Invalid feature ID", "feature_id", event.FeatureID)
 	// 	c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid feature ID"})
 	// 	return
 	// }
 
 	payload, err := json.Marshal(event)
 	if err != nil {
-		logger.Log.Error("Failed to marshal event", "error", err)
+		h.log.Error("Failed to marshal event", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process event"})
 		return
 	}
 
 	if err := h.producer.PublishWithID("events", payload, event.ID); err != nil {
-		logger.Log.Error("Failed to publish event", "error", err)
+		h.log.Error("Failed to publish event", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process event"})
 		return
 	}
@@ -79,15 +82,12 @@ func (h *Handler) GetUsage(c *gin.Context) {
 		return
 	}
 
-	meter, ok := h.registry.GetMeter(featureID)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid feature ID"})
-		return
-	}
+	// TODO: Make this dynamic based on the feature ID
+	aggregationType := "sum"
 
-	usage, err := h.storage.GetUsage(c, customerID, featureID, startTime, endTime, meter.AggregationType)
+	usage, err := h.storage.GetUsage(c, customerID, featureID, startTime, endTime, aggregationType)
 	if err != nil {
-		logger.Log.Error("Failed to get usage", "error", err)
+		h.log.Error("Failed to get usage", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get usage"})
 		return
 	}
