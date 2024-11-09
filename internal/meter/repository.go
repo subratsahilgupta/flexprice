@@ -2,11 +2,13 @@ package meter
 
 import (
 	"context"
+
 	"github.com/flexprice/flexprice/internal/postgres"
 )
 
 type Repository interface {
 	CreateMeter(ctx context.Context, meter Meter) error
+	GetMeter(ctx context.Context, id string) (Meter, error)
 	GetAllMeters(ctx context.Context) ([]Meter, error)
 	DisableMeter(ctx context.Context, id string) error
 }
@@ -24,6 +26,11 @@ func (r *repository) CreateMeter(ctx context.Context, meter Meter) error {
 	return nil
 }
 
+func (r *repository) GetMeter(ctx context.Context, id string) (Meter, error) {
+	// Implement the logic to retrieve a meter from the database
+	return Meter{}, nil
+}
+
 func (r *repository) GetAllMeters(ctx context.Context) ([]Meter, error) {
 	// Implement the logic to retrieve all meters from the database
 	return nil, nil
@@ -32,4 +39,4 @@ func (r *repository) GetAllMeters(ctx context.Context) ([]Meter, error) {
 func (r *repository) DisableMeter(ctx context.Context, id string) error {
 	// Implement the logic to disable a meter
 	return nil
-} 
+}

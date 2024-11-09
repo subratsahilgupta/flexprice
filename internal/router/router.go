@@ -5,12 +5,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(handler *api.Handler, meterHandler *api.MeterHandler) *gin.Engine {
+func SetupRouter(eventsHandler *api.EventsHandler, meterHandler *api.MeterHandler) *gin.Engine {
 	router := gin.Default()
 
 	// Existing routes
-	router.POST("/events", handler.IngestEvent)
-	router.GET("/usage", handler.GetUsage)
+	router.POST("/events", eventsHandler.IngestEvent)
+	router.GET("/usage", eventsHandler.GetUsage)
 
 	// Meter routes
 	router.POST("/meters", meterHandler.CreateMeter)
