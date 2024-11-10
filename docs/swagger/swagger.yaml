@@ -22,27 +22,16 @@ definitions:
     properties:
       aggregation:
         $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation'
-      description:
-        example: Tracks API usage per customer
-        type: string
       filters:
         items:
           $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Filter'
         type: array
-      name:
-        example: API Usage Meter
-        type: string
-      tenant_id:
-        example: tenant123
-        type: string
       window_size:
         allOf:
         - $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.WindowSize'
         example: HOUR
     required:
     - aggregation
-    - name
-    - tenant_id
     - window_size
     type: object
   github_com_flexprice_flexprice_internal_dto.IngestEventRequest:
@@ -59,9 +48,6 @@ definitions:
       properties:
         additionalProperties: true
         type: object
-      tenant_id:
-        example: tenant789
-        type: string
       timestamp:
         example: "2024-03-20T15:04:05Z"
         type: string
@@ -76,18 +62,12 @@ definitions:
       created_at:
         example: "2024-03-20T15:04:05Z"
         type: string
-      description:
-        example: Tracks API usage per customer
-        type: string
       filters:
         items:
           $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Filter'
         type: array
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
-        type: string
-      name:
-        example: API Usage Meter
         type: string
       status:
         example: ACTIVE

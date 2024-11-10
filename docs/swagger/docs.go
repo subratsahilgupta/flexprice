@@ -322,31 +322,17 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "aggregation",
-                "name",
-                "tenant_id",
                 "window_size"
             ],
             "properties": {
                 "aggregation": {
                     "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation"
                 },
-                "description": {
-                    "type": "string",
-                    "example": "Tracks API usage per customer"
-                },
                 "filters": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Filter"
                     }
-                },
-                "name": {
-                    "type": "string",
-                    "example": "API Usage Meter"
-                },
-                "tenant_id": {
-                    "type": "string",
-                    "example": "tenant123"
                 },
                 "window_size": {
                     "allOf": [
@@ -381,10 +367,6 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": true
                 },
-                "tenant_id": {
-                    "type": "string",
-                    "example": "tenant789"
-                },
                 "timestamp": {
                     "type": "string",
                     "example": "2024-03-20T15:04:05Z"
@@ -401,10 +383,6 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2024-03-20T15:04:05Z"
                 },
-                "description": {
-                    "type": "string",
-                    "example": "Tracks API usage per customer"
-                },
                 "filters": {
                     "type": "array",
                     "items": {
@@ -414,10 +392,6 @@ const docTemplate = `{
                 "id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "API Usage Meter"
                 },
                 "status": {
                     "type": "string",

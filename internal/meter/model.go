@@ -49,8 +49,6 @@ func WindowSizeFromDuration(duration time.Duration) (WindowSize, error) {
 type Meter struct {
 	ID          string      `db:"id" json:"id"`
 	TenantID    string      `db:"tenant_id" json:"tenant_id,omitempty"`
-	Name        string      `db:"name" json:"name,omitempty"`
-	Description string      `db:"description" json:"description,omitempty"`
 	Filters     []Filter    `db:"filters" json:"filters"`
 	Aggregation Aggregation `db:"aggregation" json:"aggregation"`
 	WindowSize  WindowSize  `db:"window_size" json:"window_size"`

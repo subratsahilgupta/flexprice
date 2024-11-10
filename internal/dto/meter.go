@@ -4,13 +4,11 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/meter"
+	"github.com/flexprice/flexprice/internal/models"
 )
 
 // CreateMeterRequest represents the request payload for creating a meter
 type CreateMeterRequest struct {
-	TenantID    string            `json:"tenant_id" binding:"required" example:"tenant123"`
-	Name        string            `json:"name" binding:"required" example:"API Usage Meter"`
-	Description string            `json:"description" example:"Tracks API usage per customer"`
 	Filters     []meter.Filter    `json:"filters"`
 	Aggregation meter.Aggregation `json:"aggregation" binding:"required"`
 	WindowSize  meter.WindowSize  `json:"window_size" binding:"required" example:"HOUR"`
@@ -20,8 +18,6 @@ type CreateMeterRequest struct {
 type MeterResponse struct {
 	ID          string            `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	TenantID    string            `json:"tenant_id" example:"tenant123"`
-	Name        string            `json:"name" example:"API Usage Meter"`
-	Description string            `json:"description" example:"Tracks API usage per customer"`
 	Filters     []meter.Filter    `json:"filters"`
 	Aggregation meter.Aggregation `json:"aggregation"`
 	WindowSize  meter.WindowSize  `json:"window_size" example:"HOUR"`
@@ -35,8 +31,6 @@ func ToMeterResponse(m *meter.Meter) *MeterResponse {
 	return &MeterResponse{
 		ID:          m.ID,
 		TenantID:    m.TenantID,
-		Name:        m.Name,
-		Description: m.Description,
 		Filters:     m.Filters,
 		Aggregation: m.Aggregation,
 		WindowSize:  m.WindowSize,
@@ -48,12 +42,17 @@ func ToMeterResponse(m *meter.Meter) *MeterResponse {
 
 // Convert CreateMeterRequest to domain Meter
 func (r *CreateMeterRequest) ToMeter(createdBy string) *meter.Meter {
+	if createdBy == "" {
+		createdBy = "system"
+	}
+
 	m := meter.NewMeter("", createdBy)
-	m.TenantID = r.TenantID
-	m.Name = r.Name
-	m.Description = r.Description
+	// TODO: Remove this once we have a way to set the tenant ID
+	m.TenantID = "default"
+
 	m.Filters = r.Filters
 	m.Aggregation = r.Aggregation
 	m.WindowSize = r.WindowSize
+	m.Status = models.StatusActive
 	return m
 }

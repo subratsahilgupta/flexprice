@@ -1,11 +1,3 @@
-.PHONY: generate-clients
-
-generate-clients: generate-swagger
-	# Generate Go client
-	openapi-generator generate -i api/openapi/swagger.json -g go -o pkg/client/go
-	# Generate TypeScript client
-	openapi-generator generate -i api/openapi/swagger.json -g typescript-axios -o pkg/client/typescript
-
 .PHONY: swagger-clean
 swagger-clean:
 	rm -rf docs/swagger
@@ -13,3 +5,18 @@ swagger-clean:
 .PHONY: swagger
 swagger:
 	swag init -g cmd/server/main.go --parseDependency --parseInternal --output docs/swagger
+
+.PHONY: up
+up:
+	docker compose up --build
+
+.PHONY: down
+down:
+	docker compose down
+
+.PHONY: run-server
+run-server:
+	go run cmd/server/main.go
+
+.PHONY: run
+run: swagger run-server

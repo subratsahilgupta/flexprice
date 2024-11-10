@@ -36,19 +36,16 @@ func (r *repository) CreateMeter(ctx context.Context, meter *Meter) error {
 
 	query := `
 		INSERT INTO meters (
-			id, tenant_id, name, description, filters, 
-			aggregation, window_size, created_at, updated_at,
-			created_by, updated_by, status
+			id, tenant_id, filters, aggregation, window_size, 
+			created_at, updated_at, created_by, updated_by, status
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 		)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
 		meter.ID,
 		meter.TenantID,
-		meter.Name,
-		meter.Description,
 		filtersJSON,
 		aggregationJSON,
 		meter.WindowSize,
@@ -72,18 +69,15 @@ func (r *repository) GetMeter(ctx context.Context, id string) (*Meter, error) {
 
 	query := `
 		SELECT 
-			id, tenant_id, name, description, filters,
-			aggregation, window_size, created_at, updated_at,
-			created_by, updated_by, status
+			id, tenant_id, filters, aggregation, window_size, 
+			created_at, updated_at, created_by, updated_by, status
 		FROM meters
-		WHERE id = $1 AND status = 'ACTIVE'
+		WHERE id = $1
 	`
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&meter.ID,
 		&meter.TenantID,
-		&meter.Name,
-		&meter.Description,
 		&filtersJSON,
 		&aggregationJSON,
 		&meter.WindowSize,
@@ -112,11 +106,10 @@ func (r *repository) GetMeter(ctx context.Context, id string) (*Meter, error) {
 func (r *repository) GetAllMeters(ctx context.Context) ([]*Meter, error) {
 	query := `
 		SELECT 
-			id, tenant_id, name, description, filters,
-			aggregation, window_size, created_at, updated_at,
-			created_by, updated_by, status
+			id, tenant_id, filters, aggregation, window_size, 
+			created_at, updated_at, created_by, updated_by, status
 		FROM meters
-		WHERE status = 'ACTIVE'
+		WHERE status = 'active'
 		ORDER BY created_at DESC
 	`
 
@@ -134,8 +127,6 @@ func (r *repository) GetAllMeters(ctx context.Context) ([]*Meter, error) {
 		err := rows.Scan(
 			&meter.ID,
 			&meter.TenantID,
-			&meter.Name,
-			&meter.Description,
 			&filtersJSON,
 			&aggregationJSON,
 			&meter.WindowSize,
@@ -166,8 +157,8 @@ func (r *repository) GetAllMeters(ctx context.Context) ([]*Meter, error) {
 func (r *repository) DisableMeter(ctx context.Context, id string) error {
 	query := `
 		UPDATE meters 
-		SET status = 'DISABLED', updated_at = NOW()
-		WHERE id = $1 AND status = 'ACTIVE'
+		SET status = 'disabled', updated_at = NOW()
+		WHERE id = $1 AND status = 'active'
 	`
 
 	result, err := r.db.ExecContext(ctx, query, id)

@@ -49,9 +49,12 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 		return
 	}
 
+	// TODO: Remove this once we have a way to set the tenant ID
+	tenantID := "default"
+
 	event := events.NewEvent(
 		req.ID,
-		req.TenantID,
+		tenantID,
 		req.ExternalCustomerID,
 		req.EventName,
 		req.Timestamp,

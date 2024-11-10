@@ -31,8 +31,6 @@ func (s *service) CreateMeter(ctx context.Context, meter *Meter) error {
 		newMeter := NewMeter("", meter.CreatedBy)
 		// Copy the provided meter fields to the new meter
 		newMeter.TenantID = meter.TenantID
-		newMeter.Name = meter.Name
-		newMeter.Description = meter.Description
 		newMeter.Filters = meter.Filters
 		newMeter.Aggregation = meter.Aggregation
 		newMeter.WindowSize = meter.WindowSize

@@ -4,16 +4,18 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/dto"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/meter"
 	"github.com/gin-gonic/gin"
 )
 
 type MeterHandler struct {
 	service meter.Service
+	log     *logger.Logger
 }
 
-func NewMeterHandler(service meter.Service) *MeterHandler {
-	return &MeterHandler{service: service}
+func NewMeterHandler(service meter.Service, log *logger.Logger) *MeterHandler {
+	return &MeterHandler{service: service, log: log}
 }
 
 // @Summary Create meter
@@ -35,6 +37,7 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 
 	meter := req.ToMeter(c.GetString("user_id"))
 	if err := h.service.CreateMeter(c.Request.Context(), meter); err != nil {
+		h.log.Error("Failed to create meter", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to create meter"})
 		return
 	}
@@ -52,6 +55,7 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 func (h *MeterHandler) GetAllMeters(c *gin.Context) {
 	meters, err := h.service.GetAllMeters(c.Request.Context())
 	if err != nil {
+		h.log.Error("Failed to get meters", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get meters"})
 		return
 	}
@@ -76,6 +80,7 @@ func (h *MeterHandler) GetMeter(c *gin.Context) {
 	id := c.Param("id")
 	meter, err := h.service.GetMeter(c.Request.Context(), id)
 	if err != nil {
+		h.log.Error("Failed to get meter", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get meter"})
 		return
 	}
@@ -94,6 +99,7 @@ func (h *MeterHandler) GetMeter(c *gin.Context) {
 func (h *MeterHandler) DisableMeter(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.service.DisableMeter(c.Request.Context(), id); err != nil {
+		h.log.Error("Failed to disable meter", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to disable meter"})
 		return
 	}

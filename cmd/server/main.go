@@ -69,7 +69,7 @@ func provideHandlers(
 ) api.Handlers {
 	return api.Handlers{
 		Events: v1.NewEventsHandler(producer, store, logger),
-		Meter:  v1.NewMeterHandler(meterService),
+		Meter:  v1.NewMeterHandler(meterService, logger),
 	}
 }
 
