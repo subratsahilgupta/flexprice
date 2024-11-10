@@ -1,0 +1,344 @@
+basePath: /v1
+definitions:
+  github_com_flexprice_flexprice_internal_aggregation.Type:
+    enum:
+    - COUNT
+    - SUM
+    - AVG
+    - MAX
+    - MIN
+    - COUNT_UNIQUE
+    - LATEST
+    type: string
+    x-enum-varnames:
+    - Count
+    - Sum
+    - Avg
+    - Max
+    - Min
+    - CountUnique
+    - Latest
+  github_com_flexprice_flexprice_internal_dto.CreateMeterRequest:
+    properties:
+      aggregation:
+        $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation'
+      description:
+        example: Tracks API usage per customer
+        type: string
+      filters:
+        items:
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Filter'
+        type: array
+      name:
+        example: API Usage Meter
+        type: string
+      tenant_id:
+        example: tenant123
+        type: string
+      window_size:
+        allOf:
+        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.WindowSize'
+        example: HOUR
+    required:
+    - aggregation
+    - name
+    - tenant_id
+    - window_size
+    type: object
+  github_com_flexprice_flexprice_internal_dto.IngestEventRequest:
+    properties:
+      event_name:
+        example: api.request
+        type: string
+      external_customer_id:
+        example: customer456
+        type: string
+      id:
+        example: event123
+        type: string
+      properties:
+        additionalProperties: true
+        type: object
+      tenant_id:
+        example: tenant789
+        type: string
+      timestamp:
+        example: "2024-03-20T15:04:05Z"
+        type: string
+    required:
+    - event_name
+    - external_customer_id
+    type: object
+  github_com_flexprice_flexprice_internal_dto.MeterResponse:
+    properties:
+      aggregation:
+        $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation'
+      created_at:
+        example: "2024-03-20T15:04:05Z"
+        type: string
+      description:
+        example: Tracks API usage per customer
+        type: string
+      filters:
+        items:
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Filter'
+        type: array
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      name:
+        example: API Usage Meter
+        type: string
+      status:
+        example: ACTIVE
+        type: string
+      tenant_id:
+        example: tenant123
+        type: string
+      updated_at:
+        example: "2024-03-20T15:04:05Z"
+        type: string
+      window_size:
+        allOf:
+        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.WindowSize'
+        example: HOUR
+    type: object
+  github_com_flexprice_flexprice_internal_meter.Aggregation:
+    properties:
+      field:
+        type: string
+      type:
+        $ref: '#/definitions/github_com_flexprice_flexprice_internal_aggregation.Type'
+    type: object
+  github_com_flexprice_flexprice_internal_meter.Condition:
+    properties:
+      field:
+        type: string
+      operation:
+        type: string
+      value: {}
+    type: object
+  github_com_flexprice_flexprice_internal_meter.Filter:
+    properties:
+      conditions:
+        items:
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Condition'
+        type: array
+    type: object
+  github_com_flexprice_flexprice_internal_meter.WindowSize:
+    enum:
+    - MINUTE
+    - HOUR
+    - DAY
+    type: string
+    x-enum-varnames:
+    - WindowSizeMinute
+    - WindowSizeHour
+    - WindowSizeDay
+  internal_api_v1.ErrorResponse:
+    properties:
+      error:
+        example: Invalid request payload
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: FlexPrice API Service
+  title: FlexPrice API
+  version: "1.0"
+paths:
+  /events:
+    post:
+      consumes:
+      - application/json
+      description: Ingest a new event into the system
+      parameters:
+      - description: Event data
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.IngestEventRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: message:Event accepted for processing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+      summary: Ingest event
+      tags:
+      - events
+  /events/usage:
+    get:
+      description: Retrieve aggregated usage statistics for events
+      parameters:
+      - description: External Customer ID
+        in: query
+        name: external_customer_id
+        required: true
+        type: string
+      - description: Event Name
+        in: query
+        name: event_name
+        required: true
+        type: string
+      - description: Property Name
+        in: query
+        name: property_name
+        type: string
+      - description: Aggregation Type (sum, count, avg)
+        in: query
+        name: aggregation_type
+        type: string
+      - description: Start Time (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End Time (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+      summary: Get usage statistics
+      tags:
+      - events
+  /meters:
+    get:
+      description: Get all active meters
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+      summary: List meters
+      tags:
+      - meters
+    post:
+      consumes:
+      - application/json
+      description: Create a new meter with the specified configuration
+      parameters:
+      - description: Meter configuration
+        in: body
+        name: meter
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.CreateMeterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+      summary: Create meter
+      tags:
+      - meters
+  /meters/{id}:
+    get:
+      description: Get a specific meter by ID
+      parameters:
+      - description: Meter ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+      summary: Get meter
+      tags:
+      - meters
+  /meters/{id}/disable:
+    post:
+      description: Disable an existing meter
+      parameters:
+      - description: Meter ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: message:Meter disabled successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+      summary: Disable meter
+      tags:
+      - meters
+schemes:
+- http
+- https
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

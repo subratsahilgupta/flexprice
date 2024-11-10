@@ -4,19 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/aggregation"
 	"github.com/flexprice/flexprice/internal/models"
-)
-
-type AggregationType string
-
-// Note: keep values up to date in the meter package
-const (
-	AggregationTypeCount       AggregationType = "COUNT"
-	AggregationTypeSum         AggregationType = "SUM"
-	AggregationTypeAvg         AggregationType = "AVG"
-	AggregationTypeMax         AggregationType = "MAX"
-	AggregationTypeMin         AggregationType = "MIN"
-	AggregationTypeCountUnique AggregationType = "COUNT_UNIQUE"
+	"github.com/google/uuid"
 )
 
 type WindowSize string
@@ -57,31 +47,52 @@ func WindowSizeFromDuration(duration time.Duration) (WindowSize, error) {
 }
 
 type Meter struct {
-	ID               string           `db:"id" json:"id"`
-	Filters          []MeterFilter    `db:"filters" json:"filters"`
-	Aggregation      MeterAggregation `db:"aggregation" json:"aggregation"`
-	WindowSize       WindowSize       `json:"windowSize,omitempty" yaml:"windowSize,omitempty"`
-	models.BaseModel                  // Embed the base model
+	ID          string      `db:"id" json:"id"`
+	TenantID    string      `db:"tenant_id" json:"tenant_id,omitempty"`
+	Name        string      `db:"name" json:"name,omitempty"`
+	Description string      `db:"description" json:"description,omitempty"`
+	Filters     []Filter    `db:"filters" json:"filters"`
+	Aggregation Aggregation `db:"aggregation" json:"aggregation"`
+	WindowSize  WindowSize  `db:"window_size" json:"window_size"`
+	models.BaseModel
 }
 
-type MeterFilter struct {
-	Conditions []MeterCondition `json:"conditions"`
+type Filter struct {
+	Conditions []Condition `json:"conditions"`
 }
 
-type MeterCondition struct {
-	Field     string `json:"field"`
-	Operation string `json:"operation"`
-	Value     string `json:"value"`
+type Condition struct {
+	Field     string      `json:"field"`
+	Operation string      `json:"operation"`
+	Value     interface{} `json:"value"`
 }
 
-type MeterAggregation struct {
-	Function string `json:"function"`
-	Field    string `json:"field"`
+type Aggregation struct {
+	Type  aggregation.Type `json:"type"`
+	Field string           `json:"field,omitempty"`
+}
+
+// Validate validates the meter configuration
+func (m *Meter) Validate() error {
+	if m.ID == "" {
+		return fmt.Errorf("id is required")
+	}
+	if !m.Aggregation.Type.Validate() {
+		return fmt.Errorf("invalid aggregation type: %s", m.Aggregation.Type)
+	}
+	if m.Aggregation.Type.RequiresField() && m.Aggregation.Field == "" {
+		return fmt.Errorf("field is required for aggregation type: %s", m.Aggregation.Type)
+	}
+	return nil
 }
 
 // Constructor for creating new meters with defaults
 func NewMeter(id string, createdBy string) *Meter {
-	now := time.Now()
+	now := time.Now().UTC()
+	if id == "" {
+		id = uuid.New().String()
+	}
+
 	return &Meter{
 		ID: id,
 		BaseModel: models.BaseModel{

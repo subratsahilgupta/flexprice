@@ -3,6 +3,7 @@ package events
 import (
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 )
 
@@ -40,4 +41,9 @@ func NewEvent(
 		Timestamp:          timestamp,
 		Properties:         properties,
 	}
+}
+
+// Validate validates the event
+func (e *Event) Validate() error {
+	return validator.New().Struct(e)
 }

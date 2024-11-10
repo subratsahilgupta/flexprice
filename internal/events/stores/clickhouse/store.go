@@ -36,6 +36,11 @@ func (s *ClickHouseStore) InsertEvent(ctx context.Context, event *events.Event) 
 		return fmt.Errorf("marshal properties: %w", err)
 	}
 
+	// Adding a layer to validate the event before inserting it
+	if err := event.Validate(); err != nil {
+		return fmt.Errorf("validate event: %w", err)
+	}
+
 	query := `
 		INSERT INTO events (
 			id, external_customer_id, tenant_id, event_name, timestamp, properties

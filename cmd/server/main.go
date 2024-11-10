@@ -7,7 +7,9 @@ import (
 
 	"go.uber.org/fx"
 
+	_ "github.com/flexprice/flexprice/docs/swagger"
 	"github.com/flexprice/flexprice/internal/api"
+	v1 "github.com/flexprice/flexprice/internal/api/v1"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/events"
 	"github.com/flexprice/flexprice/internal/events/stores/clickhouse"
@@ -15,9 +17,18 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/meter"
 	"github.com/flexprice/flexprice/internal/postgres"
-	"github.com/flexprice/flexprice/internal/router"
 	"github.com/gin-gonic/gin"
 )
+
+// @title FlexPrice API
+// @version 1.0
+// @description FlexPrice API Service
+// @host localhost:8080
+// @BasePath /v1
+// @schemes http https
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name Authorization
 
 func init() {
 	// Set UTC timezone for the entire application
@@ -27,35 +38,43 @@ func init() {
 func main() {
 	app := fx.New(
 		fx.Provide(
-			// Key components
+			// Core dependencies
 			config.NewConfig,
 			logger.NewLogger,
-
-			// Databases
 			postgres.NewDB,
 			clickhouse.NewClickHouseStore,
-
-			// Kafka
 			kafka.NewProducer,
 			kafka.NewConsumer,
 
-			// Repositories
+			// Domain services
 			meter.NewRepository,
-
-			// Services
 			meter.NewService,
 
 			// Handlers
-			api.NewEventsHandler,
-			api.NewMeterHandler,
+			provideHandlers,
 
 			// Router
-			router.SetupRouter,
+			provideRouter,
 		),
 		fx.Invoke(startServer),
 	)
-
 	app.Run()
+}
+
+func provideHandlers(
+	producer *kafka.Producer,
+	store *clickhouse.ClickHouseStore,
+	logger *logger.Logger,
+	meterService meter.Service,
+) api.Handlers {
+	return api.Handlers{
+		Events: v1.NewEventsHandler(producer, store, logger),
+		Meter:  v1.NewMeterHandler(meterService),
+	}
+}
+
+func provideRouter(handlers api.Handlers) *gin.Engine {
+	return api.NewRouter(handlers)
 }
 
 func startServer(

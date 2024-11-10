@@ -1,0 +1,506 @@
+{
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "FlexPrice API Service",
+        "title": "FlexPrice API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/v1",
+    "paths": {
+        "/events": {
+            "post": {
+                "description": "Ingest a new event into the system",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Ingest event",
+                "parameters": [
+                    {
+                        "description": "Event data",
+                        "name": "event",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.IngestEventRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "message:Event accepted for processing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/usage": {
+            "get": {
+                "description": "Retrieve aggregated usage statistics for events",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Get usage statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "External Customer ID",
+                        "name": "external_customer_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Event Name",
+                        "name": "event_name",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Property Name",
+                        "name": "property_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Aggregation Type (sum, count, avg)",
+                        "name": "aggregation_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start Time (RFC3339)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End Time (RFC3339)",
+                        "name": "end_time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/meters": {
+            "get": {
+                "description": "Get all active meters",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "meters"
+                ],
+                "summary": "List meters",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new meter with the specified configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "meters"
+                ],
+                "summary": "Create meter",
+                "parameters": [
+                    {
+                        "description": "Meter configuration",
+                        "name": "meter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.CreateMeterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/meters/{id}": {
+            "get": {
+                "description": "Get a specific meter by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "meters"
+                ],
+                "summary": "Get meter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Meter ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/meters/{id}/disable": {
+            "post": {
+                "description": "Disable an existing meter",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "meters"
+                ],
+                "summary": "Disable meter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Meter ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "message:Meter disabled successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_flexprice_flexprice_internal_aggregation.Type": {
+            "type": "string",
+            "enum": [
+                "COUNT",
+                "SUM",
+                "AVG",
+                "MAX",
+                "MIN",
+                "COUNT_UNIQUE",
+                "LATEST"
+            ],
+            "x-enum-varnames": [
+                "Count",
+                "Sum",
+                "Avg",
+                "Max",
+                "Min",
+                "CountUnique",
+                "Latest"
+            ]
+        },
+        "github_com_flexprice_flexprice_internal_dto.CreateMeterRequest": {
+            "type": "object",
+            "required": [
+                "aggregation",
+                "name",
+                "tenant_id",
+                "window_size"
+            ],
+            "properties": {
+                "aggregation": {
+                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Tracks API usage per customer"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Filter"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "API Usage Meter"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": "tenant123"
+                },
+                "window_size": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.WindowSize"
+                        }
+                    ],
+                    "example": "HOUR"
+                }
+            }
+        },
+        "github_com_flexprice_flexprice_internal_dto.IngestEventRequest": {
+            "type": "object",
+            "required": [
+                "event_name",
+                "external_customer_id"
+            ],
+            "properties": {
+                "event_name": {
+                    "type": "string",
+                    "example": "api.request"
+                },
+                "external_customer_id": {
+                    "type": "string",
+                    "example": "customer456"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "event123"
+                },
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": "tenant789"
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2024-03-20T15:04:05Z"
+                }
+            }
+        },
+        "github_com_flexprice_flexprice_internal_dto.MeterResponse": {
+            "type": "object",
+            "properties": {
+                "aggregation": {
+                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2024-03-20T15:04:05Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Tracks API usage per customer"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Filter"
+                    }
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "API Usage Meter"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ACTIVE"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": "tenant123"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2024-03-20T15:04:05Z"
+                },
+                "window_size": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.WindowSize"
+                        }
+                    ],
+                    "example": "HOUR"
+                }
+            }
+        },
+        "github_com_flexprice_flexprice_internal_meter.Aggregation": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_aggregation.Type"
+                }
+            }
+        },
+        "github_com_flexprice_flexprice_internal_meter.Condition": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "operation": {
+                    "type": "string"
+                },
+                "value": {}
+            }
+        },
+        "github_com_flexprice_flexprice_internal_meter.Filter": {
+            "type": "object",
+            "properties": {
+                "conditions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Condition"
+                    }
+                }
+            }
+        },
+        "github_com_flexprice_flexprice_internal_meter.WindowSize": {
+            "type": "string",
+            "enum": [
+                "MINUTE",
+                "HOUR",
+                "DAY"
+            ],
+            "x-enum-varnames": [
+                "WindowSizeMinute",
+                "WindowSizeHour",
+                "WindowSizeDay"
+            ]
+        },
+        "internal_api_v1.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Invalid request payload"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}
