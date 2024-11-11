@@ -56,6 +56,100 @@ _~/.gitconfig_
   commit = commit -s
 ```
 
+# FlexPrice Service Architecture
+
+## Project Structure
+
+```
+internal/
+├── domain/
+│   ├── events/
+│   │   ├── model.go         # Core event domain model
+│   │   ├── repository.go    # Repository interface
+│   └── meter/
+│       ├── model.go         # Core meter domain model
+│       ├── repository.go    # Repository interface
+├── repository/
+│   ├── clickhouse/
+│   │   └── event.go
+│   ├── postgres/
+│   │   └── meter.go
+|   └── factory.go          # Factory for creating repositories
+├── service/
+│   ├── event.go            # Event service implementation
+│   └── meter.go            # Meter service implementation
+├── api/
+│   ├── v1/
+│   │   ├── events.go       # Event API implementation
+│   │   └── meter.go        # Meter API implementation
+│   ├── dto/
+│   │   ├── event.go
+│   │   └── meter.go
+│   └── router.go           # API router implementation
+└── cmd/server/
+    └── main.go             # Server application entry point
+└── docs/
+    └── ...                 # Documentation files
+    ├── swagger
+    │   ├── swagger.yaml    # Generated Swagger API specifications
+```
+
+
+## Layer Responsibilities
+
+### Domain Layer
+- Contains core business logic and domain models
+- Defines interfaces for repositories
+- No dependencies on external packages or other layers
+
+### Repository Layer
+- Implements data access interfaces defined in domain
+- Handles database operations
+
+### Service Layer
+- Orchestrates business operations
+- Implements business logic
+- Uses repository interfaces for data access
+- Handles cross-cutting concerns
+
+### API Layer
+- Handles HTTP requests/responses
+- Converts between DTOs and domain models
+- No business logic, only request validation and response formatting
+
+### Key Design Principles
+
+1. **Dependency Rule**: Dependencies only point inward. Domain layer has no outward dependencies.
+
+2. **Interface Segregation**: Repository interfaces are defined in domain layer but implemented in repository layer.
+
+3. **Dependency Injection**: Using [fx](https://github.com/uber-go/fx) for clean dependency management.
+
+4. **Separation of Concerns**: Each layer has a specific responsibility.
+
+### Example Flow
+
+For an event ingestion:
+1. API Layer (`/api/v1/events.go`) receives HTTP request
+2. Converts DTO to domain model
+3. Calls service layer
+4. Service layer (`/service/event_service.go`) handles business logic
+5. Repository layer persists data
+6. Response flows back through the layers
+
+### Adding New Features
+
+1. Define domain models and interfaces in domain layer
+2. Implement repository interfaces if needed
+3. Add service layer logic
+4. Create API handlers and DTOs
+5. Register routes and dependencies
+
+## Testing
+
+TODO: Add proper testing strategy and implementation
+
+
 # How to contribute ?
 
 We encourage contributions from the community.

@@ -35,7 +35,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.IngestEventRequest"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.IngestEventRequest"
                         }
                     }
                 ],
@@ -153,7 +153,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse"
+                                "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse"
                             }
                         }
                     },
@@ -184,7 +184,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.CreateMeterRequest"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.CreateMeterRequest"
                         }
                     }
                 ],
@@ -192,7 +192,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse"
                         }
                     },
                     "400": {
@@ -233,7 +233,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse"
                         }
                     },
                     "404": {
@@ -297,28 +297,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_flexprice_flexprice_internal_aggregation.Type": {
-            "type": "string",
-            "enum": [
-                "COUNT",
-                "SUM",
-                "AVG",
-                "MAX",
-                "MIN",
-                "COUNT_UNIQUE",
-                "LATEST"
-            ],
-            "x-enum-varnames": [
-                "Count",
-                "Sum",
-                "Avg",
-                "Max",
-                "Min",
-                "CountUnique",
-                "Latest"
-            ]
-        },
-        "github_com_flexprice_flexprice_internal_dto.CreateMeterRequest": {
+        "github_com_flexprice_flexprice_internal_api_dto.CreateMeterRequest": {
             "type": "object",
             "required": [
                 "aggregation",
@@ -326,25 +305,25 @@ const docTemplate = `{
             ],
             "properties": {
                 "aggregation": {
-                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation"
+                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Aggregation"
                 },
                 "filters": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Filter"
+                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Filter"
                     }
                 },
                 "window_size": {
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.WindowSize"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.WindowSize"
                         }
                     ],
                     "example": "HOUR"
                 }
             }
         },
-        "github_com_flexprice_flexprice_internal_dto.IngestEventRequest": {
+        "github_com_flexprice_flexprice_internal_api_dto.IngestEventRequest": {
             "type": "object",
             "required": [
                 "event_name",
@@ -373,11 +352,11 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_flexprice_flexprice_internal_dto.MeterResponse": {
+        "github_com_flexprice_flexprice_internal_api_dto.MeterResponse": {
             "type": "object",
             "properties": {
                 "aggregation": {
-                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation"
+                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Aggregation"
                 },
                 "created_at": {
                     "type": "string",
@@ -386,7 +365,7 @@ const docTemplate = `{
                 "filters": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Filter"
+                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Filter"
                     }
                 },
                 "id": {
@@ -408,25 +387,25 @@ const docTemplate = `{
                 "window_size": {
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.WindowSize"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.WindowSize"
                         }
                     ],
                     "example": "HOUR"
                 }
             }
         },
-        "github_com_flexprice_flexprice_internal_meter.Aggregation": {
+        "github_com_flexprice_flexprice_internal_domain_meter.Aggregation": {
             "type": "object",
             "properties": {
                 "field": {
                     "type": "string"
                 },
                 "type": {
-                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_aggregation.Type"
+                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_types.AggregationType"
                 }
             }
         },
-        "github_com_flexprice_flexprice_internal_meter.Condition": {
+        "github_com_flexprice_flexprice_internal_domain_meter.Condition": {
             "type": "object",
             "properties": {
                 "field": {
@@ -438,18 +417,18 @@ const docTemplate = `{
                 "value": {}
             }
         },
-        "github_com_flexprice_flexprice_internal_meter.Filter": {
+        "github_com_flexprice_flexprice_internal_domain_meter.Filter": {
             "type": "object",
             "properties": {
                 "conditions": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_meter.Condition"
+                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Condition"
                     }
                 }
             }
         },
-        "github_com_flexprice_flexprice_internal_meter.WindowSize": {
+        "github_com_flexprice_flexprice_internal_domain_meter.WindowSize": {
             "type": "string",
             "enum": [
                 "MINUTE",
@@ -460,6 +439,27 @@ const docTemplate = `{
                 "WindowSizeMinute",
                 "WindowSizeHour",
                 "WindowSizeDay"
+            ]
+        },
+        "github_com_flexprice_flexprice_internal_types.AggregationType": {
+            "type": "string",
+            "enum": [
+                "COUNT",
+                "SUM",
+                "AVG",
+                "MAX",
+                "MIN",
+                "COUNT_UNIQUE",
+                "LATEST"
+            ],
+            "x-enum-varnames": [
+                "AggregationCount",
+                "AggregationSum",
+                "AggregationAvg",
+                "AggregationMax",
+                "AggregationMin",
+                "AggregationCountUnique",
+                "AggregationLatest"
             ]
         },
         "internal_api_v1.ErrorResponse": {

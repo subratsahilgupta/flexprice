@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/events"
+	"github.com/flexprice/flexprice/internal/domain/aggregation"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
-func GetAggregator(aggregationType events.AggregationType) events.Aggregator {
+func GetAggregator(aggregationType types.AggregationType) aggregation.Aggregator {
 	switch aggregationType {
-	case events.CountAggregation:
+	case types.AggregationCount:
 		return &CountAggregator{}
-	case events.SumAggregation:
+	case types.AggregationSum:
 		return &SumAggregator{}
 	}
 
@@ -46,8 +47,8 @@ func (a *SumAggregator) GetQuery(eventName, propertyName, externalCustomerID str
 		formatClickHouseDateTime(endTime))
 }
 
-func (a *SumAggregator) GetType() events.AggregationType {
-	return events.SumAggregation
+func (a *SumAggregator) GetType() types.AggregationType {
+	return types.AggregationSum
 }
 
 // CountAggregator implements count aggregation
@@ -70,6 +71,6 @@ func (a *CountAggregator) GetQuery(eventName, _, externalCustomerID string, star
 		formatClickHouseDateTime(endTime))
 }
 
-func (a *CountAggregator) GetType() events.AggregationType {
-	return events.CountAggregation
+func (a *CountAggregator) GetType() types.AggregationType {
+	return types.AggregationCount
 }

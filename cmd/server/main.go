@@ -10,13 +10,14 @@ import (
 	_ "github.com/flexprice/flexprice/docs/swagger"
 	"github.com/flexprice/flexprice/internal/api"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
+	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/events"
-	"github.com/flexprice/flexprice/internal/events/stores/clickhouse"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/meter"
 	"github.com/flexprice/flexprice/internal/postgres"
+	"github.com/flexprice/flexprice/internal/repository"
+	"github.com/flexprice/flexprice/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -46,9 +47,13 @@ func main() {
 			kafka.NewProducer,
 			kafka.NewConsumer,
 
-			// Domain services
-			meter.NewRepository,
-			meter.NewService,
+			// Repositories
+			repository.NewEventRepository,
+			repository.NewMeterRepository,
+
+			// Services
+			service.NewMeterService,
+			service.NewEventService,
 
 			// Handlers
 			provideHandlers,
@@ -62,13 +67,12 @@ func main() {
 }
 
 func provideHandlers(
-	producer *kafka.Producer,
-	store *clickhouse.ClickHouseStore,
 	logger *logger.Logger,
-	meterService meter.Service,
+	meterService service.MeterService,
+	eventService service.EventService,
 ) api.Handlers {
 	return api.Handlers{
-		Events: v1.NewEventsHandler(producer, store, logger),
+		Events: v1.NewEventsHandler(eventService, logger),
 		Meter:  v1.NewMeterHandler(meterService, logger),
 	}
 }
@@ -82,7 +86,7 @@ func startServer(
 	r *gin.Engine,
 	cfg *config.Configuration,
 	consumer *kafka.Consumer,
-	clickhouseObj *clickhouse.ClickHouseStore,
+	eventRepo events.Repository,
 	log *logger.Logger,
 ) {
 	lifecycle.Append(fx.Hook{
@@ -92,7 +96,7 @@ func startServer(
 					log.Fatalf("Failed to start server: %v", err)
 				}
 			}()
-			go consumeMessages(consumer, clickhouseObj, cfg.Kafka.Topic, log)
+			go consumeMessages(consumer, eventRepo, cfg.Kafka.Topic, log)
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
@@ -104,7 +108,7 @@ func startServer(
 
 func consumeMessages(
 	consumer *kafka.Consumer,
-	clickhouseObj *clickhouse.ClickHouseStore,
+	eventRepo events.Repository,
 	topic string,
 	log *logger.Logger,
 ) {
@@ -121,7 +125,7 @@ func consumeMessages(
 			continue
 		}
 
-		if err := clickhouseObj.InsertEvent(context.Background(), &event); err != nil {
+		if err := eventRepo.InsertEvent(context.Background(), &event); err != nil {
 			log.Errorf("Failed to insert event: %v", err)
 		}
 

@@ -1,40 +1,22 @@
 basePath: /v1
 definitions:
-  github_com_flexprice_flexprice_internal_aggregation.Type:
-    enum:
-    - COUNT
-    - SUM
-    - AVG
-    - MAX
-    - MIN
-    - COUNT_UNIQUE
-    - LATEST
-    type: string
-    x-enum-varnames:
-    - Count
-    - Sum
-    - Avg
-    - Max
-    - Min
-    - CountUnique
-    - Latest
-  github_com_flexprice_flexprice_internal_dto.CreateMeterRequest:
+  github_com_flexprice_flexprice_internal_api_dto.CreateMeterRequest:
     properties:
       aggregation:
-        $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation'
+        $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Aggregation'
       filters:
         items:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Filter'
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Filter'
         type: array
       window_size:
         allOf:
-        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.WindowSize'
+        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.WindowSize'
         example: HOUR
     required:
     - aggregation
     - window_size
     type: object
-  github_com_flexprice_flexprice_internal_dto.IngestEventRequest:
+  github_com_flexprice_flexprice_internal_api_dto.IngestEventRequest:
     properties:
       event_name:
         example: api.request
@@ -55,16 +37,16 @@ definitions:
     - event_name
     - external_customer_id
     type: object
-  github_com_flexprice_flexprice_internal_dto.MeterResponse:
+  github_com_flexprice_flexprice_internal_api_dto.MeterResponse:
     properties:
       aggregation:
-        $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Aggregation'
+        $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Aggregation'
       created_at:
         example: "2024-03-20T15:04:05Z"
         type: string
       filters:
         items:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Filter'
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Filter'
         type: array
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
@@ -80,17 +62,17 @@ definitions:
         type: string
       window_size:
         allOf:
-        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.WindowSize'
+        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.WindowSize'
         example: HOUR
     type: object
-  github_com_flexprice_flexprice_internal_meter.Aggregation:
+  github_com_flexprice_flexprice_internal_domain_meter.Aggregation:
     properties:
       field:
         type: string
       type:
-        $ref: '#/definitions/github_com_flexprice_flexprice_internal_aggregation.Type'
+        $ref: '#/definitions/github_com_flexprice_flexprice_internal_types.AggregationType'
     type: object
-  github_com_flexprice_flexprice_internal_meter.Condition:
+  github_com_flexprice_flexprice_internal_domain_meter.Condition:
     properties:
       field:
         type: string
@@ -98,14 +80,14 @@ definitions:
         type: string
       value: {}
     type: object
-  github_com_flexprice_flexprice_internal_meter.Filter:
+  github_com_flexprice_flexprice_internal_domain_meter.Filter:
     properties:
       conditions:
         items:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_meter.Condition'
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Condition'
         type: array
     type: object
-  github_com_flexprice_flexprice_internal_meter.WindowSize:
+  github_com_flexprice_flexprice_internal_domain_meter.WindowSize:
     enum:
     - MINUTE
     - HOUR
@@ -115,6 +97,24 @@ definitions:
     - WindowSizeMinute
     - WindowSizeHour
     - WindowSizeDay
+  github_com_flexprice_flexprice_internal_types.AggregationType:
+    enum:
+    - COUNT
+    - SUM
+    - AVG
+    - MAX
+    - MIN
+    - COUNT_UNIQUE
+    - LATEST
+    type: string
+    x-enum-varnames:
+    - AggregationCount
+    - AggregationSum
+    - AggregationAvg
+    - AggregationMax
+    - AggregationMin
+    - AggregationCountUnique
+    - AggregationLatest
   internal_api_v1.ErrorResponse:
     properties:
       error:
@@ -139,7 +139,7 @@ paths:
         name: event
         required: true
         schema:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.IngestEventRequest'
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.IngestEventRequest'
       produces:
       - application/json
       responses:
@@ -219,7 +219,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse'
+              $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse'
             type: array
         "500":
           description: Internal Server Error
@@ -238,14 +238,14 @@ paths:
         name: meter
         required: true
         schema:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.CreateMeterRequest'
+          $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.CreateMeterRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse'
+            $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse'
         "400":
           description: Bad Request
           schema:
@@ -272,7 +272,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_flexprice_flexprice_internal_dto.MeterResponse'
+            $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse'
         "404":
           description: Not Found
           schema:

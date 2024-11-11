@@ -1,33 +1,24 @@
 package v1
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/dto"
-	"github.com/flexprice/flexprice/internal/events"
-	"github.com/flexprice/flexprice/internal/events/stores/clickhouse"
-	"github.com/flexprice/flexprice/internal/kafka"
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 type EventsHandler struct {
-	producer *kafka.Producer
-	store    *clickhouse.ClickHouseStore
-	log      *logger.Logger
+	eventService service.EventService
+	log          *logger.Logger
 }
 
-func NewEventsHandler(
-	producer *kafka.Producer,
-	store *clickhouse.ClickHouseStore,
-	log *logger.Logger,
-) *EventsHandler {
+func NewEventsHandler(eventService service.EventService, log *logger.Logger) *EventsHandler {
 	return &EventsHandler{
-		producer: producer,
-		store:    store,
-		log:      log,
+		eventService: eventService,
+		log:          log,
 	}
 }
 
@@ -49,32 +40,14 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 		return
 	}
 
-	// TODO: Remove this once we have a way to set the tenant ID
-	tenantID := "default"
-
-	event := events.NewEvent(
-		req.ID,
-		tenantID,
-		req.ExternalCustomerID,
-		req.EventName,
-		req.Timestamp,
-		req.Properties,
-	)
-
-	payload, err := json.Marshal(event)
+	err := h.eventService.CreateEvent(c, &req)
 	if err != nil {
-		h.log.Error("Failed to marshal event", "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to process event"})
+		h.log.Error("Failed to ingest event", "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to ingest event"})
 		return
 	}
 
-	if err := h.producer.PublishWithID("events", payload, event.ID); err != nil {
-		h.log.Error("Failed to publish event", "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to process event"})
-		return
-	}
-
-	c.JSON(http.StatusAccepted, gin.H{"message": "Event accepted for processing", "event_id": event.ID})
+	c.JSON(http.StatusAccepted, gin.H{"message": "Event accepted for processing", "event_id": req.ID})
 }
 
 // @Summary Get usage statistics
@@ -127,24 +100,14 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 	startTime = startTime.UTC()
 	endTime = endTime.UTC()
 
-	// Get appropriate aggregator
-	aggType := events.AggregationType(aggregationType)
-	aggregator := clickhouse.GetAggregator(aggType)
-	if aggregator == nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid aggregation_type"})
-		return
-	}
-
-	result, err := h.store.GetUsage(
-		c.Request.Context(),
-		externalCustomerID,
-		eventName,
-		propertyName,
-		aggregator,
-		startTime,
-		endTime,
-	)
-
+	result, err := h.eventService.GetUsage(c, &dto.GetUsageRequest{
+		ExternalCustomerID: externalCustomerID,
+		EventName:          eventName,
+		PropertyName:       propertyName,
+		AggregationType:    aggregationType,
+		StartTime:          startTime,
+		EndTime:            endTime,
+	})
 	if err != nil {
 		h.log.Error("Failed to get usage", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get usage"})

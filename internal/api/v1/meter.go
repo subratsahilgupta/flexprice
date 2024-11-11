@@ -3,18 +3,18 @@ package v1
 import (
 	"net/http"
 
-	"github.com/flexprice/flexprice/internal/dto"
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/meter"
+	"github.com/flexprice/flexprice/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 type MeterHandler struct {
-	service meter.Service
+	service service.MeterService
 	log     *logger.Logger
 }
 
-func NewMeterHandler(service meter.Service, log *logger.Logger) *MeterHandler {
+func NewMeterHandler(service service.MeterService, log *logger.Logger) *MeterHandler {
 	return &MeterHandler{service: service, log: log}
 }
 

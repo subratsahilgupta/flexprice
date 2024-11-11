@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/aggregation"
-	"github.com/flexprice/flexprice/internal/models"
+	"github.com/flexprice/flexprice/internal/domain"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/google/uuid"
 )
 
@@ -52,7 +52,7 @@ type Meter struct {
 	Filters     []Filter    `db:"filters" json:"filters"`
 	Aggregation Aggregation `db:"aggregation" json:"aggregation"`
 	WindowSize  WindowSize  `db:"window_size" json:"window_size"`
-	models.BaseModel
+	domain.BaseModel
 }
 
 type Filter struct {
@@ -66,8 +66,8 @@ type Condition struct {
 }
 
 type Aggregation struct {
-	Type  aggregation.Type `json:"type"`
-	Field string           `json:"field,omitempty"`
+	Type  types.AggregationType `json:"type"`
+	Field string                `json:"field,omitempty"`
 }
 
 // Validate validates the meter configuration
@@ -93,12 +93,12 @@ func NewMeter(id string, createdBy string) *Meter {
 
 	return &Meter{
 		ID: id,
-		BaseModel: models.BaseModel{
+		BaseModel: domain.BaseModel{
 			CreatedAt: now,
 			UpdatedAt: now,
 			CreatedBy: createdBy,
 			UpdatedBy: createdBy,
-			Status:    models.StatusActive,
+			Status:    domain.StatusActive,
 		},
 	}
 }

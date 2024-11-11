@@ -69,6 +69,10 @@ cd flexprice
 go run cmd/server/main.go
 ```
 
+### Code Architecture
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for more details on the code architecture and design principles.
+
 
 ## 👨🏻‍💻 Let's Build Together! 👩🏻‍💻
 

@@ -1,17 +1,18 @@
-package meter
+package postgres
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/postgres"
 )
 
-type Repository interface {
-	CreateMeter(ctx context.Context, meter *Meter) error
-	GetMeter(ctx context.Context, id string) (*Meter, error)
-	GetAllMeters(ctx context.Context) ([]*Meter, error)
+type MeterRepository interface {
+	CreateMeter(ctx context.Context, meter *meter.Meter) error
+	GetMeter(ctx context.Context, id string) (*meter.Meter, error)
+	GetAllMeters(ctx context.Context) ([]*meter.Meter, error)
 	DisableMeter(ctx context.Context, id string) error
 }
 
@@ -19,11 +20,11 @@ type repository struct {
 	db *postgres.DB
 }
 
-func NewRepository(db *postgres.DB) Repository {
+func NewMeterRepository(db *postgres.DB) MeterRepository {
 	return &repository{db: db}
 }
 
-func (r *repository) CreateMeter(ctx context.Context, meter *Meter) error {
+func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error {
 	filtersJSON, err := json.Marshal(meter.Filters)
 	if err != nil {
 		return fmt.Errorf("marshal filters: %w", err)
@@ -63,8 +64,8 @@ func (r *repository) CreateMeter(ctx context.Context, meter *Meter) error {
 	return nil
 }
 
-func (r *repository) GetMeter(ctx context.Context, id string) (*Meter, error) {
-	meter := &Meter{}
+func (r *repository) GetMeter(ctx context.Context, id string) (*meter.Meter, error) {
+	meter := &meter.Meter{}
 	var filtersJSON, aggregationJSON []byte
 
 	query := `
@@ -103,7 +104,7 @@ func (r *repository) GetMeter(ctx context.Context, id string) (*Meter, error) {
 	return meter, nil
 }
 
-func (r *repository) GetAllMeters(ctx context.Context) ([]*Meter, error) {
+func (r *repository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 	query := `
 		SELECT 
 			id, tenant_id, filters, aggregation, window_size, 
@@ -119,9 +120,9 @@ func (r *repository) GetAllMeters(ctx context.Context) ([]*Meter, error) {
 	}
 	defer rows.Close()
 
-	var meters []*Meter
+	var meters []*meter.Meter
 	for rows.Next() {
-		var meter Meter
+		var meter meter.Meter
 		var filtersJSON, aggregationJSON []byte
 
 		err := rows.Scan(
