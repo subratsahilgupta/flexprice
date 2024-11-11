@@ -11,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/repository/clickhouse"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/go-playground/validator/v10"
 )
 
 type EventService interface {
@@ -19,19 +20,27 @@ type EventService interface {
 }
 
 type eventService struct {
-	producer  *kafka.Producer
+	producer  kafka.MessageProducer
 	eventRepo events.Repository
 	meterRepo meter.Repository
+	validator *validator.Validate
 }
 
-func NewEventService(producer *kafka.Producer, eventRepo events.Repository, meterRepo meter.Repository) EventService {
-	return &eventService{producer: producer, eventRepo: eventRepo, meterRepo: meterRepo}
+func NewEventService(producer kafka.MessageProducer, eventRepo events.Repository, meterRepo meter.Repository) EventService {
+	return &eventService{
+		producer:  producer,
+		eventRepo: eventRepo,
+		meterRepo: meterRepo,
+		validator: validator.New(),
+	}
 }
 
 func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.IngestEventRequest) error {
-	// TODO: Remove this once we have a way to set the tenant ID
-	tenantID := "default"
+	if err := s.validator.Struct(createEventRequest); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
 
+	tenantID := "default"
 	event := events.NewEvent(
 		createEventRequest.ID,
 		tenantID,

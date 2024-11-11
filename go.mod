@@ -12,6 +12,10 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/spf13/viper v1.19.0
+	github.com/stretchr/testify v1.9.0
+	github.com/swaggo/files v1.0.1
+	github.com/swaggo/gin-swagger v1.6.0
+	github.com/swaggo/swag v1.16.4
 	go.uber.org/fx v1.23.0
 	go.uber.org/zap v1.27.0
 )
@@ -19,8 +23,6 @@ require (
 require (
 	github.com/ClickHouse/ch-go v0.61.5 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
-	github.com/PuerkitoBio/purell v1.2.1 // indirect
-	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/Shopify/sarama v1.38.0 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/bytedance/sonic v1.12.4 // indirect
@@ -72,6 +74,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
@@ -82,9 +85,6 @@ require (
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/swaggo/files v1.0.1 // indirect
-	github.com/swaggo/gin-swagger v1.6.0 // indirect
-	github.com/swaggo/swag v1.16.4 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	go.opentelemetry.io/contrib/instrumentation/github.com/Shopify/sarama/otelsarama v0.31.0 // indirect
@@ -102,6 +102,5 @@ require (
 	golang.org/x/tools v0.27.0 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

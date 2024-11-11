@@ -26,3 +26,7 @@ go.work.sum
 
 # macOS-specific files
 .DS_Store
+
+# Coverage report
+coverage.out
+coverage.html

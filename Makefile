@@ -20,3 +20,19 @@ run-server:
 
 .PHONY: run
 run: swagger run-server
+
+.PHONY: test test-verbose test-coverage
+
+# Run all tests
+test:
+	go test ./...
+
+# Run tests with verbose output
+test-verbose:
+	go test -v ./...
+
+# Run tests with coverage report
+test-coverage:
+	go test -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+

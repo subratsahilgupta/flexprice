@@ -4,8 +4,8 @@ import "time"
 
 type IngestEventRequest struct {
 	ID                 string                 `json:"id" example:"event123"`
-	ExternalCustomerID string                 `json:"external_customer_id" binding:"required" example:"customer456"`
-	EventName          string                 `json:"event_name" binding:"required" example:"api.request"`
+	ExternalCustomerID string                 `json:"external_customer_id" validate:"required" binding:"required" example:"customer456"`
+	EventName          string                 `json:"event_name" validate:"required" binding:"required" example:"api.request"`
 	Timestamp          time.Time              `json:"timestamp" example:"2024-03-20T15:04:05Z"`
 	Properties         map[string]interface{} `json:"properties"`
 }

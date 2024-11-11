@@ -7,6 +7,13 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 )
 
+// Update the kafka producer to implement an interface
+type MessageProducer interface {
+	PublishWithID(topic string, payload []byte, id string) error
+	Close() error
+}
+
+// Update the Producer struct to implement MessageProducer
 type Producer struct {
 	publisher message.Publisher
 }

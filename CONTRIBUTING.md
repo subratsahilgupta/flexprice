@@ -147,7 +147,30 @@ For an event ingestion:
 
 ## Testing
 
-TODO: Add proper testing strategy and implementation
+We use [testutil](./internal/testutil) package to create test data and setup test environment.
+
+### Testing Guidelines
+
+1. **Unit Tests**
+   - Each package should have corresponding `*_test.go` files
+   - Use table-driven tests when testing multiple scenarios
+   - Mock external dependencies using interfaces
+   - Aim for >80% test coverage for critical paths
+
+2. **Integration Tests**
+   - Place integration tests in a separate `integration` package
+   - Use test containers for database tests
+   - Integration tests should use the same config structure as production
+
+3. **Running Tests**
+
+Use the following make commands:
+
+```
+make test # Run all tests
+make test-verbose # Run all tests with verbose output
+make test-coverage # Run all tests and generate coverage report
+```
 
 
 # How to contribute ?
