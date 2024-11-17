@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS events (
     CONSTRAINT check_event_name CHECK event_name != ''
 ) ENGINE = ReplacingMergeTree(timestamp)
 -- Order by clause optimized for our common query patterns
-ORDER BY (tenant_id, external_customer_id, event_name, timestamp)
+ORDER BY (id, tenant_id, external_customer_id, event_name, timestamp)
 -- Partition by month for better performance
 PARTITION BY toYYYYMM(timestamp)
 SETTINGS index_granularity = 8192;
