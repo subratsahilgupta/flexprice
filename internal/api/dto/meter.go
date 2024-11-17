@@ -3,8 +3,8 @@ package dto
 import (
 	"time"
 
-	"github.com/flexprice/flexprice/internal/domain"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // CreateMeterRequest represents the request payload for creating a meter
@@ -53,6 +53,6 @@ func (r *CreateMeterRequest) ToMeter(createdBy string) *meter.Meter {
 	m.Filters = r.Filters
 	m.Aggregation = r.Aggregation
 	m.WindowSize = r.WindowSize
-	m.Status = domain.StatusActive
+	m.Status = types.StatusActive
 	return m
 }

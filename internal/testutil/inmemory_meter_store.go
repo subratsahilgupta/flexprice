@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/flexprice/flexprice/internal/domain"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 type InMemoryMeterStore struct {
@@ -63,6 +63,6 @@ func (s *InMemoryMeterStore) DisableMeter(ctx context.Context, id string) error 
 		return fmt.Errorf("meter not found")
 	}
 
-	m.Status = domain.StatusDeleted
+	m.Status = types.StatusDeleted
 	return nil
 }

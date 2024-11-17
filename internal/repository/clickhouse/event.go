@@ -55,7 +55,7 @@ func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) 
 
 func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsageParams) (*events.AggregationResult, error) {
 	aggregator := GetAggregator(params.AggregationType)
-	query := aggregator.GetQuery(params.EventName, params.PropertyName, params.ExternalCustomerID, params.StartTime, params.EndTime)
+	query := aggregator.GetQuery(ctx, params)
 
 	var value interface{}
 	switch aggregator.GetType() {

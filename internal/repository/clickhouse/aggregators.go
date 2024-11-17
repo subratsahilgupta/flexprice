@@ -1,14 +1,15 @@
 package clickhouse
 
 import (
+	"context"
 	"fmt"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/domain/aggregation"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-func GetAggregator(aggregationType types.AggregationType) aggregation.Aggregator {
+func GetAggregator(aggregationType types.AggregationType) events.Aggregator {
 	switch aggregationType {
 	case types.AggregationCount:
 		return &CountAggregator{}
@@ -28,7 +29,7 @@ func formatClickHouseDateTime(t time.Time) string {
 // SumAggregator implements sum aggregation
 type SumAggregator struct{}
 
-func (a *SumAggregator) GetQuery(eventName, propertyName, externalCustomerID string, startTime, endTime time.Time) string {
+func (a *SumAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
 	return fmt.Sprintf(`
 		SELECT sum(value)
 		FROM (
@@ -42,9 +43,9 @@ func (a *SumAggregator) GetQuery(eventName, propertyName, externalCustomerID str
 				AND timestamp < toDateTime64('%s', 3)
 			GROUP BY id, external_customer_id, timestamp, properties
 		)
-	`, propertyName, eventName, externalCustomerID,
-		formatClickHouseDateTime(startTime),
-		formatClickHouseDateTime(endTime))
+	`, params.PropertyName, params.EventName, params.ExternalCustomerID,
+		formatClickHouseDateTime(params.StartTime),
+		formatClickHouseDateTime(params.EndTime))
 }
 
 func (a *SumAggregator) GetType() types.AggregationType {
@@ -54,21 +55,21 @@ func (a *SumAggregator) GetType() types.AggregationType {
 // CountAggregator implements count aggregation
 type CountAggregator struct{}
 
-func (a *CountAggregator) GetQuery(eventName, _, externalCustomerID string, startTime, endTime time.Time) string {
+func (a *CountAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
 	return fmt.Sprintf(`
 		SELECT count(*)
 		FROM (
 			SELECT id
 			FROM events
 			WHERE event_name = '%s'
-					AND external_customer_id = '%s'
-					AND timestamp >= toDateTime64('%s', 3)
-					AND timestamp < toDateTime64('%s', 3)
+				AND external_customer_id = '%s'
+				AND timestamp >= toDateTime64('%s', 3)
+				AND timestamp < toDateTime64('%s', 3)
 			GROUP BY id, external_customer_id, timestamp
 		)
-	`, eventName, externalCustomerID,
-		formatClickHouseDateTime(startTime),
-		formatClickHouseDateTime(endTime))
+	`, params.EventName, params.ExternalCustomerID,
+		formatClickHouseDateTime(params.StartTime),
+		formatClickHouseDateTime(params.EndTime))
 }
 
 func (a *CountAggregator) GetType() types.AggregationType {

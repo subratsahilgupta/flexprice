@@ -13,12 +13,12 @@ type Repository interface {
 }
 
 type UsageParams struct {
-	ExternalCustomerID string
-	EventName          string
-	PropertyName       string
-	AggregationType    types.AggregationType
-	StartTime          time.Time
-	EndTime            time.Time
+	ExternalCustomerID string                `json:"external_customer_id"`
+	EventName          string                `json:"event_name" validate:"required"`
+	PropertyName       string                `json:"property_name" validate:"required"`
+	AggregationType    types.AggregationType `json:"aggregation_type" validate:"required"`
+	StartTime          time.Time             `json:"start_time" validate:"required"`
+	EndTime            time.Time             `json:"end_time" validate:"required"`
 }
 
 type AggregationResult struct {

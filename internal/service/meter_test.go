@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/flexprice/flexprice/internal/domain"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -66,8 +65,8 @@ func (s *MeterServiceSuite) TestCreateMeter() {
 			name: "invalid_meter",
 			input: &meter.Meter{
 				TenantID: "tenant-1",
-				BaseModel: domain.BaseModel{
-					Status: domain.StatusActive,
+				BaseModel: types.BaseModel{
+					Status: types.StatusActive,
 				},
 			},
 			expectedError: true,
@@ -155,7 +154,7 @@ func (s *MeterServiceSuite) TestGetAllMeters() {
 			Field: "duration_ms",
 		}
 		m.WindowSize = meter.WindowSizeHour
-		m.BaseModel.Status = domain.StatusActive
+		m.BaseModel.Status = types.StatusActive
 
 		err := s.store.CreateMeter(s.ctx, m)
 		s.NoError(err)
@@ -170,8 +169,8 @@ func (s *MeterServiceSuite) TestDisableMeter() {
 	// Create test meter
 	testMeter := meter.NewMeter("", "test-user")
 	testMeter.TenantID = "tenant-1"
-	testMeter.BaseModel = domain.BaseModel{
-		Status: domain.StatusActive,
+	testMeter.BaseModel = types.BaseModel{
+		Status: types.StatusActive,
 	}
 
 	err := s.store.CreateMeter(s.ctx, testMeter)
@@ -210,7 +209,7 @@ func (s *MeterServiceSuite) TestDisableMeter() {
 
 			// Verify meter is disabled
 			meter, _ := s.store.GetMeter(s.ctx, tc.id)
-			s.Equal(domain.StatusDeleted, meter.BaseModel.Status)
+			s.Equal(types.StatusDeleted, meter.BaseModel.Status)
 		})
 	}
 }

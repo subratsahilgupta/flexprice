@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/domain"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/google/uuid"
 )
@@ -52,7 +51,7 @@ type Meter struct {
 	Filters     []Filter    `db:"filters" json:"filters"`
 	Aggregation Aggregation `db:"aggregation" json:"aggregation"`
 	WindowSize  WindowSize  `db:"window_size" json:"window_size"`
-	domain.BaseModel
+	types.BaseModel
 }
 
 type Filter struct {
@@ -93,12 +92,12 @@ func NewMeter(id string, createdBy string) *Meter {
 
 	return &Meter{
 		ID: id,
-		BaseModel: domain.BaseModel{
+		BaseModel: types.BaseModel{
 			CreatedAt: now,
 			UpdatedAt: now,
 			CreatedBy: createdBy,
 			UpdatedBy: createdBy,
-			Status:    domain.StatusActive,
+			Status:    types.StatusActive,
 		},
 	}
 }
