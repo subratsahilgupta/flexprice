@@ -22,7 +22,7 @@ func TestMeterService(t *testing.T) {
 }
 
 func (s *MeterServiceSuite) SetupTest() {
-	s.ctx = context.Background()
+	s.ctx = testutil.SetupContext()
 	s.store = testutil.NewInMemoryMeterStore()
 	s.service = NewMeterService(s.store)
 }

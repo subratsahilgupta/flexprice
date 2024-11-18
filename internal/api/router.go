@@ -2,6 +2,7 @@ package api
 
 import (
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
+	"github.com/flexprice/flexprice/internal/rest/middleware"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -14,6 +15,10 @@ type Handlers struct {
 
 func NewRouter(handlers Handlers) *gin.Engine {
 	router := gin.Default()
+	router.Use(
+		middleware.RequestIDMiddleware,
+		middleware.AuthMiddleware,
+	)
 
 	// Swagger documentation
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

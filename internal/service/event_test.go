@@ -29,7 +29,7 @@ func TestEventService(t *testing.T) {
 }
 
 func (s *EventServiceSuite) SetupTest() {
-	s.ctx = context.Background()
+	s.ctx = testutil.SetupContext()
 	s.store = testutil.NewInMemoryEventStore()
 	s.broker = testutil.NewInMemoryMessageBroker()
 	s.service = NewEventService(s.broker, s.store, nil).(*eventService)
@@ -139,7 +139,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 	for _, evt := range testingEvents {
 		event := events.NewEvent(
 			evt.ID,
-			"default",
+			types.DefaultTenantID,
 			evt.ExternalCustomerID,
 			evt.EventName,
 			evt.Timestamp,

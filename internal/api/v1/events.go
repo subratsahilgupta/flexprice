@@ -33,6 +33,7 @@ func NewEventsHandler(eventService service.EventService, log *logger.Logger) *Ev
 // @Failure 500 {object} ErrorResponse
 // @Router /events [post]
 func (h *EventsHandler) IngestEvent(c *gin.Context) {
+	ctx := c.Request.Context()
 	var req dto.IngestEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.log.Error("Failed to bind JSON", "error", err)
@@ -40,7 +41,7 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 		return
 	}
 
-	err := h.eventService.CreateEvent(c, &req)
+	err := h.eventService.CreateEvent(ctx, &req)
 	if err != nil {
 		h.log.Error("Failed to ingest event", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to ingest event"})
@@ -65,6 +66,7 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /events/usage [get]
 func (h *EventsHandler) GetUsage(c *gin.Context) {
+	ctx := c.Request.Context()
 	externalCustomerID := c.Query("external_customer_id")
 	eventName := c.Query("event_name")
 	propertyName := c.Query("property_name")
@@ -100,7 +102,7 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 	startTime = startTime.UTC()
 	endTime = endTime.UTC()
 
-	result, err := h.eventService.GetUsage(c, &dto.GetUsageRequest{
+	result, err := h.eventService.GetUsage(ctx, &dto.GetUsageRequest{
 		ExternalCustomerID: externalCustomerID,
 		EventName:          eventName,
 		PropertyName:       propertyName,

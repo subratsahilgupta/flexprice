@@ -40,7 +40,7 @@ func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	tenantID := "default"
+	tenantID := types.GetTenantID(ctx)
 	event := events.NewEvent(
 		createEventRequest.ID,
 		tenantID,

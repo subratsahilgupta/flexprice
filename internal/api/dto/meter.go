@@ -41,15 +41,12 @@ func ToMeterResponse(m *meter.Meter) *MeterResponse {
 }
 
 // Convert CreateMeterRequest to domain Meter
-func (r *CreateMeterRequest) ToMeter(createdBy string) *meter.Meter {
+func (r *CreateMeterRequest) ToMeter(tenantID, createdBy string) *meter.Meter {
 	if createdBy == "" {
 		createdBy = "system"
 	}
 
-	m := meter.NewMeter("", createdBy)
-	// TODO: Remove this once we have a way to set the tenant ID
-	m.TenantID = "default"
-
+	m := meter.NewMeter(tenantID, createdBy)
 	m.Filters = r.Filters
 	m.Aggregation = r.Aggregation
 	m.WindowSize = r.WindowSize
