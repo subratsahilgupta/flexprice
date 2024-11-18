@@ -18,7 +18,7 @@ type Producer struct {
 	publisher message.Publisher
 }
 
-func NewProducer(cfg *config.Configuration) (*Producer, error) {
+func NewProducer(cfg *config.Configuration) (MessageProducer, error) {
 	publisher, err := kafka.NewPublisher(
 		kafka.PublisherConfig{
 			Brokers:   cfg.Kafka.Brokers,

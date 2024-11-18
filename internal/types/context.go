@@ -16,13 +16,22 @@ const (
 )
 
 func GetUserID(ctx context.Context) string {
-	return ctx.Value(CtxUserID).(string)
+	if userID, ok := ctx.Value(CtxUserID).(string); ok {
+		return userID
+	}
+	return ""
 }
 
 func GetTenantID(ctx context.Context) string {
-	return ctx.Value(CtxTenantID).(string)
+	if tenantID, ok := ctx.Value(CtxTenantID).(string); ok {
+		return tenantID
+	}
+	return ""
 }
 
 func GetRequestID(ctx context.Context) string {
-	return ctx.Value(CtxRequestID).(string)
+	if requestID, ok := ctx.Value(CtxRequestID).(string); ok {
+		return requestID
+	}
+	return ""
 }
