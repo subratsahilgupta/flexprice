@@ -42,12 +42,14 @@ func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.
 
 	tenantID := types.GetTenantID(ctx)
 	event := events.NewEvent(
-		createEventRequest.ID,
+		createEventRequest.EventName,
 		tenantID,
 		createEventRequest.ExternalCustomerID,
-		createEventRequest.EventName,
-		createEventRequest.Timestamp,
 		createEventRequest.Properties,
+		createEventRequest.Timestamp,
+		createEventRequest.EventID,
+		createEventRequest.CustomerID,
+		createEventRequest.Source,
 	)
 
 	payload, err := json.Marshal(event)

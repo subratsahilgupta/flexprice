@@ -31,18 +31,20 @@ func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) 
 
 	query := `
 		INSERT INTO events (
-			id, external_customer_id, tenant_id, event_name, timestamp, properties
+			id, external_customer_id, customer_id, tenant_id, event_name, timestamp, source, properties
 		) VALUES (
-			?, ?, ?, ?, ?, ?
+			?, ?, ?, ?, ?, ?, ?, ?
 		)
 	`
 
 	err = r.store.GetConn().Exec(ctx, query,
 		event.ID,
 		event.ExternalCustomerID,
+		event.CustomerID,
 		event.TenantID,
 		event.EventName,
 		event.Timestamp,
+		event.Source,
 		string(propertiesJSON),
 	)
 

@@ -3,11 +3,13 @@ package dto
 import "time"
 
 type IngestEventRequest struct {
-	ID                 string                 `json:"id" example:"event123"`
-	ExternalCustomerID string                 `json:"external_customer_id" validate:"required" binding:"required" example:"customer456"`
 	EventName          string                 `json:"event_name" validate:"required" binding:"required" example:"api.request"`
+	EventID            string                 `json:"event_id" example:"event123"`
+	CustomerID         string                 `json:"customer_id" example:"customer456"`
+	ExternalCustomerID string                 `json:"external_customer_id" validate:"required" binding:"required" example:"customer456"`
 	Timestamp          time.Time              `json:"timestamp" example:"2024-03-20T15:04:05Z"`
-	Properties         map[string]interface{} `json:"properties"`
+	Source             string                 `json:"source" example:"api"`
+	Properties         map[string]interface{} `json:"properties" example:"{'request.size': 100, 'response.status': 200}"`
 }
 
 type GetUsageRequest struct {

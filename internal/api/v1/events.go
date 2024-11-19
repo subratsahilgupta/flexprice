@@ -48,7 +48,7 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"message": "Event accepted for processing", "event_id": req.ID})
+	c.JSON(http.StatusAccepted, gin.H{"message": "Event accepted for processing", "event_id": req.EventID})
 }
 
 // @Summary Get usage statistics

@@ -63,7 +63,7 @@ func (s *EventServiceSuite) TestCreateEvent() {
 		{
 			name: "successful_event_creation",
 			input: &dto.IngestEventRequest{
-				ID:                 "test-1",
+				EventID:            "test-1",
 				ExternalCustomerID: "customer-1",
 				EventName:          "api.request",
 				Timestamp:          time.Now(),
@@ -85,7 +85,7 @@ func (s *EventServiceSuite) TestCreateEvent() {
 		{
 			name: "missing_required_fields",
 			input: &dto.IngestEventRequest{
-				ID: "test-2",
+				EventID: "test-2",
 			},
 			expectedError: true,
 			verify: func(wg *sync.WaitGroup) {
@@ -116,7 +116,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 	// Setup test data
 	testingEvents := []*dto.IngestEventRequest{
 		{
-			ID:                 "evt-1",
+			EventID:            "evt-1",
 			ExternalCustomerID: "cust-1",
 			EventName:          "api.request",
 			Timestamp:          time.Now().Add(-1 * time.Hour),
@@ -125,7 +125,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 			},
 		},
 		{
-			ID:                 "evt-2",
+			EventID:            "evt-2",
 			ExternalCustomerID: "cust-1",
 			EventName:          "api.request",
 			Timestamp:          time.Now().Add(-30 * time.Minute),
@@ -138,12 +138,14 @@ func (s *EventServiceSuite) TestGetUsage() {
 	// Insert test events directly into store
 	for _, evt := range testingEvents {
 		event := events.NewEvent(
-			evt.ID,
-			types.DefaultTenantID,
-			evt.ExternalCustomerID,
 			evt.EventName,
-			evt.Timestamp,
+			types.GetTenantID(s.ctx),
+			evt.ExternalCustomerID,
 			evt.Properties,
+			evt.Timestamp,
+			evt.EventID,
+			evt.CustomerID,
+			evt.Source,
 		)
 		err := s.store.InsertEvent(s.ctx, event)
 		s.NoError(err)
