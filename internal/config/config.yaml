@@ -1,3 +1,6 @@
+deployment:
+  mode: "local"
+
 server:
   address: ":8080"
 
@@ -25,7 +28,3 @@ postgres:
 logging:
   level: "debug"
 
-meters:
-  - id: "meter1"
-    aggregationType: "sum"
-    windowSize: "1m"

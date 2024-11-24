@@ -8,17 +8,22 @@ import (
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
 )
 
 type Configuration struct {
+	Deployment DeploymentConfig `validate:"required"`
 	Server     ServerConfig     `validate:"required"`
 	Kafka      KafkaConfig      `validate:"required"`
 	ClickHouse ClickHouseConfig `validate:"required"`
-	Meters     []MeterConfig    `validate:"required,dive"`
 	Logging    LoggingConfig    `validate:"required"`
 	Postgres   PostgresConfig   `validate:"required"`
+}
+
+type DeploymentConfig struct {
+	Mode types.RunMode `validate:"required"`
 }
 
 type ServerConfig struct {
@@ -46,7 +51,7 @@ type MeterConfig struct {
 }
 
 type LoggingConfig struct {
-	Level string `validate:"required"`
+	Level types.LogLevel `validate:"required"`
 }
 
 type PostgresConfig struct {
@@ -92,13 +97,6 @@ func NewConfig() (*Configuration, error) {
 		return nil, err
 	}
 
-	// Set defaults for meter window sizes
-	for i := range config.Meters {
-		if config.Meters[i].WindowSize == "" {
-			config.Meters[i].WindowSize = "1m"
-		}
-	}
-
 	// Validate configuration
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -110,6 +108,15 @@ func NewConfig() (*Configuration, error) {
 func (c Configuration) Validate() error {
 	validate := validator.New()
 	return validate.Struct(c)
+}
+
+// GetDefaultConfig returns a default configuration for local development
+// This is useful for running scripts or other non-web applications
+func GetDefaultConfig() *Configuration {
+	return &Configuration{
+		Deployment: DeploymentConfig{Mode: types.ModeLocal},
+		Logging:    LoggingConfig{Level: types.LogLevelDebug},
+	}
 }
 
 func (c ClickHouseConfig) GetClientOptions() *clickhouse.Options {
