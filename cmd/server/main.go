@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"time"
 
@@ -175,6 +176,8 @@ func startAWSLambdaAPI(r *gin.Engine) {
 
 func startAWSLambdaConsumer(eventRepo events.Repository, log *logger.Logger) {
 	handler := func(ctx context.Context, kafkaEvent lambdaEvents.KafkaEvent) error {
+		log.Debugf("Received Kafka event: %+v", kafkaEvent)
+
 		for _, record := range kafkaEvent.Records {
 			for _, r := range record {
 				log.Debugf("Processing record: topic=%s, partition=%d, offset=%d",
@@ -183,9 +186,16 @@ func startAWSLambdaConsumer(eventRepo events.Repository, log *logger.Logger) {
 				// TODO decide the repository to use based on the event topic and properties
 				// For now we will use the event repository from the events topic
 
+				// Decode base64 payload first
+				decodedPayload, err := base64.StdEncoding.DecodeString(string(r.Value))
+				if err != nil {
+					log.Errorf("Failed to decode base64 payload: %v", err)
+					continue
+				}
+
 				var event events.Event
-				if err := json.Unmarshal([]byte(r.Value), &event); err != nil {
-					log.Errorf("Failed to unmarshal event: %v, payload: %s", err, r.Value)
+				if err := json.Unmarshal(decodedPayload, &event); err != nil {
+					log.Errorf("Failed to unmarshal event: %v, payload: %s", err, decodedPayload)
 					continue // Skip invalid messages
 				}
 
