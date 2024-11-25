@@ -7,6 +7,9 @@ import (
 
 	"go.uber.org/fx"
 
+	lambdaEvents "github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
 	_ "github.com/flexprice/flexprice/docs/swagger"
 	"github.com/flexprice/flexprice/internal/api"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
@@ -18,6 +21,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -37,13 +41,20 @@ func init() {
 }
 
 func main() {
-	app := fx.New(
+	var opts []fx.Option
+	opts = append(opts,
 		fx.Provide(
-			// Core dependencies
+			// Config
 			config.NewConfig,
+
+			// Logger
 			logger.NewLogger,
+
+			// DB
 			postgres.NewDB,
 			clickhouse.NewClickHouseStore,
+
+			// Producers and Consumers
 			kafka.NewProducer,
 			kafka.NewConsumer,
 
@@ -63,6 +74,8 @@ func main() {
 		),
 		fx.Invoke(startServer),
 	)
+
+	app := fx.New(opts...)
 	app.Run()
 }
 
@@ -82,21 +95,51 @@ func provideRouter(handlers api.Handlers) *gin.Engine {
 }
 
 func startServer(
-	lifecycle fx.Lifecycle,
-	r *gin.Engine,
+	lc fx.Lifecycle,
 	cfg *config.Configuration,
-	consumer *kafka.Consumer,
+	r *gin.Engine,
+	consumer kafka.MessageConsumer,
 	eventRepo events.Repository,
 	log *logger.Logger,
 ) {
-	lifecycle.Append(fx.Hook{
+	mode := cfg.Deployment.Mode
+
+	switch mode {
+	case types.ModeLocal:
+		if consumer == nil {
+			log.Fatal("Kafka consumer required for local mode")
+		}
+		startAPIServer(lc, r, cfg, log)
+		startConsumer(lc, consumer, eventRepo, cfg, log)
+	case types.ModeAPI:
+		startAPIServer(lc, r, cfg, log)
+	case types.ModeConsumer:
+		if consumer == nil {
+			log.Fatal("Kafka consumer required for consumer mode")
+		}
+		startConsumer(lc, consumer, eventRepo, cfg, log)
+	case types.ModeAWSLambdaAPI:
+		startAWSLambdaAPI(r)
+	case types.ModeAWSLambdaConsumer:
+		startAWSLambdaConsumer(eventRepo, log)
+	default:
+		log.Fatalf("Unknown deployment mode: %s", mode)
+	}
+}
+
+func startAPIServer(
+	lc fx.Lifecycle,
+	r *gin.Engine,
+	cfg *config.Configuration,
+	log *logger.Logger,
+) {
+	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			go func() {
 				if err := r.Run(cfg.Server.Address); err != nil {
 					log.Fatalf("Failed to start server: %v", err)
 				}
 			}()
-			go consumeMessages(consumer, eventRepo, cfg.Kafka.Topic, log)
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
@@ -106,29 +149,83 @@ func startServer(
 	})
 }
 
-func consumeMessages(
-	consumer *kafka.Consumer,
+func startConsumer(
+	lc fx.Lifecycle,
+	consumer kafka.MessageConsumer,
 	eventRepo events.Repository,
-	topic string,
+	cfg *config.Configuration,
 	log *logger.Logger,
 ) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			go consumeMessages(consumer, eventRepo, cfg.Kafka.Topic, log)
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			log.Info("Shutting down consumer...")
+			return nil
+		},
+	})
+}
+
+func startAWSLambdaAPI(r *gin.Engine) {
+	ginLambda := ginadapter.New(r)
+	lambda.Start(ginLambda.ProxyWithContext)
+}
+
+func startAWSLambdaConsumer(eventRepo events.Repository, log *logger.Logger) {
+	handler := func(ctx context.Context, kafkaEvent lambdaEvents.KafkaEvent) error {
+		for _, record := range kafkaEvent.Records {
+			for _, r := range record {
+				log.Debugf("Processing record: topic=%s, partition=%d, offset=%d",
+					r.Topic, r.Partition, r.Offset)
+
+				// TODO decide the repository to use based on the event topic and properties
+				// For now we will use the event repository from the events topic
+
+				var event events.Event
+				if err := json.Unmarshal([]byte(r.Value), &event); err != nil {
+					log.Errorf("Failed to unmarshal event: %v, payload: %s", err, r.Value)
+					continue // Skip invalid messages
+				}
+
+				if err := eventRepo.InsertEvent(ctx, &event); err != nil {
+					log.Errorf("Failed to insert event: %v, event: %+v", err, event)
+					// TODO: Handle error and decide if we should retry or send to DLQ
+					continue
+				}
+
+				log.Infof("Successfully processed event: topic=%s, partition=%d, offset=%d",
+					r.Topic, r.Partition, r.Offset)
+			}
+		}
+		return nil
+	}
+
+	lambda.Start(handler)
+}
+
+func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository, topic string, log *logger.Logger) {
 	messages, err := consumer.Subscribe(topic)
 	if err != nil {
-		log.Fatalf("Failed to subscribe to topic: %v", err)
+		log.Fatalf("Failed to subscribe to topic %s: %v", topic, err)
 	}
 
 	for msg := range messages {
 		var event events.Event
-		log.Debugf("received message - %+v", msg)
 		if err := json.Unmarshal(msg.Payload, &event); err != nil {
-			log.Errorf("Failed to unmarshal event: %v : error - %v ", string(msg.Payload), err)
+			log.Errorf("Failed to unmarshal event: %v, payload: %s", err, string(msg.Payload))
+			msg.Ack() // Acknowledge invalid messages
 			continue
 		}
 
-		if err := eventRepo.InsertEvent(context.Background(), &event); err != nil {
-			log.Errorf("Failed to insert event: %v", err)
-		}
+		log.Debugf("Starting to process event: %+v", event)
 
+		if err := eventRepo.InsertEvent(context.Background(), &event); err != nil {
+			log.Errorf("Failed to insert event: %v, event: %+v", err, event)
+			// TODO: Handle error and decide if we should retry or send to DLQ
+		}
 		msg.Ack()
+		log.Debugf("Successfully processed event: %+v", event)
 	}
 }

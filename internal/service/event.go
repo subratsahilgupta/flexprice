@@ -61,6 +61,8 @@ func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.
 		return fmt.Errorf("failed to publish event: %w", err)
 	}
 
+	// Return the event ID to the client
+	createEventRequest.EventID = event.ID
 	return nil
 }
 

@@ -8,76 +8,82 @@ import (
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/Shopify/sarama"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
 type Configuration struct {
+	Deployment DeploymentConfig `validate:"required"`
 	Server     ServerConfig     `validate:"required"`
 	Kafka      KafkaConfig      `validate:"required"`
 	ClickHouse ClickHouseConfig `validate:"required"`
-	Meters     []MeterConfig    `validate:"required,dive"`
 	Logging    LoggingConfig    `validate:"required"`
 	Postgres   PostgresConfig   `validate:"required"`
 }
 
+type DeploymentConfig struct {
+	Mode types.RunMode `mapstructure:"mode" validate:"required"`
+}
+
 type ServerConfig struct {
-	Address string `validate:"required"`
+	Address string `mapstructure:"address" validate:"required"`
 }
 
 type KafkaConfig struct {
-	Brokers       []string
-	ConsumerGroup string
-	Topic         string
+	Brokers       []string             `mapstructure:"brokers" validate:"required"`
+	ConsumerGroup string               `mapstructure:"consumer_group" validate:"required"`
+	Topic         string               `mapstructure:"topic" validate:"required"`
+	UseSASL       bool                 `mapstructure:"use_sasl"`
+	SASLMechanism sarama.SASLMechanism `mapstructure:"sasl_mechanism"`
+	SASLUser      string               `mapstructure:"sasl_user"`
+	SASLPassword  string               `mapstructure:"sasl_password"`
+	ClientID      string               `mapstructure:"client_id" validate:"required"`
 }
 
 type ClickHouseConfig struct {
-	Address  string
-	TLS      bool
-	Username string
-	Password string
-	Database string
-}
-
-type MeterConfig struct {
-	ID              string
-	AggregationType string
-	WindowSize      string
+	Address  string `mapstructure:"address" validate:"required"`
+	TLS      bool   `mapstructure:"tls"`
+	Username string `mapstructure:"username" validate:"required"`
+	Password string `mapstructure:"password" validate:"required"`
+	Database string `mapstructure:"database" validate:"required"`
 }
 
 type LoggingConfig struct {
-	Level string `validate:"required"`
+	Level types.LogLevel `mapstructure:"level" validate:"required"`
 }
 
 type PostgresConfig struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	DBName   string
-	SSLMode  string
+	Host     string `mapstructure:"host" validate:"required"`
+	Port     int    `mapstructure:"port" validate:"required"`
+	User     string `mapstructure:"user" validate:"required"`
+	Password string `mapstructure:"password" validate:"required"`
+	DBName   string `mapstructure:"dbname" validate:"required"`
+	SSLMode  string `mapstructure:"sslmode" validate:"required"`
 }
 
 func NewConfig() (*Configuration, error) {
 	v := viper.New()
 
-	// Modify config paths to ensure config.yaml is found
+	// Step 1: Load `.env` if it exists
+	_ = godotenv.Load()
+
+	// Step 2: Initialize Viper
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 	v.AddConfigPath("./internal/config")
-	v.AddConfigPath(".")
 	v.AddConfigPath("./config")
-	v.AddConfigPath("/etc/flexprice")
 
-	// Set up environment variables support
-	v.SetEnvPrefix("FLEXPRICE") // optional: prefix for env vars
-	v.SetEnvKeyReplacer(strings.NewReplacer(
-		".", "_",
-		"-", "_",
-	))
+	// Step 3: Set up environment variables support
+	v.SetEnvPrefix("FLEXPRICE")
 	v.AutomaticEnv()
 
-	// Read config file if exists
+	// Step 4: Environment variable key mapping (e.g., FLEXPRICE_KAFKA_CONSUMER_GROUP)
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	// Step 5: Read the YAML file
 	if err := v.ReadInConfig(); err != nil {
 		fmt.Printf("Error reading config file: %v\n", err)
 		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
@@ -92,13 +98,6 @@ func NewConfig() (*Configuration, error) {
 		return nil, err
 	}
 
-	// Set defaults for meter window sizes
-	for i := range config.Meters {
-		if config.Meters[i].WindowSize == "" {
-			config.Meters[i].WindowSize = "1m"
-		}
-	}
-
 	// Validate configuration
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -110,6 +109,15 @@ func NewConfig() (*Configuration, error) {
 func (c Configuration) Validate() error {
 	validate := validator.New()
 	return validate.Struct(c)
+}
+
+// GetDefaultConfig returns a default configuration for local development
+// This is useful for running scripts or other non-web applications
+func GetDefaultConfig() *Configuration {
+	return &Configuration{
+		Deployment: DeploymentConfig{Mode: types.ModeLocal},
+		Logging:    LoggingConfig{Level: types.LogLevelDebug},
+	}
 }
 
 func (c ClickHouseConfig) GetClientOptions() *clickhouse.Options {
