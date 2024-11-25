@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/Shopify/sarama"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -23,66 +25,65 @@ type Configuration struct {
 }
 
 type DeploymentConfig struct {
-	Mode types.RunMode `validate:"required"`
+	Mode types.RunMode `mapstructure:"mode" validate:"required"`
 }
 
 type ServerConfig struct {
-	Address string `validate:"required"`
+	Address string `mapstructure:"address" validate:"required"`
 }
 
 type KafkaConfig struct {
-	Brokers       []string
-	ConsumerGroup string
-	Topic         string
+	Brokers       []string             `mapstructure:"brokers" validate:"required"`
+	ConsumerGroup string               `mapstructure:"consumer_group" validate:"required"`
+	Topic         string               `mapstructure:"topic" validate:"required"`
+	UseSASL       bool                 `mapstructure:"use_sasl"`
+	SASLMechanism sarama.SASLMechanism `mapstructure:"sasl_mechanism"`
+	SASLUser      string               `mapstructure:"sasl_user"`
+	SASLPassword  string               `mapstructure:"sasl_password"`
+	ClientID      string               `mapstructure:"client_id" validate:"required"`
 }
 
 type ClickHouseConfig struct {
-	Address  string
-	TLS      bool
-	Username string
-	Password string
-	Database string
-}
-
-type MeterConfig struct {
-	ID              string
-	AggregationType string
-	WindowSize      string
+	Address  string `mapstructure:"address" validate:"required"`
+	TLS      bool   `mapstructure:"tls"`
+	Username string `mapstructure:"username" validate:"required"`
+	Password string `mapstructure:"password" validate:"required"`
+	Database string `mapstructure:"database" validate:"required"`
 }
 
 type LoggingConfig struct {
-	Level types.LogLevel `validate:"required"`
+	Level types.LogLevel `mapstructure:"level" validate:"required"`
 }
 
 type PostgresConfig struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	DBName   string
-	SSLMode  string
+	Host     string `mapstructure:"host" validate:"required"`
+	Port     int    `mapstructure:"port" validate:"required"`
+	User     string `mapstructure:"user" validate:"required"`
+	Password string `mapstructure:"password" validate:"required"`
+	DBName   string `mapstructure:"dbname" validate:"required"`
+	SSLMode  string `mapstructure:"sslmode" validate:"required"`
 }
 
 func NewConfig() (*Configuration, error) {
 	v := viper.New()
 
-	// Modify config paths to ensure config.yaml is found
+	// Step 1: Load `.env` if it exists
+	_ = godotenv.Load()
+
+	// Step 2: Initialize Viper
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 	v.AddConfigPath("./internal/config")
-	v.AddConfigPath(".")
 	v.AddConfigPath("./config")
-	v.AddConfigPath("/etc/flexprice")
 
-	// Set up environment variables support
-	v.SetEnvPrefix("FLEXPRICE") // optional: prefix for env vars
-	v.SetEnvKeyReplacer(strings.NewReplacer(
-		".", "_",
-		"-", "_",
-	))
+	// Step 3: Set up environment variables support
+	v.SetEnvPrefix("FLEXPRICE")
 	v.AutomaticEnv()
 
-	// Read config file if exists
+	// Step 4: Environment variable key mapping (e.g., FLEXPRICE_KAFKA_CONSUMER_GROUP)
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	// Step 5: Read the YAML file
 	if err := v.ReadInConfig(); err != nil {
 		fmt.Printf("Error reading config file: %v\n", err)
 		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {

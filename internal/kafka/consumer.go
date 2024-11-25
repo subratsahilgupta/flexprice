@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill-kafka/v2/pkg/kafka"
@@ -22,11 +23,18 @@ type Consumer struct {
 func NewConsumer(cfg *config.Configuration) (MessageConsumer, error) {
 	enableDebugLogs := cfg.Logging.Level == types.LogLevelDebug
 
+	saramaConfig := GetSaramaConfig(cfg)
+	if saramaConfig != nil {
+		// add consumer configs
+		saramaConfig.Consumer.Group.Session.Timeout = 45000 * time.Millisecond
+	}
+
 	subscriber, err := kafka.NewSubscriber(
 		kafka.SubscriberConfig{
-			Brokers:       cfg.Kafka.Brokers,
-			ConsumerGroup: cfg.Kafka.ConsumerGroup,
-			Unmarshaler:   kafka.DefaultMarshaler{},
+			Brokers:               cfg.Kafka.Brokers,
+			ConsumerGroup:         cfg.Kafka.ConsumerGroup,
+			Unmarshaler:           kafka.DefaultMarshaler{},
+			OverwriteSaramaConfig: saramaConfig,
 		},
 		watermill.NewStdLogger(enableDebugLogs, enableDebugLogs),
 	)
