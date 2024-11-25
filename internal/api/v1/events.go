@@ -33,6 +33,7 @@ func NewEventsHandler(eventService service.EventService, log *logger.Logger) *Ev
 // @Failure 500 {object} ErrorResponse
 // @Router /events [post]
 func (h *EventsHandler) IngestEvent(c *gin.Context) {
+	ctx := c.Request.Context()
 	var req dto.IngestEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.log.Error("Failed to bind JSON", "error", err)
@@ -40,50 +41,49 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 		return
 	}
 
-	err := h.eventService.CreateEvent(c, &req)
+	err := h.eventService.CreateEvent(ctx, &req)
 	if err != nil {
 		h.log.Error("Failed to ingest event", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to ingest event"})
 		return
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"message": "Event accepted for processing", "event_id": req.ID})
+	c.JSON(http.StatusAccepted, gin.H{"message": "Event accepted for processing", "event_id": req.EventID})
 }
 
-// @Summary Get usage statistics
-// @Description Retrieve aggregated usage statistics for events
+// @Summary Get usage by meter
+// @Description Retrieve aggregated usage statistics using meter configuration
 // @Tags events
 // @Produce json
-// @Param external_customer_id query string true "External Customer ID"
-// @Param event_name query string true "Event Name"
-// @Param property_name query string false "Property Name"
-// @Param aggregation_type query string false "Aggregation Type (sum, count, avg)"
+// @Param meter_id query string true "Meter ID"
+// @Param customer_id query string true "Customer ID"
 // @Param start_time query string false "Start Time (RFC3339)"
 // @Param end_time query string false "End Time (RFC3339)"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /events/usage [get]
-func (h *EventsHandler) GetUsage(c *gin.Context) {
-	externalCustomerID := c.Query("external_customer_id")
-	eventName := c.Query("event_name")
-	propertyName := c.Query("property_name")
-	aggregationType := c.Query("aggregation_type")
+// @Router /events/usage/meter [get]
+func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
+	ctx := c.Request.Context()
+	meterID := c.Query("meter_id")
+	customerID := c.Query("customer_id")
 	startTimeStr := c.Query("start_time")
 	endTimeStr := c.Query("end_time")
 
-	if externalCustomerID == "" || eventName == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters"})
+	if meterID == "" || customerID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters: meter_id or customer_id"})
 		return
 	}
 
-	if startTimeStr == "" || endTimeStr == "" {
-		// Default to last 7 days
-		endTimeStr = time.Now().Format(time.RFC3339)
+	// Set default times if not provided
+	if startTimeStr == "" {
 		startTimeStr = time.Now().AddDate(0, 0, -7).Format(time.RFC3339)
 	}
+	if endTimeStr == "" {
+		endTimeStr = time.Now().Format(time.RFC3339)
+	}
 
-	// Parse times
 	startTime, err := time.Parse(time.RFC3339, startTimeStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid start_time format"})
@@ -96,17 +96,97 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 		return
 	}
 
+	if endTime.Before(startTime) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "End time must be after start time"})
+		return
+	}
+
 	// Ensure times are in UTC
 	startTime = startTime.UTC()
 	endTime = endTime.UTC()
 
-	result, err := h.eventService.GetUsage(c, &dto.GetUsageRequest{
+	result, err := h.eventService.GetUsageByMeter(ctx, &dto.GetUsageByMeterRequest{
+		MeterID:            meterID,
+		ExternalCustomerID: customerID,
+		StartTime:          startTime.UTC(),
+		EndTime:            endTime.UTC(),
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// Service implementation:
+
+// @Summary Get usage statistics
+// @Description Retrieve aggregated usage statistics for events
+// @Tags events
+// @Produce json
+// @Param external_customer_id query string true "External Customer ID"
+// @Param event_name query string true "Event Name"
+// @Param property_name query string false "Property Name"
+// @Param aggregation_type query string false "Aggregation Type (sum, count, avg)"
+// @Param window_size query string false "Window Size (MINUTE, HOUR, DAY)"
+// @Param start_time query string false "Start Time (RFC3339)"
+// @Param end_time query string false "End Time (RFC3339)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /events/usage [get]
+func (h *EventsHandler) GetUsage(c *gin.Context) {
+	ctx := c.Request.Context()
+	externalCustomerID := c.Query("external_customer_id")
+	eventName := c.Query("event_name")
+	propertyName := c.Query("property_name")
+	aggregationType := c.Query("aggregation_type")
+	startTimeStr := c.Query("start_time")
+	endTimeStr := c.Query("end_time")
+	windowSize := c.Query("window_size")
+
+	if externalCustomerID == "" || eventName == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters"})
+		return
+	}
+
+	if startTimeStr == "" {
+		startTimeStr = time.Now().AddDate(0, 0, -7).Format(time.RFC3339)
+	}
+	if endTimeStr == "" {
+		endTimeStr = time.Now().Format(time.RFC3339)
+	}
+
+	startTime, err := time.Parse(time.RFC3339, startTimeStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid start_time format"})
+		return
+	}
+
+	endTime, err := time.Parse(time.RFC3339, endTimeStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid end_time format"})
+		return
+	}
+
+	if endTime.Before(startTime) {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "End time must be after start time"})
+		return
+	}
+
+	// Ensure times are in UTC
+	startTime = startTime.UTC()
+	endTime = endTime.UTC()
+
+	result, err := h.eventService.GetUsage(ctx, &dto.GetUsageRequest{
 		ExternalCustomerID: externalCustomerID,
 		EventName:          eventName,
 		PropertyName:       propertyName,
 		AggregationType:    aggregationType,
 		StartTime:          startTime,
 		EndTime:            endTime,
+		WindowSize:         windowSize,
 	})
 	if err != nil {
 		h.log.Error("Failed to get usage", "error", err)

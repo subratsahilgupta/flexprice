@@ -35,7 +35,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.IngestEventRequest"
+                            "$ref": "#/definitions/dto.IngestEventRequest"
                         }
                     }
                 ],
@@ -52,13 +52,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     }
                 }
@@ -103,6 +103,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Window Size (MINUTE, HOUR, DAY)",
+                        "name": "window_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Start Time (RFC3339)",
                         "name": "start_time",
                         "in": "query"
@@ -125,13 +131,80 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/usage/meter": {
+            "get": {
+                "description": "Retrieve aggregated usage statistics using meter configuration",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Get usage by meter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Meter ID",
+                        "name": "meter_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "customer_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start Time (RFC3339)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End Time (RFC3339)",
+                        "name": "end_time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     }
                 }
@@ -153,14 +226,14 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse"
+                                "$ref": "#/definitions/dto.MeterResponse"
                             }
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     }
                 }
@@ -184,7 +257,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.CreateMeterRequest"
+                            "$ref": "#/definitions/dto.CreateMeterRequest"
                         }
                     }
                 ],
@@ -192,19 +265,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse"
+                            "$ref": "#/definitions/dto.MeterResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     }
                 }
@@ -233,19 +306,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse"
+                            "$ref": "#/definitions/dto.MeterResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     }
                 }
@@ -283,13 +356,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_v1.ErrorResponse"
+                            "$ref": "#/definitions/v1.ErrorResponse"
                         }
                     }
                 }
@@ -297,39 +370,46 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_flexprice_flexprice_internal_api_dto.CreateMeterRequest": {
+        "dto.CreateMeterRequest": {
             "type": "object",
             "required": [
                 "aggregation",
+                "event_name",
                 "window_size"
             ],
             "properties": {
                 "aggregation": {
-                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Aggregation"
+                    "$ref": "#/definitions/meter.Aggregation"
                 },
-                "filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Filter"
-                    }
+                "event_name": {
+                    "type": "string",
+                    "example": "api_request"
                 },
                 "window_size": {
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.WindowSize"
+                            "$ref": "#/definitions/meter.WindowSize"
                         }
                     ],
                     "example": "HOUR"
                 }
             }
         },
-        "github_com_flexprice_flexprice_internal_api_dto.IngestEventRequest": {
+        "dto.IngestEventRequest": {
             "type": "object",
             "required": [
                 "event_name",
                 "external_customer_id"
             ],
             "properties": {
+                "customer_id": {
+                    "type": "string",
+                    "example": "customer456"
+                },
+                "event_id": {
+                    "type": "string",
+                    "example": "event123"
+                },
                 "event_name": {
                     "type": "string",
                     "example": "api.request"
@@ -338,13 +418,19 @@ const docTemplate = `{
                     "type": "string",
                     "example": "customer456"
                 },
-                "id": {
-                    "type": "string",
-                    "example": "event123"
-                },
                 "properties": {
                     "type": "object",
-                    "additionalProperties": true
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "\"response.status\"": "200}",
+                        "{\"request.size\"": "100"
+                    }
+                },
+                "source": {
+                    "type": "string",
+                    "example": "api"
                 },
                 "timestamp": {
                     "type": "string",
@@ -352,21 +438,19 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_flexprice_flexprice_internal_api_dto.MeterResponse": {
+        "dto.MeterResponse": {
             "type": "object",
             "properties": {
                 "aggregation": {
-                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Aggregation"
+                    "$ref": "#/definitions/meter.Aggregation"
                 },
                 "created_at": {
                     "type": "string",
                     "example": "2024-03-20T15:04:05Z"
                 },
-                "filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Filter"
-                    }
+                "event_name": {
+                    "type": "string",
+                    "example": "api_request"
                 },
                 "id": {
                     "type": "string",
@@ -387,48 +471,25 @@ const docTemplate = `{
                 "window_size": {
                     "allOf": [
                         {
-                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.WindowSize"
+                            "$ref": "#/definitions/meter.WindowSize"
                         }
                     ],
                     "example": "HOUR"
                 }
             }
         },
-        "github_com_flexprice_flexprice_internal_domain_meter.Aggregation": {
+        "meter.Aggregation": {
             "type": "object",
             "properties": {
                 "field": {
                     "type": "string"
                 },
                 "type": {
-                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_types.AggregationType"
+                    "$ref": "#/definitions/types.AggregationType"
                 }
             }
         },
-        "github_com_flexprice_flexprice_internal_domain_meter.Condition": {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string"
-                },
-                "operation": {
-                    "type": "string"
-                },
-                "value": {}
-            }
-        },
-        "github_com_flexprice_flexprice_internal_domain_meter.Filter": {
-            "type": "object",
-            "properties": {
-                "conditions": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Condition"
-                    }
-                }
-            }
-        },
-        "github_com_flexprice_flexprice_internal_domain_meter.WindowSize": {
+        "meter.WindowSize": {
             "type": "string",
             "enum": [
                 "MINUTE",
@@ -441,7 +502,7 @@ const docTemplate = `{
                 "WindowSizeDay"
             ]
         },
-        "github_com_flexprice_flexprice_internal_types.AggregationType": {
+        "types.AggregationType": {
             "type": "string",
             "enum": [
                 "COUNT",
@@ -462,7 +523,7 @@ const docTemplate = `{
                 "AggregationLatest"
             ]
         },
-        "internal_api_v1.ErrorResponse": {
+        "v1.ErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
@@ -484,7 +545,7 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "",
 	BasePath:         "/v1",
 	Schemes:          []string{"http", "https"},
 	Title:            "FlexPrice API",

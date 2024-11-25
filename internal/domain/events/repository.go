@@ -13,16 +13,22 @@ type Repository interface {
 }
 
 type UsageParams struct {
-	ExternalCustomerID string
-	EventName          string
-	PropertyName       string
-	AggregationType    types.AggregationType
-	StartTime          time.Time
-	EndTime            time.Time
+	ExternalCustomerID string                `json:"external_customer_id"`
+	EventName          string                `json:"event_name" validate:"required"`
+	PropertyName       string                `json:"property_name" validate:"required"`
+	AggregationType    types.AggregationType `json:"aggregation_type" validate:"required"`
+	WindowSize         string                `json:"window_size" validate:"required"`
+	StartTime          time.Time             `json:"start_time" validate:"required"`
+	EndTime            time.Time             `json:"end_time" validate:"required"`
 }
 
+type UsageResult struct {
+	WindowSize time.Time   `json:"window_size"`
+	Value      interface{} `json:"value"`
+}
 type AggregationResult struct {
-	Value     interface{}           `json:"value"`
+	Results   []UsageResult         `json:"results,omitempty"`
+	Value     interface{}           `json:"value,omitempty"`
 	EventName string                `json:"event_name"`
 	Type      types.AggregationType `json:"type"`
 }

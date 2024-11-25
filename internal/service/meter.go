@@ -32,9 +32,8 @@ func (s *meterService) CreateMeter(ctx context.Context, meterObject *meter.Meter
 	// Use NewMeter if ID is not provided
 	if meterObject.ID == "" {
 		newMeter := meter.NewMeter("", meterObject.CreatedBy)
-		// Copy the provided meter fields to the new meter
 		newMeter.TenantID = meterObject.TenantID
-		newMeter.Filters = meterObject.Filters
+		newMeter.EventName = meterObject.EventName
 		newMeter.Aggregation = meterObject.Aggregation
 		newMeter.WindowSize = meterObject.WindowSize
 		meterObject = newMeter

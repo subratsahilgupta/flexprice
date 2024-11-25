@@ -24,6 +24,9 @@ go.work.sum
 # env file
 .env
 
+# secrets file
+.secrets
+
 # macOS-specific files
 .DS_Store
 

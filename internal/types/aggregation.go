@@ -1,5 +1,7 @@
 package types
 
+// AggregationType is a type for the type of aggregation to be performed on a meter
+// This is used to determine which aggregator to use when querying the database
 type AggregationType string
 
 const (

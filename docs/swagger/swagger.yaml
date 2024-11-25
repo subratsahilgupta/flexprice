@@ -1,35 +1,45 @@
 basePath: /v1
 definitions:
-  github_com_flexprice_flexprice_internal_api_dto.CreateMeterRequest:
+  dto.CreateMeterRequest:
     properties:
       aggregation:
-        $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Aggregation'
-      filters:
-        items:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Filter'
-        type: array
+        $ref: '#/definitions/meter.Aggregation'
+      event_name:
+        example: api_request
+        type: string
       window_size:
         allOf:
-        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.WindowSize'
+        - $ref: '#/definitions/meter.WindowSize'
         example: HOUR
     required:
     - aggregation
+    - event_name
     - window_size
     type: object
-  github_com_flexprice_flexprice_internal_api_dto.IngestEventRequest:
+  dto.IngestEventRequest:
     properties:
+      customer_id:
+        example: customer456
+        type: string
+      event_id:
+        example: event123
+        type: string
       event_name:
         example: api.request
         type: string
       external_customer_id:
         example: customer456
         type: string
-      id:
-        example: event123
-        type: string
       properties:
-        additionalProperties: true
+        additionalProperties:
+          type: string
+        example:
+          '"response.status"': 200}
+          '{"request.size"': "100"
         type: object
+      source:
+        example: api
+        type: string
       timestamp:
         example: "2024-03-20T15:04:05Z"
         type: string
@@ -37,17 +47,16 @@ definitions:
     - event_name
     - external_customer_id
     type: object
-  github_com_flexprice_flexprice_internal_api_dto.MeterResponse:
+  dto.MeterResponse:
     properties:
       aggregation:
-        $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Aggregation'
+        $ref: '#/definitions/meter.Aggregation'
       created_at:
         example: "2024-03-20T15:04:05Z"
         type: string
-      filters:
-        items:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Filter'
-        type: array
+      event_name:
+        example: api_request
+        type: string
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
@@ -62,32 +71,17 @@ definitions:
         type: string
       window_size:
         allOf:
-        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.WindowSize'
+        - $ref: '#/definitions/meter.WindowSize'
         example: HOUR
     type: object
-  github_com_flexprice_flexprice_internal_domain_meter.Aggregation:
+  meter.Aggregation:
     properties:
       field:
         type: string
       type:
-        $ref: '#/definitions/github_com_flexprice_flexprice_internal_types.AggregationType'
+        $ref: '#/definitions/types.AggregationType'
     type: object
-  github_com_flexprice_flexprice_internal_domain_meter.Condition:
-    properties:
-      field:
-        type: string
-      operation:
-        type: string
-      value: {}
-    type: object
-  github_com_flexprice_flexprice_internal_domain_meter.Filter:
-    properties:
-      conditions:
-        items:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_meter.Condition'
-        type: array
-    type: object
-  github_com_flexprice_flexprice_internal_domain_meter.WindowSize:
+  meter.WindowSize:
     enum:
     - MINUTE
     - HOUR
@@ -97,7 +91,7 @@ definitions:
     - WindowSizeMinute
     - WindowSizeHour
     - WindowSizeDay
-  github_com_flexprice_flexprice_internal_types.AggregationType:
+  types.AggregationType:
     enum:
     - COUNT
     - SUM
@@ -115,13 +109,12 @@ definitions:
     - AggregationMin
     - AggregationCountUnique
     - AggregationLatest
-  internal_api_v1.ErrorResponse:
+  v1.ErrorResponse:
     properties:
       error:
         example: Invalid request payload
         type: string
     type: object
-host: localhost:8080
 info:
   contact: {}
   description: FlexPrice API Service
@@ -139,7 +132,7 @@ paths:
         name: event
         required: true
         schema:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.IngestEventRequest'
+          $ref: '#/definitions/dto.IngestEventRequest'
       produces:
       - application/json
       responses:
@@ -152,11 +145,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
       summary: Ingest event
       tags:
       - events
@@ -182,6 +175,10 @@ paths:
         in: query
         name: aggregation_type
         type: string
+      - description: Window Size (MINUTE, HOUR, DAY)
+        in: query
+        name: window_size
+        type: string
       - description: Start Time (RFC3339)
         in: query
         name: start_time
@@ -201,12 +198,57 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
       summary: Get usage statistics
+      tags:
+      - events
+  /events/usage/meter:
+    get:
+      description: Retrieve aggregated usage statistics using meter configuration
+      parameters:
+      - description: Meter ID
+        in: query
+        name: meter_id
+        required: true
+        type: string
+      - description: Customer ID
+        in: query
+        name: customer_id
+        required: true
+        type: string
+      - description: Start Time (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End Time (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Get usage by meter
       tags:
       - events
   /meters:
@@ -219,12 +261,12 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse'
+              $ref: '#/definitions/dto.MeterResponse'
             type: array
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
       summary: List meters
       tags:
       - meters
@@ -238,22 +280,22 @@ paths:
         name: meter
         required: true
         schema:
-          $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.CreateMeterRequest'
+          $ref: '#/definitions/dto.CreateMeterRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse'
+            $ref: '#/definitions/dto.MeterResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
       summary: Create meter
       tags:
       - meters
@@ -272,15 +314,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_flexprice_flexprice_internal_api_dto.MeterResponse'
+            $ref: '#/definitions/dto.MeterResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
       summary: Get meter
       tags:
       - meters
@@ -305,11 +347,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_api_v1.ErrorResponse'
+            $ref: '#/definitions/v1.ErrorResponse'
       summary: Disable meter
       tags:
       - meters
