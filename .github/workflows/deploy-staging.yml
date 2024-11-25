@@ -4,6 +4,12 @@ on:
   push:
     branches: [main] # TODO: Change to staging later
 
+env:
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  LAMBDA_API_FUNCTION_NAME: ${{ vars.LAMBDA_API_FUNCTION_NAME }}
+  LAMBDA_CONSUMER_FUNCTION_NAME: ${{ vars.LAMBDA_CONSUMER_FUNCTION_NAME }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
