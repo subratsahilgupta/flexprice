@@ -9,7 +9,7 @@ import (
 
 // CreateMeterRequest represents the request payload for creating a meter
 type CreateMeterRequest struct {
-	Filters     []meter.Filter    `json:"filters"`
+	EventName   string            `json:"event_name" binding:"required" example:"api_request"`
 	Aggregation meter.Aggregation `json:"aggregation" binding:"required"`
 	WindowSize  meter.WindowSize  `json:"window_size" binding:"required" example:"HOUR"`
 }
@@ -18,7 +18,7 @@ type CreateMeterRequest struct {
 type MeterResponse struct {
 	ID          string            `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	TenantID    string            `json:"tenant_id" example:"tenant123"`
-	Filters     []meter.Filter    `json:"filters"`
+	EventName   string            `json:"event_name" example:"api_request"`
 	Aggregation meter.Aggregation `json:"aggregation"`
 	WindowSize  meter.WindowSize  `json:"window_size" example:"HOUR"`
 	CreatedAt   time.Time         `json:"created_at" example:"2024-03-20T15:04:05Z"`
@@ -31,7 +31,7 @@ func ToMeterResponse(m *meter.Meter) *MeterResponse {
 	return &MeterResponse{
 		ID:          m.ID,
 		TenantID:    m.TenantID,
-		Filters:     m.Filters,
+		EventName:   m.EventName,
 		Aggregation: m.Aggregation,
 		WindowSize:  m.WindowSize,
 		CreatedAt:   m.CreatedAt,
@@ -46,8 +46,9 @@ func (r *CreateMeterRequest) ToMeter(tenantID, createdBy string) *meter.Meter {
 		createdBy = "system"
 	}
 
-	m := meter.NewMeter(tenantID, createdBy)
-	m.Filters = r.Filters
+	m := meter.NewMeter("", createdBy)
+	m.TenantID = tenantID
+	m.EventName = r.EventName
 	m.Aggregation = r.Aggregation
 	m.WindowSize = r.WindowSize
 	m.Status = types.StatusActive

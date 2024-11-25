@@ -103,6 +103,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Window Size (MINUTE, HOUR, DAY)",
+                        "name": "window_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Start Time (RFC3339)",
                         "name": "start_time",
                         "in": "query"
@@ -124,6 +130,73 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/usage/meter": {
+            "get": {
+                "description": "Retrieve aggregated usage statistics using meter configuration",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Get usage by meter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Meter ID",
+                        "name": "meter_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "customer_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start Time (RFC3339)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End Time (RFC3339)",
+                        "name": "end_time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/v1.ErrorResponse"
                         }
@@ -301,17 +374,16 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "aggregation",
+                "event_name",
                 "window_size"
             ],
             "properties": {
                 "aggregation": {
                     "$ref": "#/definitions/meter.Aggregation"
                 },
-                "filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/meter.Filter"
-                    }
+                "event_name": {
+                    "type": "string",
+                    "example": "api_request"
                 },
                 "window_size": {
                     "allOf": [
@@ -376,11 +448,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2024-03-20T15:04:05Z"
                 },
-                "filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/meter.Filter"
-                    }
+                "event_name": {
+                    "type": "string",
+                    "example": "api_request"
                 },
                 "id": {
                     "type": "string",
@@ -416,29 +486,6 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.AggregationType"
-                }
-            }
-        },
-        "meter.Condition": {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string"
-                },
-                "operation": {
-                    "type": "string"
-                },
-                "value": {}
-            }
-        },
-        "meter.Filter": {
-            "type": "object",
-            "properties": {
-                "conditions": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/meter.Condition"
-                    }
                 }
             }
         },

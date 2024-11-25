@@ -3,7 +3,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS meters (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id VARCHAR(255) NOT NULL,
-    filters JSONB NOT NULL,
+    event_name VARCHAR(255) NOT NULL, 
     aggregation JSONB NOT NULL,
     window_size VARCHAR(20) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',

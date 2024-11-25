@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/errors"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/kafka"
@@ -17,6 +18,7 @@ import (
 type EventService interface {
 	CreateEvent(ctx context.Context, createEventRequest *dto.IngestEventRequest) error
 	GetUsage(ctx context.Context, getUsageRequest *dto.GetUsageRequest) (*events.AggregationResult, error)
+	GetUsageByMeter(ctx context.Context, getUsageByMeterRequest *dto.GetUsageByMeterRequest) (*events.AggregationResult, error)
 }
 
 type eventService struct {
@@ -67,7 +69,6 @@ func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.
 }
 
 func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsageRequest) (*events.AggregationResult, error) {
-	// Get appropriate aggregator
 	aggType := types.AggregationType(getUsageRequest.AggregationType)
 	aggregator := clickhouse.GetAggregator(aggType)
 	if aggregator == nil {
@@ -81,14 +82,44 @@ func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsa
 			EventName:          getUsageRequest.EventName,
 			PropertyName:       getUsageRequest.PropertyName,
 			AggregationType:    aggType,
+			WindowSize:         getUsageRequest.WindowSize,
 			StartTime:          getUsageRequest.StartTime,
 			EndTime:            getUsageRequest.EndTime,
 		},
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get usage: %w", err)
 	}
 
 	return result, nil
+}
+
+func (s *eventService) GetUsageByMeter(ctx context.Context, getUsageByMeterRequest *dto.GetUsageByMeterRequest) (*events.AggregationResult, error) {
+	meter, err := s.meterRepo.GetMeter(ctx, getUsageByMeterRequest.MeterID)
+	if err != nil {
+		return nil, errors.NewAttributeNotFoundError("meter")
+	}
+
+	if meter.EventName == "" {
+		return nil, errors.NewAttributeNotFoundError("event_name")
+	}
+
+	if meter.Aggregation.Field == "" {
+		return nil, errors.NewAttributeNotFoundError("aggregation_field")
+	}
+
+	if meter.WindowSize == "" {
+		return nil, errors.NewAttributeNotFoundError("window_size")
+	}
+
+	usageRequest := &dto.GetUsageRequest{
+		ExternalCustomerID: getUsageByMeterRequest.ExternalCustomerID,
+		EventName:          meter.EventName,
+		PropertyName:       meter.Aggregation.Field,
+		AggregationType:    string(meter.Aggregation.Type),
+		WindowSize:         string(meter.WindowSize),
+		StartTime:          getUsageByMeterRequest.StartTime,
+		EndTime:            getUsageByMeterRequest.EndTime,
+	}
+	return s.GetUsage(ctx, usageRequest)
 }

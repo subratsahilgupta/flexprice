@@ -25,29 +25,24 @@ func NewMeterRepository(db *postgres.DB) MeterRepository {
 }
 
 func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error {
-	filtersJSON, err := json.Marshal(meter.Filters)
-	if err != nil {
-		return fmt.Errorf("marshal filters: %w", err)
-	}
-
 	aggregationJSON, err := json.Marshal(meter.Aggregation)
 	if err != nil {
 		return fmt.Errorf("marshal aggregation: %w", err)
 	}
 
 	query := `
-		INSERT INTO meters (
-			id, tenant_id, filters, aggregation, window_size, 
-			created_at, updated_at, created_by, updated_by, status
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-		)
+	INSERT INTO meters (
+		id, tenant_id, event_name, aggregation, window_size, 
+		created_at, updated_at, created_by, updated_by, status
+	) VALUES (
+		$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+	)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
 		meter.ID,
 		meter.TenantID,
-		filtersJSON,
+		meter.EventName,
 		aggregationJSON,
 		meter.WindowSize,
 		meter.CreatedAt,
@@ -66,20 +61,20 @@ func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error 
 
 func (r *repository) GetMeter(ctx context.Context, id string) (*meter.Meter, error) {
 	meter := &meter.Meter{}
-	var filtersJSON, aggregationJSON []byte
+	var aggregationJSON []byte
 
 	query := `
-		SELECT 
-			id, tenant_id, filters, aggregation, window_size, 
-			created_at, updated_at, created_by, updated_by, status
-		FROM meters
-		WHERE id = $1
+	SELECT 
+		id, tenant_id, event_name, aggregation, window_size, 
+		created_at, updated_at, created_by, updated_by, status
+	FROM meters
+	WHERE id = $1
 	`
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&meter.ID,
 		&meter.TenantID,
-		&filtersJSON,
+		&meter.EventName,
 		&aggregationJSON,
 		&meter.WindowSize,
 		&meter.CreatedAt,
@@ -93,10 +88,6 @@ func (r *repository) GetMeter(ctx context.Context, id string) (*meter.Meter, err
 		return nil, fmt.Errorf("get meter: %w", err)
 	}
 
-	if err := json.Unmarshal(filtersJSON, &meter.Filters); err != nil {
-		return nil, fmt.Errorf("unmarshal filters: %w", err)
-	}
-
 	if err := json.Unmarshal(aggregationJSON, &meter.Aggregation); err != nil {
 		return nil, fmt.Errorf("unmarshal aggregation: %w", err)
 	}
@@ -106,12 +97,12 @@ func (r *repository) GetMeter(ctx context.Context, id string) (*meter.Meter, err
 
 func (r *repository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 	query := `
-		SELECT 
-			id, tenant_id, filters, aggregation, window_size, 
-			created_at, updated_at, created_by, updated_by, status
-		FROM meters
-		WHERE status = 'active'
-		ORDER BY created_at DESC
+	SELECT 
+		id, tenant_id, event_name, aggregation, window_size, 
+		created_at, updated_at, created_by, updated_by, status
+	FROM meters
+	WHERE status = 'active'
+	ORDER BY created_at DESC
 	`
 
 	rows, err := r.db.QueryContext(ctx, query)
@@ -123,12 +114,12 @@ func (r *repository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 	var meters []*meter.Meter
 	for rows.Next() {
 		var meter meter.Meter
-		var filtersJSON, aggregationJSON []byte
+		var aggregationJSON []byte
 
 		err := rows.Scan(
 			&meter.ID,
 			&meter.TenantID,
-			&filtersJSON,
+			&meter.EventName,
 			&aggregationJSON,
 			&meter.WindowSize,
 			&meter.CreatedAt,
@@ -139,10 +130,6 @@ func (r *repository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan meter: %w", err)
-		}
-
-		if err := json.Unmarshal(filtersJSON, &meter.Filters); err != nil {
-			return nil, fmt.Errorf("unmarshal filters: %w", err)
 		}
 
 		if err := json.Unmarshal(aggregationJSON, &meter.Aggregation); err != nil {

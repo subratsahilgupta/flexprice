@@ -36,18 +36,8 @@ func (s *MeterServiceSuite) TestCreateMeter() {
 		{
 			name: "successful_meter_creation",
 			input: &meter.Meter{
-				TenantID: "tenant-1",
-				Filters: []meter.Filter{
-					{
-						Conditions: []meter.Condition{
-							{
-								Field:     "event_name",
-								Operation: "eq",
-								Value:     "api.request",
-							},
-						},
-					},
-				},
+				TenantID:  "tenant-1",
+				EventName: "api_request", // Replaced Filters with EventName
 				Aggregation: meter.Aggregation{
 					Type:  types.AggregationSum,
 					Field: "duration_ms",
@@ -62,12 +52,16 @@ func (s *MeterServiceSuite) TestCreateMeter() {
 			expectedError: true,
 		},
 		{
-			name: "invalid_meter",
+			name: "invalid_meter_missing_event_name",
 			input: &meter.Meter{
 				TenantID: "tenant-1",
 				BaseModel: types.BaseModel{
 					Status: types.StatusActive,
 				},
+				Aggregation: meter.Aggregation{
+					Type: types.AggregationSum,
+				},
+				WindowSize: meter.WindowSizeHour,
 			},
 			expectedError: true,
 		},
@@ -86,6 +80,7 @@ func (s *MeterServiceSuite) TestCreateMeter() {
 				stored, err := s.store.GetMeter(s.ctx, tc.input.ID)
 				s.NoError(err)
 				s.Equal(tc.input.TenantID, stored.TenantID)
+				s.Equal(tc.input.EventName, stored.EventName)
 			}
 		})
 	}
@@ -95,6 +90,7 @@ func (s *MeterServiceSuite) TestGetMeter() {
 	// Create test meter
 	testMeter := meter.NewMeter("", "test-user")
 	testMeter.TenantID = "tenant-1"
+	testMeter.EventName = "api_request" // Replaced Filters with EventName
 	testMeter.Aggregation = meter.Aggregation{
 		Type:  types.AggregationSum,
 		Field: "duration_ms",
@@ -135,6 +131,7 @@ func (s *MeterServiceSuite) TestGetMeter() {
 			}
 			s.NoError(err)
 			s.Equal(testMeter.ID, result.ID)
+			s.Equal(testMeter.EventName, result.EventName) // Verify EventName
 		})
 	}
 }
@@ -149,6 +146,7 @@ func (s *MeterServiceSuite) TestGetAllMeters() {
 	// Set required fields
 	for _, m := range meters {
 		m.TenantID = "tenant-1"
+		m.EventName = "api_request" // Replaced Filters with EventName
 		m.Aggregation = meter.Aggregation{
 			Type:  types.AggregationSum,
 			Field: "duration_ms",
@@ -163,12 +161,16 @@ func (s *MeterServiceSuite) TestGetAllMeters() {
 	result, err := s.service.GetAllMeters(s.ctx)
 	s.NoError(err)
 	s.Len(result, 2)
+	for _, m := range result {
+		s.Equal("api_request", m.EventName) // Verify EventName
+	}
 }
 
 func (s *MeterServiceSuite) TestDisableMeter() {
 	// Create test meter
 	testMeter := meter.NewMeter("", "test-user")
 	testMeter.TenantID = "tenant-1"
+	testMeter.EventName = "api_request" // Replaced Filters with EventName
 	testMeter.BaseModel = types.BaseModel{
 		Status: types.StatusActive,
 	}

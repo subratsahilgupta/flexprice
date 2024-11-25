@@ -45,9 +45,9 @@ func registerV1Routes(router *gin.RouterGroup, handlers Handlers) {
 	{
 		events.POST("", handlers.Events.IngestEvent)
 		events.GET("/usage", handlers.Events.GetUsage)
+		events.GET("/usage/meter", handlers.Events.GetUsageByMeter)
 	}
 
-	// Meter routes
 	meters := router.Group("/meters")
 	{
 		meters.POST("", handlers.Meter.CreateMeter)

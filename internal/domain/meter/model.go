@@ -48,20 +48,10 @@ func WindowSizeFromDuration(duration time.Duration) (WindowSize, error) {
 type Meter struct {
 	ID          string      `db:"id" json:"id"`
 	TenantID    string      `db:"tenant_id" json:"tenant_id,omitempty"`
-	Filters     []Filter    `db:"filters" json:"filters"`
+	EventName   string      `db:"event_name" json:"event_name"`
 	Aggregation Aggregation `db:"aggregation" json:"aggregation"`
 	WindowSize  WindowSize  `db:"window_size" json:"window_size"`
 	types.BaseModel
-}
-
-type Filter struct {
-	Conditions []Condition `json:"conditions"`
-}
-
-type Condition struct {
-	Field     string      `json:"field"`
-	Operation string      `json:"operation"`
-	Value     interface{} `json:"value"`
 }
 
 type Aggregation struct {
@@ -73,6 +63,9 @@ type Aggregation struct {
 func (m *Meter) Validate() error {
 	if m.ID == "" {
 		return fmt.Errorf("id is required")
+	}
+	if m.EventName == "" {
+		return fmt.Errorf("event_name is required")
 	}
 	if !m.Aggregation.Type.Validate() {
 		return fmt.Errorf("invalid aggregation type: %s", m.Aggregation.Type)
