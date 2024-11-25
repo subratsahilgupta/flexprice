@@ -29,7 +29,6 @@ import (
 // @title FlexPrice API
 // @version 1.0
 // @description FlexPrice API Service
-// @host localhost:8080
 // @BasePath /v1
 // @schemes http https
 // @securityDefinitions.apikey ApiKeyAuth

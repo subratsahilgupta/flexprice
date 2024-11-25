@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/flexprice/flexprice/docs/swagger"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
 	"github.com/flexprice/flexprice/internal/rest/middleware"
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,14 @@ func NewRouter(handlers Handlers) *gin.Engine {
 		middleware.RequestIDMiddleware,
 		middleware.AuthMiddleware,
 	)
+
+	// Add middleware to set swagger host dynamically
+	router.Use(func(c *gin.Context) {
+		if swagger.SwaggerInfo != nil {
+			swagger.SwaggerInfo.Host = c.Request.Host
+		}
+		c.Next()
+	})
 
 	// Swagger documentation
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

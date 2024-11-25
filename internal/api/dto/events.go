@@ -9,7 +9,7 @@ type IngestEventRequest struct {
 	ExternalCustomerID string                 `json:"external_customer_id" validate:"required" binding:"required" example:"customer456"`
 	Timestamp          time.Time              `json:"timestamp" example:"2024-03-20T15:04:05Z"`
 	Source             string                 `json:"source" example:"api"`
-	Properties         map[string]interface{} `json:"properties" example:"{'request.size': 100, 'response.status': 200}"`
+	Properties         map[string]interface{} `json:"properties" swaggertype:"object,string,number" example:"{\"request.size\":100,\"response.status\":200}"`
 }
 
 type GetUsageRequest struct {

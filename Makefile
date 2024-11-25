@@ -2,9 +2,23 @@
 swagger-clean:
 	rm -rf docs/swagger
 
+.PHONY: install-swag
+install-swag:
+	@which swag > /dev/null || (go install github.com/swaggo/swag/cmd/swag@latest)
+
 .PHONY: swagger
-swagger:
-	swag init -g cmd/server/main.go --parseDependency --parseInternal --output docs/swagger
+swagger: install-swag
+	$(shell go env GOPATH)/bin/swag init \
+		--generalInfo cmd/server/main.go \
+		--dir . \
+		--parseDependency \
+		--parseInternal \
+		--output docs/swagger \
+		--generatedTime=false \
+		--parseDepth 1 \
+		--instanceName swagger \
+		--parseVendor \
+		--outputTypes go,json,yaml
 
 .PHONY: up
 up:
