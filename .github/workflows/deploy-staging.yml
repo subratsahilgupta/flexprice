@@ -11,10 +11,8 @@ env:
   LAMBDA_CONSUMER_FUNCTION_NAME: ${{ vars.LAMBDA_CONSUMER_FUNCTION_NAME }}
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
-    outputs:
-      image_uri: ${{ steps.build.outputs.image_uri }}
     steps:
     - uses: actions/checkout@v3
     
@@ -32,11 +30,12 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
     
-    - name: Build and push image
-      id: build
+    - name: Build, push and deploy
       env:
         ECR_REGISTRY: ${{ env.ECR_REGISTRY }}
         ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        LAMBDA_API_FUNCTION_NAME: ${{ env.LAMBDA_API_FUNCTION_NAME }}
+        LAMBDA_CONSUMER_FUNCTION_NAME: ${{ env.LAMBDA_CONSUMER_FUNCTION_NAME }}
       run: |        
         # Get commit hash
         COMMIT_HASH=$(git rev-parse --short HEAD)
@@ -56,47 +55,12 @@ jobs:
         # Push the image
         docker push "${IMAGE_URI}"
         
-        # Set output for other jobs
-        echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
-
-  deploy-api:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
-    
-    - name: Update API Lambda
-      env:
-        IMAGE_URI: ${{ needs.build.outputs.image_uri }}
-        FUNCTION_NAME: ${{ env.LAMBDA_API_FUNCTION_NAME }}
-      run: |
-        echo "Updating API Lambda..."
+        echo "Updating API Lambda with image: ${IMAGE_URI}"
         aws lambda update-function-code \
-          --function-name $FUNCTION_NAME \
-          --image-uri $IMAGE_URI
-
-  deploy-consumer:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
-    
-    - name: Update Consumer Lambda
-      env:
-        IMAGE_URI: ${{ needs.build.outputs.image_uri }}
-        FUNCTION_NAME: ${{ env.LAMBDA_CONSUMER_FUNCTION_NAME }}
-      run: |
-        echo "Updating Consumer Lambda..."
+          --function-name ${LAMBDA_API_FUNCTION_NAME} \
+          --image-uri ${IMAGE_URI}
+        
+        echo "Updating Consumer Lambda with image: ${IMAGE_URI}"
         aws lambda update-function-code \
-          --function-name $FUNCTION_NAME \
-          --image-uri $IMAGE_URI
+          --function-name ${LAMBDA_CONSUMER_FUNCTION_NAME} \
+          --image-uri ${IMAGE_URI}

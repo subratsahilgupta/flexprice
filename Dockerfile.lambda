@@ -12,8 +12,15 @@ RUN go mod download
 # Copy source code
 COPY . .
 
+# Add build optimization flags
+ENV CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=arm64 \
+    GO111MODULE=on \
+    GOPROXY=direct
+
 # Build the binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bootstrap cmd/server/main.go
+RUN go build -ldflags="-w -s" -o bootstrap cmd/server/main.go
 
 # Runtime stage
 FROM --platform=${TARGETPLATFORM} public.ecr.aws/lambda/provided:al2023
