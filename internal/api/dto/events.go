@@ -1,6 +1,8 @@
 package dto
 
-import "time"
+import (
+	"time"
+)
 
 type IngestEventRequest struct {
 	EventName          string                 `json:"event_name" validate:"required" binding:"required" example:"api_request"`
@@ -28,4 +30,31 @@ type GetUsageByMeterRequest struct {
 	StartTime          time.Time `form:"start_time" example:"2024-11-09T00:00:00Z"`
 	EndTime            time.Time `form:"end_time" example:"2024-12-09T00:00:00Z"`
 	WindowSize         string    `form:"window_size" example:"HOUR"`
+}
+
+type GetEventsRequest struct {
+	ExternalCustomerID string    `json:"external_customer_id"`
+	EventName          string    `json:"event_name" binding:"required"`
+	StartTime          time.Time `json:"start_time" example:"2024-11-09T00:00:00Z"`
+	EndTime            time.Time `json:"end_time" example:"2024-12-09T00:00:00Z"`
+	IterFirstKey       string    `json:"iter_first_key"`
+	IterLastKey        string    `json:"iter_last_key"`
+	PageSize           int       `json:"page_size" default:"50"`
+}
+
+type GetEventsResponse struct {
+	Events       []Event `json:"events"`
+	HasMore      bool    `json:"has_more"`
+	IterFirstKey string  `json:"iter_first_key,omitempty"`
+	IterLastKey  string  `json:"iter_last_key,omitempty"`
+}
+
+type Event struct {
+	ID                 string                 `json:"id"`
+	ExternalCustomerID string                 `json:"external_customer_id"`
+	CustomerID         string                 `json:"customer_id"`
+	EventName          string                 `json:"event_name"`
+	Timestamp          time.Time              `json:"timestamp"`
+	Properties         map[string]interface{} `json:"properties"`
+	Source             string                 `json:"source"`
 }

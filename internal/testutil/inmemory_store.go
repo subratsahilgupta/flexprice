@@ -24,7 +24,7 @@ func (s *InMemoryEventStore) InsertEvent(ctx context.Context, event *events.Even
 	if event == nil {
 		return fmt.Errorf("event cannot be nil")
 	}
-	
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events[event.ID] = event
@@ -63,6 +63,11 @@ func (s *InMemoryEventStore) GetUsage(ctx context.Context, params *events.UsageP
 		EventName: params.EventName,
 		Type:      params.AggregationType,
 	}, nil
+}
+
+func (s *InMemoryEventStore) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, error) {
+
+	return nil, nil
 }
 
 func (s *InMemoryEventStore) HasEvent(id string) bool {

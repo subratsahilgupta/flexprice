@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/errors"
@@ -19,6 +21,7 @@ type EventService interface {
 	CreateEvent(ctx context.Context, createEventRequest *dto.IngestEventRequest) error
 	GetUsage(ctx context.Context, getUsageRequest *dto.GetUsageRequest) (*events.AggregationResult, error)
 	GetUsageByMeter(ctx context.Context, getUsageByMeterRequest *dto.GetUsageByMeterRequest) (*events.AggregationResult, error)
+	GetEvents(ctx context.Context, req *dto.GetEventsRequest) (*dto.GetEventsResponse, error)
 }
 
 type eventService struct {
@@ -122,4 +125,99 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, getUsageByMeterReque
 		EndTime:            getUsageByMeterRequest.EndTime,
 	}
 	return s.GetUsage(ctx, usageRequest)
+}
+
+func (s *eventService) GetEvents(ctx context.Context, req *dto.GetEventsRequest) (*dto.GetEventsResponse, error) {
+	// Max page size is 50
+	if req.PageSize <= 0 || req.PageSize >= 50 {
+		req.PageSize = 50
+	}
+
+	iterFirst, err := parseEventIteratorToStruct(req.IterFirstKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid before cursor key: %w", err)
+	}
+
+	iterLast, err := parseEventIteratorToStruct(req.IterLastKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid after cursor key: %w", err)
+	}
+
+	eventsList, err := s.eventRepo.GetEvents(ctx, &events.GetEventsParams{
+		ExternalCustomerID: req.ExternalCustomerID,
+		EventName:          req.EventName,
+		StartTime:          req.StartTime,
+		EndTime:            req.EndTime,
+		IterFirst:          iterFirst,
+		IterLast:           iterLast,
+		PageSize:           req.PageSize + 1,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get events: %w", err)
+	}
+
+	hasMore := len(eventsList) > req.PageSize
+	if hasMore {
+		eventsList = eventsList[:req.PageSize]
+	}
+
+	response := &dto.GetEventsResponse{
+		Events:  make([]dto.Event, len(eventsList)),
+		HasMore: hasMore,
+	}
+
+	// Set first and next cursors
+	if len(eventsList) > 0 {
+		firstEvent := eventsList[0]
+		lastEvent := eventsList[len(eventsList)-1]
+		response.IterFirstKey = createEventIteratorKey(firstEvent.Timestamp, firstEvent.ID)
+
+		if hasMore {
+			response.IterLastKey = createEventIteratorKey(lastEvent.Timestamp, lastEvent.ID)
+		}
+	}
+
+	// Convert events to DTO
+	for i, event := range eventsList {
+		response.Events[i] = dto.Event{
+			ID:                 event.ID,
+			ExternalCustomerID: event.ExternalCustomerID,
+			CustomerID:         event.CustomerID,
+			EventName:          event.EventName,
+			Timestamp:          event.Timestamp,
+			Properties:         event.Properties,
+			Source:             event.Source,
+		}
+	}
+
+	return response, nil
+}
+
+func parseEventIteratorToStruct(key string) (*events.EventIterator, error) {
+	if key == "" {
+		return nil, nil
+	}
+
+	// sample cursor "timestamp_id::event_id"
+	parts := strings.Split(key, "::")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid cursor key format")
+	}
+
+	timestamp, err := time.Parse(time.RFC3339, parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("invalid timestamp: %w", err)
+	}
+
+	cursor := &events.EventIterator{
+		Timestamp: timestamp,
+		ID:        parts[1],
+	}
+
+	return cursor, nil
+}
+
+func createEventIteratorKey(timestamp time.Time, id string) string {
+	// sample cursor timestamp_id::event_id
+	return fmt.Sprintf("%s::%s", timestamp.Format(time.RFC3339), id)
 }

@@ -16,6 +16,74 @@ const docTemplate = `{
     "basePath": "{{.BasePath}}",
     "paths": {
         "/events": {
+            "get": {
+                "description": "Retrieve raw events with pagination and filtering",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Get raw events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "External Customer ID",
+                        "name": "external_customer_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Event Name",
+                        "name": "event_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start Time (RFC3339)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End Time (RFC3339)",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Iter First Key (timestamp_id::event_id)",
+                        "name": "iter_first_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Iter Last Key (timestamp_id::event_id)",
+                        "name": "iter_last_key",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetEventsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "post": {
                 "description": "Ingest a new event into the system",
                 "consumes": [
@@ -395,6 +463,53 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.Event": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "string"
+                },
+                "event_name": {
+                    "type": "string"
+                },
+                "external_customer_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "source": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.GetEventsResponse": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.Event"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "iter_first_key": {
+                    "type": "string"
+                },
+                "iter_last_key": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.IngestEventRequest": {
             "type": "object",
             "required": [
@@ -412,7 +527,7 @@ const docTemplate = `{
                 },
                 "event_name": {
                     "type": "string",
-                    "example": "api.request"
+                    "example": "api_request"
                 },
                 "external_customer_id": {
                     "type": "string",

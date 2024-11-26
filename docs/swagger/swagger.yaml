@@ -16,6 +16,37 @@ definitions:
     - event_name
     - window_size
     type: object
+  dto.Event:
+    properties:
+      customer_id:
+        type: string
+      event_name:
+        type: string
+      external_customer_id:
+        type: string
+      id:
+        type: string
+      properties:
+        additionalProperties: true
+        type: object
+      source:
+        type: string
+      timestamp:
+        type: string
+    type: object
+  dto.GetEventsResponse:
+    properties:
+      events:
+        items:
+          $ref: '#/definitions/dto.Event'
+        type: array
+      has_more:
+        type: boolean
+      iter_first_key:
+        type: string
+      iter_last_key:
+        type: string
+    type: object
   dto.IngestEventRequest:
     properties:
       customer_id:
@@ -25,7 +56,7 @@ definitions:
         example: event123
         type: string
       event_name:
-        example: api.request
+        example: api_request
         type: string
       external_customer_id:
         example: customer456
@@ -122,6 +153,51 @@ info:
   version: "1.0"
 paths:
   /events:
+    get:
+      description: Retrieve raw events with pagination and filtering
+      parameters:
+      - description: External Customer ID
+        in: query
+        name: external_customer_id
+        type: string
+      - description: Event Name
+        in: query
+        name: event_name
+        type: string
+      - description: Start Time (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End Time (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - description: Iter First Key (timestamp_id::event_id)
+        in: query
+        name: iter_first_key
+        type: string
+      - description: Iter Last Key (timestamp_id::event_id)
+        in: query
+        name: iter_last_key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GetEventsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Get raw events
+      tags:
+      - events
     post:
       consumes:
       - application/json

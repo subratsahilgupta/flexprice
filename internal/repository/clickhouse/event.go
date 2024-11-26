@@ -134,3 +134,87 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 		Type:      aggregator.GetType(),
 	}, nil
 }
+
+func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, error) {
+	baseQuery := `
+		SELECT 
+			id,
+			external_customer_id,
+			customer_id,
+			tenant_id,
+			event_name,
+			timestamp,
+			source,
+			properties
+		FROM events
+		WHERE 1=1
+	`
+	args := make([]interface{}, 0)
+
+	// Apply filters
+	if params.ExternalCustomerID != "" {
+		baseQuery += " AND external_customer_id = ?"
+		args = append(args, params.ExternalCustomerID)
+	}
+	if params.EventName != "" {
+		baseQuery += " AND event_name = ?"
+		args = append(args, params.EventName)
+	}
+	if !params.StartTime.IsZero() {
+		baseQuery += " AND timestamp >= ?"
+		args = append(args, params.StartTime)
+	}
+	if !params.EndTime.IsZero() {
+		baseQuery += " AND timestamp <= ?"
+		args = append(args, params.EndTime)
+	}
+
+	// Handle pagination and real-time refresh using composite keys
+	if params.IterFirst != nil {
+		baseQuery += " AND (timestamp, id) > (?, ?)"
+		args = append(args, params.IterFirst.Timestamp, params.IterFirst.ID)
+	} else if params.IterLast != nil {
+		baseQuery += " AND (timestamp, id) < (?, ?)"
+		args = append(args, params.IterLast.Timestamp, params.IterLast.ID)
+	}
+
+	// Order by timestamp and ID
+	baseQuery += " ORDER BY timestamp DESC, id DESC"
+	baseQuery += " LIMIT ?"
+	args = append(args, params.PageSize+1)
+
+	// Execute query
+	rows, err := r.store.GetConn().Query(ctx, baseQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query events: %w", err)
+	}
+	defer rows.Close()
+
+	var eventsList []*events.Event
+	for rows.Next() {
+		var event events.Event
+		var propertiesJSON string
+
+		err := rows.Scan(
+			&event.ID,
+			&event.ExternalCustomerID,
+			&event.CustomerID,
+			&event.TenantID,
+			&event.EventName,
+			&event.Timestamp,
+			&event.Source,
+			&propertiesJSON,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
+		}
+
+		if err := json.Unmarshal([]byte(propertiesJSON), &event.Properties); err != nil {
+			return nil, fmt.Errorf("unmarshal properties: %w", err)
+		}
+
+		eventsList = append(eventsList, &event)
+	}
+
+	return eventsList, nil
+}
