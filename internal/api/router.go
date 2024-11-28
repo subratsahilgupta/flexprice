@@ -18,6 +18,7 @@ func NewRouter(handlers Handlers) *gin.Engine {
 	router := gin.Default()
 	router.Use(
 		middleware.RequestIDMiddleware,
+		middleware.CORSMiddleware,
 		middleware.AuthMiddleware,
 	)
 
