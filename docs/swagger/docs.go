@@ -394,6 +394,48 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "description": "Delete an existing meter",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "meters"
+                ],
+                "summary": "Delete meter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Meter ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "message:Meter deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/meters/{id}/disable": {
@@ -405,7 +447,7 @@ const docTemplate = `{
                 "tags": [
                     "meters"
                 ],
-                "summary": "Disable meter",
+                "summary": "Disable meter [TODO: Deprecate]",
                 "parameters": [
                     {
                         "type": "string",

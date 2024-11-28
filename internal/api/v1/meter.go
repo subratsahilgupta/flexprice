@@ -90,7 +90,7 @@ func (h *MeterHandler) GetMeter(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.ToMeterResponse(meter))
 }
 
-// @Summary Disable meter
+// @Summary Disable meter [TODO: Deprecate]
 // @Description Disable an existing meter
 // @Tags meters
 // @Produce json
@@ -108,4 +108,22 @@ func (h *MeterHandler) DisableMeter(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Meter disabled successfully"})
+}
+
+// @Summary Delete meter
+// @Description Delete an existing meter
+// @Tags meters
+// @Produce json
+// @Param id path string true "Meter ID"
+// @Success 200 {object} map[string]string "message:Meter deleted successfully"
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /meters/{id} [delete]
+func (h *MeterHandler) DeleteMeter(c *gin.Context) {
+	id := c.Param("id")
+	ctx := c.Request.Context()
+	if err := h.service.DisableMeter(ctx, id); err != nil {
+		h.log.Error("Failed to delete meter", "error", err)
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Meter deleted successfully"})
 }

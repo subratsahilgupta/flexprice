@@ -359,6 +359,34 @@ paths:
       tags:
       - meters
   /meters/{id}:
+    delete:
+      description: Delete an existing meter
+      parameters:
+      - description: Meter ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: message:Meter deleted successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Delete meter
+      tags:
+      - meters
     get:
       description: Get a specific meter by ID
       parameters:
@@ -411,7 +439,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
-      summary: Disable meter
+      summary: 'Disable meter [TODO: Deprecate]'
       tags:
       - meters
 schemes:

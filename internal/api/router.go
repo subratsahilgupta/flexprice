@@ -56,5 +56,6 @@ func registerV1Routes(router *gin.RouterGroup, handlers Handlers) {
 		meters.GET("", handlers.Meter.GetAllMeters)
 		meters.GET("/:id", handlers.Meter.GetMeter)
 		meters.POST("/:id/disable", handlers.Meter.DisableMeter)
+		meters.DELETE("/:id", handlers.Meter.DeleteMeter)
 	}
 }
