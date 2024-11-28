@@ -6,7 +6,9 @@ import (
 	"fmt"
 
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 type MeterRepository interface {
@@ -17,11 +19,12 @@ type MeterRepository interface {
 }
 
 type repository struct {
-	db *postgres.DB
+	db     *postgres.DB
+	logger *logger.Logger
 }
 
-func NewMeterRepository(db *postgres.DB) MeterRepository {
-	return &repository{db: db}
+func NewMeterRepository(db *postgres.DB, logger *logger.Logger) MeterRepository {
+	return &repository{db: db, logger: logger}
 }
 
 func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error {
@@ -32,10 +35,10 @@ func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error 
 
 	query := `
 	INSERT INTO meters (
-		id, tenant_id, event_name, aggregation, window_size, 
+		id, tenant_id, event_name, aggregation, 
 		created_at, updated_at, created_by, updated_by, status
 	) VALUES (
-		$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+		$1, $2, $3, $4, $5, $6, $7, $8, $9
 	)
 	`
 
@@ -44,7 +47,6 @@ func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error 
 		meter.TenantID,
 		meter.EventName,
 		aggregationJSON,
-		meter.WindowSize,
 		meter.CreatedAt,
 		meter.UpdatedAt,
 		meter.CreatedBy,
@@ -53,30 +55,30 @@ func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error 
 	)
 
 	if err != nil {
-		return fmt.Errorf("insert meter: %w", err)
+		return fmt.Errorf("insert meter: %w ", err)
 	}
 
 	return nil
 }
 
 func (r *repository) GetMeter(ctx context.Context, id string) (*meter.Meter, error) {
+
 	meter := &meter.Meter{}
 	var aggregationJSON []byte
 
 	query := `
 	SELECT 
-		id, tenant_id, event_name, aggregation, window_size, 
+		id, tenant_id, event_name, aggregation, 
 		created_at, updated_at, created_by, updated_by, status
 	FROM meters
-	WHERE id = $1
+	WHERE id = $1 AND tenant_id = $2
 	`
 
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	err := r.db.QueryRowContext(ctx, query, id, types.GetTenantID(ctx)).Scan(
 		&meter.ID,
 		&meter.TenantID,
 		&meter.EventName,
 		&aggregationJSON,
-		&meter.WindowSize,
 		&meter.CreatedAt,
 		&meter.UpdatedAt,
 		&meter.CreatedBy,
@@ -98,14 +100,14 @@ func (r *repository) GetMeter(ctx context.Context, id string) (*meter.Meter, err
 func (r *repository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 	query := `
 	SELECT 
-		id, tenant_id, event_name, aggregation, window_size, 
+		id, tenant_id, event_name, aggregation, 
 		created_at, updated_at, created_by, updated_by, status
 	FROM meters
-	WHERE status = 'active'
+	WHERE status = 'active' AND tenant_id = $1
 	ORDER BY created_at DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.QueryContext(ctx, query, types.GetTenantID(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("query meters: %w", err)
 	}
@@ -121,7 +123,6 @@ func (r *repository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 			&meter.TenantID,
 			&meter.EventName,
 			&aggregationJSON,
-			&meter.WindowSize,
 			&meter.CreatedAt,
 			&meter.UpdatedAt,
 			&meter.CreatedBy,
@@ -145,11 +146,11 @@ func (r *repository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 func (r *repository) DisableMeter(ctx context.Context, id string) error {
 	query := `
 		UPDATE meters 
-		SET status = 'disabled', updated_at = NOW()
-		WHERE id = $1 AND status = 'active'
+		SET status = 'disabled', updated_at = NOW(), updated_by = $1
+		WHERE id = $2 AND tenant_id = $3 AND status = 'active'
 	`
 
-	result, err := r.db.ExecContext(ctx, query, id)
+	result, err := r.db.ExecContext(ctx, query, types.GetUserID(ctx), id, types.GetTenantID(ctx))
 	if err != nil {
 		return fmt.Errorf("disable meter: %w", err)
 	}

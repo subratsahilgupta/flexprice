@@ -7,14 +7,40 @@ definitions:
       event_name:
         example: api_request
         type: string
-      window_size:
-        allOf:
-        - $ref: '#/definitions/meter.WindowSize'
-        example: HOUR
     required:
     - aggregation
     - event_name
-    - window_size
+    type: object
+  dto.Event:
+    properties:
+      customer_id:
+        type: string
+      event_name:
+        type: string
+      external_customer_id:
+        type: string
+      id:
+        type: string
+      properties:
+        additionalProperties: true
+        type: object
+      source:
+        type: string
+      timestamp:
+        type: string
+    type: object
+  dto.GetEventsResponse:
+    properties:
+      events:
+        items:
+          $ref: '#/definitions/dto.Event'
+        type: array
+      has_more:
+        type: boolean
+      iter_first_key:
+        type: string
+      iter_last_key:
+        type: string
     type: object
   dto.IngestEventRequest:
     properties:
@@ -25,7 +51,7 @@ definitions:
         example: event123
         type: string
       event_name:
-        example: api.request
+        example: api_request
         type: string
       external_customer_id:
         example: customer456
@@ -34,8 +60,8 @@ definitions:
         additionalProperties:
           type: string
         example:
-          '"response.status"': 200}
-          '{"request.size"': "100"
+          '"response_status"': 200}
+          '{"request_size"': "100"
         type: object
       source:
         example: api
@@ -69,10 +95,6 @@ definitions:
       updated_at:
         example: "2024-03-20T15:04:05Z"
         type: string
-      window_size:
-        allOf:
-        - $ref: '#/definitions/meter.WindowSize'
-        example: HOUR
     type: object
   meter.Aggregation:
     properties:
@@ -81,16 +103,6 @@ definitions:
       type:
         $ref: '#/definitions/types.AggregationType'
     type: object
-  meter.WindowSize:
-    enum:
-    - MINUTE
-    - HOUR
-    - DAY
-    type: string
-    x-enum-varnames:
-    - WindowSizeMinute
-    - WindowSizeHour
-    - WindowSizeDay
   types.AggregationType:
     enum:
     - COUNT
@@ -122,6 +134,55 @@ info:
   version: "1.0"
 paths:
   /events:
+    get:
+      description: Retrieve raw events with pagination and filtering
+      parameters:
+      - description: External Customer ID
+        in: query
+        name: external_customer_id
+        type: string
+      - description: Event Name
+        in: query
+        name: event_name
+        type: string
+      - description: Start Time (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End Time (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - description: Iter First Key (unix_timestamp_nanoseconds::event_id)
+        in: query
+        name: iter_first_key
+        type: string
+      - description: Iter Last Key (unix_timestamp_nanoseconds::event_id)
+        in: query
+        name: iter_last_key
+        type: string
+      - description: Page Size (1-50)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GetEventsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Get raw events
+      tags:
+      - events
     post:
       consumes:
       - application/json
@@ -160,7 +221,6 @@ paths:
       - description: External Customer ID
         in: query
         name: external_customer_id
-        required: true
         type: string
       - description: Event Name
         in: query
@@ -171,7 +231,7 @@ paths:
         in: query
         name: property_name
         type: string
-      - description: Aggregation Type (sum, count, avg)
+      - description: Aggregation Type (SUM, COUNT)
         in: query
         name: aggregation_type
         type: string
@@ -215,10 +275,9 @@ paths:
         name: meter_id
         required: true
         type: string
-      - description: Customer ID
+      - description: External Customer ID
         in: query
-        name: customer_id
-        required: true
+        name: external_customer_id
         type: string
       - description: Start Time (RFC3339)
         in: query

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/repository/postgres"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 type MeterService interface {
-	CreateMeter(ctx context.Context, meter *meter.Meter) error
+	CreateMeter(ctx context.Context, req *dto.CreateMeterRequest) (*meter.Meter, error)
 	GetMeter(ctx context.Context, id string) (*meter.Meter, error)
 	GetAllMeters(ctx context.Context) ([]*meter.Meter, error)
 	DisableMeter(ctx context.Context, id string) error
@@ -23,27 +25,23 @@ func NewMeterService(meterRepo meter.Repository) MeterService {
 	return &meterService{meterRepo: meterRepo}
 }
 
-func (s *meterService) CreateMeter(ctx context.Context, meterObject *meter.Meter) error {
+func (s *meterService) CreateMeter(ctx context.Context, req *dto.CreateMeterRequest) (*meter.Meter, error) {
 	// If meter is nil, return error
-	if meterObject == nil {
-		return fmt.Errorf("meter cannot be nil")
+	if req == nil {
+		return nil, fmt.Errorf("meter cannot be nil")
 	}
 
-	// Use NewMeter if ID is not provided
-	if meterObject.ID == "" {
-		newMeter := meter.NewMeter("", meterObject.CreatedBy)
-		newMeter.TenantID = meterObject.TenantID
-		newMeter.EventName = meterObject.EventName
-		newMeter.Aggregation = meterObject.Aggregation
-		newMeter.WindowSize = meterObject.WindowSize
-		meterObject = newMeter
+	meter := req.ToMeter(types.GetTenantID(ctx), types.GetUserID(ctx))
+
+	if err := meter.Validate(); err != nil {
+		return nil, fmt.Errorf("validate meter: %w", err)
 	}
 
-	if err := meterObject.Validate(); err != nil {
-		return fmt.Errorf("validate meter: %w", err)
+	if err := s.meterRepo.CreateMeter(ctx, meter); err != nil {
+		return nil, fmt.Errorf("create meter: %w", err)
 	}
 
-	return s.meterRepo.CreateMeter(ctx, meterObject)
+	return meter, nil
 }
 
 func (s *meterService) GetMeter(ctx context.Context, id string) (*meter.Meter, error) {

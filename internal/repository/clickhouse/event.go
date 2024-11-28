@@ -8,15 +8,17 @@ import (
 
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
 type EventRepository struct {
-	store *clickhouse.ClickHouseStore
+	store  *clickhouse.ClickHouseStore
+	logger *logger.Logger
 }
 
-func NewEventRepository(store *clickhouse.ClickHouseStore) events.Repository {
-	return &EventRepository{store: store}
+func NewEventRepository(store *clickhouse.ClickHouseStore, logger *logger.Logger) events.Repository {
+	return &EventRepository{store: store, logger: logger}
 }
 
 func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) error {
@@ -64,6 +66,7 @@ type UsageResult struct {
 func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsageParams) (*events.AggregationResult, error) {
 	aggregator := GetAggregator(params.AggregationType)
 	query := aggregator.GetQuery(ctx, params)
+	r.logger.Debugf("GetUsage query: %s", query)
 
 	var results []events.UsageResult // Use the domain-level UsageResult struct
 	var err error
@@ -133,4 +136,89 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 		EventName: params.EventName,
 		Type:      aggregator.GetType(),
 	}, nil
+}
+
+func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, error) {
+	baseQuery := `
+		SELECT 
+			id,
+			external_customer_id,
+			customer_id,
+			tenant_id,
+			event_name,
+			timestamp,
+			source,
+			properties
+		FROM events
+		WHERE tenant_id = ?
+	`
+	args := make([]interface{}, 0)
+	args = append(args, types.GetTenantID(ctx))
+
+	// Apply filters
+	if params.ExternalCustomerID != "" {
+		baseQuery += " AND external_customer_id = ?"
+		args = append(args, params.ExternalCustomerID)
+	}
+	if params.EventName != "" {
+		baseQuery += " AND event_name = ?"
+		args = append(args, params.EventName)
+	}
+	if !params.StartTime.IsZero() {
+		baseQuery += " AND timestamp >= ?"
+		args = append(args, params.StartTime)
+	}
+	if !params.EndTime.IsZero() {
+		baseQuery += " AND timestamp <= ?"
+		args = append(args, params.EndTime)
+	}
+
+	// Handle pagination and real-time refresh using composite keys
+	if params.IterFirst != nil {
+		baseQuery += " AND (timestamp, id) > (?, ?)"
+		args = append(args, params.IterFirst.Timestamp, params.IterFirst.ID)
+	} else if params.IterLast != nil {
+		baseQuery += " AND (timestamp, id) < (?, ?)"
+		args = append(args, params.IterLast.Timestamp, params.IterLast.ID)
+	}
+
+	// Order by timestamp and ID
+	baseQuery += " ORDER BY timestamp DESC, id DESC"
+	baseQuery += " LIMIT ?"
+	args = append(args, params.PageSize+1)
+
+	// Execute query
+	rows, err := r.store.GetConn().Query(ctx, baseQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query events: %w", err)
+	}
+	defer rows.Close()
+
+	var eventsList []*events.Event
+	for rows.Next() {
+		var event events.Event
+		var propertiesJSON string
+
+		err := rows.Scan(
+			&event.ID,
+			&event.ExternalCustomerID,
+			&event.CustomerID,
+			&event.TenantID,
+			&event.EventName,
+			&event.Timestamp,
+			&event.Source,
+			&propertiesJSON,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
+		}
+
+		if err := json.Unmarshal([]byte(propertiesJSON), &event.Properties); err != nil {
+			return nil, fmt.Errorf("unmarshal properties: %w", err)
+		}
+
+		eventsList = append(eventsList, &event)
+	}
+
+	return eventsList, nil
 }
