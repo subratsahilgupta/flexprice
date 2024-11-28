@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -58,7 +59,7 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 // @Tags events
 // @Produce json
 // @Param meter_id query string true "Meter ID"
-// @Param external_customer_id query string true "External Customer ID"
+// @Param external_customer_id query string false "External Customer ID"
 // @Param start_time query string false "Start Time (RFC3339)"
 // @Param end_time query string false "End Time (RFC3339)"
 // @Success 200 {object} map[string]interface{}
@@ -72,6 +73,7 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 	meterID := c.Query("meter_id")
 	startTimeStr := c.Query("start_time")
 	endTimeStr := c.Query("end_time")
+	windowSize := c.Query("window_size")
 
 	if meterID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters: meter_id or customer_id"})
@@ -89,6 +91,7 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 		ExternalCustomerID: externalCustomerID,
 		StartTime:          startTime.UTC(),
 		EndTime:            endTime.UTC(),
+		WindowSize:         types.WindowSize(windowSize),
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
@@ -107,7 +110,7 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 // @Param external_customer_id query string false "External Customer ID"
 // @Param event_name query string true "Event Name"
 // @Param property_name query string false "Property Name"
-// @Param aggregation_type query string false "Aggregation Type (sum, count, avg)"
+// @Param aggregation_type query string false "Aggregation Type (SUM, COUNT)"
 // @Param window_size query string false "Window Size (MINUTE, HOUR, DAY)"
 // @Param start_time query string false "Start Time (RFC3339)"
 // @Param end_time query string false "End Time (RFC3339)"
@@ -143,7 +146,7 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 		AggregationType:    aggregationType,
 		StartTime:          startTime,
 		EndTime:            endTime,
-		WindowSize:         windowSize,
+		WindowSize:         types.WindowSize(windowSize),
 	})
 	if err != nil {
 		h.log.Error("Failed to get usage", "error", err)

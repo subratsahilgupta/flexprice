@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -30,19 +31,17 @@ func (s *MeterServiceSuite) SetupTest() {
 func (s *MeterServiceSuite) TestCreateMeter() {
 	testCases := []struct {
 		name          string
-		input         *meter.Meter
+		input         *dto.CreateMeterRequest
 		expectedError bool
 	}{
 		{
 			name: "successful_meter_creation",
-			input: &meter.Meter{
-				TenantID:  "tenant-1",
+			input: &dto.CreateMeterRequest{
 				EventName: "api_request", // Replaced Filters with EventName
 				Aggregation: meter.Aggregation{
 					Type:  types.AggregationSum,
 					Field: "duration_ms",
 				},
-				WindowSize: meter.WindowSizeHour,
 			},
 			expectedError: false,
 		},
@@ -53,15 +52,10 @@ func (s *MeterServiceSuite) TestCreateMeter() {
 		},
 		{
 			name: "invalid_meter_missing_event_name",
-			input: &meter.Meter{
-				TenantID: "tenant-1",
-				BaseModel: types.BaseModel{
-					Status: types.StatusActive,
-				},
+			input: &dto.CreateMeterRequest{
 				Aggregation: meter.Aggregation{
 					Type: types.AggregationSum,
 				},
-				WindowSize: meter.WindowSizeHour,
 			},
 			expectedError: true,
 		},
@@ -69,17 +63,16 @@ func (s *MeterServiceSuite) TestCreateMeter() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			err := s.service.CreateMeter(s.ctx, tc.input)
+			meter, err := s.service.CreateMeter(s.ctx, tc.input)
 			if tc.expectedError {
 				s.Error(err)
 				return
 			}
 			s.NoError(err)
 
-			if tc.input != nil && tc.input.ID != "" {
-				stored, err := s.store.GetMeter(s.ctx, tc.input.ID)
+			if tc.input != nil && tc.input.EventName != "" {
+				stored, err := s.store.GetMeter(s.ctx, meter.ID)
 				s.NoError(err)
-				s.Equal(tc.input.TenantID, stored.TenantID)
 				s.Equal(tc.input.EventName, stored.EventName)
 			}
 		})
@@ -88,14 +81,12 @@ func (s *MeterServiceSuite) TestCreateMeter() {
 
 func (s *MeterServiceSuite) TestGetMeter() {
 	// Create test meter
-	testMeter := meter.NewMeter("", "test-user")
-	testMeter.TenantID = "tenant-1"
+	testMeter := meter.NewMeter("", "tenant-1", "test-user")
 	testMeter.EventName = "api_request" // Replaced Filters with EventName
 	testMeter.Aggregation = meter.Aggregation{
 		Type:  types.AggregationSum,
 		Field: "duration_ms",
 	}
-	testMeter.WindowSize = meter.WindowSizeHour
 
 	err := s.store.CreateMeter(s.ctx, testMeter)
 	s.NoError(err)
@@ -139,8 +130,8 @@ func (s *MeterServiceSuite) TestGetMeter() {
 func (s *MeterServiceSuite) TestGetAllMeters() {
 	// Create test meters
 	meters := []*meter.Meter{
-		meter.NewMeter("", "test-user-1"),
-		meter.NewMeter("", "test-user-2"),
+		meter.NewMeter("", "tenant-1", "test-user-1"),
+		meter.NewMeter("", "tenant-1", "test-user-2"),
 	}
 
 	// Set required fields
@@ -151,7 +142,6 @@ func (s *MeterServiceSuite) TestGetAllMeters() {
 			Type:  types.AggregationSum,
 			Field: "duration_ms",
 		}
-		m.WindowSize = meter.WindowSizeHour
 		m.BaseModel.Status = types.StatusActive
 
 		err := s.store.CreateMeter(s.ctx, m)
@@ -168,8 +158,7 @@ func (s *MeterServiceSuite) TestGetAllMeters() {
 
 func (s *MeterServiceSuite) TestDisableMeter() {
 	// Create test meter
-	testMeter := meter.NewMeter("", "test-user")
-	testMeter.TenantID = "tenant-1"
+	testMeter := meter.NewMeter("", "tenant-1", "test-user")
 	testMeter.EventName = "api_request" // Replaced Filters with EventName
 	testMeter.BaseModel = types.BaseModel{
 		Status: types.StatusActive,

@@ -6,7 +6,6 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
-	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -37,11 +36,8 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 		return
 	}
 
-	tenantID := types.GetTenantID(ctx)
-	userID := types.GetUserID(ctx)
-
-	meter := req.ToMeter(tenantID, userID)
-	if err := h.service.CreateMeter(ctx, meter); err != nil {
+	meter, err := h.service.CreateMeter(ctx, &req)
+	if err != nil {
 		h.log.Error("Failed to create meter", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to create meter"})
 		return

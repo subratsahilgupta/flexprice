@@ -110,16 +110,12 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, getUsageByMeterReque
 		return nil, errors.NewAttributeNotFoundError("aggregation_field")
 	}
 
-	if meter.WindowSize == "" {
-		return nil, errors.NewAttributeNotFoundError("window_size")
-	}
-
 	usageRequest := &dto.GetUsageRequest{
 		ExternalCustomerID: getUsageByMeterRequest.ExternalCustomerID,
 		EventName:          meter.EventName,
 		PropertyName:       meter.Aggregation.Field,
 		AggregationType:    string(meter.Aggregation.Type),
-		WindowSize:         string(meter.WindowSize),
+		WindowSize:         getUsageByMeterRequest.WindowSize,
 		StartTime:          getUsageByMeterRequest.StartTime,
 		EndTime:            getUsageByMeterRequest.EndTime,
 	}

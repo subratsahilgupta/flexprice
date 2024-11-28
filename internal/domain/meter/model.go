@@ -8,49 +8,11 @@ import (
 	"github.com/google/uuid"
 )
 
-type WindowSize string
-
-// Note: keep values up to date in the meter package
-const (
-	WindowSizeMinute WindowSize = "MINUTE"
-	WindowSizeHour   WindowSize = "HOUR"
-	WindowSizeDay    WindowSize = "DAY"
-)
-
-// Duration returns the duration of the window size
-func (w WindowSize) Duration() time.Duration {
-	var windowDuration time.Duration
-	switch w {
-	case WindowSizeMinute:
-		windowDuration = time.Minute
-	case WindowSizeHour:
-		windowDuration = time.Hour
-	case WindowSizeDay:
-		windowDuration = 24 * time.Hour
-	}
-
-	return windowDuration
-}
-
-func WindowSizeFromDuration(duration time.Duration) (WindowSize, error) {
-	switch duration.Minutes() {
-	case time.Minute.Minutes():
-		return WindowSizeMinute, nil
-	case time.Hour.Minutes():
-		return WindowSizeHour, nil
-	case 24 * time.Hour.Minutes():
-		return WindowSizeDay, nil
-	default:
-		return "", fmt.Errorf("invalid window size duration: %s", duration)
-	}
-}
-
 type Meter struct {
 	ID          string      `db:"id" json:"id"`
 	TenantID    string      `db:"tenant_id" json:"tenant_id,omitempty"`
 	EventName   string      `db:"event_name" json:"event_name"`
 	Aggregation Aggregation `db:"aggregation" json:"aggregation"`
-	WindowSize  WindowSize  `db:"window_size" json:"window_size"`
 	types.BaseModel
 }
 
@@ -77,14 +39,15 @@ func (m *Meter) Validate() error {
 }
 
 // Constructor for creating new meters with defaults
-func NewMeter(id string, createdBy string) *Meter {
+func NewMeter(id string, tenantID, createdBy string) *Meter {
 	now := time.Now().UTC()
 	if id == "" {
 		id = uuid.New().String()
 	}
 
 	return &Meter{
-		ID: id,
+		ID:       id,
+		TenantID: tenantID,
 		BaseModel: types.BaseModel{
 			CreatedAt: now,
 			UpdatedAt: now,

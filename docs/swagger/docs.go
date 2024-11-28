@@ -170,7 +170,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Aggregation Type (sum, count, avg)",
+                        "description": "Aggregation Type (SUM, COUNT)",
                         "name": "aggregation_type",
                         "in": "query"
                     },
@@ -238,8 +238,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "External Customer ID",
                         "name": "external_customer_id",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -447,8 +446,7 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "aggregation",
-                "event_name",
-                "window_size"
+                "event_name"
             ],
             "properties": {
                 "aggregation": {
@@ -457,14 +455,6 @@ const docTemplate = `{
                 "event_name": {
                     "type": "string",
                     "example": "api_request"
-                },
-                "window_size": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/meter.WindowSize"
-                        }
-                    ],
-                    "example": "HOUR"
                 }
             }
         },
@@ -587,14 +577,6 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2024-03-20T15:04:05Z"
-                },
-                "window_size": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/meter.WindowSize"
-                        }
-                    ],
-                    "example": "HOUR"
                 }
             }
         },
@@ -608,19 +590,6 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.AggregationType"
                 }
             }
-        },
-        "meter.WindowSize": {
-            "type": "string",
-            "enum": [
-                "MINUTE",
-                "HOUR",
-                "DAY"
-            ],
-            "x-enum-varnames": [
-                "WindowSizeMinute",
-                "WindowSizeHour",
-                "WindowSizeDay"
-            ]
         },
         "types.AggregationType": {
             "type": "string",

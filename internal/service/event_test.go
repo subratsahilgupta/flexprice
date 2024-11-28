@@ -209,7 +209,6 @@ func (s *EventServiceSuite) TestGetUsageByMeter() {
 			Type:  types.AggregationSum,
 			Field: "duration_ms",
 		},
-		WindowSize: "DAY",
 	}
 
 	// Add the test meter to a mocked meter repository

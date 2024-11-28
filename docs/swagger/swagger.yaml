@@ -7,14 +7,9 @@ definitions:
       event_name:
         example: api_request
         type: string
-      window_size:
-        allOf:
-        - $ref: '#/definitions/meter.WindowSize'
-        example: HOUR
     required:
     - aggregation
     - event_name
-    - window_size
     type: object
   dto.Event:
     properties:
@@ -100,10 +95,6 @@ definitions:
       updated_at:
         example: "2024-03-20T15:04:05Z"
         type: string
-      window_size:
-        allOf:
-        - $ref: '#/definitions/meter.WindowSize'
-        example: HOUR
     type: object
   meter.Aggregation:
     properties:
@@ -112,16 +103,6 @@ definitions:
       type:
         $ref: '#/definitions/types.AggregationType'
     type: object
-  meter.WindowSize:
-    enum:
-    - MINUTE
-    - HOUR
-    - DAY
-    type: string
-    x-enum-varnames:
-    - WindowSizeMinute
-    - WindowSizeHour
-    - WindowSizeDay
   types.AggregationType:
     enum:
     - COUNT
@@ -250,7 +231,7 @@ paths:
         in: query
         name: property_name
         type: string
-      - description: Aggregation Type (sum, count, avg)
+      - description: Aggregation Type (SUM, COUNT)
         in: query
         name: aggregation_type
         type: string
@@ -297,7 +278,6 @@ paths:
       - description: External Customer ID
         in: query
         name: external_customer_id
-        required: true
         type: string
       - description: Start Time (RFC3339)
         in: query

@@ -18,7 +18,7 @@ type UsageParams struct {
 	EventName          string                `json:"event_name" validate:"required"`
 	PropertyName       string                `json:"property_name" validate:"required"`
 	AggregationType    types.AggregationType `json:"aggregation_type" validate:"required"`
-	WindowSize         string                `json:"window_size" validate:"required"`
+	WindowSize         types.WindowSize      `json:"window_size"`
 	StartTime          time.Time             `json:"start_time" validate:"required"`
 	EndTime            time.Time             `json:"end_time" validate:"required"`
 }

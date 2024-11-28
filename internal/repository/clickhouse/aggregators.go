@@ -31,13 +31,13 @@ func formatClickHouseDateTime(t time.Time) string {
 }
 
 // Helper function for window size formatting
-func formatWindowSize(windowSize string) string {
+func formatWindowSize(windowSize types.WindowSize) string {
 	switch windowSize {
-	case "MINUTE":
+	case types.WindowSizeMinute:
 		return "toStartOfMinute(timestamp)"
-	case "HOUR":
+	case types.WindowSizeHour:
 		return "toStartOfHour(timestamp)"
-	case "DAY":
+	case types.WindowSizeDay:
 		return "toStartOfDay(timestamp)"
 	default:
 		return "" // No windowing if windowSize is empty or invalid

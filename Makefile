@@ -32,6 +32,9 @@ down:
 run-server:
 	go run cmd/server/main.go
 
+.PHONY: run-server-local
+run-server-local: swagger-clean swagger run-server
+
 .PHONY: run
 run: swagger run-server
 
