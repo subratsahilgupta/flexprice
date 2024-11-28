@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 )
 
@@ -17,11 +18,12 @@ type MeterRepository interface {
 }
 
 type repository struct {
-	db *postgres.DB
+	db     *postgres.DB
+	logger *logger.Logger
 }
 
-func NewMeterRepository(db *postgres.DB) MeterRepository {
-	return &repository{db: db}
+func NewMeterRepository(db *postgres.DB, logger *logger.Logger) MeterRepository {
+	return &repository{db: db, logger: logger}
 }
 
 func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error {

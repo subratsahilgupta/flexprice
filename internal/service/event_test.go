@@ -280,3 +280,127 @@ func (s *EventServiceSuite) TestGetUsageByMeter() {
 		})
 	}
 }
+
+func (s *EventServiceSuite) TestGetEvents() {
+	now := time.Now()
+	// Setup test data
+	testEvents := []*dto.IngestEventRequest{
+		{
+			EventID:            "evt-1",
+			ExternalCustomerID: "cust-1",
+			EventName:          "api_request",
+			Timestamp:          now.Add(-4 * time.Hour),
+			Properties: map[string]interface{}{
+				"duration_ms": float64(100),
+			},
+		},
+		{
+			EventID:            "evt-2",
+			ExternalCustomerID: "cust-1",
+			EventName:          "api_request",
+			Timestamp:          now.Add(-3 * time.Hour),
+			Properties: map[string]interface{}{
+				"duration_ms": float64(150),
+			},
+		},
+		{
+			EventID:            "evt-3",
+			ExternalCustomerID: "cust-1",
+			EventName:          "api_request",
+			Timestamp:          now.Add(-2 * time.Hour),
+			Properties: map[string]interface{}{
+				"duration_ms": float64(200),
+			},
+		},
+		{
+			EventID:            "evt-4",
+			ExternalCustomerID: "cust-1",
+			EventName:          "api_request",
+			Timestamp:          now.Add(-1 * time.Hour),
+			Properties: map[string]interface{}{
+				"duration_ms": float64(250),
+			},
+		},
+	}
+
+	// Insert test events
+	for _, evt := range testEvents {
+		event := events.NewEvent(
+			evt.EventName,
+			types.GetTenantID(s.ctx),
+			evt.ExternalCustomerID,
+			evt.Properties,
+			evt.Timestamp,
+			evt.EventID,
+			evt.CustomerID,
+			evt.Source,
+		)
+		err := s.store.InsertEvent(s.ctx, event)
+		s.NoError(err)
+	}
+
+	s.Run("get_events_with_pagination", func() {
+		// First page
+		result, err := s.service.GetEvents(s.ctx, &dto.GetEventsRequest{
+			ExternalCustomerID: "cust-1",
+			PageSize:           2,
+		})
+		s.NoError(err)
+		s.NotNil(result)
+		s.Len(result.Events, 2)
+		s.True(result.HasMore)
+		s.Equal("evt-4", result.Events[0].ID) // Most recent first
+		s.Equal("evt-3", result.Events[1].ID)
+
+		// Second page using last key
+		result, err = s.service.GetEvents(s.ctx, &dto.GetEventsRequest{
+			ExternalCustomerID: "cust-1",
+			PageSize:           2,
+			IterLastKey:        result.IterLastKey,
+		})
+		s.NoError(err)
+		s.NotNil(result)
+		s.Len(result.Events, 2)
+		s.False(result.HasMore)
+		s.Equal("evt-2", result.Events[0].ID)
+		s.Equal("evt-1", result.Events[1].ID)
+	})
+
+	s.Run("get_events_with_iter_first_key", func() {
+		// Get initial state
+		initialResult, err := s.service.GetEvents(s.ctx, &dto.GetEventsRequest{
+			ExternalCustomerID: "cust-1",
+			PageSize:           2,
+		})
+		s.NoError(err)
+		s.NotNil(initialResult)
+
+		// Add new event with a definitely later timestamp
+		newEvent := &dto.IngestEventRequest{
+			EventID:            "evt-5",
+			ExternalCustomerID: "cust-1",
+			EventName:          "api_request",
+			Timestamp:          now,
+			Properties: map[string]interface{}{
+				"duration_ms": float64(300),
+			},
+		}
+
+		err = s.service.CreateEvent(s.ctx, newEvent)
+		s.NoError(err)
+
+		// Wait a bit for the event to be processed through the message channel
+		time.Sleep(100 * time.Millisecond)
+
+		// Query new events using iter_first_key
+		result, err := s.service.GetEvents(s.ctx, &dto.GetEventsRequest{
+			ExternalCustomerID: "cust-1",
+			PageSize:           2,
+			IterFirstKey:       initialResult.IterFirstKey,
+		})
+		s.NoError(err)
+		s.NotNil(result)
+		s.Len(result.Events, 1)
+		s.Equal("evt-5", result.Events[0].ID) // Only the new event
+	})
+}

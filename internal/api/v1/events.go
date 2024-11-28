@@ -58,7 +58,7 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 // @Tags events
 // @Produce json
 // @Param meter_id query string true "Meter ID"
-// @Param customer_id query string true "Customer ID"
+// @Param external_customer_id query string true "External Customer ID"
 // @Param start_time query string false "Start Time (RFC3339)"
 // @Param end_time query string false "End Time (RFC3339)"
 // @Success 200 {object} map[string]interface{}
@@ -68,12 +68,12 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 // @Router /events/usage/meter [get]
 func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 	ctx := c.Request.Context()
+	externalCustomerID := c.Query("external_customer_id")
 	meterID := c.Query("meter_id")
-	customerID := c.Query("customer_id")
 	startTimeStr := c.Query("start_time")
 	endTimeStr := c.Query("end_time")
 
-	if meterID == "" || customerID == "" {
+	if meterID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters: meter_id or customer_id"})
 		return
 	}
@@ -86,7 +86,7 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 
 	result, err := h.eventService.GetUsageByMeter(ctx, &dto.GetUsageByMeterRequest{
 		MeterID:            meterID,
-		ExternalCustomerID: customerID,
+		ExternalCustomerID: externalCustomerID,
 		StartTime:          startTime.UTC(),
 		EndTime:            endTime.UTC(),
 	})
@@ -104,7 +104,7 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 // @Description Retrieve aggregated usage statistics for events
 // @Tags events
 // @Produce json
-// @Param external_customer_id query string true "External Customer ID"
+// @Param external_customer_id query string false "External Customer ID"
 // @Param event_name query string true "Event Name"
 // @Param property_name query string false "Property Name"
 // @Param aggregation_type query string false "Aggregation Type (sum, count, avg)"
@@ -125,7 +125,7 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 	endTimeStr := c.Query("end_time")
 	windowSize := c.Query("window_size")
 
-	if externalCustomerID == "" || eventName == "" {
+	if eventName == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters"})
 		return
 	}
@@ -162,8 +162,9 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 // @Param event_name query string false "Event Name"
 // @Param start_time query string false "Start Time (RFC3339)"
 // @Param end_time query string false "End Time (RFC3339)"
-// @Param iter_first_key query string false "Iter First Key (timestamp_id::event_id)"
-// @Param iter_last_key query string false "Iter Last Key (timestamp_id::event_id)"
+// @Param iter_first_key query string false "Iter First Key (unix_timestamp_nanoseconds::event_id)"
+// @Param iter_last_key query string false "Iter Last Key (unix_timestamp_nanoseconds::event_id)"
+// @Param page_size query int false "Page Size (1-50)"
 // @Success 200 {object} dto.GetEventsResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
@@ -211,21 +212,26 @@ func (h *EventsHandler) GetEvents(c *gin.Context) {
 }
 
 func parseStartAndEndTime(startTimeStr, endTimeStr string) (time.Time, time.Time, error) {
-	if startTimeStr == "" {
-		startTimeStr = time.Now().AddDate(0, 0, -7).Format(time.RFC3339)
-	}
-	if endTimeStr == "" {
-		endTimeStr = time.Now().Format(time.RFC3339)
+	var startTime time.Time
+	var endTime time.Time
+	var err error
+
+	if startTimeStr != "" {
+		startTime, err = time.Parse(time.RFC3339, startTimeStr)
+		if err != nil {
+			return time.Time{}, time.Time{}, err
+		}
+	} else {
+		startTime = time.Now().AddDate(0, 0, -7)
 	}
 
-	startTime, err := time.Parse(time.RFC3339, startTimeStr)
-	if err != nil {
-		return time.Time{}, time.Time{}, err
-	}
-
-	endTime, err := time.Parse(time.RFC3339, endTimeStr)
-	if err != nil {
-		return time.Time{}, time.Time{}, err
+	if endTimeStr != "" {
+		endTime, err = time.Parse(time.RFC3339, endTimeStr)
+		if err != nil {
+			return time.Time{}, time.Time{}, err
+		}
+	} else {
+		endTime = time.Now()
 	}
 
 	if endTime.Before(startTime) {

@@ -52,14 +52,20 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Iter First Key (timestamp_id::event_id)",
+                        "description": "Iter First Key (unix_timestamp_nanoseconds::event_id)",
                         "name": "iter_first_key",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Iter Last Key (timestamp_id::event_id)",
+                        "description": "Iter Last Key (unix_timestamp_nanoseconds::event_id)",
                         "name": "iter_last_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page Size (1-50)",
+                        "name": "page_size",
                         "in": "query"
                     }
                 ],
@@ -147,8 +153,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "External Customer ID",
                         "name": "external_customer_id",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -231,8 +236,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Customer ID",
-                        "name": "customer_id",
+                        "description": "External Customer ID",
+                        "name": "external_customer_id",
                         "in": "query",
                         "required": true
                     },
@@ -539,8 +544,8 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "example": {
-                        "\"response.status\"": "200}",
-                        "{\"request.size\"": "100"
+                        "\"response_status\"": "200}",
+                        "{\"request_size\"": "100"
                     }
                 },
                 "source": {

@@ -8,15 +8,17 @@ import (
 
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
 type EventRepository struct {
-	store *clickhouse.ClickHouseStore
+	store  *clickhouse.ClickHouseStore
+	logger *logger.Logger
 }
 
-func NewEventRepository(store *clickhouse.ClickHouseStore) events.Repository {
-	return &EventRepository{store: store}
+func NewEventRepository(store *clickhouse.ClickHouseStore, logger *logger.Logger) events.Repository {
+	return &EventRepository{store: store, logger: logger}
 }
 
 func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) error {
@@ -64,6 +66,7 @@ type UsageResult struct {
 func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsageParams) (*events.AggregationResult, error) {
 	aggregator := GetAggregator(params.AggregationType)
 	query := aggregator.GetQuery(ctx, params)
+	r.logger.Debugf("GetUsage query: %s", query)
 
 	var results []events.UsageResult // Use the domain-level UsageResult struct
 	var err error
@@ -147,9 +150,10 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 			source,
 			properties
 		FROM events
-		WHERE 1=1
+		WHERE tenant_id = ?
 	`
 	args := make([]interface{}, 0)
+	args = append(args, types.GetTenantID(ctx))
 
 	// Apply filters
 	if params.ExternalCustomerID != "" {

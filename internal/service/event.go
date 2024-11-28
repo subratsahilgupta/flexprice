@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/kafka"
-	"github.com/flexprice/flexprice/internal/repository/clickhouse"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
 )
@@ -72,10 +72,9 @@ func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.
 }
 
 func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsageRequest) (*events.AggregationResult, error) {
-	aggType := types.AggregationType(getUsageRequest.AggregationType)
-	aggregator := clickhouse.GetAggregator(aggType)
-	if aggregator == nil {
-		return nil, fmt.Errorf("invalid aggregation type: %s", getUsageRequest.AggregationType)
+	// Default to COUNT if property name is not specified or aggregation type is not specified
+	if getUsageRequest.AggregationType == "" || getUsageRequest.PropertyName == "" {
+		getUsageRequest.AggregationType = string(types.AggregationCount)
 	}
 
 	result, err := s.eventRepo.GetUsage(
@@ -84,7 +83,7 @@ func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsa
 			ExternalCustomerID: getUsageRequest.ExternalCustomerID,
 			EventName:          getUsageRequest.EventName,
 			PropertyName:       getUsageRequest.PropertyName,
-			AggregationType:    aggType,
+			AggregationType:    types.AggregationType(getUsageRequest.AggregationType),
 			WindowSize:         getUsageRequest.WindowSize,
 			StartTime:          getUsageRequest.StartTime,
 			EndTime:            getUsageRequest.EndTime,
@@ -161,6 +160,11 @@ func (s *eventService) GetEvents(ctx context.Context, req *dto.GetEventsRequest)
 		eventsList = eventsList[:req.PageSize]
 	}
 
+	// Deduping the events list by ID
+	// TODO: This is a temporary solution to dedupe the events list.
+	// We need to find a better way to handle this.
+	eventsList = dedupeEvents(eventsList)
+
 	response := &dto.GetEventsResponse{
 		Events:  make([]dto.Event, len(eventsList)),
 		HasMore: hasMore,
@@ -198,16 +202,19 @@ func parseEventIteratorToStruct(key string) (*events.EventIterator, error) {
 		return nil, nil
 	}
 
-	// sample cursor "timestamp_id::event_id"
+	// sample cursor unix_timestamp_nanoseconds::event_id
 	parts := strings.Split(key, "::")
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid cursor key format")
 	}
 
-	timestamp, err := time.Parse(time.RFC3339, parts[0])
+	// parse unix timestamp nanoseconds
+	timestampNanoseconds, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid timestamp: %w", err)
+		return nil, fmt.Errorf("invalid timestamp while parsing cursor: %w", err)
 	}
+
+	timestamp := time.Unix(0, timestampNanoseconds)
 
 	cursor := &events.EventIterator{
 		Timestamp: timestamp,
@@ -218,6 +225,20 @@ func parseEventIteratorToStruct(key string) (*events.EventIterator, error) {
 }
 
 func createEventIteratorKey(timestamp time.Time, id string) string {
-	// sample cursor timestamp_id::event_id
-	return fmt.Sprintf("%s::%s", timestamp.Format(time.RFC3339), id)
+	// sample cursor unix_timestamp_nanoseconds::event_id
+	return fmt.Sprintf("%d::%s", timestamp.UnixNano(), id)
+}
+
+func dedupeEvents(eventsList []*events.Event) []*events.Event {
+	seen := make(map[string]bool)
+	result := make([]*events.Event, 0, len(eventsList))
+
+	// Preserve order by taking first occurrence of each ID
+	for _, event := range eventsList {
+		if !seen[event.ID] {
+			seen[event.ID] = true
+			result = append(result, event)
+		}
+	}
+	return result
 }

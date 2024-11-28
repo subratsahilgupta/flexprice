@@ -21,6 +21,10 @@ func GetAggregator(aggregationType types.AggregationType) events.Aggregator {
 	return nil
 }
 
+func getDeduplicationKey() string {
+	return "id, tenant_id, external_customer_id, customer_id, event_name"
+}
+
 // Helper function for ClickHouse datetime formatting
 func formatClickHouseDateTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05.000")
@@ -45,29 +49,52 @@ type SumAggregator struct{}
 
 func (a *SumAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
 	windowSize := formatWindowSize(params.WindowSize)
-
+	selectClause := ""
 	windowClause := ""
 	groupByClause := ""
+	windowGroupBy := ""
 
 	if windowSize != "" {
+		selectClause = "window_size,"
 		windowClause = fmt.Sprintf("%s AS window_size,", windowSize)
-		groupByClause = "GROUP BY window_size"
+		groupByClause = "GROUP BY window_size ORDER BY window_size"
+		windowGroupBy = ", window_size"
 	}
 
+	customerFilter := ""
+	if params.ExternalCustomerID != "" {
+		customerFilter = fmt.Sprintf("AND external_customer_id = '%s'", params.ExternalCustomerID)
+	}
+
+	// 1. First buckets by time window if specified
+	// 2. Deduplicates within each window/bucket
+	// 3. Sums the values
 	return fmt.Sprintf(`
-        SELECT %s SUM(value) AS total_value
+        SELECT 
+            %s sum(value) as total
         FROM (
-            SELECT JSONExtractFloat(assumeNotNull(properties), '%s') AS value, timestamp
+            SELECT
+                %s anyLast(JSONExtractFloat(assumeNotNull(properties), '%s')) as value
             FROM events
-            WHERE event_name = '%s'
-              AND external_customer_id = '%s'
-              AND timestamp >= toDateTime64('%s', 3)
-              AND timestamp < toDateTime64('%s', 3)
+            PREWHERE event_name = '%s' 
+                AND tenant_id = '%s'
+				%s
+                AND timestamp >= toDateTime64('%s', 3)
+                AND timestamp < toDateTime64('%s', 3)
+            GROUP BY %s %s
         )
         %s
-    `, windowClause, params.PropertyName, params.EventName, params.ExternalCustomerID,
+    `,
+		selectClause,
+		windowClause,
+		params.PropertyName,
+		params.EventName,
+		types.GetTenantID(ctx),
+		customerFilter,
 		formatClickHouseDateTime(params.StartTime),
 		formatClickHouseDateTime(params.EndTime),
+		getDeduplicationKey(),
+		windowGroupBy,
 		groupByClause)
 }
 
@@ -80,27 +107,37 @@ type CountAggregator struct{}
 
 func (a *CountAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
 	windowSize := formatWindowSize(params.WindowSize)
-	windowClause := ""
+	selectClause := ""
 	groupByClause := ""
 
 	if windowSize != "" {
-		windowClause = fmt.Sprintf("%s AS window_size,", windowSize)
-		groupByClause = "GROUP BY window_size"
+		selectClause = fmt.Sprintf("%s AS window_size,", windowSize)
+		groupByClause = "GROUP BY window_size ORDER BY window_size"
 	}
 
+	customerFilter := ""
+	if params.ExternalCustomerID != "" {
+		customerFilter = fmt.Sprintf("AND external_customer_id = '%s'", params.ExternalCustomerID)
+	}
+
+	// 1. First buckets by time window if specified
+	// 2. Counts distinct events within each window/bucket
 	return fmt.Sprintf(`
-        SELECT %s COUNT(*) AS total_count
-        FROM (
-            SELECT id, timestamp
-            FROM events
-            WHERE event_name = '%s'
-              AND external_customer_id = '%s'
-              AND timestamp >= toDateTime64('%s', 3)
-              AND timestamp < toDateTime64('%s', 3)
-            GROUP BY id, external_customer_id, timestamp
-        )
+        SELECT 
+            %s count(DISTINCT %s) as total
+        FROM events
+        PREWHERE event_name = '%s'
+			AND tenant_id = '%s'
+            %s
+            AND timestamp >= toDateTime64('%s', 3)
+            AND timestamp < toDateTime64('%s', 3)
         %s
-    `, windowClause, params.EventName, params.ExternalCustomerID,
+    `,
+		selectClause,
+		getDeduplicationKey(),
+		params.EventName,
+		types.GetTenantID(ctx),
+		customerFilter,
 		formatClickHouseDateTime(params.StartTime),
 		formatClickHouseDateTime(params.EndTime),
 		groupByClause)

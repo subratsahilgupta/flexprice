@@ -65,8 +65,8 @@ definitions:
         additionalProperties:
           type: string
         example:
-          '"response.status"': 200}
-          '{"request.size"': "100"
+          '"response_status"': 200}
+          '{"request_size"': "100"
         type: object
       source:
         example: api
@@ -172,14 +172,18 @@ paths:
         in: query
         name: end_time
         type: string
-      - description: Iter First Key (timestamp_id::event_id)
+      - description: Iter First Key (unix_timestamp_nanoseconds::event_id)
         in: query
         name: iter_first_key
         type: string
-      - description: Iter Last Key (timestamp_id::event_id)
+      - description: Iter Last Key (unix_timestamp_nanoseconds::event_id)
         in: query
         name: iter_last_key
         type: string
+      - description: Page Size (1-50)
+        in: query
+        name: page_size
+        type: integer
       produces:
       - application/json
       responses:
@@ -236,7 +240,6 @@ paths:
       - description: External Customer ID
         in: query
         name: external_customer_id
-        required: true
         type: string
       - description: Event Name
         in: query
@@ -291,9 +294,9 @@ paths:
         name: meter_id
         required: true
         type: string
-      - description: Customer ID
+      - description: External Customer ID
         in: query
-        name: customer_id
+        name: external_customer_id
         required: true
         type: string
       - description: Start Time (RFC3339)
