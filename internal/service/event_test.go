@@ -203,11 +203,13 @@ func (s *EventServiceSuite) TestGetUsageByMeter() {
 	// Setup test data for meter
 	testMeter := &meter.Meter{
 		ID:        "meter-1",
-		TenantID:  "tenant-1",
 		EventName: "api_request",
 		Aggregation: meter.Aggregation{
 			Type:  types.AggregationSum,
 			Field: "duration_ms",
+		},
+		BaseModel: types.BaseModel{
+			TenantID: "tenant-1",
 		},
 	}
 

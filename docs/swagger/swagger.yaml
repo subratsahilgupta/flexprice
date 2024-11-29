@@ -1,5 +1,10 @@
 basePath: /v1
 definitions:
+  dto.AuthResponse:
+    properties:
+      token:
+        type: string
+    type: object
   dto.CreateMeterRequest:
     properties:
       aggregation:
@@ -73,6 +78,17 @@ definitions:
     - event_name
     - external_customer_id
     type: object
+  dto.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
   dto.MeterResponse:
     properties:
       aggregation:
@@ -94,6 +110,24 @@ definitions:
         type: string
       updated_at:
         example: "2024-03-20T15:04:05Z"
+        type: string
+    type: object
+  dto.SignUpRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  dto.UserResponse:
+    properties:
+      email:
+        type: string
+      id:
         type: string
     type: object
   meter.Aggregation:
@@ -133,6 +167,58 @@ info:
   title: FlexPrice API
   version: "1.0"
 paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Login a user
+      parameters:
+      - description: Login request
+        in: body
+        name: login
+        required: true
+        schema:
+          $ref: '#/definitions/dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Login
+      tags:
+      - auth
+  /auth/signup:
+    post:
+      consumes:
+      - application/json
+      description: Sign up a new user
+      parameters:
+      - description: Sign up request
+        in: body
+        name: signup
+        required: true
+        schema:
+          $ref: '#/definitions/dto.SignUpRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Sign up
+      tags:
+      - auth
   /events:
     get:
       description: Retrieve raw events with pagination and filtering
@@ -180,6 +266,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get raw events
       tags:
       - events
@@ -211,6 +299,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Ingest event
       tags:
       - events
@@ -263,6 +353,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get usage statistics
       tags:
       - events
@@ -307,6 +399,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get usage by meter
       tags:
       - events
@@ -326,6 +420,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: List meters
       tags:
       - meters
@@ -355,6 +451,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Create meter
       tags:
       - meters
@@ -384,6 +482,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Delete meter
       tags:
       - meters
@@ -410,6 +510,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get meter
       tags:
       - meters
@@ -439,14 +541,38 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: 'Disable meter [TODO: Deprecate]'
       tags:
       - meters
+  /users/me:
+    get:
+      consumes:
+      - application/json
+      description: Get the current user's information
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user info
+      tags:
+      - users
 schemes:
 - http
 - https
 securityDefinitions:
-  ApiKeyAuth:
+  BearerAuth:
+    description: Enter your bearer token in the format **Bearer &lt;token&gt;**
     in: header
     name: Authorization
     type: apiKey

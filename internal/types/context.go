@@ -6,9 +6,11 @@ import "context"
 type ContextKey string
 
 const (
-	CtxRequestID ContextKey = "ctx_request_id"
-	CtxTenantID  ContextKey = "ctx_tenant_id"
-	CtxUserID    ContextKey = "ctx_user_id"
+	CtxRequestID     ContextKey = "ctx_request_id"
+	CtxTenantID      ContextKey = "ctx_tenant_id"
+	CtxUserID        ContextKey = "ctx_user_id"
+	CtxJWT           ContextKey = "ctx_jwt"
+	CtxEnvironmentID ContextKey = "ctx_environment_id"
 
 	// Default values
 	DefaultTenantID = "00000000-0000-0000-0000-000000000000"
@@ -32,6 +34,20 @@ func GetTenantID(ctx context.Context) string {
 func GetRequestID(ctx context.Context) string {
 	if requestID, ok := ctx.Value(CtxRequestID).(string); ok {
 		return requestID
+	}
+	return ""
+}
+
+func GetJWT(ctx context.Context) string {
+	if jwt, ok := ctx.Value(CtxJWT).(string); ok {
+		return jwt
+	}
+	return ""
+}
+
+func GetEnvironmentID(ctx context.Context) string {
+	if environmentID, ok := ctx.Value(CtxEnvironmentID).(string); ok {
+		return environmentID
 	}
 	return ""
 }

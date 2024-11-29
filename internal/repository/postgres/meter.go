@@ -11,23 +11,16 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-type MeterRepository interface {
-	CreateMeter(ctx context.Context, meter *meter.Meter) error
-	GetMeter(ctx context.Context, id string) (*meter.Meter, error)
-	GetAllMeters(ctx context.Context) ([]*meter.Meter, error)
-	DisableMeter(ctx context.Context, id string) error
-}
-
-type repository struct {
+type meterRepository struct {
 	db     *postgres.DB
 	logger *logger.Logger
 }
 
-func NewMeterRepository(db *postgres.DB, logger *logger.Logger) MeterRepository {
-	return &repository{db: db, logger: logger}
+func NewMeterRepository(db *postgres.DB, logger *logger.Logger) meter.Repository {
+	return &meterRepository{db: db, logger: logger}
 }
 
-func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error {
+func (r *meterRepository) CreateMeter(ctx context.Context, meter *meter.Meter) error {
 	aggregationJSON, err := json.Marshal(meter.Aggregation)
 	if err != nil {
 		return fmt.Errorf("marshal aggregation: %w", err)
@@ -61,7 +54,7 @@ func (r *repository) CreateMeter(ctx context.Context, meter *meter.Meter) error 
 	return nil
 }
 
-func (r *repository) GetMeter(ctx context.Context, id string) (*meter.Meter, error) {
+func (r *meterRepository) GetMeter(ctx context.Context, id string) (*meter.Meter, error) {
 
 	meter := &meter.Meter{}
 	var aggregationJSON []byte
@@ -97,7 +90,7 @@ func (r *repository) GetMeter(ctx context.Context, id string) (*meter.Meter, err
 	return meter, nil
 }
 
-func (r *repository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
+func (r *meterRepository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 	query := `
 	SELECT 
 		id, tenant_id, event_name, aggregation, 
@@ -143,7 +136,7 @@ func (r *repository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 	return meters, nil
 }
 
-func (r *repository) DisableMeter(ctx context.Context, id string) error {
+func (r *meterRepository) DisableMeter(ctx context.Context, id string) error {
 	query := `
 		UPDATE meters 
 		SET status = 'disabled', updated_at = NOW(), updated_by = $1

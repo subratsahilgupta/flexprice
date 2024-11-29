@@ -30,6 +30,7 @@ func NewEventsHandler(eventService service.EventService, log *logger.Logger) *Ev
 // @Tags events
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Param event body dto.IngestEventRequest true "Event data"
 // @Success 202 {object} map[string]string "message:Event accepted for processing"
 // @Failure 400 {object} ErrorResponse
@@ -41,6 +42,11 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.log.Error("Failed to bind JSON", "error", err)
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request payload"})
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
@@ -58,6 +64,7 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 // @Description Retrieve aggregated usage statistics using meter configuration
 // @Tags events
 // @Produce json
+// @Security BearerAuth
 // @Param meter_id query string true "Meter ID"
 // @Param external_customer_id query string false "External Customer ID"
 // @Param start_time query string false "Start Time (RFC3339)"
@@ -107,6 +114,7 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 // @Description Retrieve aggregated usage statistics for events
 // @Tags events
 // @Produce json
+// @Security BearerAuth
 // @Param external_customer_id query string false "External Customer ID"
 // @Param event_name query string true "Event Name"
 // @Param property_name query string false "Property Name"
@@ -161,6 +169,7 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 // @Description Retrieve raw events with pagination and filtering
 // @Tags events
 // @Produce json
+// @Security BearerAuth
 // @Param external_customer_id query string false "External Customer ID"
 // @Param event_name query string false "Event Name"
 // @Param start_time query string false "Start Time (RFC3339)"
