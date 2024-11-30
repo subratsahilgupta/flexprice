@@ -25,7 +25,7 @@ func RequestIDMiddleware(c *gin.Context) {
 	c.Request = c.Request.WithContext(ctx)
 
 	// Add headers for response
-	c.Header("X-Request-ID", requestID)
+	c.Header(types.HeaderRequestID, requestID)
 
 	c.Next()
 }

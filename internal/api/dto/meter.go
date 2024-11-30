@@ -5,6 +5,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/go-playground/validator/v10"
 )
 
 // CreateMeterRequest represents the request payload for creating a meter
@@ -44,4 +45,9 @@ func (r *CreateMeterRequest) ToMeter(tenantID, createdBy string) *meter.Meter {
 	m.Aggregation = r.Aggregation
 	m.Status = types.StatusActive
 	return m
+}
+
+// Request validations
+func (r *CreateMeterRequest) Validate() error {
+	return validator.New().Struct(r)
 }

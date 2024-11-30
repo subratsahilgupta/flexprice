@@ -6,7 +6,6 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/meter"
-	"github.com/flexprice/flexprice/internal/repository/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -18,7 +17,7 @@ type MeterService interface {
 }
 
 type meterService struct {
-	meterRepo postgres.MeterRepository
+	meterRepo meter.Repository
 }
 
 func NewMeterService(meterRepo meter.Repository) MeterService {

@@ -3,6 +3,8 @@ package api
 import (
 	"github.com/flexprice/flexprice/docs/swagger"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
+	"github.com/flexprice/flexprice/internal/config"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rest/middleware"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -12,14 +14,16 @@ import (
 type Handlers struct {
 	Events *v1.EventsHandler
 	Meter  *v1.MeterHandler
+	Auth   *v1.AuthHandler
+	User   *v1.UserHandler
+	Health *v1.HealthHandler
 }
 
-func NewRouter(handlers Handlers) *gin.Engine {
+func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
 	router := gin.Default()
 	router.Use(
 		middleware.RequestIDMiddleware,
 		middleware.CORSMiddleware,
-		middleware.AuthMiddleware,
 	)
 
 	// Add middleware to set swagger host dynamically
@@ -30,32 +34,48 @@ func NewRouter(handlers Handlers) *gin.Engine {
 		c.Next()
 	})
 
+	// Health check
+	router.GET("/health", handlers.Health.Health)
 	// Swagger documentation
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// v1 routes
-	v1Group := router.Group("/v1")
-	registerV1Routes(v1Group, handlers)
+	// Public routes
+	public := router.Group("/", middleware.GuestAuthenticateMiddleware)
 
+	v1Public := public.Group("/v1")
+
+	{
+		// Auth routes
+		v1Public.POST("/auth/signup", handlers.Auth.SignUp)
+		v1Public.POST("/auth/login", handlers.Auth.Login)
+	}
+
+	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, logger))
+
+	v1Private := private.Group("/v1")
+	{
+		user := v1Private.Group("/users")
+		{
+			user.GET("/me", handlers.User.GetUserInfo)
+		}
+
+		// Events routes
+		events := v1Private.Group("/events")
+		{
+			events.POST("", handlers.Events.IngestEvent)
+			events.GET("", handlers.Events.GetEvents)
+			events.GET("/usage", handlers.Events.GetUsage)
+			events.GET("/usage/meter", handlers.Events.GetUsageByMeter)
+		}
+
+		meters := v1Private.Group("/meters")
+		{
+			meters.POST("", handlers.Meter.CreateMeter)
+			meters.GET("", handlers.Meter.GetAllMeters)
+			meters.GET("/:id", handlers.Meter.GetMeter)
+			meters.POST("/:id/disable", handlers.Meter.DisableMeter)
+			meters.DELETE("/:id", handlers.Meter.DeleteMeter)
+		}
+	}
 	return router
-}
-
-func registerV1Routes(router *gin.RouterGroup, handlers Handlers) {
-	// Events routes
-	events := router.Group("/events")
-	{
-		events.POST("", handlers.Events.IngestEvent)
-		events.GET("", handlers.Events.GetEvents)
-		events.GET("/usage", handlers.Events.GetUsage)
-		events.GET("/usage/meter", handlers.Events.GetUsageByMeter)
-	}
-
-	meters := router.Group("/meters")
-	{
-		meters.POST("", handlers.Meter.CreateMeter)
-		meters.GET("", handlers.Meter.GetAllMeters)
-		meters.GET("/:id", handlers.Meter.GetMeter)
-		meters.POST("/:id/disable", handlers.Meter.DisableMeter)
-		meters.DELETE("/:id", handlers.Meter.DeleteMeter)
-	}
 }

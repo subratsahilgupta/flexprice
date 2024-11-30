@@ -10,7 +10,6 @@ import (
 
 type Meter struct {
 	ID          string      `db:"id" json:"id"`
-	TenantID    string      `db:"tenant_id" json:"tenant_id,omitempty"`
 	EventName   string      `db:"event_name" json:"event_name"`
 	Aggregation Aggregation `db:"aggregation" json:"aggregation"`
 	types.BaseModel
@@ -46,9 +45,9 @@ func NewMeter(id string, tenantID, createdBy string) *Meter {
 	}
 
 	return &Meter{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 		BaseModel: types.BaseModel{
+			TenantID:  tenantID,
 			CreatedAt: now,
 			UpdatedAt: now,
 			CreatedBy: createdBy,

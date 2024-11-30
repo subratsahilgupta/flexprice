@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/go-playground/validator/v10"
 )
 
 type IngestEventRequest struct {
@@ -59,4 +60,20 @@ type Event struct {
 	Timestamp          time.Time              `json:"timestamp"`
 	Properties         map[string]interface{} `json:"properties"`
 	Source             string                 `json:"source"`
+}
+
+func (r *IngestEventRequest) Validate() error {
+	return validator.New().Struct(r)
+}
+
+func (r *GetUsageRequest) Validate() error {
+	return validator.New().Struct(r)
+}
+
+func (r *GetUsageByMeterRequest) Validate() error {
+	return validator.New().Struct(r)
+}
+
+func (r *GetEventsRequest) Validate() error {
+	return validator.New().Struct(r)
 }

@@ -31,9 +31,10 @@ import (
 // @description FlexPrice API Service
 // @BasePath /v1
 // @schemes http https
-// @securityDefinitions.apikey ApiKeyAuth
+// @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
+// @description Enter your bearer token in the format **Bearer &lt;token&gt;**
 
 func init() {
 	// Set UTC timezone for the entire application
@@ -61,10 +62,14 @@ func main() {
 			// Repositories
 			repository.NewEventRepository,
 			repository.NewMeterRepository,
+			repository.NewUserRepository,
+			repository.NewAuthRepository,
 
 			// Services
 			service.NewMeterService,
 			service.NewEventService,
+			service.NewUserService,
+			service.NewAuthService,
 
 			// Handlers
 			provideHandlers,
@@ -80,18 +85,23 @@ func main() {
 }
 
 func provideHandlers(
+	cfg *config.Configuration,
 	logger *logger.Logger,
 	meterService service.MeterService,
 	eventService service.EventService,
+	authService service.AuthService,
+	userService service.UserService,
 ) api.Handlers {
 	return api.Handlers{
 		Events: v1.NewEventsHandler(eventService, logger),
 		Meter:  v1.NewMeterHandler(meterService, logger),
+		Auth:   v1.NewAuthHandler(cfg, authService, logger),
+		User:   v1.NewUserHandler(userService, logger),
 	}
 }
 
-func provideRouter(handlers api.Handlers) *gin.Engine {
-	return api.NewRouter(handlers)
+func provideRouter(handlers api.Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
+	return api.NewRouter(handlers, cfg, logger)
 }
 
 func startServer(

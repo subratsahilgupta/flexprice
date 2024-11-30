@@ -18,6 +18,7 @@ import (
 type Configuration struct {
 	Deployment DeploymentConfig `validate:"required"`
 	Server     ServerConfig     `validate:"required"`
+	Auth       AuthConfig       `validate:"required"`
 	Kafka      KafkaConfig      `validate:"required"`
 	ClickHouse ClickHouseConfig `validate:"required"`
 	Logging    LoggingConfig    `validate:"required"`
@@ -30,6 +31,16 @@ type DeploymentConfig struct {
 
 type ServerConfig struct {
 	Address string `mapstructure:"address" validate:"required"`
+}
+
+type AuthConfig struct {
+	Provider types.AuthProvider `mapstructure:"provider" validate:"required"`
+	Secret   string             `mapstructure:"secret" validate:"required"`
+	Supabase SupabaseConfig     `mapstructure:"supabase"`
+}
+
+type SupabaseConfig struct {
+	BaseURL string `mapstructure:"base_url"`
 }
 
 type KafkaConfig struct {
