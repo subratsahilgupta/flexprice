@@ -17,6 +17,7 @@ type Handlers struct {
 	Auth   *v1.AuthHandler
 	User   *v1.UserHandler
 	Health *v1.HealthHandler
+	Price  *v1.PriceHandler
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
@@ -75,6 +76,16 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			meters.GET("/:id", handlers.Meter.GetMeter)
 			meters.POST("/:id/disable", handlers.Meter.DisableMeter)
 			meters.DELETE("/:id", handlers.Meter.DeleteMeter)
+		}
+
+		price := v1Private.Group("/prices")
+		{
+			price.POST("", handlers.Price.CreatePrice)
+			price.GET("", handlers.Price.GetPrices)
+			price.GET("/:id", handlers.Price.GetPrice)
+			price.PUT("/:id", handlers.Price.UpdatePrice)
+			price.DELETE("/:id/archive", handlers.Price.ArchivePrice)
+			price.DELETE("/:id/delete", handlers.Price.DeletePrice)
 		}
 	}
 	return router

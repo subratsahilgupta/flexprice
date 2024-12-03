@@ -36,7 +36,7 @@ type Price struct {
 
 	// Tiered pricing fields
 	TierMode *types.BillingTier `db:"tier_mode" json:"tier_mode"` // volume or slab(graduated)
-	Tiers    []PriceTier         `db:"tiers" json:"tiers"`        // Array of pricing tiers
+	Tiers    []PriceTier        `db:"tiers" json:"tiers"`         // Array of pricing tiers
 
 	// Quantity transformation
 	Transform *PriceTransform `db:"transform" json:"transform"` // For package pricing

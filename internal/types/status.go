@@ -8,5 +8,6 @@ type Status string
 const (
 	StatusActive   Status = "active"
 	StatusInactive Status = "inactive"
+	StatusArchived Status = "archived"
 	StatusDeleted  Status = "deleted"
 )
