@@ -6,16 +6,18 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
 type priceRepository struct {
-	db *postgres.DB
+	db     *postgres.DB
+	logger *logger.Logger
 }
 
-func NewPriceRepository(db *postgres.DB) price.Repository {
-	return &priceRepository{db: db}
+func NewPriceRepository(db *postgres.DB, logger *logger.Logger) price.Repository {
+	return &priceRepository{db: db, logger: logger}
 }
 
 func (r *priceRepository) CreatePrice(ctx context.Context, price *price.Price) error {
@@ -32,20 +34,38 @@ func (r *priceRepository) CreatePrice(ctx context.Context, price *price.Price) e
 			:description, :metadata, :status, :created_at, :updated_at, :created_by, :updated_by
 		)`
 
+	r.logger.Debug("creating price",
+		"price_id", price.ID,
+		"tenant_id", price.TenantID,
+	)
+
 	_, err := r.db.NamedExecContext(ctx, query, price)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to insert price: %w", err)
+	}
+
+	return nil
 }
 
 func (r *priceRepository) GetPrice(ctx context.Context, id string) (*price.Price, error) {
 	var p price.Price
 	query := `SELECT * FROM prices WHERE id = :id AND tenant_id = :tenant_id`
 
-	err := r.db.GetContext(ctx, &p, query, map[string]interface{}{
+	rows, err := r.db.NamedQueryContext(ctx, query, map[string]interface{}{
 		"id":        id,
-		"tenant_id": ctx.Value("tenant_id"),
+		"tenant_id": types.GetTenantID(ctx),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get price: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return nil, fmt.Errorf("price not found")
+	}
+
+	if err := rows.StructScan(&p); err != nil {
+		return nil, fmt.Errorf("failed to scan price: %w", err)
 	}
 	return &p, nil
 }
@@ -55,19 +75,33 @@ func (r *priceRepository) GetPrices(ctx context.Context, filter types.Filter) ([
 	query := `
 		SELECT * FROM prices 
 		WHERE tenant_id = :tenant_id 
+		AND status = :status
 		ORDER BY created_at DESC 
 		LIMIT :limit OFFSET :offset`
 
-	err := r.db.SelectContext(
-		ctx,
-		&prices,
-		query,
-		ctx.Value("tenant_id"),
-		filter.Limit,
-		filter.Offset,
-	)
+	// First, prepare the named query
+	rows, err := r.db.NamedQueryContext(ctx, query, map[string]interface{}{
+		"tenant_id": types.GetTenantID(ctx),
+		"status":    types.StatusActive,
+		"limit":     filter.Limit,
+		"offset":    filter.Offset,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list prices: %w", err)
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	// Iterate through the rows and scan into price objects
+	for rows.Next() {
+		var p price.Price
+		if err := rows.StructScan(&p); err != nil {
+			return nil, fmt.Errorf("failed to scan price: %w", err)
+		}
+		prices = append(prices, &p)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
 
 	return prices, nil
@@ -111,9 +145,10 @@ func (r *priceRepository) UpdatePriceStatus(ctx context.Context, id string, stat
 
 	_, err := r.db.NamedExecContext(ctx, query, map[string]interface{}{
 		"id":         id,
+		"tenant_id":  types.GetTenantID(ctx),
 		"status":     status,
 		"updated_at": time.Now(),
-		"updated_by": ctx.Value("user_id"),
+		"updated_by": types.GetUserID(ctx),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update price status: %w", err)

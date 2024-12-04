@@ -8,7 +8,6 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/google/uuid"
 )
 
 type PriceService interface {
@@ -28,32 +27,11 @@ func NewPriceService(repo price.Repository) PriceService {
 }
 
 func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceRequest) (*dto.PriceResponse, error) {
-	price := &price.Price{
-		ID:                 uuid.New().String(),
-		Amount:             req.Amount,
-		Currency:           req.Currency,
-		ExternalID:         req.ExternalID,
-		ExternalSource:     req.ExternalSource,
-		BillingPeriod:      req.BillingPeriod,
-		BillingPeriodCount: req.BillingPeriodCount,
-		BillingModel:       req.BillingModel,
-		BillingCadence:     req.BillingCadence,
-		BillingCountryCode: req.BillingCountryCode,
-		LookupKey:          req.LookupKey,
-		Description:        req.Description,
-		Metadata:           req.Metadata,
-		TierMode:           req.TierMode,
-		Tiers:              req.Tiers,
-		Transform:          req.Transform,
-		BaseModel: types.BaseModel{
-			TenantID:  types.GetTenantID(ctx),
-			Status:    types.StatusActive,
-			CreatedAt: time.Now().UTC(),
-			UpdatedAt: time.Now().UTC(),
-			CreatedBy: types.GetUserID(ctx),
-			UpdatedBy: types.GetUserID(ctx),
-		},
+	if err := req.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
 	}
+
+	price := req.ToPrice(ctx)
 
 	if err := s.repo.CreatePrice(ctx, price); err != nil {
 		return nil, fmt.Errorf("failed to create price: %w", err)

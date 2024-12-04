@@ -5,6 +5,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -33,4 +34,8 @@ func NewUserRepository(db *postgres.DB, logger *logger.Logger) user.Repository {
 
 func NewAuthRepository(db *postgres.DB, logger *logger.Logger) auth.Repository {
 	return postgresRepo.NewAuthRepository(db, logger)
+}
+
+func NewPriceRepository(db *postgres.DB, logger *logger.Logger) price.Repository {
+	return postgresRepo.NewPriceRepository(db, logger)
 }

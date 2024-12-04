@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
@@ -11,10 +12,11 @@ import (
 
 type PriceHandler struct {
 	service service.PriceService
+	log     *logger.Logger
 }
 
-func NewPriceHandler(service service.PriceService) *PriceHandler {
-	return &PriceHandler{service: service}
+func NewPriceHandler(service service.PriceService, log *logger.Logger) *PriceHandler {
+	return &PriceHandler{service: service, log: log}
 }
 
 // @Summary Create a new price
@@ -78,7 +80,7 @@ func (h *PriceHandler) GetPrice(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param filter query types.Filter true "Filter"
-// @Success 200 {object} dto.PricesResponse
+// @Success 200 {object} dto.ListPricesResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /prices [get]
@@ -142,7 +144,7 @@ func (h *PriceHandler) UpdatePrice(c *gin.Context) {
 // @Success 200 {object} dto.PriceResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /prices/{id}/archive [put]
+// @Router /prices/{id}/archive [delete]
 func (h *PriceHandler) ArchivePrice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -168,7 +170,7 @@ func (h *PriceHandler) ArchivePrice(c *gin.Context) {
 // @Success 200 {object} dto.PriceResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /prices/{id} [delete]
+// @Router /prices/{id}/delete [delete]
 func (h *PriceHandler) DeletePrice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
