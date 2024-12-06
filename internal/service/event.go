@@ -87,6 +87,7 @@ func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsa
 			WindowSize:         getUsageRequest.WindowSize,
 			StartTime:          getUsageRequest.StartTime,
 			EndTime:            getUsageRequest.EndTime,
+			Filters:            getUsageRequest.Filters,
 		},
 	)
 	if err != nil {
@@ -106,8 +107,14 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, getUsageByMeterReque
 		return nil, errors.NewAttributeNotFoundError("event_name")
 	}
 
-	if meter.Aggregation.Field == "" {
+	if meter.Aggregation.Field == "" && meter.Aggregation.Type != types.AggregationCount {
 		return nil, errors.NewAttributeNotFoundError("aggregation_field")
+	}
+
+	// Convert meter filters to map format
+	filterMap := make(map[string][]string)
+	for _, filter := range meter.Filters {
+		filterMap[filter.Key] = filter.Values
 	}
 
 	usageRequest := &dto.GetUsageRequest{
@@ -118,6 +125,7 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, getUsageByMeterReque
 		WindowSize:         getUsageByMeterRequest.WindowSize,
 		StartTime:          getUsageByMeterRequest.StartTime,
 		EndTime:            getUsageByMeterRequest.EndTime,
+		Filters:            filterMap,
 	}
 	return s.GetUsage(ctx, usageRequest)
 }

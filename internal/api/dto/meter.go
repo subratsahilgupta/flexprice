@@ -12,6 +12,7 @@ import (
 type CreateMeterRequest struct {
 	EventName   string            `json:"event_name" binding:"required" example:"api_request"`
 	Aggregation meter.Aggregation `json:"aggregation" binding:"required"`
+	Filters     []meter.Filter    `json:"filters" binding:"required"`
 }
 
 // MeterResponse represents the meter response structure
@@ -20,6 +21,7 @@ type MeterResponse struct {
 	TenantID    string            `json:"tenant_id" example:"tenant123"`
 	EventName   string            `json:"event_name" example:"api_request"`
 	Aggregation meter.Aggregation `json:"aggregation"`
+	Filters     []meter.Filter    `json:"filters"`
 	CreatedAt   time.Time         `json:"created_at" example:"2024-03-20T15:04:05Z"`
 	UpdatedAt   time.Time         `json:"updated_at" example:"2024-03-20T15:04:05Z"`
 	Status      string            `json:"status" example:"ACTIVE"`
@@ -32,6 +34,7 @@ func ToMeterResponse(m *meter.Meter) *MeterResponse {
 		TenantID:    m.TenantID,
 		EventName:   m.EventName,
 		Aggregation: m.Aggregation,
+		Filters:     m.Filters,
 		CreatedAt:   m.CreatedAt,
 		UpdatedAt:   m.UpdatedAt,
 		Status:      string(m.Status),

@@ -655,7 +655,8 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "aggregation",
-                "event_name"
+                "event_name",
+                "filters"
             ],
             "properties": {
                 "aggregation": {
@@ -664,6 +665,12 @@ const docTemplate = `{
                 "event_name": {
                     "type": "string",
                     "example": "api_request"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meter.Filter"
+                    }
                 }
             }
         },
@@ -787,6 +794,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "api_request"
                 },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meter.Filter"
+                    }
+                },
                 "id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
@@ -840,6 +853,20 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.AggregationType"
+                }
+            }
+        },
+        "meter.Filter": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

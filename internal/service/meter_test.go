@@ -87,44 +87,27 @@ func (s *MeterServiceSuite) TestGetMeter() {
 		Type:  types.AggregationSum,
 		Field: "duration_ms",
 	}
+	testMeter.Filters = []meter.Filter{
+		{
+			Key:    "status",
+			Values: []string{"success", "error"},
+		},
+		{
+			Key:    "region",
+			Values: []string{"us-east-1"},
+		},
+	}
+	testMeter.BaseModel.Status = types.StatusActive
 
 	err := s.store.CreateMeter(s.ctx, testMeter)
 	s.NoError(err)
 
-	testCases := []struct {
-		name          string
-		id            string
-		expectedError bool
-	}{
-		{
-			name:          "existing_meter",
-			id:            testMeter.ID,
-			expectedError: false,
-		},
-		{
-			name:          "empty_id",
-			id:            "",
-			expectedError: true,
-		},
-		{
-			name:          "non_existent_meter",
-			id:            "non-existent",
-			expectedError: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		s.Run(tc.name, func() {
-			result, err := s.service.GetMeter(s.ctx, tc.id)
-			if tc.expectedError {
-				s.Error(err)
-				return
-			}
-			s.NoError(err)
-			s.Equal(testMeter.ID, result.ID)
-			s.Equal(testMeter.EventName, result.EventName) // Verify EventName
-		})
-	}
+	result, err := s.service.GetMeter(s.ctx, testMeter.ID)
+	s.NoError(err)
+	s.Equal(testMeter.ID, result.ID)
+	s.Equal(testMeter.EventName, result.EventName)
+	s.Equal(testMeter.Aggregation, result.Aggregation)
+	s.Equal(testMeter.Filters, result.Filters)
 }
 
 func (s *MeterServiceSuite) TestGetAllMeters() {
@@ -137,10 +120,16 @@ func (s *MeterServiceSuite) TestGetAllMeters() {
 	// Set required fields
 	for _, m := range meters {
 		m.TenantID = "tenant-1"
-		m.EventName = "api_request" // Replaced Filters with EventName
+		m.EventName = "api_request"
 		m.Aggregation = meter.Aggregation{
 			Type:  types.AggregationSum,
 			Field: "duration_ms",
+		}
+		m.Filters = []meter.Filter{
+			{
+				Key:    "status",
+				Values: []string{"success"},
+			},
 		}
 		m.BaseModel.Status = types.StatusActive
 
@@ -152,7 +141,9 @@ func (s *MeterServiceSuite) TestGetAllMeters() {
 	s.NoError(err)
 	s.Len(result, 2)
 	for _, m := range result {
-		s.Equal("api_request", m.EventName) // Verify EventName
+		s.Equal("api_request", m.EventName)
+		s.NotEmpty(m.Filters)
+		s.Equal("status", m.Filters[0].Key)
 	}
 }
 

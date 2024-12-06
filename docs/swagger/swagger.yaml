@@ -12,9 +12,14 @@ definitions:
       event_name:
         example: api_request
         type: string
+      filters:
+        items:
+          $ref: '#/definitions/meter.Filter'
+        type: array
     required:
     - aggregation
     - event_name
+    - filters
     type: object
   dto.Event:
     properties:
@@ -99,6 +104,10 @@ definitions:
       event_name:
         example: api_request
         type: string
+      filters:
+        items:
+          $ref: '#/definitions/meter.Filter'
+        type: array
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
@@ -136,6 +145,15 @@ definitions:
         type: string
       type:
         $ref: '#/definitions/types.AggregationType'
+    type: object
+  meter.Filter:
+    properties:
+      key:
+        type: string
+      values:
+        items:
+          type: string
+        type: array
     type: object
   types.AggregationType:
     enum:

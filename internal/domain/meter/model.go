@@ -12,7 +12,13 @@ type Meter struct {
 	ID          string      `db:"id" json:"id"`
 	EventName   string      `db:"event_name" json:"event_name"`
 	Aggregation Aggregation `db:"aggregation" json:"aggregation"`
+	Filters     []Filter    `db:"filters" json:"filters"`
 	types.BaseModel
+}
+
+type Filter struct {
+	Key    string   `json:"key"`
+	Values []string `json:"values"`
 }
 
 type Aggregation struct {
@@ -33,6 +39,15 @@ func (m *Meter) Validate() error {
 	}
 	if m.Aggregation.Type.RequiresField() && m.Aggregation.Field == "" {
 		return fmt.Errorf("field is required for aggregation type: %s", m.Aggregation.Type)
+	}
+
+	for _, filter := range m.Filters {
+		if filter.Key == "" {
+			return fmt.Errorf("filter key cannot be empty")
+		}
+		if len(filter.Values) == 0 {
+			return fmt.Errorf("filter values cannot be empty for key: %s", filter.Key)
+		}
 	}
 	return nil
 }
