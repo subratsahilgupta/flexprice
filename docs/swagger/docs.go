@@ -1119,8 +1119,11 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "204": {
-                        "description": "No Content"
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -1387,7 +1390,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/dto.PriceResponse"
+                            "$ref": "#/definitions/gin.H"
                         }
                     },
                     "400": {
@@ -1512,7 +1515,6 @@ const docTemplate = `{
                 "billing_period",
                 "billing_period_count",
                 "currency",
-                "plan_id",
                 "type"
             ],
             "properties": {
@@ -1539,7 +1541,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "filter_values": {
-                    "$ref": "#/definitions/price.JSONBFilters"
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "lookup_key": {
                     "type": "string"
@@ -1556,17 +1561,17 @@ const docTemplate = `{
                 "plan_id": {
                     "type": "string"
                 },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
                 "tiers": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/price.PriceTier"
                     }
                 },
-                "tiers_mode": {
-                    "$ref": "#/definitions/types.BillingTier"
-                },
                 "transform": {
-                    "$ref": "#/definitions/price.JSONBTransform"
+                    "$ref": "#/definitions/price.PriceTransform"
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
@@ -1580,6 +1585,9 @@ const docTemplate = `{
             ],
             "properties": {
                 "description": {
+                    "type": "string"
+                },
+                "lookup_key": {
                     "type": "string"
                 },
                 "name": {
@@ -1602,7 +1610,6 @@ const docTemplate = `{
                 "billing_period",
                 "billing_period_count",
                 "currency",
-                "plan_id",
                 "type"
             ],
             "properties": {
@@ -1629,7 +1636,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "filter_values": {
-                    "$ref": "#/definitions/price.JSONBFilters"
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "lookup_key": {
                     "type": "string"
@@ -1646,17 +1656,17 @@ const docTemplate = `{
                 "plan_id": {
                     "type": "string"
                 },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
                 "tiers": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/price.PriceTier"
                     }
                 },
-                "tiers_mode": {
-                    "$ref": "#/definitions/types.BillingTier"
-                },
                 "transform": {
-                    "$ref": "#/definitions/price.JSONBTransform"
+                    "$ref": "#/definitions/price.PriceTransform"
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
@@ -1673,15 +1683,19 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "email": {
+                    "description": "Email is the email of the customer",
                     "type": "string"
                 },
                 "external_id": {
+                    "description": "ExternalID is the external identifier for the customer",
                     "type": "string"
                 },
                 "id": {
+                    "description": "ID is the unique identifier for the customer",
                     "type": "string"
                 },
                 "name": {
+                    "description": "Name is the name of the customer",
                     "type": "string"
                 },
                 "status": {
@@ -1924,6 +1938,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "lookup_key": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -2110,10 +2127,48 @@ const docTemplate = `{
         "dto.UpdatePlanPriceRequest": {
             "type": "object",
             "required": [
-                "price_id"
+                "amount",
+                "billing_cadence",
+                "billing_model",
+                "billing_period",
+                "billing_period_count",
+                "currency",
+                "type"
             ],
             "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "billing_cadence": {
+                    "$ref": "#/definitions/types.BillingCadence"
+                },
+                "billing_model": {
+                    "$ref": "#/definitions/types.BillingModel"
+                },
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_count": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "currency": {
+                    "type": "string"
+                },
                 "description": {
+                    "type": "string"
+                },
+                "filter_values": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "description": "The ID of the price to update (present if the price is being updated)",
+                    "type": "string"
+                },
+                "lookup_key": {
                     "type": "string"
                 },
                 "metadata": {
@@ -2122,8 +2177,26 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "price_id": {
+                "meter_id": {
                     "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
+                "tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "transform": {
+                    "$ref": "#/definitions/price.PriceTransform"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.PriceType"
                 }
             }
         },
@@ -2134,6 +2207,9 @@ const docTemplate = `{
             ],
             "properties": {
                 "description": {
+                    "type": "string"
+                },
+                "lookup_key": {
                     "type": "string"
                 },
                 "name": {
@@ -2151,6 +2227,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "description": {
+                    "type": "string"
+                },
+                "lookup_key": {
                     "type": "string"
                 },
                 "metadata": {
@@ -2171,6 +2250,10 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "gin.H": {
+            "type": "object",
+            "additionalProperties": {}
         },
         "meter.Aggregation": {
             "type": "object",
@@ -2210,6 +2293,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "lookup_key": {
                     "type": "string"
                 },
                 "name": {
@@ -2268,6 +2354,19 @@ const docTemplate = `{
                 "up_to": {
                     "description": "null means infinity",
                     "type": "integer"
+                }
+            }
+        },
+        "price.PriceTransform": {
+            "type": "object",
+            "properties": {
+                "divide_by": {
+                    "description": "Divide quantity by this number",
+                    "type": "integer"
+                },
+                "round": {
+                    "description": "up, down, or nearest",
+                    "type": "string"
                 }
             }
         },

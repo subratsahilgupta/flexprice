@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS plans (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    lookup_key VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     tenant_id VARCHAR(255) NOT NULL,
@@ -9,3 +10,6 @@ CREATE TABLE IF NOT EXISTS plans (
     created_by VARCHAR(255) NOT NULL,
     updated_by VARCHAR(255) NOT NULL
 );
+
+CREATE INDEX idx_plans_tenant_id ON plans(tenant_id);
+CREATE INDEX idx_plans_lookup_key ON plans(lookup_key);

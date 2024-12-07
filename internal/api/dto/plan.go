@@ -12,6 +12,7 @@ import (
 
 type CreatePlanRequest struct {
 	Name        string                   `json:"name" validate:"required"`
+	LookupKey   string                   `json:"lookup_key"`
 	Description string                   `json:"description"`
 	Prices      []CreatePlanPriceRequest `json:"prices"`
 }
@@ -38,6 +39,7 @@ func (r *CreatePlanRequest) Validate() error {
 func (r *CreatePlanRequest) ToPlan(ctx context.Context) *plan.Plan {
 	plan := &plan.Plan{
 		ID:          uuid.New().String(),
+		LookupKey:   r.LookupKey,
 		Name:        r.Name,
 		Description: r.Description,
 		BaseModel: types.BaseModel{
@@ -63,13 +65,16 @@ type PlanResponse struct {
 
 type UpdatePlanRequest struct {
 	Name        string                   `json:"name" validate:"required"`
+	LookupKey   string                   `json:"lookup_key"`
 	Description string                   `json:"description"`
 	Prices      []UpdatePlanPriceRequest `json:"prices"`
 }
 
 type UpdatePlanPriceRequest struct {
-	PriceID string `json:"price_id" validate:"required"`
-	*UpdatePriceRequest
+	// The ID of the price to update (present if the price is being updated)
+	ID string `json:"id,omitempty"`
+	// The price request to update existing price or create new price
+	*CreatePriceRequest
 }
 
 type ListPlansResponse struct {

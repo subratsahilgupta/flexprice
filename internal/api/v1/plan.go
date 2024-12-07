@@ -82,6 +82,10 @@ func (h *PlanHandler) GetPlan(c *gin.Context) {
 // @Router /plans [get]
 func (h *PlanHandler) GetPlans(c *gin.Context) {
 	var filter types.Filter
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	resp, err := h.service.GetPlans(c.Request.Context(), filter)
 	if err != nil {
@@ -129,7 +133,7 @@ func (h *PlanHandler) UpdatePlan(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Plan ID"
-// @Success 204
+// @Success 200 {object} gin.H
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /plans/{id} [delete]
@@ -142,5 +146,5 @@ func (h *PlanHandler) DeletePlan(c *gin.Context) {
 		return
 	}
 
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusOK, gin.H{"message": "price deleted successfully"})
 }

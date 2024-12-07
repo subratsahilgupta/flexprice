@@ -30,6 +30,10 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
+	if req.PlanID == "" {
+		return nil, fmt.Errorf("plan_id is required")
+	}
+
 	price := req.ToPrice(ctx)
 
 	if err := s.repo.Create(ctx, price); err != nil {
@@ -42,6 +46,7 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceResponse, error) {
 	price, err := s.repo.Get(ctx, id)
 	if err != nil {
+
 		return nil, fmt.Errorf("failed to get price: %w", err)
 	}
 
@@ -77,6 +82,7 @@ func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.Updat
 
 	price.Description = req.Description
 	price.Metadata = req.Metadata
+	price.LookupKey = req.LookupKey
 
 	if err := s.repo.Update(ctx, price); err != nil {
 		return nil, fmt.Errorf("failed to update price: %w", err)

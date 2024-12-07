@@ -47,7 +47,7 @@ type Price struct {
 	BillingCadence types.BillingCadence `db:"billing_cadence" json:"billing_cadence"`
 
 	// Tiered pricing fields when BillingModel is TIERED
-	TierMode *types.BillingTier `db:"tier_mode" json:"tier_mode"`
+	TierMode types.BillingTier `db:"tier_mode" json:"tier_mode"`
 
 	// Tiers are the tiers for the price when BillingModel is TIERED
 	Tiers JSONBTiers `db:"tiers,jsonb" json:"tiers"` // JSONB field
@@ -55,17 +55,17 @@ type Price struct {
 	// MeterID is the id of the meter for usage based pricing
 	MeterID string `db:"meter_id" json:"meter_id"`
 
-	// FilterValues are the filter values for the price in case of usage based pricing
-	FilterValues JSONBFilters `db:"filter_values,jsonb" json:"filter_values"`
-
-	// Transform is the quantity transformation in case of PACKAGE billing model
-	Transform *JSONBTransform `db:"transform,jsonb" json:"transform"` // JSONB field
-
 	// LookupKey used for looking up the price in the database
 	LookupKey string `db:"lookup_key" json:"lookup_key"`
 
 	// Description of the price
 	Description string `db:"description" json:"description"`
+
+	// FilterValues are the filter values for the price in case of usage based pricing
+	FilterValues JSONBFilters `db:"filter_values,jsonb" json:"filter_values"`
+
+	// Transform is the quantity transformation in case of PACKAGE billing model
+	Transform JSONBTransform `db:"transform,jsonb" json:"transform"` // JSONB field
 
 	// Metadata is a jsonb field for additional information
 	Metadata JSONBMetadata `db:"metadata,jsonb" json:"metadata"` // JSONB field
@@ -95,19 +95,18 @@ type PriceTier struct {
 // TODO : comeup with a better way to handle jsonb fields
 
 // Scanner/Valuer implementations for JSONBTiers
-func (j *JSONBTiers) Scan(value interface{}) error {
+func (j JSONBTiers) Scan(value interface{}) error {
 	if value == nil {
-		*j = nil
 		return nil
 	}
 	bytes, ok := value.([]byte)
 	if !ok {
 		return fmt.Errorf("invalid type for jsonb tiers")
 	}
-	return json.Unmarshal(bytes, j)
+	return json.Unmarshal(bytes, &j)
 }
 
-func (j *JSONBTiers) Value() (driver.Value, error) {
+func (j JSONBTiers) Value() (driver.Value, error) {
 	if j == nil {
 		return nil, nil
 	}
@@ -117,7 +116,6 @@ func (j *JSONBTiers) Value() (driver.Value, error) {
 // Scanner/Valuer implementations for JSONBTransform
 func (j *JSONBTransform) Scan(value interface{}) error {
 	if value == nil {
-		*j = JSONBTransform{}
 		return nil
 	}
 	bytes, ok := value.([]byte)
@@ -127,46 +125,44 @@ func (j *JSONBTransform) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, j)
 }
 
-func (j *JSONBTransform) Value() (driver.Value, error) {
-	if j == nil {
+func (j JSONBTransform) Value() (driver.Value, error) {
+	if j == (JSONBTransform{}) {
 		return nil, nil
 	}
 	return json.Marshal(j)
 }
 
 // Scanner/Valuer implementations for JSONBMetadata
-func (j *JSONBMetadata) Scan(value interface{}) error {
+func (j JSONBMetadata) Scan(value interface{}) error {
 	if value == nil {
-		*j = make(JSONBMetadata)
 		return nil
 	}
 	bytes, ok := value.([]byte)
 	if !ok {
 		return fmt.Errorf("invalid type for jsonb metadata")
 	}
-	return json.Unmarshal(bytes, j)
+	return json.Unmarshal(bytes, &j)
 }
 
-func (j *JSONBMetadata) Value() (driver.Value, error) {
+func (j JSONBMetadata) Value() (driver.Value, error) {
 	if j == nil {
 		return nil, nil
 	}
 	return json.Marshal(j)
 }
 
-func (j *JSONBFilters) Scan(value interface{}) error {
+func (j JSONBFilters) Scan(value interface{}) error {
 	if value == nil {
-		*j = make(JSONBFilters)
 		return nil
 	}
 	bytes, ok := value.([]byte)
 	if !ok {
 		return fmt.Errorf("invalid type for jsonb filters")
 	}
-	return json.Unmarshal(bytes, j)
+	return json.Unmarshal(bytes, &j)
 }
 
-func (j *JSONBFilters) Value() (driver.Value, error) {
+func (j JSONBFilters) Value() (driver.Value, error) {
 	if j == nil {
 		return nil, nil
 	}

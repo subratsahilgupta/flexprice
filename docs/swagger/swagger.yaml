@@ -59,7 +59,9 @@ definitions:
       description:
         type: string
       filter_values:
-        $ref: '#/definitions/price.JSONBFilters'
+        additionalProperties:
+          type: string
+        type: object
       lookup_key:
         type: string
       metadata:
@@ -70,14 +72,14 @@ definitions:
         type: string
       plan_id:
         type: string
+      tier_mode:
+        $ref: '#/definitions/types.BillingTier'
       tiers:
         items:
           $ref: '#/definitions/price.PriceTier'
         type: array
-      tiers_mode:
-        $ref: '#/definitions/types.BillingTier'
       transform:
-        $ref: '#/definitions/price.JSONBTransform'
+        $ref: '#/definitions/price.PriceTransform'
       type:
         $ref: '#/definitions/types.PriceType'
     required:
@@ -87,12 +89,13 @@ definitions:
     - billing_period
     - billing_period_count
     - currency
-    - plan_id
     - type
     type: object
   dto.CreatePlanRequest:
     properties:
       description:
+        type: string
+      lookup_key:
         type: string
       name:
         type: string
@@ -121,7 +124,9 @@ definitions:
       description:
         type: string
       filter_values:
-        $ref: '#/definitions/price.JSONBFilters'
+        additionalProperties:
+          type: string
+        type: object
       lookup_key:
         type: string
       metadata:
@@ -132,14 +137,14 @@ definitions:
         type: string
       plan_id:
         type: string
+      tier_mode:
+        $ref: '#/definitions/types.BillingTier'
       tiers:
         items:
           $ref: '#/definitions/price.PriceTier'
         type: array
-      tiers_mode:
-        $ref: '#/definitions/types.BillingTier'
       transform:
-        $ref: '#/definitions/price.JSONBTransform'
+        $ref: '#/definitions/price.PriceTransform'
       type:
         $ref: '#/definitions/types.PriceType'
     required:
@@ -149,7 +154,6 @@ definitions:
     - billing_period
     - billing_period_count
     - currency
-    - plan_id
     - type
     type: object
   dto.CustomerResponse:
@@ -159,12 +163,16 @@ definitions:
       created_by:
         type: string
       email:
+        description: Email is the email of the customer
         type: string
       external_id:
+        description: ExternalID is the external identifier for the customer
         type: string
       id:
+        description: ID is the unique identifier for the customer
         type: string
       name:
+        description: Name is the name of the customer
         type: string
       status:
         $ref: '#/definitions/types.Status'
@@ -329,6 +337,8 @@ definitions:
         type: string
       id:
         type: string
+      lookup_key:
+        type: string
       name:
         type: string
       prices:
@@ -451,20 +461,63 @@ definitions:
     type: object
   dto.UpdatePlanPriceRequest:
     properties:
+      amount:
+        type: integer
+      billing_cadence:
+        $ref: '#/definitions/types.BillingCadence'
+      billing_model:
+        $ref: '#/definitions/types.BillingModel'
+      billing_period:
+        $ref: '#/definitions/types.BillingPeriod'
+      billing_period_count:
+        minimum: 1
+        type: integer
+      currency:
+        type: string
       description:
+        type: string
+      filter_values:
+        additionalProperties:
+          type: string
+        type: object
+      id:
+        description: The ID of the price to update (present if the price is being
+          updated)
+        type: string
+      lookup_key:
         type: string
       metadata:
         additionalProperties:
           type: string
         type: object
-      price_id:
+      meter_id:
         type: string
+      plan_id:
+        type: string
+      tier_mode:
+        $ref: '#/definitions/types.BillingTier'
+      tiers:
+        items:
+          $ref: '#/definitions/price.PriceTier'
+        type: array
+      transform:
+        $ref: '#/definitions/price.PriceTransform'
+      type:
+        $ref: '#/definitions/types.PriceType'
     required:
-    - price_id
+    - amount
+    - billing_cadence
+    - billing_model
+    - billing_period
+    - billing_period_count
+    - currency
+    - type
     type: object
   dto.UpdatePlanRequest:
     properties:
       description:
+        type: string
+      lookup_key:
         type: string
       name:
         type: string
@@ -479,6 +532,8 @@ definitions:
     properties:
       description:
         type: string
+      lookup_key:
+        type: string
       metadata:
         additionalProperties:
           type: string
@@ -490,6 +545,9 @@ definitions:
         type: string
       id:
         type: string
+    type: object
+  gin.H:
+    additionalProperties: {}
     type: object
   meter.Aggregation:
     properties:
@@ -516,6 +574,8 @@ definitions:
       description:
         type: string
       id:
+        type: string
+      lookup_key:
         type: string
       name:
         type: string
@@ -556,6 +616,15 @@ definitions:
       up_to:
         description: null means infinity
         type: integer
+    type: object
+  price.PriceTransform:
+    properties:
+      divide_by:
+        description: Divide quantity by this number
+        type: integer
+      round:
+        description: up, down, or nearest
+        type: string
     type: object
   types.AggregationType:
     enum:
@@ -1283,8 +1352,10 @@ paths:
       produces:
       - application/json
       responses:
-        "204":
-          description: No Content
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
         "400":
           description: Bad Request
           schema:
@@ -1453,7 +1524,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/dto.PriceResponse'
+            $ref: '#/definitions/gin.H'
         "400":
           description: Bad Request
           schema:
