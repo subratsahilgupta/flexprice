@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS prices (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     amount INTEGER NOT NULL,
     currency VARCHAR(3) NOT NULL,
+    display_amount VARCHAR(255) NOT NULL,
     plan_id VARCHAR(255) NOT NULL,
     type VARCHAR(20) NOT NULL,
     billing_period VARCHAR(20) NOT NULL,
@@ -27,4 +28,4 @@ CREATE TABLE IF NOT EXISTS prices (
 -- Add indexes
 CREATE INDEX idx_prices_tenant_id ON prices(tenant_id);
 CREATE INDEX idx_prices_lookup_key ON prices(lookup_key);
-CREATE INDEX idx_prices_external_id ON prices(external_id); 
+CREATE INDEX idx_prices_plan_id ON prices(plan_id);

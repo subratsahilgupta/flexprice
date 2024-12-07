@@ -35,9 +35,9 @@ func (r *priceRepository) Create(ctx context.Context, price *price.Price) error 
 			:description, :metadata, :status, :created_at, :updated_at, :created_by, :updated_by
 		)`
 
-	r.logger.Debug("creating price",
-		"price_id", price.ID,
-		"tenant_id", price.TenantID,
+	r.logger.Debug("creating price ",
+		"price_id ", price.ID,
+		"tenant_id ", price.TenantID,
 	)
 
 	_, err := r.db.NamedExecContext(ctx, query, price)
@@ -61,6 +61,8 @@ func (r *priceRepository) Get(ctx context.Context, id string) (*price.Price, err
 		"tenant_id": types.GetTenantID(ctx),
 		"status":    types.StatusActive,
 	})
+
+	// TODO: Handle not found error better to not throw 500
 	if err != nil {
 		return nil, fmt.Errorf("failed to get price: %w", err)
 	}
@@ -74,6 +76,35 @@ func (r *priceRepository) Get(ctx context.Context, id string) (*price.Price, err
 		return nil, fmt.Errorf("failed to scan price: %w", err)
 	}
 	return &p, nil
+}
+
+func (r *priceRepository) GetByPlanID(ctx context.Context, planID string) ([]*price.Price, error) {
+	var prices []*price.Price
+	query := `
+		SELECT * FROM prices
+		WHERE plan_id = :plan_id
+		AND tenant_id = :tenant_id
+		AND status = :status`
+
+	rows, err := r.db.NamedQueryContext(ctx, query, map[string]interface{}{
+		"plan_id":   planID,
+		"tenant_id": types.GetTenantID(ctx),
+		"status":    types.StatusActive,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get prices: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var p price.Price
+		if err := rows.StructScan(&p); err != nil {
+			return nil, fmt.Errorf("failed to scan price: %w", err)
+		}
+		prices = append(prices, &p)
+	}
+
+	return prices, nil
 }
 
 func (r *priceRepository) List(ctx context.Context, filter types.Filter) ([]*price.Price, error) {
@@ -119,6 +150,7 @@ func (r *priceRepository) Update(ctx context.Context, price *price.Price) error 
 
 	query := `
 		UPDATE prices SET 
+			lookup_key = :lookup_key,
 			description = :description,
 			metadata = :metadata,
 			status = :status,

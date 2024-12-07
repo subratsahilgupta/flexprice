@@ -10,3 +10,6 @@ CREATE TABLE IF NOT EXISTS customers (
     created_by VARCHAR(255) NOT NULL,
     updated_by VARCHAR(255) NOT NULL
 );
+
+CREATE INDEX idx_customers_tenant_id ON customers(tenant_id);
+CREATE INDEX idx_customers_external_id ON customers(external_id);
