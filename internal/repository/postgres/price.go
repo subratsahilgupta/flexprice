@@ -20,17 +20,18 @@ func NewPriceRepository(db *postgres.DB, logger *logger.Logger) price.Repository
 	return &priceRepository{db: db, logger: logger}
 }
 
-func (r *priceRepository) CreatePrice(ctx context.Context, price *price.Price) error {
+func (r *priceRepository) Create(ctx context.Context, price *price.Price) error {
+	price.DisplayAmount = price.GetDisplayAmount()
 	query := `
 		INSERT INTO prices (
-			id, tenant_id, amount, currency, external_id, external_source,
-			billing_period, billing_period_count, billing_model, billing_cadence,
-			billing_country_code, tier_mode, tiers, transform, lookup_key,
-			description, metadata, status, created_at, updated_at, created_by, updated_by
+			id, tenant_id, amount, display_amount, currency, plan_id, type, 
+			billing_period, billing_period_count, billing_model, billing_cadence, 
+			tier_mode, tiers, meter_id, filter_values, transform, lookup_key, description,
+			metadata, status, created_at, updated_at, created_by, updated_by
 		) VALUES (
-			:id, :tenant_id, :amount, :currency, :external_id, :external_source,
+			:id, :tenant_id, :amount, :display_amount, :currency, :plan_id, :type,
 			:billing_period, :billing_period_count, :billing_model, :billing_cadence,
-			:billing_country_code, :tier_mode, :tiers, :transform, :lookup_key,
+			:tier_mode, :tiers, :meter_id, :filter_values, :transform, :lookup_key,
 			:description, :metadata, :status, :created_at, :updated_at, :created_by, :updated_by
 		)`
 
@@ -47,13 +48,18 @@ func (r *priceRepository) CreatePrice(ctx context.Context, price *price.Price) e
 	return nil
 }
 
-func (r *priceRepository) GetPrice(ctx context.Context, id string) (*price.Price, error) {
+func (r *priceRepository) Get(ctx context.Context, id string) (*price.Price, error) {
 	var p price.Price
-	query := `SELECT * FROM prices WHERE id = :id AND tenant_id = :tenant_id`
+	query := `
+		SELECT * FROM prices 
+		WHERE id = :id 
+		AND tenant_id = :tenant_id
+		AND status = :status`
 
 	rows, err := r.db.NamedQueryContext(ctx, query, map[string]interface{}{
 		"id":        id,
 		"tenant_id": types.GetTenantID(ctx),
+		"status":    types.StatusActive,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get price: %w", err)
@@ -70,7 +76,7 @@ func (r *priceRepository) GetPrice(ctx context.Context, id string) (*price.Price
 	return &p, nil
 }
 
-func (r *priceRepository) GetPrices(ctx context.Context, filter types.Filter) ([]*price.Price, error) {
+func (r *priceRepository) List(ctx context.Context, filter types.Filter) ([]*price.Price, error) {
 	var prices []*price.Price
 	query := `
 		SELECT * FROM prices 
@@ -107,8 +113,8 @@ func (r *priceRepository) GetPrices(ctx context.Context, filter types.Filter) ([
 	return prices, nil
 }
 
-func (r *priceRepository) UpdatePrice(ctx context.Context, price *price.Price) error {
-	price.UpdatedAt = time.Now()
+func (r *priceRepository) Update(ctx context.Context, price *price.Price) error {
+	price.UpdatedAt = time.Now().UTC()
 	price.UpdatedBy = types.GetUserID(ctx)
 
 	query := `
@@ -118,7 +124,8 @@ func (r *priceRepository) UpdatePrice(ctx context.Context, price *price.Price) e
 			status = :status,
 			updated_at = :updated_at,
 			updated_by = :updated_by
-		WHERE id = :id AND tenant_id = :tenant_id`
+		WHERE id = :id 
+		AND tenant_id = :tenant_id`
 
 	result, err := r.db.NamedExecContext(ctx, query, price)
 	if err != nil {
@@ -135,18 +142,19 @@ func (r *priceRepository) UpdatePrice(ctx context.Context, price *price.Price) e
 	return nil
 }
 
-func (r *priceRepository) UpdatePriceStatus(ctx context.Context, id string, status types.Status) error {
+func (r *priceRepository) Delete(ctx context.Context, id string) error {
 	query := `
 		UPDATE prices SET 
 			status = :status,
 			updated_at = :updated_at,
 			updated_by = :updated_by
-		WHERE id = :id AND tenant_id = :tenant_id`
+		WHERE id = :id 
+		AND tenant_id = :tenant_id`
 
 	_, err := r.db.NamedExecContext(ctx, query, map[string]interface{}{
 		"id":         id,
 		"tenant_id":  types.GetTenantID(ctx),
-		"status":     status,
+		"status":     types.StatusDeleted,
 		"updated_at": time.Now(),
 		"updated_by": types.GetUserID(ctx),
 	})

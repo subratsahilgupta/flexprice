@@ -1,0 +1,146 @@
+package v1
+
+import (
+	"net/http"
+
+	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/types"
+	"github.com/gin-gonic/gin"
+)
+
+type PlanHandler struct {
+	service service.PlanService
+	log     *logger.Logger
+}
+
+func NewPlanHandler(service service.PlanService, log *logger.Logger) *PlanHandler {
+	return &PlanHandler{service: service, log: log}
+}
+
+// @Summary Create a new plan
+// @Description Create a new plan with the specified configuration
+// @Tags plans
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param plan body dto.CreatePlanRequest true "Plan configuration"
+// @Success 201 {object} dto.PlanResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /plans [post]
+func (h *PlanHandler) CreatePlan(c *gin.Context) {
+	var req dto.CreatePlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.service.CreatePlan(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, resp)
+}
+
+// @Summary Get a plan by ID
+// @Description Get a plan by ID
+// @Tags plans
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Plan ID"
+// @Success 200 {object} dto.PlanResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /plans/{id} [get]
+func (h *PlanHandler) GetPlan(c *gin.Context) {
+	id := c.Param("id")
+
+	resp, err := h.service.GetPlan(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// @Summary Get plans
+// @Description Get plans with the specified filter
+// @Tags plans
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param filter query types.Filter true "Filter"
+// @Success 200 {object} dto.ListPlansResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /plans [get]
+func (h *PlanHandler) GetPlans(c *gin.Context) {
+	var filter types.Filter
+
+	resp, err := h.service.GetPlans(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// @Summary Update a plan by ID
+// @Description Update a plan by ID
+// @Tags plans
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Plan ID"
+// @Param plan body dto.UpdatePlanRequest true "Plan configuration"
+// @Success 200 {object} dto.PlanResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /plans/{id} [put]
+func (h *PlanHandler) UpdatePlan(c *gin.Context) {
+	id := c.Param("id")
+
+	var req dto.UpdatePlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.service.UpdatePlan(c.Request.Context(), id, req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// @Summary Delete a plan by ID
+// @Description Delete a plan by ID
+// @Tags plans
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Plan ID"
+// @Success 204
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /plans/{id} [delete]
+func (h *PlanHandler) DeletePlan(c *gin.Context) {
+	id := c.Param("id")
+
+	err := h.service.DeletePlan(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}

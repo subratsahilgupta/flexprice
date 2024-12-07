@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/price"
@@ -15,7 +14,7 @@ type PriceService interface {
 	GetPrice(ctx context.Context, id string) (*dto.PriceResponse, error)
 	GetPrices(ctx context.Context, filter types.Filter) (*dto.ListPricesResponse, error)
 	UpdatePrice(ctx context.Context, id string, req dto.UpdatePriceRequest) (*dto.PriceResponse, error)
-	UpdatePriceStatus(ctx context.Context, id string, status types.Status) error
+	DeletePrice(ctx context.Context, id string) error
 }
 
 type priceService struct {
@@ -33,7 +32,7 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 
 	price := req.ToPrice(ctx)
 
-	if err := s.repo.CreatePrice(ctx, price); err != nil {
+	if err := s.repo.Create(ctx, price); err != nil {
 		return nil, fmt.Errorf("failed to create price: %w", err)
 	}
 
@@ -41,7 +40,7 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 }
 
 func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceResponse, error) {
-	price, err := s.repo.GetPrice(ctx, id)
+	price, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get price: %w", err)
 	}
@@ -50,7 +49,7 @@ func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceRespo
 }
 
 func (s *priceService) GetPrices(ctx context.Context, filter types.Filter) (*dto.ListPricesResponse, error) {
-	prices, err := s.repo.GetPrices(ctx, filter)
+	prices, err := s.repo.List(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list prices: %w", err)
 	}
@@ -71,26 +70,24 @@ func (s *priceService) GetPrices(ctx context.Context, filter types.Filter) (*dto
 }
 
 func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.UpdatePriceRequest) (*dto.PriceResponse, error) {
-	price, err := s.repo.GetPrice(ctx, id)
+	price, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get price: %w", err)
 	}
 
 	price.Description = req.Description
 	price.Metadata = req.Metadata
-	price.UpdatedAt = time.Now().UTC()
-	price.UpdatedBy = types.GetUserID(ctx)
 
-	if err := s.repo.UpdatePrice(ctx, price); err != nil {
+	if err := s.repo.Update(ctx, price); err != nil {
 		return nil, fmt.Errorf("failed to update price: %w", err)
 	}
 
 	return &dto.PriceResponse{Price: price}, nil
 }
 
-func (s *priceService) UpdatePriceStatus(ctx context.Context, id string, status types.Status) error {
-	if err := s.repo.UpdatePriceStatus(ctx, id, status); err != nil {
-		return fmt.Errorf("failed to update price status: %w", err)
+func (s *priceService) DeletePrice(ctx context.Context, id string) error {
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return fmt.Errorf("failed to delete price: %w", err)
 	}
 	return nil
 }

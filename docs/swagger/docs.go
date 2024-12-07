@@ -95,6 +95,271 @@ const docTemplate = `{
                 }
             }
         },
+        "/customers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get customers",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "customers"
+                ],
+                "summary": "Get customers",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "sort",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListCustomersResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a customer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "customers"
+                ],
+                "summary": "Create a customer",
+                "parameters": [
+                    {
+                        "description": "Customer",
+                        "name": "customer",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateCustomerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CustomerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/customers/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a customer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "customers"
+                ],
+                "summary": "Get a customer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CustomerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update a customer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "customers"
+                ],
+                "summary": "Update a customer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Customer",
+                        "name": "customer",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateCustomerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CustomerResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a customer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "customers"
+                ],
+                "summary": "Delete a customer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/events": {
             "get": {
                 "security": [
@@ -607,6 +872,271 @@ const docTemplate = `{
                 }
             }
         },
+        "/plans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get plans with the specified filter",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plans"
+                ],
+                "summary": "Get plans",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "sort",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListPlansResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new plan with the specified configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plans"
+                ],
+                "summary": "Create a new plan",
+                "parameters": [
+                    {
+                        "description": "Plan configuration",
+                        "name": "plan",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreatePlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/plans/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a plan by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plans"
+                ],
+                "summary": "Get a plan by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update a plan by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plans"
+                ],
+                "summary": "Update a plan by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Plan configuration",
+                        "name": "plan",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatePlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a plan by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plans"
+                ],
+                "summary": "Delete a plan by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/prices": {
             "get": {
                 "security": [
@@ -826,58 +1356,7 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/prices/{id}/archive": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Archive a price",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "prices"
-                ],
-                "summary": "Archive a price",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Price ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.PriceResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/prices/{id}/delete": {
+            },
             "delete": {
                 "security": [
                     {
@@ -970,6 +1449,23 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreateCustomerRequest": {
+            "type": "object",
+            "required": [
+                "external_id"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.CreateMeterRequest": {
             "type": "object",
             "required": [
@@ -986,7 +1482,7 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.CreatePriceRequest": {
+        "dto.CreatePlanPriceRequest": {
             "type": "object",
             "required": [
                 "amount",
@@ -994,7 +1490,9 @@ const docTemplate = `{
                 "billing_model",
                 "billing_period",
                 "billing_period_count",
-                "currency"
+                "currency",
+                "plan_id",
+                "type"
             ],
             "properties": {
                 "amount": {
@@ -1002,9 +1500,6 @@ const docTemplate = `{
                 },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
-                },
-                "billing_country_code": {
-                    "type": "string"
                 },
                 "billing_model": {
                     "$ref": "#/definitions/types.BillingModel"
@@ -1022,11 +1517,8 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "external_id": {
-                    "type": "string"
-                },
-                "external_source": {
-                    "type": "string"
+                "filter_values": {
+                    "$ref": "#/definitions/price.JSONBFilters"
                 },
                 "lookup_key": {
                     "type": "string"
@@ -1036,6 +1528,12 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
                 },
                 "tiers": {
                     "type": "array",
@@ -1049,8 +1547,133 @@ const docTemplate = `{
                 "transform": {
                     "$ref": "#/definitions/price.JSONBTransform"
                 },
-                "usage_type": {
-                    "$ref": "#/definitions/types.UsageType"
+                "type": {
+                    "$ref": "#/definitions/types.PriceType"
+                }
+            }
+        },
+        "dto.CreatePlanRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreatePlanPriceRequest"
+                    }
+                }
+            }
+        },
+        "dto.CreatePriceRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "billing_cadence",
+                "billing_model",
+                "billing_period",
+                "billing_period_count",
+                "currency",
+                "plan_id",
+                "type"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "billing_cadence": {
+                    "$ref": "#/definitions/types.BillingCadence"
+                },
+                "billing_model": {
+                    "$ref": "#/definitions/types.BillingModel"
+                },
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_count": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "filter_values": {
+                    "$ref": "#/definitions/price.JSONBFilters"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "tiers_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
+                "transform": {
+                    "$ref": "#/definitions/price.JSONBTransform"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.PriceType"
+                }
+            }
+        },
+        "dto.CustomerResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
                 }
             }
         },
@@ -1144,6 +1767,46 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ListCustomersResponse": {
+            "type": "object",
+            "properties": {
+                "customers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CustomerResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.ListPlansResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "plans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Plan"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "dto.ListPricesResponse": {
             "type": "object",
             "properties": {
@@ -1212,6 +1875,44 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.PlanResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.PriceResponse"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.PriceResponse": {
             "type": "object",
             "properties": {
@@ -1227,12 +1928,8 @@ const docTemplate = `{
                         }
                     ]
                 },
-                "billing_country_code": {
-                    "description": "BillingCountryCode 3 digit ISO country code in uppercase ex USA, FRA, DEU",
-                    "type": "string"
-                },
                 "billing_model": {
-                    "description": "BillingModel is the billing model for the price ex FLAT_FEE, PER_UNIT, TIERED",
+                    "description": "BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.BillingModel"
@@ -1265,13 +1962,17 @@ const docTemplate = `{
                     "description": "Description of the price",
                     "type": "string"
                 },
-                "external_id": {
-                    "description": "ExternalID is the identifier of the price in the external system",
+                "display_amount": {
+                    "description": "DisplayAmount is the amount in the currency ex $12.00",
                     "type": "string"
                 },
-                "external_source": {
-                    "description": "ExternalSource is the source of the price in the external system",
-                    "type": "string"
+                "filter_values": {
+                    "description": "FilterValues are the filter values for the price in case of usage based pricing",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/price.JSONBFilters"
+                        }
+                    ]
                 },
                 "id": {
                     "description": "ID uuid identifier for the price",
@@ -1289,6 +1990,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "meter_id": {
+                    "description": "MeterID is the id of the meter for usage based pricing",
+                    "type": "string"
+                },
+                "plan_id": {
+                    "description": "PlanID is the id of the plan for plan based pricing",
+                    "type": "string"
+                },
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
@@ -1296,7 +2005,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tier_mode": {
-                    "description": "Tiered pricing fields",
+                    "description": "Tiered pricing fields when BillingModel is TIERED",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.BillingTier"
@@ -1304,17 +2013,25 @@ const docTemplate = `{
                     ]
                 },
                 "tiers": {
-                    "description": "JSONB field",
+                    "description": "Tiers are the tiers for the price when BillingModel is TIERED",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/price.PriceTier"
                     }
                 },
                 "transform": {
-                    "description": "Quantity transformation",
+                    "description": "Transform is the quantity transformation in case of PACKAGE billing model",
                     "allOf": [
                         {
                             "$ref": "#/definitions/price.JSONBTransform"
+                        }
+                    ]
+                },
+                "type": {
+                    "description": "Type is the type of the price ex USAGE, FIXED",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceType"
                         }
                     ]
                 },
@@ -1339,6 +2056,60 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "minLength": 8
+                }
+            }
+        },
+        "dto.UpdateCustomerRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UpdatePlanPriceRequest": {
+            "type": "object",
+            "required": [
+                "price_id"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "price_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UpdatePlanRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.UpdatePlanPriceRequest"
+                    }
                 }
             }
         },
@@ -1376,6 +2147,44 @@ const docTemplate = `{
                 "type": {
                     "$ref": "#/definitions/types.AggregationType"
                 }
+            }
+        },
+        "plan.Plan": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "price.JSONBFilters": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
             }
         },
         "price.JSONBMetadata": {
@@ -1451,14 +2260,12 @@ const docTemplate = `{
             "enum": [
                 "FLAT_FEE",
                 "PACKAGE",
-                "TIERED",
-                "USAGE"
+                "TIERED"
             ],
             "x-enum-varnames": [
                 "BILLING_MODEL_FLAT_FEE",
                 "BILLING_MODEL_PACKAGE",
-                "BILLING_MODEL_TIERED",
-                "BILLING_MODEL_USAGE"
+                "BILLING_MODEL_TIERED"
             ]
         },
         "types.BillingPeriod": {
@@ -1487,30 +2294,28 @@ const docTemplate = `{
                 "BILLING_TIER_SLAB"
             ]
         },
+        "types.PriceType": {
+            "type": "string",
+            "enum": [
+                "USAGE",
+                "FIXED"
+            ],
+            "x-enum-varnames": [
+                "PRICE_TYPE_USAGE",
+                "PRICE_TYPE_FIXED"
+            ]
+        },
         "types.Status": {
             "type": "string",
             "enum": [
                 "active",
-                "inactive",
-                "archived",
-                "deleted"
+                "deleted",
+                "archived"
             ],
             "x-enum-varnames": [
                 "StatusActive",
-                "StatusInactive",
-                "StatusArchived",
-                "StatusDeleted"
-            ]
-        },
-        "types.UsageType": {
-            "type": "string",
-            "enum": [
-                "METERED",
-                "LICENSED"
-            ],
-            "x-enum-varnames": [
-                "USAGE_TYPE_METERED",
-                "USAGE_TYPE_LICENSED"
+                "StatusDeleted",
+                "StatusArchived"
             ]
         },
         "v1.ErrorResponse": {

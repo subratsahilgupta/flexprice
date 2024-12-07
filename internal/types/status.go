@@ -6,8 +6,17 @@ package types
 type Status string
 
 const (
-	StatusActive   Status = "active"
-	StatusInactive Status = "inactive"
+	// StatusActive is the status of a resource that is a valid and in use record
+	// This is typically used for data that is currently in use and should be returned in queries
+	StatusActive Status = "active"
+
+	// StatusDeleted is the status of a resource that is deleted and not in use
+	// This is typically used for data that is no longer in use and should be removed from the database
+	// These rows should not be returned in queries and should not be visible to users
+	StatusDeleted Status = "deleted"
+
+	// StatusArchived is the status of a resource that is archived and not in use
+	// This is typically used for data that is no longer in use but we want to keep for historical purposes
+	// These rows might be returned in queries and might be visible to users in some cases only
 	StatusArchived Status = "archived"
-	StatusDeleted  Status = "deleted"
 )

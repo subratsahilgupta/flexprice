@@ -3,8 +3,10 @@ package repository
 import (
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/auth"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -38,4 +40,12 @@ func NewAuthRepository(db *postgres.DB, logger *logger.Logger) auth.Repository {
 
 func NewPriceRepository(db *postgres.DB, logger *logger.Logger) price.Repository {
 	return postgresRepo.NewPriceRepository(db, logger)
+}
+
+func NewCustomerRepository(db *postgres.DB, logger *logger.Logger) customer.Repository {
+	return postgresRepo.NewCustomerRepository(db, logger)
+}
+
+func NewPlanRepository(db *postgres.DB, logger *logger.Logger) plan.Repository {
+	return postgresRepo.NewPlanRepository(db, logger)
 }

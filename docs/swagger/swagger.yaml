@@ -5,6 +5,17 @@ definitions:
       token:
         type: string
     type: object
+  dto.CreateCustomerRequest:
+    properties:
+      email:
+        type: string
+      external_id:
+        type: string
+      name:
+        type: string
+    required:
+    - external_id
+    type: object
   dto.CreateMeterRequest:
     properties:
       aggregation:
@@ -16,14 +27,12 @@ definitions:
     - aggregation
     - event_name
     type: object
-  dto.CreatePriceRequest:
+  dto.CreatePlanPriceRequest:
     properties:
       amount:
         type: integer
       billing_cadence:
         $ref: '#/definitions/types.BillingCadence'
-      billing_country_code:
-        type: string
       billing_model:
         $ref: '#/definitions/types.BillingModel'
       billing_period:
@@ -35,16 +44,18 @@ definitions:
         type: string
       description:
         type: string
-      external_id:
-        type: string
-      external_source:
-        type: string
+      filter_values:
+        $ref: '#/definitions/price.JSONBFilters'
       lookup_key:
         type: string
       metadata:
         additionalProperties:
           type: string
         type: object
+      meter_id:
+        type: string
+      plan_id:
+        type: string
       tiers:
         items:
           $ref: '#/definitions/price.PriceTier'
@@ -53,8 +64,8 @@ definitions:
         $ref: '#/definitions/types.BillingTier'
       transform:
         $ref: '#/definitions/price.JSONBTransform'
-      usage_type:
-        $ref: '#/definitions/types.UsageType'
+      type:
+        $ref: '#/definitions/types.PriceType'
     required:
     - amount
     - billing_cadence
@@ -62,6 +73,93 @@ definitions:
     - billing_period
     - billing_period_count
     - currency
+    - plan_id
+    - type
+    type: object
+  dto.CreatePlanRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      prices:
+        items:
+          $ref: '#/definitions/dto.CreatePlanPriceRequest'
+        type: array
+    required:
+    - name
+    type: object
+  dto.CreatePriceRequest:
+    properties:
+      amount:
+        type: integer
+      billing_cadence:
+        $ref: '#/definitions/types.BillingCadence'
+      billing_model:
+        $ref: '#/definitions/types.BillingModel'
+      billing_period:
+        $ref: '#/definitions/types.BillingPeriod'
+      billing_period_count:
+        minimum: 1
+        type: integer
+      currency:
+        type: string
+      description:
+        type: string
+      filter_values:
+        $ref: '#/definitions/price.JSONBFilters'
+      lookup_key:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      meter_id:
+        type: string
+      plan_id:
+        type: string
+      tiers:
+        items:
+          $ref: '#/definitions/price.PriceTier'
+        type: array
+      tiers_mode:
+        $ref: '#/definitions/types.BillingTier'
+      transform:
+        $ref: '#/definitions/price.JSONBTransform'
+      type:
+        $ref: '#/definitions/types.PriceType'
+    required:
+    - amount
+    - billing_cadence
+    - billing_model
+    - billing_period
+    - billing_period_count
+    - currency
+    - plan_id
+    - type
+    type: object
+  dto.CustomerResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      email:
+        type: string
+      external_id:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
     type: object
   dto.Event:
     properties:
@@ -125,6 +223,32 @@ definitions:
     - event_name
     - external_customer_id
     type: object
+  dto.ListCustomersResponse:
+    properties:
+      customers:
+        items:
+          $ref: '#/definitions/dto.CustomerResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  dto.ListPlansResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      plans:
+        items:
+          $ref: '#/definitions/plan.Plan'
+        type: array
+      total:
+        type: integer
+    type: object
   dto.ListPricesResponse:
     properties:
       limit:
@@ -172,6 +296,31 @@ definitions:
         example: "2024-03-20T15:04:05Z"
         type: string
     type: object
+  dto.PlanResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      prices:
+        items:
+          $ref: '#/definitions/dto.PriceResponse'
+        type: array
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   dto.PriceResponse:
     properties:
       amount:
@@ -182,15 +331,11 @@ definitions:
         - $ref: '#/definitions/types.BillingCadence'
         description: BillingCadence is the billing cadence for the price ex RECURRING,
           ONETIME
-      billing_country_code:
-        description: BillingCountryCode 3 digit ISO country code in uppercase ex USA,
-          FRA, DEU
-        type: string
       billing_model:
         allOf:
         - $ref: '#/definitions/types.BillingModel'
         description: BillingModel is the billing model for the price ex FLAT_FEE,
-          PER_UNIT, TIERED
+          PACKAGE, TIERED
       billing_period:
         allOf:
         - $ref: '#/definitions/types.BillingPeriod'
@@ -210,12 +355,14 @@ definitions:
       description:
         description: Description of the price
         type: string
-      external_id:
-        description: ExternalID is the identifier of the price in the external system
+      display_amount:
+        description: DisplayAmount is the amount in the currency ex $12.00
         type: string
-      external_source:
-        description: ExternalSource is the source of the price in the external system
-        type: string
+      filter_values:
+        allOf:
+        - $ref: '#/definitions/price.JSONBFilters'
+        description: FilterValues are the filter values for the price in case of usage
+          based pricing
       id:
         description: ID uuid identifier for the price
         type: string
@@ -226,6 +373,12 @@ definitions:
         allOf:
         - $ref: '#/definitions/price.JSONBMetadata'
         description: Metadata is a jsonb field for additional information
+      meter_id:
+        description: MeterID is the id of the meter for usage based pricing
+        type: string
+      plan_id:
+        description: PlanID is the id of the plan for plan based pricing
+        type: string
       status:
         $ref: '#/definitions/types.Status'
       tenant_id:
@@ -233,16 +386,21 @@ definitions:
       tier_mode:
         allOf:
         - $ref: '#/definitions/types.BillingTier'
-        description: Tiered pricing fields
+        description: Tiered pricing fields when BillingModel is TIERED
       tiers:
-        description: JSONB field
+        description: Tiers are the tiers for the price when BillingModel is TIERED
         items:
           $ref: '#/definitions/price.PriceTier'
         type: array
       transform:
         allOf:
         - $ref: '#/definitions/price.JSONBTransform'
-        description: Quantity transformation
+        description: Transform is the quantity transformation in case of PACKAGE billing
+          model
+      type:
+        allOf:
+        - $ref: '#/definitions/types.PriceType'
+        description: Type is the type of the price ex USAGE, FIXED
       updated_at:
         type: string
       updated_by:
@@ -258,6 +416,41 @@ definitions:
     required:
     - email
     - password
+    type: object
+  dto.UpdateCustomerRequest:
+    properties:
+      email:
+        type: string
+      external_id:
+        type: string
+      name:
+        type: string
+    type: object
+  dto.UpdatePlanPriceRequest:
+    properties:
+      description:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      price_id:
+        type: string
+    required:
+    - price_id
+    type: object
+  dto.UpdatePlanRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      prices:
+        items:
+          $ref: '#/definitions/dto.UpdatePlanPriceRequest'
+        type: array
+    required:
+    - name
     type: object
   dto.UpdatePriceRequest:
     properties:
@@ -281,6 +474,31 @@ definitions:
         type: string
       type:
         $ref: '#/definitions/types.AggregationType'
+    type: object
+  plan.Plan:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  price.JSONBFilters:
+    additionalProperties:
+      type: string
     type: object
   price.JSONBMetadata:
     additionalProperties:
@@ -338,13 +556,11 @@ definitions:
     - FLAT_FEE
     - PACKAGE
     - TIERED
-    - USAGE
     type: string
     x-enum-varnames:
     - BILLING_MODEL_FLAT_FEE
     - BILLING_MODEL_PACKAGE
     - BILLING_MODEL_TIERED
-    - BILLING_MODEL_USAGE
   types.BillingPeriod:
     enum:
     - MONTHLY
@@ -365,26 +581,24 @@ definitions:
     x-enum-varnames:
     - BILLING_TIER_VOLUME
     - BILLING_TIER_SLAB
+  types.PriceType:
+    enum:
+    - USAGE
+    - FIXED
+    type: string
+    x-enum-varnames:
+    - PRICE_TYPE_USAGE
+    - PRICE_TYPE_FIXED
   types.Status:
     enum:
     - active
-    - inactive
-    - archived
     - deleted
+    - archived
     type: string
     x-enum-varnames:
     - StatusActive
-    - StatusInactive
-    - StatusArchived
     - StatusDeleted
-  types.UsageType:
-    enum:
-    - METERED
-    - LICENSED
-    type: string
-    x-enum-varnames:
-    - USAGE_TYPE_METERED
-    - USAGE_TYPE_LICENSED
+    - StatusArchived
   v1.ErrorResponse:
     properties:
       error:
@@ -449,6 +663,173 @@ paths:
       summary: Sign up
       tags:
       - auth
+  /customers:
+    get:
+      consumes:
+      - application/json
+      description: Get customers
+      parameters:
+      - in: query
+        name: limit
+        type: integer
+      - in: query
+        name: offset
+        type: integer
+      - in: query
+        name: order
+        type: string
+      - in: query
+        name: search
+        type: string
+      - in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListCustomersResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get customers
+      tags:
+      - customers
+    post:
+      consumes:
+      - application/json
+      description: Create a customer
+      parameters:
+      - description: Customer
+        in: body
+        name: customer
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateCustomerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CustomerResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a customer
+      tags:
+      - customers
+  /customers/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a customer
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a customer
+      tags:
+      - customers
+    get:
+      consumes:
+      - application/json
+      description: Get a customer
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CustomerResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a customer
+      tags:
+      - customers
+    put:
+      consumes:
+      - application/json
+      description: Update a customer
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Customer
+        in: body
+        name: customer
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateCustomerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CustomerResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a customer
+      tags:
+      - customers
   /events:
     get:
       description: Retrieve raw events with pagination and filtering
@@ -776,6 +1157,173 @@ paths:
       summary: 'Disable meter [TODO: Deprecate]'
       tags:
       - meters
+  /plans:
+    get:
+      consumes:
+      - application/json
+      description: Get plans with the specified filter
+      parameters:
+      - in: query
+        name: limit
+        type: integer
+      - in: query
+        name: offset
+        type: integer
+      - in: query
+        name: order
+        type: string
+      - in: query
+        name: search
+        type: string
+      - in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListPlansResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get plans
+      tags:
+      - plans
+    post:
+      consumes:
+      - application/json
+      description: Create a new plan with the specified configuration
+      parameters:
+      - description: Plan configuration
+        in: body
+        name: plan
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreatePlanRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.PlanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new plan
+      tags:
+      - plans
+  /plans/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a plan by ID
+      parameters:
+      - description: Plan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a plan by ID
+      tags:
+      - plans
+    get:
+      consumes:
+      - application/json
+      description: Get a plan by ID
+      parameters:
+      - description: Plan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PlanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a plan by ID
+      tags:
+      - plans
+    put:
+      consumes:
+      - application/json
+      description: Update a plan by ID
+      parameters:
+      - description: Plan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Plan configuration
+        in: body
+        name: plan
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdatePlanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PlanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a plan by ID
+      tags:
+      - plans
   /prices:
     get:
       consumes:
@@ -849,6 +1397,36 @@ paths:
       tags:
       - prices
   /prices/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a price
+      parameters:
+      - description: Price ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PriceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a price
+      tags:
+      - prices
     get:
       consumes:
       - application/json
@@ -913,68 +1491,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Update a price
-      tags:
-      - prices
-  /prices/{id}/archive:
-    delete:
-      consumes:
-      - application/json
-      description: Archive a price
-      parameters:
-      - description: Price ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.PriceResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Archive a price
-      tags:
-      - prices
-  /prices/{id}/delete:
-    delete:
-      consumes:
-      - application/json
-      description: Delete a price
-      parameters:
-      - description: Price ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.PriceResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Delete a price
       tags:
       - prices
   /users/me:

@@ -1,6 +1,6 @@
 package types
 
-// BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED, USAGE
+// BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED
 type BillingModel string
 
 // BillingPeriod is the billing period for the price ex MONTHLY, ANNUAL, WEEKLY, DAILY
@@ -13,7 +13,12 @@ type BillingCadence string
 // calculate the price for a given quantity
 type BillingTier string
 
+type PriceType string
+
 const (
+	PRICE_TYPE_USAGE PriceType = "USAGE"
+	PRICE_TYPE_FIXED PriceType = "FIXED"
+
 	// Billing model for a flat fee per unit
 	BILLING_MODEL_FLAT_FEE BillingModel = "FLAT_FEE"
 
@@ -23,9 +28,6 @@ const (
 	// Billing model for a tiered pricing model
 	// ex 1-100 emails for $100, 101-1000 emails for $90
 	BILLING_MODEL_TIERED BillingModel = "TIERED"
-
-	// Billing model for a usage based pricing model
-	BILLING_MODEL_USAGE BillingModel = "USAGE"
 
 	// For BILLING_CADENCE_RECURRING
 	BILLING_PERIOD_MONTHLY BillingPeriod = "MONTHLY"
@@ -41,11 +43,4 @@ const (
 
 	// BILLING_TIER_SLAB means Tiers apply progressively as quantity increases
 	BILLING_TIER_SLAB BillingTier = "SLAB"
-)
-
-type UsageType string
-
-const (
-	USAGE_TYPE_METERED  UsageType = "METERED"
-	USAGE_TYPE_LICENSED UsageType = "LICENSED"
 )

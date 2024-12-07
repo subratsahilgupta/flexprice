@@ -134,32 +134,6 @@ func (h *PriceHandler) UpdatePrice(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// @Summary Archive a price
-// @Description Archive a price
-// @Tags prices
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "Price ID"
-// @Success 200 {object} dto.PriceResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
-// @Router /prices/{id}/archive [delete]
-func (h *PriceHandler) ArchivePrice(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
-		return
-	}
-
-	if err := h.service.UpdatePriceStatus(c.Request.Context(), id, types.StatusArchived); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "price archived successfully"})
-}
-
 // @Summary Delete a price
 // @Description Delete a price
 // @Tags prices
@@ -170,7 +144,7 @@ func (h *PriceHandler) ArchivePrice(c *gin.Context) {
 // @Success 200 {object} dto.PriceResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /prices/{id}/delete [delete]
+// @Router /prices/{id} [delete]
 func (h *PriceHandler) DeletePrice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -178,7 +152,7 @@ func (h *PriceHandler) DeletePrice(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.UpdatePriceStatus(c.Request.Context(), id, types.StatusDeleted); err != nil {
+	if err := h.service.DeletePrice(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

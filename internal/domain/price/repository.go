@@ -7,9 +7,9 @@ import (
 )
 
 type Repository interface {
-	CreatePrice(ctx context.Context, price *Price) error
-	GetPrice(ctx context.Context, id string) (*Price, error)
-	GetPrices(ctx context.Context, filter types.Filter) ([]*Price, error)
-	UpdatePrice(ctx context.Context, price *Price) error
-	UpdatePriceStatus(ctx context.Context, id string, status types.Status) error
+	Create(ctx context.Context, price *Price) error
+	Get(ctx context.Context, id string) (*Price, error)
+	List(ctx context.Context, filter types.Filter) ([]*Price, error)
+	Update(ctx context.Context, price *Price) error
+	Delete(ctx context.Context, id string) error
 }
