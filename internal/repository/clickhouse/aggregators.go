@@ -19,8 +19,6 @@ func GetAggregator(aggregationType types.AggregationType) events.Aggregator {
 	case types.AggregationAvg:
 		return &AvgAggregator{}
 	}
-
-	// TODO: Add rest of the aggregators later
 	return nil
 }
 
@@ -28,12 +26,10 @@ func getDeduplicationKey() string {
 	return "id, tenant_id, external_customer_id, customer_id, event_name"
 }
 
-// Helper function for ClickHouse datetime formatting
 func formatClickHouseDateTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02 15:04:05.000")
 }
 
-// Helper function for window size formatting
 func formatWindowSize(windowSize types.WindowSize) string {
 	switch windowSize {
 	case types.WindowSizeMinute:
@@ -43,11 +39,10 @@ func formatWindowSize(windowSize types.WindowSize) string {
 	case types.WindowSizeDay:
 		return "toStartOfDay(timestamp)"
 	default:
-		return "" // No windowing if windowSize is empty or invalid
+		return ""
 	}
 }
 
-// buildFilterConditions creates the WHERE clause for filters
 func buildFilterConditions(filters map[string][]string) string {
 	if len(filters) == 0 {
 		return ""
@@ -59,18 +54,38 @@ func buildFilterConditions(filters map[string][]string) string {
 			continue
 		}
 
-		// Create an array of quoted values
 		quotedValues := make([]string, len(values))
 		for i, v := range values {
 			quotedValues[i] = fmt.Sprintf("'%s'", v)
 		}
 
-		// Use JSONExtractString for property comparison
 		conditions = append(conditions, fmt.Sprintf(
 			"JSONExtractString(properties, '%s') IN (%s)",
 			key,
 			strings.Join(quotedValues, ","),
 		))
+	}
+
+	if len(conditions) == 0 {
+		return ""
+	}
+
+	return "AND " + strings.Join(conditions, " AND ")
+}
+
+func buildTimeConditions(params *events.UsageParams) string {
+	var conditions []string
+
+	if !params.StartTime.IsZero() {
+		conditions = append(conditions,
+			fmt.Sprintf("timestamp >= toDateTime64('%s', 3)",
+				formatClickHouseDateTime(params.StartTime)))
+	}
+
+	if !params.EndTime.IsZero() {
+		conditions = append(conditions,
+			fmt.Sprintf("timestamp < toDateTime64('%s', 3)",
+				formatClickHouseDateTime(params.EndTime)))
 	}
 
 	if len(conditions) == 0 {
@@ -103,6 +118,7 @@ func (a *SumAggregator) GetQuery(ctx context.Context, params *events.UsageParams
 	}
 
 	filterConditions := buildFilterConditions(params.Filters)
+	timeConditions := buildTimeConditions(params)
 
 	return fmt.Sprintf(`
         SELECT 
@@ -115,8 +131,7 @@ func (a *SumAggregator) GetQuery(ctx context.Context, params *events.UsageParams
                 AND tenant_id = '%s'
                 %s
                 %s
-                AND timestamp >= toDateTime64('%s', 3)
-                AND timestamp < toDateTime64('%s', 3)
+                %s
             GROUP BY %s %s
         )
         %s
@@ -128,8 +143,7 @@ func (a *SumAggregator) GetQuery(ctx context.Context, params *events.UsageParams
 		types.GetTenantID(ctx),
 		customerFilter,
 		filterConditions,
-		formatClickHouseDateTime(params.StartTime),
-		formatClickHouseDateTime(params.EndTime),
+		timeConditions,
 		getDeduplicationKey(),
 		windowGroupBy,
 		groupByClause)
@@ -158,6 +172,7 @@ func (a *CountAggregator) GetQuery(ctx context.Context, params *events.UsagePara
 	}
 
 	filterConditions := buildFilterConditions(params.Filters)
+	timeConditions := buildTimeConditions(params)
 
 	return fmt.Sprintf(`
         SELECT 
@@ -167,8 +182,7 @@ func (a *CountAggregator) GetQuery(ctx context.Context, params *events.UsagePara
             AND tenant_id = '%s'
             %s
             %s
-            AND timestamp >= toDateTime64('%s', 3)
-            AND timestamp < toDateTime64('%s', 3)
+            %s
         %s
     `,
 		selectClause,
@@ -177,8 +191,7 @@ func (a *CountAggregator) GetQuery(ctx context.Context, params *events.UsagePara
 		types.GetTenantID(ctx),
 		customerFilter,
 		filterConditions,
-		formatClickHouseDateTime(params.StartTime),
-		formatClickHouseDateTime(params.EndTime),
+		timeConditions,
 		groupByClause)
 }
 
@@ -186,6 +199,7 @@ func (a *CountAggregator) GetType() types.AggregationType {
 	return types.AggregationCount
 }
 
+// AvgAggregator implements avg aggregation
 type AvgAggregator struct{}
 
 func (a *AvgAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
@@ -208,6 +222,7 @@ func (a *AvgAggregator) GetQuery(ctx context.Context, params *events.UsageParams
 	}
 
 	filterConditions := buildFilterConditions(params.Filters)
+	timeConditions := buildTimeConditions(params)
 
 	return fmt.Sprintf(`
         SELECT 
@@ -220,8 +235,7 @@ func (a *AvgAggregator) GetQuery(ctx context.Context, params *events.UsageParams
                 AND tenant_id = '%s'
                 %s
                 %s
-                AND timestamp >= toDateTime64('%s', 3)
-                AND timestamp < toDateTime64('%s', 3)
+                %s
             GROUP BY %s %s
         )
         %s
@@ -233,8 +247,7 @@ func (a *AvgAggregator) GetQuery(ctx context.Context, params *events.UsageParams
 		types.GetTenantID(ctx),
 		customerFilter,
 		filterConditions,
-		formatClickHouseDateTime(params.StartTime),
-		formatClickHouseDateTime(params.EndTime),
+		timeConditions,
 		getDeduplicationKey(),
 		windowGroupBy,
 		groupByClause)

@@ -9,10 +9,11 @@ import (
 )
 
 type Meter struct {
-	ID          string      `db:"id" json:"id"`
-	EventName   string      `db:"event_name" json:"event_name"`
-	Aggregation Aggregation `db:"aggregation" json:"aggregation"`
-	Filters     []Filter    `db:"filters" json:"filters"`
+	ID          string           `db:"id" json:"id"`
+	EventName   string           `db:"event_name" json:"event_name"`
+	Aggregation Aggregation      `db:"aggregation" json:"aggregation"`
+	Filters     []Filter         `db:"filters" json:"filters"`
+	ResetUsage  types.ResetUsage `db:"reset_usage" json:"reset_usage"`
 	types.BaseModel
 }
 
@@ -69,5 +70,7 @@ func NewMeter(id string, tenantID, createdBy string) *Meter {
 			UpdatedBy: createdBy,
 			Status:    types.StatusActive,
 		},
+		Filters:    []Filter{},
+		ResetUsage: types.ResetUsageBillingPeriod,
 	}
 }

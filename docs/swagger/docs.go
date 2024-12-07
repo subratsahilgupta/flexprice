@@ -656,7 +656,8 @@ const docTemplate = `{
             "required": [
                 "aggregation",
                 "event_name",
-                "filters"
+                "filters",
+                "reset_usage"
             ],
             "properties": {
                 "aggregation": {
@@ -671,6 +672,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/meter.Filter"
                     }
+                },
+                "reset_usage": {
+                    "$ref": "#/definitions/types.ResetUsage"
                 }
             }
         },
@@ -804,6 +808,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
                 },
+                "reset_usage": {
+                    "$ref": "#/definitions/types.ResetUsage"
+                },
                 "status": {
                     "type": "string",
                     "example": "ACTIVE"
@@ -889,6 +896,17 @@ const docTemplate = `{
                 "AggregationMin",
                 "AggregationCountUnique",
                 "AggregationLatest"
+            ]
+        },
+        "types.ResetUsage": {
+            "type": "string",
+            "enum": [
+                "BILLING_PERIOD",
+                "NEVER"
+            ],
+            "x-enum-varnames": [
+                "ResetUsageBillingPeriod",
+                "ResetUsageNever"
             ]
         },
         "v1.ErrorResponse": {
