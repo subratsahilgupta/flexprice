@@ -23,10 +23,10 @@ func NewMeterRepository(db *postgres.DB, logger *logger.Logger) meter.Repository
 func (r *meterRepository) CreateMeter(ctx context.Context, meter *meter.Meter) error {
 	query := `
 	INSERT INTO meters (
-		id, tenant_id, event_name, aggregation, filters, reset_usage,
+		id, tenant_id, name, event_name, filters, aggregation, reset_usage,
 		created_at, updated_at, created_by, updated_by, status
 	) VALUES (
-		$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+		$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 	)
 	`
 
@@ -43,9 +43,10 @@ func (r *meterRepository) CreateMeter(ctx context.Context, meter *meter.Meter) e
 	_, err = r.db.ExecContext(ctx, query,
 		meter.ID,
 		meter.TenantID,
+		meter.Name,
 		meter.EventName,
-		aggregationJSON,
 		filtersJSON,
+		aggregationJSON,
 		meter.ResetUsage,
 		meter.CreatedAt,
 		meter.UpdatedAt,
@@ -64,7 +65,7 @@ func (r *meterRepository) CreateMeter(ctx context.Context, meter *meter.Meter) e
 func (r *meterRepository) GetMeter(ctx context.Context, id string) (*meter.Meter, error) {
 	query := `
 	SELECT 
-		id, tenant_id, event_name, filters, aggregation, reset_usage,
+		id, tenant_id, name, event_name, filters, aggregation, reset_usage,
 		created_at, updated_at, created_by, updated_by, status
 	FROM meters 
 	WHERE id = $1 AND status = $2
@@ -76,6 +77,7 @@ func (r *meterRepository) GetMeter(ctx context.Context, id string) (*meter.Meter
 	err := r.db.QueryRowContext(ctx, query, id, types.StatusActive).Scan(
 		&m.ID,
 		&m.TenantID,
+		&m.Name,
 		&m.EventName,
 		&filtersJSON,
 		&aggregationJSON,
@@ -111,7 +113,7 @@ func (r *meterRepository) GetMeter(ctx context.Context, id string) (*meter.Meter
 func (r *meterRepository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 	query := `
 	SELECT 
-		id, tenant_id, event_name, filters, aggregation, reset_usage,
+		id, tenant_id, name, event_name, filters, aggregation, reset_usage,
 		created_at, updated_at, created_by, updated_by, status
 	FROM meters 
 	WHERE status = $1
@@ -131,6 +133,7 @@ func (r *meterRepository) GetAllMeters(ctx context.Context) ([]*meter.Meter, err
 		err := rows.Scan(
 			&m.ID,
 			&m.TenantID,
+			&m.Name,
 			&m.EventName,
 			&filtersJSON,
 			&aggregationJSON,

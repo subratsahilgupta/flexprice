@@ -16,12 +16,18 @@ definitions:
         items:
           $ref: '#/definitions/meter.Filter'
         type: array
+      name:
+        example: API Usage Meter
+        type: string
       reset_usage:
-        $ref: '#/definitions/types.ResetUsage'
+        allOf:
+        - $ref: '#/definitions/types.ResetUsage'
+        example: BILLING_PERIOD
     required:
     - aggregation
     - event_name
     - filters
+    - name
     - reset_usage
     type: object
   dto.Event:
@@ -113,6 +119,9 @@ definitions:
         type: array
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      name:
+        example: API Usage Meter
         type: string
       reset_usage:
         $ref: '#/definitions/types.ResetUsage'

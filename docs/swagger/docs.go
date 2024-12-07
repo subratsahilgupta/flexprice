@@ -657,6 +657,7 @@ const docTemplate = `{
                 "aggregation",
                 "event_name",
                 "filters",
+                "name",
                 "reset_usage"
             ],
             "properties": {
@@ -673,8 +674,17 @@ const docTemplate = `{
                         "$ref": "#/definitions/meter.Filter"
                     }
                 },
+                "name": {
+                    "type": "string",
+                    "example": "API Usage Meter"
+                },
                 "reset_usage": {
-                    "$ref": "#/definitions/types.ResetUsage"
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ResetUsage"
+                        }
+                    ],
+                    "example": "BILLING_PERIOD"
                 }
             }
         },
@@ -807,6 +817,10 @@ const docTemplate = `{
                 "id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "API Usage Meter"
                 },
                 "reset_usage": {
                     "$ref": "#/definitions/types.ResetUsage"

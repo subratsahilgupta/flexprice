@@ -28,6 +28,10 @@ func (s *InMemoryMeterStore) CreateMeter(ctx context.Context, m *meter.Meter) er
 		return fmt.Errorf("meter ID cannot be empty")
 	}
 
+	if m.Name == "" {
+		return fmt.Errorf("meter name cannot be empty")
+	}
+
 	if m.ResetUsage == "" {
 		m.ResetUsage = types.ResetUsageBillingPeriod
 	}
