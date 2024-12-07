@@ -249,9 +249,10 @@ func (s *EventServiceSuite) TestGetUsage() {
 }
 
 func (s *EventServiceSuite) TestGetUsageByMeter() {
-	// Setup test meter with filters
+	// Setup test meter with required fields
 	testMeter := &meter.Meter{
 		ID:        "meter-1",
+		Name:      "Test Meter", // Add a name
 		EventName: "api_request",
 		Aggregation: meter.Aggregation{
 			Type:  types.AggregationSum,
@@ -267,6 +268,7 @@ func (s *EventServiceSuite) TestGetUsageByMeter() {
 				Values: []string{"us-east-1"},
 			},
 		},
+		ResetUsage: types.ResetUsageBillingPeriod, // Ensure ResetUsage is valid
 		BaseModel: types.BaseModel{
 			TenantID: types.GetTenantID(s.ctx),
 		},
