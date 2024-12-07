@@ -12,11 +12,14 @@ import (
 )
 
 type Handlers struct {
-	Events *v1.EventsHandler
-	Meter  *v1.MeterHandler
-	Auth   *v1.AuthHandler
-	User   *v1.UserHandler
-	Health *v1.HealthHandler
+	Events   *v1.EventsHandler
+	Meter    *v1.MeterHandler
+	Auth     *v1.AuthHandler
+	User     *v1.UserHandler
+	Health   *v1.HealthHandler
+	Price    *v1.PriceHandler
+	Customer *v1.CustomerHandler
+	Plan     *v1.PlanHandler
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
@@ -48,6 +51,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		// Auth routes
 		v1Public.POST("/auth/signup", handlers.Auth.SignUp)
 		v1Public.POST("/auth/login", handlers.Auth.Login)
+		v1Public.POST("/events/ingest", handlers.Events.IngestEvent)
 	}
 
 	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, logger))
@@ -75,6 +79,33 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			meters.GET("/:id", handlers.Meter.GetMeter)
 			meters.POST("/:id/disable", handlers.Meter.DisableMeter)
 			meters.DELETE("/:id", handlers.Meter.DeleteMeter)
+		}
+
+		price := v1Private.Group("/prices")
+		{
+			price.POST("", handlers.Price.CreatePrice)
+			price.GET("", handlers.Price.GetPrices)
+			price.GET("/:id", handlers.Price.GetPrice)
+			price.PUT("/:id", handlers.Price.UpdatePrice)
+			price.DELETE("/:id", handlers.Price.DeletePrice)
+		}
+
+		customer := v1Private.Group("/customers")
+		{
+			customer.POST("", handlers.Customer.CreateCustomer)
+			customer.GET("", handlers.Customer.GetCustomers)
+			customer.GET("/:id", handlers.Customer.GetCustomer)
+			customer.PUT("/:id", handlers.Customer.UpdateCustomer)
+			customer.DELETE("/:id", handlers.Customer.DeleteCustomer)
+		}
+
+		plan := v1Private.Group("/plans")
+		{
+			plan.POST("", handlers.Plan.CreatePlan)
+			plan.GET("", handlers.Plan.GetPlans)
+			plan.GET("/:id", handlers.Plan.GetPlan)
+			plan.PUT("/:id", handlers.Plan.UpdatePlan)
+			plan.DELETE("/:id", handlers.Plan.DeletePlan)
 		}
 	}
 	return router

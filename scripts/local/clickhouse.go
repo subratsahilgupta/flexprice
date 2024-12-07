@@ -19,12 +19,13 @@ import (
 
 const (
 	NUM_EVENTS       = 100000
-	BATCH_SIZE       = 1000 // Reduced batch size
-	REQUESTS_PER_SEC = 100  // Rate limit: requests per second
-	MAX_RETRIES      = 1    // Maximum number of retries for failed requests
-	INITIAL_BACKOFF  = 100  // Initial backoff in milliseconds
-	API_ENDPOINT     = "https://api-dev.cloud.flexprice.io/v1/events"
-	TIMEOUT_SECONDS  = 5
+	BATCH_SIZE       = 10 // Reduced batch size
+	REQUESTS_PER_SEC = 1  // Rate limit: requests per second
+	MAX_RETRIES      = 1   // Maximum number of retries for failed requests
+	INITIAL_BACKOFF  = 100 // Initial backoff in milliseconds
+	// API_ENDPOINT     = "https://api-dev.cloud.flexprice.io/v1/events"
+	API_ENDPOINT    = "http://localhost:8080/v1/events/ingest"
+	TIMEOUT_SECONDS = 5
 )
 
 type BatchResult struct {
@@ -38,13 +39,15 @@ type BatchResult struct {
 // generateEvent creates a random event with varying properties
 func generateEvent(index int) dto.IngestEventRequest {
 	sources := []string{"web", "mobile", "api", "backend"}
-	eventTypes := []string{"api_call", "page_view", "button_click", "form_submit"}
+	// eventTypes := []string{"api_call", "page_view", "button_click", "form_submit"}
+	eventTypes := []string{"gpu_time"}
 
 	return dto.IngestEventRequest{
 		EventID:            uuid.New().String(),
 		EventName:          eventTypes[index%len(eventTypes)],
 		ExternalCustomerID: fmt.Sprintf("cus_loadtest_%d", index%100), // 100 different customers
 		Source:             sources[index%len(sources)],
+		Timestamp:          time.Now().Add(-time.Duration(index*2) * time.Second),
 		Properties: map[string]interface{}{
 			"bytes_transferred": 100 + (index % 1000),
 			"duration_ms":       50 + (index % 200),
