@@ -12,9 +12,17 @@ definitions:
       event_name:
         example: api_request
         type: string
+      filters:
+        items:
+          $ref: '#/definitions/meter.Filter'
+        type: array
+      reset_usage:
+        $ref: '#/definitions/types.ResetUsage'
     required:
     - aggregation
     - event_name
+    - filters
+    - reset_usage
     type: object
   dto.Event:
     properties:
@@ -99,9 +107,15 @@ definitions:
       event_name:
         example: api_request
         type: string
+      filters:
+        items:
+          $ref: '#/definitions/meter.Filter'
+        type: array
       id:
         example: 550e8400-e29b-41d4-a716-446655440000
         type: string
+      reset_usage:
+        $ref: '#/definitions/types.ResetUsage'
       status:
         example: ACTIVE
         type: string
@@ -137,6 +151,15 @@ definitions:
       type:
         $ref: '#/definitions/types.AggregationType'
     type: object
+  meter.Filter:
+    properties:
+      key:
+        type: string
+      values:
+        items:
+          type: string
+        type: array
+    type: object
   types.AggregationType:
     enum:
     - COUNT
@@ -155,6 +178,14 @@ definitions:
     - AggregationMin
     - AggregationCountUnique
     - AggregationLatest
+  types.ResetUsage:
+    enum:
+    - BILLING_PERIOD
+    - NEVER
+    type: string
+    x-enum-varnames:
+    - ResetUsageBillingPeriod
+    - ResetUsageNever
   v1.ErrorResponse:
     properties:
       error:

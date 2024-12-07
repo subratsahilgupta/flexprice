@@ -655,7 +655,9 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "aggregation",
-                "event_name"
+                "event_name",
+                "filters",
+                "reset_usage"
             ],
             "properties": {
                 "aggregation": {
@@ -664,6 +666,15 @@ const docTemplate = `{
                 "event_name": {
                     "type": "string",
                     "example": "api_request"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meter.Filter"
+                    }
+                },
+                "reset_usage": {
+                    "$ref": "#/definitions/types.ResetUsage"
                 }
             }
         },
@@ -787,9 +798,18 @@ const docTemplate = `{
                     "type": "string",
                     "example": "api_request"
                 },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meter.Filter"
+                    }
+                },
                 "id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "reset_usage": {
+                    "$ref": "#/definitions/types.ResetUsage"
                 },
                 "status": {
                     "type": "string",
@@ -843,6 +863,20 @@ const docTemplate = `{
                 }
             }
         },
+        "meter.Filter": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "types.AggregationType": {
             "type": "string",
             "enum": [
@@ -862,6 +896,17 @@ const docTemplate = `{
                 "AggregationMin",
                 "AggregationCountUnique",
                 "AggregationLatest"
+            ]
+        },
+        "types.ResetUsage": {
+            "type": "string",
+            "enum": [
+                "BILLING_PERIOD",
+                "NEVER"
+            ],
+            "x-enum-varnames": [
+                "ResetUsageBillingPeriod",
+                "ResetUsageNever"
             ]
         },
         "v1.ErrorResponse": {
