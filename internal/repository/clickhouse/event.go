@@ -81,12 +81,28 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 
 	var result events.AggregationResult
 	if rows.Next() {
-		var value float64
-		if err := rows.Scan(&value); err != nil {
-			return nil, fmt.Errorf("scan result: %w", err)
+		// Choose scan type based on aggregation type
+		switch params.AggregationType {
+		case types.AggregationCount:
+			// COUNT operations always return uint64
+			var value uint64
+			if err := rows.Scan(&value); err != nil {
+				return nil, fmt.Errorf("scan result: %w", err)
+			}
+			result.Value = float64(value)
+
+		case types.AggregationSum:
+			// SUM and AVG might return float64
+			var value float64
+			if err := rows.Scan(&value); err != nil {
+				return nil, fmt.Errorf("scan result: %w", err)
+			}
+			result.Value = value
+
+		default:
+			return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
 		}
 
-		result.Value = value
 		result.Type = params.AggregationType
 		result.EventName = params.EventName
 	}
