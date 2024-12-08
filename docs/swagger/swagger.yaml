@@ -44,7 +44,7 @@ definitions:
   dto.CreatePlanPriceRequest:
     properties:
       amount:
-        type: integer
+        type: number
       billing_cadence:
         $ref: '#/definitions/types.BillingCadence'
       billing_model:
@@ -60,7 +60,9 @@ definitions:
         type: string
       filter_values:
         additionalProperties:
-          type: string
+          items:
+            type: string
+          type: array
         type: object
       lookup_key:
         type: string
@@ -76,14 +78,13 @@ definitions:
         $ref: '#/definitions/types.BillingTier'
       tiers:
         items:
-          $ref: '#/definitions/price.PriceTier'
+          $ref: '#/definitions/dto.CreatePriceTier'
         type: array
       transform:
         $ref: '#/definitions/price.PriceTransform'
       type:
         $ref: '#/definitions/types.PriceType'
     required:
-    - amount
     - billing_cadence
     - billing_model
     - billing_period
@@ -95,6 +96,8 @@ definitions:
     properties:
       description:
         type: string
+      invoice_cadence:
+        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         type: string
       name:
@@ -103,13 +106,15 @@ definitions:
         items:
           $ref: '#/definitions/dto.CreatePlanPriceRequest'
         type: array
+      trial_period:
+        type: integer
     required:
     - name
     type: object
   dto.CreatePriceRequest:
     properties:
       amount:
-        type: integer
+        type: number
       billing_cadence:
         $ref: '#/definitions/types.BillingCadence'
       billing_model:
@@ -125,7 +130,9 @@ definitions:
         type: string
       filter_values:
         additionalProperties:
-          type: string
+          items:
+            type: string
+          type: array
         type: object
       lookup_key:
         type: string
@@ -141,14 +148,13 @@ definitions:
         $ref: '#/definitions/types.BillingTier'
       tiers:
         items:
-          $ref: '#/definitions/price.PriceTier'
+          $ref: '#/definitions/dto.CreatePriceTier'
         type: array
       transform:
         $ref: '#/definitions/price.PriceTransform'
       type:
         $ref: '#/definitions/types.PriceType'
     required:
-    - amount
     - billing_cadence
     - billing_model
     - billing_period
@@ -156,8 +162,23 @@ definitions:
     - currency
     - type
     type: object
+  dto.CreatePriceTier:
+    properties:
+      flat_amount:
+        type: number
+      unit_amount:
+        type: number
+      up_to:
+        type: integer
+    type: object
   dto.CreateSubscriptionRequest:
     properties:
+      billing_cadence:
+        $ref: '#/definitions/types.BillingCadence'
+      billing_period:
+        $ref: '#/definitions/types.BillingPeriod'
+      billing_period_unit:
+        type: integer
       currency:
         type: string
       customer_id:
@@ -238,6 +259,107 @@ definitions:
         type: string
       iter_last_key:
         type: string
+    type: object
+  dto.GetUsageByMeterRequest:
+    properties:
+      customer_id:
+        example: customer456
+        type: string
+      end_time:
+        example: "2024-12-09T00:00:00Z"
+        type: string
+      external_customer_id:
+        example: user_5
+        type: string
+      filters:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        type: object
+      meter_id:
+        example: "123"
+        type: string
+      start_time:
+        example: "2024-11-09T00:00:00Z"
+        type: string
+      window_size:
+        allOf:
+        - $ref: '#/definitions/types.WindowSize'
+        example: HOUR
+    required:
+    - customer_id
+    - meter_id
+    type: object
+  dto.GetUsageBySubscriptionRequest:
+    properties:
+      end_time:
+        example: "2024-03-20T00:00:00Z"
+        type: string
+      start_time:
+        example: "2024-03-13T00:00:00Z"
+        type: string
+      subscription_id:
+        example: "123"
+        type: string
+    required:
+    - subscription_id
+    type: object
+  dto.GetUsageBySubscriptionResponse:
+    properties:
+      amount:
+        type: number
+      charges:
+        items:
+          $ref: '#/definitions/dto.SubscriptionUsageByMetersResponse'
+        type: array
+      currency:
+        type: string
+      display_amount:
+        type: string
+      end_time:
+        type: string
+      start_time:
+        type: string
+    type: object
+  dto.GetUsageRequest:
+    properties:
+      aggregation_type:
+        example: COUNT
+        type: string
+      customer_id:
+        example: customer456
+        type: string
+      end_time:
+        example: "2024-03-20T00:00:00Z"
+        type: string
+      event_name:
+        example: api_request
+        type: string
+      external_customer_id:
+        example: customer456
+        type: string
+      filters:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        type: object
+      property_name:
+        description: will be empty/ignored in case of COUNT
+        example: request_size
+        type: string
+      start_time:
+        example: "2024-03-13T00:00:00Z"
+        type: string
+      window_size:
+        allOf:
+        - $ref: '#/definitions/types.WindowSize'
+        example: HOUR
+    required:
+    - aggregation_type
+    - customer_id
+    - event_name
     type: object
   dto.IngestEventRequest:
     properties:
@@ -500,6 +622,17 @@ definitions:
           It sets the day of week for week intervals, the day of month for month and year intervals,
           and the month of year for year intervals. The timestamp is in UTC format.
         type: string
+      billing_cadence:
+        allOf:
+        - $ref: '#/definitions/types.BillingCadence'
+        description: BillingCadence is the cadence of the billing cycle.
+      billing_period:
+        allOf:
+        - $ref: '#/definitions/types.BillingPeriod'
+        description: BillingPeriod is the period of the billing cycle.
+      billing_period_unit:
+        description: BillingPeriodUnit is the unit of the billing period.
+        type: integer
       cancel_at:
         description: CancelAt is the date the subscription will be canceled
         type: string
@@ -572,6 +705,23 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.SubscriptionUsageByMetersResponse:
+    properties:
+      amount:
+        type: number
+      currency:
+        type: string
+      display_amount:
+        type: string
+      filter_values:
+        $ref: '#/definitions/price.JSONBFilters'
+      meter:
+        $ref: '#/definitions/dto.MeterResponse'
+      price:
+        $ref: '#/definitions/dto.PriceResponse'
+      quantity:
+        type: number
+    type: object
   dto.UpdateCustomerRequest:
     properties:
       email:
@@ -584,7 +734,7 @@ definitions:
   dto.UpdatePlanPriceRequest:
     properties:
       amount:
-        type: integer
+        type: number
       billing_cadence:
         $ref: '#/definitions/types.BillingCadence'
       billing_model:
@@ -600,7 +750,9 @@ definitions:
         type: string
       filter_values:
         additionalProperties:
-          type: string
+          items:
+            type: string
+          type: array
         type: object
       id:
         description: The ID of the price to update (present if the price is being
@@ -620,14 +772,13 @@ definitions:
         $ref: '#/definitions/types.BillingTier'
       tiers:
         items:
-          $ref: '#/definitions/price.PriceTier'
+          $ref: '#/definitions/dto.CreatePriceTier'
         type: array
       transform:
         $ref: '#/definitions/price.PriceTransform'
       type:
         $ref: '#/definitions/types.PriceType'
     required:
-    - amount
     - billing_cadence
     - billing_model
     - billing_period
@@ -639,6 +790,8 @@ definitions:
     properties:
       description:
         type: string
+      invoice_cadence:
+        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         type: string
       name:
@@ -647,6 +800,8 @@ definitions:
         items:
           $ref: '#/definitions/dto.UpdatePlanPriceRequest'
         type: array
+      trial_period:
+        type: integer
     required:
     - name
     type: object
@@ -716,7 +871,9 @@ definitions:
     type: object
   price.JSONBFilters:
     additionalProperties:
-      type: string
+      items:
+        type: string
+      type: array
     type: object
   price.JSONBMetadata:
     additionalProperties:
@@ -862,6 +1019,16 @@ definitions:
     - SubscriptionStatusPastDue
     - SubscriptionStatusTrialing
     - SubscriptionStatusUnpaid
+  types.WindowSize:
+    enum:
+    - MINUTE
+    - HOUR
+    - DAY
+    type: string
+    x-enum-varnames:
+    - WindowSizeMinute
+    - WindowSizeHour
+    - WindowSizeDay
   v1.ErrorResponse:
     properties:
       error:
@@ -1182,35 +1349,12 @@ paths:
     get:
       description: Retrieve aggregated usage statistics for events
       parameters:
-      - description: External Customer ID
-        in: query
-        name: external_customer_id
-        type: string
-      - description: Event Name
-        in: query
-        name: event_name
+      - description: Request body
+        in: body
+        name: request
         required: true
-        type: string
-      - description: Property Name
-        in: query
-        name: property_name
-        type: string
-      - description: Aggregation Type (SUM, COUNT)
-        in: query
-        name: aggregation_type
-        type: string
-      - description: Window Size (MINUTE, HOUR, DAY)
-        in: query
-        name: window_size
-        type: string
-      - description: Start Time (RFC3339)
-        in: query
-        name: start_time
-        type: string
-      - description: End Time (RFC3339)
-        in: query
-        name: end_time
-        type: string
+        schema:
+          $ref: '#/definitions/dto.GetUsageRequest'
       produces:
       - application/json
       responses:
@@ -1236,23 +1380,12 @@ paths:
     get:
       description: Retrieve aggregated usage statistics using meter configuration
       parameters:
-      - description: Meter ID
-        in: query
-        name: meter_id
+      - description: Request body
+        in: body
+        name: request
         required: true
-        type: string
-      - description: External Customer ID
-        in: query
-        name: external_customer_id
-        type: string
-      - description: Start Time (RFC3339)
-        in: query
-        name: start_time
-        type: string
-      - description: End Time (RFC3339)
-        in: query
-        name: end_time
-        type: string
+        schema:
+          $ref: '#/definitions/dto.GetUsageByMeterRequest'
       produces:
       - application/json
       responses:
@@ -1766,9 +1899,9 @@ paths:
         in: query
         name: customer_id
         type: string
-      - description: Filter by status
+      - description: Filter by subscription status
         in: query
-        name: status
+        name: subscription_status
         type: string
       - description: Filter by plan ID
         in: query
@@ -1895,6 +2028,36 @@ paths:
       security:
       - BearerAuth: []
       summary: Cancel subscription
+      tags:
+      - subscriptions
+  /subscriptions/usage:
+    get:
+      description: Get usage by subscription
+      parameters:
+      - description: Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.GetUsageBySubscriptionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GetUsageBySubscriptionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get usage by subscription
       tags:
       - subscriptions
   /users/me:

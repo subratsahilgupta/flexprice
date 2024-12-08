@@ -117,6 +117,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			subscription.GET("", handlers.Subscription.GetSubscriptions)
 			subscription.GET("/:id", handlers.Subscription.GetSubscription)
 			subscription.POST("/:id/cancel", handlers.Subscription.CancelSubscription)
+			subscription.GET("/usage", handlers.Subscription.GetUsageBySubscription)
 		}
 	}
 	return router

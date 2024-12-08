@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/types"
@@ -13,7 +12,7 @@ import (
 )
 
 type CreatePriceRequest struct {
-	Amount             int                   `json:"amount" validate:"required"`
+	Amount             float64               `json:"amount"`
 	Currency           string                `json:"currency" validate:"required,len=3"`
 	PlanID             string                `json:"plan_id,omitempty"`
 	Type               types.PriceType       `json:"type" validate:"required"`
@@ -22,20 +21,26 @@ type CreatePriceRequest struct {
 	BillingModel       types.BillingModel    `json:"billing_model" validate:"required"`
 	BillingCadence     types.BillingCadence  `json:"billing_cadence" validate:"required"`
 	MeterID            string                `json:"meter_id,omitempty"`
-	FilterValues       map[string]string     `json:"filter_values,omitempty"`
+	FilterValues       map[string][]string   `json:"filter_values,omitempty"`
 	LookupKey          string                `json:"lookup_key,omitempty"`
 	Description        string                `json:"description,omitempty"`
 	Metadata           map[string]string     `json:"metadata,omitempty"`
 	TierMode           types.BillingTier     `json:"tier_mode,omitempty"`
-	Tiers              []price.PriceTier     `json:"tiers,omitempty"`
+	Tiers              []CreatePriceTier     `json:"tiers,omitempty"`
 	Transform          *price.PriceTransform `json:"transform,omitempty"`
+}
+
+type CreatePriceTier struct {
+	UpTo       *int     `json:"up_to"`
+	UnitAmount float64  `json:"unit_amount"`
+	FlatAmount *float64 `json:"flat_amount,omitempty"`
 }
 
 // TODO : add all price validations
 func (r *CreatePriceRequest) Validate() error {
 
 	// Base validations
-	if r.Amount <= 0 {
+	if r.Amount < 0 {
 		return fmt.Errorf("amount must be greater than 0")
 	}
 
@@ -98,17 +103,27 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) *price.Price {
 
 	var tiers price.JSONBTiers
 	if r.Tiers != nil {
-		tiers = price.JSONBTiers(r.Tiers)
-	}
+		priceTiers := make([]price.PriceTier, len(r.Tiers))
+		for i, tier := range r.Tiers {
+			var flatAmount *uint64
+			if tier.FlatAmount != nil {
+				flatAmount = new(uint64)
+				*flatAmount = uint64(*tier.FlatAmount)
+			}
 
-	var tierMode types.BillingTier
-	if r.TierMode != "" {
-		tierMode = r.TierMode
+			priceTiers[i] = price.PriceTier{
+				UpTo:       tier.UpTo,
+				UnitAmount: price.GetAmountInCents(tier.UnitAmount),
+				FlatAmount: flatAmount,
+			}
+		}
+
+		tiers = price.JSONBTiers(priceTiers)
 	}
 
 	price := &price.Price{
 		ID:                 uuid.New().String(),
-		Amount:             r.Amount,
+		Amount:             price.GetAmountInCents(r.Amount),
 		Currency:           r.Currency,
 		PlanID:             r.PlanID,
 		Type:               r.Type,
@@ -121,17 +136,10 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) *price.Price {
 		LookupKey:          r.LookupKey,
 		Description:        r.Description,
 		Metadata:           metadata,
-		TierMode:           tierMode,
+		TierMode:           r.TierMode,
 		Tiers:              tiers,
 		Transform:          transform,
-		BaseModel: types.BaseModel{
-			TenantID:  types.GetTenantID(ctx),
-			Status:    types.StatusPublished,
-			CreatedAt: time.Now().UTC(),
-			UpdatedAt: time.Now().UTC(),
-			CreatedBy: types.GetUserID(ctx),
-			UpdatedBy: types.GetUserID(ctx),
-		},
+		BaseModel:          types.GetDefaultBaseModel(ctx),
 	}
 	price.DisplayAmount = price.GetDisplayAmount()
 	return price

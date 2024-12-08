@@ -510,47 +510,13 @@ const docTemplate = `{
                 "summary": "Get usage statistics",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "External Customer ID",
-                        "name": "external_customer_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Event Name",
-                        "name": "event_name",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Property Name",
-                        "name": "property_name",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Aggregation Type (SUM, COUNT)",
-                        "name": "aggregation_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Window Size (MINUTE, HOUR, DAY)",
-                        "name": "window_size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Start Time (RFC3339)",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "End Time (RFC3339)",
-                        "name": "end_time",
-                        "in": "query"
+                        "description": "Request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -593,29 +559,13 @@ const docTemplate = `{
                 "summary": "Get usage by meter",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Meter ID",
-                        "name": "meter_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "External Customer ID",
-                        "name": "external_customer_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Start Time (RFC3339)",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "End Time (RFC3339)",
-                        "name": "end_time",
-                        "in": "query"
+                        "description": "Request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageByMeterRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -1432,8 +1382,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by status",
-                        "name": "status",
+                        "description": "Filter by subscription status",
+                        "name": "subscription_status",
                         "in": "query"
                     },
                     {
@@ -1509,6 +1459,54 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/dto.SubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions/usage": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get usage by subscription",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "subscriptions"
+                ],
+                "summary": "Get usage by subscription",
+                "parameters": [
+                    {
+                        "description": "Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageBySubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageBySubscriptionResponse"
                         }
                     },
                     "400": {
@@ -1728,7 +1726,6 @@ const docTemplate = `{
         "dto.CreatePlanPriceRequest": {
             "type": "object",
             "required": [
-                "amount",
                 "billing_cadence",
                 "billing_model",
                 "billing_period",
@@ -1738,7 +1735,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
-                    "type": "integer"
+                    "type": "number"
                 },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
@@ -1762,7 +1759,10 @@ const docTemplate = `{
                 "filter_values": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "string"
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 },
                 "lookup_key": {
@@ -1786,7 +1786,7 @@ const docTemplate = `{
                 "tiers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/price.PriceTier"
+                        "$ref": "#/definitions/dto.CreatePriceTier"
                     }
                 },
                 "transform": {
@@ -1806,6 +1806,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
                 "lookup_key": {
                     "type": "string"
                 },
@@ -1817,13 +1820,15 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.CreatePlanPriceRequest"
                     }
+                },
+                "trial_period": {
+                    "type": "integer"
                 }
             }
         },
         "dto.CreatePriceRequest": {
             "type": "object",
             "required": [
-                "amount",
                 "billing_cadence",
                 "billing_model",
                 "billing_period",
@@ -1833,7 +1838,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
-                    "type": "integer"
+                    "type": "number"
                 },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
@@ -1857,7 +1862,10 @@ const docTemplate = `{
                 "filter_values": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "string"
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 },
                 "lookup_key": {
@@ -1881,7 +1889,7 @@ const docTemplate = `{
                 "tiers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/price.PriceTier"
+                        "$ref": "#/definitions/dto.CreatePriceTier"
                     }
                 },
                 "transform": {
@@ -1889,6 +1897,20 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
+                }
+            }
+        },
+        "dto.CreatePriceTier": {
+            "type": "object",
+            "properties": {
+                "flat_amount": {
+                    "type": "number"
+                },
+                "unit_amount": {
+                    "type": "number"
+                },
+                "up_to": {
+                    "type": "integer"
                 }
             }
         },
@@ -1900,6 +1922,15 @@ const docTemplate = `{
                 "plan_id"
             ],
             "properties": {
+                "billing_cadence": {
+                    "$ref": "#/definitions/types.BillingCadence"
+                },
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_unit": {
+                    "type": "integer"
+                },
                 "currency": {
                     "type": "string"
                 },
@@ -2012,6 +2043,154 @@ const docTemplate = `{
                 },
                 "iter_last_key": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.GetUsageByMeterRequest": {
+            "type": "object",
+            "required": [
+                "customer_id",
+                "meter_id"
+            ],
+            "properties": {
+                "customer_id": {
+                    "type": "string",
+                    "example": "customer456"
+                },
+                "end_time": {
+                    "type": "string",
+                    "example": "2024-12-09T00:00:00Z"
+                },
+                "external_customer_id": {
+                    "type": "string",
+                    "example": "user_5"
+                },
+                "filters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "meter_id": {
+                    "type": "string",
+                    "example": "123"
+                },
+                "start_time": {
+                    "type": "string",
+                    "example": "2024-11-09T00:00:00Z"
+                },
+                "window_size": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ],
+                    "example": "HOUR"
+                }
+            }
+        },
+        "dto.GetUsageBySubscriptionRequest": {
+            "type": "object",
+            "required": [
+                "subscription_id"
+            ],
+            "properties": {
+                "end_time": {
+                    "type": "string",
+                    "example": "2024-03-20T00:00:00Z"
+                },
+                "start_time": {
+                    "type": "string",
+                    "example": "2024-03-13T00:00:00Z"
+                },
+                "subscription_id": {
+                    "type": "string",
+                    "example": "123"
+                }
+            }
+        },
+        "dto.GetUsageBySubscriptionResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "charges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SubscriptionUsageByMetersResponse"
+                    }
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "display_amount": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "start_time": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.GetUsageRequest": {
+            "type": "object",
+            "required": [
+                "aggregation_type",
+                "customer_id",
+                "event_name"
+            ],
+            "properties": {
+                "aggregation_type": {
+                    "type": "string",
+                    "example": "COUNT"
+                },
+                "customer_id": {
+                    "type": "string",
+                    "example": "customer456"
+                },
+                "end_time": {
+                    "type": "string",
+                    "example": "2024-03-20T00:00:00Z"
+                },
+                "event_name": {
+                    "type": "string",
+                    "example": "api_request"
+                },
+                "external_customer_id": {
+                    "type": "string",
+                    "example": "customer456"
+                },
+                "filters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "property_name": {
+                    "description": "will be empty/ignored in case of COUNT",
+                    "type": "string",
+                    "example": "request_size"
+                },
+                "start_time": {
+                    "type": "string",
+                    "example": "2024-03-13T00:00:00Z"
+                },
+                "window_size": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ],
+                    "example": "HOUR"
                 }
             }
         },
@@ -2399,6 +2578,26 @@ const docTemplate = `{
                     "description": "BillingAnchor is the reference point that aligns future billing cycle dates.\nIt sets the day of week for week intervals, the day of month for month and year intervals,\nand the month of year for year intervals. The timestamp is in UTC format.",
                     "type": "string"
                 },
+                "billing_cadence": {
+                    "description": "BillingCadence is the cadence of the billing cycle.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingCadence"
+                        }
+                    ]
+                },
+                "billing_period": {
+                    "description": "BillingPeriod is the period of the billing cycle.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingPeriod"
+                        }
+                    ]
+                },
+                "billing_period_unit": {
+                    "description": "BillingPeriodUnit is the unit of the billing period.",
+                    "type": "integer"
+                },
                 "cancel_at": {
                     "description": "CancelAt is the date the subscription will be canceled",
                     "type": "string"
@@ -2494,6 +2693,32 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SubscriptionUsageByMetersResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "display_amount": {
+                    "type": "string"
+                },
+                "filter_values": {
+                    "$ref": "#/definitions/price.JSONBFilters"
+                },
+                "meter": {
+                    "$ref": "#/definitions/dto.MeterResponse"
+                },
+                "price": {
+                    "$ref": "#/definitions/dto.PriceResponse"
+                },
+                "quantity": {
+                    "type": "number"
+                }
+            }
+        },
         "dto.UpdateCustomerRequest": {
             "type": "object",
             "properties": {
@@ -2511,7 +2736,6 @@ const docTemplate = `{
         "dto.UpdatePlanPriceRequest": {
             "type": "object",
             "required": [
-                "amount",
                 "billing_cadence",
                 "billing_model",
                 "billing_period",
@@ -2521,7 +2745,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
-                    "type": "integer"
+                    "type": "number"
                 },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
@@ -2545,7 +2769,10 @@ const docTemplate = `{
                 "filter_values": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "string"
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 },
                 "id": {
@@ -2573,7 +2800,7 @@ const docTemplate = `{
                 "tiers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/price.PriceTier"
+                        "$ref": "#/definitions/dto.CreatePriceTier"
                     }
                 },
                 "transform": {
@@ -2593,6 +2820,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
                 "lookup_key": {
                     "type": "string"
                 },
@@ -2604,6 +2834,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.UpdatePlanPriceRequest"
                     }
+                },
+                "trial_period": {
+                    "type": "integer"
                 }
             }
         },
@@ -2708,7 +2941,10 @@ const docTemplate = `{
         "price.JSONBFilters": {
             "type": "object",
             "additionalProperties": {
-                "type": "string"
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
             }
         },
         "price.JSONBMetadata": {
@@ -2898,6 +3134,19 @@ const docTemplate = `{
                 "SubscriptionStatusPastDue",
                 "SubscriptionStatusTrialing",
                 "SubscriptionStatusUnpaid"
+            ]
+        },
+        "types.WindowSize": {
+            "type": "string",
+            "enum": [
+                "MINUTE",
+                "HOUR",
+                "DAY"
+            ],
+            "x-enum-varnames": [
+                "WindowSizeMinute",
+                "WindowSizeHour",
+                "WindowSizeDay"
             ]
         },
         "v1.ErrorResponse": {

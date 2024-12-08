@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"math"
 
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -12,7 +13,7 @@ import (
 type JSONBTiers []PriceTier
 type JSONBTransform PriceTransform
 type JSONBMetadata map[string]string
-type JSONBFilters map[string]string
+type JSONBFilters map[string][]string
 
 // Price model with JSONB tags
 type Price struct {
@@ -20,7 +21,7 @@ type Price struct {
 	ID string `db:"id" json:"id"`
 
 	// Amount in cents ex 1200 for $12
-	Amount int `db:"amount" json:"amount"`
+	Amount uint64 `db:"amount" json:"amount"`
 
 	// DisplayAmount is the amount in the currency ex $12.00
 	DisplayAmount string `db:"display_amount" json:"display_amount"`
@@ -81,21 +82,39 @@ func (p *Price) GetDisplayAmount() string {
 	return fmt.Sprintf("%s%.2f", p.GetCurrencySymbol(), float64(p.Amount)/100.0)
 }
 
+func GetDisplayAmount(amount uint64, currency string) string {
+	price := &Price{
+		Amount:   amount,
+		Currency: currency,
+	}
+	return price.GetDisplayAmount()
+}
+
+func GetAmountInDollars(amount uint64) float64 {
+	return float64(amount) / 100.0
+}
+
+func GetAmountInCents(amount float64) uint64 {
+	// round to 2 decimal places
+	amountFloat := math.Round(amount*100) / 100
+	return uint64(amountFloat * 100)
+}
+
 type PriceTransform struct {
 	DivideBy int    `json:"divide_by,omitempty"` // Divide quantity by this number
 	Round    string `json:"round,omitempty"`     // up, down, or nearest
 }
 
 type PriceTier struct {
-	UpTo       *int `json:"up_to"`                 // null means infinity
-	UnitAmount int  `json:"unit_amount"`           // Amount per unit in cents
-	FlatAmount *int `json:"flat_amount,omitempty"` // Optional flat fee for this tier
+	UpTo       *int    `json:"up_to"`                 // null means infinity
+	UnitAmount uint64  `json:"unit_amount"`           // Amount per unit in cents
+	FlatAmount *uint64 `json:"flat_amount,omitempty"` // Optional flat fee for this tier
 }
 
 // TODO : comeup with a better way to handle jsonb fields
 
 // Scanner/Valuer implementations for JSONBTiers
-func (j JSONBTiers) Scan(value interface{}) error {
+func (j *JSONBTiers) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
@@ -103,7 +122,7 @@ func (j JSONBTiers) Scan(value interface{}) error {
 	if !ok {
 		return fmt.Errorf("invalid type for jsonb tiers")
 	}
-	return json.Unmarshal(bytes, &j)
+	return json.Unmarshal(bytes, j)
 }
 
 func (j JSONBTiers) Value() (driver.Value, error) {
@@ -111,6 +130,13 @@ func (j JSONBTiers) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return json.Marshal(j)
+}
+
+func (t PriceTier) GetTierUpTo() int {
+	if t.UpTo != nil {
+		return *t.UpTo
+	}
+	return math.MaxInt
 }
 
 // Scanner/Valuer implementations for JSONBTransform
@@ -133,7 +159,7 @@ func (j JSONBTransform) Value() (driver.Value, error) {
 }
 
 // Scanner/Valuer implementations for JSONBMetadata
-func (j JSONBMetadata) Scan(value interface{}) error {
+func (j *JSONBMetadata) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
@@ -151,7 +177,7 @@ func (j JSONBMetadata) Value() (driver.Value, error) {
 	return json.Marshal(j)
 }
 
-func (j JSONBFilters) Scan(value interface{}) error {
+func (j *JSONBFilters) Scan(value interface{}) error {
 	if value == nil {
 		return nil
 	}
@@ -159,7 +185,7 @@ func (j JSONBFilters) Scan(value interface{}) error {
 	if !ok {
 		return fmt.Errorf("invalid type for jsonb filters")
 	}
-	return json.Unmarshal(bytes, &j)
+	return json.Unmarshal(bytes, j)
 }
 
 func (j JSONBFilters) Value() (driver.Value, error) {
