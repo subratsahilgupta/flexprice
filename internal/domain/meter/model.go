@@ -69,6 +69,7 @@ func NewMeter(name string, tenantID, createdBy string) *Meter {
 			UpdatedAt: now,
 			CreatedBy: createdBy,
 			UpdatedBy: createdBy,
+			Status:    types.StatusPublished,
 		},
 		Filters:    []Filter{},
 		ResetUsage: types.ResetUsageBillingPeriod,

@@ -28,7 +28,7 @@ type MeterResponse struct {
 	ResetUsage  types.ResetUsage  `json:"reset_usage"`
 	CreatedAt   time.Time         `json:"created_at" example:"2024-03-20T15:04:05Z"`
 	UpdatedAt   time.Time         `json:"updated_at" example:"2024-03-20T15:04:05Z"`
-	Status      string            `json:"status" example:"ACTIVE"`
+	Status      string            `json:"status" example:"published"`
 }
 
 // Convert domain Meter to MeterResponse
@@ -54,7 +54,7 @@ func (r *CreateMeterRequest) ToMeter(tenantID, createdBy string) *meter.Meter {
 	m.Aggregation = r.Aggregation
 	m.Filters = r.Filters
 	m.ResetUsage = r.ResetUsage
-	m.Status = types.StatusActive
+	m.Status = types.StatusPublished
 	return m
 }
 

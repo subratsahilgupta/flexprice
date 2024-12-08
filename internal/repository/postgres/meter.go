@@ -74,7 +74,7 @@ func (r *meterRepository) GetMeter(ctx context.Context, id string) (*meter.Meter
 	var m meter.Meter
 	var filtersJSON, aggregationJSON []byte
 
-	err := r.db.QueryRowContext(ctx, query, id, types.StatusActive).Scan(
+	err := r.db.QueryRowContext(ctx, query, id, types.StatusPublished, types.GetTenantID(ctx)).Scan(
 		&m.ID,
 		&m.TenantID,
 		&m.Name,
@@ -115,11 +115,12 @@ func (r *meterRepository) GetAllMeters(ctx context.Context) ([]*meter.Meter, err
 	SELECT 
 		id, tenant_id, name, event_name, filters, aggregation, reset_usage,
 		created_at, updated_at, created_by, updated_by, status
-	FROM meters 
-	WHERE status = $1
+	FROM meters
+	WHERE status = $1 AND tenant_id = $2
+	ORDER BY created_at DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, types.StatusActive)
+	rows, err := r.db.QueryContext(ctx, query, types.StatusPublished, types.GetTenantID(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("query meters: %w", err)
 	}
@@ -176,7 +177,7 @@ func (r *meterRepository) DisableMeter(ctx context.Context, id string) error {
 	query := `
 		UPDATE meters 
 		SET status = 'disabled', updated_at = NOW(), updated_by = $1
-		WHERE id = $2 AND tenant_id = $3 AND status = 'active'
+		WHERE id = $2 AND tenant_id = $3 AND status = 'published'
 	`
 
 	result, err := r.db.ExecContext(ctx, query, types.GetUserID(ctx), id, types.GetTenantID(ctx))
