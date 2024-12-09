@@ -65,6 +65,24 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
+	plan, err := s.planRepo.Get(ctx, req.PlanID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get plan: %w", err)
+	}
+
+	if plan.Status != types.StatusPublished {
+		return nil, fmt.Errorf("plan is not active")
+	}
+
+	prices, err := s.priceRepo.GetByPlanID(ctx, req.PlanID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get prices: %w", err)
+	}
+
+	if len(prices) == 0 {
+		return nil, fmt.Errorf("no prices found for plan")
+	}
+
 	subscription := req.ToSubscription(ctx)
 	now := time.Now().UTC()
 	if subscription.StartDate.IsZero() {
@@ -86,6 +104,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 	subscription.CurrentPeriodStart = subscription.StartDate
 	subscription.CurrentPeriodEnd = nextBillingDate
+	subscription.InvoiceCadence = plan.InvoiceCadence
+	subscription.Currency = prices[0].Currency
 
 	if err := s.subscriptionRepo.Create(ctx, subscription); err != nil {
 		return nil, fmt.Errorf("failed to create subscription: %w", err)
