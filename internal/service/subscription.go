@@ -167,8 +167,16 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 	}
 
 	for i, sub := range subscriptions {
+		plan, err := s.planRepo.Get(ctx, sub.PlanID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get plan: %w", err)
+		}
+
 		response.Subscriptions[i] = &dto.SubscriptionResponse{
 			Subscription: sub,
+			Plan: &dto.PlanResponse{
+				Plan: plan,
+			},
 		}
 	}
 
