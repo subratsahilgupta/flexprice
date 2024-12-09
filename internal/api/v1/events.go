@@ -321,7 +321,7 @@ func validateStartAndEndTime(startTime, endTime time.Time) (time.Time, time.Time
 	}
 
 	if startTime.IsZero() {
-		startTime = endTime.AddDate(0, 0, -7)
+		startTime = endTime.AddDate(0, 0, -3)
 	}
 
 	if endTime.Before(startTime) {
