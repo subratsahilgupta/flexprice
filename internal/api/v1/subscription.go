@@ -132,7 +132,7 @@ func (h *SubscriptionHandler) CancelSubscription(c *gin.Context) {
 // @Success 200 {object} dto.GetUsageBySubscriptionResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /subscriptions/usage [get]
+// @Router /subscriptions/usage [post]
 func (h *SubscriptionHandler) GetUsageBySubscription(c *gin.Context) {
 	var req dto.GetUsageBySubscriptionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
