@@ -24,7 +24,7 @@ type Handlers struct {
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
-	gin.SetMode(gin.ReleaseMode)
+	// gin.SetMode(gin.ReleaseMode)
 
 	router := gin.Default()
 	router.Use(
@@ -71,6 +71,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			events.POST("", handlers.Events.IngestEvent)
 			events.GET("", handlers.Events.GetEvents)
+			events.GET("/list", handlers.Events.GetEvents)
 			events.GET("/usage", handlers.Events.GetUsage)
 			events.GET("/usage/meter", handlers.Events.GetUsageByMeter)
 		}
@@ -79,6 +80,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			meters.POST("", handlers.Meter.CreateMeter)
 			meters.GET("", handlers.Meter.GetAllMeters)
+			meters.GET("/list", handlers.Meter.GetAllMeters)
 			meters.GET("/:id", handlers.Meter.GetMeter)
 			meters.POST("/:id/disable", handlers.Meter.DisableMeter)
 			meters.DELETE("/:id", handlers.Meter.DeleteMeter)
@@ -88,6 +90,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			price.POST("", handlers.Price.CreatePrice)
 			price.GET("", handlers.Price.GetPrices)
+			price.GET("/list", handlers.Price.GetPrices)
 			price.GET("/:id", handlers.Price.GetPrice)
 			price.PUT("/:id", handlers.Price.UpdatePrice)
 			price.DELETE("/:id", handlers.Price.DeletePrice)
@@ -97,6 +100,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			customer.POST("", handlers.Customer.CreateCustomer)
 			customer.GET("", handlers.Customer.GetCustomers)
+			customer.GET("/list", handlers.Customer.GetCustomers)
 			customer.GET("/:id", handlers.Customer.GetCustomer)
 			customer.PUT("/:id", handlers.Customer.UpdateCustomer)
 			customer.DELETE("/:id", handlers.Customer.DeleteCustomer)
@@ -106,6 +110,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			plan.POST("", handlers.Plan.CreatePlan)
 			plan.GET("", handlers.Plan.GetPlans)
+			plan.GET("/list", handlers.Plan.GetPlans)
 			plan.GET("/:id", handlers.Plan.GetPlan)
 			plan.PUT("/:id", handlers.Plan.UpdatePlan)
 			plan.DELETE("/:id", handlers.Plan.DeletePlan)
@@ -115,6 +120,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			subscription.POST("", handlers.Subscription.CreateSubscription)
 			subscription.GET("", handlers.Subscription.GetSubscriptions)
+			subscription.GET("/list", handlers.Subscription.GetSubscriptions)
 			subscription.GET("/:id", handlers.Subscription.GetSubscription)
 			subscription.POST("/:id/cancel", handlers.Subscription.CancelSubscription)
 			subscription.GET("/usage", handlers.Subscription.GetUsageBySubscription)
