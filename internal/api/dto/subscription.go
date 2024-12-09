@@ -90,11 +90,10 @@ type GetUsageBySubscriptionResponse struct {
 }
 
 type SubscriptionUsageByMetersResponse struct {
-	Amount        float64            `json:"amount"`
-	Currency      string             `json:"currency"`
-	DisplayAmount string             `json:"display_amount"`
-	Quantity      float64            `json:"quantity"`
-	FilterValues  price.JSONBFilters `json:"filter_values"`
-	Meter         *MeterResponse     `json:"meter"`
-	Price         *PriceResponse     `json:"price"`
+	Amount           float64            `json:"amount"`
+	Currency         string             `json:"currency"`
+	DisplayAmount    string             `json:"display_amount"`
+	Quantity         float64            `json:"quantity"`
+	FilterValues     price.JSONBFilters `json:"filter_values"`
+	MeterDisplayName string             `json:"meter_display_name"`
 }

@@ -213,6 +213,9 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		usageEndTime = subscription.CurrentPeriodEnd
 	}
 
+	// saved meter display names
+	meterDisplayNames := make(map[string]string)
+
 	totalCost := uint64(0)
 	for _, priceResponse := range pricesResponse {
 		priceObj := priceResponse.Price
@@ -251,13 +254,26 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			quantity = float64(v)
 		}
 
+		meterDisplayName, ok := meterDisplayNames[priceObj.MeterID]
+		if !ok {
+			meter, err := s.meterRepo.GetMeter(ctx, priceObj.MeterID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get meter: %w", err)
+			}
+			meterDisplayName = meter.Name
+			if meter.Name == "" {
+				meterDisplayName = meter.EventName
+			}
+			meterDisplayNames[priceObj.MeterID] = meterDisplayName
+		}
+
 		response.Charges = append(response.Charges, &dto.SubscriptionUsageByMetersResponse{
-			Amount:        price.GetAmountInDollars(cost),
-			Currency:      priceObj.Currency,
-			DisplayAmount: price.GetDisplayAmount(cost, priceObj.Currency),
-			Quantity:      quantity,
-			Price:         &priceResponse,
-			FilterValues:  priceObj.FilterValues,
+			Amount:           price.GetAmountInDollars(cost),
+			Currency:         priceObj.Currency,
+			DisplayAmount:    price.GetDisplayAmount(cost, priceObj.Currency),
+			Quantity:         quantity,
+			FilterValues:     priceObj.FilterValues,
+			MeterDisplayName: meterDisplayName,
 		})
 
 	}
