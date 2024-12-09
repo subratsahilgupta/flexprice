@@ -15,12 +15,14 @@ type Repository interface {
 
 type UsageParams struct {
 	ExternalCustomerID string                `json:"external_customer_id"`
+	CustomerID         string                `json:"customer_id"`
 	EventName          string                `json:"event_name" validate:"required"`
 	PropertyName       string                `json:"property_name" validate:"required"`
 	AggregationType    types.AggregationType `json:"aggregation_type" validate:"required"`
 	WindowSize         types.WindowSize      `json:"window_size"`
 	StartTime          time.Time             `json:"start_time" validate:"required"`
 	EndTime            time.Time             `json:"end_time" validate:"required"`
+	Filters            map[string][]string   `json:"filters"`
 }
 
 type GetEventsParams struct {

@@ -39,7 +39,7 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 
 	meter, err := h.service.CreateMeter(ctx, &req)
 	if err != nil {
-		h.log.Error("Failed to create meter", "error", err)
+		h.log.Error("Failed to create meter ", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to create meter"})
 		return
 	}
@@ -48,7 +48,7 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 }
 
 // @Summary List meters
-// @Description Get all active meters
+// @Description Get all meters
 // @Tags meters
 // @Produce json
 // @Security BearerAuth

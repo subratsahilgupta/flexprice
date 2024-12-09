@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/clickhouse"
@@ -65,77 +66,74 @@ type UsageResult struct {
 
 func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsageParams) (*events.AggregationResult, error) {
 	aggregator := GetAggregator(params.AggregationType)
+	if aggregator == nil {
+		return nil, fmt.Errorf("unsupported aggregation type: %s", params.AggregationType)
+	}
+
 	query := aggregator.GetQuery(ctx, params)
-	r.logger.Debugf("GetUsage query: %s", query)
+	log.Printf("Executing query: %s", query)
 
-	var results []events.UsageResult // Use the domain-level UsageResult struct
-	var err error
+	rows, err := r.store.GetConn().Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("execute query: %w", err)
+	}
+	defer rows.Close()
 
+	var result events.AggregationResult
+	result.Type = params.AggregationType
+	result.EventName = params.EventName
+
+	// For windowed queries, we need to process all rows
 	if params.WindowSize != "" {
-		// If WindowSize is provided, fetch multiple rows
-		rows, err := r.store.GetConn().Query(ctx, query)
-		if err != nil {
-			return nil, fmt.Errorf("query rows: %w", err)
-		}
-		defer rows.Close()
-
 		for rows.Next() {
 			var windowSize time.Time
 			var value interface{}
 
-			switch aggregator.GetType() {
+			switch params.AggregationType {
 			case types.AggregationCount:
-				var count uint64
-				err = rows.Scan(&windowSize, &count)
-				value = count
+				var countValue uint64
+				if err := rows.Scan(&windowSize, &countValue); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				value = float64(countValue)
+			case types.AggregationSum, types.AggregationAvg:
+				var floatValue float64
+				if err := rows.Scan(&windowSize, &floatValue); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				value = floatValue
 			default:
-				var num float64
-				err = rows.Scan(&windowSize, &num)
-				value = num
+				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
 			}
 
-			if err != nil {
-				return nil, fmt.Errorf("scan row: %w", err)
-			}
-
-			results = append(results, events.UsageResult{ // Use domain-level UsageResult struct
+			result.Results = append(result.Results, events.UsageResult{
 				WindowSize: windowSize,
 				Value:      value,
 			})
 		}
-
-		if rows.Err() != nil {
-			return nil, fmt.Errorf("rows error: %w", rows.Err())
-		}
-
 	} else {
-		// If WindowSize is not provided, fetch a single value
-		var value interface{}
-		switch aggregator.GetType() {
-		case types.AggregationCount:
-			var count uint64
-			err = r.store.GetConn().QueryRow(ctx, query).Scan(&count)
-			value = count
-		default:
-			var num float64
-			err = r.store.GetConn().QueryRow(ctx, query).Scan(&num)
-			value = num
+		// Non-windowed query - process single row
+		if rows.Next() {
+			switch params.AggregationType {
+			case types.AggregationCount:
+				var value uint64
+				if err := rows.Scan(&value); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				result.Value = float64(value)
+			case types.AggregationSum, types.AggregationAvg:
+				var value float64
+				if err := rows.Scan(&value); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				result.Value = value
+			default:
+				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
+			}
 		}
-
-		if err != nil {
-			return nil, fmt.Errorf("get usage: %w", err)
-		}
-
-		results = append(results, events.UsageResult{
-			Value: value,
-		})
 	}
 
-	return &events.AggregationResult{
-		Results:   results,
-		EventName: params.EventName,
-		Type:      aggregator.GetType(),
-	}, nil
+	return &result, nil
 }
 
 func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, error) {

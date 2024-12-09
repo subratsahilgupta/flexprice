@@ -12,14 +12,20 @@ import (
 )
 
 type Handlers struct {
-	Events *v1.EventsHandler
-	Meter  *v1.MeterHandler
-	Auth   *v1.AuthHandler
-	User   *v1.UserHandler
-	Health *v1.HealthHandler
+	Events       *v1.EventsHandler
+	Meter        *v1.MeterHandler
+	Auth         *v1.AuthHandler
+	User         *v1.UserHandler
+	Health       *v1.HealthHandler
+	Price        *v1.PriceHandler
+	Customer     *v1.CustomerHandler
+	Plan         *v1.PlanHandler
+	Subscription *v1.SubscriptionHandler
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
+	// gin.SetMode(gin.ReleaseMode)
+
 	router := gin.Default()
 	router.Use(
 		middleware.RequestIDMiddleware,
@@ -48,6 +54,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		// Auth routes
 		v1Public.POST("/auth/signup", handlers.Auth.SignUp)
 		v1Public.POST("/auth/login", handlers.Auth.Login)
+		v1Public.POST("/events/ingest", handlers.Events.IngestEvent)
 	}
 
 	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, logger))
@@ -65,7 +72,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			events.POST("", handlers.Events.IngestEvent)
 			events.GET("", handlers.Events.GetEvents)
 			events.GET("/usage", handlers.Events.GetUsage)
+			events.POST("/usage", handlers.Events.GetUsagePOST)
 			events.GET("/usage/meter", handlers.Events.GetUsageByMeter)
+			events.POST("/usage/meter", handlers.Events.GetUsageByMeterPOST)
 		}
 
 		meters := v1Private.Group("/meters")
@@ -75,6 +84,43 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			meters.GET("/:id", handlers.Meter.GetMeter)
 			meters.POST("/:id/disable", handlers.Meter.DisableMeter)
 			meters.DELETE("/:id", handlers.Meter.DeleteMeter)
+		}
+
+		price := v1Private.Group("/prices")
+		{
+			price.POST("", handlers.Price.CreatePrice)
+			price.GET("", handlers.Price.GetPrices)
+			price.GET("/list", handlers.Price.GetPrices)
+			price.GET("/:id", handlers.Price.GetPrice)
+			price.PUT("/:id", handlers.Price.UpdatePrice)
+			price.DELETE("/:id", handlers.Price.DeletePrice)
+		}
+
+		customer := v1Private.Group("/customers")
+		{
+			customer.POST("", handlers.Customer.CreateCustomer)
+			customer.GET("", handlers.Customer.GetCustomers)
+			customer.GET("/:id", handlers.Customer.GetCustomer)
+			customer.PUT("/:id", handlers.Customer.UpdateCustomer)
+			customer.DELETE("/:id", handlers.Customer.DeleteCustomer)
+		}
+
+		plan := v1Private.Group("/plans")
+		{
+			plan.POST("", handlers.Plan.CreatePlan)
+			plan.GET("", handlers.Plan.GetPlans)
+			plan.GET("/:id", handlers.Plan.GetPlan)
+			plan.PUT("/:id", handlers.Plan.UpdatePlan)
+			plan.DELETE("/:id", handlers.Plan.DeletePlan)
+		}
+
+		subscription := v1Private.Group("/subscriptions")
+		{
+			subscription.POST("", handlers.Subscription.CreateSubscription)
+			subscription.GET("", handlers.Subscription.GetSubscriptions)
+			subscription.GET("/:id", handlers.Subscription.GetSubscription)
+			subscription.POST("/:id/cancel", handlers.Subscription.CancelSubscription)
+			subscription.POST("/usage", handlers.Subscription.GetUsageBySubscription)
 		}
 	}
 	return router

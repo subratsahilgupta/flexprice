@@ -64,12 +64,20 @@ func main() {
 			repository.NewMeterRepository,
 			repository.NewUserRepository,
 			repository.NewAuthRepository,
+			repository.NewPriceRepository,
+			repository.NewCustomerRepository,
+			repository.NewPlanRepository,
+			repository.NewSubscriptionRepository,
 
 			// Services
 			service.NewMeterService,
 			service.NewEventService,
 			service.NewUserService,
 			service.NewAuthService,
+			service.NewPriceService,
+			service.NewCustomerService,
+			service.NewPlanService,
+			service.NewSubscriptionService,
 
 			// Handlers
 			provideHandlers,
@@ -91,12 +99,20 @@ func provideHandlers(
 	eventService service.EventService,
 	authService service.AuthService,
 	userService service.UserService,
+	priceService service.PriceService,
+	customerService service.CustomerService,
+	planService service.PlanService,
+	subscriptionService service.SubscriptionService,
 ) api.Handlers {
 	return api.Handlers{
-		Events: v1.NewEventsHandler(eventService, logger),
-		Meter:  v1.NewMeterHandler(meterService, logger),
-		Auth:   v1.NewAuthHandler(cfg, authService, logger),
-		User:   v1.NewUserHandler(userService, logger),
+		Events:       v1.NewEventsHandler(eventService, logger),
+		Meter:        v1.NewMeterHandler(meterService, logger),
+		Auth:         v1.NewAuthHandler(cfg, authService, logger),
+		User:         v1.NewUserHandler(userService, logger),
+		Price:        v1.NewPriceHandler(priceService, logger),
+		Customer:     v1.NewCustomerHandler(customerService, logger),
+		Plan:         v1.NewPlanHandler(planService, logger),
+		Subscription: v1.NewSubscriptionHandler(subscriptionService, logger),
 	}
 }
 

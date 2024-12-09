@@ -33,3 +33,6 @@ go.work.sum
 # Coverage report
 coverage.out
 coverage.html
+
+# Local Research docs
+research/*
