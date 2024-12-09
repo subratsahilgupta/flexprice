@@ -21,7 +21,7 @@ type IngestEventRequest struct {
 
 type GetUsageRequest struct {
 	ExternalCustomerID string              `form:"external_customer_id" json:"external_customer_id" example:"customer456"`
-	CustomerID         string              `form:"customer_id" json:"customer_id" binding:"required" example:"customer456"`
+	CustomerID         string              `form:"customer_id" json:"customer_id" example:"customer456"`
 	EventName          string              `form:"event_name" json:"event_name" binding:"required" required:"true" example:"api_request"`
 	PropertyName       string              `form:"property_name" json:"property_name" example:"request_size"` // will be empty/ignored in case of COUNT
 	AggregationType    string              `form:"aggregation_type" json:"aggregation_type" binding:"required" example:"COUNT"`
@@ -34,7 +34,7 @@ type GetUsageRequest struct {
 type GetUsageByMeterRequest struct {
 	MeterID            string              `form:"meter_id" json:"meter_id" binding:"required" example:"123"`
 	ExternalCustomerID string              `form:"external_customer_id" json:"external_customer_id" example:"user_5"`
-	CustomerID         string              `form:"customer_id" json:"customer_id" binding:"required" example:"customer456"`
+	CustomerID         string              `form:"customer_id" json:"customer_id" example:"customer456"`
 	StartTime          time.Time           `form:"start_time" json:"start_time" example:"2024-11-09T00:00:00Z"`
 	EndTime            time.Time           `form:"end_time" json:"end_time" example:"2024-12-09T00:00:00Z"`
 	WindowSize         types.WindowSize    `form:"window_size" json:"window_size" example:"HOUR"`

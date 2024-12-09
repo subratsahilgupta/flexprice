@@ -19,8 +19,8 @@ import (
 
 const (
 	NUM_EVENTS       = 100000
-	BATCH_SIZE       = 10 // Reduced batch size
-	REQUESTS_PER_SEC = 1  // Rate limit: requests per second
+	BATCH_SIZE       = 10  // Reduced batch size
+	REQUESTS_PER_SEC = 1   // Rate limit: requests per second
 	MAX_RETRIES      = 1   // Maximum number of retries for failed requests
 	INITIAL_BACKOFF  = 100 // Initial backoff in milliseconds
 	// API_ENDPOINT     = "https://api-dev.cloud.flexprice.io/v1/events"
@@ -39,19 +39,22 @@ type BatchResult struct {
 // generateEvent creates a random event with varying properties
 func generateEvent(index int) dto.IngestEventRequest {
 	sources := []string{"web", "mobile", "api", "backend"}
+	clouds := []string{"aws", "gcp", "azure"}
 	// eventTypes := []string{"api_call", "page_view", "button_click", "form_submit"}
 	eventTypes := []string{"gpu_time"}
 
 	return dto.IngestEventRequest{
-		EventID:            uuid.New().String(),
-		EventName:          eventTypes[index%len(eventTypes)],
-		ExternalCustomerID: fmt.Sprintf("cus_loadtest_%d", index%100), // 100 different customers
+		EventID:   uuid.New().String(),
+		EventName: eventTypes[index%len(eventTypes)],
+		// ExternalCustomerID: fmt.Sprintf("cus_loadtest_%d", index%100), // 100 different customers
+		ExternalCustomerID: "cust-00000001",
 		Source:             sources[index%len(sources)],
 		Timestamp:          time.Now().Add(-time.Duration(index*2) * time.Second),
 		Properties: map[string]interface{}{
 			"bytes_transferred": 100 + (index % 1000),
 			"duration_ms":       50 + (index % 200),
 			"status_code":       200 + (index%3)*100, // 200, 300, 400
+			"cloud":             clouds[index%len(clouds)],
 			"test_group":        fmt.Sprintf("group_%d", index%10),
 		},
 	}

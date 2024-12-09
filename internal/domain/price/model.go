@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -85,7 +86,7 @@ func (p *Price) GetDisplayAmount() string {
 func GetDisplayAmount(amount uint64, currency string) string {
 	price := &Price{
 		Amount:   amount,
-		Currency: currency,
+		Currency: strings.ToLower(currency),
 	}
 	return price.GetDisplayAmount()
 }
