@@ -73,9 +73,59 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 // @Router /events/usage/meter [get]
 func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 	ctx := c.Request.Context()
+
+	// parse query params
+	externalCustomerID := c.Query("external_customer_id")
+	meterID := c.Query("meter_id")
+	customerID := c.Query("customer_id")
+	startTimeStr := c.Query("start_time")
+	endTimeStr := c.Query("end_time")
+	windowSize := c.Query("window_size")
+
+	startTime, endTime, err := parseStartAndEndTime(startTimeStr, endTimeStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	req := dto.GetUsageByMeterRequest{
+		MeterID:            meterID,
+		ExternalCustomerID: externalCustomerID,
+		CustomerID:         customerID,
+		StartTime:          startTime.UTC(),
+		EndTime:            endTime.UTC(),
+		WindowSize:         types.WindowSize(windowSize),
+	}
+
+	if req.MeterID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters: meter_id"})
+		return
+	}
+
+	result, err := h.eventService.GetUsageByMeter(ctx, &req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// @Summary Get usage by meter
+// @Description Retrieve aggregated usage statistics using meter configuration
+// @Tags events
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.GetUsageByMeterRequest true "Request body"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /events/usage/meter [post]
+func (h *EventsHandler) GetUsageByMeterPOST(c *gin.Context) {
+	ctx := c.Request.Context()
 	var err error
 
-	// First, try to parse JSON body
 	var req dto.GetUsageByMeterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
@@ -85,38 +135,6 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 	req.StartTime, req.EndTime, err = validateStartAndEndTime(req.StartTime, req.EndTime)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	// if the values are empty by parsing the json body, fallback to query params
-	// this is to support old API clients that don't send JSON body
-	if req.MeterID == "" && req.ExternalCustomerID == "" {
-		// parse query params
-		externalCustomerID := c.Query("external_customer_id")
-		meterID := c.Query("meter_id")
-		customerID := c.Query("customer_id")
-		startTimeStr := c.Query("start_time")
-		endTimeStr := c.Query("end_time")
-		windowSize := c.Query("window_size")
-
-		startTime, endTime, err := parseStartAndEndTime(startTimeStr, endTimeStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
-			return
-		}
-
-		req = dto.GetUsageByMeterRequest{
-			MeterID:            meterID,
-			ExternalCustomerID: externalCustomerID,
-			CustomerID:         customerID,
-			StartTime:          startTime.UTC(),
-			EndTime:            endTime.UTC(),
-			WindowSize:         types.WindowSize(windowSize),
-		}
-	}
-
-	if req.MeterID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters: meter_id"})
 		return
 	}
 
@@ -141,9 +159,61 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 // @Router /events/usage [get]
 func (h *EventsHandler) GetUsage(c *gin.Context) {
 	ctx := c.Request.Context()
+	externalCustomerID := c.Query("external_customer_id")
+	customerID := c.Query("customer_id")
+	eventName := c.Query("event_name")
+	propertyName := c.Query("property_name")
+	aggregationType := c.Query("aggregation_type")
+	startTimeStr := c.Query("start_time")
+	endTimeStr := c.Query("end_time")
+	windowSize := c.Query("window_size")
+
+	startTime, endTime, err := parseStartAndEndTime(startTimeStr, endTimeStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	req := dto.GetUsageRequest{
+		ExternalCustomerID: externalCustomerID,
+		CustomerID:         customerID,
+		EventName:          eventName,
+		PropertyName:       propertyName,
+		AggregationType:    aggregationType,
+		StartTime:          startTime,
+		EndTime:            endTime,
+		WindowSize:         types.WindowSize(windowSize),
+	}
+
+	if req.EventName == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters"})
+		return
+	}
+
+	result, err := h.eventService.GetUsage(ctx, &req)
+	if err != nil {
+		h.log.Error("Failed to get usage", "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get usage"})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// @Summary Get usage statistics
+// @Description Retrieve aggregated usage statistics for events
+// @Tags events
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.GetUsageRequest true "Request body"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /events/usage [post]
+func (h *EventsHandler) GetUsagePOST(c *gin.Context) {
+	ctx := c.Request.Context()
 	var err error
 
-	// First, try to parse JSON body
 	var req dto.GetUsageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
@@ -156,45 +226,9 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 		return
 	}
 
-	// if the values are empty by parsing the json body, fallback to query params
-	// this is to support old API clients that don't send JSON body
-	if req.EventName == "" {
-		externalCustomerID := c.Query("external_customer_id")
-		customerID := c.Query("customer_id")
-		eventName := c.Query("event_name")
-		propertyName := c.Query("property_name")
-		aggregationType := c.Query("aggregation_type")
-		startTimeStr := c.Query("start_time")
-		endTimeStr := c.Query("end_time")
-		windowSize := c.Query("window_size")
-
-		startTime, endTime, err := parseStartAndEndTime(startTimeStr, endTimeStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
-			return
-		}
-
-		req = dto.GetUsageRequest{
-			ExternalCustomerID: externalCustomerID,
-			CustomerID:         customerID,
-			EventName:          eventName,
-			PropertyName:       propertyName,
-			AggregationType:    aggregationType,
-			StartTime:          startTime,
-			EndTime:            endTime,
-			WindowSize:         types.WindowSize(windowSize),
-		}
-	}
-
-	if req.EventName == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Missing required parameters"})
-		return
-	}
-
 	result, err := h.eventService.GetUsage(ctx, &req)
 	if err != nil {
-		h.log.Error("Failed to get usage", "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get usage"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 

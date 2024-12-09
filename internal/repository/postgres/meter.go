@@ -176,22 +176,19 @@ func (r *meterRepository) GetAllMeters(ctx context.Context) ([]*meter.Meter, err
 func (r *meterRepository) DisableMeter(ctx context.Context, id string) error {
 	query := `
 		UPDATE meters 
-		SET status = 'disabled', updated_at = NOW(), updated_by = $1
-		WHERE id = $2 AND tenant_id = $3 AND status = 'published'
+		SET 
+			status = 'deleted', 
+			updated_at = NOW(), 
+			updated_by = $1
+		WHERE 
+			id = $2 AND 
+			tenant_id = $3 AND 
+			status = 'published'
 	`
 
-	result, err := r.db.ExecContext(ctx, query, types.GetUserID(ctx), id, types.GetTenantID(ctx))
+	_, err := r.db.ExecContext(ctx, query, types.GetUserID(ctx), id, types.GetTenantID(ctx))
 	if err != nil {
 		return fmt.Errorf("disable meter: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("get rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("meter not found or already disabled")
 	}
 
 	return nil
