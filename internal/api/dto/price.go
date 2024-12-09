@@ -89,6 +89,12 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) *price.Price {
 	filterValues := make(price.JSONBFilters)
 	if r.FilterValues != nil {
 		filterValues = price.JSONBFilters(r.FilterValues)
+		for key, values := range r.FilterValues {
+			for _, value := range values {
+				// TODO : can there be a case where the value is string with spaces?
+				filterValues[key] = append(filterValues[key], strings.TrimSpace(value))
+			}
+		}
 	}
 
 	metadata := make(price.JSONBMetadata)

@@ -237,8 +237,8 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	response.StartTime = usageStartTime
 	response.EndTime = usageEndTime
 	response.Amount = price.GetAmountInDollars(totalCost)
-	response.Currency = "USD"
-	response.DisplayAmount = price.GetDisplayAmount(totalCost, "USD")
+	response.Currency = subscription.Currency
+	response.DisplayAmount = price.GetDisplayAmount(totalCost, subscription.Currency)
 
 	return response, nil
 }

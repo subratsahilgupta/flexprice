@@ -13,8 +13,8 @@ type CreateMeterRequest struct {
 	Name        string            `json:"name" binding:"required" example:"API Usage Meter"`
 	EventName   string            `json:"event_name" binding:"required" example:"api_request"`
 	Aggregation meter.Aggregation `json:"aggregation" binding:"required"`
-	Filters     []meter.Filter    `json:"filters" binding:"required"`
-	ResetUsage  types.ResetUsage  `json:"reset_usage" binding:"required" example:"BILLING_PERIOD"`
+	Filters     []meter.Filter    `json:"filters"`
+	ResetUsage  types.ResetUsage  `json:"reset_usage" example:"BILLING_PERIOD"`
 }
 
 // MeterResponse represents the meter response structure

@@ -81,6 +81,15 @@ func (r *GetUsageRequest) ToUsageParams() *events.UsageParams {
 		r.AggregationType = string(types.AggregationCount)
 	}
 
+	// TODO : can there be a case where the value is string with spaces?
+	filters := make(map[string][]string)
+	for key, values := range r.Filters {
+		filters[key] = make([]string, len(values))
+		for i, value := range values {
+			filters[key][i] = strings.TrimSpace(value)
+		}
+	}
+
 	return &events.UsageParams{
 		ExternalCustomerID: r.ExternalCustomerID,
 		CustomerID:         r.CustomerID,
@@ -90,7 +99,7 @@ func (r *GetUsageRequest) ToUsageParams() *events.UsageParams {
 		StartTime:          r.StartTime,
 		EndTime:            r.EndTime,
 		WindowSize:         r.WindowSize,
-		Filters:            r.Filters,
+		Filters:            filters,
 	}
 }
 
