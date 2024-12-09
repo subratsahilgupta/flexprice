@@ -14,7 +14,7 @@ import (
 type CreateSubscriptionRequest struct {
 	CustomerID        string               `json:"customer_id" validate:"required"`
 	PlanID            string               `json:"plan_id" validate:"required"`
-	Currency          string               `json:"currency" validate:"required,len=3"`
+	Currency          string               `json:"currency"`
 	LookupKey         string               `json:"lookup_key"`
 	StartDate         time.Time            `json:"start_date,omitempty"`
 	EndDate           *time.Time           `json:"end_date,omitempty"`
