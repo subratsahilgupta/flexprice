@@ -540,10 +540,110 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieve aggregated usage statistics for events",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Get usage statistics",
+                "parameters": [
+                    {
+                        "description": "Request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/events/usage/meter": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieve aggregated usage statistics using meter configuration",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Get usage by meter",
+                "parameters": [
+                    {
+                        "description": "Request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageByMeterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1477,7 +1577,7 @@ const docTemplate = `{
             }
         },
         "/subscriptions/usage": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1691,9 +1791,7 @@ const docTemplate = `{
             "required": [
                 "aggregation",
                 "event_name",
-                "filters",
-                "name",
-                "reset_usage"
+                "name"
             ],
             "properties": {
                 "aggregation": {
@@ -1917,7 +2015,6 @@ const docTemplate = `{
         "dto.CreateSubscriptionRequest": {
             "type": "object",
             "required": [
-                "currency",
                 "customer_id",
                 "plan_id"
             ],
@@ -2049,7 +2146,6 @@ const docTemplate = `{
         "dto.GetUsageByMeterRequest": {
             "type": "object",
             "required": [
-                "customer_id",
                 "meter_id"
             ],
             "properties": {
@@ -2142,7 +2238,6 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "aggregation_type",
-                "customer_id",
                 "event_name"
             ],
             "properties": {
@@ -2708,11 +2803,8 @@ const docTemplate = `{
                 "filter_values": {
                     "$ref": "#/definitions/price.JSONBFilters"
                 },
-                "meter": {
-                    "$ref": "#/definitions/dto.MeterResponse"
-                },
-                "price": {
-                    "$ref": "#/definitions/dto.PriceResponse"
+                "meter_display_name": {
+                    "type": "string"
                 },
                 "quantity": {
                     "type": "number"
@@ -3070,8 +3162,8 @@ const docTemplate = `{
         "types.InvoiceCadence": {
             "type": "string",
             "enum": [
-                "arrear",
-                "advance"
+                "ARREAR",
+                "ADVANCE"
             ],
             "x-enum-varnames": [
                 "InvoiceCadenceArrear",

@@ -37,9 +37,7 @@ definitions:
     required:
     - aggregation
     - event_name
-    - filters
     - name
-    - reset_usage
     type: object
   dto.CreatePlanPriceRequest:
     properties:
@@ -198,7 +196,6 @@ definitions:
       trial_start:
         type: string
     required:
-    - currency
     - customer_id
     - plan_id
     type: object
@@ -288,7 +285,6 @@ definitions:
         - $ref: '#/definitions/types.WindowSize'
         example: HOUR
     required:
-    - customer_id
     - meter_id
     type: object
   dto.GetUsageBySubscriptionRequest:
@@ -358,7 +354,6 @@ definitions:
         example: HOUR
     required:
     - aggregation_type
-    - customer_id
     - event_name
     type: object
   dto.IngestEventRequest:
@@ -715,10 +710,8 @@ definitions:
         type: string
       filter_values:
         $ref: '#/definitions/price.JSONBFilters'
-      meter:
-        $ref: '#/definitions/dto.MeterResponse'
-      price:
-        $ref: '#/definitions/dto.PriceResponse'
+      meter_display_name:
+        type: string
       quantity:
         type: number
     type: object
@@ -967,8 +960,8 @@ definitions:
     - BILLING_TIER_SLAB
   types.InvoiceCadence:
     enum:
-    - arrear
-    - advance
+    - ARREAR
+    - ADVANCE
     type: string
     x-enum-varnames:
     - InvoiceCadenceArrear
@@ -1376,8 +1369,72 @@ paths:
       summary: Get usage statistics
       tags:
       - events
+    post:
+      description: Retrieve aggregated usage statistics for events
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.GetUsageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get usage statistics
+      tags:
+      - events
   /events/usage/meter:
     get:
+      description: Retrieve aggregated usage statistics using meter configuration
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.GetUsageByMeterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get usage by meter
+      tags:
+      - events
+    post:
       description: Retrieve aggregated usage statistics using meter configuration
       parameters:
       - description: Request body
@@ -2031,7 +2088,7 @@ paths:
       tags:
       - subscriptions
   /subscriptions/usage:
-    get:
+    post:
       description: Get usage by subscription
       parameters:
       - description: Request

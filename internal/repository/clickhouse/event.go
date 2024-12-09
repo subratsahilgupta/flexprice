@@ -80,44 +80,48 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 	defer rows.Close()
 
 	var result events.AggregationResult
-	if rows.Next() {
-		// Choose scan type based on aggregation type and window size
-		// Windowed query - Done to get usage for showing graphs on the UI
-		if params.WindowSize != "" {
-			var windowSizeTime time.Time
+	result.Type = params.AggregationType
+	result.EventName = params.EventName
+
+	// For windowed queries, we need to process all rows
+	if params.WindowSize != "" {
+		for rows.Next() {
+			var windowSize time.Time
+			var value interface{}
+
 			switch params.AggregationType {
 			case types.AggregationCount:
-				var value uint64
-				if err := rows.Scan(&windowSizeTime, &value); err != nil {
+				var countValue uint64
+				if err := rows.Scan(&windowSize, &countValue); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
 				}
-				result.Value = float64(value)
+				value = float64(countValue)
 			case types.AggregationSum, types.AggregationAvg:
-				var value float64
-				if err := rows.Scan(&windowSizeTime, &value); err != nil {
+				var floatValue float64
+				if err := rows.Scan(&windowSize, &floatValue); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
 				}
-				result.Value = value
+				value = floatValue
 			default:
 				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
 			}
-			// Store the windowed results
+
 			result.Results = append(result.Results, events.UsageResult{
-				WindowSize: windowSizeTime,
-				Value:      result.Value,
+				WindowSize: windowSize,
+				Value:      value,
 			})
-		} else {
-			// Non-windowed query - Done to get usage for calculation
+		}
+	} else {
+		// Non-windowed query - process single row
+		if rows.Next() {
 			switch params.AggregationType {
 			case types.AggregationCount:
-				// COUNT operations always return uint64
 				var value uint64
 				if err := rows.Scan(&value); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
 				}
 				result.Value = float64(value)
 			case types.AggregationSum, types.AggregationAvg:
-				// SUM and AVG will return float64
 				var value float64
 				if err := rows.Scan(&value); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
@@ -127,9 +131,6 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
 			}
 		}
-
-		result.Type = params.AggregationType
-		result.EventName = params.EventName
 	}
 
 	return &result, nil
