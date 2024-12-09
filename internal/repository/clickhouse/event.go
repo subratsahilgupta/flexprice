@@ -81,26 +81,51 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 
 	var result events.AggregationResult
 	if rows.Next() {
-		// Choose scan type based on aggregation type
-		switch params.AggregationType {
-		case types.AggregationCount:
-			// COUNT operations always return uint64
-			var value uint64
-			if err := rows.Scan(&value); err != nil {
-				return nil, fmt.Errorf("scan result: %w", err)
+		// Choose scan type based on aggregation type and window size
+		// Windowed query - Done to get usage for showing graphs on the UI
+		if params.WindowSize != "" {
+			var windowSizeTime time.Time
+			switch params.AggregationType {
+			case types.AggregationCount:
+				var value uint64
+				if err := rows.Scan(&windowSizeTime, &value); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				result.Value = float64(value)
+			case types.AggregationSum, types.AggregationAvg:
+				var value float64
+				if err := rows.Scan(&windowSizeTime, &value); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				result.Value = value
+			default:
+				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
 			}
-			result.Value = float64(value)
-
-		case types.AggregationSum:
-			// SUM and AVG might return float64
-			var value float64
-			if err := rows.Scan(&value); err != nil {
-				return nil, fmt.Errorf("scan result: %w", err)
+			// Store the windowed results
+			result.Results = append(result.Results, events.UsageResult{
+				WindowSize: windowSizeTime,
+				Value:      result.Value,
+			})
+		} else {
+			// Non-windowed query - Done to get usage for calculation
+			switch params.AggregationType {
+			case types.AggregationCount:
+				// COUNT operations always return uint64
+				var value uint64
+				if err := rows.Scan(&value); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				result.Value = float64(value)
+			case types.AggregationSum, types.AggregationAvg:
+				// SUM and AVG will return float64
+				var value float64
+				if err := rows.Scan(&value); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				result.Value = value
+			default:
+				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
 			}
-			result.Value = value
-
-		default:
-			return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
 		}
 
 		result.Type = params.AggregationType
