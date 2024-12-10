@@ -273,13 +273,16 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			cost := priceService.CalculateCost(ctx, priceObj.Price, filteredUsage)
 			totalCost += cost
 
-			// Add charge to response
-			response.Charges = append(response.Charges, createChargeResponse(
+			filteredUsageCharge := createChargeResponse(
 				priceObj.Price,
 				filteredUsage,
 				cost,
 				getMeterDisplayName(ctx, s, meterID, meterDisplayNames),
-			))
+			)
+
+			if filteredUsageCharge.Quantity > 0 && filteredUsageCharge.Amount > 0 {
+				response.Charges = append(response.Charges, filteredUsageCharge)
+			}
 		}
 
 		// Apply default price to remaining usage if it exists
@@ -291,13 +294,16 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			cost := priceService.CalculateCost(ctx, defaultPrice.Price, defaultUsage)
 			totalCost += cost
 
-			// Add charge to response
-			response.Charges = append(response.Charges, createChargeResponse(
+			defaultUsageCharge := createChargeResponse(
 				defaultPrice.Price,
 				defaultUsage,
 				cost,
 				getMeterDisplayName(ctx, s, meterID, meterDisplayNames),
-			))
+			)
+
+			if defaultUsageCharge.Quantity > 0 && defaultUsageCharge.Amount > 0 {
+				response.Charges = append(response.Charges, defaultUsageCharge)
+			}
 		}
 	}
 
