@@ -90,7 +90,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			price.POST("", handlers.Price.CreatePrice)
 			price.GET("", handlers.Price.GetPrices)
-			price.GET("/list", handlers.Price.GetPrices)
 			price.GET("/:id", handlers.Price.GetPrice)
 			price.PUT("/:id", handlers.Price.UpdatePrice)
 			price.DELETE("/:id", handlers.Price.DeletePrice)

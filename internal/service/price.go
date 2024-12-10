@@ -129,8 +129,8 @@ func (s *priceService) CalculateCost(ctx context.Context, price *price.Price, us
 		totalCost += perUnitCost * quantityInt // multiply by quantity
 	case types.BILLING_MODEL_PACKAGE:
 		perUnitCost = price.Amount
-		perUnitCost /= uint64(price.Transform.DivideBy) // convert to per unit
-		totalCost += perUnitCost * quantityInt          // multiply by quantity
+		quantityIntTransform := uint64(math.Round(quantity / float64(price.Transform.DivideBy)))
+		totalCost += perUnitCost * quantityIntTransform // multiply by quantity
 	case types.BILLING_MODEL_TIERED:
 		switch price.TierMode {
 		case types.BILLING_TIER_SLAB:
