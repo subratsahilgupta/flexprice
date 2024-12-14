@@ -1,3 +1,4 @@
+// In-memory customer repository for testing
 package testutil
 
 import (
