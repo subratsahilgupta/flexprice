@@ -12,18 +12,18 @@ import (
 )
 
 type CreateSubscriptionRequest struct {
-	CustomerID        string               `json:"customer_id" validate:"required"`
-	PlanID            string               `json:"plan_id" validate:"required"`
-	Currency          string               `json:"currency"`
-	LookupKey         string               `json:"lookup_key"`
-	StartDate         time.Time            `json:"start_date,omitempty"`
-	EndDate           *time.Time           `json:"end_date,omitempty"`
-	TrialStart        *time.Time           `json:"trial_start,omitempty"`
-	TrialEnd          *time.Time           `json:"trial_end,omitempty"`
-	InvoiceCadence    types.InvoiceCadence `json:"invoice_cadence,omitempty"`
-	BillingCadence    types.BillingCadence `json:"billing_cadence,omitempty"`
-	BillingPeriod     types.BillingPeriod  `json:"billing_period,omitempty"`
-	BillingPeriodUnit int                  `json:"billing_period_unit,omitempty"`
+	CustomerID         string               `json:"customer_id" validate:"required"`
+	PlanID             string               `json:"plan_id" validate:"required"`
+	Currency           string               `json:"currency"`
+	LookupKey          string               `json:"lookup_key"`
+	StartDate          time.Time            `json:"start_date,omitempty"`
+	EndDate            *time.Time           `json:"end_date,omitempty"`
+	TrialStart         *time.Time           `json:"trial_start,omitempty"`
+	TrialEnd           *time.Time           `json:"trial_end,omitempty"`
+	InvoiceCadence     types.InvoiceCadence `json:"invoice_cadence,omitempty"`
+	BillingCadence     types.BillingCadence `json:"billing_cadence,omitempty"`
+	BillingPeriod      types.BillingPeriod  `json:"billing_period,omitempty"`
+	BillingPeriodCount int                  `json:"billing_period_count,omitempty"`
 }
 
 type UpdateSubscriptionRequest struct {
@@ -68,7 +68,7 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		InvoiceCadence:     r.InvoiceCadence,
 		BillingCadence:     r.BillingCadence,
 		BillingPeriod:      r.BillingPeriod,
-		BillingPeriodUnit:  r.BillingPeriodUnit,
+		BillingPeriodCount: r.BillingPeriodCount,
 		BillingAnchor:      r.StartDate,
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 	}

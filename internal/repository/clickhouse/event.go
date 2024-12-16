@@ -10,7 +10,9 @@ import (
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/repository/clickhouse/builder"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 )
 
 type EventRepository struct {
@@ -87,7 +89,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 	if params.WindowSize != "" {
 		for rows.Next() {
 			var windowSize time.Time
-			var value interface{}
+			var value decimal.Decimal
 
 			switch params.AggregationType {
 			case types.AggregationCount:
@@ -95,13 +97,13 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 				if err := rows.Scan(&windowSize, &countValue); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
 				}
-				value = float64(countValue)
+				value = decimal.NewFromUint64(countValue)
 			case types.AggregationSum, types.AggregationAvg:
 				var floatValue float64
 				if err := rows.Scan(&windowSize, &floatValue); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
 				}
-				value = floatValue
+				value = decimal.NewFromFloat(floatValue)
 			default:
 				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
 			}
@@ -120,13 +122,13 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 				if err := rows.Scan(&value); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
 				}
-				result.Value = float64(value)
+				result.Value = decimal.NewFromUint64(value)
 			case types.AggregationSum, types.AggregationAvg:
 				var value float64
 				if err := rows.Scan(&value); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
 				}
-				result.Value = value
+				result.Value = decimal.NewFromFloat(value)
 			default:
 				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
 			}
@@ -134,6 +136,70 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 	}
 
 	return &result, nil
+}
+
+func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *events.UsageWithFiltersParams) ([]*events.AggregationResult, error) {
+	if params == nil || params.UsageParams == nil {
+		return nil, fmt.Errorf("params cannot be nil")
+	}
+
+	// Build query using the new builder
+	qb := builder.NewQueryBuilder().
+		WithBaseFilters(ctx, params.UsageParams).
+		WithAggregation(ctx, params.AggregationType, params.PropertyName).
+		WithFilterGroups(ctx, params.FilterGroups)
+
+	query, queryParams := qb.Build()
+
+	r.logger.Debugw("executing filter groups query",
+		"event_name", params.EventName,
+		"filter_groups", len(params.FilterGroups),
+		"query", query,
+		"params", queryParams)
+
+	// Execute query with named parameters
+	rows, err := r.store.GetConn().Query(ctx, query, queryParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	// Process results
+	var results []*events.AggregationResult
+	for rows.Next() {
+		var filterGroupID string
+		var value interface{}
+
+		if err := rows.Scan(&filterGroupID, &value); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		result := &events.AggregationResult{
+			Metadata: map[string]string{
+				"filter_group_id": filterGroupID,
+			},
+		}
+
+		// Convert value based on aggregation type
+		switch params.AggregationType {
+		case types.AggregationCount:
+			if v, ok := value.(uint64); ok {
+				result.Value = decimal.NewFromUint64(v)
+			}
+		case types.AggregationSum, types.AggregationAvg:
+			if v, ok := value.(float64); ok {
+				result.Value = decimal.NewFromFloat(v)
+			}
+		}
+
+		results = append(results, result)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	return results, nil
 }
 
 func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, error) {

@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -173,7 +174,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 	testCases := []struct {
 		name          string
 		request       *dto.GetUsageRequest
-		expectedValue float64
+		expectedValue decimal.Decimal
 		expectedError bool
 	}{
 		{
@@ -185,7 +186,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 				StartTime:          time.Now().Add(-2 * time.Hour),
 				EndTime:            time.Now(),
 			},
-			expectedValue: float64(3),
+			expectedValue: decimal.NewFromFloat(3),
 			expectedError: false,
 		},
 		{
@@ -201,7 +202,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 					"status": {"success"},
 				},
 			},
-			expectedValue: 300, // 100 + 200 (only success events)
+			expectedValue: decimal.NewFromFloat(300.0), // 100 + 200 (only success events)
 			expectedError: false,
 		},
 		{
@@ -218,7 +219,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 					"region": {"us-east-1"},
 				},
 			},
-			expectedValue: 250, // 100 + 150 (us-east-1 events only)
+			expectedValue: decimal.NewFromFloat(250), // 100 + 150 (us-east-1 events only)
 			expectedError: false,
 		},
 		{
@@ -233,7 +234,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 					"region": {"us-west-2"},
 				},
 			},
-			expectedValue: 1, // Only one event in us-west-2
+			expectedValue: decimal.NewFromFloat(1), // Only one event in us-west-2
 			expectedError: false,
 		},
 	}
@@ -245,7 +246,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 				s.Error(err)
 			} else {
 				s.NoError(err)
-				s.Equal(tc.expectedValue, result.Value)
+				s.Equal(tc.expectedValue.InexactFloat64(), result.Value.InexactFloat64())
 			}
 		})
 	}
@@ -345,11 +346,14 @@ func (s *EventServiceSuite) TestGetUsageByMeter() {
 		StartTime:          time.Now().Add(-2 * time.Hour),
 		EndTime:            time.Now(),
 		WindowSize:         types.WindowSizeHour,
+		Filters: map[string][]string{
+			"region": {"us-east-1"},
+		},
 	})
 
 	s.NoError(err)
 	s.NotNil(result)
-	s.Equal(float64(300), result.Value) // Only sum of us-east-1 events (100 + 200)
+	s.Equal(decimal.NewFromFloat(300).InexactFloat64(), result.Value.InexactFloat64()) // Only sum of us-east-1 events (100 + 200)
 	s.Equal("api_request", result.EventName)
 	s.Equal(types.AggregationSum, result.Type)
 }

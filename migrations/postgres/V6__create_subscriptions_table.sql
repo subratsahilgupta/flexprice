@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     invoice_cadence VARCHAR(20) NOT NULL,
     billing_cadence VARCHAR(20) NOT NULL,
     billing_period VARCHAR(20) NOT NULL,
-    billing_period_unit INT NOT NULL,
+    billing_period_count INT NOT NULL,
     tenant_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,

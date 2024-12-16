@@ -68,6 +68,42 @@ type Event struct {
 	Source             string                 `json:"source"`
 }
 
+type GetUsageResponse struct {
+	Results   []UsageResult         `json:"results,omitempty"`
+	Value     float64               `json:"value,omitempty"`
+	EventName string                `json:"event_name"`
+	Type      types.AggregationType `json:"type"`
+}
+
+type UsageResult struct {
+	WindowSize time.Time `json:"window_size"`
+	Value      float64   `json:"value"`
+}
+
+func FromAggregationResult(result *events.AggregationResult) *GetUsageResponse {
+	if result == nil {
+		return nil
+	}
+
+	response := &GetUsageResponse{
+		Results:   make([]UsageResult, len(result.Results)),
+		Value:     result.Value.InexactFloat64(),
+		EventName: result.EventName,
+		Type:      result.Type,
+	}
+
+	if len(result.Results) > 0 {
+		for i, r := range result.Results {
+			response.Results[i] = UsageResult{
+				WindowSize: r.WindowSize,
+				Value:      r.Value.InexactFloat64(),
+			}
+		}
+	}
+
+	return response
+}
+
 func (r *IngestEventRequest) Validate() error {
 	return validator.New().Struct(r)
 }

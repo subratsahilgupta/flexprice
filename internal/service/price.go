@@ -3,14 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 )
 
 type PriceService interface {
@@ -19,7 +18,7 @@ type PriceService interface {
 	GetPrices(ctx context.Context, filter types.Filter) (*dto.ListPricesResponse, error)
 	UpdatePrice(ctx context.Context, id string, req dto.UpdatePriceRequest) (*dto.PriceResponse, error)
 	DeletePrice(ctx context.Context, id string) error
-	CalculateCost(ctx context.Context, price *price.Price, usage *events.AggregationResult) uint64
+	CalculateCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal
 }
 
 type priceService struct {
@@ -40,7 +39,10 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 		return nil, fmt.Errorf("plan_id is required")
 	}
 
-	price := req.ToPrice(ctx)
+	price, err := req.ToPrice(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse price: %w", err)
+	}
 
 	if err := s.repo.Create(ctx, price); err != nil {
 		return nil, fmt.Errorf("failed to create price: %w", err)
@@ -105,75 +107,115 @@ func (s *priceService) DeletePrice(ctx context.Context, id string) error {
 }
 
 // CalculateCost calculates the cost for a given price and usage
-// returns the cost in cents (e.g. 100 = $1.00)
-// TODO : this is the first draft of the cost calculation, it needs to be tested and optimized
-func (s *priceService) CalculateCost(ctx context.Context, price *price.Price, usage *events.AggregationResult) uint64 {
-	var totalCost uint64
-	var quantityInt uint64
-	var quantity float64
-
-	switch v := usage.Value.(type) {
-	case float64:
-		quantity = v
-	case uint64:
-		quantity = float64(v)
+// returns the cost in main currency units (e.g., 1.00 = $1.00)
+func (s *priceService) CalculateCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal {
+	cost := decimal.Zero
+	if quantity.IsZero() {
+		return cost
 	}
 
-	// round off quantity to the nearest integer and convert to int
-	quantityInt = uint64(math.Round(quantity))
-
-	var perUnitCost uint64
 	switch price.BillingModel {
 	case types.BILLING_MODEL_FLAT_FEE:
-		perUnitCost = price.Amount
-		totalCost += perUnitCost * quantityInt // multiply by quantity
+		cost = price.CalculateAmountWithPrecision(quantity)
+
 	case types.BILLING_MODEL_PACKAGE:
-		perUnitCost = price.Amount
-		quantityIntTransform := uint64(math.Round(quantity / float64(price.Transform.DivideBy)))
-		totalCost += perUnitCost * quantityIntTransform // multiply by quantity
-	case types.BILLING_MODEL_TIERED:
-		switch price.TierMode {
-		case types.BILLING_TIER_SLAB:
-			remainingQuantity := quantityInt
-			for _, tier := range price.Tiers {
-				if remainingQuantity <= 0 {
-					break
-				}
-
-				perUnitCost = tier.UnitAmount
-				maxQuantityForTier := uint64(tier.GetTierUpTo())
-
-				validQuantityForTier := remainingQuantity
-				if validQuantityForTier > maxQuantityForTier {
-					validQuantityForTier = maxQuantityForTier
-				}
-
-				if validQuantityForTier <= 0 {
-					break
-				}
-
-				totalCost += perUnitCost * validQuantityForTier // add the cost for this tier
-
-				// subtract the tier quantity from the remaining quantity
-				remainingQuantity -= maxQuantityForTier
-			}
-		case types.BILLING_TIER_VOLUME:
-			// Sort price tiers by up_to value
-			sort.Slice(price.Tiers, func(i, j int) bool {
-				return price.Tiers[i].GetTierUpTo() < price.Tiers[j].GetTierUpTo()
-			})
-
-			// Find the tier that the quantity falls into
-			for _, tier := range price.Tiers {
-				perUnitCost = tier.UnitAmount
-
-				if quantityInt <= uint64(tier.GetTierUpTo()) {
-					totalCost += quantityInt * perUnitCost // add the cost for this tier
-					break
-				}
-			}
+		if price.TransformQuantity.DivideBy <= 0 {
+			return decimal.Zero
 		}
+
+		transformedQuantity := quantity.Div(decimal.NewFromInt(int64(price.TransformQuantity.DivideBy)))
+
+		if price.TransformQuantity.Round == types.ROUND_UP {
+			transformedQuantity = transformedQuantity.Ceil()
+		} else if price.TransformQuantity.Round == types.ROUND_DOWN {
+			transformedQuantity = transformedQuantity.Floor()
+		}
+
+		cost = price.CalculateAmountWithPrecision(transformedQuantity)
+
+	case types.BILLING_MODEL_TIERED:
+		cost = s.calculateTieredCost(ctx, price, quantity)
 	}
 
-	return totalCost
+	finalCost := cost.Round(types.GetCurrencyPrecision(price.Currency))
+	return finalCost
+}
+
+// calculateTieredCost calculates cost for tiered pricing
+func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal {
+	cost := decimal.Zero
+	if len(price.Tiers) == 0 {
+		s.logger.WithContext(ctx).Errorf("no tiers found for price %s", price.ID)
+		return cost
+	}
+
+	// Sort price tiers by up_to value
+	sort.Slice(price.Tiers, func(i, j int) bool {
+		return price.Tiers[i].GetTierUpTo() < price.Tiers[j].GetTierUpTo()
+	})
+
+	switch price.TierMode {
+	case types.BILLING_TIER_VOLUME:
+		selectedTierIndex := len(price.Tiers) - 1
+		// Find the tier that the quantity falls into
+		for i, tier := range price.Tiers {
+			if tier.UpTo == nil {
+				selectedTierIndex = i
+				break
+			}
+			if quantity.LessThan(decimal.NewFromUint64(*tier.UpTo)) {
+				selectedTierIndex = i
+				break
+			}
+		}
+
+		selectedTier := price.Tiers[selectedTierIndex]
+
+		// Calculate tier cost with proper rounding and handling of flat amount
+		tierCost := selectedTier.CalculateTierAmountWithPrecision(quantity, price.Currency)
+
+		s.logger.WithContext(ctx).Debugf(
+			"volume tier total cost for quantity %s: %s price: %s tier : %+v",
+			quantity.String(),
+			tierCost.String(),
+			price.ID,
+			selectedTier,
+		)
+
+		cost = cost.Add(tierCost)
+
+	case types.BILLING_TIER_SLAB:
+		remainingQuantity := quantity
+		for _, tier := range price.Tiers {
+			var tierQuantity = remainingQuantity
+			if tier.UpTo != nil {
+				upTo := decimal.NewFromUint64(*tier.UpTo)
+				if remainingQuantity.GreaterThan(upTo) {
+					tierQuantity = upTo
+				}
+			}
+
+			// Calculate tier cost with proper rounding and handling of flat amount
+			tierCost := tier.CalculateTierAmountWithPrecision(tierQuantity, price.Currency)
+			cost = cost.Add(tierCost)
+			remainingQuantity = remainingQuantity.Sub(tierQuantity)
+
+			s.logger.WithContext(ctx).Debugf(
+				"slab tier total cost for quantity %s: %s price: %s tier : %+v",
+				quantity.String(),
+				tierCost.String(),
+				price.ID,
+				tier,
+			)
+
+			if remainingQuantity.LessThanOrEqual(decimal.Zero) {
+				break
+			}
+		}
+	default:
+		s.logger.WithContext(ctx).Errorf("invalid tier mode: %s", price.TierMode)
+		return decimal.Zero
+	}
+
+	return cost
 }

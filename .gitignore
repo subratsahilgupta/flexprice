@@ -36,3 +36,7 @@ coverage.html
 
 # Local Research docs
 research/*
+
+# windsurf rules
+.windsurfrules
+.cursorrules

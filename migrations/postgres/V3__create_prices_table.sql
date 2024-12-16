@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS prices (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    amount INTEGER NOT NULL,
+    -- Amount stored in main currency units (e.g., dollars, not cents)
+    -- For USD: 12.50 means $12.50, not cents
+    amount DECIMAL(20,9) NOT NULL,
     currency VARCHAR(3) NOT NULL,
     display_amount VARCHAR(255) NOT NULL,
     plan_id VARCHAR(255) NOT NULL,
@@ -13,7 +15,7 @@ CREATE TABLE IF NOT EXISTS prices (
     filter_values JSONB,
     tier_mode VARCHAR(20),
     tiers JSONB,
-    transform JSONB,
+    transform_quantity JSONB,
     lookup_key VARCHAR(255) NOT NULL,
     description TEXT,
     metadata JSONB,

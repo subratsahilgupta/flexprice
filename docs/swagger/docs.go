@@ -131,12 +131,22 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "name": "search",
+                        "name": "sort",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
                         "type": "string",
-                        "name": "sort",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
                         "in": "query"
                     }
                 ],
@@ -494,53 +504,6 @@ const docTemplate = `{
             }
         },
         "/events/usage": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Retrieve aggregated usage statistics for events",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "events"
-                ],
-                "summary": "Get usage statistics",
-                "parameters": [
-                    {
-                        "description": "Request body",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.GetUsageRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
-                        }
-                    }
-                }
-            },
             "post": {
                 "security": [
                     {
@@ -570,8 +533,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/dto.GetUsageResponse"
                         }
                     },
                     "400": {
@@ -590,59 +552,6 @@ const docTemplate = `{
             }
         },
         "/events/usage/meter": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Retrieve aggregated usage statistics using meter configuration",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "events"
-                ],
-                "summary": "Get usage by meter",
-                "parameters": [
-                    {
-                        "description": "Request body",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.GetUsageByMeterRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
-                        }
-                    }
-                }
-            },
             "post": {
                 "security": [
                     {
@@ -672,8 +581,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/dto.GetUsageResponse"
                         }
                     },
                     "400": {
@@ -958,12 +866,22 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "name": "search",
+                        "name": "sort",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
                         "type": "string",
-                        "name": "sort",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
                         "in": "query"
                     }
                 ],
@@ -1226,12 +1144,22 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "name": "search",
+                        "name": "sort",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
                         "type": "string",
-                        "name": "sort",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
                         "in": "query"
                     }
                 ],
@@ -1824,6 +1752,7 @@ const docTemplate = `{
         "dto.CreatePlanPriceRequest": {
             "type": "object",
             "required": [
+                "amount",
                 "billing_cadence",
                 "billing_model",
                 "billing_period",
@@ -1833,7 +1762,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
@@ -1887,8 +1816,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.CreatePriceTier"
                     }
                 },
-                "transform": {
-                    "$ref": "#/definitions/price.PriceTransform"
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.TransformQuantity"
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
@@ -1927,6 +1856,7 @@ const docTemplate = `{
         "dto.CreatePriceRequest": {
             "type": "object",
             "required": [
+                "amount",
                 "billing_cadence",
                 "billing_model",
                 "billing_period",
@@ -1936,7 +1866,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
@@ -1990,8 +1920,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.CreatePriceTier"
                     }
                 },
-                "transform": {
-                    "$ref": "#/definitions/price.PriceTransform"
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.TransformQuantity"
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
@@ -2000,12 +1930,15 @@ const docTemplate = `{
         },
         "dto.CreatePriceTier": {
             "type": "object",
+            "required": [
+                "unit_amount"
+            ],
             "properties": {
                 "flat_amount": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "unit_amount": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "up_to": {
                     "type": "integer"
@@ -2025,7 +1958,7 @@ const docTemplate = `{
                 "billing_period": {
                     "$ref": "#/definitions/types.BillingPeriod"
                 },
-                "billing_period_unit": {
+                "billing_period_count": {
                     "type": "integer"
                 },
                 "currency": {
@@ -2289,6 +2222,26 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.GetUsageResponse": {
+            "type": "object",
+            "properties": {
+                "event_name": {
+                    "type": "string"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.UsageResult"
+                    }
+                },
+                "type": {
+                    "$ref": "#/definitions/types.AggregationType"
+                },
+                "value": {
+                    "type": "number"
+                }
+            }
+        },
         "dto.IngestEventRequest": {
             "type": "object",
             "required": [
@@ -2524,8 +2477,8 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "amount": {
-                    "description": "Amount in cents ex 1200 for $12",
-                    "type": "integer"
+                    "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
+                    "type": "string"
                 },
                 "billing_cadence": {
                     "description": "BillingCadence is the billing cadence for the price ex RECURRING, ONETIME",
@@ -2567,10 +2520,6 @@ const docTemplate = `{
                 },
                 "description": {
                     "description": "Description of the price",
-                    "type": "string"
-                },
-                "display_amount": {
-                    "description": "DisplayAmount is the amount in the currency ex $12.00",
                     "type": "string"
                 },
                 "filter_values": {
@@ -2626,11 +2575,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/price.PriceTier"
                     }
                 },
-                "transform": {
+                "transform_quantity": {
                     "description": "Transform is the quantity transformation in case of PACKAGE billing model",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/price.JSONBTransform"
+                            "$ref": "#/definitions/price.JSONBTransformQuantity"
                         }
                     ]
                 },
@@ -2689,8 +2638,8 @@ const docTemplate = `{
                         }
                     ]
                 },
-                "billing_period_unit": {
-                    "description": "BillingPeriodUnit is the unit of the billing period.",
+                "billing_period_count": {
+                    "description": "BillingPeriodCount is the total number units of the billing period.",
                     "type": "integer"
                 },
                 "cancel_at": {
@@ -2828,6 +2777,7 @@ const docTemplate = `{
         "dto.UpdatePlanPriceRequest": {
             "type": "object",
             "required": [
+                "amount",
                 "billing_cadence",
                 "billing_model",
                 "billing_period",
@@ -2837,7 +2787,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
@@ -2895,8 +2845,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.CreatePriceTier"
                     }
                 },
-                "transform": {
-                    "$ref": "#/definitions/price.PriceTransform"
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.TransformQuantity"
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
@@ -2949,6 +2899,17 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UsageResult": {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "number"
+                },
+                "window_size": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.UserResponse": {
             "type": "object",
             "properties": {
@@ -2968,10 +2929,16 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "field": {
+                    "description": "Field is the key in $event.properties on which the aggregation is to be applied\nFor ex if the aggregation type is sum for API usage, the field could be \"duration_ms\"",
                     "type": "string"
                 },
                 "type": {
-                    "$ref": "#/definitions/types.AggregationType"
+                    "description": "Type is the type of aggregation to be applied on the events\nFor ex sum, count, avg, max, min etc",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.AggregationType"
+                        }
+                    ]
                 }
             }
         },
@@ -2979,9 +2946,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "key": {
+                    "description": "Key is the key for the filter from $event.properties\nCurrently we support only first level keys in the properties and not nested keys",
                     "type": "string"
                 },
                 "values": {
+                    "description": "Values are the possible values for the filter to be considered for the meter\nFor ex \"model_name\" could have values \"o1-mini\", \"gpt-4o\" etc",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -3045,7 +3014,7 @@ const docTemplate = `{
                 "type": "string"
             }
         },
-        "price.JSONBTransform": {
+        "price.JSONBTransformQuantity": {
             "type": "object",
             "properties": {
                 "divide_by": {
@@ -3053,7 +3022,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "round": {
-                    "description": "up, down, or nearest",
+                    "description": "up or down",
                     "type": "string"
                 }
             }
@@ -3062,20 +3031,20 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "flat_amount": {
-                    "description": "Optional flat fee for this tier",
-                    "type": "integer"
+                    "description": "FlatAmount is the flat amount for the given tier and it is applied\non top of the unit amount*quantity. It solves cases in banking like 2.7% + 5c",
+                    "type": "number"
                 },
                 "unit_amount": {
-                    "description": "Amount per unit in cents",
-                    "type": "integer"
+                    "description": "UnitAmount is the amount per unit for the given tier",
+                    "type": "number"
                 },
                 "up_to": {
-                    "description": "null means infinity",
+                    "description": "Upto is the quantity up to which this tier applies. It is null for the last tier",
                     "type": "integer"
                 }
             }
         },
-        "price.PriceTransform": {
+        "price.TransformQuantity": {
             "type": "object",
             "properties": {
                 "divide_by": {
@@ -3083,7 +3052,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "round": {
-                    "description": "up, down, or nearest",
+                    "description": "up or down",
                     "type": "string"
                 }
             }
@@ -3093,20 +3062,12 @@ const docTemplate = `{
             "enum": [
                 "COUNT",
                 "SUM",
-                "AVG",
-                "MAX",
-                "MIN",
-                "COUNT_UNIQUE",
-                "LATEST"
+                "AVG"
             ],
             "x-enum-varnames": [
                 "AggregationCount",
                 "AggregationSum",
-                "AggregationAvg",
-                "AggregationMax",
-                "AggregationMin",
-                "AggregationCountUnique",
-                "AggregationLatest"
+                "AggregationAvg"
             ]
         },
         "types.BillingCadence": {

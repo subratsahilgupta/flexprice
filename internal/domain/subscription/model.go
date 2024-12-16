@@ -65,8 +65,8 @@ type Subscription struct {
 	// BillingPeriod is the period of the billing cycle.
 	BillingPeriod types.BillingPeriod `db:"billing_period" json:"billing_period"`
 
-	// BillingPeriodUnit is the unit of the billing period.
-	BillingPeriodUnit int `db:"billing_period_unit" json:"billing_period_unit"`
+	// BillingPeriodCount is the total number units of the billing period.
+	BillingPeriodCount int `db:"billing_period_count" json:"billing_period_count"`
 
 	// InvoiceCadence is the cadence of the invoice. This overrides the plan's invoice cadence.
 	InvoiceCadence types.InvoiceCadence `db:"invoice_cadence" json:"invoice_cadence"`
