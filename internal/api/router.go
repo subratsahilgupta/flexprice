@@ -21,6 +21,7 @@ type Handlers struct {
 	Customer     *v1.CustomerHandler
 	Plan         *v1.PlanHandler
 	Subscription *v1.SubscriptionHandler
+	Wallet       *v1.WalletHandler
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
@@ -100,6 +101,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.GET("/:id", handlers.Customer.GetCustomer)
 			customer.PUT("/:id", handlers.Customer.UpdateCustomer)
 			customer.DELETE("/:id", handlers.Customer.DeleteCustomer)
+
+			// other routes for customer
+			customer.GET("/:id/wallets", handlers.Wallet.GetWalletsByCustomerID)
 		}
 
 		plan := v1Private.Group("/plans")
@@ -118,6 +122,15 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			subscription.GET("/:id", handlers.Subscription.GetSubscription)
 			subscription.POST("/:id/cancel", handlers.Subscription.CancelSubscription)
 			subscription.POST("/usage", handlers.Subscription.GetUsageBySubscription)
+		}
+
+		wallet := v1Private.Group("/wallets")
+		{
+			wallet.POST("", handlers.Wallet.CreateWallet)
+			wallet.GET("/:id", handlers.Wallet.GetWalletByID)
+			wallet.GET("/:id/transactions", handlers.Wallet.GetWalletTransactions)
+			wallet.POST("/:id/top-up", handlers.Wallet.TopUpWallet)
+			wallet.GET("/:id/balance/real-time", handlers.Wallet.GetWalletBalance)
 		}
 	}
 	return router
