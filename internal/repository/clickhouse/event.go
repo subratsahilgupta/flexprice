@@ -168,30 +168,32 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 	var results []*events.AggregationResult
 	for rows.Next() {
 		var filterGroupID string
-		var value interface{}
 
-		if err := rows.Scan(&filterGroupID, &value); err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
-		}
+		result := &events.AggregationResult{}
+		result.Type = params.AggregationType
+		result.EventName = params.UsageParams.EventName
 
-		result := &events.AggregationResult{
-			Metadata: map[string]string{
-				"filter_group_id": filterGroupID,
-			},
-		}
-
-		// Convert value based on aggregation type
+		// Use appropriate type based on aggregation
 		switch params.AggregationType {
 		case types.AggregationCount:
-			if v, ok := value.(uint64); ok {
-				result.Value = decimal.NewFromUint64(v)
+			var value uint64
+			if err := rows.Scan(&filterGroupID, &value); err != nil {
+				return nil, fmt.Errorf("failed to scan count row: %w", err)
 			}
+			result.Value = decimal.NewFromUint64(value)
 		case types.AggregationSum, types.AggregationAvg:
-			if v, ok := value.(float64); ok {
-				result.Value = decimal.NewFromFloat(v)
+			var value float64
+			if err := rows.Scan(&filterGroupID, &value); err != nil {
+				return nil, fmt.Errorf("failed to scan float row: %w", err)
 			}
+			result.Value = decimal.NewFromFloat(value)
+		default:
+			return nil, fmt.Errorf("unsupported aggregation type: %v", params.AggregationType)
 		}
 
+		result.Metadata = map[string]string{
+			"filter_group_id": filterGroupID,
+		}
 		results = append(results, result)
 	}
 

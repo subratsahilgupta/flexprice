@@ -2474,8 +2474,8 @@
             "type": "object",
             "properties": {
                 "amount": {
-                    "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
-                    "type": "string"
+                    "description": "Amount stored in main currency units (e.g., dollars, not cents)\nFor USD: 12.50 means $12.50",
+                    "type": "number"
                 },
                 "billing_cadence": {
                     "description": "BillingCadence is the billing cadence for the price ex RECURRING, ONETIME",
@@ -2517,6 +2517,10 @@
                 },
                 "description": {
                     "description": "Description of the price",
+                    "type": "string"
+                },
+                "display_amount": {
+                    "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
                     "type": "string"
                 },
                 "filter_values": {
@@ -2751,6 +2755,9 @@
                 },
                 "meter_display_name": {
                     "type": "string"
+                },
+                "price": {
+                    "$ref": "#/definitions/price.Price"
                 },
                 "quantity": {
                     "type": "number"
@@ -3020,6 +3027,136 @@
                 },
                 "round": {
                     "description": "up or down",
+                    "type": "string"
+                }
+            }
+        },
+        "price.Price": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "description": "Amount stored in main currency units (e.g., dollars, not cents)\nFor USD: 12.50 means $12.50",
+                    "type": "number"
+                },
+                "billing_cadence": {
+                    "description": "BillingCadence is the billing cadence for the price ex RECURRING, ONETIME",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingCadence"
+                        }
+                    ]
+                },
+                "billing_model": {
+                    "description": "BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingModel"
+                        }
+                    ]
+                },
+                "billing_period": {
+                    "description": "BillingPeriod is the billing period for the price ex month, year",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingPeriod"
+                        }
+                    ]
+                },
+                "billing_period_count": {
+                    "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "description": "Currency 3 digit ISO currency code in lowercase ex usd, eur, gbp",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "Description of the price",
+                    "type": "string"
+                },
+                "display_amount": {
+                    "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
+                    "type": "string"
+                },
+                "filter_values": {
+                    "description": "FilterValues are the filter values for the price in case of usage based pricing",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/price.JSONBFilters"
+                        }
+                    ]
+                },
+                "id": {
+                    "description": "ID uuid identifier for the price",
+                    "type": "string"
+                },
+                "lookup_key": {
+                    "description": "LookupKey used for looking up the price in the database",
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata is a jsonb field for additional information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/price.JSONBMetadata"
+                        }
+                    ]
+                },
+                "meter_id": {
+                    "description": "MeterID is the id of the meter for usage based pricing",
+                    "type": "string"
+                },
+                "plan_id": {
+                    "description": "PlanID is the id of the plan for plan based pricing",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tier_mode": {
+                    "description": "Tiered pricing fields when BillingModel is TIERED",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingTier"
+                        }
+                    ]
+                },
+                "tiers": {
+                    "description": "Tiers are the tiers for the price when BillingModel is TIERED",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "transform_quantity": {
+                    "description": "Transform is the quantity transformation in case of PACKAGE billing model",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/price.JSONBTransformQuantity"
+                        }
+                    ]
+                },
+                "type": {
+                    "description": "Type is the type of the price ex USAGE, FIXED",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceType"
+                        }
+                    ]
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
                     "type": "string"
                 }
             }

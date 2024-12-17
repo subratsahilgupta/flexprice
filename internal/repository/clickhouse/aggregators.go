@@ -74,6 +74,16 @@ func buildFilterConditions(filters map[string][]string) string {
 }
 
 func buildTimeConditions(params *events.UsageParams) string {
+	conditions := parseTimeConditions(params)
+
+	if len(conditions) == 0 {
+		return ""
+	}
+
+	return "AND " + strings.Join(conditions, " AND ")
+}
+
+func parseTimeConditions(params *events.UsageParams) []string {
 	var conditions []string
 
 	if !params.StartTime.IsZero() {
@@ -88,11 +98,7 @@ func buildTimeConditions(params *events.UsageParams) string {
 				formatClickHouseDateTime(params.EndTime)))
 	}
 
-	if len(conditions) == 0 {
-		return ""
-	}
-
-	return "AND " + strings.Join(conditions, " AND ")
+	return conditions
 }
 
 // SumAggregator implements sum aggregation

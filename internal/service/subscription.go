@@ -200,6 +200,9 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	plan := subscriptionResponse.Plan
 	pricesResponse := plan.Prices
 
+	// Filter only the eligible prices
+	pricesResponse = filterValidPricesForSubscription(pricesResponse, subscription)
+
 	customer, err := s.customerRepo.Get(ctx, subscription.CustomerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get customer: %w", err)
@@ -219,24 +222,19 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	meterDisplayNames := make(map[string]string)
 
 	// Group prices by meter ID to handle default and filtered prices
-	meterPrices := make(map[string][]*dto.PriceResponse)
+	meterPrices := make(map[string][]dto.PriceResponse)
 	for _, priceResponse := range pricesResponse {
 		if priceResponse.Price.Type != types.PRICE_TYPE_USAGE {
 			continue
 		}
 
 		meterID := priceResponse.Price.MeterID
-		meterPrices[meterID] = append(meterPrices[meterID], &priceResponse)
+		meterPrices[meterID] = append(meterPrices[meterID], priceResponse)
 	}
 
 	// Pre-fetch all meter display names
 	for meterID := range meterPrices {
-		meter, err := s.meterRepo.GetMeter(ctx, meterID)
-		if err != nil {
-			s.logger.Errorw("failed to get meter", "meter_id", meterID, "error", err)
-			continue
-		}
-		meterDisplayNames[meterID] = meter.Name
+		meterDisplayNames[meterID] = getMeterDisplayName(ctx, s.meterRepo, meterID, meterDisplayNames)
 	}
 
 	totalCost := decimal.Zero
@@ -317,42 +315,36 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 	response.StartTime = usageStartTime
 	response.EndTime = usageEndTime
-	response.Amount = price.FormatAmountToFloat64(totalCost, subscription.Currency)
+	response.Amount = price.FormatAmountToFloat64WithPrecision(totalCost, subscription.Currency)
 	response.Currency = subscription.Currency
-	response.DisplayAmount = price.GetDisplayAmount(totalCost, subscription.Currency)
+	response.DisplayAmount = price.GetDisplayAmountWithPrecision(totalCost, subscription.Currency)
 
 	return response, nil
 }
 
 func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost decimal.Decimal, meterDisplayName string) *dto.SubscriptionUsageByMetersResponse {
-	finalAmount := cost.Round(types.GetCurrencyPrecision(priceObj.Currency))
-	if finalAmount.LessThan(decimal.Zero) {
-		finalAmount = decimal.Zero
-	}
-
-	// Skipping zero cost line items from the response for now
-	if finalAmount.LessThanOrEqual(decimal.Zero) {
+	finalAmount := price.FormatAmountToFloat64WithPrecision(cost, priceObj.Currency)
+	if finalAmount <= 0 {
 		return nil
 	}
 
-	amountFloat, _ := finalAmount.Float64()
-
 	return &dto.SubscriptionUsageByMetersResponse{
-		Amount:           amountFloat,
+		Amount:           finalAmount,
 		Currency:         priceObj.Currency,
-		DisplayAmount:    fmt.Sprintf("%s%s", types.GetCurrencySymbol(priceObj.Currency), cost.Round(types.GetCurrencyPrecision(priceObj.Currency))),
+		DisplayAmount:    price.GetDisplayAmountWithPrecision(cost, priceObj.Currency),
 		Quantity:         quantity.InexactFloat64(),
 		FilterValues:     priceObj.FilterValues,
 		MeterDisplayName: meterDisplayName,
+		Price:            priceObj,
 	}
 }
 
-func getMeterDisplayName(ctx context.Context, s *subscriptionService, meterID string, cache map[string]string) string {
+func getMeterDisplayName(ctx context.Context, meterRepo meter.Repository, meterID string, cache map[string]string) string {
 	if name, ok := cache[meterID]; ok {
 		return name
 	}
 
-	meter, err := s.meterRepo.GetMeter(ctx, meterID)
+	meter, err := meterRepo.GetMeter(ctx, meterID)
 	if err != nil {
 		return meterID // Fallback to meterID if error
 	}
@@ -368,27 +360,17 @@ func getMeterDisplayName(ctx context.Context, s *subscriptionService, meterID st
 func filterValidPricesForSubscription(prices []dto.PriceResponse, subscriptionObj *subscription.Subscription) []dto.PriceResponse {
 	var validPrices []dto.PriceResponse
 
-	// filter by currency
 	for _, price := range prices {
+		// filter by currency
 		if price.Price.Currency == subscriptionObj.Currency {
-			validPrices = append(validPrices, price)
-		}
-	}
-
-	// filter by billing period
-	for _, price := range validPrices {
-		if price.Price.BillingPeriod == subscriptionObj.BillingPeriod {
-			if price.Price.BillingPeriodCount == subscriptionObj.BillingPeriodCount {
-				validPrices = append(validPrices, price)
+			// filter by billing period
+			if price.Price.BillingPeriod == subscriptionObj.BillingPeriod {
+				// filter by billing period count
+				if price.Price.BillingPeriodCount == subscriptionObj.BillingPeriodCount {
+					validPrices = append(validPrices, price)
+				}
 			}
 		}
 	}
 	return validPrices
-}
-
-// Sort prices by filter count (most specific first)
-func sortPricesByFilterCount(prices []*dto.PriceResponse) {
-	sort.Slice(prices, func(i, j int) bool {
-		return len(prices[i].Price.FilterValues) > len(prices[j].Price.FilterValues)
-	})
 }
