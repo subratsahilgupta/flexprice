@@ -116,7 +116,7 @@ func (s *priceService) CalculateCost(ctx context.Context, price *price.Price, qu
 
 	switch price.BillingModel {
 	case types.BILLING_MODEL_FLAT_FEE:
-		cost = price.CalculateAmountWithPrecision(quantity)
+		cost = price.CalculateAmount(quantity)
 
 	case types.BILLING_MODEL_PACKAGE:
 		if price.TransformQuantity.DivideBy <= 0 {
@@ -131,7 +131,7 @@ func (s *priceService) CalculateCost(ctx context.Context, price *price.Price, qu
 			transformedQuantity = transformedQuantity.Floor()
 		}
 
-		cost = price.CalculateAmountWithPrecision(transformedQuantity)
+		cost = price.CalculateAmount(transformedQuantity)
 
 	case types.BILLING_MODEL_TIERED:
 		cost = s.calculateTieredCost(ctx, price, quantity)
@@ -172,7 +172,7 @@ func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Pri
 		selectedTier := price.Tiers[selectedTierIndex]
 
 		// Calculate tier cost with proper rounding and handling of flat amount
-		tierCost := selectedTier.CalculateTierAmountWithPrecision(quantity, price.Currency)
+		tierCost := selectedTier.CalculateTierAmount(quantity, price.Currency)
 
 		s.logger.WithContext(ctx).Debugf(
 			"volume tier total cost for quantity %s: %s price: %s tier : %+v",
@@ -196,7 +196,7 @@ func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Pri
 			}
 
 			// Calculate tier cost with proper rounding and handling of flat amount
-			tierCost := tier.CalculateTierAmountWithPrecision(tierQuantity, price.Currency)
+			tierCost := tier.CalculateTierAmount(tierQuantity, price.Currency)
 			cost = cost.Add(tierCost)
 			remainingQuantity = remainingQuantity.Sub(tierQuantity)
 

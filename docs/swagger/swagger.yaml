@@ -534,9 +534,9 @@ definitions:
     properties:
       amount:
         description: |-
-          DisplayAmount is the formatted amount with currency symbol
-          For USD: $12.50
-        type: string
+          Amount stored in main currency units (e.g., dollars, not cents)
+          For USD: 12.50 means $12.50
+        type: number
       billing_cadence:
         allOf:
         - $ref: '#/definitions/types.BillingCadence'
@@ -565,6 +565,11 @@ definitions:
         type: string
       description:
         description: Description of the price
+        type: string
+      display_amount:
+        description: |-
+          DisplayAmount is the formatted amount with currency symbol
+          For USD: $12.50
         type: string
       filter_values:
         allOf:
@@ -728,6 +733,8 @@ definitions:
         $ref: '#/definitions/price.JSONBFilters'
       meter_display_name:
         type: string
+      price:
+        $ref: '#/definitions/price.Price'
       quantity:
         type: number
     type: object
@@ -916,6 +923,95 @@ definitions:
         type: integer
       round:
         description: up or down
+        type: string
+    type: object
+  price.Price:
+    properties:
+      amount:
+        description: |-
+          Amount stored in main currency units (e.g., dollars, not cents)
+          For USD: 12.50 means $12.50
+        type: number
+      billing_cadence:
+        allOf:
+        - $ref: '#/definitions/types.BillingCadence'
+        description: BillingCadence is the billing cadence for the price ex RECURRING,
+          ONETIME
+      billing_model:
+        allOf:
+        - $ref: '#/definitions/types.BillingModel'
+        description: BillingModel is the billing model for the price ex FLAT_FEE,
+          PACKAGE, TIERED
+      billing_period:
+        allOf:
+        - $ref: '#/definitions/types.BillingPeriod'
+        description: BillingPeriod is the billing period for the price ex month, year
+      billing_period_count:
+        description: BillingPeriodCount is the count of the billing period ex 1, 3,
+          6, 12
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        description: Currency 3 digit ISO currency code in lowercase ex usd, eur,
+          gbp
+        type: string
+      description:
+        description: Description of the price
+        type: string
+      display_amount:
+        description: |-
+          DisplayAmount is the formatted amount with currency symbol
+          For USD: $12.50
+        type: string
+      filter_values:
+        allOf:
+        - $ref: '#/definitions/price.JSONBFilters'
+        description: FilterValues are the filter values for the price in case of usage
+          based pricing
+      id:
+        description: ID uuid identifier for the price
+        type: string
+      lookup_key:
+        description: LookupKey used for looking up the price in the database
+        type: string
+      metadata:
+        allOf:
+        - $ref: '#/definitions/price.JSONBMetadata'
+        description: Metadata is a jsonb field for additional information
+      meter_id:
+        description: MeterID is the id of the meter for usage based pricing
+        type: string
+      plan_id:
+        description: PlanID is the id of the plan for plan based pricing
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      tier_mode:
+        allOf:
+        - $ref: '#/definitions/types.BillingTier'
+        description: Tiered pricing fields when BillingModel is TIERED
+      tiers:
+        description: Tiers are the tiers for the price when BillingModel is TIERED
+        items:
+          $ref: '#/definitions/price.PriceTier'
+        type: array
+      transform_quantity:
+        allOf:
+        - $ref: '#/definitions/price.JSONBTransformQuantity'
+        description: Transform is the quantity transformation in case of PACKAGE billing
+          model
+      type:
+        allOf:
+        - $ref: '#/definitions/types.PriceType'
+        description: Type is the type of the price ex USAGE, FIXED
+      updated_at:
+        type: string
+      updated_by:
         type: string
     type: object
   price.PriceTier:

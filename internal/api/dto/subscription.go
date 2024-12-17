@@ -96,4 +96,5 @@ type SubscriptionUsageByMetersResponse struct {
 	Quantity         float64            `json:"quantity"`
 	FilterValues     price.JSONBFilters `json:"filter_values"`
 	MeterDisplayName string             `json:"meter_display_name"`
+	Price            *price.Price       `json:"price"`
 }

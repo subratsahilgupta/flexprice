@@ -23,11 +23,11 @@ type Price struct {
 
 	// Amount stored in main currency units (e.g., dollars, not cents)
 	// For USD: 12.50 means $12.50
-	Amount decimal.Decimal `db:"amount" json:"-"`
+	Amount decimal.Decimal `db:"amount" json:"amount"`
 
 	// DisplayAmount is the formatted amount with currency symbol
 	// For USD: $12.50
-	DisplayAmount string `db:"display_amount" json:"amount"`
+	DisplayAmount string `db:"display_amount" json:"display_amount"`
 
 	// Currency 3 digit ISO currency code in lowercase ex usd, eur, gbp
 	Currency string `db:"currency" json:"currency"`
@@ -91,16 +91,27 @@ func (p *Price) ValidateAmount() error {
 }
 
 // FormatAmountToString formats the amount to string
-// It rounds off the amount according to currency precision
 func (p *Price) FormatAmountToString() string {
+	return p.Amount.String()
+}
+
+// FormatAmountToStringWithPrecision formats the amount to string
+// It rounds off the amount according to currency precision
+func (p *Price) FormatAmountToStringWithPrecision() string {
 	config := types.GetCurrencyConfig(p.Currency)
 	return p.Amount.Round(config.Precision).String()
 }
 
 // FormatAmountToFloat64 formats the amount to float64
-// It rounds off the amount according to currency precision
 func (p *Price) FormatAmountToFloat64() float64 {
-	return p.Amount.Round(types.GetCurrencyPrecision(p.Currency)).InexactFloat64()
+	return p.Amount.InexactFloat64()
+}
+
+// FormatAmountToFloat64WithPrecision formats the amount to float64
+// It rounds off the amount according to currency precision
+func (p *Price) FormatAmountToFloat64WithPrecision() float64 {
+	config := types.GetCurrencyConfig(p.Currency)
+	return p.Amount.Round(config.Precision).InexactFloat64()
 }
 
 // GetDisplayAmount returns the amount in the currency ex $12.00
@@ -109,46 +120,41 @@ func (p *Price) GetDisplayAmount() string {
 	return fmt.Sprintf("%s%s", p.GetCurrencySymbol(), amount)
 }
 
-// CalculateAmountWithPrecision performs calculation with proper rounding
-func (p *Price) CalculateAmountWithPrecision(quantity decimal.Decimal) decimal.Decimal {
+// CalculateAmount performs calculation
+func (p *Price) CalculateAmount(quantity decimal.Decimal) decimal.Decimal {
 	// Calculate with full precision
 	result := p.Amount.Mul(quantity)
-	return result.Round(types.GetCurrencyPrecision(p.Currency))
+	return result
 }
 
-// CalculateTierAmountWithPrecision performs calculation with proper rounding
-func (pt *PriceTier) CalculateTierAmountWithPrecision(quantity decimal.Decimal, currency string) decimal.Decimal {
+// CalculateTierAmount performs calculation for tier price with flat and fixed ampunt
+func (pt *PriceTier) CalculateTierAmount(quantity decimal.Decimal, currency string) decimal.Decimal {
 	// Calculate tier cost with proper rounding
 	tierCost := pt.UnitAmount.Mul(quantity)
 	if pt.FlatAmount != nil {
 		tierCost = tierCost.Add(*pt.FlatAmount)
 	}
-	return tierCost.Round(types.GetCurrencyPrecision(currency))
+	return tierCost
 }
 
 // GetDisplayAmount returns the amount in the currency ex $12.00
-func GetDisplayAmount(amount decimal.Decimal, currency string) string {
-	p := &Price{Amount: amount, Currency: currency}
-	return p.GetDisplayAmount()
+func GetDisplayAmountWithPrecision(amount decimal.Decimal, currency string) string {
+	val := FormatAmountToStringWithPrecision(amount, currency)
+	config := types.GetCurrencyConfig(currency)
+	return fmt.Sprintf("%s%s", config.Symbol, val)
 }
 
-// FormatAmountToString formats the amount to string
+// FormatAmountToStringWithPrecision formats the amount to string
 // It rounds off the amount according to currency precision
-func FormatAmountToString(amount decimal.Decimal, currency string) string {
+func FormatAmountToStringWithPrecision(amount decimal.Decimal, currency string) string {
 	config := types.GetCurrencyConfig(currency)
 	return amount.Round(config.Precision).String()
 }
 
-// FormatAmountToFloat64 formats the amount to float64
+// FormatAmountToFloat64WithPrecision formats the amount to float64
 // It rounds off the amount according to currency precision
-func FormatAmountToFloat64(amount decimal.Decimal, currency string) float64 {
+func FormatAmountToFloat64WithPrecision(amount decimal.Decimal, currency string) float64 {
 	return amount.Round(types.GetCurrencyPrecision(currency)).InexactFloat64()
-}
-
-// CalculateAmountWithPrecision performs calculation with proper rounding
-func CalculateAmountWithPrecision(amount decimal.Decimal, currency string, quantity decimal.Decimal) decimal.Decimal {
-	p := &Price{Amount: amount, Currency: currency}
-	return p.CalculateAmountWithPrecision(quantity)
 }
 
 // PriceTransform is the quantity transformation in case of PACKAGE billing model
