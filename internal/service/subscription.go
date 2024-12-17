@@ -252,9 +252,37 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			return len(meterPriceGroup[i].Price.FilterValues) > len(meterPriceGroup[j].Price.FilterValues)
 		})
 
-		filterGroups := make(map[string]map[string][]string, 0)
-		for _, p := range meterPriceGroup {
-			filterGroups[p.Price.ID] = p.Price.FilterValues
+		type filterGroup struct {
+			ID           string
+			Priority     int
+			FilterValues map[string][]string
+		}
+
+		filterGroups := make([]filterGroup, 0, len(meterPriceGroup))
+		for _, price := range meterPriceGroup {
+			filterGroups = append(filterGroups, filterGroup{
+				ID:           price.Price.ID,
+				Priority:     calculatePriority(price.Price.FilterValues),
+				FilterValues: price.Price.FilterValues,
+			})
+		}
+
+		// Sort filter groups by priority and ID for consistency
+		sort.SliceStable(filterGroups, func(i, j int) bool {
+			pi := calculatePriority(filterGroups[i].FilterValues)
+			pj := calculatePriority(filterGroups[j].FilterValues)
+			if pi != pj {
+				return pi > pj // Higher priority first
+			}
+			return filterGroups[i].ID < filterGroups[j].ID // Stable sort by ID
+		})
+
+		// Convert to map after sorting
+		filterGroupsMap := make(map[string]map[string][]string)
+		for _, group := range filterGroups {
+			if len(group.FilterValues) > 0 {
+				filterGroupsMap[group.ID] = group.FilterValues
+			}
 		}
 
 		usages, err := eventService.GetUsageByMeterWithFilters(ctx, &dto.GetUsageByMeterRequest{
@@ -262,7 +290,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			ExternalCustomerID: customer.ExternalID,
 			StartTime:          usageStartTime,
 			EndTime:            usageEndTime,
-		}, filterGroups)
+		}, filterGroupsMap)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get usage for meter %s: %w", meterID, err)
 		}
@@ -373,4 +401,19 @@ func filterValidPricesForSubscription(prices []dto.PriceResponse, subscriptionOb
 		}
 	}
 	return validPrices
+}
+
+func calculatePriority(filterValues map[string][]string) int {
+	priority := 0
+
+	// Calculate priority based on number of filters and values
+	for _, values := range filterValues {
+		// Each filter key-value pair adds to priority
+		priority += len(values)
+	}
+
+	// Add weight for number of distinct filter keys
+	priority += len(filterValues) * 10
+
+	return priority
 }
