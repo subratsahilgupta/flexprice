@@ -203,6 +203,18 @@ definitions:
     - customer_id
     - plan_id
     type: object
+  dto.CreateWalletRequest:
+    properties:
+      currency:
+        type: string
+      customer_id:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+    required:
+    - currency
+    - customer_id
+    type: object
   dto.CustomerResponse:
     properties:
       created_at:
@@ -738,6 +750,17 @@ definitions:
       quantity:
         type: number
     type: object
+  dto.TopUpWalletRequest:
+    properties:
+      amount:
+        type: number
+      description:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+    required:
+    - amount
+    type: object
   dto.UpdateCustomerRequest:
     properties:
       email:
@@ -846,6 +869,94 @@ definitions:
         type: string
       id:
         type: string
+    type: object
+  dto.WalletBalanceResponse:
+    properties:
+      balance:
+        type: number
+      balance_updated_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      customer_id:
+        type: string
+      id:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      real_time_balance:
+        type: number
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      wallet_status:
+        $ref: '#/definitions/types.WalletStatus'
+    type: object
+  dto.WalletResponse:
+    properties:
+      balance:
+        type: number
+      created_at:
+        type: string
+      currency:
+        type: string
+      customer_id:
+        type: string
+      id:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      updated_at:
+        type: string
+      wallet_status:
+        type: string
+    type: object
+  dto.WalletTransactionResponse:
+    properties:
+      amount:
+        type: number
+      balance_after:
+        type: number
+      balance_before:
+        type: number
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      reference_id:
+        type: string
+      reference_type:
+        type: string
+      transaction_status:
+        type: string
+      type:
+        type: string
+      wallet_id:
+        type: string
+    type: object
+  dto.WalletTransactionsResponse:
+    properties:
+      filter:
+        $ref: '#/definitions/types.Filter'
+      total:
+        type: integer
+      transactions:
+        items:
+          $ref: '#/definitions/dto.WalletTransactionResponse'
+        type: array
     type: object
   gin.H:
     additionalProperties: {}
@@ -1086,6 +1197,19 @@ definitions:
     x-enum-varnames:
     - BILLING_TIER_VOLUME
     - BILLING_TIER_SLAB
+  types.Filter:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      order:
+        type: string
+      sort:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+    type: object
   types.InvoiceCadence:
     enum:
     - ARREAR
@@ -1094,6 +1218,10 @@ definitions:
     x-enum-varnames:
     - InvoiceCadenceArrear
     - InvoiceCadenceAdvance
+  types.Metadata:
+    additionalProperties:
+      type: string
+    type: object
   types.PriceType:
     enum:
     - USAGE
@@ -1140,6 +1268,16 @@ definitions:
     - SubscriptionStatusPastDue
     - SubscriptionStatusTrialing
     - SubscriptionStatusUnpaid
+  types.WalletStatus:
+    enum:
+    - active
+    - frozen
+    - closed
+    type: string
+    x-enum-varnames:
+    - WalletStatusActive
+    - WalletStatusFrozen
+    - WalletStatusClosed
   types.WindowSize:
     enum:
     - MINUTE
@@ -1152,6 +1290,9 @@ definitions:
     - WindowSizeDay
   v1.ErrorResponse:
     properties:
+      detail:
+        example: Invalid request payload
+        type: string
       error:
         example: Invalid request payload
         type: string
@@ -1389,6 +1530,39 @@ paths:
       summary: Update a customer
       tags:
       - customers
+  /customers/{id}/wallets:
+    get:
+      consumes:
+      - application/json
+      description: Get all wallets for a customer
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.WalletResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get wallets by customer ID
+      tags:
+      - Wallet
   /events:
     get:
       description: Retrieve raw events with pagination and filtering
@@ -2224,6 +2398,207 @@ paths:
       summary: Get user info
       tags:
       - users
+  /wallets:
+    post:
+      consumes:
+      - application/json
+      description: Create a new wallet for a customer
+      parameters:
+      - description: Create wallet request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateWalletRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.WalletResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new wallet
+      tags:
+      - Wallet
+  /wallets/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get a wallet by its ID
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.WalletResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get wallet by ID
+      tags:
+      - Wallet
+  /wallets/{id}/balance:
+    get:
+      consumes:
+      - application/json
+      description: Get real-time balance of a wallet
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.WalletBalanceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get wallet balance
+      tags:
+      - Wallet
+  /wallets/{id}/top-up:
+    post:
+      consumes:
+      - application/json
+      description: Add credits to a wallet
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Top up request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.TopUpWalletRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.WalletResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Top up wallet
+      tags:
+      - Wallet
+  /wallets/{id}/transactions:
+    get:
+      consumes:
+      - application/json
+      description: Get transactions for a wallet with pagination
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 50
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      - default: created_at
+        description: Sort field
+        in: query
+        name: sort
+        type: string
+      - default: desc
+        description: Sort order
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.WalletTransactionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get wallet transactions
+      tags:
+      - Wallet
 schemes:
 - http
 - https
