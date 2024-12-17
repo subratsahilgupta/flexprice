@@ -13,7 +13,7 @@ import (
 )
 
 type CreatePriceRequest struct {
-	Amount             string                   `json:"amount" validate:"required,decimal"`
+	Amount             string                   `json:"amount" validate:"required"`
 	Currency           string                   `json:"currency" validate:"required,len=3"`
 	PlanID             string                   `json:"plan_id,omitempty"`
 	Type               types.PriceType          `json:"type" validate:"required"`
@@ -33,8 +33,8 @@ type CreatePriceRequest struct {
 
 type CreatePriceTier struct {
 	UpTo       *uint64 `json:"up_to"`
-	UnitAmount string  `json:"unit_amount" validate:"required,decimal"`
-	FlatAmount *string `json:"flat_amount" validate:"omitempty,decimal"`
+	UnitAmount string  `json:"unit_amount" validate:"required"`
+	FlatAmount *string `json:"flat_amount" validate:"omitempty"`
 }
 
 // TODO : add all price validations
