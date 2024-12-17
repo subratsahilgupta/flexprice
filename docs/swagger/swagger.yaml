@@ -42,7 +42,7 @@ definitions:
   dto.CreatePlanPriceRequest:
     properties:
       amount:
-        type: number
+        type: string
       billing_cadence:
         $ref: '#/definitions/types.BillingCadence'
       billing_model:
@@ -78,11 +78,12 @@ definitions:
         items:
           $ref: '#/definitions/dto.CreatePriceTier'
         type: array
-      transform:
-        $ref: '#/definitions/price.PriceTransform'
+      transform_quantity:
+        $ref: '#/definitions/price.TransformQuantity'
       type:
         $ref: '#/definitions/types.PriceType'
     required:
+    - amount
     - billing_cadence
     - billing_model
     - billing_period
@@ -112,7 +113,7 @@ definitions:
   dto.CreatePriceRequest:
     properties:
       amount:
-        type: number
+        type: string
       billing_cadence:
         $ref: '#/definitions/types.BillingCadence'
       billing_model:
@@ -148,11 +149,12 @@ definitions:
         items:
           $ref: '#/definitions/dto.CreatePriceTier'
         type: array
-      transform:
-        $ref: '#/definitions/price.PriceTransform'
+      transform_quantity:
+        $ref: '#/definitions/price.TransformQuantity'
       type:
         $ref: '#/definitions/types.PriceType'
     required:
+    - amount
     - billing_cadence
     - billing_model
     - billing_period
@@ -163,11 +165,13 @@ definitions:
   dto.CreatePriceTier:
     properties:
       flat_amount:
-        type: number
+        type: string
       unit_amount:
-        type: number
+        type: string
       up_to:
         type: integer
+    required:
+    - unit_amount
     type: object
   dto.CreateSubscriptionRequest:
     properties:
@@ -175,7 +179,7 @@ definitions:
         $ref: '#/definitions/types.BillingCadence'
       billing_period:
         $ref: '#/definitions/types.BillingPeriod'
-      billing_period_unit:
+      billing_period_count:
         type: integer
       currency:
         type: string
@@ -356,6 +360,19 @@ definitions:
     - aggregation_type
     - event_name
     type: object
+  dto.GetUsageResponse:
+    properties:
+      event_name:
+        type: string
+      results:
+        items:
+          $ref: '#/definitions/dto.UsageResult'
+        type: array
+      type:
+        $ref: '#/definitions/types.AggregationType'
+      value:
+        type: number
+    type: object
   dto.IngestEventRequest:
     properties:
       customer_id:
@@ -516,8 +533,10 @@ definitions:
   dto.PriceResponse:
     properties:
       amount:
-        description: Amount in cents ex 1200 for $12
-        type: integer
+        description: |-
+          DisplayAmount is the formatted amount with currency symbol
+          For USD: $12.50
+        type: string
       billing_cadence:
         allOf:
         - $ref: '#/definitions/types.BillingCadence'
@@ -546,9 +565,6 @@ definitions:
         type: string
       description:
         description: Description of the price
-        type: string
-      display_amount:
-        description: DisplayAmount is the amount in the currency ex $12.00
         type: string
       filter_values:
         allOf:
@@ -584,9 +600,9 @@ definitions:
         items:
           $ref: '#/definitions/price.PriceTier'
         type: array
-      transform:
+      transform_quantity:
         allOf:
-        - $ref: '#/definitions/price.JSONBTransform'
+        - $ref: '#/definitions/price.JSONBTransformQuantity'
         description: Transform is the quantity transformation in case of PACKAGE billing
           model
       type:
@@ -625,8 +641,8 @@ definitions:
         allOf:
         - $ref: '#/definitions/types.BillingPeriod'
         description: BillingPeriod is the period of the billing cycle.
-      billing_period_unit:
-        description: BillingPeriodUnit is the unit of the billing period.
+      billing_period_count:
+        description: BillingPeriodCount is the total number units of the billing period.
         type: integer
       cancel_at:
         description: CancelAt is the date the subscription will be canceled
@@ -727,7 +743,7 @@ definitions:
   dto.UpdatePlanPriceRequest:
     properties:
       amount:
-        type: number
+        type: string
       billing_cadence:
         $ref: '#/definitions/types.BillingCadence'
       billing_model:
@@ -767,11 +783,12 @@ definitions:
         items:
           $ref: '#/definitions/dto.CreatePriceTier'
         type: array
-      transform:
-        $ref: '#/definitions/price.PriceTransform'
+      transform_quantity:
+        $ref: '#/definitions/price.TransformQuantity'
       type:
         $ref: '#/definitions/types.PriceType'
     required:
+    - amount
     - billing_cadence
     - billing_model
     - billing_period
@@ -809,6 +826,13 @@ definitions:
           type: string
         type: object
     type: object
+  dto.UsageResult:
+    properties:
+      value:
+        type: number
+      window_size:
+        type: string
+    type: object
   dto.UserResponse:
     properties:
       email:
@@ -822,15 +846,28 @@ definitions:
   meter.Aggregation:
     properties:
       field:
+        description: |-
+          Field is the key in $event.properties on which the aggregation is to be applied
+          For ex if the aggregation type is sum for API usage, the field could be "duration_ms"
         type: string
       type:
-        $ref: '#/definitions/types.AggregationType'
+        allOf:
+        - $ref: '#/definitions/types.AggregationType'
+        description: |-
+          Type is the type of aggregation to be applied on the events
+          For ex sum, count, avg, max, min etc
     type: object
   meter.Filter:
     properties:
       key:
+        description: |-
+          Key is the key for the filter from $event.properties
+          Currently we support only first level keys in the properties and not nested keys
         type: string
       values:
+        description: |-
+          Values are the possible values for the filter to be considered for the meter
+          For ex "model_name" could have values "o1-mini", "gpt-4o" etc
         items:
           type: string
         type: array
@@ -872,34 +909,37 @@ definitions:
     additionalProperties:
       type: string
     type: object
-  price.JSONBTransform:
+  price.JSONBTransformQuantity:
     properties:
       divide_by:
         description: Divide quantity by this number
         type: integer
       round:
-        description: up, down, or nearest
+        description: up or down
         type: string
     type: object
   price.PriceTier:
     properties:
       flat_amount:
-        description: Optional flat fee for this tier
-        type: integer
+        description: |-
+          FlatAmount is the flat amount for the given tier and it is applied
+          on top of the unit amount*quantity. It solves cases in banking like 2.7% + 5c
+        type: number
       unit_amount:
-        description: Amount per unit in cents
-        type: integer
+        description: UnitAmount is the amount per unit for the given tier
+        type: number
       up_to:
-        description: null means infinity
+        description: Upto is the quantity up to which this tier applies. It is null
+          for the last tier
         type: integer
     type: object
-  price.PriceTransform:
+  price.TransformQuantity:
     properties:
       divide_by:
         description: Divide quantity by this number
         type: integer
       round:
-        description: up, down, or nearest
+        description: up or down
         type: string
     type: object
   types.AggregationType:
@@ -907,19 +947,11 @@ definitions:
     - COUNT
     - SUM
     - AVG
-    - MAX
-    - MIN
-    - COUNT_UNIQUE
-    - LATEST
     type: string
     x-enum-varnames:
     - AggregationCount
     - AggregationSum
     - AggregationAvg
-    - AggregationMax
-    - AggregationMin
-    - AggregationCountUnique
-    - AggregationLatest
   types.BillingCadence:
     enum:
     - RECURRING
@@ -1102,11 +1134,19 @@ paths:
         name: order
         type: string
       - in: query
-        name: search
-        type: string
-      - in: query
         name: sort
         type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
       produces:
       - application/json
       responses:
@@ -1339,36 +1379,6 @@ paths:
       tags:
       - events
   /events/usage:
-    get:
-      description: Retrieve aggregated usage statistics for events
-      parameters:
-      - description: Request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/dto.GetUsageRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Get usage statistics
-      tags:
-      - events
     post:
       description: Retrieve aggregated usage statistics for events
       parameters:
@@ -1384,8 +1394,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/dto.GetUsageResponse'
         "400":
           description: Bad Request
           schema:
@@ -1400,40 +1409,6 @@ paths:
       tags:
       - events
   /events/usage/meter:
-    get:
-      description: Retrieve aggregated usage statistics using meter configuration
-      parameters:
-      - description: Request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/dto.GetUsageByMeterRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Get usage by meter
-      tags:
-      - events
     post:
       description: Retrieve aggregated usage statistics using meter configuration
       parameters:
@@ -1449,8 +1424,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/dto.GetUsageResponse'
         "400":
           description: Bad Request
           schema:
@@ -1626,11 +1600,19 @@ paths:
         name: order
         type: string
       - in: query
-        name: search
-        type: string
-      - in: query
         name: sort
         type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
       produces:
       - application/json
       responses:
@@ -1795,11 +1777,19 @@ paths:
         name: order
         type: string
       - in: query
-        name: search
-        type: string
-      - in: query
         name: sort
         type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
       produces:
       - application/json
       responses:

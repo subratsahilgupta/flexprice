@@ -41,7 +41,10 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 
 	// TODO: Create prices in bulk
 	for _, priceReq := range req.Prices {
-		price := priceReq.ToPrice(ctx)
+		price, err := priceReq.ToPrice(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create price: %w", err)
+		}
 		price.PlanID = plan.ID
 		if err := s.priceRepo.Create(ctx, price); err != nil {
 			return nil, fmt.Errorf("failed to create price: %w", err)
@@ -151,7 +154,10 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 		}
 
 		// Create the newly requested price
-		newPrice := reqPrice.ToPrice(ctx)
+		newPrice, err := reqPrice.ToPrice(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create price: %w", err)
+		}
 		newPrice.PlanID = plan.ID
 		if err := s.priceRepo.Create(ctx, newPrice); err != nil {
 			return nil, fmt.Errorf("failed to create price: %w", err)

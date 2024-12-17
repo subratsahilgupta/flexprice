@@ -277,3 +277,137 @@ func (a *AvgAggregator) GetQuery(ctx context.Context, params *events.UsageParams
 func (a *AvgAggregator) GetType() types.AggregationType {
 	return types.AggregationAvg
 }
+
+// // buildFilterGroupsQuery builds a query that matches events to the most specific filter group
+// func buildFilterGroupsQuery(params *events.UsageWithFiltersParams) string {
+//     var queryBuilder strings.Builder
+
+//     // Base query with CTE for filter matches
+//     queryBuilder.WriteString(fmt.Sprintf(`
+//         WITH
+//         base_events AS (
+//             SELECT
+//                 %s,
+//                 timestamp,
+//                 properties
+//             FROM events
+//             WHERE event_name = $1
+//             %s
+//         ),
+//         filter_matches AS (
+//             SELECT
+//                 *,
+//                 -- Calculate matches for each filter group
+//                 ARRAY[
+//     `, getDeduplicationKey(), buildTimeAndCustomerConditions(params.UsageParams)))
+
+//     // Generate array of filter group matches
+//     for i, group := range params.FilterGroups {
+//         if i > 0 {
+//             queryBuilder.WriteString(",")
+//         }
+
+//         // Default group case (no filters)
+//         if len(group.Filters) == 0 {
+//             queryBuilder.WriteString(fmt.Sprintf(`
+//                 (%d, %d, 1)  -- group_id, priority, always matches
+//             `, group.ID, group.Priority))
+//             continue
+//         }
+
+//         // Build filter conditions
+//         var conditions []string
+//         for property, values := range group.Filters {
+//             quotedValues := make([]string, len(values))
+//             for i, v := range values {
+//                 quotedValues[i] = fmt.Sprintf("'%s'", v)
+//             }
+//             conditions = append(conditions, fmt.Sprintf(
+//                 "JSONExtractString(properties, '%s') IN (%s)",
+//                 property,
+//                 strings.Join(quotedValues, ","),
+//             ))
+//         }
+
+//         queryBuilder.WriteString(fmt.Sprintf(`
+//             (%d, %d, %s)  -- group_id, priority, filter conditions
+//         `, group.ID, group.Priority, strings.Join(conditions, " AND ")))
+//     }
+
+//     // Complete filter_matches CTE and add matched_events CTE
+//     queryBuilder.WriteString(`
+//         ] as group_matches
+//         ),
+//         matched_events AS (
+//             SELECT
+//                 *,
+//                 -- Select group with highest priority that matches
+//                 (
+//                     SELECT group_id
+//                     FROM arrayJoin(group_matches) AS g
+//                     WHERE g.3 = 1  -- where matches = true
+//                     ORDER BY g.2 DESC, group_id  -- order by priority desc, then group_id
+//                     LIMIT 1
+//                 ) as best_match_group
+//             FROM base_events
+//         )
+//     `)
+
+//     // Add final aggregation based on params
+//     queryBuilder.WriteString(`
+//         SELECT
+//             best_match_group as filter_group_id,
+//     `)
+
+//     // Add aggregation function
+//     switch params.AggregationType {
+//     case types.AggregationCount:
+//         queryBuilder.WriteString(`
+//             COUNT(*) as value
+//         `)
+//     case types.AggregationSum:
+//         queryBuilder.WriteString(fmt.Sprintf(`
+//             SUM(CAST(JSONExtractString(properties, '%s') AS Float64)) as value
+//         `, params.PropertyName))
+//     case types.AggregationAvg:
+//         queryBuilder.WriteString(fmt.Sprintf(`
+//             AVG(CAST(JSONExtractString(properties, '%s') AS Float64)) as value
+//         `, params.PropertyName))
+//     }
+
+//     // Add grouping and ordering
+//     queryBuilder.WriteString(`
+//         FROM matched_events
+//         GROUP BY best_match_group
+//         ORDER BY best_match_group
+//     `)
+
+//     return queryBuilder.String()
+// }
+
+// // buildTimeAndCustomerConditions builds the WHERE clause for time and customer filters
+// func buildTimeAndCustomerConditions(params *events.UsageParams) string {
+//     var conditions []string
+
+//     // Add time range conditions
+//     if !params.StartTime.IsZero() {
+//         conditions = append(conditions,
+//             fmt.Sprintf("AND timestamp >= '%s'", params.StartTime.Format(time.RFC3339)))
+//     }
+//     if !params.EndTime.IsZero() {
+//         conditions = append(conditions,
+//             fmt.Sprintf("AND timestamp < '%s'", params.EndTime.Format(time.RFC3339)))
+//     }
+
+//     // Add customer conditions
+//     if params.ExternalCustomerID != "" {
+//         conditions = append(conditions,
+//             fmt.Sprintf("AND external_customer_id = '%s'", params.ExternalCustomerID))
+//     }
+//     if params.CustomerID != "" {
+//         conditions = append(conditions,
+//             fmt.Sprintf("AND customer_id = '%s'", params.CustomerID))
+//     }
+
+//     return strings.Join(conditions, " ")
+// }

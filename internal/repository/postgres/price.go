@@ -26,12 +26,12 @@ func (r *priceRepository) Create(ctx context.Context, price *price.Price) error 
 		INSERT INTO prices (
 			id, tenant_id, amount, display_amount, currency, plan_id, type, 
 			billing_period, billing_period_count, billing_model, billing_cadence, 
-			tier_mode, tiers, meter_id, filter_values, transform, lookup_key, description,
+			tier_mode, tiers, meter_id, filter_values, transform_quantity, lookup_key, description,
 			metadata, status, created_at, updated_at, created_by, updated_by
 		) VALUES (
 			:id, :tenant_id, :amount, :display_amount, :currency, :plan_id, :type,
 			:billing_period, :billing_period_count, :billing_model, :billing_cadence,
-			:tier_mode, :tiers, :meter_id, :filter_values, :transform, :lookup_key,
+			:tier_mode, :tiers, :meter_id, :filter_values, :transform_quantity, :lookup_key,
 			:description, :metadata, :status, :created_at, :updated_at, :created_by, :updated_by
 		)`
 

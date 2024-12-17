@@ -16,12 +16,14 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
+	"github.com/shopspring/decimal"
 )
 
 type EventService interface {
 	CreateEvent(ctx context.Context, createEventRequest *dto.IngestEventRequest) error
 	GetUsage(ctx context.Context, getUsageRequest *dto.GetUsageRequest) (*events.AggregationResult, error)
 	GetUsageByMeter(ctx context.Context, getUsageByMeterRequest *dto.GetUsageByMeterRequest) (*events.AggregationResult, error)
+	GetUsageByMeterWithFilters(ctx context.Context, req *dto.GetUsageByMeterRequest, filterGroups map[string]map[string][]string) ([]*events.AggregationResult, error)
 	GetEvents(ctx context.Context, req *dto.GetEventsRequest) (*dto.GetEventsResponse, error)
 }
 
@@ -33,7 +35,12 @@ type eventService struct {
 	logger    *logger.Logger
 }
 
-func NewEventService(producer kafka.MessageProducer, eventRepo events.Repository, meterRepo meter.Repository, logger *logger.Logger) EventService {
+func NewEventService(
+	producer kafka.MessageProducer,
+	eventRepo events.Repository,
+	meterRepo meter.Repository,
+	logger *logger.Logger,
+) EventService {
 	return &eventService{
 		producer:  producer,
 		eventRepo: eventRepo,
@@ -127,25 +134,62 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, req *dto.GetUsageByM
 	return usage, nil
 }
 
-func (s *eventService) combineResults(historicUsage, currentUsage *events.AggregationResult, meter *meter.Meter) *events.AggregationResult {
-	var totalValue float64
+func (s *eventService) GetUsageByMeterWithFilters(ctx context.Context, req *dto.GetUsageByMeterRequest, filterGroups map[string]map[string][]string) ([]*events.AggregationResult, error) {
+	meter, err := s.meterRepo.GetMeter(ctx, req.MeterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get meter: %w", err)
+	}
 
-	if historicUsage != nil && historicUsage.Value != nil {
-		switch v := historicUsage.Value.(type) {
-		case float64:
-			totalValue += v
-		case int64:
-			totalValue += float64(v)
+	prioritizedGroups := make([]events.FilterGroup, len(filterGroups))
+	priceIDs := make([]string, 0, len(filterGroups))
+	for priceID := range filterGroups {
+		priceIDs = append(priceIDs, priceID)
+	}
+
+	for i, priceID := range priceIDs {
+		priority := len(filterGroups) - i
+		prioritizedGroups[i] = events.FilterGroup{
+			ID:       priceID,
+			Priority: priority,
+			Filters:  filterGroups[priceID],
 		}
 	}
 
-	if currentUsage != nil && currentUsage.Value != nil {
-		switch v := currentUsage.Value.(type) {
-		case float64:
-			totalValue += v
-		case int64:
-			totalValue += float64(v)
-		}
+	params := &events.UsageWithFiltersParams{
+		UsageParams: &events.UsageParams{
+			EventName:       meter.EventName,
+			PropertyName:    meter.Aggregation.Field,
+			AggregationType: meter.Aggregation.Type,
+			CustomerID:      req.ExternalCustomerID,
+			StartTime:       req.StartTime,
+			EndTime:         req.EndTime,
+		},
+		FilterGroups: prioritizedGroups,
+	}
+
+	results, err := s.eventRepo.GetUsageWithFilters(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get usage with filters: %w", err)
+	}
+
+	if len(results) == 0 {
+		s.logger.Debugw("no usage found for meter with filters",
+			"meter_id", meter.ID,
+			"filter_groups", len(filterGroups))
+		return results, nil
+	}
+	return results, nil
+}
+
+func (s *eventService) combineResults(historicUsage, currentUsage *events.AggregationResult, meter *meter.Meter) *events.AggregationResult {
+	var totalValue decimal.Decimal
+
+	if historicUsage != nil {
+		totalValue = totalValue.Add(historicUsage.Value)
+	}
+
+	if currentUsage != nil {
+		totalValue = totalValue.Add(currentUsage.Value)
 	}
 
 	return &events.AggregationResult{
