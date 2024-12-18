@@ -22,6 +22,13 @@ import (
 )
 
 func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
+	// Use explicit non-empty TenantID and consistent context values
+	const testTenantID = "tenant_test"
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, types.CtxTenantID, testTenantID)
+	ctx = context.WithValue(ctx, types.CtxUserID, "user_test")
+	ctx = context.WithValue(ctx, types.CtxRequestID, uuid.New().String())
+
 	// Setup test dependencies
 	subscriptionStore := testutil.NewInMemorySubscriptionStore()
 	eventStore := testutil.NewInMemoryEventStore()
@@ -29,13 +36,7 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 	priceStore := testutil.NewInMemoryPriceStore()
 	meterStore := testutil.NewInMemoryMeterStore()
 	customerStore := testutil.NewInMemoryCustomerStore()
-	logger := logger.GetLogger()
-
-	// Create test data
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, types.CtxTenantID, types.DefaultTenantID)
-	ctx = context.WithValue(ctx, types.CtxUserID, types.DefaultUserID)
-	ctx = context.WithValue(ctx, types.CtxRequestID, uuid.New().String())
+	log := logger.GetLogger()
 
 	// Create test customer
 	testCustomer := &customer.Customer{
@@ -43,7 +44,7 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 		ExternalID: "ext_cust_123",
 		Name:       "Test Customer",
 		Email:      "test@example.com",
-		BaseModel:  types.GetDefaultBaseModel(ctx),
+		BaseModel:  types.GetDefaultBaseModel(ctx), // sets TenantID
 	}
 	require.NoError(t, customerStore.Create(ctx, testCustomer))
 
@@ -52,7 +53,7 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 		ID:          "plan_123",
 		Name:        "Test Plan",
 		Description: "Test Plan Description",
-		BaseModel:   types.GetDefaultBaseModel(ctx),
+		BaseModel:   types.GetDefaultBaseModel(ctx), // sets TenantID
 	}
 	require.NoError(t, planStore.Create(ctx, testPlan))
 
@@ -62,10 +63,9 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 		Name:      "API Calls",
 		EventName: "api_call",
 		Aggregation: meter.Aggregation{
-			Type:  types.AggregationCount,
-			Field: "",
+			Type: types.AggregationCount,
 		},
-		BaseModel: types.GetDefaultBaseModel(ctx),
+		BaseModel: types.GetDefaultBaseModel(ctx), // sets TenantID
 	}
 	require.NoError(t, meterStore.CreateMeter(ctx, apiCallsMeter))
 
@@ -77,12 +77,11 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 			Type:  types.AggregationSum,
 			Field: "bytes_used",
 		},
-		BaseModel: types.GetDefaultBaseModel(ctx),
+		BaseModel: types.GetDefaultBaseModel(ctx), // sets TenantID
 	}
 	require.NoError(t, meterStore.CreateMeter(ctx, storageMeter))
 
 	// Create test prices
-	// 1. API Calls with tiers
 	upTo1000 := uint64(1000)
 	upTo5000 := uint64(5000)
 	apiCallsPrice := &price.Price{
@@ -114,7 +113,6 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 	}
 	require.NoError(t, priceStore.Create(ctx, apiCallsPrice))
 
-	// 2. Storage with filters
 	storagePrice := &price.Price{
 		ID:                 "price_storage",
 		PlanID:             testPlan.ID,
@@ -153,7 +151,6 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 	}
 	require.NoError(t, priceStore.Create(ctx, storagePriceArchive))
 
-	// Create test subscription
 	now := time.Now().UTC()
 	testSub := &subscription.Subscription{
 		ID:                 "sub_123",
@@ -163,12 +160,14 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 		CurrentPeriodStart: now.Add(-24 * time.Hour),
 		CurrentPeriodEnd:   now.Add(6 * 24 * time.Hour),
 		Currency:           "USD",
+		// Match the prices' BillingPeriod and BillingPeriodCount
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 	}
 	require.NoError(t, subscriptionStore.Create(ctx, testSub))
 
 	// Create test events
-	// 1. API call events (1500 calls)
 	for i := 0; i < 1500; i++ {
 		event := &events.Event{
 			ID:                 uuid.New().String(),
@@ -181,7 +180,6 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 		require.NoError(t, eventStore.InsertEvent(ctx, event))
 	}
 
-	// 2. Storage events with different properties
 	storageEvents := []struct {
 		bytes float64
 		tier  string
@@ -207,10 +205,7 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 		require.NoError(t, eventStore.InsertEvent(ctx, event))
 	}
 
-	// Create test producer
 	producer := testutil.NewInMemoryMessageBroker()
-
-	// Create service instance
 	svc := NewSubscriptionService(
 		subscriptionStore,
 		planStore,
@@ -219,10 +214,9 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 		eventStore,
 		meterStore,
 		customerStore,
-		logger,
+		log,
 	)
 
-	// Test cases
 	tests := []struct {
 		name    string
 		req     *dto.GetUsageBySubscriptionRequest
@@ -239,23 +233,23 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 			want: &dto.GetUsageBySubscriptionResponse{
 				StartTime: now.Add(-48 * time.Hour),
 				EndTime:   now,
-				Amount:    61.5, // Total cost calculation below
+				Amount:    61.5,
 				Currency:  "USD",
 				Charges: []*dto.SubscriptionUsageByMetersResponse{
 					{
 						MeterDisplayName: "Storage",
 						Quantity:         decimal.NewFromInt(300).InexactFloat64(),
-						Amount:           9, // 300 * 0.03 for archived tier
+						Amount:           9, // archive: 300 * 0.03
 					},
 					{
 						MeterDisplayName: "Storage",
 						Quantity:         decimal.NewFromInt(300).InexactFloat64(),
-						Amount:           30, // 300 * 0.1 for standard tier
+						Amount:           30, // standard: 300 * 0.1
 					},
 					{
 						MeterDisplayName: "API Calls",
 						Quantity:         decimal.NewFromInt(1500).InexactFloat64(),
-						Amount:           22.5, // First 1000 at 0.02 = 20, next 500 at 0.005 = 2.5
+						Amount:           22.5, // tiers: (1000 *0.02=20) + (500*0.005=2.5)
 					},
 				},
 			},
@@ -265,7 +259,7 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 			name: "zero usage period",
 			req: &dto.GetUsageBySubscriptionRequest{
 				SubscriptionID: testSub.ID,
-				StartTime:      now.Add(-100 * 24 * time.Hour), // Way before events
+				StartTime:      now.Add(-100 * 24 * time.Hour),
 				EndTime:        now.Add(-50 * 24 * time.Hour),
 			},
 			want: &dto.GetUsageBySubscriptionResponse{
@@ -285,7 +279,7 @@ func TestSubscriptionService_GetUsageBySubscription(t *testing.T) {
 			want: &dto.GetUsageBySubscriptionResponse{
 				StartTime: testSub.CurrentPeriodStart,
 				EndTime:   testSub.CurrentPeriodEnd,
-				Amount:    61.5, // Same as first test since events fall in current period
+				Amount:    61.5, // same as first test since events fall in current period
 				Currency:  "USD",
 			},
 			wantErr: false,
