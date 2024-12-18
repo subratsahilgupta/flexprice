@@ -72,6 +72,10 @@ func (r *CreatePriceRequest) Validate() error {
 		if r.TransformQuantity == nil {
 			return fmt.Errorf("transform_quantity is required when billing model is PACKAGE")
 		}
+
+		if r.TransformQuantity.DivideBy <= 0 {
+			return fmt.Errorf("transform_quantity.divide_by must be greater than 0 when billing model is PACKAGE")
+		}
 	}
 
 	switch r.Type {

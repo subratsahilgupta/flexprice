@@ -194,7 +194,7 @@ func (h *WalletHandler) TopUpWallet(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /wallets/{id}/balance [get]
+// @Router /wallets/{id}/balance/real-time [get]
 func (h *WalletHandler) GetWalletBalance(c *gin.Context) {
 	walletID := c.Param("id")
 	if walletID == "" {

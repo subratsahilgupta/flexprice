@@ -20,16 +20,9 @@ type Repository interface {
 	UpdateTransactionStatus(ctx context.Context, id string, status types.TransactionStatus) error
 
 	// Atomic operations that require transaction support
-	CreateWallet(ctx context.Context, req *CreateWalletRequest) error
+	CreateWallet(ctx context.Context, w *Wallet) error
 	CreditWallet(ctx context.Context, req *WalletOperation) error
 	DebitWallet(ctx context.Context, req *WalletOperation) error
-}
-
-// CreateWalletRequest represents the request to create a new wallet
-type CreateWalletRequest struct {
-	CustomerID string
-	Currency   string
-	Metadata   map[string]string
 }
 
 // WalletOperation represents the request to credit or debit a wallet

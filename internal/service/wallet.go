@@ -78,43 +78,33 @@ func NewWalletService(
 }
 
 func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletRequest) (*dto.WalletResponse, error) {
-	createReq := &wallet.CreateWalletRequest{
-		CustomerID: req.CustomerID,
-		Currency:   req.Currency,
-		Metadata:   req.Metadata,
+	if err := req.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	if err := s.walletRepo.CreateWallet(ctx, createReq); err != nil {
+	w := req.ToWallet(ctx)
+
+	// Create wallet in DB and update the wallet object
+	if err := s.walletRepo.CreateWallet(ctx, w); err != nil {
 		return nil, fmt.Errorf("failed to create wallet: %w", err)
 	}
 
-	// Get the created wallet
-	wallets, err := s.walletRepo.GetWalletsByCustomerID(ctx, req.CustomerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get created wallet: %w", err)
-	}
+	s.logger.Debugw("created wallet",
+		"wallet_id", w.ID,
+		"customer_id", w.CustomerID,
+		"currency", w.Currency,
+	)
 
-	// Find the most recently created wallet
-	var createdWallet *wallet.Wallet
-	for _, w := range wallets {
-		if createdWallet == nil || w.CreatedAt.After(createdWallet.CreatedAt) {
-			createdWallet = w
-		}
-	}
-
-	if createdWallet == nil {
-		return nil, fmt.Errorf("created wallet not found")
-	}
-
+	// Convert to response DTO
 	return &dto.WalletResponse{
-		ID:           createdWallet.ID,
-		CustomerID:   createdWallet.CustomerID,
-		Currency:     createdWallet.Currency,
-		Balance:      createdWallet.Balance,
-		WalletStatus: string(createdWallet.WalletStatus),
-		Metadata:     createdWallet.Metadata,
-		CreatedAt:    createdWallet.CreatedAt,
-		UpdatedAt:    createdWallet.UpdatedAt,
+		ID:           w.ID,
+		CustomerID:   w.CustomerID,
+		Currency:     w.Currency,
+		Balance:      w.Balance,
+		WalletStatus: w.WalletStatus,
+		Metadata:     w.Metadata,
+		CreatedAt:    w.CreatedAt,
+		UpdatedAt:    w.UpdatedAt,
 	}, nil
 }
 
@@ -131,7 +121,7 @@ func (s *walletService) GetWalletsByCustomerID(ctx context.Context, customerID s
 			CustomerID:   w.CustomerID,
 			Currency:     w.Currency,
 			Balance:      w.Balance,
-			WalletStatus: string(w.WalletStatus),
+			WalletStatus: w.WalletStatus,
 			Metadata:     w.Metadata,
 			CreatedAt:    w.CreatedAt,
 			UpdatedAt:    w.UpdatedAt,
@@ -152,7 +142,7 @@ func (s *walletService) GetWalletByID(ctx context.Context, id string) (*dto.Wall
 		CustomerID:   w.CustomerID,
 		Currency:     w.Currency,
 		Balance:      w.Balance,
-		WalletStatus: string(w.WalletStatus),
+		WalletStatus: w.WalletStatus,
 		Metadata:     w.Metadata,
 		CreatedAt:    w.CreatedAt,
 		UpdatedAt:    w.UpdatedAt,
@@ -179,7 +169,7 @@ func (s *walletService) GetWalletTransactions(ctx context.Context, walletID stri
 			Amount:            txn.Amount,
 			BalanceBefore:     txn.BalanceBefore,
 			BalanceAfter:      txn.BalanceAfter,
-			TransactionStatus: string(txn.TxStatus),
+			TransactionStatus: txn.TxStatus,
 			ReferenceType:     txn.ReferenceType,
 			ReferenceID:       txn.ReferenceID,
 			Description:       txn.Description,
