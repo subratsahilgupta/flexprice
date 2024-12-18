@@ -2465,7 +2465,7 @@ paths:
       summary: Get wallet by ID
       tags:
       - Wallet
-  /wallets/{id}/balance:
+  /wallets/{id}/balance/real-time:
     get:
       consumes:
       - application/json

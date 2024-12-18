@@ -1845,7 +1845,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/wallets/{id}/balance": {
+        "/wallets/{id}/balance/real-time": {
             "get": {
                 "security": [
                     {

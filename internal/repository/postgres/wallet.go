@@ -43,6 +43,7 @@ func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walle
 		"tenant_id", types.GetTenantID(ctx),
 	)
 
+	// Use NamedQueryContext for named queries
 	rows, err := r.db.NamedQueryContext(ctx, query, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query wallet: %w", err)
@@ -127,6 +128,7 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 		"status", status,
 	)
 
+	// Use NamedExecContext for named queries
 	result, err := r.db.NamedExecContext(ctx, query, params)
 	if err != nil {
 		return fmt.Errorf("failed to update wallet status: %w", err)
@@ -264,7 +266,7 @@ func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id strin
 	}
 
 	if rows == 0 {
-		return fmt.Errorf("transaction not found or already updated")
+		return fmt.Errorf("transaction not found")
 	}
 
 	return nil
@@ -274,10 +276,10 @@ func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id strin
 func (r *walletRepository) CreateWallet(ctx context.Context, w *wallet.Wallet) error {
 	query := `
 		INSERT INTO wallets (
-			id, customer_id, currency, balance, wallet_status, metadata, created_at, updated_at
+			id, customer_id, currency, balance, wallet_status, metadata, tenant_id, status, created_at, updated_at, created_by, updated_by
 		) VALUES (
-			:id, :customer_id, :currency, :balance, :wallet_status, :metadata, :created_at, :updated_at
-		) RETURNING id, customer_id, currency, balance, wallet_status, metadata, created_at, updated_at`
+			:id, :customer_id, :currency, :balance, :wallet_status, :metadata, :tenant_id, :status, :created_at, :updated_at, :created_by, :updated_by
+		) RETURNING id, customer_id, currency, balance, wallet_status, metadata, tenant_id, status, created_at, updated_at, created_by, updated_by`
 
 	rows, err := r.db.NamedQueryContext(ctx, query, w)
 	if err != nil {
@@ -450,7 +452,7 @@ func (r *walletRepository) CreditWallet(ctx context.Context, req *wallet.WalletO
 	return r.processWalletOperation(ctx, req)
 }
 
-// DebitWallet debits a wallet with the specified amount
+// DebitWallet debits amount from wallet
 func (r *walletRepository) DebitWallet(ctx context.Context, req *wallet.WalletOperation) error {
 	if req.Type != types.TransactionTypeDebit {
 		return fmt.Errorf("invalid transaction type")

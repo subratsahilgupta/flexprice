@@ -130,6 +130,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			wallet.GET("/:id", handlers.Wallet.GetWalletByID)
 			wallet.GET("/:id/transactions", handlers.Wallet.GetWalletTransactions)
 			wallet.POST("/:id/top-up", handlers.Wallet.TopUpWallet)
+			wallet.POST("/:id/terminate", handlers.Wallet.TerminateWallet)
 			wallet.GET("/:id/balance/real-time", handlers.Wallet.GetWalletBalance)
 		}
 	}
