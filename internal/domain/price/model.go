@@ -87,9 +87,9 @@ type PriceTransform struct {
 }
 
 type PriceTier struct {
-	UpTo       *int `json:"up_to"`                 // null means infinity
-	UnitAmount int  `json:"unit_amount"`           // Amount per unit in cents
-	FlatAmount *int `json:"flat_amount,omitempty"` // Optional flat fee for this tier
+	UpTo       int `json:"up_to"`                 // null means infinity
+	UnitAmount int `json:"unit_amount"`           // Amount per unit in cents
+	FlatAmount int `json:"flat_amount,omitempty"` // Optional flat fee for this tier
 }
 
 // TODO : comeup with a better way to handle jsonb fields
