@@ -67,12 +67,16 @@ type LoggingConfig struct {
 }
 
 type PostgresConfig struct {
-	Host     string `mapstructure:"host" validate:"required"`
-	Port     int    `mapstructure:"port" validate:"required"`
-	User     string `mapstructure:"user" validate:"required"`
-	Password string `mapstructure:"password" validate:"required"`
-	DBName   string `mapstructure:"dbname" validate:"required"`
-	SSLMode  string `mapstructure:"sslmode" validate:"required"`
+	Host                   string `mapstructure:"host" validate:"required"`
+	Port                   int    `mapstructure:"port" validate:"required"`
+	User                   string `mapstructure:"user" validate:"required"`
+	Password               string `mapstructure:"password" validate:"required"`
+	DBName                 string `mapstructure:"dbname" validate:"required"`
+	SSLMode                string `mapstructure:"sslmode" validate:"required"`
+	MaxOpenConns           int    `mapstructure:"max_open_conns, default=10"`
+	MaxIdleConns           int    `mapstructure:"max_idle_conns default=5"`
+	ConnMaxLifetimeMinutes int    `mapstructure:"conn_max_lifetime_minutes default=60"`
+	AutoMigrate            bool   `mapstructure:"auto_migrate default=false"`
 }
 
 func NewConfig() (*Configuration, error) {

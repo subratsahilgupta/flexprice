@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/customer"
@@ -14,48 +15,58 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	clickhouseRepo "github.com/flexprice/flexprice/internal/repository/clickhouse"
+	entRepo "github.com/flexprice/flexprice/internal/repository/ent"
 	postgresRepo "github.com/flexprice/flexprice/internal/repository/postgres"
+	"go.uber.org/fx"
 )
 
-type RepositoryType string
+// RepositoryParams holds common dependencies for repositories
+type RepositoryParams struct {
+	fx.In
 
-const (
-	PostgresRepo   RepositoryType = "postgres"
-	ClickHouseRepo RepositoryType = "clickhouse"
-)
-
-func NewEventRepository(store *clickhouse.ClickHouseStore, logger *logger.Logger) events.Repository {
-	return clickhouseRepo.NewEventRepository(store, logger)
+	Logger       *logger.Logger
+	DB           *postgres.DB
+	EntClient    *ent.Client
+	ClickHouseDB *clickhouse.ClickHouseStore
 }
 
-func NewMeterRepository(db *postgres.DB, logger *logger.Logger) meter.Repository {
-	return postgresRepo.NewMeterRepository(db, logger)
+func NewEventRepository(p RepositoryParams) events.Repository {
+	return clickhouseRepo.NewEventRepository(p.ClickHouseDB, p.Logger)
 }
 
-func NewUserRepository(db *postgres.DB, logger *logger.Logger) user.Repository {
-	return postgresRepo.NewUserRepository(db, logger)
+func NewMeterRepository(p RepositoryParams) meter.Repository {
+	return postgresRepo.NewMeterRepository(p.DB, p.Logger)
 }
 
-func NewAuthRepository(db *postgres.DB, logger *logger.Logger) auth.Repository {
-	return postgresRepo.NewAuthRepository(db, logger)
+func NewUserRepository(p RepositoryParams) user.Repository {
+	return postgresRepo.NewUserRepository(p.DB, p.Logger)
 }
 
-func NewPriceRepository(db *postgres.DB, logger *logger.Logger) price.Repository {
-	return postgresRepo.NewPriceRepository(db, logger)
+func NewAuthRepository(p RepositoryParams) auth.Repository {
+	return postgresRepo.NewAuthRepository(p.DB, p.Logger)
 }
 
-func NewCustomerRepository(db *postgres.DB, logger *logger.Logger) customer.Repository {
-	return postgresRepo.NewCustomerRepository(db, logger)
+func NewPriceRepository(p RepositoryParams) price.Repository {
+	return postgresRepo.NewPriceRepository(p.DB, p.Logger)
 }
 
-func NewPlanRepository(db *postgres.DB, logger *logger.Logger) plan.Repository {
-	return postgresRepo.NewPlanRepository(db, logger)
+func NewCustomerRepository(p RepositoryParams) customer.Repository {
+	return postgresRepo.NewCustomerRepository(p.DB, p.Logger)
 }
 
-func NewSubscriptionRepository(db *postgres.DB, logger *logger.Logger) subscription.Repository {
-	return postgresRepo.NewSubscriptionRepository(db, logger)
+func NewPlanRepository(p RepositoryParams) plan.Repository {
+	return postgresRepo.NewPlanRepository(p.DB, p.Logger)
 }
 
-func NewWalletRepository(db *postgres.DB, logger *logger.Logger) wallet.Repository {
-	return postgresRepo.NewWalletRepository(db, logger)
+func NewSubscriptionRepository(p RepositoryParams) subscription.Repository {
+	return postgresRepo.NewSubscriptionRepository(p.DB, p.Logger)
+}
+
+func NewWalletRepository(p RepositoryParams) wallet.Repository {
+	// Use Ent implementation if client is available
+	if p.EntClient != nil {
+		return entRepo.NewWalletRepository(p.EntClient, p.Logger)
+	}
+	// Fallback to PostgreSQL implementation
+	return postgresRepo.NewWalletRepository(p.DB, p.Logger)
 }

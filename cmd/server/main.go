@@ -6,23 +6,24 @@ import (
 	"encoding/json"
 	"time"
 
-	"go.uber.org/fx"
-
-	lambdaEvents "github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
-	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
-	_ "github.com/flexprice/flexprice/docs/swagger"
 	"github.com/flexprice/flexprice/internal/api"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/ent"
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
+	"go.uber.org/fx"
+
+	lambdaEvents "github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
+	_ "github.com/flexprice/flexprice/docs/swagger"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/gin-gonic/gin"
 )
 
@@ -44,6 +45,9 @@ func init() {
 func main() {
 	var opts []fx.Option
 	opts = append(opts,
+		// Ent client module
+		ent.Module(),
+
 		fx.Provide(
 			// Config
 			config.NewConfig,

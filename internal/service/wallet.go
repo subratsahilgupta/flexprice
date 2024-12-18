@@ -208,6 +208,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 	// Create a credit operation
 	creditReq := &wallet.WalletOperation{
 		WalletID:    walletID,
+		Type:        types.TransactionTypeCredit,
 		Amount:      req.Amount,
 		Description: req.Description,
 		Metadata:    req.Metadata,
@@ -225,6 +226,10 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	w, err := s.walletRepo.GetWalletByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wallet: %w", err)
+	}
+
+	if w.WalletStatus != types.WalletStatusActive {
+		return nil, fmt.Errorf("wallet is not active")
 	}
 
 	subscriptionService := NewSubscriptionService(
