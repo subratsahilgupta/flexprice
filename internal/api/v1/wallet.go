@@ -194,7 +194,7 @@ func (h *WalletHandler) TopUpWallet(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /wallets/{id}/balance [get]
+// @Router /wallets/{id}/balance/real-time [get]
 func (h *WalletHandler) GetWalletBalance(c *gin.Context) {
 	walletID := c.Param("id")
 	if walletID == "" {
@@ -209,4 +209,32 @@ func (h *WalletHandler) GetWalletBalance(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, balance)
+}
+
+// TerminateWallet godoc
+// @Summary Terminate a wallet
+// @Description Terminates a wallet by closing it and debiting remaining balance
+// @Tags wallets
+// @Accept json
+// @Produce json
+// @Param id path string true "Wallet ID"
+// @Success 200 {object} dto.WalletResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /wallets/{id}/terminate [post]
+func (h *WalletHandler) TerminateWallet(c *gin.Context) {
+	walletID := c.Param("id")
+	if walletID == "" {
+		NewErrorResponse(c, http.StatusBadRequest, "wallet id is required", nil)
+		return
+	}
+
+	err := h.walletService.TerminateWallet(c.Request.Context(), walletID)
+	if err != nil {
+		NewErrorResponse(c, http.StatusInternalServerError, "failed to terminate wallet", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "wallet terminated successfully"})
 }

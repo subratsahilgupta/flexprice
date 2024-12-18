@@ -884,6 +884,8 @@ definitions:
         type: string
       customer_id:
         type: string
+      description:
+        type: string
       id:
         type: string
       metadata:
@@ -918,7 +920,7 @@ definitions:
       updated_at:
         type: string
       wallet_status:
-        type: string
+        $ref: '#/definitions/types.WalletStatus'
     type: object
   dto.WalletTransactionResponse:
     properties:
@@ -941,7 +943,7 @@ definitions:
       reference_type:
         type: string
       transaction_status:
-        type: string
+        $ref: '#/definitions/types.TransactionStatus'
       type:
         type: string
       wallet_id:
@@ -1268,6 +1270,16 @@ definitions:
     - SubscriptionStatusPastDue
     - SubscriptionStatusTrialing
     - SubscriptionStatusUnpaid
+  types.TransactionStatus:
+    enum:
+    - pending
+    - completed
+    - failed
+    type: string
+    x-enum-varnames:
+    - TransactionStatusPending
+    - TransactionStatusCompleted
+    - TransactionStatusFailed
   types.WalletStatus:
     enum:
     - active
@@ -2465,7 +2477,7 @@ paths:
       summary: Get wallet by ID
       tags:
       - Wallet
-  /wallets/{id}/balance:
+  /wallets/{id}/balance/real-time:
     get:
       consumes:
       - application/json
@@ -2500,6 +2512,39 @@ paths:
       summary: Get wallet balance
       tags:
       - Wallet
+  /wallets/{id}/terminate:
+    post:
+      consumes:
+      - application/json
+      description: Terminates a wallet by closing it and debiting remaining balance
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.WalletResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Terminate a wallet
+      tags:
+      - wallets
   /wallets/{id}/top-up:
     post:
       consumes:
