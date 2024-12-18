@@ -140,6 +140,12 @@ func (s *eventService) GetUsageByMeterWithFilters(ctx context.Context, req *dto.
 		return nil, fmt.Errorf("failed to get meter: %w", err)
 	}
 
+	// Convert meter.Filters to map format
+	meterFilters := make(map[string][]string)
+	for _, filter := range meter.Filters {
+		meterFilters[filter.Key] = filter.Values
+	}
+
 	prioritizedGroups := make([]events.FilterGroup, len(filterGroups))
 	priceIDs := make([]string, 0, len(filterGroups))
 	for priceID := range filterGroups {
@@ -163,6 +169,7 @@ func (s *eventService) GetUsageByMeterWithFilters(ctx context.Context, req *dto.
 			ExternalCustomerID: req.ExternalCustomerID,
 			StartTime:          req.StartTime,
 			EndTime:            req.EndTime,
+			Filters:            meterFilters,
 		},
 		FilterGroups: prioritizedGroups,
 	}
