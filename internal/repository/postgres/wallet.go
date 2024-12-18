@@ -66,16 +66,18 @@ func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerI
 	query := `
 		SELECT * FROM wallets
 		WHERE customer_id = :customer_id 
+		AND wallet_status = :wallet_status
 		AND tenant_id = :tenant_id
 		AND status = :status`
 
 	params := map[string]interface{}{
-		"customer_id": customerID,
-		"tenant_id":   types.GetTenantID(ctx),
-		"status":      types.StatusPublished,
+		"customer_id":   customerID,
+		"wallet_status": types.WalletStatusActive,
+		"tenant_id":     types.GetTenantID(ctx),
+		"status":        types.StatusPublished,
 	}
 
-	r.logger.Debug("getting wallets by customer id",
+	r.logger.Debugw("getting active wallets by customer id",
 		"customer_id", customerID,
 		"tenant_id", types.GetTenantID(ctx),
 	)

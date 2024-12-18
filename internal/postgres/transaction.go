@@ -5,17 +5,18 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
 
 // TxKey is the context key type for storing transaction
-// Using a custom type instead of string prevents collisions in the context
 type TxKey struct{}
 
 // Tx wraps sqlx.Tx to support nested transactions using savepoints
 type Tx struct {
 	*sqlx.Tx
 	savepointID int
+	ID          string // Unique ID for tracing
 }
 
 // GetTx retrieves a transaction from the context if it exists
@@ -30,6 +31,13 @@ func (db *DB) BeginTx(ctx context.Context) (context.Context, *Tx, error) {
 		// Create a new savepoint for nested transaction
 		tx.savepointID++
 		savepoint := fmt.Sprintf("sp_%d", tx.savepointID)
+
+		db.logger.Debug("creating savepoint",
+			"tx_id", tx.ID,
+			"savepoint", savepoint,
+			"savepoint_id", tx.savepointID,
+		)
+
 		_, err := tx.ExecContext(ctx, fmt.Sprintf("SAVEPOINT %s", savepoint))
 		if err != nil {
 			return ctx, nil, fmt.Errorf("failed to create savepoint: %w", err)
@@ -46,7 +54,15 @@ func (db *DB) BeginTx(ctx context.Context) (context.Context, *Tx, error) {
 		return ctx, nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
-	tx := &Tx{Tx: sqlxTx}
+	tx := &Tx{
+		Tx: sqlxTx,
+		ID: uuid.New().String(),
+	}
+
+	db.logger.Debug("starting new transaction",
+		"tx_id", tx.ID,
+	)
+
 	ctx = context.WithValue(ctx, TxKey{}, tx)
 	return ctx, tx, nil
 }
@@ -61,6 +77,13 @@ func (db *DB) CommitTx(ctx context.Context) error {
 	if tx.savepointID > 0 {
 		// Release the current savepoint for nested transaction
 		savepoint := fmt.Sprintf("sp_%d", tx.savepointID)
+
+		db.logger.Debug("releasing savepoint",
+			"tx_id", tx.ID,
+			"savepoint", savepoint,
+			"savepoint_id", tx.savepointID,
+		)
+
 		_, err := tx.ExecContext(ctx, fmt.Sprintf("RELEASE SAVEPOINT %s", savepoint))
 		if err != nil {
 			return fmt.Errorf("failed to release savepoint: %w", err)
@@ -70,6 +93,10 @@ func (db *DB) CommitTx(ctx context.Context) error {
 	}
 
 	// Commit the top-level transaction
+	db.logger.Debug("committing transaction",
+		"tx_id", tx.ID,
+	)
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
@@ -86,6 +113,13 @@ func (db *DB) RollbackTx(ctx context.Context) error {
 	if tx.savepointID > 0 {
 		// Rollback to the current savepoint for nested transaction
 		savepoint := fmt.Sprintf("sp_%d", tx.savepointID)
+
+		db.logger.Debug("rolling back to savepoint",
+			"tx_id", tx.ID,
+			"savepoint", savepoint,
+			"savepoint_id", tx.savepointID,
+		)
+
 		_, err := tx.ExecContext(ctx, fmt.Sprintf("ROLLBACK TO SAVEPOINT %s", savepoint))
 		if err != nil {
 			return fmt.Errorf("failed to rollback to savepoint: %w", err)
@@ -95,6 +129,10 @@ func (db *DB) RollbackTx(ctx context.Context) error {
 	}
 
 	// Rollback the top-level transaction
+	db.logger.Debug("rolling back transaction",
+		"tx_id", tx.ID,
+	)
+
 	if err := tx.Rollback(); err != nil {
 		return fmt.Errorf("failed to rollback transaction: %w", err)
 	}
@@ -104,7 +142,7 @@ func (db *DB) RollbackTx(ctx context.Context) error {
 // WithTx executes a function within a transaction
 func (db *DB) WithTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	// Start transaction
-	ctx, _, err := db.BeginTx(ctx)
+	ctx, tx, err := db.BeginTx(ctx)
 	if err != nil {
 		return err
 	}
@@ -112,6 +150,10 @@ func (db *DB) WithTx(ctx context.Context, fn func(ctx context.Context) error) er
 	// Handle panics by rolling back
 	defer func() {
 		if r := recover(); r != nil {
+			db.logger.Error("panic in transaction",
+				"tx_id", tx.ID,
+				"panic", r,
+			)
 			_ = db.RollbackTx(ctx)
 			panic(r) // Re-throw panic after rollback
 		}
@@ -119,6 +161,10 @@ func (db *DB) WithTx(ctx context.Context, fn func(ctx context.Context) error) er
 
 	// Execute the function
 	if err := fn(ctx); err != nil {
+		db.logger.Error("transaction failed",
+			"tx_id", tx.ID,
+			"error", err,
+		)
 		if rbErr := db.RollbackTx(ctx); rbErr != nil {
 			return fmt.Errorf("error rolling back transaction: %v (original error: %v)", rbErr, err)
 		}

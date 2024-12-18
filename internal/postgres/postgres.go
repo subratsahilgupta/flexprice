@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/flexprice/flexprice/internal/config"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
@@ -13,6 +14,7 @@ import (
 // DB wraps sqlx.DB to provide transaction management
 type DB struct {
 	*sqlx.DB
+	logger *logger.Logger
 }
 
 // Querier interface defines all database operations
@@ -30,14 +32,14 @@ type Querier interface {
 }
 
 // NewDB creates a new DB instance
-func NewDB(config *config.Configuration) (*DB, error) {
+func NewDB(config *config.Configuration, logger *logger.Logger) (*DB, error) {
 	dsn := config.Postgres.GetDSN()
 	db, err := sqlx.Connect("postgres", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &DB{db}, nil
+	return &DB{DB: db, logger: logger}, nil
 }
 
 // Close closes the database connection
@@ -50,9 +52,9 @@ func (db *DB) Close() {
 // GetQuerier returns either the transaction from context or the base DB
 func (db *DB) GetQuerier(ctx context.Context) Querier {
 	if tx, ok := GetTx(ctx); ok {
-		return tx.Tx
+		return NewTracedQuerier(tx.Tx, db.logger, tx.ID)
 	}
-	return db.DB
+	return NewTracedQuerier(db.DB, db.logger, "")
 }
 
 // NamedExecContext is a helper method that wraps NamedExec with context
