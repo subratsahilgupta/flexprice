@@ -45,6 +45,22 @@ func (qb *QueryBuilder) WithBaseFilters(ctx context.Context, params *events.Usag
 		conditions = append(conditions, fmt.Sprintf("customer_id = '%s'", params.CustomerID))
 	}
 
+	if params.Filters != nil {
+		for property, values := range params.Filters {
+			if len(values) > 0 {
+				quotedValues := make([]string, len(values))
+				for i, v := range values {
+					quotedValues[i] = fmt.Sprintf("'%s'", v)
+				}
+				conditions = append(conditions, fmt.Sprintf(
+					"JSONExtractString(properties, '%s') IN (%s)",
+					property,
+					strings.Join(quotedValues, ","),
+				))
+			}
+		}
+	}
+
 	qb.baseQuery = fmt.Sprintf("base_events AS (SELECT id, timestamp, properties FROM events WHERE %s)",
 		strings.Join(conditions, " AND "))
 
@@ -204,15 +220,18 @@ func formatClickHouseDateTime(t time.Time) string {
 
 ---------Sample Query with Filter Groups---------------------------------------------
 
-
-WITH
-base_events AS (
-	SELECT id, timestamp, properties FROM events
-	WHERE event_name = 'tokens'
-	AND tenant_id = '00000000-0000-0000-0000-000000000000'
-	AND timestamp >= toDateTime64('2024-12-01 07:47:09.000', 3)
-	AND timestamp < toDateTime64('2025-01-01 07:47:09.000', 3)
-	AND external_customer_id = 'cus_loadtest_4'
+WITH base_events AS (
+    SELECT
+        id,
+        timestamp,
+        properties
+    FROM events
+    WHERE event_name = 'images_processed'
+      AND tenant_id = '00000000-0000-0000-0000-000000000000'
+      AND timestamp >= toDateTime64('2024-12-01 08:03:02.000', 3)
+      AND timestamp < toDateTime64('2025-01-01 08:03:02.000', 3)
+      AND external_customer_id = 'cus_loadtest_1'
+      AND JSONExtractString(properties, 'image_size') IN ('512x512','768x768','1024x1024')
 ),
 filter_matches AS (
     SELECT
@@ -224,9 +243,10 @@ filter_matches AS (
             x.2,
             x.3
         ), [
-            ('c97b5c3c-d5c3-4f88-88ac-4f41985b650d', 2, (JSONExtractString(properties, 'text_model') IN ('llama3_1_70b'))),
-            ('54a4103e-e73a-436c-87a1-548686c5eadd', 1, 1)
-        ]) as group_matches
+            ('3759afd0-588d-4a15-a6d8-8278901ab610', 3, (JSONExtractString(properties, 'image_size') IN ('1024x1024'))),
+            ('1f04fd3a-33ce-494c-9498-70e47de97fc5', 2, (JSONExtractString(properties, 'image_size') IN ('512x512'))),
+            ('2715dab7-1045-4a3c-bad1-8d6d837ce491', 1, (JSONExtractString(properties, 'image_size') IN ('768x768')))
+        ]) AS group_matches
     FROM base_events
 ),
 matched_events AS (
@@ -234,25 +254,26 @@ matched_events AS (
         id,
         timestamp,
         properties,
-        arrayJoin(group_matches) as matched_group,
-        matched_group.1 as group_id,
-        matched_group.2 as total_filters,
-        matched_group.3 as matches
+        arrayJoin(group_matches) AS matched_group,
+        matched_group.1 AS group_id,
+        matched_group.2 AS total_filters,
+        matched_group.3 AS matches
     FROM filter_matches
 ),
 best_matches AS (
     SELECT
         id,
         properties,
-        argMax(group_id, (total_filters, group_id)) as best_match_group
+        argMax(group_id, (total_filters, group_id)) AS best_match_group
     FROM matched_events
     WHERE matches = 1
     GROUP BY id, properties
 )
 SELECT
-    best_match_group as filter_group_id,
-    SUM(CAST(JSONExtractString(properties, 'output_tokens') AS Float64)) as value
+    best_match_group AS filter_group_id,
+    COUNT(*) AS value
 FROM best_matches
 GROUP BY best_match_group
 ORDER BY best_match_group;
+
 */
