@@ -11,6 +11,7 @@ const (
 	CtxUserID        ContextKey = "ctx_user_id"
 	CtxJWT           ContextKey = "ctx_jwt"
 	CtxEnvironmentID ContextKey = "ctx_environment_id"
+	CtxDBTransaction ContextKey = "ctx_db_transaction"
 
 	// Default values
 	DefaultTenantID = "00000000-0000-0000-0000-000000000000"

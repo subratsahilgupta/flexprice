@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/customer"
@@ -26,7 +25,7 @@ type RepositoryParams struct {
 
 	Logger       *logger.Logger
 	DB           *postgres.DB
-	EntClient    *ent.Client
+	EntClient    *postgres.Client
 	ClickHouseDB *clickhouse.ClickHouseStore
 }
 

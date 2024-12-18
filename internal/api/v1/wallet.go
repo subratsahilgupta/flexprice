@@ -230,11 +230,11 @@ func (h *WalletHandler) TerminateWallet(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.walletService.TerminateWallet(c.Request.Context(), walletID)
+	err := h.walletService.TerminateWallet(c.Request.Context(), walletID)
 	if err != nil {
 		NewErrorResponse(c, http.StatusInternalServerError, "failed to terminate wallet", err)
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, gin.H{"message": "wallet terminated successfully"})
 }

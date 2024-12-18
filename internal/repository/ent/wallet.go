@@ -3,23 +3,25 @@ package ent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
 	walletdomain "github.com/flexprice/flexprice/internal/domain/wallet"
-	logger "github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
 type walletRepository struct {
-	client *ent.Client
+	client *postgres.Client
 	logger *logger.Logger
 }
 
-func NewWalletRepository(client *ent.Client, logger *logger.Logger) walletdomain.Repository {
+func NewWalletRepository(client *postgres.Client, logger *logger.Logger) walletdomain.Repository {
 	return &walletRepository{
 		client: client,
 		logger: logger,
@@ -27,9 +29,8 @@ func NewWalletRepository(client *ent.Client, logger *logger.Logger) walletdomain
 }
 
 func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wallet) error {
-	// Create wallet
-	wallet, err := r.client.Wallet.
-		Create().
+	client := r.client.Querier(ctx)
+	wallet, err := client.Wallet.Create().
 		SetID(w.ID).
 		SetTenantID(w.TenantID).
 		SetCustomerID(w.CustomerID).
@@ -52,8 +53,8 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 }
 
 func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walletdomain.Wallet, error) {
-	w, err := r.client.Wallet.
-		Query().
+	client := r.client.Querier(ctx)
+	w, err := client.Wallet.Query().
 		Where(
 			wallet.ID(id),
 			wallet.TenantID(types.GetTenantID(ctx)),
@@ -72,8 +73,8 @@ func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walle
 }
 
 func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*walletdomain.Wallet, error) {
-	wallets, err := r.client.Wallet.
-		Query().
+	client := r.client.Querier(ctx)
+	wallets, err := client.Wallet.Query().
 		Where(
 			wallet.CustomerID(customerID),
 			wallet.TenantID(types.GetTenantID(ctx)),
@@ -94,8 +95,8 @@ func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerI
 }
 
 func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, status types.WalletStatus) error {
-	count, err := r.client.Wallet.
-		Update().
+	client := r.client.Querier(ctx)
+	count, err := client.Wallet.Update().
 		Where(
 			wallet.ID(id),
 			wallet.TenantID(types.GetTenantID(ctx)),
@@ -103,6 +104,7 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 		).
 		SetWalletStatus(string(status)).
 		SetUpdatedBy(types.GetUserID(ctx)).
+		SetUpdatedAt(time.Now().UTC()).
 		Save(ctx)
 
 	if err != nil {
@@ -136,9 +138,6 @@ func (r *walletRepository) DebitWallet(ctx context.Context, req *walletdomain.Wa
 	if req.Amount.LessThanOrEqual(decimal.Zero) {
 		return fmt.Errorf("amount must be greater than 0")
 	}
-
-	// For debit operations, make the amount negative
-	req.Amount = req.Amount.Neg()
 	return r.processWalletOperation(ctx, req)
 }
 
@@ -147,97 +146,85 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 		return fmt.Errorf("transaction type is required")
 	}
 
-	// Start a new transaction
-	tx, err := r.client.Tx(ctx)
-	if err != nil {
-		return fmt.Errorf("starting transaction: %w", err)
-	}
+	return r.client.WithTx(ctx, func(ctx context.Context) error {
+		// Get wallet
+		w, err := r.client.Querier(ctx).Wallet.Query().
+			Where(
+				wallet.ID(req.WalletID),
+				wallet.TenantID(types.GetTenantID(ctx)),
+				wallet.StatusEQ(string(types.StatusPublished)),
+			).
+			Only(ctx)
 
-	// Ensure transaction is rolled back on panic
-	defer func() {
-		if v := recover(); v != nil {
-			_ = tx.Rollback()
-			panic(v)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return fmt.Errorf("wallet not found: %w", err)
+			}
+			return fmt.Errorf("querying wallet: %w", err)
 		}
-	}()
 
-	// Get wallet within transaction
-	w, err := tx.Wallet.Query().
-		Where(
-			wallet.ID(req.WalletID),
-			wallet.TenantID(types.GetTenantID(ctx)),
-			wallet.StatusEQ(string(types.StatusPublished)),
-		).
-		Only(ctx)
-
-	if err != nil {
-		_ = tx.Rollback()
-		if ent.IsNotFound(err) {
-			return fmt.Errorf("wallet not found: %w", err)
+		// Calculate new balance
+		var newBalance decimal.Decimal
+		if req.Type == types.TransactionTypeCredit {
+			newBalance = w.Balance.Add(req.Amount)
+		} else if req.Type == types.TransactionTypeDebit {
+			newBalance = w.Balance.Sub(req.Amount)
+			if newBalance.LessThan(decimal.Zero) {
+				return fmt.Errorf("insufficient balance: current=%s, requested=%s", w.Balance, req.Amount)
+			}
+		} else {
+			return fmt.Errorf("invalid transaction type")
 		}
-		return fmt.Errorf("querying wallet: %w", err)
-	}
 
-	// Calculate new balance
-	newBalance := w.Balance.Add(req.Amount)
-	if newBalance.LessThan(decimal.Zero) {
-		_ = tx.Rollback()
-		return fmt.Errorf("insufficient balance: current=%s, requested=%s", w.Balance, req.Amount)
-	}
+		// Create transaction record
+		txn, err := r.client.Querier(ctx).WalletTransaction.Create().
+			SetID(uuid.NewString()).
+			SetTenantID(types.GetTenantID(ctx)).
+			SetWalletID(req.WalletID).
+			SetType(string(req.Type)).
+			SetAmount(req.Amount).
+			SetReferenceType(req.ReferenceType).
+			SetReferenceID(req.ReferenceID).
+			SetDescription(req.Description).
+			SetMetadata(req.Metadata).
+			SetStatus(string(types.StatusPublished)).
+			SetTransactionStatus(string(types.TransactionStatusPending)).
+			SetCreatedBy(types.GetUserID(ctx)).
+			SetBalanceBefore(w.Balance).
+			SetBalanceAfter(newBalance).
+			Save(ctx)
 
-	// Create transaction record
-	txn, err := tx.WalletTransaction.Create().
-		SetID(uuid.NewString()).
-		SetTenantID(types.GetTenantID(ctx)).
-		SetWalletID(req.WalletID).
-		SetType(string(req.Type)).
-		SetAmount(req.Amount).
-		SetReferenceType(req.ReferenceType).
-		SetReferenceID(req.ReferenceID).
-		SetDescription(req.Description).
-		SetMetadata(req.Metadata).
-		SetStatus(string(types.StatusPublished)).
-		SetTransactionStatus(string(types.TransactionStatusPending)).
-		SetCreatedBy(types.GetUserID(ctx)).
-		SetBalanceBefore(w.Balance).
-		SetBalanceAfter(newBalance).
-		Save(ctx)
+		if err != nil {
+			return fmt.Errorf("creating transaction: %w", err)
+		}
 
-	if err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("creating transaction record: %w", err)
-	}
+		// Update wallet balance
+		if err := r.client.Querier(ctx).Wallet.Update().
+			Where(wallet.ID(req.WalletID)).
+			SetBalance(newBalance).
+			SetUpdatedBy(types.GetUserID(ctx)).
+			SetUpdatedAt(time.Now().UTC()).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("updating wallet balance: %w", err)
+		}
 
-	r.logger.Debugw("wallet transaction created",
-		"wallet_id", req.WalletID,
-		"transaction_id", txn.ID,
-		"amount", req.Amount,
-		"reference_type", req.ReferenceType,
-		"reference_id", req.ReferenceID,
-		"metadata", req.Metadata,
-	)
+		// Update transaction status to completed
+		if err := r.client.Querier(ctx).WalletTransaction.Update().
+			Where(wallettransaction.ID(txn.ID)).
+			SetTransactionStatus(string(types.TransactionStatusCompleted)).
+			SetUpdatedBy(types.GetUserID(ctx)).
+			SetUpdatedAt(time.Now().UTC()).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("updating transaction status: %w", err)
+		}
 
-	// Update wallet balance
-	if err := tx.Wallet.UpdateOne(w).
-		SetBalance(newBalance).
-		SetUpdatedBy(types.GetUserID(ctx)).
-		Exec(ctx); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("updating wallet balance: %w", err)
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing transaction: %w", err)
-	}
-
-	return nil
+		return nil
+	})
 }
 
-// GetTransactionByID retrieves a transaction by its ID
 func (r *walletRepository) GetTransactionByID(ctx context.Context, id string) (*walletdomain.Transaction, error) {
-	t, err := r.client.WalletTransaction.
-		Query().
+	client := r.client.Querier(ctx)
+	t, err := client.WalletTransaction.Query().
 		Where(
 			wallettransaction.ID(id),
 			wallettransaction.TenantID(types.GetTenantID(ctx)),
@@ -257,8 +244,8 @@ func (r *walletRepository) GetTransactionByID(ctx context.Context, id string) (*
 
 // GetTransactionsByWalletID retrieves transactions for a wallet with pagination
 func (r *walletRepository) GetTransactionsByWalletID(ctx context.Context, walletID string, limit, offset int) ([]*walletdomain.Transaction, error) {
-	transactions, err := r.client.WalletTransaction.
-		Query().
+	client := r.client.Querier(ctx)
+	transactions, err := client.WalletTransaction.Query().
 		Where(
 			wallettransaction.WalletID(walletID),
 			wallettransaction.TenantID(types.GetTenantID(ctx)),
@@ -282,8 +269,8 @@ func (r *walletRepository) GetTransactionsByWalletID(ctx context.Context, wallet
 
 // UpdateTransactionStatus updates the status of a transaction
 func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id string, status types.TransactionStatus) error {
-	count, err := r.client.WalletTransaction.
-		Update().
+	client := r.client.Querier(ctx)
+	count, err := client.WalletTransaction.Update().
 		Where(
 			wallettransaction.ID(id),
 			wallettransaction.TenantID(types.GetTenantID(ctx)),
@@ -291,6 +278,7 @@ func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id strin
 		).
 		SetTransactionStatus(string(status)).
 		SetUpdatedBy(types.GetUserID(ctx)).
+		SetUpdatedAt(time.Now().UTC()).
 		Save(ctx)
 
 	if err != nil {
@@ -337,6 +325,8 @@ func toDomainTransaction(t *ent.WalletTransaction) *walletdomain.Transaction {
 		Description:   t.Description,
 		Metadata:      t.Metadata,
 		TxStatus:      types.TransactionStatus(t.TransactionStatus),
+		BalanceBefore: t.BalanceBefore,
+		BalanceAfter:  t.BalanceAfter,
 		BaseModel: types.BaseModel{
 			TenantID:  t.TenantID,
 			Status:    types.Status(t.Status),

@@ -10,7 +10,6 @@ import (
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/ent"
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -46,7 +45,7 @@ func main() {
 	var opts []fx.Option
 	opts = append(opts,
 		// Ent client module
-		ent.Module(),
+		postgres.Module(),
 
 		fx.Provide(
 			// Config

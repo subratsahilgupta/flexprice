@@ -41,7 +41,7 @@ type WalletService interface {
 	GetWalletBalance(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error)
 
 	// TerminateWallet terminates a wallet by closing it and debiting remaining balance
-	TerminateWallet(ctx context.Context, walletID string) (*dto.WalletResponse, error)
+	TerminateWallet(ctx context.Context, walletID string) error
 }
 
 type walletService struct {
@@ -54,7 +54,7 @@ type walletService struct {
 	eventRepo        events.Repository
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
-	db               *postgres.DB
+	client           *postgres.Client
 }
 
 // NewWalletService creates a new instance of WalletService
@@ -68,7 +68,7 @@ func NewWalletService(
 	eventRepo events.Repository,
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
-	db *postgres.DB,
+	client *postgres.Client,
 ) WalletService {
 	return &walletService{
 		walletRepo:       walletRepo,
@@ -80,7 +80,7 @@ func NewWalletService(
 		eventRepo:        eventRepo,
 		meterRepo:        meterRepo,
 		customerRepo:     customerRepo,
-		db:               db,
+		client:           client,
 	}
 }
 
@@ -290,73 +290,37 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	}, nil
 }
 
-func (s *walletService) TerminateWallet(ctx context.Context, walletID string) (*dto.WalletResponse, error) {
-	var terminatedWallet *wallet.Wallet
+func (s *walletService) TerminateWallet(ctx context.Context, walletID string) error {
+	w, err := s.walletRepo.GetWalletByID(ctx, walletID)
+	if err != nil {
+		return fmt.Errorf("failed to get wallet: %w", err)
+	}
 
-	err := s.db.WithTx(ctx, func(ctx context.Context) error {
-		// Get wallet with row lock
-		w, err := s.walletRepo.GetWalletByID(ctx, walletID)
-		if err != nil {
-			return fmt.Errorf("failed to get wallet: %w", err)
-		}
+	if w.WalletStatus == types.WalletStatusClosed {
+		return fmt.Errorf("wallet is already closed")
+	}
 
-		if w.WalletStatus != types.WalletStatusActive {
-			return fmt.Errorf("wallet is not active")
-		}
-
-		// Create closure transaction if balance > 0
+	// Use client's WithTx for atomic operations
+	return s.client.WithTx(ctx, func(ctx context.Context) error {
+		// Debit remaining balance if any
 		if w.Balance.GreaterThan(decimal.Zero) {
 			debitReq := &wallet.WalletOperation{
-				WalletID:      w.ID,
-				Amount:        w.Balance,
-				Type:          types.TransactionTypeDebit,
-				ReferenceType: "wallet_closure",
-				ReferenceID:   w.ID,
-				Description:   "Wallet closure - debiting remaining balance",
-				Metadata: types.Metadata{
-					"reason":             "wallet_termination",
-					"balance_at_closure": w.Balance.String(),
-				},
+				WalletID:    walletID,
+				Amount:      w.Balance,
+				Type:        types.TransactionTypeDebit,
+				Description: "Wallet termination - remaining balance debit",
 			}
 
 			if err := s.walletRepo.DebitWallet(ctx, debitReq); err != nil {
-				return fmt.Errorf("failed to debit remaining balance: %w", err)
+				return fmt.Errorf("failed to debit wallet: %w", err)
 			}
 		}
 
-		// Close wallet
-		if err := s.walletRepo.UpdateWalletStatus(ctx, w.ID, types.WalletStatusClosed); err != nil {
+		// Update wallet status to closed
+		if err := s.walletRepo.UpdateWalletStatus(ctx, walletID, types.WalletStatusClosed); err != nil {
 			return fmt.Errorf("failed to close wallet: %w", err)
 		}
 
-		// Get updated wallet within transaction
-		w, err = s.walletRepo.GetWalletByID(ctx, walletID)
-		if err != nil {
-			return fmt.Errorf("failed to get updated wallet: %w", err)
-		}
-		terminatedWallet = w
-
 		return nil
 	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to terminate wallet: %w", err)
-	}
-
-	s.logger.Infow("terminated wallet",
-		"wallet_id", terminatedWallet.ID,
-		"customer_id", terminatedWallet.CustomerID,
-		"balance_at_closure", terminatedWallet.Balance,
-	)
-
-	return &dto.WalletResponse{
-		ID:           terminatedWallet.ID,
-		CustomerID:   terminatedWallet.CustomerID,
-		Currency:     terminatedWallet.Currency,
-		Balance:      terminatedWallet.Balance,
-		WalletStatus: terminatedWallet.WalletStatus,
-		Metadata:     terminatedWallet.Metadata,
-		CreatedAt:    terminatedWallet.CreatedAt,
-		UpdatedAt:    terminatedWallet.UpdatedAt,
-	}, nil
 }
