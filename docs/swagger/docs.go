@@ -1845,7 +1845,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/wallets/{id}/balance": {
+        "/wallets/{id}/balance/real-time": {
             "get": {
                 "security": [
                     {
@@ -1877,6 +1877,56 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/dto.WalletBalanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{id}/terminate": {
+            "post": {
+                "description": "Terminates a wallet by closing it and debiting remaining balance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "wallets"
+                ],
+                "summary": "Terminate a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WalletResponse"
                         }
                     },
                     "400": {
@@ -3348,6 +3398,9 @@ const docTemplate = `{
                 "customer_id": {
                     "type": "string"
                 },
+                "description": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -3399,7 +3452,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "wallet_status": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.WalletStatus"
                 }
             }
         },
@@ -3434,7 +3487,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "transaction_status": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.TransactionStatus"
                 },
                 "type": {
                     "type": "string"
@@ -3883,6 +3936,19 @@ const docTemplate = `{
                 "SubscriptionStatusPastDue",
                 "SubscriptionStatusTrialing",
                 "SubscriptionStatusUnpaid"
+            ]
+        },
+        "types.TransactionStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "completed",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "TransactionStatusPending",
+                "TransactionStatusCompleted",
+                "TransactionStatusFailed"
             ]
         },
         "types.WalletStatus": {

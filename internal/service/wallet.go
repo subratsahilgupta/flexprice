@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -38,6 +39,9 @@ type WalletService interface {
 
 	// GetWalletBalance retrieves the real-time balance of a wallet
 	GetWalletBalance(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error)
+
+	// TerminateWallet terminates a wallet by closing it and debiting remaining balance
+	TerminateWallet(ctx context.Context, walletID string) error
 }
 
 type walletService struct {
@@ -50,6 +54,7 @@ type walletService struct {
 	eventRepo        events.Repository
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
+	client           *postgres.Client
 }
 
 // NewWalletService creates a new instance of WalletService
@@ -63,6 +68,7 @@ func NewWalletService(
 	eventRepo events.Repository,
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
+	client *postgres.Client,
 ) WalletService {
 	return &walletService{
 		walletRepo:       walletRepo,
@@ -74,47 +80,54 @@ func NewWalletService(
 		eventRepo:        eventRepo,
 		meterRepo:        meterRepo,
 		customerRepo:     customerRepo,
+		client:           client,
 	}
 }
 
 func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletRequest) (*dto.WalletResponse, error) {
-	createReq := &wallet.CreateWalletRequest{
-		CustomerID: req.CustomerID,
-		Currency:   req.Currency,
-		Metadata:   req.Metadata,
+	if err := req.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	if err := s.walletRepo.CreateWallet(ctx, createReq); err != nil {
-		return nil, fmt.Errorf("failed to create wallet: %w", err)
-	}
-
-	// Get the created wallet
-	wallets, err := s.walletRepo.GetWalletsByCustomerID(ctx, req.CustomerID)
+	// Check if customer already has an active wallet
+	existingWallets, err := s.walletRepo.GetWalletsByCustomerID(ctx, req.CustomerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get created wallet: %w", err)
+		return nil, fmt.Errorf("failed to check existing wallets: %w", err)
 	}
 
-	// Find the most recently created wallet
-	var createdWallet *wallet.Wallet
-	for _, w := range wallets {
-		if createdWallet == nil || w.CreatedAt.After(createdWallet.CreatedAt) {
-			createdWallet = w
+	for _, w := range existingWallets {
+		if w.WalletStatus == types.WalletStatusActive && w.Currency == req.Currency {
+			s.logger.Warnw("customer already has an active wallet in the same currency",
+				"customer_id", req.CustomerID,
+				"existing_wallet_id", w.ID,
+			)
+			return nil, fmt.Errorf("customer already has an active wallet with ID: %s", w.ID)
 		}
 	}
 
-	if createdWallet == nil {
-		return nil, fmt.Errorf("created wallet not found")
+	w := req.ToWallet(ctx)
+
+	// Create wallet in DB and update the wallet object
+	if err := s.walletRepo.CreateWallet(ctx, w); err != nil {
+		return nil, fmt.Errorf("failed to create wallet: %w", err)
 	}
 
+	s.logger.Debugw("created wallet",
+		"wallet_id", w.ID,
+		"customer_id", w.CustomerID,
+		"currency", w.Currency,
+	)
+
+	// Convert to response DTO
 	return &dto.WalletResponse{
-		ID:           createdWallet.ID,
-		CustomerID:   createdWallet.CustomerID,
-		Currency:     createdWallet.Currency,
-		Balance:      createdWallet.Balance,
-		WalletStatus: string(createdWallet.WalletStatus),
-		Metadata:     createdWallet.Metadata,
-		CreatedAt:    createdWallet.CreatedAt,
-		UpdatedAt:    createdWallet.UpdatedAt,
+		ID:           w.ID,
+		CustomerID:   w.CustomerID,
+		Currency:     w.Currency,
+		Balance:      w.Balance,
+		WalletStatus: w.WalletStatus,
+		Metadata:     w.Metadata,
+		CreatedAt:    w.CreatedAt,
+		UpdatedAt:    w.UpdatedAt,
 	}, nil
 }
 
@@ -131,7 +144,7 @@ func (s *walletService) GetWalletsByCustomerID(ctx context.Context, customerID s
 			CustomerID:   w.CustomerID,
 			Currency:     w.Currency,
 			Balance:      w.Balance,
-			WalletStatus: string(w.WalletStatus),
+			WalletStatus: w.WalletStatus,
 			Metadata:     w.Metadata,
 			CreatedAt:    w.CreatedAt,
 			UpdatedAt:    w.UpdatedAt,
@@ -152,7 +165,7 @@ func (s *walletService) GetWalletByID(ctx context.Context, id string) (*dto.Wall
 		CustomerID:   w.CustomerID,
 		Currency:     w.Currency,
 		Balance:      w.Balance,
-		WalletStatus: string(w.WalletStatus),
+		WalletStatus: w.WalletStatus,
 		Metadata:     w.Metadata,
 		CreatedAt:    w.CreatedAt,
 		UpdatedAt:    w.UpdatedAt,
@@ -179,7 +192,7 @@ func (s *walletService) GetWalletTransactions(ctx context.Context, walletID stri
 			Amount:            txn.Amount,
 			BalanceBefore:     txn.BalanceBefore,
 			BalanceAfter:      txn.BalanceAfter,
-			TransactionStatus: string(txn.TxStatus),
+			TransactionStatus: txn.TxStatus,
 			ReferenceType:     txn.ReferenceType,
 			ReferenceID:       txn.ReferenceID,
 			Description:       txn.Description,
@@ -213,6 +226,10 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	w, err := s.walletRepo.GetWalletByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wallet: %w", err)
+	}
+
+	if w.WalletStatus != types.WalletStatusActive {
+		return nil, fmt.Errorf("wallet is not active")
 	}
 
 	subscriptionService := NewSubscriptionService(
@@ -271,4 +288,39 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 		BalanceUpdatedAt: time.Now().UTC(),
 		Wallet:           w,
 	}, nil
+}
+
+func (s *walletService) TerminateWallet(ctx context.Context, walletID string) error {
+	w, err := s.walletRepo.GetWalletByID(ctx, walletID)
+	if err != nil {
+		return fmt.Errorf("failed to get wallet: %w", err)
+	}
+
+	if w.WalletStatus == types.WalletStatusClosed {
+		return fmt.Errorf("wallet is already closed")
+	}
+
+	// Use client's WithTx for atomic operations
+	return s.client.WithTx(ctx, func(ctx context.Context) error {
+		// Debit remaining balance if any
+		if w.Balance.GreaterThan(decimal.Zero) {
+			debitReq := &wallet.WalletOperation{
+				WalletID:    walletID,
+				Amount:      w.Balance,
+				Type:        types.TransactionTypeDebit,
+				Description: "Wallet termination - remaining balance debit",
+			}
+
+			if err := s.walletRepo.DebitWallet(ctx, debitReq); err != nil {
+				return fmt.Errorf("failed to debit wallet: %w", err)
+			}
+		}
+
+		// Update wallet status to closed
+		if err := s.walletRepo.UpdateWalletStatus(ctx, walletID, types.WalletStatusClosed); err != nil {
+			return fmt.Errorf("failed to close wallet: %w", err)
+		}
+
+		return nil
+	})
 }

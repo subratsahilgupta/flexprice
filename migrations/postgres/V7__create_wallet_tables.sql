@@ -36,11 +36,9 @@ CREATE TABLE wallet_transactions (
 );
 
 -- Create indexes
-CREATE INDEX idx_wallet_tenant_customer ON wallets(tenant_id, customer_id);
-CREATE INDEX idx_wallet_tenant_status ON wallets(tenant_id, status);
-CREATE INDEX idx_wallet_customer_status ON wallets(customer_id, status);
+CREATE INDEX idx_wallet_customer ON wallets(customer_id);
+CREATE INDEX idx_wallet_tenant ON wallets(tenant_id);
 
-CREATE INDEX idx_transaction_tenant_wallet ON wallet_transactions(tenant_id, wallet_id);
+CREATE INDEX idx_transaction_wallet ON wallet_transactions(wallet_id);
 CREATE INDEX idx_transaction_reference ON wallet_transactions(reference_type, reference_id);
-CREATE INDEX idx_transaction_wallet_status ON wallet_transactions(wallet_id, transaction_status);
 CREATE INDEX idx_transaction_created_at ON wallet_transactions(created_at DESC);

@@ -60,8 +60,6 @@ func NewSubscriptionService(
 	}
 }
 
-// CreateSubscription creates a new subscription
-// TODO: Add validations and trial logic
 func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.CreateSubscriptionRequest) (*dto.SubscriptionResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
@@ -122,9 +120,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 		return nil, fmt.Errorf("failed to get subscription: %w", err)
 	}
 
-	// TODO: Think of a better way to handle this initialization of other services
 	planService := NewPlanService(s.planRepo, s.priceRepo, s.logger)
-
 	plan, err := planService.GetPlan(ctx, subscription.PlanID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan: %w", err)
@@ -218,27 +214,31 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		usageEndTime = subscription.CurrentPeriodEnd
 	}
 
-	// saved meter display names
-	meterDisplayNames := make(map[string]string)
-
-	// Group prices by meter ID to handle default and filtered prices
+	// Maintain meter order as they first appear in pricesResponse
+	meterOrder := []string{}
+	seenMeters := make(map[string]bool)
 	meterPrices := make(map[string][]dto.PriceResponse)
+
+	// Build meterPrices in the order of appearance in pricesResponse
 	for _, priceResponse := range pricesResponse {
 		if priceResponse.Price.Type != types.PRICE_TYPE_USAGE {
 			continue
 		}
-
 		meterID := priceResponse.Price.MeterID
+		if !seenMeters[meterID] {
+			meterOrder = append(meterOrder, meterID)
+			seenMeters[meterID] = true
+		}
 		meterPrices[meterID] = append(meterPrices[meterID], priceResponse)
 	}
 
 	// Pre-fetch all meter display names
-	for meterID := range meterPrices {
+	meterDisplayNames := make(map[string]string)
+	for _, meterID := range meterOrder {
 		meterDisplayNames[meterID] = getMeterDisplayName(ctx, s.meterRepo, meterID, meterDisplayNames)
 	}
 
 	totalCost := decimal.Zero
-	// Process each meter's usage separately
 
 	s.logger.Debugw("calculating usage for subscription",
 		"subscription_id", req.SubscriptionID,
@@ -246,8 +246,10 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		"end_time", usageEndTime,
 		"num_prices", len(pricesResponse))
 
-	for meterID, meterPriceGroup := range meterPrices {
-		// Sort prices by filter count to make sure narrower filters are processed first
+	for _, meterID := range meterOrder {
+		meterPriceGroup := meterPrices[meterID]
+
+		// Sort prices by filter count (stable order)
 		sort.Slice(meterPriceGroup, func(i, j int) bool {
 			return len(meterPriceGroup[i].Price.FilterValues) > len(meterPriceGroup[j].Price.FilterValues)
 		})
@@ -267,20 +269,21 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			})
 		}
 
-		// Sort filter groups by priority and ID for consistency
+		// Sort filter groups by priority and ID
 		sort.SliceStable(filterGroups, func(i, j int) bool {
 			pi := calculatePriority(filterGroups[i].FilterValues)
 			pj := calculatePriority(filterGroups[j].FilterValues)
 			if pi != pj {
-				return pi > pj // Higher priority first
+				return pi > pj
 			}
-			return filterGroups[i].ID < filterGroups[j].ID // Stable sort by ID
+			return filterGroups[i].ID < filterGroups[j].ID
 		})
 
-		// Convert to map after sorting
 		filterGroupsMap := make(map[string]map[string][]string)
 		for _, group := range filterGroups {
-			if len(group.FilterValues) > 0 {
+			if len(group.FilterValues) == 0 {
+				filterGroupsMap[group.ID] = map[string][]string{}
+			} else {
 				filterGroupsMap[group.ID] = group.FilterValues
 			}
 		}
@@ -295,9 +298,9 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			return nil, fmt.Errorf("failed to get usage for meter %s: %w", meterID, err)
 		}
 
+		// Append charges in the same order as meterPriceGroup
 		for _, priceResponse := range meterPriceGroup {
 			var quantity decimal.Decimal
-
 			var matchingUsage *events.AggregationResult
 			for _, usage := range usages {
 				if fgID, ok := usage.Metadata["filter_group_id"]; ok && fgID == priceResponse.Price.ID {
@@ -372,14 +375,14 @@ func getMeterDisplayName(ctx context.Context, meterRepo meter.Repository, meterI
 		return name
 	}
 
-	meter, err := meterRepo.GetMeter(ctx, meterID)
+	m, err := meterRepo.GetMeter(ctx, meterID)
 	if err != nil {
-		return meterID // Fallback to meterID if error
+		return meterID
 	}
 
-	displayName := meter.Name
+	displayName := m.Name
 	if displayName == "" {
-		displayName = meter.EventName
+		displayName = m.EventName
 	}
 	cache[meterID] = displayName
 	return displayName
@@ -387,17 +390,11 @@ func getMeterDisplayName(ctx context.Context, meterRepo meter.Repository, meterI
 
 func filterValidPricesForSubscription(prices []dto.PriceResponse, subscriptionObj *subscription.Subscription) []dto.PriceResponse {
 	var validPrices []dto.PriceResponse
-
-	for _, price := range prices {
-		// filter by currency
-		if price.Price.Currency == subscriptionObj.Currency {
-			// filter by billing period
-			if price.Price.BillingPeriod == subscriptionObj.BillingPeriod {
-				// filter by billing period count
-				if price.Price.BillingPeriodCount == subscriptionObj.BillingPeriodCount {
-					validPrices = append(validPrices, price)
-				}
-			}
+	for _, p := range prices {
+		if p.Price.Currency == subscriptionObj.Currency &&
+			p.Price.BillingPeriod == subscriptionObj.BillingPeriod &&
+			p.Price.BillingPeriodCount == subscriptionObj.BillingPeriodCount {
+			validPrices = append(validPrices, p)
 		}
 	}
 	return validPrices
@@ -405,15 +402,9 @@ func filterValidPricesForSubscription(prices []dto.PriceResponse, subscriptionOb
 
 func calculatePriority(filterValues map[string][]string) int {
 	priority := 0
-
-	// Calculate priority based on number of filters and values
 	for _, values := range filterValues {
-		// Each filter key-value pair adds to priority
 		priority += len(values)
 	}
-
-	// Add weight for number of distinct filter keys
 	priority += len(filterValues) * 10
-
 	return priority
 }

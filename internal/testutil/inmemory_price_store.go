@@ -27,6 +27,10 @@ func (s *InMemoryPriceRepository) Create(ctx context.Context, p *price.Price) er
 		return fmt.Errorf("price cannot be nil")
 	}
 
+	// Set TenantID from the context
+	tenantID, _ := ctx.Value(types.CtxTenantID).(string)
+	p.TenantID = tenantID
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -52,14 +56,15 @@ func (s *InMemoryPriceRepository) GetByPlanID(ctx context.Context, planID string
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	tenantID, _ := ctx.Value(types.CtxTenantID).(string)
 	var result []*price.Price
 	for _, p := range s.prices {
-		if p.PlanID == planID {
+		if p.PlanID == planID && p.TenantID == tenantID {
 			result = append(result, p)
 		}
 	}
 
-	// Sort by created date desc (default)
+	// Sort by created date desc
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].CreatedAt.After(result[j].CreatedAt)
 	})
@@ -76,7 +81,7 @@ func (s *InMemoryPriceRepository) List(ctx context.Context, filter types.Filter)
 		result = append(result, p)
 	}
 
-	// Sort by created date desc (default)
+	// Sort by created date desc
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].CreatedAt.After(result[j].CreatedAt)
 	})
