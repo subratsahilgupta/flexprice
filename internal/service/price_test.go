@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -24,7 +25,7 @@ func TestPriceService(t *testing.T) {
 
 func (s *PriceServiceSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.priceRepo = testutil.NewInMemoryPriceRepository()
+	s.priceRepo = testutil.NewInMemoryPriceStore()
 
 	s.priceService = &priceService{
 		repo: s.priceRepo,
@@ -33,7 +34,7 @@ func (s *PriceServiceSuite) SetupTest() {
 
 func (s *PriceServiceSuite) TestCreatePrice() {
 	req := dto.CreatePriceRequest{
-		Amount:             100,
+		Amount:             "100",
 		Currency:           "USD",
 		PlanID:             "plan-1",
 		Type:               types.PRICE_TYPE_USAGE,
@@ -56,7 +57,7 @@ func (s *PriceServiceSuite) TestGetPrice() {
 	// Create a price
 	price := &price.Price{
 		ID:       "price-1",
-		Amount:   100,
+		Amount:   decimal.NewFromInt(100),
 		Currency: "USD",
 		PlanID:   "plan-1",
 	}
@@ -75,8 +76,8 @@ func (s *PriceServiceSuite) TestGetPrice() {
 
 func (s *PriceServiceSuite) TestGetPrices() {
 	// Prepopulate the repository with prices
-	_ = s.priceRepo.Create(s.ctx, &price.Price{ID: "price-1", Amount: 100, Currency: "USD"})
-	_ = s.priceRepo.Create(s.ctx, &price.Price{ID: "price-2", Amount: 200, Currency: "USD"})
+	_ = s.priceRepo.Create(s.ctx, &price.Price{ID: "price-1", Amount: decimal.NewFromInt(100), Currency: "USD"})
+	_ = s.priceRepo.Create(s.ctx, &price.Price{ID: "price-2", Amount: decimal.NewFromInt(200), Currency: "USD"})
 
 	resp, err := s.priceService.GetPrices(s.ctx, types.Filter{Offset: 0, Limit: 10})
 	s.NoError(err)
@@ -93,7 +94,7 @@ func (s *PriceServiceSuite) TestUpdatePrice() {
 	// Create a price
 	price := &price.Price{
 		ID:       "price-1",
-		Amount:   100,
+		Amount:   decimal.NewFromInt(100),
 		Currency: "USD",
 		PlanID:   "plan-1",
 	}
@@ -113,7 +114,7 @@ func (s *PriceServiceSuite) TestUpdatePrice() {
 
 func (s *PriceServiceSuite) TestDeletePrice() {
 	// Create a price
-	price := &price.Price{ID: "price-1", Amount: 100, Currency: "USD"}
+	price := &price.Price{ID: "price-1", Amount: decimal.NewFromInt(100), Currency: "USD"}
 	_ = s.priceRepo.Create(s.ctx, price)
 
 	err := s.priceService.DeletePrice(s.ctx, "price-1")

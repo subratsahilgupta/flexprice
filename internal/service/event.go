@@ -13,14 +13,17 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/kafka"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
+	"github.com/shopspring/decimal"
 )
 
 type EventService interface {
 	CreateEvent(ctx context.Context, createEventRequest *dto.IngestEventRequest) error
 	GetUsage(ctx context.Context, getUsageRequest *dto.GetUsageRequest) (*events.AggregationResult, error)
 	GetUsageByMeter(ctx context.Context, getUsageByMeterRequest *dto.GetUsageByMeterRequest) (*events.AggregationResult, error)
+	GetUsageByMeterWithFilters(ctx context.Context, req *dto.GetUsageByMeterRequest, filterGroups map[string]map[string][]string) ([]*events.AggregationResult, error)
 	GetEvents(ctx context.Context, req *dto.GetEventsRequest) (*dto.GetEventsResponse, error)
 }
 
@@ -29,14 +32,21 @@ type eventService struct {
 	eventRepo events.Repository
 	meterRepo meter.Repository
 	validator *validator.Validate
+	logger    *logger.Logger
 }
 
-func NewEventService(producer kafka.MessageProducer, eventRepo events.Repository, meterRepo meter.Repository) EventService {
+func NewEventService(
+	producer kafka.MessageProducer,
+	eventRepo events.Repository,
+	meterRepo meter.Repository,
+	logger *logger.Logger,
+) EventService {
 	return &eventService{
 		producer:  producer,
 		eventRepo: eventRepo,
 		meterRepo: meterRepo,
 		validator: validator.New(),
+		logger:    logger,
 	}
 }
 
@@ -71,23 +81,11 @@ func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.
 }
 
 func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsageRequest) (*events.AggregationResult, error) {
-	if getUsageRequest.AggregationType == "" || getUsageRequest.PropertyName == "" {
-		getUsageRequest.AggregationType = string(types.AggregationCount)
+	if err := getUsageRequest.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	result, err := s.eventRepo.GetUsage(
-		ctx,
-		&events.UsageParams{
-			ExternalCustomerID: getUsageRequest.ExternalCustomerID,
-			EventName:          getUsageRequest.EventName,
-			PropertyName:       getUsageRequest.PropertyName,
-			AggregationType:    types.AggregationType(getUsageRequest.AggregationType),
-			WindowSize:         getUsageRequest.WindowSize,
-			StartTime:          getUsageRequest.StartTime,
-			EndTime:            getUsageRequest.EndTime,
-			Filters:            getUsageRequest.Filters,
-		},
-	)
+	result, err := s.eventRepo.GetUsage(ctx, getUsageRequest.ToUsageParams())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get usage: %w", err)
 	}
@@ -95,92 +93,108 @@ func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsa
 	return result, nil
 }
 
-func (s *eventService) GetUsageByMeter(ctx context.Context, getUsageByMeterRequest *dto.GetUsageByMeterRequest) (*events.AggregationResult, error) {
-	meter, err := s.meterRepo.GetMeter(ctx, getUsageByMeterRequest.MeterID)
+func (s *eventService) GetUsageByMeter(ctx context.Context, req *dto.GetUsageByMeterRequest) (*events.AggregationResult, error) {
+	meter, err := s.meterRepo.GetMeter(ctx, req.MeterID)
 	if err != nil {
+		s.logger.Errorf("failed to get meter: %v", err)
 		return nil, errors.NewAttributeNotFoundError("meter")
 	}
 
-	switch meter.ResetUsage {
-	case types.ResetUsageBillingPeriod:
-		return s.getUsageForBillingPeriod(ctx, meter, getUsageByMeterRequest)
-	case types.ResetUsageNever:
-		return s.getUsageForNeverReset(ctx, meter, getUsageByMeterRequest)
-	default:
-		return nil, errors.NewInvalidInputError("invalid reset_usage type")
-	}
-}
-
-func (s *eventService) getUsageForBillingPeriod(ctx context.Context, meter *meter.Meter, req *dto.GetUsageByMeterRequest) (*events.AggregationResult, error) {
-	return s.calculateUsage(ctx, meter, req.ExternalCustomerID, req.StartTime, req.EndTime)
-}
-
-func (s *eventService) getUsageForNeverReset(ctx context.Context, meter *meter.Meter, req *dto.GetUsageByMeterRequest) (*events.AggregationResult, error) {
-	if req.StartTime.IsZero() && req.EndTime.IsZero() {
-		return s.calculateUsage(ctx, meter, req.ExternalCustomerID, req.StartTime, req.EndTime)
+	getUsageRequest := dto.GetUsageRequest{
+		ExternalCustomerID: req.ExternalCustomerID,
+		CustomerID:         req.CustomerID,
+		EventName:          meter.EventName,
+		PropertyName:       meter.Aggregation.Field,
+		AggregationType:    string(meter.Aggregation.Type),
+		StartTime:          req.StartTime,
+		WindowSize:         req.WindowSize,
+		EndTime:            req.EndTime,
+		Filters:            req.Filters,
 	}
 
-	if !req.StartTime.IsZero() && req.EndTime.IsZero() {
-		beforeUsage, err := s.calculateUsage(ctx, meter, req.ExternalCustomerID, time.Time{}, req.StartTime)
+	usage, err := s.GetUsage(ctx, &getUsageRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate usage: %w", err)
+	}
+
+	if meter.ResetUsage == types.ResetUsageNever {
+		getHistoricUsageRequest := getUsageRequest
+		getHistoricUsageRequest.StartTime = time.Time{}
+		getHistoricUsageRequest.EndTime = req.StartTime
+		getHistoricUsageRequest.WindowSize = ""
+
+		historicUsage, err := s.GetUsage(ctx, &getHistoricUsageRequest)
 		if err != nil {
 			return nil, fmt.Errorf("calculate before usage: %w", err)
 		}
 
-		afterUsage, err := s.calculateUsage(ctx, meter, req.ExternalCustomerID, req.StartTime, time.Time{})
-		if err != nil {
-			return nil, fmt.Errorf("calculate after usage: %w", err)
-		}
-
-		return s.combineResults(beforeUsage, afterUsage, meter), nil
+		return s.combineResults(historicUsage, usage, meter), nil
 	}
 
-	if !req.StartTime.IsZero() && !req.EndTime.IsZero() {
-		return s.calculateUsage(ctx, meter, req.ExternalCustomerID, req.StartTime, req.EndTime)
-	}
-
-	return nil, errors.NewInvalidInputError("invalid date range")
+	return usage, nil
 }
 
-func (s *eventService) calculateUsage(ctx context.Context, meter *meter.Meter, externalCustomerID string, startTime, endTime time.Time) (*events.AggregationResult, error) {
-	filterMap := make(map[string][]string)
-	for _, filter := range meter.Filters {
-		filterMap[filter.Key] = filter.Values
+func (s *eventService) GetUsageByMeterWithFilters(ctx context.Context, req *dto.GetUsageByMeterRequest, filterGroups map[string]map[string][]string) ([]*events.AggregationResult, error) {
+	meter, err := s.meterRepo.GetMeter(ctx, req.MeterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get meter: %w", err)
 	}
 
-	return s.GetUsage(ctx, &dto.GetUsageRequest{
-		ExternalCustomerID: externalCustomerID,
-		EventName:          meter.EventName,
-		PropertyName:       meter.Aggregation.Field,
-		AggregationType:    string(meter.Aggregation.Type),
-		StartTime:          startTime,
-		EndTime:            endTime,
-		Filters:            filterMap,
-	})
+	prioritizedGroups := make([]events.FilterGroup, len(filterGroups))
+	priceIDs := make([]string, 0, len(filterGroups))
+	for priceID := range filterGroups {
+		priceIDs = append(priceIDs, priceID)
+	}
+
+	for i, priceID := range priceIDs {
+		priority := len(filterGroups) - i
+		prioritizedGroups[i] = events.FilterGroup{
+			ID:       priceID,
+			Priority: priority,
+			Filters:  filterGroups[priceID],
+		}
+	}
+
+	params := &events.UsageWithFiltersParams{
+		UsageParams: &events.UsageParams{
+			EventName:          meter.EventName,
+			PropertyName:       meter.Aggregation.Field,
+			AggregationType:    meter.Aggregation.Type,
+			ExternalCustomerID: req.ExternalCustomerID,
+			StartTime:          req.StartTime,
+			EndTime:            req.EndTime,
+		},
+		FilterGroups: prioritizedGroups,
+	}
+
+	results, err := s.eventRepo.GetUsageWithFilters(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get usage with filters: %w", err)
+	}
+
+	if len(results) == 0 {
+		s.logger.Debugw("no usage found for meter with filters",
+			"meter_id", meter.ID,
+			"filter_groups", len(filterGroups))
+		return results, nil
+	}
+	return results, nil
 }
 
-func (s *eventService) combineResults(beforeUsage, afterUsage *events.AggregationResult, meter *meter.Meter) *events.AggregationResult {
-	var totalValue float64
+func (s *eventService) combineResults(historicUsage, currentUsage *events.AggregationResult, meter *meter.Meter) *events.AggregationResult {
+	var totalValue decimal.Decimal
 
-	if beforeUsage != nil && beforeUsage.Value != nil {
-		switch v := beforeUsage.Value.(type) {
-		case float64:
-			totalValue += v
-		case int64:
-			totalValue += float64(v)
-		}
+	if historicUsage != nil {
+		totalValue = totalValue.Add(historicUsage.Value)
 	}
 
-	if afterUsage != nil && afterUsage.Value != nil {
-		switch v := afterUsage.Value.(type) {
-		case float64:
-			totalValue += v
-		case int64:
-			totalValue += float64(v)
-		}
+	if currentUsage != nil {
+		totalValue = totalValue.Add(currentUsage.Value)
 	}
 
 	return &events.AggregationResult{
 		Value:     totalValue,
+		Results:   currentUsage.Results,
 		EventName: meter.EventName,
 		Type:      meter.Aggregation.Type,
 	}

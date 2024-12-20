@@ -12,17 +12,22 @@ import (
 )
 
 type Handlers struct {
-	Events   *v1.EventsHandler
-	Meter    *v1.MeterHandler
-	Auth     *v1.AuthHandler
-	User     *v1.UserHandler
-	Health   *v1.HealthHandler
-	Price    *v1.PriceHandler
-	Customer *v1.CustomerHandler
-	Plan     *v1.PlanHandler
+	Events       *v1.EventsHandler
+	Meter        *v1.MeterHandler
+	Auth         *v1.AuthHandler
+	User         *v1.UserHandler
+	Health       *v1.HealthHandler
+	Price        *v1.PriceHandler
+	Customer     *v1.CustomerHandler
+	Plan         *v1.PlanHandler
+	Subscription *v1.SubscriptionHandler
+	Wallet       *v1.WalletHandler
+	Tenant       *v1.TenantHandler
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
+	// gin.SetMode(gin.ReleaseMode)
+
 	router := gin.Default()
 	router.Use(
 		middleware.RequestIDMiddleware,
@@ -68,8 +73,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			events.POST("", handlers.Events.IngestEvent)
 			events.GET("", handlers.Events.GetEvents)
-			events.GET("/usage", handlers.Events.GetUsage)
-			events.GET("/usage/meter", handlers.Events.GetUsageByMeter)
+			events.POST("/usage", handlers.Events.GetUsage)
+			events.POST("/usage/meter", handlers.Events.GetUsageByMeter)
 		}
 
 		meters := v1Private.Group("/meters")
@@ -97,6 +102,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.GET("/:id", handlers.Customer.GetCustomer)
 			customer.PUT("/:id", handlers.Customer.UpdateCustomer)
 			customer.DELETE("/:id", handlers.Customer.DeleteCustomer)
+
+			// other routes for customer
+			customer.GET("/:id/wallets", handlers.Wallet.GetWalletsByCustomerID)
 		}
 
 		plan := v1Private.Group("/plans")
@@ -106,6 +114,30 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			plan.GET("/:id", handlers.Plan.GetPlan)
 			plan.PUT("/:id", handlers.Plan.UpdatePlan)
 			plan.DELETE("/:id", handlers.Plan.DeletePlan)
+		}
+
+		subscription := v1Private.Group("/subscriptions")
+		{
+			subscription.POST("", handlers.Subscription.CreateSubscription)
+			subscription.GET("", handlers.Subscription.GetSubscriptions)
+			subscription.GET("/:id", handlers.Subscription.GetSubscription)
+			subscription.POST("/:id/cancel", handlers.Subscription.CancelSubscription)
+			subscription.POST("/usage", handlers.Subscription.GetUsageBySubscription)
+		}
+
+		wallet := v1Private.Group("/wallets")
+		{
+			wallet.POST("", handlers.Wallet.CreateWallet)
+			wallet.GET("/:id", handlers.Wallet.GetWalletByID)
+			wallet.GET("/:id/transactions", handlers.Wallet.GetWalletTransactions)
+			wallet.POST("/:id/top-up", handlers.Wallet.TopUpWallet)
+			wallet.GET("/:id/balance/real-time", handlers.Wallet.GetWalletBalance)
+		}
+		// Tenant routes
+		tenant := v1Private.Group("/tenants")
+		{
+			tenant.POST("", handlers.Tenant.CreateTenant)     // Create a new tenant
+			tenant.GET("/:id", handlers.Tenant.GetTenantByID) // Get tenant by ID
 		}
 	}
 	return router

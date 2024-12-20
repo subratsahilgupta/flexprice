@@ -16,7 +16,7 @@ type CustomerServiceSuite struct {
 	suite.Suite
 	ctx             context.Context
 	customerService *customerService
-	repo            *testutil.InMemoryCustomerRepository
+	repo            *testutil.InMemoryCustomerStore
 }
 
 func TestCustomerService(t *testing.T) {
@@ -25,7 +25,7 @@ func TestCustomerService(t *testing.T) {
 
 func (s *CustomerServiceSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.repo = testutil.NewInMemoryCustomerRepository()
+	s.repo = testutil.NewInMemoryCustomerStore()
 	s.customerService = &customerService{
 		repo: s.repo,
 	}
@@ -41,7 +41,7 @@ func (s *CustomerServiceSuite) TestCreateCustomer() {
 			name: "successful_creation",
 			setup: func() {
 				// Ensure the repository is empty before test
-				s.repo = testutil.NewInMemoryCustomerRepository()
+				s.repo = testutil.NewInMemoryCustomerStore()
 				s.customerService = &customerService{repo: s.repo}
 			},
 			expectedError: false,
@@ -127,7 +127,7 @@ func (s *CustomerServiceSuite) TestGetCustomer() {
 
 func (s *CustomerServiceSuite) TestGetCustomers() {
 	// Reset and prepopulate the repository with customers
-	s.repo = testutil.NewInMemoryCustomerRepository()
+	s.repo = testutil.NewInMemoryCustomerStore()
 	s.customerService = &customerService{repo: s.repo}
 	_ = s.repo.Create(s.ctx, &customer.Customer{
 		ID:    "cust-1",

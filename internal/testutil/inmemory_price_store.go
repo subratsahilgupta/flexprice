@@ -1,89 +1,124 @@
-// In-memory price repository for testing
 package testutil
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
+// InMemoryPriceRepository implements price.Repository
 type InMemoryPriceRepository struct {
-	store map[string]*price.Price
-	mutex sync.RWMutex
+	mu     sync.RWMutex
+	prices map[string]*price.Price
 }
 
-func NewInMemoryPriceRepository() *InMemoryPriceRepository {
+func NewInMemoryPriceStore() *InMemoryPriceRepository {
 	return &InMemoryPriceRepository{
-		store: make(map[string]*price.Price),
+		prices: make(map[string]*price.Price),
 	}
 }
 
-func (r *InMemoryPriceRepository) Get(ctx context.Context, id string) (*price.Price, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+func (s *InMemoryPriceRepository) Create(ctx context.Context, p *price.Price) error {
+	if p == nil {
+		return fmt.Errorf("price cannot be nil")
+	}
 
-	if p, exists := r.store[id]; exists {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.prices[p.ID]; exists {
+		return fmt.Errorf("price already exists")
+	}
+
+	s.prices[p.ID] = p
+	return nil
+}
+
+func (s *InMemoryPriceRepository) Get(ctx context.Context, id string) (*price.Price, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if p, exists := s.prices[id]; exists {
 		return p, nil
 	}
-	return nil, errors.New("price not found")
+	return nil, fmt.Errorf("price not found")
 }
 
-func (r *InMemoryPriceRepository) Create(ctx context.Context, p *price.Price) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+func (s *InMemoryPriceRepository) GetByPlanID(ctx context.Context, planID string) ([]*price.Price, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	if _, exists := r.store[p.ID]; exists {
-		return errors.New("price already exists")
+	var result []*price.Price
+	for _, p := range s.prices {
+		if p.PlanID == planID {
+			result = append(result, p)
+		}
 	}
 
-	r.store[p.ID] = p
-	return nil
+	// Sort by created date desc (default)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+
+	return result, nil
 }
 
-func (r *InMemoryPriceRepository) Update(ctx context.Context, p *price.Price) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+func (s *InMemoryPriceRepository) List(ctx context.Context, filter types.Filter) ([]*price.Price, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	if _, exists := r.store[p.ID]; !exists {
-		return errors.New("price not found")
+	var result []*price.Price
+	for _, p := range s.prices {
+		result = append(result, p)
 	}
 
-	r.store[p.ID] = p
-	return nil
-}
+	// Sort by created date desc (default)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
 
-func (r *InMemoryPriceRepository) Delete(ctx context.Context, id string) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	if _, exists := r.store[id]; !exists {
-		return errors.New("price not found")
-	}
-
-	delete(r.store, id)
-	return nil
-}
-
-func (r *InMemoryPriceRepository) List(ctx context.Context, filter types.Filter) ([]*price.Price, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	prices := []*price.Price{}
-	for _, p := range r.store {
-		prices = append(prices, p)
-	}
-
-	// Apply offset and limit
+	// Apply pagination
 	start := filter.Offset
-	end := start + filter.Limit
-	if start > len(prices) {
+	if start >= len(result) {
 		return []*price.Price{}, nil
 	}
-	if end > len(prices) {
-		end = len(prices)
+
+	end := start + filter.Limit
+	if end > len(result) {
+		end = len(result)
 	}
-	return prices[start:end], nil
+
+	return result[start:end], nil
+}
+
+func (s *InMemoryPriceRepository) Update(ctx context.Context, p *price.Price) error {
+	if p == nil {
+		return fmt.Errorf("price cannot be nil")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.prices[p.ID]; !exists {
+		return fmt.Errorf("price not found")
+	}
+
+	s.prices[p.ID] = p
+	return nil
+}
+
+func (s *InMemoryPriceRepository) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.prices[id]; !exists {
+		return fmt.Errorf("price not found")
+	}
+
+	delete(s.prices, id)
+	return nil
 }

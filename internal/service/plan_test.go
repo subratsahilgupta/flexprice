@@ -9,6 +9,8 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -25,11 +27,11 @@ func TestPlanService(t *testing.T) {
 
 func (s *PlanServiceSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.planRepo = testutil.NewInMemoryPlanRepository()
+	s.planRepo = testutil.NewInMemoryPlanStore()
 
 	s.planService = &planService{
 		planRepo:  s.planRepo,
-		priceRepo: testutil.NewInMemoryPriceRepository(),
+		priceRepo: testutil.NewInMemoryPriceStore(),
 	}
 }
 
@@ -40,7 +42,7 @@ func (s *PlanServiceSuite) TestCreatePlan() {
 		Prices: []dto.CreatePlanPriceRequest{
 			{
 				CreatePriceRequest: &dto.CreatePriceRequest{
-					Amount:             100,
+					Amount:             "100",
 					Currency:           "USD",
 					PlanID:             "plan-1",
 					Type:               types.PRICE_TYPE_USAGE,
@@ -50,18 +52,18 @@ func (s *PlanServiceSuite) TestCreatePlan() {
 					BillingCadence:     types.BILLING_CADENCE_RECURRING,
 					Description:        "Test Price",
 					MeterID:            "meter-1",
-					Tiers: []price.PriceTier{
+					Tiers: ConvertToCreatePriceTier([]price.PriceTier{
 						{
-							UpTo:       10,
-							UnitAmount: 100,
-							FlatAmount: 20,
+							UpTo:       lo.ToPtr(uint64(10)),
+							UnitAmount: decimal.NewFromFloat(100.0),
+							FlatAmount: lo.ToPtr(decimal.NewFromInt(20)),
 						},
 						{
-							UpTo:       20,
-							UnitAmount: 80,
-							FlatAmount: 10,
+							UpTo:       lo.ToPtr(uint64(20)),
+							UnitAmount: decimal.NewFromFloat(80.0),
+							FlatAmount: lo.ToPtr(decimal.NewFromInt(10)),
 						},
-					},
+					}),
 				},
 			},
 		},
@@ -74,6 +76,24 @@ func (s *PlanServiceSuite) TestCreatePlan() {
 	s.NotNil(resp)
 	s.Equal(req.Name, resp.Plan.Name)
 	s.Equal(req.Description, resp.Plan.Description)
+}
+
+func ConvertToCreatePriceTier(tiers []price.PriceTier) []dto.CreatePriceTier {
+	var converted []dto.CreatePriceTier
+	for _, tier := range tiers {
+		converted = append(converted, dto.CreatePriceTier{
+			UpTo:       tier.UpTo,
+			UnitAmount: tier.UnitAmount.String(), // Convert decimal.Decimal to string
+			FlatAmount: func(flatAmount *decimal.Decimal) *string {
+				if flatAmount != nil {
+					str := flatAmount.String()
+					return &str
+				}
+				return nil
+			}(tier.FlatAmount), // Convert *decimal.Decimal to *string
+		})
+	}
+	return converted
 }
 
 func (s *PlanServiceSuite) TestGetPlan() {

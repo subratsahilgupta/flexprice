@@ -3,88 +3,104 @@ package testutil
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-type InMemoryCustomerRepository struct {
-	store map[string]*customer.Customer
-	mutex sync.RWMutex
+// InMemoryCustomerStore implements customer.Repository
+type InMemoryCustomerStore struct {
+	mu        sync.RWMutex
+	customers map[string]*customer.Customer
 }
 
-func NewInMemoryCustomerRepository() *InMemoryCustomerRepository {
-	return &InMemoryCustomerRepository{
-		store: make(map[string]*customer.Customer),
+func NewInMemoryCustomerStore() *InMemoryCustomerStore {
+	return &InMemoryCustomerStore{
+		customers: make(map[string]*customer.Customer),
 	}
 }
 
-func (r *InMemoryCustomerRepository) Get(ctx context.Context, id string) (*customer.Customer, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+func (s *InMemoryCustomerStore) Create(ctx context.Context, c *customer.Customer) error {
+	if c == nil {
+		return fmt.Errorf("customer cannot be nil")
+	}
 
-	if c, exists := r.store[id]; exists {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.customers[c.ID]; exists {
+		return fmt.Errorf("customer already exists")
+	}
+
+	s.customers[c.ID] = c
+	return nil
+}
+
+func (s *InMemoryCustomerStore) Get(ctx context.Context, id string) (*customer.Customer, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if c, exists := s.customers[id]; exists {
 		return c, nil
 	}
-	return nil, errors.New("customer not found")
+	return nil, fmt.Errorf("customer not found")
 }
 
-func (r *InMemoryCustomerRepository) Create(ctx context.Context, c *customer.Customer) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+func (s *InMemoryCustomerStore) List(ctx context.Context, filter types.Filter) ([]*customer.Customer, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	if _, exists := r.store[c.ID]; exists {
-		return errors.New("customer already exists")
+	var result []*customer.Customer
+	for _, c := range s.customers {
+		result = append(result, c)
 	}
 
-	r.store[c.ID] = c
-	return nil
-}
+	// Sort by created date desc (default)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
 
-func (r *InMemoryCustomerRepository) Update(ctx context.Context, c *customer.Customer) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	if _, exists := r.store[c.ID]; !exists {
-		return errors.New("customer not found")
-	}
-
-	r.store[c.ID] = c
-	return nil
-}
-
-func (r *InMemoryCustomerRepository) Delete(ctx context.Context, id string) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	if _, exists := r.store[id]; !exists {
-		return errors.New("customer not found")
-	}
-
-	delete(r.store, id)
-	return nil
-}
-
-func (r *InMemoryCustomerRepository) List(ctx context.Context, filter types.Filter) ([]*customer.Customer, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	customers := []*customer.Customer{}
-	for _, c := range r.store {
-		customers = append(customers, c)
-	}
-
-	// Apply offset and limit
+	// Apply pagination
 	start := filter.Offset
-	end := start + filter.Limit
-
-	if start > len(customers) {
-		return []*customer.Customer{}, nil // No customers in this range
-	} else if end > len(customers) {
-		end = len(customers) // Adjust the end index to avoid out-of-bounds
+	if start >= len(result) {
+		return []*customer.Customer{}, nil
 	}
 
-	return customers[start:end], nil
+	end := start + filter.Limit
+	if end > len(result) {
+		end = len(result)
+	}
+
+	return result[start:end], nil
+}
+
+func (s *InMemoryCustomerStore) Update(ctx context.Context, c *customer.Customer) error {
+	if c == nil {
+		return fmt.Errorf("customer cannot be nil")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.customers[c.ID]; !exists {
+		return fmt.Errorf("customer not found")
+	}
+
+	s.customers[c.ID] = c
+	return nil
+}
+
+func (s *InMemoryCustomerStore) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.customers[id]; !exists {
+		return fmt.Errorf("customer not found")
+	}
+
+	delete(s.customers, id)
+	return nil
 }

@@ -8,7 +8,9 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/user"
+	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	clickhouseRepo "github.com/flexprice/flexprice/internal/repository/clickhouse"
@@ -48,4 +50,12 @@ func NewCustomerRepository(db *postgres.DB, logger *logger.Logger) customer.Repo
 
 func NewPlanRepository(db *postgres.DB, logger *logger.Logger) plan.Repository {
 	return postgresRepo.NewPlanRepository(db, logger)
+}
+
+func NewSubscriptionRepository(db *postgres.DB, logger *logger.Logger) subscription.Repository {
+	return postgresRepo.NewSubscriptionRepository(db, logger)
+}
+
+func NewWalletRepository(db *postgres.DB, logger *logger.Logger) wallet.Repository {
+	return postgresRepo.NewWalletRepository(db, logger)
 }

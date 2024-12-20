@@ -10,7 +10,9 @@ import (
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/repository/clickhouse/builder"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 )
 
 type EventRepository struct {
@@ -80,18 +82,126 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 	defer rows.Close()
 
 	var result events.AggregationResult
-	if rows.Next() {
-		var value float64
-		if err := rows.Scan(&value); err != nil {
-			return nil, fmt.Errorf("scan result: %w", err)
-		}
+	result.Type = params.AggregationType
+	result.EventName = params.EventName
 
-		result.Value = value
-		result.Type = params.AggregationType
-		result.EventName = params.EventName
+	// For windowed queries, we need to process all rows
+	if params.WindowSize != "" {
+		for rows.Next() {
+			var windowSize time.Time
+			var value decimal.Decimal
+
+			switch params.AggregationType {
+			case types.AggregationCount:
+				var countValue uint64
+				if err := rows.Scan(&windowSize, &countValue); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				value = decimal.NewFromUint64(countValue)
+			case types.AggregationSum, types.AggregationAvg:
+				var floatValue float64
+				if err := rows.Scan(&windowSize, &floatValue); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				value = decimal.NewFromFloat(floatValue)
+			default:
+				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
+			}
+
+			result.Results = append(result.Results, events.UsageResult{
+				WindowSize: windowSize,
+				Value:      value,
+			})
+		}
+	} else {
+		// Non-windowed query - process single row
+		if rows.Next() {
+			switch params.AggregationType {
+			case types.AggregationCount:
+				var value uint64
+				if err := rows.Scan(&value); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				result.Value = decimal.NewFromUint64(value)
+			case types.AggregationSum, types.AggregationAvg:
+				var value float64
+				if err := rows.Scan(&value); err != nil {
+					return nil, fmt.Errorf("scan result: %w", err)
+				}
+				result.Value = decimal.NewFromFloat(value)
+			default:
+				return nil, fmt.Errorf("unsupported aggregation type for scanning: %s", params.AggregationType)
+			}
+		}
 	}
 
 	return &result, nil
+}
+
+func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *events.UsageWithFiltersParams) ([]*events.AggregationResult, error) {
+	if params == nil || params.UsageParams == nil {
+		return nil, fmt.Errorf("params cannot be nil")
+	}
+
+	// Build query using the new builder
+	qb := builder.NewQueryBuilder().
+		WithBaseFilters(ctx, params.UsageParams).
+		WithAggregation(ctx, params.AggregationType, params.PropertyName).
+		WithFilterGroups(ctx, params.FilterGroups)
+
+	query, queryParams := qb.Build()
+
+	r.logger.Debugw("executing filter groups query",
+		"event_name", params.EventName,
+		"filter_groups", len(params.FilterGroups),
+		"query", query,
+		"params", queryParams)
+
+	// Execute query with named parameters
+	rows, err := r.store.GetConn().Query(ctx, query, queryParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	// Process results
+	var results []*events.AggregationResult
+	for rows.Next() {
+		var filterGroupID string
+
+		result := &events.AggregationResult{}
+		result.Type = params.AggregationType
+		result.EventName = params.UsageParams.EventName
+
+		// Use appropriate type based on aggregation
+		switch params.AggregationType {
+		case types.AggregationCount:
+			var value uint64
+			if err := rows.Scan(&filterGroupID, &value); err != nil {
+				return nil, fmt.Errorf("failed to scan count row: %w", err)
+			}
+			result.Value = decimal.NewFromUint64(value)
+		case types.AggregationSum, types.AggregationAvg:
+			var value float64
+			if err := rows.Scan(&filterGroupID, &value); err != nil {
+				return nil, fmt.Errorf("failed to scan float row: %w", err)
+			}
+			result.Value = decimal.NewFromFloat(value)
+		default:
+			return nil, fmt.Errorf("unsupported aggregation type: %v", params.AggregationType)
+		}
+
+		result.Metadata = map[string]string{
+			"filter_group_id": filterGroupID,
+		}
+		results = append(results, result)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	return results, nil
 }
 
 func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, error) {

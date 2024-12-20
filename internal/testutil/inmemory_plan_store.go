@@ -1,89 +1,105 @@
-// In-memory plan repository for testing
 package testutil
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
+// InMemoryPlanRepository implements plan.Repository
 type InMemoryPlanRepository struct {
-	store map[string]*plan.Plan
-	mutex sync.RWMutex
+	mu    sync.RWMutex
+	plans map[string]*plan.Plan
 }
 
-func NewInMemoryPlanRepository() *InMemoryPlanRepository {
+func NewInMemoryPlanStore() *InMemoryPlanRepository {
 	return &InMemoryPlanRepository{
-		store: make(map[string]*plan.Plan),
+		plans: make(map[string]*plan.Plan),
 	}
 }
 
-func (r *InMemoryPlanRepository) Get(ctx context.Context, id string) (*plan.Plan, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+func (s *InMemoryPlanRepository) Create(ctx context.Context, p *plan.Plan) error {
+	if p == nil {
+		return fmt.Errorf("plan cannot be nil")
+	}
 
-	if p, exists := r.store[id]; exists {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.plans[p.ID]; exists {
+		return fmt.Errorf("plan already exists")
+	}
+
+	s.plans[p.ID] = p
+	return nil
+}
+
+func (s *InMemoryPlanRepository) Get(ctx context.Context, id string) (*plan.Plan, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if p, exists := s.plans[id]; exists {
 		return p, nil
 	}
-	return nil, errors.New("plan not found")
+	return nil, fmt.Errorf("plan not found")
 }
 
-func (r *InMemoryPlanRepository) Create(ctx context.Context, p *plan.Plan) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+func (s *InMemoryPlanRepository) List(ctx context.Context, filter types.Filter) ([]*plan.Plan, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	if _, exists := r.store[p.ID]; exists {
-		return errors.New("plan already exists")
+	var result []*plan.Plan
+	for _, p := range s.plans {
+		result = append(result, p)
 	}
 
-	r.store[p.ID] = p
-	return nil
-}
+	// Sort by created date desc (default)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
 
-func (r *InMemoryPlanRepository) Update(ctx context.Context, p *plan.Plan) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	if _, exists := r.store[p.ID]; !exists {
-		return errors.New("plan not found")
-	}
-
-	r.store[p.ID] = p
-	return nil
-}
-
-func (r *InMemoryPlanRepository) Delete(ctx context.Context, id string) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	if _, exists := r.store[id]; !exists {
-		return errors.New("plan not found")
-	}
-
-	delete(r.store, id)
-	return nil
-}
-
-func (r *InMemoryPlanRepository) List(ctx context.Context, filter types.Filter) ([]*plan.Plan, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	plans := []*plan.Plan{}
-	for _, p := range r.store {
-		plans = append(plans, p)
-	}
-
-	// Apply offset and limit
+	// Apply pagination
 	start := filter.Offset
-	end := start + filter.Limit
-	if start > len(plans) {
+	if start >= len(result) {
 		return []*plan.Plan{}, nil
 	}
-	if end > len(plans) {
-		end = len(plans)
+
+	end := start + filter.Limit
+	if end > len(result) {
+		end = len(result)
 	}
-	return plans[start:end], nil
+
+	return result[start:end], nil
+}
+
+func (s *InMemoryPlanRepository) Update(ctx context.Context, p *plan.Plan) error {
+	if p == nil {
+		return fmt.Errorf("plan cannot be nil")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.plans[p.ID]; !exists {
+		return fmt.Errorf("plan not found")
+	}
+
+	s.plans[p.ID] = p
+	return nil
+}
+
+func (s *InMemoryPlanRepository) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.plans[id]; !exists {
+		return fmt.Errorf("plan not found")
+	}
+
+	delete(s.plans, id)
+	return nil
 }
