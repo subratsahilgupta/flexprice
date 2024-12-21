@@ -26,7 +26,7 @@ func TestPlanService(t *testing.T) {
 }
 
 func (s *PlanServiceSuite) SetupTest() {
-	s.ctx = context.Background()
+	s.ctx = testutil.SetupContext()
 	s.planRepo = testutil.NewInMemoryPlanStore()
 
 	s.planService = &planService{

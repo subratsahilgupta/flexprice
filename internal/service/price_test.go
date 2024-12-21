@@ -24,7 +24,7 @@ func TestPriceService(t *testing.T) {
 }
 
 func (s *PriceServiceSuite) SetupTest() {
-	s.ctx = context.Background()
+	s.ctx = testutil.SetupContext()
 	s.priceRepo = testutil.NewInMemoryPriceStore()
 
 	s.priceService = &priceService{
@@ -75,19 +75,25 @@ func (s *PriceServiceSuite) TestGetPrice() {
 }
 
 func (s *PriceServiceSuite) TestGetPrices() {
-	// Prepopulate the repository with prices
-	_ = s.priceRepo.Create(s.ctx, &price.Price{ID: "price-1", Amount: decimal.NewFromInt(100), Currency: "USD"})
-	_ = s.priceRepo.Create(s.ctx, &price.Price{ID: "price-2", Amount: decimal.NewFromInt(200), Currency: "USD"})
+	// Prepopulate the repository with prices associated with a plan_id
+	_ = s.priceRepo.Create(s.ctx, &price.Price{ID: "price-1", Amount: decimal.NewFromInt(100), Currency: "USD", PlanID: "plan-1"})
+	_ = s.priceRepo.Create(s.ctx, &price.Price{ID: "price-2", Amount: decimal.NewFromInt(200), Currency: "USD", PlanID: "plan-1"})
 
+	// Retrieve all prices within limit
 	resp, err := s.priceService.GetPrices(s.ctx, types.Filter{Offset: 0, Limit: 10})
 	s.NoError(err)
 	s.NotNil(resp)
-	s.Equal(2, resp.Total)
+	s.Equal(2, resp.Total) // Ensure all prices are retrieved
+	s.Len(resp.Prices, 2)
+	s.Equal("price-1", resp.Prices[0].ID)
+	s.Equal("price-2", resp.Prices[1].ID)
 
+	// Retrieve with offset exceeding available records
 	resp, err = s.priceService.GetPrices(s.ctx, types.Filter{Offset: 10, Limit: 10})
 	s.NoError(err)
 	s.NotNil(resp)
-	s.Equal(0, resp.Total)
+	s.Equal(0, resp.Total) // Ensure no prices are retrieved
+	s.Len(resp.Prices, 0)
 }
 
 func (s *PriceServiceSuite) TestUpdatePrice() {
