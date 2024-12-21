@@ -13,7 +13,7 @@ import (
 type TenantServiceSuite struct {
 	suite.Suite
 	ctx           context.Context
-	tenantService *TenantService
+	tenantService *tenantService // Pointer to the concrete implementation
 	tenantRepo    *testutil.InMemoryTenantRepository
 }
 
@@ -27,66 +27,7 @@ func (s *TenantServiceSuite) SetupTest() {
 	s.tenantRepo = testutil.NewInMemoryTenantStore()
 
 	// Create the tenantService with the repository
-	s.tenantService = NewTenantService(s.tenantRepo)
-}
-
-func (s *TenantServiceSuite) TestGetTenantByID() {
-	testCases := []struct {
-		name          string
-		setup         func(ctx context.Context)
-		tenantID      string
-		expectedError bool
-		expectedName  string
-	}{
-		{
-			name: "tenant_found",
-			setup: func(ctx context.Context) {
-				_ = s.tenantRepo.Create(ctx, &tenant.Tenant{
-					ID:   "tenant-1",
-					Name: "Test Tenant",
-				})
-			},
-			tenantID:      "tenant-1",
-			expectedError: false,
-			expectedName:  "Test Tenant",
-		},
-		{
-			name:          "tenant_not_found",
-			setup:         nil,
-			tenantID:      "nonexistent-id",
-			expectedError: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		s.Run(tc.name, func() {
-			// Reset repository and service for each test
-			s.tenantRepo = testutil.NewInMemoryTenantStore()
-			s.tenantService = NewTenantService(s.tenantRepo)
-
-			// Create a context for the test
-			ctx := testutil.SetupContext()
-
-			// Execute setup function if provided
-			if tc.setup != nil {
-				tc.setup(ctx)
-			}
-
-			// Call the service method
-			resp, err := s.tenantService.GetTenantByID(ctx, tc.tenantID)
-
-			// Assert results
-			if tc.expectedError {
-				s.Error(err)
-				s.Nil(resp)
-			} else {
-				s.NoError(err)
-				s.NotNil(resp)
-				s.Equal(tc.tenantID, resp.ID)
-				s.Equal(tc.expectedName, resp.Name)
-			}
-		})
-	}
+	s.tenantService = &tenantService{repo: s.tenantRepo} // Directly assign the concrete struct
 }
 
 func (s *TenantServiceSuite) TestCreateTenant() {
@@ -115,15 +56,51 @@ func (s *TenantServiceSuite) TestCreateTenant() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
-			// Reset repository and service for each test
-			s.tenantRepo = testutil.NewInMemoryTenantStore()
-			s.tenantService = NewTenantService(s.tenantRepo)
-
-			// Create a context for the test
-			ctx := testutil.SetupContext()
-
 			// Call the service method
-			resp, err := s.tenantService.CreateTenant(ctx, tc.request)
+			resp, err := s.tenantService.CreateTenant(s.ctx, tc.request)
+
+			// Assert results
+			if tc.expectedError {
+				s.Error(err)
+				s.Nil(resp)
+			} else {
+				s.NoError(err)
+				s.NotNil(resp)
+				s.Equal(tc.expectedName, resp.Name)
+			}
+		})
+	}
+}
+
+func (s *TenantServiceSuite) TestGetTenantByID() {
+	_ = s.tenantRepo.Create(s.ctx, &tenant.Tenant{
+		ID:   "tenant-1",
+		Name: "Test Tenant",
+	})
+
+	testCases := []struct {
+		name          string
+		id            string
+		expectedError bool
+		expectedName  string
+	}{
+		{
+			name:          "tenant_found",
+			id:            "tenant-1",
+			expectedError: false,
+			expectedName:  "Test Tenant",
+		},
+		{
+			name:          "tenant_not_found",
+			id:            "nonexistent-id",
+			expectedError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Call the service method
+			resp, err := s.tenantService.GetTenantByID(s.ctx, tc.id)
 
 			// Assert results
 			if tc.expectedError {

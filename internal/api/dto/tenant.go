@@ -1,10 +1,17 @@
 package dto
 
 import (
+	"context"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/tenant"
+	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 )
+
+type CreateTenantRequest struct {
+	Name string `json:"name" validate:"required"`
+}
 
 type TenantResponse struct {
 	ID        string `json:"id"`
@@ -13,11 +20,19 @@ type TenantResponse struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-type CreateTenantRequest struct {
-	Name string `json:"name" binding:"required"`
+func (r *CreateTenantRequest) Validate() error {
+	return validator.New().Struct(r)
 }
 
-// NewTenantResponse converts a Tenant domain object into a TenantResponse DTO.
+func (r *CreateTenantRequest) ToTenant(ctx context.Context) *tenant.Tenant {
+	return &tenant.Tenant{
+		ID:        uuid.New().String(),
+		Name:      r.Name,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+}
+
 func NewTenantResponse(t *tenant.Tenant) *TenantResponse {
 	return &TenantResponse{
 		ID:        t.ID,

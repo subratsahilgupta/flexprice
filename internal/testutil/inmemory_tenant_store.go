@@ -38,7 +38,7 @@ func (s *InMemoryTenantRepository) Create(ctx context.Context, t *tenant.Tenant)
 	return nil
 }
 
-func (s *InMemoryTenantRepository) GetById(ctx context.Context, id string) (*tenant.Tenant, error) {
+func (s *InMemoryTenantRepository) GetByID(ctx context.Context, id string) (*tenant.Tenant, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
