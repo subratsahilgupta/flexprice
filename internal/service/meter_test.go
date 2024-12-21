@@ -112,7 +112,7 @@ func (s *MeterServiceSuite) TestGetMeter() {
 			Values: []string{"us-east-1"},
 		},
 	}
-	testMeter.BaseModel.Status = types.StatusActive
+	testMeter.BaseModel.Status = types.StatusPublished
 	testMeter.ResetUsage = types.ResetUsageBillingPeriod
 
 	err := s.store.CreateMeter(s.ctx, testMeter)
@@ -147,7 +147,7 @@ func (s *MeterServiceSuite) TestGetAllMeters() {
 				Values: []string{"success"},
 			},
 		}
-		m.BaseModel.Status = types.StatusActive
+		m.BaseModel.Status = types.StatusPublished
 		m.ResetUsage = types.ResetUsageBillingPeriod
 
 		err := s.store.CreateMeter(s.ctx, m)
@@ -170,7 +170,7 @@ func (s *MeterServiceSuite) TestDisableMeter() {
 	testMeter := meter.NewMeter("Test Disable Meter", "tenant-1", "test-user") // Added name
 	testMeter.EventName = "api_request"
 	testMeter.BaseModel = types.BaseModel{
-		Status: types.StatusActive,
+		Status: types.StatusPublished,
 	}
 	testMeter.Aggregation = meter.Aggregation{ // Add required fields
 		Type:  types.AggregationSum,

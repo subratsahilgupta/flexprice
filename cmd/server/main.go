@@ -6,23 +6,23 @@ import (
 	"encoding/json"
 	"time"
 
-	"go.uber.org/fx"
-
-	lambdaEvents "github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
-	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
-	_ "github.com/flexprice/flexprice/docs/swagger"
 	"github.com/flexprice/flexprice/internal/api"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
+	"go.uber.org/fx"
+
+	lambdaEvents "github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
+	_ "github.com/flexprice/flexprice/docs/swagger"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/gin-gonic/gin"
 )
 
@@ -44,6 +44,9 @@ func init() {
 func main() {
 	var opts []fx.Option
 	opts = append(opts,
+		// Ent client module
+		postgres.Module(),
+
 		fx.Provide(
 			// Config
 			config.NewConfig,
@@ -67,6 +70,8 @@ func main() {
 			repository.NewPriceRepository,
 			repository.NewCustomerRepository,
 			repository.NewPlanRepository,
+			repository.NewSubscriptionRepository,
+			repository.NewWalletRepository,
 
 			// Services
 			service.NewMeterService,
@@ -76,6 +81,8 @@ func main() {
 			service.NewPriceService,
 			service.NewCustomerService,
 			service.NewPlanService,
+			service.NewSubscriptionService,
+			service.NewWalletService,
 
 			// Handlers
 			provideHandlers,
@@ -100,15 +107,19 @@ func provideHandlers(
 	priceService service.PriceService,
 	customerService service.CustomerService,
 	planService service.PlanService,
+	subscriptionService service.SubscriptionService,
+	walletService service.WalletService,
 ) api.Handlers {
 	return api.Handlers{
-		Events:   v1.NewEventsHandler(eventService, logger),
-		Meter:    v1.NewMeterHandler(meterService, logger),
-		Auth:     v1.NewAuthHandler(cfg, authService, logger),
-		User:     v1.NewUserHandler(userService, logger),
-		Price:    v1.NewPriceHandler(priceService, logger),
-		Customer: v1.NewCustomerHandler(customerService, logger),
-		Plan:     v1.NewPlanHandler(planService, logger),
+		Events:       v1.NewEventsHandler(eventService, logger),
+		Meter:        v1.NewMeterHandler(meterService, logger),
+		Auth:         v1.NewAuthHandler(cfg, authService, logger),
+		User:         v1.NewUserHandler(userService, logger),
+		Price:        v1.NewPriceHandler(priceService, logger),
+		Customer:     v1.NewCustomerHandler(customerService, logger),
+		Plan:         v1.NewPlanHandler(planService, logger),
+		Subscription: v1.NewSubscriptionHandler(subscriptionService, logger),
+		Wallet:       v1.NewWalletHandler(walletService, logger),
 	}
 }
 

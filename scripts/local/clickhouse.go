@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	NUM_EVENTS       = 100000
-	BATCH_SIZE       = 10 // Reduced batch size
-	REQUESTS_PER_SEC = 1  // Rate limit: requests per second
+	NUM_EVENTS       = 500000
+	BATCH_SIZE       = 1000  // Reduced batch size
+	REQUESTS_PER_SEC = 100   // Rate limit: requests per second
 	MAX_RETRIES      = 1   // Maximum number of retries for failed requests
 	INITIAL_BACKOFF  = 100 // Initial backoff in milliseconds
 	// API_ENDPOINT     = "https://api-dev.cloud.flexprice.io/v1/events"
@@ -39,19 +39,33 @@ type BatchResult struct {
 // generateEvent creates a random event with varying properties
 func generateEvent(index int) dto.IngestEventRequest {
 	sources := []string{"web", "mobile", "api", "backend"}
+	clouds := []string{"aws", "gcp", "azure"}
 	// eventTypes := []string{"api_call", "page_view", "button_click", "form_submit"}
-	eventTypes := []string{"gpu_time"}
+	eventTypes := []string{"tokens", "audio_length", "images_processed"}
+	// image_sizes := []string{"512x512", "768x768", "1024x1024"}
+	image_sizes := []string{"512x512", "768x768", "1024x1024"}
+	audio_models := []string{"whisper"}
+	text_models := []string{"llama3_1_8b", "llama3_1_70b"}
 
 	return dto.IngestEventRequest{
 		EventID:            uuid.New().String(),
 		EventName:          eventTypes[index%len(eventTypes)],
-		ExternalCustomerID: fmt.Sprintf("cus_loadtest_%d", index%100), // 100 different customers
-		Source:             sources[index%len(sources)],
-		Timestamp:          time.Now().Add(-time.Duration(index*2) * time.Second),
+		ExternalCustomerID: fmt.Sprintf("cus_loadtest_%d", index%2), // 100 different customers
+		// ExternalCustomerID: "cust-00000007",
+		Source:    sources[index%len(sources)],
+		Timestamp: time.Now().Add(-time.Duration((index%10)*2) * time.Minute),
 		Properties: map[string]interface{}{
 			"bytes_transferred": 100 + (index % 1000),
 			"duration_ms":       50 + (index % 200),
 			"status_code":       200 + (index%3)*100, // 200, 300, 400
+			"input_tokens":      100 + (index % 1000),
+			"output_tokens":     100 + (index % 1000),
+			"image_count":       10 + (index % 1000),
+			"image_size":        image_sizes[index%len(image_sizes)],
+			"audio_length_secs": 1 + (index % 1000),
+			"audio_model":       audio_models[index%len(audio_models)],
+			"text_model":        text_models[index%len(text_models)],
+			"cloud":             clouds[index%len(clouds)],
 			"test_group":        fmt.Sprintf("group_%d", index%10),
 		},
 	}

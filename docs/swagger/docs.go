@@ -131,12 +131,22 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "name": "search",
+                        "name": "sort",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
                         "type": "string",
-                        "name": "sort",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
                         "in": "query"
                     }
                 ],
@@ -360,6 +370,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/customers/{id}/wallets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all wallets for a customer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet"
+                ],
+                "summary": "Get wallets by customer ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.WalletResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/events": {
             "get": {
                 "security": [
@@ -494,7 +556,7 @@ const docTemplate = `{
             }
         },
         "/events/usage": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -510,55 +572,20 @@ const docTemplate = `{
                 "summary": "Get usage statistics",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "External Customer ID",
-                        "name": "external_customer_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Event Name",
-                        "name": "event_name",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Property Name",
-                        "name": "property_name",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Aggregation Type (SUM, COUNT)",
-                        "name": "aggregation_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Window Size (MINUTE, HOUR, DAY)",
-                        "name": "window_size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Start Time (RFC3339)",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "End Time (RFC3339)",
-                        "name": "end_time",
-                        "in": "query"
+                        "description": "Request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/dto.GetUsageResponse"
                         }
                     },
                     "400": {
@@ -577,7 +604,7 @@ const docTemplate = `{
             }
         },
         "/events/usage/meter": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -593,37 +620,20 @@ const docTemplate = `{
                 "summary": "Get usage by meter",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Meter ID",
-                        "name": "meter_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "External Customer ID",
-                        "name": "external_customer_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Start Time (RFC3339)",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "End Time (RFC3339)",
-                        "name": "end_time",
-                        "in": "query"
+                        "description": "Request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageByMeterRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/dto.GetUsageResponse"
                         }
                     },
                     "400": {
@@ -654,7 +664,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get all active meters",
+                "description": "Get all meters",
                 "produces": [
                     "application/json"
                 ],
@@ -908,12 +918,22 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "name": "search",
+                        "name": "sort",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
                         "type": "string",
-                        "name": "sort",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
                         "in": "query"
                     }
                 ],
@@ -1119,8 +1139,11 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "204": {
-                        "description": "No Content"
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -1173,12 +1196,22 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "name": "search",
+                        "name": "sort",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
                         "type": "string",
-                        "name": "sort",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
                         "in": "query"
                     }
                 ],
@@ -1387,7 +1420,274 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/dto.PriceResponse"
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get subscriptions with optional filtering",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "subscriptions"
+                ],
+                "summary": "List subscriptions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by customer ID",
+                        "name": "customer_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by subscription status",
+                        "name": "subscription_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by plan ID",
+                        "name": "plan_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset for pagination",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit for pagination",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListSubscriptionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new subscription",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "subscriptions"
+                ],
+                "summary": "Create subscription",
+                "parameters": [
+                    {
+                        "description": "Subscription Request",
+                        "name": "subscription",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateSubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions/usage": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get usage by subscription",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "subscriptions"
+                ],
+                "summary": "Get usage by subscription",
+                "parameters": [
+                    {
+                        "description": "Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageBySubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetUsageBySubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a subscription by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "subscriptions"
+                ],
+                "summary": "Get subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions/{id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Cancel a subscription",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "subscriptions"
+                ],
+                "summary": "Cancel subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Cancel at period end",
+                        "name": "cancel_at_period_end",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
                         }
                     },
                     "400": {
@@ -1438,6 +1738,368 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/wallets": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Create a new wallet for a customer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet"
+                ],
+                "summary": "Create a new wallet",
+                "parameters": [
+                    {
+                        "description": "Create wallet request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateWalletRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WalletResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get a wallet by its ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet"
+                ],
+                "summary": "Get wallet by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WalletResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{id}/balance/real-time": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get real-time balance of a wallet",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet"
+                ],
+                "summary": "Get wallet balance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WalletBalanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{id}/terminate": {
+            "post": {
+                "description": "Terminates a wallet by closing it and debiting remaining balance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "wallets"
+                ],
+                "summary": "Terminate a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WalletResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{id}/top-up": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Add credits to a wallet",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet"
+                ],
+                "summary": "Top up wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Top up request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.TopUpWalletRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WalletResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/wallets/{id}/transactions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get transactions for a wallet with pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallet"
+                ],
+                "summary": "Get wallet transactions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "created_at",
+                        "description": "Sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "desc",
+                        "description": "Sort order",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WalletTransactionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1471,9 +2133,7 @@ const docTemplate = `{
             "required": [
                 "aggregation",
                 "event_name",
-                "filters",
-                "name",
-                "reset_usage"
+                "name"
             ],
             "properties": {
                 "aggregation": {
@@ -1512,12 +2172,11 @@ const docTemplate = `{
                 "billing_period",
                 "billing_period_count",
                 "currency",
-                "plan_id",
                 "type"
             ],
             "properties": {
                 "amount": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
@@ -1539,7 +2198,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "filter_values": {
-                    "$ref": "#/definitions/price.JSONBFilters"
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
                 },
                 "lookup_key": {
                     "type": "string"
@@ -1556,17 +2221,17 @@ const docTemplate = `{
                 "plan_id": {
                     "type": "string"
                 },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
                 "tiers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/price.PriceTier"
+                        "$ref": "#/definitions/dto.CreatePriceTier"
                     }
                 },
-                "tiers_mode": {
-                    "$ref": "#/definitions/types.BillingTier"
-                },
-                "transform": {
-                    "$ref": "#/definitions/price.JSONBTransform"
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.TransformQuantity"
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
@@ -1582,6 +2247,12 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -1590,6 +2261,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.CreatePlanPriceRequest"
                     }
+                },
+                "trial_period": {
+                    "type": "integer"
                 }
             }
         },
@@ -1602,12 +2276,11 @@ const docTemplate = `{
                 "billing_period",
                 "billing_period_count",
                 "currency",
-                "plan_id",
                 "type"
             ],
             "properties": {
                 "amount": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
@@ -1629,7 +2302,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "filter_values": {
-                    "$ref": "#/definitions/price.JSONBFilters"
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
                 },
                 "lookup_key": {
                     "type": "string"
@@ -1646,20 +2325,100 @@ const docTemplate = `{
                 "plan_id": {
                     "type": "string"
                 },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
                 "tiers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/price.PriceTier"
+                        "$ref": "#/definitions/dto.CreatePriceTier"
                     }
                 },
-                "tiers_mode": {
-                    "$ref": "#/definitions/types.BillingTier"
-                },
-                "transform": {
-                    "$ref": "#/definitions/price.JSONBTransform"
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.TransformQuantity"
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
+                }
+            }
+        },
+        "dto.CreatePriceTier": {
+            "type": "object",
+            "required": [
+                "unit_amount"
+            ],
+            "properties": {
+                "flat_amount": {
+                    "type": "string"
+                },
+                "unit_amount": {
+                    "type": "string"
+                },
+                "up_to": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.CreateSubscriptionRequest": {
+            "type": "object",
+            "required": [
+                "customer_id",
+                "plan_id"
+            ],
+            "properties": {
+                "billing_cadence": {
+                    "$ref": "#/definitions/types.BillingCadence"
+                },
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_count": {
+                    "type": "integer"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "trial_end": {
+                    "type": "string"
+                },
+                "trial_start": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CreateWalletRequest": {
+            "type": "object",
+            "required": [
+                "currency",
+                "customer_id"
+            ],
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
                 }
             }
         },
@@ -1673,15 +2432,19 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "email": {
+                    "description": "Email is the email of the customer",
                     "type": "string"
                 },
                 "external_id": {
+                    "description": "ExternalID is the external identifier for the customer",
                     "type": "string"
                 },
                 "id": {
+                    "description": "ID is the unique identifier for the customer",
                     "type": "string"
                 },
                 "name": {
+                    "description": "Name is the name of the customer",
                     "type": "string"
                 },
                 "status": {
@@ -1742,6 +2505,172 @@ const docTemplate = `{
                 },
                 "iter_last_key": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.GetUsageByMeterRequest": {
+            "type": "object",
+            "required": [
+                "meter_id"
+            ],
+            "properties": {
+                "customer_id": {
+                    "type": "string",
+                    "example": "customer456"
+                },
+                "end_time": {
+                    "type": "string",
+                    "example": "2024-12-09T00:00:00Z"
+                },
+                "external_customer_id": {
+                    "type": "string",
+                    "example": "user_5"
+                },
+                "filters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "meter_id": {
+                    "type": "string",
+                    "example": "123"
+                },
+                "start_time": {
+                    "type": "string",
+                    "example": "2024-11-09T00:00:00Z"
+                },
+                "window_size": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ],
+                    "example": "HOUR"
+                }
+            }
+        },
+        "dto.GetUsageBySubscriptionRequest": {
+            "type": "object",
+            "required": [
+                "subscription_id"
+            ],
+            "properties": {
+                "end_time": {
+                    "type": "string",
+                    "example": "2024-03-20T00:00:00Z"
+                },
+                "start_time": {
+                    "type": "string",
+                    "example": "2024-03-13T00:00:00Z"
+                },
+                "subscription_id": {
+                    "type": "string",
+                    "example": "123"
+                }
+            }
+        },
+        "dto.GetUsageBySubscriptionResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "charges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SubscriptionUsageByMetersResponse"
+                    }
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "display_amount": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "start_time": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.GetUsageRequest": {
+            "type": "object",
+            "required": [
+                "aggregation_type",
+                "event_name"
+            ],
+            "properties": {
+                "aggregation_type": {
+                    "type": "string",
+                    "example": "COUNT"
+                },
+                "customer_id": {
+                    "type": "string",
+                    "example": "customer456"
+                },
+                "end_time": {
+                    "type": "string",
+                    "example": "2024-03-20T00:00:00Z"
+                },
+                "event_name": {
+                    "type": "string",
+                    "example": "api_request"
+                },
+                "external_customer_id": {
+                    "type": "string",
+                    "example": "customer456"
+                },
+                "filters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "property_name": {
+                    "description": "will be empty/ignored in case of COUNT",
+                    "type": "string",
+                    "example": "request_size"
+                },
+                "start_time": {
+                    "type": "string",
+                    "example": "2024-03-13T00:00:00Z"
+                },
+                "window_size": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ],
+                    "example": "HOUR"
+                }
+            }
+        },
+        "dto.GetUsageResponse": {
+            "type": "object",
+            "properties": {
+                "event_name": {
+                    "type": "string"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.UsageResult"
+                    }
+                },
+                "type": {
+                    "$ref": "#/definitions/types.AggregationType"
+                },
+                "value": {
+                    "type": "number"
                 }
             }
         },
@@ -1848,6 +2777,26 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ListSubscriptionsResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "subscriptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SubscriptionResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "dto.LoginRequest": {
             "type": "object",
             "required": [
@@ -1897,7 +2846,7 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string",
-                    "example": "ACTIVE"
+                    "example": "published"
                 },
                 "tenant_id": {
                     "type": "string",
@@ -1924,6 +2873,12 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -1939,6 +2894,9 @@ const docTemplate = `{
                 "tenant_id": {
                     "type": "string"
                 },
+                "trial_period": {
+                    "type": "integer"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -1951,8 +2909,8 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "amount": {
-                    "description": "Amount in cents ex 1200 for $12",
-                    "type": "integer"
+                    "description": "Amount stored in main currency units (e.g., dollars, not cents)\nFor USD: 12.50 means $12.50",
+                    "type": "number"
                 },
                 "billing_cadence": {
                     "description": "BillingCadence is the billing cadence for the price ex RECURRING, ONETIME",
@@ -1997,7 +2955,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "display_amount": {
-                    "description": "DisplayAmount is the amount in the currency ex $12.00",
+                    "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
                     "type": "string"
                 },
                 "filter_values": {
@@ -2053,11 +3011,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/price.PriceTier"
                     }
                 },
-                "transform": {
+                "transform_quantity": {
                     "description": "Transform is the quantity transformation in case of PACKAGE billing model",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/price.JSONBTransform"
+                            "$ref": "#/definitions/price.JSONBTransformQuantity"
                         }
                     ]
                 },
@@ -2093,6 +3051,171 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SubscriptionResponse": {
+            "type": "object",
+            "properties": {
+                "billing_anchor": {
+                    "description": "BillingAnchor is the reference point that aligns future billing cycle dates.\nIt sets the day of week for week intervals, the day of month for month and year intervals,\nand the month of year for year intervals. The timestamp is in UTC format.",
+                    "type": "string"
+                },
+                "billing_cadence": {
+                    "description": "BillingCadence is the cadence of the billing cycle.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingCadence"
+                        }
+                    ]
+                },
+                "billing_period": {
+                    "description": "BillingPeriod is the period of the billing cycle.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingPeriod"
+                        }
+                    ]
+                },
+                "billing_period_count": {
+                    "description": "BillingPeriodCount is the total number units of the billing period.",
+                    "type": "integer"
+                },
+                "cancel_at": {
+                    "description": "CancelAt is the date the subscription will be canceled",
+                    "type": "string"
+                },
+                "cancel_at_period_end": {
+                    "description": "CancelAtPeriodEnd is whether the subscription was canceled at the end of the current period",
+                    "type": "boolean"
+                },
+                "cancelled_at": {
+                    "description": "CanceledAt is the date the subscription was canceled",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "description": "Currency is the currency of the subscription in lowercase 3 digit ISO codes",
+                    "type": "string"
+                },
+                "current_period_end": {
+                    "description": "CurrentPeriodEnd is the end of the current period that the subscription has been invoiced for.\nAt the end of this period, a new invoice will be created.",
+                    "type": "string"
+                },
+                "current_period_start": {
+                    "description": "CurrentPeriodStart is the end of the current period that the subscription has been invoiced for.\nAt the end of this period, a new invoice will be created.",
+                    "type": "string"
+                },
+                "customer_id": {
+                    "description": "CustomerID is the identifier for the customer in our system",
+                    "type": "string"
+                },
+                "end_date": {
+                    "description": "EndDate is the end date of the subscription",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the subscription",
+                    "type": "string"
+                },
+                "invoice_cadence": {
+                    "description": "InvoiceCadence is the cadence of the invoice. This overrides the plan's invoice cadence.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceCadence"
+                        }
+                    ]
+                },
+                "lookup_key": {
+                    "description": "LookupKey is the key used to lookup the subscription in our system",
+                    "type": "string"
+                },
+                "plan": {
+                    "$ref": "#/definitions/dto.PlanResponse"
+                },
+                "plan_id": {
+                    "description": "PlanID is the identifier for the plan in our system",
+                    "type": "string"
+                },
+                "start_date": {
+                    "description": "StartDate is the start date of the subscription",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_status": {
+                    "description": "Status is the status of the subscription",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.SubscriptionStatus"
+                        }
+                    ]
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "trial_end": {
+                    "description": "TrialEnd is the end date of the trial period",
+                    "type": "string"
+                },
+                "trial_start": {
+                    "description": "TrialStart is the start date of the trial period",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.SubscriptionUsageByMetersResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "display_amount": {
+                    "type": "string"
+                },
+                "filter_values": {
+                    "$ref": "#/definitions/price.JSONBFilters"
+                },
+                "meter_display_name": {
+                    "type": "string"
+                },
+                "price": {
+                    "$ref": "#/definitions/price.Price"
+                },
+                "quantity": {
+                    "type": "number"
+                }
+            }
+        },
+        "dto.TopUpWalletRequest": {
+            "type": "object",
+            "required": [
+                "amount"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                }
+            }
+        },
         "dto.UpdateCustomerRequest": {
             "type": "object",
             "properties": {
@@ -2110,10 +3233,51 @@ const docTemplate = `{
         "dto.UpdatePlanPriceRequest": {
             "type": "object",
             "required": [
-                "price_id"
+                "amount",
+                "billing_cadence",
+                "billing_model",
+                "billing_period",
+                "billing_period_count",
+                "currency",
+                "type"
             ],
             "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "billing_cadence": {
+                    "$ref": "#/definitions/types.BillingCadence"
+                },
+                "billing_model": {
+                    "$ref": "#/definitions/types.BillingModel"
+                },
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_count": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "currency": {
+                    "type": "string"
+                },
                 "description": {
+                    "type": "string"
+                },
+                "filter_values": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "id": {
+                    "description": "The ID of the price to update (present if the price is being updated)",
+                    "type": "string"
+                },
+                "lookup_key": {
                     "type": "string"
                 },
                 "metadata": {
@@ -2122,8 +3286,26 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "price_id": {
+                "meter_id": {
                     "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
+                "tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreatePriceTier"
+                    }
+                },
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.TransformQuantity"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.PriceType"
                 }
             }
         },
@@ -2136,6 +3318,12 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -2144,6 +3332,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.UpdatePlanPriceRequest"
                     }
+                },
+                "trial_period": {
+                    "type": "integer"
                 }
             }
         },
@@ -2153,11 +3344,25 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "lookup_key": {
+                    "type": "string"
+                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "dto.UsageResult": {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "number"
+                },
+                "window_size": {
+                    "type": "string"
                 }
             }
         },
@@ -2172,14 +3377,161 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.WalletBalanceResponse": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "number"
+                },
+                "balance_updated_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "real_time_balance": {
+                    "type": "number"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                },
+                "wallet_status": {
+                    "$ref": "#/definitions/types.WalletStatus"
+                }
+            }
+        },
+        "dto.WalletResponse": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "wallet_status": {
+                    "$ref": "#/definitions/types.WalletStatus"
+                }
+            }
+        },
+        "dto.WalletTransactionResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "balance_after": {
+                    "type": "number"
+                },
+                "balance_before": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "reference_id": {
+                    "type": "string"
+                },
+                "reference_type": {
+                    "type": "string"
+                },
+                "transaction_status": {
+                    "$ref": "#/definitions/types.TransactionStatus"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "wallet_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.WalletTransactionsResponse": {
+            "type": "object",
+            "properties": {
+                "filter": {
+                    "$ref": "#/definitions/types.Filter"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "transactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.WalletTransactionResponse"
+                    }
+                }
+            }
+        },
+        "gin.H": {
+            "type": "object",
+            "additionalProperties": {}
+        },
         "meter.Aggregation": {
             "type": "object",
             "properties": {
                 "field": {
+                    "description": "Field is the key in $event.properties on which the aggregation is to be applied\nFor ex if the aggregation type is sum for API usage, the field could be \"duration_ms\"",
                     "type": "string"
                 },
                 "type": {
-                    "$ref": "#/definitions/types.AggregationType"
+                    "description": "Type is the type of aggregation to be applied on the events\nFor ex sum, count, avg, max, min etc",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.AggregationType"
+                        }
+                    ]
                 }
             }
         },
@@ -2187,9 +3539,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "key": {
+                    "description": "Key is the key for the filter from $event.properties\nCurrently we support only first level keys in the properties and not nested keys",
                     "type": "string"
                 },
                 "values": {
+                    "description": "Values are the possible values for the filter to be considered for the meter\nFor ex \"model_name\" could have values \"o1-mini\", \"gpt-4o\" etc",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -2212,6 +3566,12 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -2220,6 +3580,9 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "string"
+                },
+                "trial_period": {
+                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -2232,7 +3595,10 @@ const docTemplate = `{
         "price.JSONBFilters": {
             "type": "object",
             "additionalProperties": {
-                "type": "string"
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
             }
         },
         "price.JSONBMetadata": {
@@ -2241,7 +3607,7 @@ const docTemplate = `{
                 "type": "string"
             }
         },
-        "price.JSONBTransform": {
+        "price.JSONBTransformQuantity": {
             "type": "object",
             "properties": {
                 "divide_by": {
@@ -2249,7 +3615,137 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "round": {
-                    "description": "up, down, or nearest",
+                    "description": "up or down",
+                    "type": "string"
+                }
+            }
+        },
+        "price.Price": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "description": "Amount stored in main currency units (e.g., dollars, not cents)\nFor USD: 12.50 means $12.50",
+                    "type": "number"
+                },
+                "billing_cadence": {
+                    "description": "BillingCadence is the billing cadence for the price ex RECURRING, ONETIME",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingCadence"
+                        }
+                    ]
+                },
+                "billing_model": {
+                    "description": "BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingModel"
+                        }
+                    ]
+                },
+                "billing_period": {
+                    "description": "BillingPeriod is the billing period for the price ex month, year",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingPeriod"
+                        }
+                    ]
+                },
+                "billing_period_count": {
+                    "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "description": "Currency 3 digit ISO currency code in lowercase ex usd, eur, gbp",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "Description of the price",
+                    "type": "string"
+                },
+                "display_amount": {
+                    "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
+                    "type": "string"
+                },
+                "filter_values": {
+                    "description": "FilterValues are the filter values for the price in case of usage based pricing",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/price.JSONBFilters"
+                        }
+                    ]
+                },
+                "id": {
+                    "description": "ID uuid identifier for the price",
+                    "type": "string"
+                },
+                "lookup_key": {
+                    "description": "LookupKey used for looking up the price in the database",
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata is a jsonb field for additional information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/price.JSONBMetadata"
+                        }
+                    ]
+                },
+                "meter_id": {
+                    "description": "MeterID is the id of the meter for usage based pricing",
+                    "type": "string"
+                },
+                "plan_id": {
+                    "description": "PlanID is the id of the plan for plan based pricing",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tier_mode": {
+                    "description": "Tiered pricing fields when BillingModel is TIERED",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingTier"
+                        }
+                    ]
+                },
+                "tiers": {
+                    "description": "Tiers are the tiers for the price when BillingModel is TIERED",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "transform_quantity": {
+                    "description": "Transform is the quantity transformation in case of PACKAGE billing model",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/price.JSONBTransformQuantity"
+                        }
+                    ]
+                },
+                "type": {
+                    "description": "Type is the type of the price ex USAGE, FIXED",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceType"
+                        }
+                    ]
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
                     "type": "string"
                 }
             }
@@ -2258,16 +3754,29 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "flat_amount": {
-                    "description": "Optional flat fee for this tier",
-                    "type": "integer"
+                    "description": "FlatAmount is the flat amount for the given tier and it is applied\non top of the unit amount*quantity. It solves cases in banking like 2.7% + 5c",
+                    "type": "number"
                 },
                 "unit_amount": {
-                    "description": "Amount per unit in cents",
-                    "type": "integer"
+                    "description": "UnitAmount is the amount per unit for the given tier",
+                    "type": "number"
                 },
                 "up_to": {
-                    "description": "null means infinity",
+                    "description": "Upto is the quantity up to which this tier applies. It is null for the last tier",
                     "type": "integer"
+                }
+            }
+        },
+        "price.TransformQuantity": {
+            "type": "object",
+            "properties": {
+                "divide_by": {
+                    "description": "Divide quantity by this number",
+                    "type": "integer"
+                },
+                "round": {
+                    "description": "up or down",
+                    "type": "string"
                 }
             }
         },
@@ -2276,20 +3785,12 @@ const docTemplate = `{
             "enum": [
                 "COUNT",
                 "SUM",
-                "AVG",
-                "MAX",
-                "MIN",
-                "COUNT_UNIQUE",
-                "LATEST"
+                "AVG"
             ],
             "x-enum-varnames": [
                 "AggregationCount",
                 "AggregationSum",
-                "AggregationAvg",
-                "AggregationMax",
-                "AggregationMin",
-                "AggregationCountUnique",
-                "AggregationLatest"
+                "AggregationAvg"
             ]
         },
         "types.BillingCadence": {
@@ -2342,6 +3843,43 @@ const docTemplate = `{
                 "BILLING_TIER_SLAB"
             ]
         },
+        "types.Filter": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "order": {
+                    "type": "string"
+                },
+                "sort": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                }
+            }
+        },
+        "types.InvoiceCadence": {
+            "type": "string",
+            "enum": [
+                "ARREAR",
+                "ADVANCE"
+            ],
+            "x-enum-varnames": [
+                "InvoiceCadenceArrear",
+                "InvoiceCadenceAdvance"
+            ]
+        },
+        "types.Metadata": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
         "types.PriceType": {
             "type": "string",
             "enum": [
@@ -2367,19 +3905,85 @@ const docTemplate = `{
         "types.Status": {
             "type": "string",
             "enum": [
-                "active",
+                "published",
                 "deleted",
                 "archived"
             ],
             "x-enum-varnames": [
-                "StatusActive",
+                "StatusPublished",
                 "StatusDeleted",
                 "StatusArchived"
+            ]
+        },
+        "types.SubscriptionStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "paused",
+                "cancelled",
+                "incomplete",
+                "incomplete_expired",
+                "past_due",
+                "trialing",
+                "unpaid"
+            ],
+            "x-enum-varnames": [
+                "SubscriptionStatusActive",
+                "SubscriptionStatusPaused",
+                "SubscriptionStatusCancelled",
+                "SubscriptionStatusIncomplete",
+                "SubscriptionStatusIncompleteExpired",
+                "SubscriptionStatusPastDue",
+                "SubscriptionStatusTrialing",
+                "SubscriptionStatusUnpaid"
+            ]
+        },
+        "types.TransactionStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "completed",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "TransactionStatusPending",
+                "TransactionStatusCompleted",
+                "TransactionStatusFailed"
+            ]
+        },
+        "types.WalletStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "frozen",
+                "closed"
+            ],
+            "x-enum-varnames": [
+                "WalletStatusActive",
+                "WalletStatusFrozen",
+                "WalletStatusClosed"
+            ]
+        },
+        "types.WindowSize": {
+            "type": "string",
+            "enum": [
+                "MINUTE",
+                "HOUR",
+                "DAY"
+            ],
+            "x-enum-varnames": [
+                "WindowSizeMinute",
+                "WindowSizeHour",
+                "WindowSizeDay"
             ]
         },
         "v1.ErrorResponse": {
             "type": "object",
             "properties": {
+                "detail": {
+                    "type": "string",
+                    "example": "Invalid request payload"
+                },
                 "error": {
                     "type": "string",
                     "example": "Invalid request payload"

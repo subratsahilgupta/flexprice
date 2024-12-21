@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -106,7 +107,7 @@ func (r *customerRepository) Update(ctx context.Context, customer *customer.Cust
 func (r *customerRepository) Delete(ctx context.Context, id string) error {
 	query := `
 		UPDATE customers SET
-			status = 'deleted',
+			status = :status,
 			updated_at = :updated_at,
 			updated_by = :updated_by
 		WHERE id = :id AND tenant_id = :tenant_id`
@@ -117,8 +118,11 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 	)
 
 	_, err := r.db.NamedExecContext(ctx, query, map[string]interface{}{
-		"id":        id,
-		"tenant_id": types.GetTenantID(ctx),
+		"id":         id,
+		"tenant_id":  types.GetTenantID(ctx),
+		"status":     types.StatusDeleted,
+		"updated_by": types.GetUserID(ctx),
+		"updated_at": time.Now().UTC(),
 	})
 	return err
 }

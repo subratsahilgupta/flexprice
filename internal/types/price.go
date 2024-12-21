@@ -43,4 +43,17 @@ const (
 
 	// BILLING_TIER_SLAB means Tiers apply progressively as quantity increases
 	BILLING_TIER_SLAB BillingTier = "SLAB"
+
+	// MAX_BILLING_AMOUNT is the maximum allowed billing amount (as a safeguard)
+	MAX_BILLING_AMOUNT = 1000000000000 // 1 trillion
+
+	// ROUND_UP rounds to the ceiling value ex 1.99 -> 2.00
+	ROUND_UP = "up"
+	// ROUND_DOWN rounds to the floor value ex 1.99 -> 1.00
+	ROUND_DOWN = "down"
+	// ROUND_NEAREST rounds to the nearest value ex
+	ROUND_NEAREST = "nearest"
+
+	// DEFAULT_FLOATING_PRECISION is the default floating point precision
+	DEFAULT_FLOATING_PRECISION = 2
 )
