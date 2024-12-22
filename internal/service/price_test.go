@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
@@ -38,19 +41,38 @@ func (s *PriceServiceSuite) TestCreatePrice() {
 		Currency:           "USD",
 		PlanID:             "plan-1",
 		Type:               types.PRICE_TYPE_USAGE,
+		MeterID:            "meter-1",
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_TIERED,
+		TierMode:           types.BILLING_TIER_SLAB,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
 		Description:        "Test Price",
 		Metadata:           map[string]string{"key": "value"},
+		Tiers: []dto.CreatePriceTier{
+			{
+				UpTo:       lo.ToPtr(uint64(10)),
+				UnitAmount: "50",
+				FlatAmount: lo.ToPtr("10"),
+			},
+			{
+				UpTo:       lo.ToPtr(uint64(20)),
+				UnitAmount: "40",
+				FlatAmount: lo.ToPtr("5"),
+			},
+		},
 	}
 
 	resp, err := s.priceService.CreatePrice(s.ctx, req)
 	s.NoError(err)
 	s.NotNil(resp)
-	s.Equal(req.Amount, resp.Price.Amount)
-	s.Equal(req.Currency, resp.Price.Currency)
+
+	// Convert expected amount to decimal.Decimal for comparison
+	expectedAmount, _ := decimal.NewFromString(req.Amount)
+	s.Equal(expectedAmount, resp.Price.Amount) // Compare decimal.Decimal
+
+	// Normalize currency to lowercase for comparison
+	s.Equal(strings.ToLower(req.Currency), resp.Price.Currency)
 }
 
 func (s *PriceServiceSuite) TestGetPrice() {
@@ -85,6 +107,12 @@ func (s *PriceServiceSuite) TestGetPrices() {
 	s.NotNil(resp)
 	s.Equal(2, resp.Total) // Ensure all prices are retrieved
 	s.Len(resp.Prices, 2)
+
+	// Sort the response prices by ID
+	sort.Slice(resp.Prices, func(i, j int) bool {
+		return resp.Prices[i].ID < resp.Prices[j].ID
+	})
+
 	s.Equal("price-1", resp.Prices[0].ID)
 	s.Equal("price-2", resp.Prices[1].ID)
 
@@ -115,7 +143,7 @@ func (s *PriceServiceSuite) TestUpdatePrice() {
 	s.NoError(err)
 	s.NotNil(resp)
 	s.Equal(req.Description, resp.Price.Description)
-	s.Equal(req.Metadata, resp.Price.Metadata)
+	s.Equal(req.Metadata, map[string]string(resp.Price.Metadata)) // Convert Metadata for comparison
 }
 
 func (s *PriceServiceSuite) TestDeletePrice() {

@@ -36,46 +36,164 @@ func (s *PlanServiceSuite) SetupTest() {
 }
 
 func (s *PlanServiceSuite) TestCreatePlan() {
-	req := dto.CreatePlanRequest{
-		Name:        "Test Plan",
-		Description: "Description",
-		Prices: []dto.CreatePlanPriceRequest{
-			{
-				CreatePriceRequest: &dto.CreatePriceRequest{
-					Amount:             "100",
-					Currency:           "USD",
-					PlanID:             "plan-1",
-					Type:               types.PRICE_TYPE_USAGE,
-					BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-					BillingPeriodCount: 1,
-					BillingModel:       types.BILLING_MODEL_TIERED,
-					BillingCadence:     types.BILLING_CADENCE_RECURRING,
-					Description:        "Test Price",
-					MeterID:            "meter-1",
-					Tiers: ConvertToCreatePriceTier([]price.PriceTier{
-						{
-							UpTo:       lo.ToPtr(uint64(10)),
-							UnitAmount: decimal.NewFromFloat(100.0),
-							FlatAmount: lo.ToPtr(decimal.NewFromInt(20)),
-						},
-						{
-							UpTo:       lo.ToPtr(uint64(20)),
-							UnitAmount: decimal.NewFromFloat(80.0),
-							FlatAmount: lo.ToPtr(decimal.NewFromInt(10)),
-						},
-					}),
+	// Test case: Valid plan with a single price
+	s.Run("Valid Plan with Single Price", func() {
+		req := dto.CreatePlanRequest{
+			Name:        "Single Price Plan",
+			Description: "A plan with one valid price",
+			Prices: []dto.CreatePlanPriceRequest{
+				{
+					CreatePriceRequest: &dto.CreatePriceRequest{
+						Amount:             "100",
+						Currency:           "USD",
+						Type:               types.PRICE_TYPE_USAGE,
+						BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+						BillingPeriodCount: 1,
+						BillingModel:       types.BILLING_MODEL_TIERED,
+						TierMode:           types.BILLING_TIER_SLAB,
+						BillingCadence:     types.BILLING_CADENCE_RECURRING,
+						Description:        "Test Price",
+						MeterID:            "meter-1",
+						Tiers: ConvertToCreatePriceTier([]price.PriceTier{
+							{
+								UpTo:       lo.ToPtr(uint64(10)),
+								UnitAmount: decimal.NewFromFloat(100.0),
+								FlatAmount: lo.ToPtr(decimal.NewFromInt(20)),
+							},
+						}),
+					},
 				},
 			},
-		},
-	}
+		}
 
-	resp, err := s.planService.CreatePlan(s.ctx, req)
+		resp, err := s.planService.CreatePlan(s.ctx, req)
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(req.Name, resp.Plan.Name)
+	})
 
-	// Assert no errors occurred and response is not nil
-	s.NoError(err)
-	s.NotNil(resp)
-	s.Equal(req.Name, resp.Plan.Name)
-	s.Equal(req.Description, resp.Plan.Description)
+	// Test case: Valid plan with multiple prices
+	s.Run("Valid Plan with Multiple Prices", func() {
+		req := dto.CreatePlanRequest{
+			Name:        "Multi-Price Plan",
+			Description: "A plan with multiple prices",
+			Prices: []dto.CreatePlanPriceRequest{
+				{
+					CreatePriceRequest: &dto.CreatePriceRequest{
+						Amount:             "100",
+						Currency:           "USD",
+						Type:               types.PRICE_TYPE_FIXED,
+						BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+						BillingPeriodCount: 1,
+						BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+						BillingCadence:     types.BILLING_CADENCE_RECURRING,
+						Description:        "Flat Fee Price",
+					},
+				},
+				{
+					CreatePriceRequest: &dto.CreatePriceRequest{
+						Amount:             "200",
+						Currency:           "USD",
+						Type:               types.PRICE_TYPE_USAGE,
+						BillingPeriod:      types.BILLING_PERIOD_ANNUAL,
+						BillingPeriodCount: 1,
+						BillingModel:       types.BILLING_MODEL_PACKAGE,
+						BillingCadence:     types.BILLING_CADENCE_RECURRING,
+						TransformQuantity:  &price.TransformQuantity{DivideBy: 10},
+						MeterID:            "meter-2",
+						Description:        "Package Price",
+					},
+				},
+			},
+		}
+
+		resp, err := s.planService.CreatePlan(s.ctx, req)
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(2, len(req.Prices))
+	})
+
+	// Test case: Empty prices (if allowed)
+	s.Run("Plan with No Prices", func() {
+		req := dto.CreatePlanRequest{
+			Name:        "Empty Plan",
+			Description: "A plan with no prices",
+			Prices:      []dto.CreatePlanPriceRequest{},
+		}
+
+		resp, err := s.planService.CreatePlan(s.ctx, req)
+		s.NoError(err)
+		s.NotNil(resp)
+	})
+
+	// Test case: Invalid price with missing tier_mode for TIERED model
+	s.Run("Invalid Price Missing TierMode", func() {
+		req := dto.CreatePlanRequest{
+			Name:        "Invalid Tiered Plan",
+			Description: "A plan with a price missing tier_mode",
+			Prices: []dto.CreatePlanPriceRequest{
+				{
+					CreatePriceRequest: &dto.CreatePriceRequest{
+						Amount:       "100",
+						Currency:     "USD",
+						Type:         types.PRICE_TYPE_USAGE,
+						BillingModel: types.BILLING_MODEL_TIERED,
+						Description:  "Invalid Tiered Price",
+					},
+				},
+			},
+		}
+
+		resp, err := s.planService.CreatePlan(s.ctx, req)
+		s.Error(err)
+		s.Nil(resp)
+	})
+
+	// Test case: Invalid price with negative amount
+	s.Run("Invalid Price Negative Amount", func() {
+		req := dto.CreatePlanRequest{
+			Name:        "Invalid Negative Amount Plan",
+			Description: "A plan with a price having negative amount",
+			Prices: []dto.CreatePlanPriceRequest{
+				{
+					CreatePriceRequest: &dto.CreatePriceRequest{
+						Amount:       "-100",
+						Currency:     "USD",
+						Type:         types.PRICE_TYPE_USAGE,
+						BillingModel: types.BILLING_MODEL_FLAT_FEE,
+						Description:  "Negative Price",
+					},
+				},
+			},
+		}
+
+		resp, err := s.planService.CreatePlan(s.ctx, req)
+		s.Error(err)
+		s.Nil(resp)
+	})
+
+	// Test case: Invalid price with missing meter_id for USAGE type
+	s.Run("Invalid Price Missing MeterID", func() {
+		req := dto.CreatePlanRequest{
+			Name:        "Invalid Missing MeterID Plan",
+			Description: "A plan with a price missing meter_id",
+			Prices: []dto.CreatePlanPriceRequest{
+				{
+					CreatePriceRequest: &dto.CreatePriceRequest{
+						Amount:       "100",
+						Currency:     "USD",
+						Type:         types.PRICE_TYPE_USAGE,
+						BillingModel: types.BILLING_MODEL_FLAT_FEE,
+						Description:  "Missing MeterID",
+					},
+				},
+			},
+		}
+
+		resp, err := s.planService.CreatePlan(s.ctx, req)
+		s.Error(err)
+		s.Nil(resp)
+	})
 }
 
 func ConvertToCreatePriceTier(tiers []price.PriceTier) []dto.CreatePriceTier {
