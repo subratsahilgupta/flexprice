@@ -26,8 +26,8 @@ func NewTenantHandler(service service.TenantService, log *logger.Logger) *Tenant
 // @Security BearerAuth
 // @Param request body dto.CreateTenantRequest true "Create tenant request"
 // @Success 201 {object} dto.TenantResponse
-// @Failure 400 {object} environmentErrorResponse
-// @Failure 500 {object} environmentErrorResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /tenants [post]
 func (h *TenantHandler) CreateTenant(c *gin.Context) {
 	var req dto.CreateTenantRequest
@@ -53,8 +53,8 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 // @Security BearerAuth
 // @Param id path string true "Tenant ID"
 // @Success 200 {object} dto.TenantResponse
-// @Failure 404 {object} environmentErrorResponse
-// @Failure 500 {object} environmentErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /tenants/{id} [get]
 func (h *TenantHandler) GetTenantByID(c *gin.Context) {
 	id := c.Param("id")

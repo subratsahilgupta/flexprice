@@ -46,7 +46,7 @@ func (r *CreateEnvironmentRequest) ToEnvironment(ctx context.Context) *environme
 	return &environment.Environment{
 		ID:        uuid.New().String(),
 		Name:      r.Name,
-		Type:      environment.EnvironmentType(r.Type),
+		Type:      types.EnvironmentType(r.Type),
 		Slug:      r.Slug,
 		BaseModel: types.GetDefaultBaseModel(ctx),
 	}

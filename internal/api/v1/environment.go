@@ -27,8 +27,8 @@ func NewEnvironmentHandler(service service.EnvironmentService, log *logger.Logge
 // @Security BearerAuth
 // @Param environment body dto.CreateEnvironmentRequest true "Environment"
 // @Success 201 {object} dto.EnvironmentResponse
-// @Failure 400 {object} errors.ErrorResponse
-// @Failure 500 {object} errors.ErrorResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /environments [post]
 func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
 	var req dto.CreateEnvironmentRequest
@@ -54,9 +54,9 @@ func (h *EnvironmentHandler) CreateEnvironment(c *gin.Context) {
 // @Security BearerAuth
 // @Param id path string true "Environment ID"
 // @Success 200 {object} dto.EnvironmentResponse
-// @Failure 400 {object} errors.ErrorResponse
-// @Failure 404 {object} errors.ErrorResponse
-// @Failure 500 {object} errors.ErrorResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /environments/{id} [get]
 func (h *EnvironmentHandler) GetEnvironment(c *gin.Context) {
 	id := c.Param("id")

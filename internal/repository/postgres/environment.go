@@ -22,12 +22,12 @@ func NewEnvironmentRepository(db *postgres.DB, logger *logger.Logger) environmen
 func (r *environmentRepository) Create(ctx context.Context, env *environment.Environment) error {
 	query := `
 		INSERT INTO environments (
-			id, name, type, slug, created_at, updated_at, created_by, updated_by
+			id, tenant_id, name, type, slug, status created_at, updated_at, created_by, updated_by
 		) VALUES (
-			:id, :name, :type, :slug, :created_at, :updated_at, :created_by, :updated_by
+			:id, :tenant_id, :name, :type, :slug, :status, :created_at, :updated_at, :created_by, :updated_by
 		)`
 
-	r.logger.Debug("creating environment", "environment_id", env.ID)
+	r.logger.Debug("creating environment", "environment_id", env.ID, "tenant_id", env.TenantID)
 
 	_, err := r.db.NamedExecContext(ctx, query, env)
 	return err
@@ -35,9 +35,15 @@ func (r *environmentRepository) Create(ctx context.Context, env *environment.Env
 
 func (r *environmentRepository) Get(ctx context.Context, id string) (*environment.Environment, error) {
 	var env environment.Environment
-	query := `SELECT * FROM environments WHERE id = :id`
+	query := `SELECT * FROM environments WHERE id = :id AND tenant_id = :tenant_id`
 
-	err := r.db.GetContext(ctx, &env, query, map[string]interface{}{"id": id})
+	tenantID := ctx.Value(types.CtxTenantID)
+	params := map[string]interface{}{
+		"id":        id,
+		"tenant_id": tenantID,
+	}
+
+	err := r.db.GetContext(ctx, &env, query, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
@@ -47,12 +53,19 @@ func (r *environmentRepository) Get(ctx context.Context, id string) (*environmen
 func (r *environmentRepository) List(ctx context.Context, filter types.Filter) ([]*environment.Environment, error) {
 	var environments []*environment.Environment
 	query := `
-		SELECT * FROM environments ORDER BY created_at DESC LIMIT :limit OFFSET :offset`
+		SELECT * FROM environments 
+		WHERE tenant_id = :tenant_id 
+		ORDER BY created_at DESC 
+		LIMIT :limit OFFSET :offset`
 
-	rows, err := r.db.NamedQueryContext(ctx, query, map[string]interface{}{
-		"limit":  filter.Limit,
-		"offset": filter.Offset,
-	})
+	tenantID := ctx.Value(types.CtxTenantID)
+	params := map[string]interface{}{
+		"tenant_id": tenantID,
+		"limit":     filter.Limit,
+		"offset":    filter.Offset,
+	}
+
+	rows, err := r.db.NamedQueryContext(ctx, query, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list environments: %w", err)
 	}
@@ -77,10 +90,20 @@ func (r *environmentRepository) Update(ctx context.Context, env *environment.Env
 			slug = :slug,
 			updated_at = :updated_at,
 			updated_by = :updated_by
-		WHERE id = :id`
+		WHERE id = :id AND tenant_id = :tenant_id`
 
-	r.logger.Debug("updating environment", "environment_id", env.ID)
+	r.logger.Debug("updating environment", "environment_id", env.ID, "tenant_id", env.TenantID)
 
-	_, err := r.db.NamedExecContext(ctx, query, env)
+	params := map[string]interface{}{
+		"id":         env.ID,
+		"tenant_id":  env.TenantID,
+		"name":       env.Name,
+		"type":       env.Type,
+		"slug":       env.Slug,
+		"updated_at": env.UpdatedAt,
+		"updated_by": env.UpdatedBy,
+	}
+
+	_, err := r.db.NamedExecContext(ctx, query, params)
 	return err
 }

@@ -82,7 +82,7 @@ func (s *environmentService) UpdateEnvironment(ctx context.Context, id string, r
 		env.Name = req.Name
 	}
 	if req.Type != "" {
-		env.Type = environment.EnvironmentType(req.Type)
+		env.Type = types.EnvironmentType(req.Type)
 	}
 	if req.Slug != "" {
 		env.Slug = req.Slug

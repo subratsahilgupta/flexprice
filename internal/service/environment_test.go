@@ -44,7 +44,7 @@ func (s *EnvironmentServiceSuite) TestGetEnvironmentByID() {
 	env := &environment.Environment{
 		ID:   "env-1",
 		Name: "Staging",
-		Type: environment.EnvironmentType("staging"),
+		Type: types.EnvironmentType("staging"),
 		Slug: "staging-environment",
 	}
 
