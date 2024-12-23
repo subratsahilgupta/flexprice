@@ -23,6 +23,7 @@ type Configuration struct {
 	ClickHouse ClickHouseConfig `validate:"required"`
 	Logging    LoggingConfig    `validate:"required"`
 	Postgres   PostgresConfig   `validate:"required"`
+	Sentry     SentryConfig     `validate:"required"`
 }
 
 type DeploymentConfig struct {
@@ -90,6 +91,13 @@ type APIKeyDetails struct {
 	UserID   string `mapstructure:"user_id" json:"user_id" validate:"required"`
 	Name     string `mapstructure:"name" json:"name" validate:"required"`      // description of what this key is for
 	IsActive bool   `mapstructure:"is_active" json:"is_active" default:"true"` // whether this key is active
+}
+
+type SentryConfig struct {
+	Enabled     bool    `mapstructure:"enabled"`
+	DSN         string  `mapstructure:"dsn"`
+	Environment string  `mapstructure:"environment"`
+	SampleRate  float64 `mapstructure:"sample_rate" default:"1.0"`
 }
 
 func NewConfig() (*Configuration, error) {
