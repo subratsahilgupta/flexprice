@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -73,4 +74,8 @@ func NewWalletRepository(p RepositoryParams) wallet.Repository {
 	}
 	// Fallback to PostgreSQL implementation
 	return postgresRepo.NewWalletRepository(p.DB, p.Logger)
+}
+
+func NewTenantRepository(p RepositoryParams) tenant.Repository {
+	return postgresRepo.NewTenantRepository(p.DB, p.Logger)
 }

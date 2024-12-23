@@ -138,10 +138,17 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			wallet.GET("/:id/balance/real-time", handlers.Wallet.GetWalletBalance)
 		}
 		// Tenant routes
-		tenant := v1Private.Group("/tenants")
+		tenantRoutes := v1Private.Group("/tenants")
 		{
-			tenant.POST("", handlers.Tenant.CreateTenant)     // Create a new tenant
-			tenant.GET("/:id", handlers.Tenant.GetTenantByID) // Get tenant by ID
+			tenantRoutes.POST("", handlers.Tenant.CreateTenant)
+			tenantRoutes.GET("/:id", handlers.Tenant.GetTenantByID)
+		}
+
+		// Admin routes (API Key only)
+		adminRoutes := v1Private.Group("/admin")
+		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, logger))
+		{
+			// All admin routes to go here
 		}
 	}
 
