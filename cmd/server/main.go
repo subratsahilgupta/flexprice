@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/repository"
+	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"go.uber.org/fx"
@@ -47,6 +48,7 @@ func main() {
 	opts = append(opts,
 		// Ent client module
 		postgres.Module(),
+		sentry.Module(),
 
 		fx.Provide(
 			// Config
@@ -270,6 +272,9 @@ func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository
 			// TODO: Handle error and decide if we should retry or send to DLQ
 		}
 		msg.Ack()
-		log.Debugf("Successfully processed event: %+v", event)
+		log.Debugf(
+			"Successfully processed event with lag : %v ms : %+v",
+			time.Since(event.Timestamp).Milliseconds(), event,
+		)
 	}
 }

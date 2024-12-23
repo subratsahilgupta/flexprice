@@ -48,6 +48,11 @@ postgres:
   conn_max_lifetime_minutes: 60
   auto_migrate: false
 
+sentry:
+  enabled: false  # Set to true in production
+  dsn: ""  # Add your Sentry DSN here
+  environment: "development"  # Change to "production" in prod
+  sample_rate: 1.0  # Adjust sampling rate as needed (0.0 to 1.0)
+
 logging:
   level: "debug"
-
