@@ -42,7 +42,8 @@ type AuthConfig struct {
 }
 
 type SupabaseConfig struct {
-	BaseURL string `mapstructure:"base_url"`
+	BaseURL    string `mapstructure:"base_url"`
+	ServiceKey string `mapstructure:"service_key"`
 }
 
 type KafkaConfig struct {
