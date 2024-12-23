@@ -4,6 +4,7 @@ import (
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -78,4 +79,8 @@ func NewWalletRepository(p RepositoryParams) wallet.Repository {
 
 func NewTenantRepository(p RepositoryParams) tenant.Repository {
 	return postgresRepo.NewTenantRepository(p.DB, p.Logger)
+}
+
+func NewEnvironmentRepository(p RepositoryParams) environment.Repository {
+	return postgresRepo.NewEnvironmentRepository(p.DB, p.Logger)
 }

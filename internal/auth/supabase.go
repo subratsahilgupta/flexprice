@@ -38,14 +38,30 @@ func (s *supabaseAuth) GetProvider() types.AuthProvider {
 }
 
 func (s *supabaseAuth) SignUp(ctx context.Context, req AuthRequest) (*AuthResponse, error) {
-	// Delegate to Supabase Auth API
-	// Implementation depends on Supabase SDK or REST API
-	return nil, fmt.Errorf("use UI for signup")
+	_, err := s.client.Auth.SignUp(ctx, supabase.UserCredentials{
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign up: %w", err)
+	}
+
+	return s.Login(ctx, req, nil)
 }
 
 func (s *supabaseAuth) Login(ctx context.Context, req AuthRequest, userAuthInfo *auth.Auth) (*AuthResponse, error) {
-	// TODO: implement login by integrating with Supabase SDK
-	return nil, fmt.Errorf("use UI for login")
+	user, err := s.client.Auth.SignIn(ctx, supabase.UserCredentials{
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	return &AuthResponse{
+		ProviderToken: user.AccessToken,
+		AuthToken:     user.AccessToken,
+		ID:            user.User.ID,
+	}, nil
 }
 
 func (s *supabaseAuth) ValidateToken(ctx context.Context, token string) (*auth.Claims, error) {

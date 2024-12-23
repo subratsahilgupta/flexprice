@@ -18,6 +18,7 @@ type AuthRequest struct {
 type AuthResponse struct {
 	ProviderToken string
 	AuthToken     string
+	ID            string
 }
 
 type Provider interface {

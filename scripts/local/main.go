@@ -4,4 +4,5 @@ func main() {
 	// SeedEventsClickhouse()
 	// GenerateNewAPIKey()
 	// AssignTenantToUser()
+	// OnboardNewTenant()
 }
