@@ -1,5 +1,6 @@
 package main
 
 func main() {
-	SeedEventsClickhouse()
+	// SeedEventsClickhouse()
+	// GenerateNewAPIKey()
 }

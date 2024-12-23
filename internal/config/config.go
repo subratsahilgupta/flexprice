@@ -2,9 +2,9 @@ package config
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
-
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -37,6 +37,7 @@ type AuthConfig struct {
 	Provider types.AuthProvider `mapstructure:"provider" validate:"required"`
 	Secret   string             `mapstructure:"secret" validate:"required"`
 	Supabase SupabaseConfig     `mapstructure:"supabase"`
+	APIKey   APIKeyConfig       `mapstructure:"api_key"`
 }
 
 type SupabaseConfig struct {
@@ -79,6 +80,18 @@ type PostgresConfig struct {
 	AutoMigrate            bool   `mapstructure:"auto_migrate default=false"`
 }
 
+type APIKeyConfig struct {
+	Header string                   `mapstructure:"header" validate:"required" default:"x-api-key"`
+	Keys   map[string]APIKeyDetails `mapstructure:"keys"` // map of hashed API key to its details
+}
+
+type APIKeyDetails struct {
+	TenantID string `mapstructure:"tenant_id" json:"tenant_id" validate:"required"`
+	UserID   string `mapstructure:"user_id" json:"user_id" validate:"required"`
+	Name     string `mapstructure:"name" json:"name" validate:"required"`      // description of what this key is for
+	IsActive bool   `mapstructure:"is_active" json:"is_active" default:"true"` // whether this key is active
+}
+
 func NewConfig() (*Configuration, error) {
 	v := viper.New()
 
@@ -108,17 +121,22 @@ func NewConfig() (*Configuration, error) {
 		fmt.Printf("Using config file: %s\n", v.ConfigFileUsed())
 	}
 
-	var config Configuration
-	if err := v.Unmarshal(&config); err != nil {
-		return nil, err
+	var cfg Configuration
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("unable to decode into config struct, %v", err)
 	}
 
-	// Validate configuration
-	if err := config.Validate(); err != nil {
-		return nil, err
+	apiKeysStr := v.GetString("auth.api_key.keys")
+	// Parse API keys JSON if present
+	if apiKeysStr != "" {
+		var apiKeys map[string]APIKeyDetails
+		if err := json.Unmarshal([]byte(apiKeysStr), &apiKeys); err != nil {
+			return nil, fmt.Errorf("failed to parse API keys JSON: %v", err)
+		}
+		cfg.Auth.APIKey.Keys = apiKeys
 	}
 
-	return &config, nil
+	return &cfg, nil
 }
 
 func (c Configuration) Validate() error {
