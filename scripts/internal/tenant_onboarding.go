@@ -1,9 +1,9 @@
-package main
+package internal
 
 import (
 	"context"
-	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/auth"
@@ -146,15 +146,18 @@ func (s *onboardingScript) assignTenantToUser(ctx context.Context, userID, tenan
 	return nil
 }
 
-func OnboardNewTenant() {
-	// Parse command line flags
-	email := flag.String("email", "", "User email")
-	tenantName := flag.String("tenant", "", "Tenant name")
-	flag.Parse()
+func OnboardNewTenant() error {
+	email := os.Getenv("USER_EMAIL")
+	tenantName := os.Getenv("TENANT_NAME")
+	if email == "" || tenantName == "" {
+		log, _ := logger.NewLogger(config.GetDefaultConfig())
+		log.Fatal("Please set EMAIL and TENANT environment variables")
+		return nil
+	}
 
 	log, _ := logger.NewLogger(config.GetDefaultConfig())
 
-	if *email == "" || *tenantName == "" {
+	if email == "" || tenantName == "" {
 		log.Fatalf("Usage: go run scripts/local/main.go -email=<email> -tenant=<tenant_name>")
 	}
 
@@ -167,13 +170,13 @@ func OnboardNewTenant() {
 	ctx := context.Background()
 
 	// Create tenant
-	t, err := script.createTenant(ctx, *tenantName)
+	t, err := script.createTenant(ctx, tenantName)
 	if err != nil {
 		log.Fatalf("Failed to create tenant: %v", err)
 	}
 
 	// Create user
-	u, err := script.createUser(ctx, *email, t.ID)
+	u, err := script.createUser(ctx, email, t.ID)
 	if err != nil {
 		log.Fatalf("Failed to create user: %v", err)
 	}
@@ -196,7 +199,9 @@ func OnboardNewTenant() {
 		log.Fatalf("Failed to assign tenant to user: %v", err)
 	}
 
-	fmt.Printf("Successfully onboarded tenant %s with user %s\n", *tenantName, *email)
+	fmt.Printf("Successfully onboarded tenant %s with user %s\n", tenantName, email)
 	fmt.Printf("Tenant ID: %s\n", t.ID)
 	fmt.Printf("User ID: %s\n", u.ID)
+
+	return nil
 }
