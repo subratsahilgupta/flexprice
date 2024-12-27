@@ -82,6 +82,7 @@ func (s *onboardingScript) createTenant(ctx context.Context, name string) (*tena
 }
 
 func (s *onboardingScript) createUser(ctx context.Context, email, tenantID string) (*user.User, error) {
+	password := os.Getenv("USER_PASSWORD")
 	u := user.NewUser(email, tenantID)
 
 	// Check if user already exists in MongoDB
@@ -95,7 +96,7 @@ func (s *onboardingScript) createUser(ctx context.Context, email, tenantID strin
 	// Skip the confirmation email step and directly set the user as confirmed
 	authResponse, err := s.authProvider.SignUp(ctx, auth.AuthRequest{
 		Email:    u.Email,
-		Password: "Pass@123",
+		Password: password,
 	})
 	if err != nil {
 		s.log.Errorf("Supabase registration failed: %v", err)

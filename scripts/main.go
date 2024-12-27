@@ -50,6 +50,7 @@ func main() {
 		plansFile    string
 		tenantID     string
 		userID       string
+		password     string
 	)
 
 	flag.BoolVar(&listCommands, "list", false, "List all available commands")
@@ -60,6 +61,7 @@ func main() {
 	flag.StringVar(&plansFile, "plans-file", "", "Path to plans JSON file")
 	flag.StringVar(&tenantID, "tenant-id", "", "Tenant ID for operations")
 	flag.StringVar(&userID, "user-id", "", "User ID for operations")
+	flag.StringVar(&password, "user-password", "", "password for setting up new user")
 
 	flag.Parse()
 
@@ -93,6 +95,9 @@ func main() {
 	}
 	if userID != "" {
 		os.Setenv("USER_ID", userID)
+	}
+	if password != "" {
+		os.Setenv("USER_PASSWORD", password)
 	}
 
 	// Find and run the command
