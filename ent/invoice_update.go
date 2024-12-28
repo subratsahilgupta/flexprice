@@ -89,26 +89,6 @@ func (iu *InvoiceUpdate) ClearSubscriptionID() *InvoiceUpdate {
 	return iu
 }
 
-// SetWalletID sets the "wallet_id" field.
-func (iu *InvoiceUpdate) SetWalletID(s string) *InvoiceUpdate {
-	iu.mutation.SetWalletID(s)
-	return iu
-}
-
-// SetNillableWalletID sets the "wallet_id" field if the given value is not nil.
-func (iu *InvoiceUpdate) SetNillableWalletID(s *string) *InvoiceUpdate {
-	if s != nil {
-		iu.SetWalletID(*s)
-	}
-	return iu
-}
-
-// ClearWalletID clears the value of the "wallet_id" field.
-func (iu *InvoiceUpdate) ClearWalletID() *InvoiceUpdate {
-	iu.mutation.ClearWalletID()
-	return iu
-}
-
 // SetInvoiceStatus sets the "invoice_status" field.
 func (iu *InvoiceUpdate) SetInvoiceStatus(s string) *InvoiceUpdate {
 	iu.mutation.SetInvoiceStatus(s)
@@ -123,16 +103,16 @@ func (iu *InvoiceUpdate) SetNillableInvoiceStatus(s *string) *InvoiceUpdate {
 	return iu
 }
 
-// SetCurrency sets the "currency" field.
-func (iu *InvoiceUpdate) SetCurrency(s string) *InvoiceUpdate {
-	iu.mutation.SetCurrency(s)
+// SetPaymentStatus sets the "payment_status" field.
+func (iu *InvoiceUpdate) SetPaymentStatus(s string) *InvoiceUpdate {
+	iu.mutation.SetPaymentStatus(s)
 	return iu
 }
 
-// SetNillableCurrency sets the "currency" field if the given value is not nil.
-func (iu *InvoiceUpdate) SetNillableCurrency(s *string) *InvoiceUpdate {
+// SetNillablePaymentStatus sets the "payment_status" field if the given value is not nil.
+func (iu *InvoiceUpdate) SetNillablePaymentStatus(s *string) *InvoiceUpdate {
 	if s != nil {
-		iu.SetCurrency(*s)
+		iu.SetPaymentStatus(*s)
 	}
 	return iu
 }
@@ -279,26 +259,6 @@ func (iu *InvoiceUpdate) ClearFinalizedAt() *InvoiceUpdate {
 	return iu
 }
 
-// SetPaymentIntentID sets the "payment_intent_id" field.
-func (iu *InvoiceUpdate) SetPaymentIntentID(s string) *InvoiceUpdate {
-	iu.mutation.SetPaymentIntentID(s)
-	return iu
-}
-
-// SetNillablePaymentIntentID sets the "payment_intent_id" field if the given value is not nil.
-func (iu *InvoiceUpdate) SetNillablePaymentIntentID(s *string) *InvoiceUpdate {
-	if s != nil {
-		iu.SetPaymentIntentID(*s)
-	}
-	return iu
-}
-
-// ClearPaymentIntentID clears the value of the "payment_intent_id" field.
-func (iu *InvoiceUpdate) ClearPaymentIntentID() *InvoiceUpdate {
-	iu.mutation.ClearPaymentIntentID()
-	return iu
-}
-
 // SetInvoicePdfURL sets the "invoice_pdf_url" field.
 func (iu *InvoiceUpdate) SetInvoicePdfURL(s string) *InvoiceUpdate {
 	iu.mutation.SetInvoicePdfURL(s)
@@ -316,27 +276,6 @@ func (iu *InvoiceUpdate) SetNillableInvoicePdfURL(s *string) *InvoiceUpdate {
 // ClearInvoicePdfURL clears the value of the "invoice_pdf_url" field.
 func (iu *InvoiceUpdate) ClearInvoicePdfURL() *InvoiceUpdate {
 	iu.mutation.ClearInvoicePdfURL()
-	return iu
-}
-
-// SetAttemptCount sets the "attempt_count" field.
-func (iu *InvoiceUpdate) SetAttemptCount(i int) *InvoiceUpdate {
-	iu.mutation.ResetAttemptCount()
-	iu.mutation.SetAttemptCount(i)
-	return iu
-}
-
-// SetNillableAttemptCount sets the "attempt_count" field if the given value is not nil.
-func (iu *InvoiceUpdate) SetNillableAttemptCount(i *int) *InvoiceUpdate {
-	if i != nil {
-		iu.SetAttemptCount(*i)
-	}
-	return iu
-}
-
-// AddAttemptCount adds i to the "attempt_count" field.
-func (iu *InvoiceUpdate) AddAttemptCount(i int) *InvoiceUpdate {
-	iu.mutation.AddAttemptCount(i)
 	return iu
 }
 
@@ -434,20 +373,7 @@ func (iu *InvoiceUpdate) defaults() {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (iu *InvoiceUpdate) check() error {
-	if v, ok := iu.mutation.Currency(); ok {
-		if err := invoice.CurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "Invoice.currency": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
-	if err := iu.check(); err != nil {
-		return n, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(invoice.Table, invoice.Columns, sqlgraph.NewFieldSpec(invoice.FieldID, field.TypeString))
 	if ps := iu.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -477,17 +403,11 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if iu.mutation.SubscriptionIDCleared() {
 		_spec.ClearField(invoice.FieldSubscriptionID, field.TypeString)
 	}
-	if value, ok := iu.mutation.WalletID(); ok {
-		_spec.SetField(invoice.FieldWalletID, field.TypeString, value)
-	}
-	if iu.mutation.WalletIDCleared() {
-		_spec.ClearField(invoice.FieldWalletID, field.TypeString)
-	}
 	if value, ok := iu.mutation.InvoiceStatus(); ok {
 		_spec.SetField(invoice.FieldInvoiceStatus, field.TypeString, value)
 	}
-	if value, ok := iu.mutation.Currency(); ok {
-		_spec.SetField(invoice.FieldCurrency, field.TypeString, value)
+	if value, ok := iu.mutation.PaymentStatus(); ok {
+		_spec.SetField(invoice.FieldPaymentStatus, field.TypeString, value)
 	}
 	if value, ok := iu.mutation.AmountDue(); ok {
 		_spec.SetField(invoice.FieldAmountDue, field.TypeOther, value)
@@ -528,23 +448,11 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if iu.mutation.FinalizedAtCleared() {
 		_spec.ClearField(invoice.FieldFinalizedAt, field.TypeTime)
 	}
-	if value, ok := iu.mutation.PaymentIntentID(); ok {
-		_spec.SetField(invoice.FieldPaymentIntentID, field.TypeString, value)
-	}
-	if iu.mutation.PaymentIntentIDCleared() {
-		_spec.ClearField(invoice.FieldPaymentIntentID, field.TypeString)
-	}
 	if value, ok := iu.mutation.InvoicePdfURL(); ok {
 		_spec.SetField(invoice.FieldInvoicePdfURL, field.TypeString, value)
 	}
 	if iu.mutation.InvoicePdfURLCleared() {
 		_spec.ClearField(invoice.FieldInvoicePdfURL, field.TypeString)
-	}
-	if value, ok := iu.mutation.AttemptCount(); ok {
-		_spec.SetField(invoice.FieldAttemptCount, field.TypeInt, value)
-	}
-	if value, ok := iu.mutation.AddedAttemptCount(); ok {
-		_spec.AddField(invoice.FieldAttemptCount, field.TypeInt, value)
 	}
 	if value, ok := iu.mutation.BillingReason(); ok {
 		_spec.SetField(invoice.FieldBillingReason, field.TypeString, value)
@@ -644,26 +552,6 @@ func (iuo *InvoiceUpdateOne) ClearSubscriptionID() *InvoiceUpdateOne {
 	return iuo
 }
 
-// SetWalletID sets the "wallet_id" field.
-func (iuo *InvoiceUpdateOne) SetWalletID(s string) *InvoiceUpdateOne {
-	iuo.mutation.SetWalletID(s)
-	return iuo
-}
-
-// SetNillableWalletID sets the "wallet_id" field if the given value is not nil.
-func (iuo *InvoiceUpdateOne) SetNillableWalletID(s *string) *InvoiceUpdateOne {
-	if s != nil {
-		iuo.SetWalletID(*s)
-	}
-	return iuo
-}
-
-// ClearWalletID clears the value of the "wallet_id" field.
-func (iuo *InvoiceUpdateOne) ClearWalletID() *InvoiceUpdateOne {
-	iuo.mutation.ClearWalletID()
-	return iuo
-}
-
 // SetInvoiceStatus sets the "invoice_status" field.
 func (iuo *InvoiceUpdateOne) SetInvoiceStatus(s string) *InvoiceUpdateOne {
 	iuo.mutation.SetInvoiceStatus(s)
@@ -678,16 +566,16 @@ func (iuo *InvoiceUpdateOne) SetNillableInvoiceStatus(s *string) *InvoiceUpdateO
 	return iuo
 }
 
-// SetCurrency sets the "currency" field.
-func (iuo *InvoiceUpdateOne) SetCurrency(s string) *InvoiceUpdateOne {
-	iuo.mutation.SetCurrency(s)
+// SetPaymentStatus sets the "payment_status" field.
+func (iuo *InvoiceUpdateOne) SetPaymentStatus(s string) *InvoiceUpdateOne {
+	iuo.mutation.SetPaymentStatus(s)
 	return iuo
 }
 
-// SetNillableCurrency sets the "currency" field if the given value is not nil.
-func (iuo *InvoiceUpdateOne) SetNillableCurrency(s *string) *InvoiceUpdateOne {
+// SetNillablePaymentStatus sets the "payment_status" field if the given value is not nil.
+func (iuo *InvoiceUpdateOne) SetNillablePaymentStatus(s *string) *InvoiceUpdateOne {
 	if s != nil {
-		iuo.SetCurrency(*s)
+		iuo.SetPaymentStatus(*s)
 	}
 	return iuo
 }
@@ -834,26 +722,6 @@ func (iuo *InvoiceUpdateOne) ClearFinalizedAt() *InvoiceUpdateOne {
 	return iuo
 }
 
-// SetPaymentIntentID sets the "payment_intent_id" field.
-func (iuo *InvoiceUpdateOne) SetPaymentIntentID(s string) *InvoiceUpdateOne {
-	iuo.mutation.SetPaymentIntentID(s)
-	return iuo
-}
-
-// SetNillablePaymentIntentID sets the "payment_intent_id" field if the given value is not nil.
-func (iuo *InvoiceUpdateOne) SetNillablePaymentIntentID(s *string) *InvoiceUpdateOne {
-	if s != nil {
-		iuo.SetPaymentIntentID(*s)
-	}
-	return iuo
-}
-
-// ClearPaymentIntentID clears the value of the "payment_intent_id" field.
-func (iuo *InvoiceUpdateOne) ClearPaymentIntentID() *InvoiceUpdateOne {
-	iuo.mutation.ClearPaymentIntentID()
-	return iuo
-}
-
 // SetInvoicePdfURL sets the "invoice_pdf_url" field.
 func (iuo *InvoiceUpdateOne) SetInvoicePdfURL(s string) *InvoiceUpdateOne {
 	iuo.mutation.SetInvoicePdfURL(s)
@@ -871,27 +739,6 @@ func (iuo *InvoiceUpdateOne) SetNillableInvoicePdfURL(s *string) *InvoiceUpdateO
 // ClearInvoicePdfURL clears the value of the "invoice_pdf_url" field.
 func (iuo *InvoiceUpdateOne) ClearInvoicePdfURL() *InvoiceUpdateOne {
 	iuo.mutation.ClearInvoicePdfURL()
-	return iuo
-}
-
-// SetAttemptCount sets the "attempt_count" field.
-func (iuo *InvoiceUpdateOne) SetAttemptCount(i int) *InvoiceUpdateOne {
-	iuo.mutation.ResetAttemptCount()
-	iuo.mutation.SetAttemptCount(i)
-	return iuo
-}
-
-// SetNillableAttemptCount sets the "attempt_count" field if the given value is not nil.
-func (iuo *InvoiceUpdateOne) SetNillableAttemptCount(i *int) *InvoiceUpdateOne {
-	if i != nil {
-		iuo.SetAttemptCount(*i)
-	}
-	return iuo
-}
-
-// AddAttemptCount adds i to the "attempt_count" field.
-func (iuo *InvoiceUpdateOne) AddAttemptCount(i int) *InvoiceUpdateOne {
-	iuo.mutation.AddAttemptCount(i)
 	return iuo
 }
 
@@ -1002,20 +849,7 @@ func (iuo *InvoiceUpdateOne) defaults() {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (iuo *InvoiceUpdateOne) check() error {
-	if v, ok := iuo.mutation.Currency(); ok {
-		if err := invoice.CurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "Invoice.currency": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err error) {
-	if err := iuo.check(); err != nil {
-		return _node, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(invoice.Table, invoice.Columns, sqlgraph.NewFieldSpec(invoice.FieldID, field.TypeString))
 	id, ok := iuo.mutation.ID()
 	if !ok {
@@ -1062,17 +896,11 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	if iuo.mutation.SubscriptionIDCleared() {
 		_spec.ClearField(invoice.FieldSubscriptionID, field.TypeString)
 	}
-	if value, ok := iuo.mutation.WalletID(); ok {
-		_spec.SetField(invoice.FieldWalletID, field.TypeString, value)
-	}
-	if iuo.mutation.WalletIDCleared() {
-		_spec.ClearField(invoice.FieldWalletID, field.TypeString)
-	}
 	if value, ok := iuo.mutation.InvoiceStatus(); ok {
 		_spec.SetField(invoice.FieldInvoiceStatus, field.TypeString, value)
 	}
-	if value, ok := iuo.mutation.Currency(); ok {
-		_spec.SetField(invoice.FieldCurrency, field.TypeString, value)
+	if value, ok := iuo.mutation.PaymentStatus(); ok {
+		_spec.SetField(invoice.FieldPaymentStatus, field.TypeString, value)
 	}
 	if value, ok := iuo.mutation.AmountDue(); ok {
 		_spec.SetField(invoice.FieldAmountDue, field.TypeOther, value)
@@ -1113,23 +941,11 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	if iuo.mutation.FinalizedAtCleared() {
 		_spec.ClearField(invoice.FieldFinalizedAt, field.TypeTime)
 	}
-	if value, ok := iuo.mutation.PaymentIntentID(); ok {
-		_spec.SetField(invoice.FieldPaymentIntentID, field.TypeString, value)
-	}
-	if iuo.mutation.PaymentIntentIDCleared() {
-		_spec.ClearField(invoice.FieldPaymentIntentID, field.TypeString)
-	}
 	if value, ok := iuo.mutation.InvoicePdfURL(); ok {
 		_spec.SetField(invoice.FieldInvoicePdfURL, field.TypeString, value)
 	}
 	if iuo.mutation.InvoicePdfURLCleared() {
 		_spec.ClearField(invoice.FieldInvoicePdfURL, field.TypeString)
-	}
-	if value, ok := iuo.mutation.AttemptCount(); ok {
-		_spec.SetField(invoice.FieldAttemptCount, field.TypeInt, value)
-	}
-	if value, ok := iuo.mutation.AddedAttemptCount(); ok {
-		_spec.AddField(invoice.FieldAttemptCount, field.TypeInt, value)
 	}
 	if value, ok := iuo.mutation.BillingReason(); ok {
 		_spec.SetField(invoice.FieldBillingReason, field.TypeString, value)

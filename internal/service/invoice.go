@@ -7,11 +7,9 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
-	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -21,28 +19,24 @@ type InvoiceService interface {
 	ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error)
 	FinalizeInvoice(ctx context.Context, id string) error
 	VoidInvoice(ctx context.Context, id string) error
-	MarkInvoiceAsPaid(ctx context.Context, id string, paymentIntentID string) error
-	CreateSubscriptionInvoice(ctx context.Context, subscriptionID string, amount decimal.Decimal, billingReason types.InvoiceBillingReason) (*dto.InvoiceResponse, error)
+	UpdatePaymentStatus(ctx context.Context, id string, status types.InvoicePaymentStatus, amount *decimal.Decimal) error
 }
 
 type invoiceService struct {
-	invoiceRepo      invoice.Repository
-	subscriptionRepo subscription.Repository
-	publisher        publisher.EventPublisher
-	logger           *logger.Logger
+	invoiceRepo invoice.Repository
+	publisher   publisher.EventPublisher
+	logger      *logger.Logger
 }
 
 func NewInvoiceService(
 	invoiceRepo invoice.Repository,
-	subscriptionRepo subscription.Repository,
 	publisher publisher.EventPublisher,
 	logger *logger.Logger,
 ) InvoiceService {
 	return &invoiceService{
-		invoiceRepo:      invoiceRepo,
-		subscriptionRepo: subscriptionRepo,
-		publisher:        publisher,
-		logger:           logger,
+		invoiceRepo: invoiceRepo,
+		publisher:   publisher,
+		logger:      logger,
 	}
 }
 
@@ -51,22 +45,9 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	inv := &invoice.Invoice{
-		ID:              uuid.New().String(),
-		TenantID:        req.TenantID,
-		CustomerID:      req.CustomerID,
-		SubscriptionID:  req.SubscriptionID,
-		WalletID:        req.WalletID,
-		InvoiceStatus:   types.InvoiceStatusDraft,
-		Currency:        req.Currency,
-		AmountDue:       req.AmountDue,
-		AmountPaid:      decimal.Zero,
-		AmountRemaining: req.AmountDue,
-		Description:     req.Description,
-		DueDate:         req.DueDate,
-		BillingReason:   string(req.BillingReason),
-		Metadata:        req.Metadata,
-		Version:         1,
+	inv, err := req.ToInvoice(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create invoice: %w", err)
 	}
 
 	if err := s.invoiceRepo.Create(ctx, inv); err != nil {
@@ -138,7 +119,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to get invoice: %w", err)
 	}
 
-	if inv.InvoiceStatus == types.InvoiceStatusPaid || inv.InvoiceStatus == types.InvoiceStatusVoided {
+	if inv.InvoiceStatus == types.InvoiceStatusVoided {
 		return fmt.Errorf("invoice cannot be voided")
 	}
 
@@ -156,54 +137,73 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *invoiceService) MarkInvoiceAsPaid(ctx context.Context, id string, paymentIntentID string) error {
+func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, status types.InvoicePaymentStatus, amount *decimal.Decimal) error {
 	inv, err := s.invoiceRepo.Get(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to get invoice: %w", err)
 	}
 
-	if inv.InvoiceStatus != types.InvoiceStatusFinalized {
-		return fmt.Errorf("invoice is not in finalized status")
+	// Validate the payment status transition
+	if err := s.validatePaymentStatusTransition(inv.PaymentStatus, status); err != nil {
+		return fmt.Errorf("invalid payment status transition: %w", err)
 	}
 
 	now := time.Now().UTC()
-	inv.InvoiceStatus = types.InvoiceStatusPaid
-	inv.PaidAt = &now
-	inv.PaymentIntentID = &paymentIntentID
-	inv.AmountPaid = inv.AmountDue
-	inv.AmountRemaining = decimal.Zero
+	inv.PaymentStatus = status
 	inv.Version++
+
+	switch status {
+	case types.InvoicePaymentStatusSucceeded:
+		if amount != nil {
+			inv.AmountPaid = *amount
+			inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
+		} else {
+			inv.AmountPaid = inv.AmountDue
+			inv.AmountRemaining = decimal.Zero
+		}
+		inv.PaidAt = &now
+	case types.InvoicePaymentStatusFailed:
+		inv.AmountPaid = decimal.Zero
+		inv.AmountRemaining = inv.AmountDue
+		inv.PaidAt = nil
+	}
+
+	// Validate the final state
+	if err := inv.Validate(); err != nil {
+		return fmt.Errorf("invalid invoice state: %w", err)
+	}
 
 	if err := s.invoiceRepo.Update(ctx, inv); err != nil {
 		return fmt.Errorf("failed to update invoice: %w", err)
 	}
 
-	// TODO: add publisher event for invoice paid
-
 	return nil
 }
 
-func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, subscriptionID string, amount decimal.Decimal, billingReason types.InvoiceBillingReason) (*dto.InvoiceResponse, error) {
-	sub, err := s.subscriptionRepo.Get(ctx, subscriptionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get subscription: %w", err)
+func (s *invoiceService) validatePaymentStatusTransition(from, to types.InvoicePaymentStatus) error {
+	// Define valid transitions
+	validTransitions := map[types.InvoicePaymentStatus][]types.InvoicePaymentStatus{
+		types.InvoicePaymentStatusPending: {
+			types.InvoicePaymentStatusPending,
+			types.InvoicePaymentStatusSucceeded,
+			types.InvoicePaymentStatusFailed,
+		},
+		types.InvoicePaymentStatusFailed: {
+			types.InvoicePaymentStatusPending,
+		},
 	}
 
-	description := fmt.Sprintf("Subscription charges for %s", sub.ID)
-	if billingReason == types.InvoiceBillingReasonSubscriptionCreate {
-		description = fmt.Sprintf("Initial subscription charges for %s", sub.ID)
+	// Check if transition is valid
+	validNextStates, exists := validTransitions[from]
+	if !exists {
+		return fmt.Errorf("invalid current payment status: %s", from)
 	}
 
-	req := dto.CreateInvoiceRequest{
-		TenantID:       sub.TenantID,
-		CustomerID:     sub.CustomerID,
-		SubscriptionID: &sub.ID,
-		Currency:       sub.Currency,
-		AmountDue:      amount,
-		Description:    description,
-		BillingReason:  billingReason,
-		DueDate:        &sub.CurrentPeriodEnd,
+	for _, validState := range validNextStates {
+		if validState == to {
+			return nil
+		}
 	}
 
-	return s.CreateInvoice(ctx, req)
+	return fmt.Errorf("invalid payment status transition from %s to %s", from, to)
 }

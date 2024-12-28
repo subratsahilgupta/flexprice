@@ -29,6 +29,39 @@ definitions:
     - slug
     - type
     type: object
+  dto.CreateInvoiceRequest:
+    properties:
+      amount_due:
+        type: number
+      amount_paid:
+        type: number
+      billing_reason:
+        $ref: '#/definitions/types.InvoiceBillingReason'
+      currency:
+        type: string
+      customer_id:
+        type: string
+      description:
+        type: string
+      due_date:
+        type: string
+      invoice_status:
+        $ref: '#/definitions/types.InvoiceStatus'
+      invoice_type:
+        $ref: '#/definitions/types.InvoiceType'
+      metadata:
+        additionalProperties: true
+        type: object
+      payment_status:
+        $ref: '#/definitions/types.InvoicePaymentStatus'
+      subscription_id:
+        type: string
+    required:
+    - amount_due
+    - currency
+    - customer_id
+    - invoice_type
+    type: object
   dto.CreateMeterRequest:
     properties:
       aggregation:
@@ -454,6 +487,60 @@ definitions:
     - event_name
     - external_customer_id
     type: object
+  dto.InvoiceResponse:
+    properties:
+      amount_due:
+        type: number
+      amount_paid:
+        type: number
+      amount_remaining:
+        type: number
+      billing_reason:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      customer_id:
+        type: string
+      description:
+        type: string
+      due_date:
+        type: string
+      finalized_at:
+        type: string
+      id:
+        type: string
+      invoice_pdf_url:
+        type: string
+      invoice_status:
+        $ref: '#/definitions/types.InvoiceStatus'
+      invoice_type:
+        $ref: '#/definitions/types.InvoiceType'
+      metadata:
+        additionalProperties: true
+        type: object
+      paid_at:
+        type: string
+      payment_status:
+        $ref: '#/definitions/types.InvoicePaymentStatus'
+      status:
+        type: string
+      subscription_id:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      version:
+        type: integer
+      voided_at:
+        type: string
+    type: object
   dto.ListCustomersResponse:
     properties:
       customers:
@@ -477,6 +564,15 @@ definitions:
         type: integer
       offset:
         type: integer
+      total:
+        type: integer
+    type: object
+  dto.ListInvoicesResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.InvoiceResponse'
+        type: array
       total:
         type: integer
     type: object
@@ -842,6 +938,15 @@ definitions:
         type: string
       type:
         type: string
+    type: object
+  dto.UpdateInvoicePaymentStatusRequest:
+    properties:
+      amount:
+        type: number
+      payment_status:
+        $ref: '#/definitions/types.InvoicePaymentStatus'
+    required:
+    - payment_status
     type: object
   dto.UpdateMeterRequest:
     properties:
@@ -1292,6 +1397,18 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
     type: object
+  types.InvoiceBillingReason:
+    enum:
+    - SUBSCRIPTION_CREATE
+    - SUBSCRIPTION_CYCLE
+    - SUBSCRIPTION_UPDATE
+    - MANUAL
+    type: string
+    x-enum-varnames:
+    - InvoiceBillingReasonSubscriptionCreate
+    - InvoiceBillingReasonSubscriptionCycle
+    - InvoiceBillingReasonSubscriptionUpdate
+    - InvoiceBillingReasonManual
   types.InvoiceCadence:
     enum:
     - ARREAR
@@ -1300,6 +1417,36 @@ definitions:
     x-enum-varnames:
     - InvoiceCadenceArrear
     - InvoiceCadenceAdvance
+  types.InvoicePaymentStatus:
+    enum:
+    - PENDING
+    - SUCCEEDED
+    - FAILED
+    type: string
+    x-enum-varnames:
+    - InvoicePaymentStatusPending
+    - InvoicePaymentStatusSucceeded
+    - InvoicePaymentStatusFailed
+  types.InvoiceStatus:
+    enum:
+    - DRAFT
+    - FINALIZED
+    - VOIDED
+    type: string
+    x-enum-varnames:
+    - InvoiceStatusDraft
+    - InvoiceStatusFinalized
+    - InvoiceStatusVoided
+  types.InvoiceType:
+    enum:
+    - SUBSCRIPTION
+    - ONE_OFF
+    - CREDIT
+    type: string
+    x-enum-varnames:
+    - InvoiceTypeSubscription
+    - InvoiceTypeOneOff
+    - InvoiceTypeCredit
   types.Metadata:
     additionalProperties:
       type: string
@@ -2748,6 +2895,218 @@ paths:
       summary: Get user info
       tags:
       - users
+  /v1/invoices:
+    get:
+      consumes:
+      - application/json
+      description: List invoices with optional filtering
+      parameters:
+      - description: Customer ID
+        in: query
+        name: customer_id
+        type: string
+      - description: Subscription ID
+        in: query
+        name: subscription_id
+        type: string
+      - description: Wallet ID
+        in: query
+        name: wallet_id
+        type: string
+      - collectionFormat: csv
+        description: Invoice statuses
+        in: query
+        items:
+          type: string
+        name: status
+        type: array
+      - description: Start time (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: End time (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListInvoicesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: List invoices
+      tags:
+      - invoices
+    post:
+      consumes:
+      - application/json
+      description: Create a new invoice with the provided details
+      parameters:
+      - description: Invoice details
+        in: body
+        name: invoice
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateInvoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.InvoiceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Create a new invoice
+      tags:
+      - invoices
+  /v1/invoices/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about an invoice
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.InvoiceResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Get an invoice by ID
+      tags:
+      - invoices
+  /v1/invoices/{id}/finalize:
+    post:
+      consumes:
+      - application/json
+      description: Finalize a draft invoice
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Finalize an invoice
+      tags:
+      - invoices
+  /v1/invoices/{id}/payment:
+    put:
+      consumes:
+      - application/json
+      description: Update the payment status of an invoice
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Payment Status Update Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateInvoicePaymentStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.InvoiceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update invoice payment status
+      tags:
+      - invoices
+  /v1/invoices/{id}/void:
+    post:
+      consumes:
+      - application/json
+      description: Void an invoice that hasn't been paid
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Void an invoice
+      tags:
+      - invoices
   /wallets:
     post:
       consumes:

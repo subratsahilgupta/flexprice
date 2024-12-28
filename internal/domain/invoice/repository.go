@@ -22,10 +22,4 @@ type Repository interface {
 
 	// Count returns the total count of invoices based on filter criteria
 	Count(ctx context.Context, filter *types.InvoiceFilter) (int, error)
-
-	// GetByPaymentIntentID retrieves an invoice by payment intent ID
-	GetByPaymentIntentID(ctx context.Context, paymentIntentID string) (*Invoice, error)
-
-	// GetPendingInvoices retrieves all pending invoices that need to be processed
-	GetPendingInvoices(ctx context.Context) ([]*Invoice, error)
 }

@@ -1,10 +1,5 @@
 package types
 
-const (
-	DefaultFilterLimit  = 50
-	DefaultFilterOffset = 0
-)
-
 type Filter struct {
 	Limit  int    `form:"limit,default=50"`
 	Offset int    `form:"offset,default=0"`
@@ -13,9 +8,19 @@ type Filter struct {
 	Order  string `form:"order,default=desc"`
 }
 
+const (
+	FILTER_DEFAULT_LIMIT  = 50
+	FILTER_DEFAULT_STATUS = string(StatusPublished)
+	FILTER_DEFAULT_SORT   = "created_at"
+	FILTER_DEFAULT_ORDER  = "desc"
+)
+
 func GetDefaultFilter() Filter {
 	return Filter{
-		Limit:  DefaultFilterLimit,
-		Offset: DefaultFilterOffset,
+		Limit:  FILTER_DEFAULT_LIMIT,
+		Offset: 0,
+		Status: StatusPublished,
+		Sort:   FILTER_DEFAULT_SORT,
+		Order:  FILTER_DEFAULT_ORDER,
 	}
 }

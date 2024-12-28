@@ -30,10 +30,12 @@ const (
 	FieldCustomerID = "customer_id"
 	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
 	FieldSubscriptionID = "subscription_id"
-	// FieldWalletID holds the string denoting the wallet_id field in the database.
-	FieldWalletID = "wallet_id"
+	// FieldInvoiceType holds the string denoting the invoice_type field in the database.
+	FieldInvoiceType = "invoice_type"
 	// FieldInvoiceStatus holds the string denoting the invoice_status field in the database.
 	FieldInvoiceStatus = "invoice_status"
+	// FieldPaymentStatus holds the string denoting the payment_status field in the database.
+	FieldPaymentStatus = "payment_status"
 	// FieldCurrency holds the string denoting the currency field in the database.
 	FieldCurrency = "currency"
 	// FieldAmountDue holds the string denoting the amount_due field in the database.
@@ -52,12 +54,8 @@ const (
 	FieldVoidedAt = "voided_at"
 	// FieldFinalizedAt holds the string denoting the finalized_at field in the database.
 	FieldFinalizedAt = "finalized_at"
-	// FieldPaymentIntentID holds the string denoting the payment_intent_id field in the database.
-	FieldPaymentIntentID = "payment_intent_id"
 	// FieldInvoicePdfURL holds the string denoting the invoice_pdf_url field in the database.
 	FieldInvoicePdfURL = "invoice_pdf_url"
-	// FieldAttemptCount holds the string denoting the attempt_count field in the database.
-	FieldAttemptCount = "attempt_count"
 	// FieldBillingReason holds the string denoting the billing_reason field in the database.
 	FieldBillingReason = "billing_reason"
 	// FieldMetadata holds the string denoting the metadata field in the database.
@@ -79,8 +77,9 @@ var Columns = []string{
 	FieldUpdatedBy,
 	FieldCustomerID,
 	FieldSubscriptionID,
-	FieldWalletID,
+	FieldInvoiceType,
 	FieldInvoiceStatus,
+	FieldPaymentStatus,
 	FieldCurrency,
 	FieldAmountDue,
 	FieldAmountPaid,
@@ -90,9 +89,7 @@ var Columns = []string{
 	FieldPaidAt,
 	FieldVoidedAt,
 	FieldFinalizedAt,
-	FieldPaymentIntentID,
 	FieldInvoicePdfURL,
-	FieldAttemptCount,
 	FieldBillingReason,
 	FieldMetadata,
 	FieldVersion,
@@ -121,8 +118,12 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 	// CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
 	CustomerIDValidator func(string) error
+	// InvoiceTypeValidator is a validator for the "invoice_type" field. It is called by the builders before save.
+	InvoiceTypeValidator func(string) error
 	// DefaultInvoiceStatus holds the default value on creation for the "invoice_status" field.
 	DefaultInvoiceStatus string
+	// DefaultPaymentStatus holds the default value on creation for the "payment_status" field.
+	DefaultPaymentStatus string
 	// CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	CurrencyValidator func(string) error
 	// DefaultAmountDue holds the default value on creation for the "amount_due" field.
@@ -131,8 +132,6 @@ var (
 	DefaultAmountPaid decimal.Decimal
 	// DefaultAmountRemaining holds the default value on creation for the "amount_remaining" field.
 	DefaultAmountRemaining decimal.Decimal
-	// DefaultAttemptCount holds the default value on creation for the "attempt_count" field.
-	DefaultAttemptCount int
 	// DefaultVersion holds the default value on creation for the "version" field.
 	DefaultVersion int
 )
@@ -185,14 +184,19 @@ func BySubscriptionID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionID, opts...).ToFunc()
 }
 
-// ByWalletID orders the results by the wallet_id field.
-func ByWalletID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldWalletID, opts...).ToFunc()
+// ByInvoiceType orders the results by the invoice_type field.
+func ByInvoiceType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInvoiceType, opts...).ToFunc()
 }
 
 // ByInvoiceStatus orders the results by the invoice_status field.
 func ByInvoiceStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldInvoiceStatus, opts...).ToFunc()
+}
+
+// ByPaymentStatus orders the results by the payment_status field.
+func ByPaymentStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPaymentStatus, opts...).ToFunc()
 }
 
 // ByCurrency orders the results by the currency field.
@@ -240,19 +244,9 @@ func ByFinalizedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFinalizedAt, opts...).ToFunc()
 }
 
-// ByPaymentIntentID orders the results by the payment_intent_id field.
-func ByPaymentIntentID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPaymentIntentID, opts...).ToFunc()
-}
-
 // ByInvoicePdfURL orders the results by the invoice_pdf_url field.
 func ByInvoicePdfURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldInvoicePdfURL, opts...).ToFunc()
-}
-
-// ByAttemptCount orders the results by the attempt_count field.
-func ByAttemptCount(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldAttemptCount, opts...).ToFunc()
 }
 
 // ByBillingReason orders the results by the billing_reason field.

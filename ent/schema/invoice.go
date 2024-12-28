@@ -33,13 +33,16 @@ func (Invoice) Fields() []ent.Field {
 		field.String("subscription_id").
 			Optional().
 			Nillable(),
-		field.String("wallet_id").
-			Optional().
-			Nillable(),
+		field.String("invoice_type").
+			NotEmpty().
+			Immutable(),
 		field.String("invoice_status").
 			Default(string(types.InvoiceStatusDraft)),
+		field.String("payment_status").
+			Default(string(types.InvoicePaymentStatusPending)),
 		field.String("currency").
-			NotEmpty(),
+			NotEmpty().
+			Immutable(),
 		field.Other("amount_due", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,8)",
@@ -69,14 +72,9 @@ func (Invoice) Fields() []ent.Field {
 		field.Time("finalized_at").
 			Optional().
 			Nillable(),
-		field.String("payment_intent_id").
-			Optional().
-			Nillable(),
 		field.String("invoice_pdf_url").
 			Optional().
 			Nillable(),
-		field.Int("attempt_count").
-			Default(0),
 		field.String("billing_reason").
 			Optional(),
 		field.JSON("metadata", map[string]interface{}{}).
@@ -94,11 +92,10 @@ func (Invoice) Edges() []ent.Edge {
 // Indexes of the Invoice.
 func (Invoice) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "customer_id", "status"),
-		index.Fields("tenant_id", "subscription_id", "status"),
-		index.Fields("tenant_id", "wallet_id", "status"),
-		index.Fields("tenant_id", "status", "due_date"),
-		index.Fields("tenant_id", "payment_intent_id").
-			Unique(),
+		// Common query patterns
+		index.Fields("tenant_id", "customer_id", "invoice_status", "payment_status", "status"),
+		index.Fields("tenant_id", "subscription_id", "invoice_status", "payment_status", "status"),
+		index.Fields("tenant_id", "invoice_type", "invoice_status", "payment_status", "status"),
+		index.Fields("tenant_id", "due_date", "invoice_status", "payment_status", "status"),
 	}
 }

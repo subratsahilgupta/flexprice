@@ -35,10 +35,12 @@ type Invoice struct {
 	CustomerID string `json:"customer_id,omitempty"`
 	// SubscriptionID holds the value of the "subscription_id" field.
 	SubscriptionID *string `json:"subscription_id,omitempty"`
-	// WalletID holds the value of the "wallet_id" field.
-	WalletID *string `json:"wallet_id,omitempty"`
+	// InvoiceType holds the value of the "invoice_type" field.
+	InvoiceType string `json:"invoice_type,omitempty"`
 	// InvoiceStatus holds the value of the "invoice_status" field.
 	InvoiceStatus string `json:"invoice_status,omitempty"`
+	// PaymentStatus holds the value of the "payment_status" field.
+	PaymentStatus string `json:"payment_status,omitempty"`
 	// Currency holds the value of the "currency" field.
 	Currency string `json:"currency,omitempty"`
 	// AmountDue holds the value of the "amount_due" field.
@@ -57,12 +59,8 @@ type Invoice struct {
 	VoidedAt *time.Time `json:"voided_at,omitempty"`
 	// FinalizedAt holds the value of the "finalized_at" field.
 	FinalizedAt *time.Time `json:"finalized_at,omitempty"`
-	// PaymentIntentID holds the value of the "payment_intent_id" field.
-	PaymentIntentID *string `json:"payment_intent_id,omitempty"`
 	// InvoicePdfURL holds the value of the "invoice_pdf_url" field.
 	InvoicePdfURL *string `json:"invoice_pdf_url,omitempty"`
-	// AttemptCount holds the value of the "attempt_count" field.
-	AttemptCount int `json:"attempt_count,omitempty"`
 	// BillingReason holds the value of the "billing_reason" field.
 	BillingReason string `json:"billing_reason,omitempty"`
 	// Metadata holds the value of the "metadata" field.
@@ -81,9 +79,9 @@ func (*Invoice) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case invoice.FieldAmountDue, invoice.FieldAmountPaid, invoice.FieldAmountRemaining:
 			values[i] = new(decimal.Decimal)
-		case invoice.FieldAttemptCount, invoice.FieldVersion:
+		case invoice.FieldVersion:
 			values[i] = new(sql.NullInt64)
-		case invoice.FieldID, invoice.FieldTenantID, invoice.FieldStatus, invoice.FieldCreatedBy, invoice.FieldUpdatedBy, invoice.FieldCustomerID, invoice.FieldSubscriptionID, invoice.FieldWalletID, invoice.FieldInvoiceStatus, invoice.FieldCurrency, invoice.FieldDescription, invoice.FieldPaymentIntentID, invoice.FieldInvoicePdfURL, invoice.FieldBillingReason:
+		case invoice.FieldID, invoice.FieldTenantID, invoice.FieldStatus, invoice.FieldCreatedBy, invoice.FieldUpdatedBy, invoice.FieldCustomerID, invoice.FieldSubscriptionID, invoice.FieldInvoiceType, invoice.FieldInvoiceStatus, invoice.FieldPaymentStatus, invoice.FieldCurrency, invoice.FieldDescription, invoice.FieldInvoicePdfURL, invoice.FieldBillingReason:
 			values[i] = new(sql.NullString)
 		case invoice.FieldCreatedAt, invoice.FieldUpdatedAt, invoice.FieldDueDate, invoice.FieldPaidAt, invoice.FieldVoidedAt, invoice.FieldFinalizedAt:
 			values[i] = new(sql.NullTime)
@@ -157,18 +155,23 @@ func (i *Invoice) assignValues(columns []string, values []any) error {
 				i.SubscriptionID = new(string)
 				*i.SubscriptionID = value.String
 			}
-		case invoice.FieldWalletID:
+		case invoice.FieldInvoiceType:
 			if value, ok := values[j].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field wallet_id", values[j])
+				return fmt.Errorf("unexpected type %T for field invoice_type", values[j])
 			} else if value.Valid {
-				i.WalletID = new(string)
-				*i.WalletID = value.String
+				i.InvoiceType = value.String
 			}
 		case invoice.FieldInvoiceStatus:
 			if value, ok := values[j].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field invoice_status", values[j])
 			} else if value.Valid {
 				i.InvoiceStatus = value.String
+			}
+		case invoice.FieldPaymentStatus:
+			if value, ok := values[j].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field payment_status", values[j])
+			} else if value.Valid {
+				i.PaymentStatus = value.String
 			}
 		case invoice.FieldCurrency:
 			if value, ok := values[j].(*sql.NullString); !ok {
@@ -228,25 +231,12 @@ func (i *Invoice) assignValues(columns []string, values []any) error {
 				i.FinalizedAt = new(time.Time)
 				*i.FinalizedAt = value.Time
 			}
-		case invoice.FieldPaymentIntentID:
-			if value, ok := values[j].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field payment_intent_id", values[j])
-			} else if value.Valid {
-				i.PaymentIntentID = new(string)
-				*i.PaymentIntentID = value.String
-			}
 		case invoice.FieldInvoicePdfURL:
 			if value, ok := values[j].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field invoice_pdf_url", values[j])
 			} else if value.Valid {
 				i.InvoicePdfURL = new(string)
 				*i.InvoicePdfURL = value.String
-			}
-		case invoice.FieldAttemptCount:
-			if value, ok := values[j].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field attempt_count", values[j])
-			} else if value.Valid {
-				i.AttemptCount = int(value.Int64)
 			}
 		case invoice.FieldBillingReason:
 			if value, ok := values[j].(*sql.NullString); !ok {
@@ -330,13 +320,14 @@ func (i *Invoice) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
-	if v := i.WalletID; v != nil {
-		builder.WriteString("wallet_id=")
-		builder.WriteString(*v)
-	}
+	builder.WriteString("invoice_type=")
+	builder.WriteString(i.InvoiceType)
 	builder.WriteString(", ")
 	builder.WriteString("invoice_status=")
 	builder.WriteString(i.InvoiceStatus)
+	builder.WriteString(", ")
+	builder.WriteString("payment_status=")
+	builder.WriteString(i.PaymentStatus)
 	builder.WriteString(", ")
 	builder.WriteString("currency=")
 	builder.WriteString(i.Currency)
@@ -373,18 +364,10 @@ func (i *Invoice) String() string {
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
-	if v := i.PaymentIntentID; v != nil {
-		builder.WriteString("payment_intent_id=")
-		builder.WriteString(*v)
-	}
-	builder.WriteString(", ")
 	if v := i.InvoicePdfURL; v != nil {
 		builder.WriteString("invoice_pdf_url=")
 		builder.WriteString(*v)
 	}
-	builder.WriteString(", ")
-	builder.WriteString("attempt_count=")
-	builder.WriteString(fmt.Sprintf("%v", i.AttemptCount))
 	builder.WriteString(", ")
 	builder.WriteString("billing_reason=")
 	builder.WriteString(i.BillingReason)

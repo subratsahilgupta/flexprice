@@ -1,13 +1,22 @@
 package invoice
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
-	// ErrInvoiceNotFound indicates that the requested invoice was not found
+	// ErrInvoiceNotFound is returned when an invoice is not found
 	ErrInvoiceNotFound = errors.New("invoice not found")
 
-	// ErrInvalidInvoiceStatus indicates that the invoice status transition is invalid
+	// ErrInvalidInvoiceAmount is returned when invoice amounts are invalid
+	ErrInvalidInvoiceAmount = errors.New("invalid invoice amount")
+
+	// ErrInvalidInvoiceStatus is returned when invoice status transition is invalid
 	ErrInvalidInvoiceStatus = errors.New("invalid invoice status")
+
+	// ErrInvalidPaymentStatus is returned when payment status transition is invalid
+	ErrInvalidPaymentStatus = errors.New("invalid payment status")
 
 	// ErrInvoiceAlreadyPaid indicates that the invoice has already been paid
 	ErrInvoiceAlreadyPaid = errors.New("invoice already paid")
@@ -18,3 +27,32 @@ var (
 	// ErrInvoiceNotFinalized indicates that the invoice is not in finalized status
 	ErrInvoiceNotFinalized = errors.New("invoice not finalized")
 )
+
+// ValidationError represents an error that occurs during invoice validation
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string {
+	return fmt.Sprintf("validation failed for field %s: %s", e.Field, e.Message)
+}
+
+// NewValidationError creates a new validation error
+func NewValidationError(field, message string) error {
+	return &ValidationError{
+		Field:   field,
+		Message: message,
+	}
+}
+
+// IsValidationError checks if an error is a validation error
+func IsValidationError(err error) bool {
+	_, ok := err.(*ValidationError)
+	return ok
+}
+
+// IsNotFoundError checks if an error is a not found error
+func IsNotFoundError(err error) bool {
+	return errors.Is(err, ErrInvoiceNotFound)
+}

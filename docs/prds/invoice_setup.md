@@ -2,7 +2,7 @@
 
 #### Overview
 
-The Invoice entity is a core component to enable detailed billing for Flexprice. It will handle generating invoices for various use cases, including subscriptions, wallet top-ups, and manual invoice generation. This document outlines the technical requirements and functionalities of the Invoice entity to ensure alignment with Flexprice’s goals and existing architecture.
+The Invoice entity is a core component to enable detailed billing for Flexprice. It will handle generating invoices for various use cases, including subscriptions and one-off charges. This document outlines the technical requirements and functionalities of the Invoice entity to ensure alignment with Flexprice's goals and existing architecture.
 
 ---
 
@@ -10,66 +10,70 @@ The Invoice entity is a core component to enable detailed billing for Flexprice.
 
 1. Provide a structured invoice entity to track charges and payments.
 2. Enable both manual and automated invoice creation workflows.
-3. Support multiple states for invoice lifecycle management (e.g., draft, finalized, paid, voided).
-4. Integrate seamlessly with existing subscription workflows to automate invoice generation during renewals or billing events.
-5. Support updates to payment statuses, voiding invoices, and capturing edge cases (e.g., proration, currency mismatch).
+3. Support multiple states for invoice lifecycle management.
+4. Integrate seamlessly with existing subscription workflows.
+5. Support payment status updates and void operations.
 6. Provide API endpoints for creating, retrieving, updating, and managing invoices.
 
 ---
 
 ### Functional Requirements
 
-#### Invoice Use Cases
+#### Invoice Types
 
-1. **Subscription Billing:** Automatically generate invoices during subscription renewals or at the start of a new billing period.
-2. **Wallet Top-Ups:** Generate invoices when a customer adds credits to their wallet.
-3. **Manual Invoices:** Allow users to create invoices manually via APIs for one-time charges or adjustments.
+1. **Subscription:** Automatically generated for subscription-based billing.
+2. **One-off:** Manual invoices for one-time charges.
+3. **Credit:** Credit notes for refunds or adjustments.
 
 #### Invoice States
 
-- **Draft:** Initial state for invoices that can be modified.
-- **Finalized:** Indicates the invoice is ready to be sent to the customer.
-- **Paid:** Indicates payment has been received.
-- **Voided:** Represents canceled or invalid invoices.
+1. **Invoice Status:**
+   - **Draft:** Initial state, can be modified
+   - **Finalized:** Ready for payment processing
+   - **Voided:** Canceled or invalid
+
+2. **Payment Status:**
+   - **Pending:** Awaiting payment
+   - **Succeeded:** Payment completed
+   - **Failed:** Payment attempt failed
 
 #### Supported Actions
 
-1. **Create Invoice:** Ability to create invoices manually or programmatically during subscription workflows.
-2. **Update Payment Status:** Update the status to reflect payments (e.g., partial, fully paid).
-3. **Void Invoice:** Mark an invoice as voided, ensuring no further action.
+1. **Create Invoice:** Create new invoices with specified type and details.
+2. **Update Payment Status:** Track payment lifecycle with proper validation.
+3. **Void Invoice:** Cancel an invoice when needed.
 4. **Fetch Invoice Details:** Retrieve detailed invoice information.
-5. **List Invoices:** Fetch a list of invoices filtered by customer, subscription, or status.
+5. **List Invoices:** Filter invoices by various criteria.
 
 ---
 
 ### Data Model
 
-The Invoice entity will include the following fields:
+The Invoice entity includes the following fields:
 
 | Field             | Type         | Description                                               |
 | ----------------- | ------------ | --------------------------------------------------------- |
-| `id`              | `string`     | Unique identifier for the invoice                         |
-| `customer_id`     | `string`     | ID of the customer associated with the invoice            |
-| `subscription_id` | `string`     | (Optional) ID of the subscription related to this invoice |
-| `wallet_id`       | `string`     | (Optional) ID of the wallet related to this invoice       |
-| `status`          | `enum`       | Draft, Finalized, Paid, Voided                            |
+| `id`              | `string`     | Unique identifier                                         |
+| `tenant_id`       | `string`     | Tenant identifier                                         |
+| `customer_id`     | `string`     | Customer identifier                                       |
+| `subscription_id` | `string`     | (Optional) Related subscription                           |
+| `invoice_type`    | `enum`       | Subscription, One-off, Credit                             |
+| `invoice_status`  | `enum`       | Draft, Finalized, Voided                                  |
+| `payment_status`  | `enum`       | Pending, Succeeded, Failed                                |
+| `currency`        | `string`     | Currency code (e.g., USD)                                 |
 | `amount_due`      | `decimal`    | Total amount due                                          |
-| `currency`        | `string`     | Currency code (e.g., USD, EUR)                            |
-| `amount_paid`     | `decimal`    | Total amount paid                                         |
-| `created_at`      | `datetime`   | Timestamp of invoice creation                             |
-| `updated_at`      | `datetime`   | Timestamp of last update                                  |
-| `due_date`        | `datetime`   | Due date for payment                                      |
-| `line_items`      | `[]LineItem` | List of line items in the invoice                         |
-
-#### LineItem Structure
-
-| Field         | Type      | Description                         |
-| ------------- | --------- | ----------------------------------- |
-| `id`          | `string`  | Unique identifier for the line item |
-| `description` | `string`  | Description of the charge           |
-| `amount`      | `decimal` | Amount for this line item           |
-| `quantity`    | `int`     | Quantity                            |
-| `total`       | `decimal` | Total amount (amount x quantity)    |
+| `amount_paid`     | `decimal`    | Amount paid so far                                        |
+| `amount_remaining`| `decimal`    | Amount still to be paid                                   |
+| `description`     | `string`     | Invoice description                                       |
+| `due_date`        | `datetime`   | Payment due date                                          |
+| `paid_at`         | `datetime`   | When payment was completed                                |
+| `voided_at`       | `datetime`   | When invoice was voided                                   |
+| `finalized_at`    | `datetime`   | When invoice was finalized                                |
+| `invoice_pdf_url` | `string`     | URL to invoice PDF                                        |
+| `billing_reason`  | `string`     | Reason for invoice generation                             |
+| `metadata`        | `json`       | Additional metadata                                        |
+| `version`         | `int`        | Optimistic locking version                                |
+| `status`          | `enum`       | Record status (Published, Deleted)                        |
 
 ---
 
@@ -79,94 +83,26 @@ The Invoice entity will include the following fields:
 
 **POST** `/v1/invoices`
 
-- Request:
-
 ```json
 {
   "customer_id": "cus_123",
   "subscription_id": "sub_123",
-  "wallet_id": "wallet_123",
-  "due_date": "2024-01-01T00:00:00Z",
-  "line_items": [
-    {
-      "description": "API usage",
-      "amount": 50,
-      "quantity": 2
-    }
-  ]
+  "invoice_type": "subscription",
+  "currency": "USD",
+  "amount_due": "100.00",
+  "description": "Monthly subscription charge",
+  "due_date": "2024-01-31T00:00:00Z"
 }
 ```
 
-- Response:
-
-```json
-{
-  "id": "inv_123",
-  "status": "draft",
-  "amount_due": 100,
-  "currency": "usd",
-  "created_at": "2023-12-28T00:00:00Z"
-}
-```
-
-#### Fetch Invoice
-
-**GET** `/v1/invoices/{id}`
-
-- Response:
-
-```json
-{
-  "id": "inv_123",
-  "status": "finalized",
-  "customer_id": "cus_123",
-  "amount_due": 100,
-  "amount_paid": 0,
-  "line_items": [
-    {
-      "id": "li_456",
-      "description": "API usage",
-      "amount": 50,
-      "quantity": 2,
-      "total": 100
-    }
-  ]
-}
-```
-
-#### Update Invoice Payment Status
+#### Update Payment Status
 
 **PUT** `/v1/invoices/{id}/payment`
 
-- Request:
-
 ```json
 {
-  "amount_paid": 100
-}
-```
-
-- Response:
-
-```json
-{
-  "id": "inv_123",
-  "status": "paid",
-  "amount_due": 0,
-  "amount_paid": 100
-}
-```
-
-#### Void Invoice
-
-**POST** `/v1/invoices/{id}/void`
-
-- Response:
-
-```json
-{
-  "id": "inv_123",
-  "status": "voided"
+  "payment_status": "succeeded",
+  "amount": "100.00"
 }
 ```
 
@@ -174,51 +110,44 @@ The Invoice entity will include the following fields:
 
 **GET** `/v1/invoices`
 
-- Query Parameters: `customer_id`, `status`, `subscription_id`
-- Response:
+Query Parameters:
+- `customer_id`
+- `subscription_id`
+- `invoice_type`
+- `invoice_status`
+- `payment_status`
+- `start_time`
+- `end_time`
 
-```json
-[
-  {
-    "id": "inv_123",
-    "status": "draft",
-    "amount_due": 100,
-    "currency": "usd",
-    "created_at": "2023-12-28T00:00:00Z"
-  }
-]
+---
+
+### State Transitions
+
+#### Payment Status Transitions
+
 ```
+Pending -> Succeeded
+Pending -> Failed
+Failed -> Pending
+```
+
+Each transition updates relevant fields:
+- **Succeeded:** Updates amount_paid, amount_remaining, paid_at
+- **Failed:** Resets amount_paid, updates amount_remaining
+- **Pending:** Initial state for new invoices
 
 ---
 
 ### Integration Points
 
-1. **Subscription Workflows:**
+1. **Subscription System:**
+   - Auto-generate invoices for subscription events
+   - Track subscription-related metadata
 
-   - Auto-generate invoices during subscription renewals or billing period changes.
-   - Attach line items based on aggregated usage and subscription details.
+2. **Payment Processing:**
+   - Handle payment status updates
+   - Maintain payment audit trail
 
-2. **Payment Handling:**
-
-   - Update invoice payment status upon payment capture.
-   - Void invoices for canceled subscriptions.
-
-3. **Error Handling:**
-
-   - Validate invoice creation requests for required fields (e.g., `customer_id`, `due_date`).
-   - Handle scenarios like partial payments or mismatched currencies.
-
----
-
-### Future Enhancements
-
-1. Add support for tax calculations and discounts.
-2. Introduce email notifications for customers upon invoice finalization.
-3. Enable PDF generation for invoices.
-4. Build reporting capabilities to track invoicing and payment trends.
-
----
-
-### Conclusion
-
-The Invoice entity will serve as a foundational component in Flexprice’s billing and invoicing workflows. With robust integration into existing systems, it will simplify tracking and managing billing for customers, subscriptions, and other financial activities.
+3. **Reporting System:**
+   - Track invoice metrics
+   - Generate financial reports

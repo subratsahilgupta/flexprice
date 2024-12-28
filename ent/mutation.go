@@ -37,40 +37,38 @@ const (
 // InvoiceMutation represents an operation that mutates the Invoice nodes in the graph.
 type InvoiceMutation struct {
 	config
-	op                Op
-	typ               string
-	id                *string
-	tenant_id         *string
-	status            *string
-	created_at        *time.Time
-	updated_at        *time.Time
-	created_by        *string
-	updated_by        *string
-	customer_id       *string
-	subscription_id   *string
-	wallet_id         *string
-	invoice_status    *string
-	currency          *string
-	amount_due        *decimal.Decimal
-	amount_paid       *decimal.Decimal
-	amount_remaining  *decimal.Decimal
-	description       *string
-	due_date          *time.Time
-	paid_at           *time.Time
-	voided_at         *time.Time
-	finalized_at      *time.Time
-	payment_intent_id *string
-	invoice_pdf_url   *string
-	attempt_count     *int
-	addattempt_count  *int
-	billing_reason    *string
-	metadata          *map[string]interface{}
-	version           *int
-	addversion        *int
-	clearedFields     map[string]struct{}
-	done              bool
-	oldValue          func(context.Context) (*Invoice, error)
-	predicates        []predicate.Invoice
+	op               Op
+	typ              string
+	id               *string
+	tenant_id        *string
+	status           *string
+	created_at       *time.Time
+	updated_at       *time.Time
+	created_by       *string
+	updated_by       *string
+	customer_id      *string
+	subscription_id  *string
+	invoice_type     *string
+	invoice_status   *string
+	payment_status   *string
+	currency         *string
+	amount_due       *decimal.Decimal
+	amount_paid      *decimal.Decimal
+	amount_remaining *decimal.Decimal
+	description      *string
+	due_date         *time.Time
+	paid_at          *time.Time
+	voided_at        *time.Time
+	finalized_at     *time.Time
+	invoice_pdf_url  *string
+	billing_reason   *string
+	metadata         *map[string]interface{}
+	version          *int
+	addversion       *int
+	clearedFields    map[string]struct{}
+	done             bool
+	oldValue         func(context.Context) (*Invoice, error)
+	predicates       []predicate.Invoice
 }
 
 var _ ent.Mutation = (*InvoiceMutation)(nil)
@@ -504,53 +502,40 @@ func (m *InvoiceMutation) ResetSubscriptionID() {
 	delete(m.clearedFields, invoice.FieldSubscriptionID)
 }
 
-// SetWalletID sets the "wallet_id" field.
-func (m *InvoiceMutation) SetWalletID(s string) {
-	m.wallet_id = &s
+// SetInvoiceType sets the "invoice_type" field.
+func (m *InvoiceMutation) SetInvoiceType(s string) {
+	m.invoice_type = &s
 }
 
-// WalletID returns the value of the "wallet_id" field in the mutation.
-func (m *InvoiceMutation) WalletID() (r string, exists bool) {
-	v := m.wallet_id
+// InvoiceType returns the value of the "invoice_type" field in the mutation.
+func (m *InvoiceMutation) InvoiceType() (r string, exists bool) {
+	v := m.invoice_type
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldWalletID returns the old "wallet_id" field's value of the Invoice entity.
+// OldInvoiceType returns the old "invoice_type" field's value of the Invoice entity.
 // If the Invoice object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceMutation) OldWalletID(ctx context.Context) (v *string, err error) {
+func (m *InvoiceMutation) OldInvoiceType(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldWalletID is only allowed on UpdateOne operations")
+		return v, errors.New("OldInvoiceType is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldWalletID requires an ID field in the mutation")
+		return v, errors.New("OldInvoiceType requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldWalletID: %w", err)
+		return v, fmt.Errorf("querying old value for OldInvoiceType: %w", err)
 	}
-	return oldValue.WalletID, nil
+	return oldValue.InvoiceType, nil
 }
 
-// ClearWalletID clears the value of the "wallet_id" field.
-func (m *InvoiceMutation) ClearWalletID() {
-	m.wallet_id = nil
-	m.clearedFields[invoice.FieldWalletID] = struct{}{}
-}
-
-// WalletIDCleared returns if the "wallet_id" field was cleared in this mutation.
-func (m *InvoiceMutation) WalletIDCleared() bool {
-	_, ok := m.clearedFields[invoice.FieldWalletID]
-	return ok
-}
-
-// ResetWalletID resets all changes to the "wallet_id" field.
-func (m *InvoiceMutation) ResetWalletID() {
-	m.wallet_id = nil
-	delete(m.clearedFields, invoice.FieldWalletID)
+// ResetInvoiceType resets all changes to the "invoice_type" field.
+func (m *InvoiceMutation) ResetInvoiceType() {
+	m.invoice_type = nil
 }
 
 // SetInvoiceStatus sets the "invoice_status" field.
@@ -587,6 +572,42 @@ func (m *InvoiceMutation) OldInvoiceStatus(ctx context.Context) (v string, err e
 // ResetInvoiceStatus resets all changes to the "invoice_status" field.
 func (m *InvoiceMutation) ResetInvoiceStatus() {
 	m.invoice_status = nil
+}
+
+// SetPaymentStatus sets the "payment_status" field.
+func (m *InvoiceMutation) SetPaymentStatus(s string) {
+	m.payment_status = &s
+}
+
+// PaymentStatus returns the value of the "payment_status" field in the mutation.
+func (m *InvoiceMutation) PaymentStatus() (r string, exists bool) {
+	v := m.payment_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaymentStatus returns the old "payment_status" field's value of the Invoice entity.
+// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceMutation) OldPaymentStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaymentStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaymentStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaymentStatus: %w", err)
+	}
+	return oldValue.PaymentStatus, nil
+}
+
+// ResetPaymentStatus resets all changes to the "payment_status" field.
+func (m *InvoiceMutation) ResetPaymentStatus() {
+	m.payment_status = nil
 }
 
 // SetCurrency sets the "currency" field.
@@ -978,55 +999,6 @@ func (m *InvoiceMutation) ResetFinalizedAt() {
 	delete(m.clearedFields, invoice.FieldFinalizedAt)
 }
 
-// SetPaymentIntentID sets the "payment_intent_id" field.
-func (m *InvoiceMutation) SetPaymentIntentID(s string) {
-	m.payment_intent_id = &s
-}
-
-// PaymentIntentID returns the value of the "payment_intent_id" field in the mutation.
-func (m *InvoiceMutation) PaymentIntentID() (r string, exists bool) {
-	v := m.payment_intent_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldPaymentIntentID returns the old "payment_intent_id" field's value of the Invoice entity.
-// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceMutation) OldPaymentIntentID(ctx context.Context) (v *string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPaymentIntentID is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPaymentIntentID requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPaymentIntentID: %w", err)
-	}
-	return oldValue.PaymentIntentID, nil
-}
-
-// ClearPaymentIntentID clears the value of the "payment_intent_id" field.
-func (m *InvoiceMutation) ClearPaymentIntentID() {
-	m.payment_intent_id = nil
-	m.clearedFields[invoice.FieldPaymentIntentID] = struct{}{}
-}
-
-// PaymentIntentIDCleared returns if the "payment_intent_id" field was cleared in this mutation.
-func (m *InvoiceMutation) PaymentIntentIDCleared() bool {
-	_, ok := m.clearedFields[invoice.FieldPaymentIntentID]
-	return ok
-}
-
-// ResetPaymentIntentID resets all changes to the "payment_intent_id" field.
-func (m *InvoiceMutation) ResetPaymentIntentID() {
-	m.payment_intent_id = nil
-	delete(m.clearedFields, invoice.FieldPaymentIntentID)
-}
-
 // SetInvoicePdfURL sets the "invoice_pdf_url" field.
 func (m *InvoiceMutation) SetInvoicePdfURL(s string) {
 	m.invoice_pdf_url = &s
@@ -1074,62 +1046,6 @@ func (m *InvoiceMutation) InvoicePdfURLCleared() bool {
 func (m *InvoiceMutation) ResetInvoicePdfURL() {
 	m.invoice_pdf_url = nil
 	delete(m.clearedFields, invoice.FieldInvoicePdfURL)
-}
-
-// SetAttemptCount sets the "attempt_count" field.
-func (m *InvoiceMutation) SetAttemptCount(i int) {
-	m.attempt_count = &i
-	m.addattempt_count = nil
-}
-
-// AttemptCount returns the value of the "attempt_count" field in the mutation.
-func (m *InvoiceMutation) AttemptCount() (r int, exists bool) {
-	v := m.attempt_count
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldAttemptCount returns the old "attempt_count" field's value of the Invoice entity.
-// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceMutation) OldAttemptCount(ctx context.Context) (v int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldAttemptCount is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldAttemptCount requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldAttemptCount: %w", err)
-	}
-	return oldValue.AttemptCount, nil
-}
-
-// AddAttemptCount adds i to the "attempt_count" field.
-func (m *InvoiceMutation) AddAttemptCount(i int) {
-	if m.addattempt_count != nil {
-		*m.addattempt_count += i
-	} else {
-		m.addattempt_count = &i
-	}
-}
-
-// AddedAttemptCount returns the value that was added to the "attempt_count" field in this mutation.
-func (m *InvoiceMutation) AddedAttemptCount() (r int, exists bool) {
-	v := m.addattempt_count
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetAttemptCount resets all changes to the "attempt_count" field.
-func (m *InvoiceMutation) ResetAttemptCount() {
-	m.attempt_count = nil
-	m.addattempt_count = nil
 }
 
 // SetBillingReason sets the "billing_reason" field.
@@ -1320,7 +1236,7 @@ func (m *InvoiceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceMutation) Fields() []string {
-	fields := make([]string, 0, 25)
+	fields := make([]string, 0, 24)
 	if m.tenant_id != nil {
 		fields = append(fields, invoice.FieldTenantID)
 	}
@@ -1345,11 +1261,14 @@ func (m *InvoiceMutation) Fields() []string {
 	if m.subscription_id != nil {
 		fields = append(fields, invoice.FieldSubscriptionID)
 	}
-	if m.wallet_id != nil {
-		fields = append(fields, invoice.FieldWalletID)
+	if m.invoice_type != nil {
+		fields = append(fields, invoice.FieldInvoiceType)
 	}
 	if m.invoice_status != nil {
 		fields = append(fields, invoice.FieldInvoiceStatus)
+	}
+	if m.payment_status != nil {
+		fields = append(fields, invoice.FieldPaymentStatus)
 	}
 	if m.currency != nil {
 		fields = append(fields, invoice.FieldCurrency)
@@ -1378,14 +1297,8 @@ func (m *InvoiceMutation) Fields() []string {
 	if m.finalized_at != nil {
 		fields = append(fields, invoice.FieldFinalizedAt)
 	}
-	if m.payment_intent_id != nil {
-		fields = append(fields, invoice.FieldPaymentIntentID)
-	}
 	if m.invoice_pdf_url != nil {
 		fields = append(fields, invoice.FieldInvoicePdfURL)
-	}
-	if m.attempt_count != nil {
-		fields = append(fields, invoice.FieldAttemptCount)
 	}
 	if m.billing_reason != nil {
 		fields = append(fields, invoice.FieldBillingReason)
@@ -1420,10 +1333,12 @@ func (m *InvoiceMutation) Field(name string) (ent.Value, bool) {
 		return m.CustomerID()
 	case invoice.FieldSubscriptionID:
 		return m.SubscriptionID()
-	case invoice.FieldWalletID:
-		return m.WalletID()
+	case invoice.FieldInvoiceType:
+		return m.InvoiceType()
 	case invoice.FieldInvoiceStatus:
 		return m.InvoiceStatus()
+	case invoice.FieldPaymentStatus:
+		return m.PaymentStatus()
 	case invoice.FieldCurrency:
 		return m.Currency()
 	case invoice.FieldAmountDue:
@@ -1442,12 +1357,8 @@ func (m *InvoiceMutation) Field(name string) (ent.Value, bool) {
 		return m.VoidedAt()
 	case invoice.FieldFinalizedAt:
 		return m.FinalizedAt()
-	case invoice.FieldPaymentIntentID:
-		return m.PaymentIntentID()
 	case invoice.FieldInvoicePdfURL:
 		return m.InvoicePdfURL()
-	case invoice.FieldAttemptCount:
-		return m.AttemptCount()
 	case invoice.FieldBillingReason:
 		return m.BillingReason()
 	case invoice.FieldMetadata:
@@ -1479,10 +1390,12 @@ func (m *InvoiceMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldCustomerID(ctx)
 	case invoice.FieldSubscriptionID:
 		return m.OldSubscriptionID(ctx)
-	case invoice.FieldWalletID:
-		return m.OldWalletID(ctx)
+	case invoice.FieldInvoiceType:
+		return m.OldInvoiceType(ctx)
 	case invoice.FieldInvoiceStatus:
 		return m.OldInvoiceStatus(ctx)
+	case invoice.FieldPaymentStatus:
+		return m.OldPaymentStatus(ctx)
 	case invoice.FieldCurrency:
 		return m.OldCurrency(ctx)
 	case invoice.FieldAmountDue:
@@ -1501,12 +1414,8 @@ func (m *InvoiceMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldVoidedAt(ctx)
 	case invoice.FieldFinalizedAt:
 		return m.OldFinalizedAt(ctx)
-	case invoice.FieldPaymentIntentID:
-		return m.OldPaymentIntentID(ctx)
 	case invoice.FieldInvoicePdfURL:
 		return m.OldInvoicePdfURL(ctx)
-	case invoice.FieldAttemptCount:
-		return m.OldAttemptCount(ctx)
 	case invoice.FieldBillingReason:
 		return m.OldBillingReason(ctx)
 	case invoice.FieldMetadata:
@@ -1578,12 +1487,12 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSubscriptionID(v)
 		return nil
-	case invoice.FieldWalletID:
+	case invoice.FieldInvoiceType:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetWalletID(v)
+		m.SetInvoiceType(v)
 		return nil
 	case invoice.FieldInvoiceStatus:
 		v, ok := value.(string)
@@ -1591,6 +1500,13 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetInvoiceStatus(v)
+		return nil
+	case invoice.FieldPaymentStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaymentStatus(v)
 		return nil
 	case invoice.FieldCurrency:
 		v, ok := value.(string)
@@ -1655,26 +1571,12 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetFinalizedAt(v)
 		return nil
-	case invoice.FieldPaymentIntentID:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetPaymentIntentID(v)
-		return nil
 	case invoice.FieldInvoicePdfURL:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetInvoicePdfURL(v)
-		return nil
-	case invoice.FieldAttemptCount:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetAttemptCount(v)
 		return nil
 	case invoice.FieldBillingReason:
 		v, ok := value.(string)
@@ -1705,9 +1607,6 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *InvoiceMutation) AddedFields() []string {
 	var fields []string
-	if m.addattempt_count != nil {
-		fields = append(fields, invoice.FieldAttemptCount)
-	}
 	if m.addversion != nil {
 		fields = append(fields, invoice.FieldVersion)
 	}
@@ -1719,8 +1618,6 @@ func (m *InvoiceMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *InvoiceMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
-	case invoice.FieldAttemptCount:
-		return m.AddedAttemptCount()
 	case invoice.FieldVersion:
 		return m.AddedVersion()
 	}
@@ -1732,13 +1629,6 @@ func (m *InvoiceMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *InvoiceMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case invoice.FieldAttemptCount:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddAttemptCount(v)
-		return nil
 	case invoice.FieldVersion:
 		v, ok := value.(int)
 		if !ok {
@@ -1763,9 +1653,6 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	if m.FieldCleared(invoice.FieldSubscriptionID) {
 		fields = append(fields, invoice.FieldSubscriptionID)
 	}
-	if m.FieldCleared(invoice.FieldWalletID) {
-		fields = append(fields, invoice.FieldWalletID)
-	}
 	if m.FieldCleared(invoice.FieldDescription) {
 		fields = append(fields, invoice.FieldDescription)
 	}
@@ -1780,9 +1667,6 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(invoice.FieldFinalizedAt) {
 		fields = append(fields, invoice.FieldFinalizedAt)
-	}
-	if m.FieldCleared(invoice.FieldPaymentIntentID) {
-		fields = append(fields, invoice.FieldPaymentIntentID)
 	}
 	if m.FieldCleared(invoice.FieldInvoicePdfURL) {
 		fields = append(fields, invoice.FieldInvoicePdfURL)
@@ -1816,9 +1700,6 @@ func (m *InvoiceMutation) ClearField(name string) error {
 	case invoice.FieldSubscriptionID:
 		m.ClearSubscriptionID()
 		return nil
-	case invoice.FieldWalletID:
-		m.ClearWalletID()
-		return nil
 	case invoice.FieldDescription:
 		m.ClearDescription()
 		return nil
@@ -1833,9 +1714,6 @@ func (m *InvoiceMutation) ClearField(name string) error {
 		return nil
 	case invoice.FieldFinalizedAt:
 		m.ClearFinalizedAt()
-		return nil
-	case invoice.FieldPaymentIntentID:
-		m.ClearPaymentIntentID()
 		return nil
 	case invoice.FieldInvoicePdfURL:
 		m.ClearInvoicePdfURL()
@@ -1878,11 +1756,14 @@ func (m *InvoiceMutation) ResetField(name string) error {
 	case invoice.FieldSubscriptionID:
 		m.ResetSubscriptionID()
 		return nil
-	case invoice.FieldWalletID:
-		m.ResetWalletID()
+	case invoice.FieldInvoiceType:
+		m.ResetInvoiceType()
 		return nil
 	case invoice.FieldInvoiceStatus:
 		m.ResetInvoiceStatus()
+		return nil
+	case invoice.FieldPaymentStatus:
+		m.ResetPaymentStatus()
 		return nil
 	case invoice.FieldCurrency:
 		m.ResetCurrency()
@@ -1911,14 +1792,8 @@ func (m *InvoiceMutation) ResetField(name string) error {
 	case invoice.FieldFinalizedAt:
 		m.ResetFinalizedAt()
 		return nil
-	case invoice.FieldPaymentIntentID:
-		m.ResetPaymentIntentID()
-		return nil
 	case invoice.FieldInvoicePdfURL:
 		m.ResetInvoicePdfURL()
-		return nil
-	case invoice.FieldAttemptCount:
-		m.ResetAttemptCount()
 		return nil
 	case invoice.FieldBillingReason:
 		m.ResetBillingReason()

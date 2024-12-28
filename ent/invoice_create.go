@@ -117,17 +117,9 @@ func (ic *InvoiceCreate) SetNillableSubscriptionID(s *string) *InvoiceCreate {
 	return ic
 }
 
-// SetWalletID sets the "wallet_id" field.
-func (ic *InvoiceCreate) SetWalletID(s string) *InvoiceCreate {
-	ic.mutation.SetWalletID(s)
-	return ic
-}
-
-// SetNillableWalletID sets the "wallet_id" field if the given value is not nil.
-func (ic *InvoiceCreate) SetNillableWalletID(s *string) *InvoiceCreate {
-	if s != nil {
-		ic.SetWalletID(*s)
-	}
+// SetInvoiceType sets the "invoice_type" field.
+func (ic *InvoiceCreate) SetInvoiceType(s string) *InvoiceCreate {
+	ic.mutation.SetInvoiceType(s)
 	return ic
 }
 
@@ -141,6 +133,20 @@ func (ic *InvoiceCreate) SetInvoiceStatus(s string) *InvoiceCreate {
 func (ic *InvoiceCreate) SetNillableInvoiceStatus(s *string) *InvoiceCreate {
 	if s != nil {
 		ic.SetInvoiceStatus(*s)
+	}
+	return ic
+}
+
+// SetPaymentStatus sets the "payment_status" field.
+func (ic *InvoiceCreate) SetPaymentStatus(s string) *InvoiceCreate {
+	ic.mutation.SetPaymentStatus(s)
+	return ic
+}
+
+// SetNillablePaymentStatus sets the "payment_status" field if the given value is not nil.
+func (ic *InvoiceCreate) SetNillablePaymentStatus(s *string) *InvoiceCreate {
+	if s != nil {
+		ic.SetPaymentStatus(*s)
 	}
 	return ic
 }
@@ -263,20 +269,6 @@ func (ic *InvoiceCreate) SetNillableFinalizedAt(t *time.Time) *InvoiceCreate {
 	return ic
 }
 
-// SetPaymentIntentID sets the "payment_intent_id" field.
-func (ic *InvoiceCreate) SetPaymentIntentID(s string) *InvoiceCreate {
-	ic.mutation.SetPaymentIntentID(s)
-	return ic
-}
-
-// SetNillablePaymentIntentID sets the "payment_intent_id" field if the given value is not nil.
-func (ic *InvoiceCreate) SetNillablePaymentIntentID(s *string) *InvoiceCreate {
-	if s != nil {
-		ic.SetPaymentIntentID(*s)
-	}
-	return ic
-}
-
 // SetInvoicePdfURL sets the "invoice_pdf_url" field.
 func (ic *InvoiceCreate) SetInvoicePdfURL(s string) *InvoiceCreate {
 	ic.mutation.SetInvoicePdfURL(s)
@@ -287,20 +279,6 @@ func (ic *InvoiceCreate) SetInvoicePdfURL(s string) *InvoiceCreate {
 func (ic *InvoiceCreate) SetNillableInvoicePdfURL(s *string) *InvoiceCreate {
 	if s != nil {
 		ic.SetInvoicePdfURL(*s)
-	}
-	return ic
-}
-
-// SetAttemptCount sets the "attempt_count" field.
-func (ic *InvoiceCreate) SetAttemptCount(i int) *InvoiceCreate {
-	ic.mutation.SetAttemptCount(i)
-	return ic
-}
-
-// SetNillableAttemptCount sets the "attempt_count" field if the given value is not nil.
-func (ic *InvoiceCreate) SetNillableAttemptCount(i *int) *InvoiceCreate {
-	if i != nil {
-		ic.SetAttemptCount(*i)
 	}
 	return ic
 }
@@ -396,6 +374,10 @@ func (ic *InvoiceCreate) defaults() {
 		v := invoice.DefaultInvoiceStatus
 		ic.mutation.SetInvoiceStatus(v)
 	}
+	if _, ok := ic.mutation.PaymentStatus(); !ok {
+		v := invoice.DefaultPaymentStatus
+		ic.mutation.SetPaymentStatus(v)
+	}
 	if _, ok := ic.mutation.AmountDue(); !ok {
 		v := invoice.DefaultAmountDue
 		ic.mutation.SetAmountDue(v)
@@ -407,10 +389,6 @@ func (ic *InvoiceCreate) defaults() {
 	if _, ok := ic.mutation.AmountRemaining(); !ok {
 		v := invoice.DefaultAmountRemaining
 		ic.mutation.SetAmountRemaining(v)
-	}
-	if _, ok := ic.mutation.AttemptCount(); !ok {
-		v := invoice.DefaultAttemptCount
-		ic.mutation.SetAttemptCount(v)
 	}
 	if _, ok := ic.mutation.Version(); !ok {
 		v := invoice.DefaultVersion
@@ -445,8 +423,19 @@ func (ic *InvoiceCreate) check() error {
 			return &ValidationError{Name: "customer_id", err: fmt.Errorf(`ent: validator failed for field "Invoice.customer_id": %w`, err)}
 		}
 	}
+	if _, ok := ic.mutation.InvoiceType(); !ok {
+		return &ValidationError{Name: "invoice_type", err: errors.New(`ent: missing required field "Invoice.invoice_type"`)}
+	}
+	if v, ok := ic.mutation.InvoiceType(); ok {
+		if err := invoice.InvoiceTypeValidator(v); err != nil {
+			return &ValidationError{Name: "invoice_type", err: fmt.Errorf(`ent: validator failed for field "Invoice.invoice_type": %w`, err)}
+		}
+	}
 	if _, ok := ic.mutation.InvoiceStatus(); !ok {
 		return &ValidationError{Name: "invoice_status", err: errors.New(`ent: missing required field "Invoice.invoice_status"`)}
+	}
+	if _, ok := ic.mutation.PaymentStatus(); !ok {
+		return &ValidationError{Name: "payment_status", err: errors.New(`ent: missing required field "Invoice.payment_status"`)}
 	}
 	if _, ok := ic.mutation.Currency(); !ok {
 		return &ValidationError{Name: "currency", err: errors.New(`ent: missing required field "Invoice.currency"`)}
@@ -464,9 +453,6 @@ func (ic *InvoiceCreate) check() error {
 	}
 	if _, ok := ic.mutation.AmountRemaining(); !ok {
 		return &ValidationError{Name: "amount_remaining", err: errors.New(`ent: missing required field "Invoice.amount_remaining"`)}
-	}
-	if _, ok := ic.mutation.AttemptCount(); !ok {
-		return &ValidationError{Name: "attempt_count", err: errors.New(`ent: missing required field "Invoice.attempt_count"`)}
 	}
 	if _, ok := ic.mutation.Version(); !ok {
 		return &ValidationError{Name: "version", err: errors.New(`ent: missing required field "Invoice.version"`)}
@@ -538,13 +524,17 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 		_spec.SetField(invoice.FieldSubscriptionID, field.TypeString, value)
 		_node.SubscriptionID = &value
 	}
-	if value, ok := ic.mutation.WalletID(); ok {
-		_spec.SetField(invoice.FieldWalletID, field.TypeString, value)
-		_node.WalletID = &value
+	if value, ok := ic.mutation.InvoiceType(); ok {
+		_spec.SetField(invoice.FieldInvoiceType, field.TypeString, value)
+		_node.InvoiceType = value
 	}
 	if value, ok := ic.mutation.InvoiceStatus(); ok {
 		_spec.SetField(invoice.FieldInvoiceStatus, field.TypeString, value)
 		_node.InvoiceStatus = value
+	}
+	if value, ok := ic.mutation.PaymentStatus(); ok {
+		_spec.SetField(invoice.FieldPaymentStatus, field.TypeString, value)
+		_node.PaymentStatus = value
 	}
 	if value, ok := ic.mutation.Currency(); ok {
 		_spec.SetField(invoice.FieldCurrency, field.TypeString, value)
@@ -582,17 +572,9 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 		_spec.SetField(invoice.FieldFinalizedAt, field.TypeTime, value)
 		_node.FinalizedAt = &value
 	}
-	if value, ok := ic.mutation.PaymentIntentID(); ok {
-		_spec.SetField(invoice.FieldPaymentIntentID, field.TypeString, value)
-		_node.PaymentIntentID = &value
-	}
 	if value, ok := ic.mutation.InvoicePdfURL(); ok {
 		_spec.SetField(invoice.FieldInvoicePdfURL, field.TypeString, value)
 		_node.InvoicePdfURL = &value
-	}
-	if value, ok := ic.mutation.AttemptCount(); ok {
-		_spec.SetField(invoice.FieldAttemptCount, field.TypeInt, value)
-		_node.AttemptCount = value
 	}
 	if value, ok := ic.mutation.BillingReason(); ok {
 		_spec.SetField(invoice.FieldBillingReason, field.TypeString, value)

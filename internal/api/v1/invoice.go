@@ -1,10 +1,10 @@
 package v1
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
@@ -99,63 +99,32 @@ func (h *InvoiceHandler) GetInvoice(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /v1/invoices [get]
 func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
-	filter := &types.InvoiceFilter{
-		CustomerID:     c.Query("customer_id"),
-		SubscriptionID: c.Query("subscription_id"),
-		WalletID:       c.Query("wallet_id"),
-	}
-
-	if statuses := c.QueryArray("status"); len(statuses) > 0 {
-		filter.Status = make([]types.InvoiceStatus, len(statuses))
-		for i, s := range statuses {
-			filter.Status[i] = types.InvoiceStatus(s)
-		}
-	}
-
-	if startTime := c.Query("start_time"); startTime != "" {
-		t, err := types.ParseTime(startTime)
-		if err != nil {
-			NewErrorResponse(c, http.StatusBadRequest, "invalid start time", err)
-			return
-		}
-		filter.StartTime = &t
-	}
-
-	if endTime := c.Query("end_time"); endTime != "" {
-		t, err := types.ParseTime(endTime)
-		if err != nil {
-			NewErrorResponse(c, http.StatusBadRequest, "invalid end time", err)
-			return
-		}
-		filter.EndTime = &t
-	}
-
-	if limit := c.Query("limit"); limit != "" {
-		var l int
-		if _, err := fmt.Sscanf(limit, "%d", &l); err != nil {
-			NewErrorResponse(c, http.StatusBadRequest, "invalid limit", err)
-			return
-		}
-		filter.Limit = l
-	}
-
-	if offset := c.Query("offset"); offset != "" {
-		var o int
-		if _, err := fmt.Sscanf(offset, "%d", &o); err != nil {
-			NewErrorResponse(c, http.StatusBadRequest, "invalid offset", err)
-			return
-		}
-		filter.Offset = o
-	}
-
-	response, err := h.invoiceService.ListInvoices(c.Request.Context(), filter)
-	if err != nil {
-		h.logger.Errorw("failed to list invoices", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to list invoices", err)
+	var filter types.InvoiceFilter
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		h.logger.Error("Failed to bind query parameters", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, response)
+	// Set default values if not provided
+	if filter.Limit == 0 {
+		filter.Limit = types.FILTER_DEFAULT_LIMIT
+	}
+	if filter.Sort == "" {
+		filter.Sort = types.FILTER_DEFAULT_SORT
+	}
+	if filter.Order == "" {
+		filter.Order = types.FILTER_DEFAULT_ORDER
+	}
+
+	resp, err := h.invoiceService.ListInvoices(c.Request.Context(), &filter)
+	if err != nil {
+		h.logger.Error("Failed to list invoices", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // FinalizeInvoice godoc
@@ -212,37 +181,57 @@ func (h *InvoiceHandler) VoidInvoice(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-// MarkInvoiceAsPaid godoc
-// @Summary Mark an invoice as paid
-// @Description Mark a finalized invoice as paid with payment intent ID
+// UpdatePaymentStatus godoc
+// @Summary Update invoice payment status
+// @Description Update the payment status of an invoice
 // @Tags invoices
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Param id path string true "Invoice ID"
-// @Param payment_intent_id body string true "Payment Intent ID"
-// @Success 200
+// @Param request body dto.UpdateInvoicePaymentStatusRequest true "Payment Status Update Request"
+// @Success 200 {object} dto.InvoiceResponse
 // @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /v1/invoices/{id}/mark_paid [post]
-func (h *InvoiceHandler) MarkInvoiceAsPaid(c *gin.Context) {
+// @Router /v1/invoices/{id}/payment [put]
+func (h *InvoiceHandler) UpdatePaymentStatus(c *gin.Context) {
 	id := c.Param("id")
-	if id == "" {
-		NewErrorResponse(c, http.StatusBadRequest, "invalid invoice id", nil)
-		return
-	}
-
-	var req struct {
-		PaymentIntentID string `json:"payment_intent_id" binding:"required"`
-	}
+	var req dto.UpdateInvoicePaymentStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		NewErrorResponse(c, http.StatusBadRequest, "invalid request", err)
+		h.logger.Error("Failed to bind request body", "error", err)
+		NewErrorResponse(c, http.StatusBadRequest, "failed to bind request body", err)
 		return
 	}
 
-	if err := h.invoiceService.MarkInvoiceAsPaid(c.Request.Context(), id, req.PaymentIntentID); err != nil {
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to mark invoice as paid", err)
+	if err := h.invoiceService.UpdatePaymentStatus(c.Request.Context(), id, req.PaymentStatus, req.Amount); err != nil {
+		if invoice.IsNotFoundError(err) {
+			NewErrorResponse(c, http.StatusNotFound, "invoice not found", err)
+			return
+		}
+		if invoice.IsValidationError(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		h.logger.Error("Failed to update invoice payment status",
+			"invoice_id", id,
+			"payment_status", req.PaymentStatus,
+			"error", err,
+		)
+		NewErrorResponse(c, http.StatusInternalServerError, "failed to update invoice payment status", err)
 		return
 	}
 
-	c.Status(http.StatusOK)
+	// Get updated invoice
+	resp, err := h.invoiceService.GetInvoice(c.Request.Context(), id)
+	if err != nil {
+		h.logger.Error("Failed to get updated invoice",
+			"invoice_id", id,
+			"error", err,
+		)
+		NewErrorResponse(c, http.StatusInternalServerError, "failed to get updated invoice", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }

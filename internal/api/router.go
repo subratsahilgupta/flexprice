@@ -146,24 +146,21 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			tenantRoutes.GET("/:id", handlers.Tenant.GetTenantByID)
 		}
 
-		// Admin routes (API Key only)
-		adminRoutes := v1Private.Group("/admin")
-		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, logger))
-		{
-			// All admin routes to go here
-		}
-	}
-
-	v1Routes := router.Group("/v1")
-	{
-		invoices := v1Routes.Group("/invoices")
+		invoices := v1Private.Group("/invoices")
 		{
 			invoices.POST("", handlers.Invoice.CreateInvoice)
 			invoices.GET("", handlers.Invoice.ListInvoices)
 			invoices.GET("/:id", handlers.Invoice.GetInvoice)
 			invoices.POST("/:id/finalize", handlers.Invoice.FinalizeInvoice)
 			invoices.POST("/:id/void", handlers.Invoice.VoidInvoice)
-			invoices.POST("/:id/mark_paid", handlers.Invoice.MarkInvoiceAsPaid)
+			invoices.PUT("/:id/payment", handlers.Invoice.UpdatePaymentStatus)
+		}
+
+		// Admin routes (API Key only)
+		adminRoutes := v1Private.Group("/admin")
+		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, logger))
+		{
+			// All admin routes to go here
 		}
 	}
 
