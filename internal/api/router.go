@@ -25,6 +25,7 @@ type Handlers struct {
 	Wallet       *v1.WalletHandler
 	Tenant       *v1.TenantHandler
 	Cron         *cron.SubscriptionHandler
+	Invoice      *v1.InvoiceHandler
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
@@ -150,6 +151,19 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, logger))
 		{
 			// All admin routes to go here
+		}
+	}
+
+	v1Routes := router.Group("/v1")
+	{
+		invoices := v1Routes.Group("/invoices")
+		{
+			invoices.POST("", handlers.Invoice.CreateInvoice)
+			invoices.GET("", handlers.Invoice.ListInvoices)
+			invoices.GET("/:id", handlers.Invoice.GetInvoice)
+			invoices.POST("/:id/finalize", handlers.Invoice.FinalizeInvoice)
+			invoices.POST("/:id/void", handlers.Invoice.VoidInvoice)
+			invoices.POST("/:id/mark_paid", handlers.Invoice.MarkInvoiceAsPaid)
 		}
 	}
 

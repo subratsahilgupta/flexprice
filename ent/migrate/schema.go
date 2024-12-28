@@ -8,6 +8,68 @@ import (
 )
 
 var (
+	// InvoicesColumns holds the columns for the "invoices" table.
+	InvoicesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "tenant_id", Type: field.TypeString},
+		{Name: "status", Type: field.TypeString, Default: "published"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "customer_id", Type: field.TypeString},
+		{Name: "subscription_id", Type: field.TypeString, Nullable: true},
+		{Name: "wallet_id", Type: field.TypeString, Nullable: true},
+		{Name: "invoice_status", Type: field.TypeString, Default: "DRAFT"},
+		{Name: "currency", Type: field.TypeString},
+		{Name: "amount_due", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "amount_paid", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "amount_remaining", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "description", Type: field.TypeString, Nullable: true},
+		{Name: "due_date", Type: field.TypeTime, Nullable: true},
+		{Name: "paid_at", Type: field.TypeTime, Nullable: true},
+		{Name: "voided_at", Type: field.TypeTime, Nullable: true},
+		{Name: "finalized_at", Type: field.TypeTime, Nullable: true},
+		{Name: "payment_intent_id", Type: field.TypeString, Nullable: true},
+		{Name: "invoice_pdf_url", Type: field.TypeString, Nullable: true},
+		{Name: "attempt_count", Type: field.TypeInt, Default: 0},
+		{Name: "billing_reason", Type: field.TypeString, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "version", Type: field.TypeInt, Default: 1},
+	}
+	// InvoicesTable holds the schema information for the "invoices" table.
+	InvoicesTable = &schema.Table{
+		Name:       "invoices",
+		Columns:    InvoicesColumns,
+		PrimaryKey: []*schema.Column{InvoicesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "invoice_tenant_id_customer_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[2]},
+			},
+			{
+				Name:    "invoice_tenant_id_subscription_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[8], InvoicesColumns[2]},
+			},
+			{
+				Name:    "invoice_tenant_id_wallet_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[9], InvoicesColumns[2]},
+			},
+			{
+				Name:    "invoice_tenant_id_status_due_date",
+				Unique:  false,
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[2], InvoicesColumns[16]},
+			},
+			{
+				Name:    "invoice_tenant_id_payment_intent_id",
+				Unique:  true,
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[20]},
+			},
+		},
+	}
 	// SubscriptionsColumns holds the columns for the "subscriptions" table.
 	SubscriptionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -150,6 +212,7 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		InvoicesTable,
 		SubscriptionsTable,
 		WalletsTable,
 		WalletTransactionsTable,

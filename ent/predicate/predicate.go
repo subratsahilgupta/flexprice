@@ -6,6 +6,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// Invoice is the predicate function for invoice builders.
+type Invoice func(*sql.Selector)
+
 // Subscription is the predicate function for subscription builders.
 type Subscription func(*sql.Selector)
 

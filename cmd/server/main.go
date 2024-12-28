@@ -84,6 +84,8 @@ func main() {
 			repository.NewSubscriptionRepository,
 			repository.NewWalletRepository,
 			repository.NewTenantRepository,
+			repository.NewEnvironmentRepository,
+			repository.NewInvoiceRepository,
 
 			// Services
 			service.NewMeterService,
@@ -96,6 +98,7 @@ func main() {
 			service.NewSubscriptionService,
 			service.NewWalletService,
 			service.NewTenantService,
+			service.NewInvoiceService,
 
 			// Handlers
 			provideHandlers,
@@ -123,6 +126,7 @@ func provideHandlers(
 	subscriptionService service.SubscriptionService,
 	walletService service.WalletService,
 	tenantService service.TenantService,
+	invoiceService service.InvoiceService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:       v1.NewEventsHandler(eventService, logger),
@@ -136,6 +140,7 @@ func provideHandlers(
 		Wallet:       v1.NewWalletHandler(walletService, logger),
 		Tenant:       v1.NewTenantHandler(tenantService, logger),
 		Cron:         cron.NewSubscriptionHandler(subscriptionService, logger),
+		Invoice:      v1.NewInvoiceHandler(invoiceService, logger),
 	}
 }
 
