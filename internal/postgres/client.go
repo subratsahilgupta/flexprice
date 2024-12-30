@@ -16,6 +16,18 @@ import (
 	"go.uber.org/fx"
 )
 
+// IClient defines the interface for postgres client operations
+type IClient interface {
+	// WithTx wraps the given function in a transaction
+	WithTx(ctx context.Context, fn func(context.Context) error) error
+
+	// TxFromContext returns the transaction from context if it exists
+	TxFromContext(ctx context.Context) *ent.Tx
+
+	// Querier returns the current transaction client if in a transaction, or the regular client
+	Querier(ctx context.Context) *ent.Client
+}
+
 // Client wraps ent.Client to provide transaction management
 type Client struct {
 	entClient *ent.Client

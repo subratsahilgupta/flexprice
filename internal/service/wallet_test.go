@@ -5,7 +5,10 @@ import (
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
+	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
@@ -17,6 +20,8 @@ type WalletServiceSuite struct {
 	ctx           context.Context
 	walletService *walletService
 	walletRepo    *testutil.InMemoryWalletRepository
+	logger        *logger.Logger
+	client        postgres.IClient
 }
 
 func TestWalletService(t *testing.T) {
@@ -27,8 +32,25 @@ func (s *WalletServiceSuite) SetupTest() {
 	s.ctx = testutil.SetupContext()
 	s.walletRepo = testutil.NewInMemoryWalletStore()
 
+	// Initialize logger with test config
+	cfg := &config.Configuration{
+		Logging: config.LoggingConfig{
+			Level: types.LogLevelDebug,
+		},
+	}
+	var err error
+	s.logger, err = logger.NewLogger(cfg)
+	if err != nil {
+		s.T().Fatalf("failed to create logger: %v", err)
+	}
+
+	// Initialize mock postgres client
+	s.client = testutil.NewMockPostgresClient(s.logger)
+
 	s.walletService = &walletService{
 		walletRepo: s.walletRepo,
+		logger:     s.logger,
+		client:     s.client,
 	}
 }
 
@@ -111,11 +133,11 @@ func (s *WalletServiceSuite) TestTerminateWallet() {
 	// Verify the wallet status
 	updatedWallet, _ := s.walletRepo.GetWalletByID(s.ctx, "wallet-1")
 	s.Equal(types.WalletStatusClosed, updatedWallet.WalletStatus)
-	s.Equal(decimal.NewFromInt(0), updatedWallet.Balance)
+	s.Equal(decimal.NewFromInt(0).Equal(updatedWallet.Balance), true)
 
 	// Verify transaction creation
 	transactions, _ := s.walletRepo.GetTransactionsByWalletID(s.ctx, "wallet-1", 10, 0)
 	s.Len(transactions, 1)
 	s.Equal(types.TransactionTypeDebit, transactions[0].Type)
-	s.Equal(decimal.NewFromInt(100), transactions[0].Amount)
+	s.Equal(decimal.NewFromInt(100).Equal(transactions[0].Amount), true)
 }

@@ -54,7 +54,7 @@ type walletService struct {
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
 	publisher        publisher.EventPublisher
-	client           *postgres.Client
+	client           postgres.IClient
 }
 
 // NewWalletService creates a new instance of WalletService
@@ -67,7 +67,7 @@ func NewWalletService(
 	eventRepo events.Repository,
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
-	client *postgres.Client,
+	client postgres.IClient,
 	publisher publisher.EventPublisher,
 ) WalletService {
 	return &walletService{
