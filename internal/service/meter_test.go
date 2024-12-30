@@ -16,7 +16,7 @@ type MeterServiceSuite struct {
 	suite.Suite
 	ctx     context.Context
 	service MeterService
-	store   *testutil.InMemoryMeterRepository
+	store   *testutil.InMemoryMeterStore
 }
 
 func TestMeterService(t *testing.T) {
