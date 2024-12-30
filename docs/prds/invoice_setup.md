@@ -77,6 +77,38 @@ The Invoice entity includes the following fields:
 
 ---
 
+### Subscription Integration
+
+The invoice system is tightly integrated with the subscription workflow to automate billing:
+
+1. **Billing Period Updates:**
+   - Every 15 minutes, the system checks for subscriptions due for billing period updates
+   - For each subscription, in a transaction:
+     1. Creates a draft invoice for the current period
+     2. Calculates usage charges for the period
+     3. Finalizes the invoice
+     4. Updates subscription billing period
+   - If any step fails, the entire transaction is rolled back
+
+2. **Usage Calculation:**
+   - System aggregates usage events for the billing period
+   - Applies pricing tiers and rules based on subscription plan
+   - Includes both recurring charges and usage-based charges
+
+3. **Invoice Generation:**
+   - Automatically creates draft invoice with:
+     - Subscription details
+     - Usage breakdown
+     - Due date (7 days from period end)
+   - Finalizes invoice immediately to start payment collection
+
+4. **Error Handling:**
+   - Transactional processing ensures data consistency
+   - Failed subscriptions are logged and can be retried
+   - Monitoring alerts for processing failures
+
+---
+
 ### API Endpoints
 
 #### Create Invoice
@@ -143,6 +175,7 @@ Each transition updates relevant fields:
 1. **Subscription System:**
    - Auto-generate invoices for subscription events
    - Track subscription-related metadata
+   - Handle billing period transitions
 
 2. **Payment Processing:**
    - Handle payment status updates
@@ -151,3 +184,19 @@ Each transition updates relevant fields:
 3. **Reporting System:**
    - Track invoice metrics
    - Generate financial reports
+
+---
+
+### Monitoring and Alerts
+
+1. **Key Metrics:**
+   - Invoice generation success rate
+   - Payment success rate
+   - Processing time for billing updates
+   - Number of failed transactions
+
+2. **Alerts:**
+   - Failed subscription processing
+   - Payment processing errors
+   - Unusual payment patterns
+   - System performance degradation

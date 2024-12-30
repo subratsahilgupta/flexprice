@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -46,6 +47,7 @@ func (r *CreateInvoiceRequest) Validate() error {
 
 func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice, error) {
 	invoice := &invoice.Invoice{
+		ID:              uuid.New().String(),
 		CustomerID:      r.CustomerID,
 		SubscriptionID:  r.SubscriptionID,
 		InvoiceType:     r.InvoiceType,
@@ -62,27 +64,16 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 	// Default invoice status and payment status
 	if r.InvoiceStatus != nil {
 		invoice.InvoiceStatus = *r.InvoiceStatus
-	} else {
-		invoice.InvoiceStatus = types.InvoiceStatusFinalized
 	}
+
 	if r.PaymentStatus != nil {
 		invoice.PaymentStatus = *r.PaymentStatus
 	} else {
-		invoice.PaymentStatus = types.InvoicePaymentStatusSucceeded
+		invoice.PaymentStatus = types.InvoicePaymentStatusPending
 	}
 
 	if r.AmountPaid != nil {
 		invoice.AmountPaid = *r.AmountPaid
-	} else {
-		invoice.AmountPaid = r.AmountDue
-	}
-
-	// Calculated Amount Remaining
-	invoice.AmountRemaining = invoice.AmountDue.Sub(invoice.AmountPaid)
-
-	// Validate invoice
-	if err := invoice.Validate(); err != nil {
-		return nil, err
 	}
 	return invoice, nil
 }

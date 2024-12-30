@@ -57,6 +57,10 @@ const (
 	InvoiceBillingReasonManual InvoiceBillingReason = "MANUAL"
 )
 
+const (
+	InvoiceDefaultDueDays = 30
+)
+
 // InvoiceFilter represents the filter options for listing invoices
 type InvoiceFilter struct {
 	Filter
