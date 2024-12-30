@@ -27,7 +27,7 @@ type RepositoryParams struct {
 
 	Logger       *logger.Logger
 	DB           *postgres.DB
-	EntClient    *postgres.Client
+	EntClient    postgres.IClient
 	ClickHouseDB *clickhouse.ClickHouseStore
 }
 

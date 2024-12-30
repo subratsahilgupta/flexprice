@@ -15,11 +15,11 @@ import (
 )
 
 type subscriptionRepository struct {
-	client *postgres.Client
+	client postgres.IClient
 	logger *logger.Logger
 }
 
-func NewSubscriptionRepository(client *postgres.Client, logger *logger.Logger) domainSub.Repository {
+func NewSubscriptionRepository(client postgres.IClient, logger *logger.Logger) domainSub.Repository {
 	return &subscriptionRepository{
 		client: client,
 		logger: logger,

@@ -82,7 +82,7 @@ func NewEntClient(config *config.Configuration, logger *logger.Logger) (*ent.Cli
 }
 
 // NewClient creates a new ent client wrapper with transaction management
-func NewClient(client *ent.Client, logger *logger.Logger) *Client {
+func NewClient(client *ent.Client, logger *logger.Logger) IClient {
 	return &Client{
 		entClient: client,
 		logger:    logger,

@@ -843,6 +843,13 @@ definitions:
       type:
         type: string
     type: object
+  dto.UpdateMeterRequest:
+    properties:
+      filters:
+        items:
+          $ref: '#/definitions/meter.Filter'
+        type: array
+    type: object
   dto.UpdatePlanPriceRequest:
     properties:
       amount:
@@ -2061,6 +2068,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Get meter
+      tags:
+      - meters
+    put:
+      consumes:
+      - application/json
+      description: Update an existing meter
+      parameters:
+      - description: Meter ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Meter configuration
+        in: body
+        name: meter
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateMeterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MeterResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update meter
       tags:
       - meters
   /meters/{id}/disable:
