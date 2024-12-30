@@ -37,6 +37,11 @@ require (
 )
 
 require (
+	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/google/go-querystring v1.1.0 // indirect
+)
+
+require (
 	ariga.io/atlas v0.19.1-0.20240203083654-5948b60a8e43 // indirect
 	github.com/ClickHouse/ch-go v0.61.5 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
@@ -78,11 +83,9 @@ require (
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
-	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
