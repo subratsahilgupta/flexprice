@@ -120,11 +120,6 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[16], SubscriptionsColumns[10], SubscriptionsColumns[2]},
 			},
-			{
-				Name:    "subscription_tenant_id_lookup_key",
-				Unique:  true,
-				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7]},
-			},
 		},
 	}
 	// WalletsColumns holds the columns for the "wallets" table.

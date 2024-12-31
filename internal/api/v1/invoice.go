@@ -33,7 +33,7 @@ func NewInvoiceHandler(invoiceService service.InvoiceService, logger *logger.Log
 // @Success 201 {object} dto.InvoiceResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /v1/invoices [post]
+// @Router /invoices [post]
 func (h *InvoiceHandler) CreateInvoice(c *gin.Context) {
 	var req dto.CreateInvoiceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -62,7 +62,7 @@ func (h *InvoiceHandler) CreateInvoice(c *gin.Context) {
 // @Success 200 {object} dto.InvoiceResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /v1/invoices/{id} [get]
+// @Router /invoices/{id} [get]
 func (h *InvoiceHandler) GetInvoice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -97,7 +97,7 @@ func (h *InvoiceHandler) GetInvoice(c *gin.Context) {
 // @Success 200 {object} dto.ListInvoicesResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /v1/invoices [get]
+// @Router /invoices [get]
 func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
 	var filter types.InvoiceFilter
 	if err := c.ShouldBindQuery(&filter); err != nil {
@@ -134,10 +134,10 @@ func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path string true "Invoice ID"
-// @Success 200
+// @Success 200 {object} gin.H
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /v1/invoices/{id}/finalize [post]
+// @Router /invoices/{id}/finalize [post]
 func (h *InvoiceHandler) FinalizeInvoice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -151,7 +151,7 @@ func (h *InvoiceHandler) FinalizeInvoice(c *gin.Context) {
 		return
 	}
 
-	c.Status(http.StatusOK)
+	c.JSON(http.StatusOK, gin.H{"message": "invoice finalized successfully"})
 }
 
 // VoidInvoice godoc
@@ -161,10 +161,10 @@ func (h *InvoiceHandler) FinalizeInvoice(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path string true "Invoice ID"
-// @Success 200
+// @Success 200 {object} gin.H
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /v1/invoices/{id}/void [post]
+// @Router /invoices/{id}/void [post]
 func (h *InvoiceHandler) VoidInvoice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -178,7 +178,7 @@ func (h *InvoiceHandler) VoidInvoice(c *gin.Context) {
 		return
 	}
 
-	c.Status(http.StatusOK)
+	c.JSON(http.StatusOK, gin.H{"message": "invoice voided successfully"})
 }
 
 // UpdatePaymentStatus godoc
@@ -194,7 +194,7 @@ func (h *InvoiceHandler) VoidInvoice(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /v1/invoices/{id}/payment [put]
+// @Router /invoices/{id}/payment [put]
 func (h *InvoiceHandler) UpdatePaymentStatus(c *gin.Context) {
 	id := c.Param("id")
 	var req dto.UpdateInvoicePaymentStatusRequest

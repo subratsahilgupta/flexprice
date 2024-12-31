@@ -140,7 +140,6 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
 	now := time.Now().UTC()
 	inv.InvoiceStatus = types.InvoiceStatusFinalized
 	inv.FinalizedAt = &now
-	inv.Version++
 
 	if err := s.invoiceRepo.Update(ctx, inv); err != nil {
 		return fmt.Errorf("failed to update invoice: %w", err)
@@ -157,14 +156,17 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to get invoice: %w", err)
 	}
 
-	if inv.InvoiceStatus == types.InvoiceStatusVoided {
-		return fmt.Errorf("invoice cannot be voided")
+	allowedInvoiceStatuses := []types.InvoiceStatus{
+		types.InvoiceStatusDraft,
+		types.InvoiceStatusFinalized,
+	}
+	if !lo.Contains(allowedInvoiceStatuses, inv.InvoiceStatus) {
+		return fmt.Errorf("invoice status - %s is not allowed", inv.InvoiceStatus)
 	}
 
 	now := time.Now().UTC()
 	inv.InvoiceStatus = types.InvoiceStatusVoided
 	inv.VoidedAt = &now
-	inv.Version++
 
 	if err := s.invoiceRepo.Update(ctx, inv); err != nil {
 		return fmt.Errorf("failed to update invoice: %w", err)
@@ -181,24 +183,37 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 		return fmt.Errorf("failed to get invoice: %w", err)
 	}
 
+	// Validate the invoice status
+	allowedInvoiceStatuses := []types.InvoiceStatus{
+		types.InvoiceStatusDraft,
+		types.InvoiceStatusFinalized,
+	}
+	if !lo.Contains(allowedInvoiceStatuses, inv.InvoiceStatus) {
+		return fmt.Errorf("invoice status - %s is not allowed", inv.InvoiceStatus)
+	}
+
 	// Validate the payment status transition
 	if err := s.validatePaymentStatusTransition(inv.PaymentStatus, status); err != nil {
 		return fmt.Errorf("invalid payment status transition: %w", err)
 	}
 
+	// Validate the request amount
+	if amount != nil && amount.IsNegative() {
+		return fmt.Errorf("amount must be non-negative")
+	}
+
 	now := time.Now().UTC()
 	inv.PaymentStatus = status
-	inv.Version++
 
 	switch status {
-	case types.InvoicePaymentStatusSucceeded:
+	case types.InvoicePaymentStatusPending:
 		if amount != nil {
 			inv.AmountPaid = *amount
-			inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
-		} else {
-			inv.AmountPaid = inv.AmountDue
-			inv.AmountRemaining = decimal.Zero
+			inv.AmountRemaining = inv.AmountDue.Sub(*amount)
 		}
+	case types.InvoicePaymentStatusSucceeded:
+		inv.AmountPaid = inv.AmountDue
+		inv.AmountRemaining = decimal.Zero
 		inv.PaidAt = &now
 	case types.InvoicePaymentStatusFailed:
 		inv.AmountPaid = decimal.Zero

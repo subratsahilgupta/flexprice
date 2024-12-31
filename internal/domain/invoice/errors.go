@@ -56,3 +56,29 @@ func IsValidationError(err error) bool {
 func IsNotFoundError(err error) bool {
 	return errors.Is(err, ErrInvoiceNotFound)
 }
+
+// VersionConflictError represents an error that occurs during optimistic locking
+type VersionConflictError struct {
+	ID            string
+	CurrentVersion int
+	ExpectedVersion int
+}
+
+func (e *VersionConflictError) Error() string {
+	return fmt.Sprintf("version conflict for invoice %s: current version %d, expected version %d", e.ID, e.CurrentVersion, e.ExpectedVersion)
+}
+
+// NewVersionConflictError creates a new version conflict error
+func NewVersionConflictError(id string, currentVersion, expectedVersion int) error {
+	return &VersionConflictError{
+		ID:            id,
+		CurrentVersion: currentVersion,
+		ExpectedVersion: expectedVersion,
+	}
+}
+
+// IsVersionConflictError checks if an error is a version conflict error
+func IsVersionConflictError(err error) bool {
+	_, ok := err.(*VersionConflictError)
+	return ok
+}

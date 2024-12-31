@@ -48,10 +48,6 @@ func init() {
 func main() {
 	var opts []fx.Option
 	opts = append(opts,
-		// Ent client module
-		postgres.Module(),
-		sentry.Module(),
-
 		fx.Provide(
 			// Config
 			config.NewConfig,
@@ -59,8 +55,13 @@ func main() {
 			// Logger
 			logger.NewLogger,
 
+			// Monitoring
+			sentry.NewSentryService,
+
 			// DB
 			postgres.NewDB,
+			postgres.NewEntClient,
+			postgres.NewClient,
 			clickhouse.NewClickHouseStore,
 
 			// Optional DBs
@@ -106,7 +107,7 @@ func main() {
 			// Router
 			provideRouter,
 		),
-		fx.Invoke(startServer),
+		fx.Invoke(sentry.RegisterHooks, startServer),
 	)
 
 	app := fx.New(opts...)

@@ -76,7 +76,18 @@ func (r *invoiceRepository) Get(ctx context.Context, id string) (*domainInvoice.
 
 func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoice) error {
 	client := r.client.Querier(ctx)
-	_, err := client.Invoice.UpdateOneID(inv.ID).
+
+	// Use predicate-based update for optimistic locking
+	query := client.Invoice.Update().
+		Where(
+			invoice.ID(inv.ID),
+			invoice.TenantID(types.GetTenantID(ctx)),
+			invoice.Status(string(types.StatusPublished)),
+			invoice.Version(inv.Version), // Version check for optimistic locking
+		)
+
+	// Set all fields
+	query.
 		SetInvoiceStatus(string(inv.InvoiceStatus)).
 		SetPaymentStatus(string(inv.PaymentStatus)).
 		SetAmountDue(inv.AmountDue).
@@ -88,19 +99,35 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetNillableVoidedAt(inv.VoidedAt).
 		SetNillableFinalizedAt(inv.FinalizedAt).
 		SetNillableInvoicePdfURL(inv.InvoicePDFURL).
-		SetBillingReason(inv.BillingReason).
+		SetBillingReason(string(inv.BillingReason)).
 		SetMetadata(inv.Metadata).
-		SetVersion(inv.Version).
-		SetStatus(string(inv.Status)).
 		SetUpdatedAt(inv.UpdatedAt).
 		SetUpdatedBy(inv.UpdatedBy).
-		Save(ctx)
+		AddVersion(1) // Increment version atomically
+
+	// Execute update
+	n, err := query.Save(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
-			return domainInvoice.ErrInvoiceNotFound
-		}
 		return fmt.Errorf("failed to update invoice: %w", err)
 	}
+	if n == 0 {
+		// No rows were updated - either record doesn't exist or version mismatch
+		exists, err := client.Invoice.Query().
+			Where(
+				invoice.ID(inv.ID),
+				invoice.TenantID(types.GetTenantID(ctx)),
+			).
+			Exist(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check invoice existence: %w", err)
+		}
+		if !exists {
+			return domainInvoice.ErrInvoiceNotFound
+		}
+		// Record exists but version mismatch
+		return domainInvoice.NewVersionConflictError(inv.ID, inv.Version, inv.Version+1)
+	}
+
 	return nil
 }
 
