@@ -71,8 +71,14 @@ func NewEntClient(config *config.Configuration, logger *logger.Logger) (*ent.Cli
 
 	client := ent.NewClient(opts...)
 
+	logger.Debugw("connected to postgres",
+		"host", config.Postgres.Host,
+		"port", config.Postgres.Port,
+		"auto_migrate", config.Postgres.AutoMigrate,
+	)
 	// Run the auto migration tool if enabled
 	if config.Postgres.AutoMigrate {
+		logger.Debugw("running auto migration")
 		if err := client.Schema.Create(context.Background()); err != nil {
 			return nil, fmt.Errorf("failed creating schema resources: %w", err)
 		}

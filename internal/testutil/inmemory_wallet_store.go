@@ -9,20 +9,20 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-type InMemoryWalletRepository struct {
+type InMemoryWalletStore struct {
 	mu           sync.RWMutex
 	wallets      map[string]*wallet.Wallet
 	transactions map[string]*wallet.Transaction
 }
 
-func NewInMemoryWalletStore() *InMemoryWalletRepository {
-	return &InMemoryWalletRepository{
+func NewInMemoryWalletStore() *InMemoryWalletStore {
+	return &InMemoryWalletStore{
 		wallets:      make(map[string]*wallet.Wallet),
 		transactions: make(map[string]*wallet.Transaction),
 	}
 }
 
-func (r *InMemoryWalletRepository) CreateWallet(ctx context.Context, w *wallet.Wallet) error {
+func (r *InMemoryWalletStore) CreateWallet(ctx context.Context, w *wallet.Wallet) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -34,7 +34,7 @@ func (r *InMemoryWalletRepository) CreateWallet(ctx context.Context, w *wallet.W
 	return nil
 }
 
-func (r *InMemoryWalletRepository) GetWalletByID(ctx context.Context, id string) (*wallet.Wallet, error) {
+func (r *InMemoryWalletStore) GetWalletByID(ctx context.Context, id string) (*wallet.Wallet, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -44,7 +44,7 @@ func (r *InMemoryWalletRepository) GetWalletByID(ctx context.Context, id string)
 	return nil, fmt.Errorf("wallet not found")
 }
 
-func (r *InMemoryWalletRepository) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*wallet.Wallet, error) {
+func (r *InMemoryWalletStore) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*wallet.Wallet, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -57,7 +57,7 @@ func (r *InMemoryWalletRepository) GetWalletsByCustomerID(ctx context.Context, c
 	return result, nil
 }
 
-func (r *InMemoryWalletRepository) UpdateWalletStatus(ctx context.Context, id string, status types.WalletStatus) error {
+func (r *InMemoryWalletStore) UpdateWalletStatus(ctx context.Context, id string, status types.WalletStatus) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -70,7 +70,7 @@ func (r *InMemoryWalletRepository) UpdateWalletStatus(ctx context.Context, id st
 	return nil
 }
 
-func (r *InMemoryWalletRepository) DebitWallet(ctx context.Context, op *wallet.WalletOperation) error {
+func (r *InMemoryWalletStore) DebitWallet(ctx context.Context, op *wallet.WalletOperation) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -101,7 +101,7 @@ func (r *InMemoryWalletRepository) DebitWallet(ctx context.Context, op *wallet.W
 	return nil
 }
 
-func (r *InMemoryWalletRepository) CreditWallet(ctx context.Context, op *wallet.WalletOperation) error {
+func (r *InMemoryWalletStore) CreditWallet(ctx context.Context, op *wallet.WalletOperation) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -128,7 +128,7 @@ func (r *InMemoryWalletRepository) CreditWallet(ctx context.Context, op *wallet.
 	return nil
 }
 
-func (r *InMemoryWalletRepository) GetTransactionsByWalletID(ctx context.Context, walletID string, limit, offset int) ([]*wallet.Transaction, error) {
+func (r *InMemoryWalletStore) GetTransactionsByWalletID(ctx context.Context, walletID string, limit, offset int) ([]*wallet.Transaction, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -152,7 +152,7 @@ func (r *InMemoryWalletRepository) GetTransactionsByWalletID(ctx context.Context
 	return result[offset:end], nil
 }
 
-func (r *InMemoryWalletRepository) GetTransactionByID(ctx context.Context, id string) (*wallet.Transaction, error) {
+func (r *InMemoryWalletStore) GetTransactionByID(ctx context.Context, id string) (*wallet.Transaction, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -162,7 +162,7 @@ func (r *InMemoryWalletRepository) GetTransactionByID(ctx context.Context, id st
 	return nil, fmt.Errorf("transaction not found")
 }
 
-func (r *InMemoryWalletRepository) UpdateTransactionStatus(ctx context.Context, id string, status types.TransactionStatus) error {
+func (r *InMemoryWalletStore) UpdateTransactionStatus(ctx context.Context, id string, status types.TransactionStatus) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -175,36 +175,10 @@ func (r *InMemoryWalletRepository) UpdateTransactionStatus(ctx context.Context, 
 	return nil
 }
 
-func (r *InMemoryWalletRepository) WithTx(ctx context.Context, fn func(wallet.Repository) error) error {
-	// Clone the current state to simulate transaction isolation
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (s *InMemoryWalletStore) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	clonedWallets := make(map[string]*wallet.Wallet)
-	for k, v := range r.wallets {
-		cloned := *v
-		clonedWallets[k] = &cloned
-	}
-
-	clonedTransactions := make(map[string]*wallet.Transaction)
-	for k, v := range r.transactions {
-		cloned := *v
-		clonedTransactions[k] = &cloned
-	}
-
-	// Create a temporary repository for the transaction
-	tempRepo := &InMemoryWalletRepository{
-		wallets:      clonedWallets,
-		transactions: clonedTransactions,
-	}
-
-	// Execute the transaction function
-	if err := fn(tempRepo); err != nil {
-		return err // Rollback by not applying changes
-	}
-
-	// Commit changes back to the main repository
-	r.wallets = tempRepo.wallets
-	r.transactions = tempRepo.transactions
-	return nil
+	s.wallets = make(map[string]*wallet.Wallet)
+	s.transactions = make(map[string]*wallet.Transaction)
 }

@@ -20,7 +20,7 @@ func NewTenantHandler(service service.TenantService, log *logger.Logger) *Tenant
 
 // @Summary Create a new tenant
 // @Description Create a new tenant
-// @Tags Tenant
+// @Tags tenants
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -47,7 +47,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 
 // @Summary Get tenant by ID
 // @Description Get tenant by ID
-// @Tags Tenant
+// @Tags tenants
 // @Accept json
 // @Produce json
 // @Security BearerAuth

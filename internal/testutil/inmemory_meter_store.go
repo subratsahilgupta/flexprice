@@ -9,18 +9,18 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-type InMemoryMeterRepository struct {
+type InMemoryMeterStore struct {
 	mu     sync.RWMutex
 	meters map[string]*meter.Meter
 }
 
-func NewInMemoryMeterStore() *InMemoryMeterRepository {
-	return &InMemoryMeterRepository{
+func NewInMemoryMeterStore() *InMemoryMeterStore {
+	return &InMemoryMeterStore{
 		meters: make(map[string]*meter.Meter),
 	}
 }
 
-func (s *InMemoryMeterRepository) CreateMeter(ctx context.Context, m *meter.Meter) error {
+func (s *InMemoryMeterStore) CreateMeter(ctx context.Context, m *meter.Meter) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -40,7 +40,7 @@ func (s *InMemoryMeterRepository) CreateMeter(ctx context.Context, m *meter.Mete
 	return nil
 }
 
-func (s *InMemoryMeterRepository) GetMeter(ctx context.Context, id string) (*meter.Meter, error) {
+func (s *InMemoryMeterStore) GetMeter(ctx context.Context, id string) (*meter.Meter, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -51,7 +51,7 @@ func (s *InMemoryMeterRepository) GetMeter(ctx context.Context, id string) (*met
 	return m, nil
 }
 
-func (s *InMemoryMeterRepository) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
+func (s *InMemoryMeterStore) GetAllMeters(ctx context.Context) ([]*meter.Meter, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -62,7 +62,7 @@ func (s *InMemoryMeterRepository) GetAllMeters(ctx context.Context) ([]*meter.Me
 	return meters, nil
 }
 
-func (s *InMemoryMeterRepository) DisableMeter(ctx context.Context, id string) error {
+func (s *InMemoryMeterStore) DisableMeter(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -75,7 +75,7 @@ func (s *InMemoryMeterRepository) DisableMeter(ctx context.Context, id string) e
 	return nil
 }
 
-func (s *InMemoryMeterRepository) UpdateMeter(ctx context.Context, id string, filters []meter.Filter) error {
+func (s *InMemoryMeterStore) UpdateMeter(ctx context.Context, id string, filters []meter.Filter) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -124,6 +124,13 @@ func (s *InMemoryMeterRepository) UpdateMeter(ctx context.Context, id string, fi
 
 	m.Filters = updatedFilters
 	return nil
+}
+
+func (s *InMemoryMeterStore) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.meters = make(map[string]*meter.Meter)
 }
 
 // Helper function to check if a slice contains a specific value

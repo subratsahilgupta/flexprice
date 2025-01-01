@@ -1,14 +1,10 @@
 package service
 
 import (
-	"context"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
-	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
@@ -16,12 +12,11 @@ import (
 )
 
 type WalletServiceSuite struct {
-	suite.Suite
-	ctx           context.Context
-	walletService *walletService
-	walletRepo    *testutil.InMemoryWalletRepository
-	logger        *logger.Logger
-	client        postgres.IClient
+	testutil.BaseServiceTestSuite
+	service  WalletService
+	testData struct {
+		wallet *wallet.Wallet
+	}
 }
 
 func TestWalletService(t *testing.T) {
@@ -29,39 +24,52 @@ func TestWalletService(t *testing.T) {
 }
 
 func (s *WalletServiceSuite) SetupTest() {
-	s.ctx = testutil.SetupContext()
-	s.walletRepo = testutil.NewInMemoryWalletStore()
+	s.BaseServiceTestSuite.SetupTest()
+	s.setupService()
+	s.setupTestData()
+}
 
-	// Initialize logger with test config
-	cfg := &config.Configuration{
-		Logging: config.LoggingConfig{
-			Level: types.LogLevelDebug,
-		},
-	}
-	var err error
-	s.logger, err = logger.NewLogger(cfg)
-	if err != nil {
-		s.T().Fatalf("failed to create logger: %v", err)
-	}
+// TearDownTest is called after each test
+func (s *WalletServiceSuite) TearDownTest() {
+	s.BaseServiceTestSuite.TearDownTest()
+}
 
-	// Initialize mock postgres client
-	s.client = testutil.NewMockPostgresClient(s.logger)
+func (s *WalletServiceSuite) setupService() {
+	stores := s.GetStores()
+	s.service = NewWalletService(
+		stores.WalletRepo,
+		s.GetLogger(),
+		stores.SubscriptionRepo,
+		stores.PlanRepo,
+		stores.PriceRepo,
+		stores.EventRepo,
+		stores.MeterRepo,
+		stores.CustomerRepo,
+		stores.InvoiceRepo,
+		s.GetDB(),
+		s.GetPublisher(),
+	)
+}
 
-	s.walletService = &walletService{
-		walletRepo: s.walletRepo,
-		logger:     s.logger,
-		client:     s.client,
+func (s *WalletServiceSuite) setupTestData() {
+	s.testData.wallet = &wallet.Wallet{
+		ID:           "wallet-1",
+		CustomerID:   "customer-1",
+		Currency:     "USD",
+		Balance:      decimal.NewFromInt(1000),
+		WalletStatus: types.WalletStatusActive,
 	}
+	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), s.testData.wallet))
 }
 
 func (s *WalletServiceSuite) TestCreateWallet() {
 	req := &dto.CreateWalletRequest{
-		CustomerID: "customer-1",
+		CustomerID: "customer-2",
 		Currency:   "USD",
 		Metadata:   types.Metadata{"key": "value"},
 	}
 
-	resp, err := s.walletService.CreateWallet(s.ctx, req)
+	resp, err := s.service.CreateWallet(s.GetContext(), req)
 	s.NoError(err)
 	s.NotNil(resp)
 	s.Equal(req.CustomerID, resp.CustomerID)
@@ -70,74 +78,54 @@ func (s *WalletServiceSuite) TestCreateWallet() {
 }
 
 func (s *WalletServiceSuite) TestGetWalletByID() {
-	w := &wallet.Wallet{
-		ID:           "wallet-1",
-		CustomerID:   "customer-1",
-		Currency:     "USD",
-		Balance:      decimal.NewFromInt(1000),
-		WalletStatus: types.WalletStatusActive,
-	}
-	_ = s.walletRepo.CreateWallet(s.ctx, w)
-
-	resp, err := s.walletService.GetWalletByID(s.ctx, "wallet-1")
+	resp, err := s.service.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
 	s.NoError(err)
 	s.NotNil(resp)
-	s.Equal(w.CustomerID, resp.CustomerID)
-	s.Equal(w.Currency, resp.Currency)
-	s.Equal(w.Balance, resp.Balance)
+	s.Equal(s.testData.wallet.CustomerID, resp.CustomerID)
+	s.Equal(s.testData.wallet.Currency, resp.Currency)
+	s.Equal(s.testData.wallet.Balance, resp.Balance)
 }
 
 func (s *WalletServiceSuite) TestGetWalletsByCustomerID() {
-	_ = s.walletRepo.CreateWallet(s.ctx, &wallet.Wallet{ID: "wallet-1", CustomerID: "customer-1", Currency: "USD", Balance: decimal.NewFromInt(1000)})
-	_ = s.walletRepo.CreateWallet(s.ctx, &wallet.Wallet{ID: "wallet-2", CustomerID: "customer-1", Currency: "EUR", Balance: decimal.NewFromInt(500)})
+	// Create another wallet for same customer
+	wallet2 := &wallet.Wallet{
+		ID:           "wallet-2",
+		CustomerID:   s.testData.wallet.CustomerID,
+		Currency:     "EUR",
+		Balance:      decimal.NewFromInt(500),
+		WalletStatus: types.WalletStatusActive,
+	}
+	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), wallet2))
 
-	resp, err := s.walletService.GetWalletsByCustomerID(s.ctx, "customer-1")
+	resp, err := s.service.GetWalletsByCustomerID(s.GetContext(), s.testData.wallet.CustomerID)
 	s.NoError(err)
 	s.Len(resp, 2)
 }
 
 func (s *WalletServiceSuite) TestTopUpWallet() {
-	w := &wallet.Wallet{
-		ID:           "wallet-1",
-		CustomerID:   "customer-1",
-		Currency:     "USD",
-		Balance:      decimal.NewFromInt(1000),
-		WalletStatus: types.WalletStatusActive,
-	}
-	_ = s.walletRepo.CreateWallet(s.ctx, w)
-
 	topUpReq := &dto.TopUpWalletRequest{
 		Amount: decimal.NewFromInt(500),
 	}
-	resp, err := s.walletService.TopUpWallet(s.ctx, "wallet-1", topUpReq)
+	resp, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, topUpReq)
 	s.NoError(err)
 	s.NotNil(resp)
 	s.Equal(decimal.NewFromInt(1500), resp.Balance)
 }
 
 func (s *WalletServiceSuite) TestTerminateWallet() {
-	// Create a wallet
-	w := &wallet.Wallet{
-		ID:           "wallet-1",
-		CustomerID:   "customer-1",
-		Currency:     "USD",
-		Balance:      decimal.NewFromInt(100),
-		WalletStatus: types.WalletStatusActive,
-	}
-	_ = s.walletRepo.CreateWallet(s.ctx, w)
-
-	// Terminate the wallet
-	err := s.walletService.TerminateWallet(s.ctx, "wallet-1")
+	err := s.service.TerminateWallet(s.GetContext(), s.testData.wallet.ID)
 	s.NoError(err)
 
 	// Verify the wallet status
-	updatedWallet, _ := s.walletRepo.GetWalletByID(s.ctx, "wallet-1")
+	updatedWallet, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
+	s.NoError(err)
 	s.Equal(types.WalletStatusClosed, updatedWallet.WalletStatus)
 	s.Equal(decimal.NewFromInt(0).Equal(updatedWallet.Balance), true)
 
 	// Verify transaction creation
-	transactions, _ := s.walletRepo.GetTransactionsByWalletID(s.ctx, "wallet-1", 10, 0)
+	transactions, err := s.GetStores().WalletRepo.GetTransactionsByWalletID(s.GetContext(), s.testData.wallet.ID, 10, 0)
+	s.NoError(err)
 	s.Len(transactions, 1)
 	s.Equal(types.TransactionTypeDebit, transactions[0].Type)
-	s.Equal(decimal.NewFromInt(100).Equal(transactions[0].Amount), true)
+	s.Equal(decimal.NewFromInt(1000).Equal(transactions[0].Amount), true)
 }

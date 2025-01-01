@@ -5,6 +5,7 @@ package ent
 import (
 	"time"
 
+	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/wallet"
@@ -16,6 +17,65 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	invoiceMixin := schema.Invoice{}.Mixin()
+	invoiceMixinFields0 := invoiceMixin[0].Fields()
+	_ = invoiceMixinFields0
+	invoiceFields := schema.Invoice{}.Fields()
+	_ = invoiceFields
+	// invoiceDescTenantID is the schema descriptor for tenant_id field.
+	invoiceDescTenantID := invoiceMixinFields0[0].Descriptor()
+	// invoice.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	invoice.TenantIDValidator = invoiceDescTenantID.Validators[0].(func(string) error)
+	// invoiceDescStatus is the schema descriptor for status field.
+	invoiceDescStatus := invoiceMixinFields0[1].Descriptor()
+	// invoice.DefaultStatus holds the default value on creation for the status field.
+	invoice.DefaultStatus = invoiceDescStatus.Default.(string)
+	// invoiceDescCreatedAt is the schema descriptor for created_at field.
+	invoiceDescCreatedAt := invoiceMixinFields0[2].Descriptor()
+	// invoice.DefaultCreatedAt holds the default value on creation for the created_at field.
+	invoice.DefaultCreatedAt = invoiceDescCreatedAt.Default.(func() time.Time)
+	// invoiceDescUpdatedAt is the schema descriptor for updated_at field.
+	invoiceDescUpdatedAt := invoiceMixinFields0[3].Descriptor()
+	// invoice.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	invoice.DefaultUpdatedAt = invoiceDescUpdatedAt.Default.(func() time.Time)
+	// invoice.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	invoice.UpdateDefaultUpdatedAt = invoiceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// invoiceDescCustomerID is the schema descriptor for customer_id field.
+	invoiceDescCustomerID := invoiceFields[1].Descriptor()
+	// invoice.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
+	invoice.CustomerIDValidator = invoiceDescCustomerID.Validators[0].(func(string) error)
+	// invoiceDescInvoiceType is the schema descriptor for invoice_type field.
+	invoiceDescInvoiceType := invoiceFields[3].Descriptor()
+	// invoice.InvoiceTypeValidator is a validator for the "invoice_type" field. It is called by the builders before save.
+	invoice.InvoiceTypeValidator = invoiceDescInvoiceType.Validators[0].(func(string) error)
+	// invoiceDescInvoiceStatus is the schema descriptor for invoice_status field.
+	invoiceDescInvoiceStatus := invoiceFields[4].Descriptor()
+	// invoice.DefaultInvoiceStatus holds the default value on creation for the invoice_status field.
+	invoice.DefaultInvoiceStatus = invoiceDescInvoiceStatus.Default.(string)
+	// invoiceDescPaymentStatus is the schema descriptor for payment_status field.
+	invoiceDescPaymentStatus := invoiceFields[5].Descriptor()
+	// invoice.DefaultPaymentStatus holds the default value on creation for the payment_status field.
+	invoice.DefaultPaymentStatus = invoiceDescPaymentStatus.Default.(string)
+	// invoiceDescCurrency is the schema descriptor for currency field.
+	invoiceDescCurrency := invoiceFields[6].Descriptor()
+	// invoice.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	invoice.CurrencyValidator = invoiceDescCurrency.Validators[0].(func(string) error)
+	// invoiceDescAmountDue is the schema descriptor for amount_due field.
+	invoiceDescAmountDue := invoiceFields[7].Descriptor()
+	// invoice.DefaultAmountDue holds the default value on creation for the amount_due field.
+	invoice.DefaultAmountDue = invoiceDescAmountDue.Default.(decimal.Decimal)
+	// invoiceDescAmountPaid is the schema descriptor for amount_paid field.
+	invoiceDescAmountPaid := invoiceFields[8].Descriptor()
+	// invoice.DefaultAmountPaid holds the default value on creation for the amount_paid field.
+	invoice.DefaultAmountPaid = invoiceDescAmountPaid.Default.(decimal.Decimal)
+	// invoiceDescAmountRemaining is the schema descriptor for amount_remaining field.
+	invoiceDescAmountRemaining := invoiceFields[9].Descriptor()
+	// invoice.DefaultAmountRemaining holds the default value on creation for the amount_remaining field.
+	invoice.DefaultAmountRemaining = invoiceDescAmountRemaining.Default.(decimal.Decimal)
+	// invoiceDescVersion is the schema descriptor for version field.
+	invoiceDescVersion := invoiceFields[18].Descriptor()
+	// invoice.DefaultVersion holds the default value on creation for the version field.
+	invoice.DefaultVersion = invoiceDescVersion.Default.(int)
 	subscriptionMixin := schema.Subscription{}.Mixin()
 	subscriptionMixinFields0 := subscriptionMixin[0].Fields()
 	_ = subscriptionMixinFields0
