@@ -19,7 +19,7 @@ type UserHandler struct {
 
 // @Summary Get user info
 // @Description Get the current user's information
-// @Tags users
+// @Tags Users
 // @Accept json
 // @Produce json
 // @Security BearerAuth

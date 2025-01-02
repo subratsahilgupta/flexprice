@@ -20,7 +20,7 @@ func NewMeterHandler(service service.MeterService, log *logger.Logger) *MeterHan
 
 // @Summary Create meter
 // @Description Create a new meter with the specified configuration
-// @Tags meters
+// @Tags Meters
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -49,7 +49,7 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 
 // @Summary List meters
 // @Description Get all meters
-// @Tags meters
+// @Tags Meters
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {array} dto.MeterResponse
@@ -73,7 +73,7 @@ func (h *MeterHandler) GetAllMeters(c *gin.Context) {
 
 // @Summary Get meter
 // @Description Get a specific meter by ID
-// @Tags meters
+// @Tags Meters
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Meter ID"
@@ -95,7 +95,7 @@ func (h *MeterHandler) GetMeter(c *gin.Context) {
 
 // @Summary Disable meter [TODO: Deprecate]
 // @Description Disable an existing meter
-// @Tags meters
+// @Tags Meters
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Meter ID"
@@ -116,7 +116,7 @@ func (h *MeterHandler) DisableMeter(c *gin.Context) {
 
 // @Summary Delete meter
 // @Description Delete an existing meter
-// @Tags meters
+// @Tags Meters
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Meter ID"
@@ -129,13 +129,15 @@ func (h *MeterHandler) DeleteMeter(c *gin.Context) {
 	ctx := c.Request.Context()
 	if err := h.service.DisableMeter(ctx, id); err != nil {
 		h.log.Error("Failed to delete meter", "error", err)
+		NewErrorResponse(c, http.StatusInternalServerError, "Failed to delete meter", err)
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Meter deleted successfully"})
 }
 
 // @Summary Update meter
 // @Description Update an existing meter
-// @Tags meters
+// @Tags Meters
 // @Accept json
 // @Produce json
 // @Security BearerAuth

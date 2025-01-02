@@ -21,7 +21,7 @@ func NewPlanHandler(service service.PlanService, log *logger.Logger) *PlanHandle
 
 // @Summary Create a new plan
 // @Description Create a new plan with the specified configuration
-// @Tags plans
+// @Tags Plans
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -48,7 +48,7 @@ func (h *PlanHandler) CreatePlan(c *gin.Context) {
 
 // @Summary Get a plan by ID
 // @Description Get a plan by ID
-// @Tags plans
+// @Tags Plans
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -71,7 +71,7 @@ func (h *PlanHandler) GetPlan(c *gin.Context) {
 
 // @Summary Get plans
 // @Description Get plans with the specified filter
-// @Tags plans
+// @Tags Plans
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -98,7 +98,7 @@ func (h *PlanHandler) GetPlans(c *gin.Context) {
 
 // @Summary Update a plan by ID
 // @Description Update a plan by ID
-// @Tags plans
+// @Tags Plans
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -128,7 +128,7 @@ func (h *PlanHandler) UpdatePlan(c *gin.Context) {
 
 // @Summary Delete a plan by ID
 // @Description Delete a plan by ID
-// @Tags plans
+// @Tags Plans
 // @Accept json
 // @Produce json
 // @Security BearerAuth
