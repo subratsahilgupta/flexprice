@@ -25,7 +25,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "auth"
+                    "Auth"
                 ],
                 "summary": "Login",
                 "parameters": [
@@ -65,7 +65,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "auth"
+                    "Auth"
                 ],
                 "summary": "Sign up",
                 "parameters": [
@@ -110,7 +110,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Get customers",
                 "parameters": [
@@ -185,7 +185,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Create a customer",
                 "parameters": [
@@ -236,7 +236,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Get a customer",
                 "parameters": [
@@ -283,7 +283,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Update a customer",
                 "parameters": [
@@ -339,7 +339,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Delete a customer",
                 "parameters": [
@@ -385,7 +385,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Get wallets by customer ID",
                 "parameters": [
@@ -437,7 +437,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "environments"
+                    "Environments"
                 ],
                 "summary": "Get environments",
                 "parameters": [
@@ -512,7 +512,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "environments"
+                    "Environments"
                 ],
                 "summary": "Create an environment",
                 "parameters": [
@@ -563,7 +563,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "environments"
+                    "Environments"
                 ],
                 "summary": "Get an environment",
                 "parameters": [
@@ -616,7 +616,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "environments"
+                    "Environments"
                 ],
                 "summary": "Update an environment",
                 "parameters": [
@@ -677,7 +677,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "events"
+                    "Events"
                 ],
                 "summary": "Get raw events",
                 "parameters": [
@@ -759,7 +759,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "events"
+                    "Events"
                 ],
                 "summary": "Ingest event",
                 "parameters": [
@@ -810,7 +810,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "events"
+                    "Events"
                 ],
                 "summary": "Get usage statistics",
                 "parameters": [
@@ -858,7 +858,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "events"
+                    "Events"
                 ],
                 "summary": "Get usage by meter",
                 "parameters": [
@@ -910,7 +910,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "List invoices",
                 "parameters": [
@@ -997,7 +997,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Create a new invoice",
                 "parameters": [
@@ -1043,7 +1043,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Get an invoice by ID",
                 "parameters": [
@@ -1087,7 +1087,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Finalize an invoice",
                 "parameters": [
@@ -1136,7 +1136,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Update invoice payment status",
                 "parameters": [
@@ -1195,7 +1195,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Void an invoice",
                 "parameters": [
@@ -1241,7 +1241,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "List meters",
                 "responses": {
@@ -1276,7 +1276,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Create meter",
                 "parameters": [
@@ -1324,7 +1324,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Get meter",
                 "parameters": [
@@ -1371,7 +1371,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Update meter",
                 "parameters": [
@@ -1430,7 +1430,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Delete meter",
                 "parameters": [
@@ -1479,7 +1479,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Disable meter [TODO: Deprecate]",
                 "parameters": [
@@ -1531,7 +1531,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Get plans",
                 "parameters": [
@@ -1606,7 +1606,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Create a new plan",
                 "parameters": [
@@ -1657,7 +1657,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Get a plan by ID",
                 "parameters": [
@@ -1704,7 +1704,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Update a plan by ID",
                 "parameters": [
@@ -1760,7 +1760,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Delete a plan by ID",
                 "parameters": [
@@ -1809,7 +1809,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Get prices",
                 "parameters": [
@@ -1884,7 +1884,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Create a new price",
                 "parameters": [
@@ -1935,7 +1935,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Get a price by ID",
                 "parameters": [
@@ -1982,7 +1982,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Update a price",
                 "parameters": [
@@ -2038,7 +2038,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Delete a price",
                 "parameters": [
@@ -2084,7 +2084,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "List subscriptions",
                 "parameters": [
@@ -2154,7 +2154,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "Create subscription",
                 "parameters": [
@@ -2202,7 +2202,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "Get usage by subscription",
                 "parameters": [
@@ -2250,7 +2250,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "Get subscription",
                 "parameters": [
@@ -2299,7 +2299,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "Cancel subscription",
                 "parameters": [
@@ -2354,7 +2354,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "tenants"
+                    "Tenants"
                 ],
                 "summary": "Create a new tenant",
                 "parameters": [
@@ -2405,7 +2405,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "tenants"
+                    "Tenants"
                 ],
                 "summary": "Get tenant by ID",
                 "parameters": [
@@ -2454,7 +2454,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "users"
+                    "Users"
                 ],
                 "summary": "Get user info",
                 "responses": {
@@ -2488,7 +2488,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Create a new wallet",
                 "parameters": [
@@ -2539,7 +2539,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Get wallet by ID",
                 "parameters": [
@@ -2594,7 +2594,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Get wallet balance",
                 "parameters": [
@@ -2644,7 +2644,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Terminate a wallet",
                 "parameters": [
@@ -2699,7 +2699,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Top up wallet",
                 "parameters": [
@@ -2763,7 +2763,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Get wallet transactions",
                 "parameters": [

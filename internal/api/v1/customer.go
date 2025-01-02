@@ -21,7 +21,7 @@ func NewCustomerHandler(service service.CustomerService, log *logger.Logger) *Cu
 
 // @Summary Create a customer
 // @Description Create a customer
-// @Tags customers
+// @Tags Customers
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -48,7 +48,7 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 
 // @Summary Get a customer
 // @Description Get a customer
-// @Tags customers
+// @Tags Customers
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -71,7 +71,7 @@ func (h *CustomerHandler) GetCustomer(c *gin.Context) {
 
 // @Summary Get customers
 // @Description Get customers
-// @Tags customers
+// @Tags Customers
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -98,7 +98,7 @@ func (h *CustomerHandler) GetCustomers(c *gin.Context) {
 
 // @Summary Update a customer
 // @Description Update a customer
-// @Tags customers
+// @Tags Customers
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -128,7 +128,7 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 
 // @Summary Delete a customer
 // @Description Delete a customer
-// @Tags customers
+// @Tags Customers
 // @Accept json
 // @Produce json
 // @Security BearerAuth

@@ -21,7 +21,7 @@ func NewSubscriptionHandler(service service.SubscriptionService, log *logger.Log
 
 // @Summary Create subscription
 // @Description Create a new subscription
-// @Tags subscriptions
+// @Tags Subscriptions
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -48,7 +48,7 @@ func (h *SubscriptionHandler) CreateSubscription(c *gin.Context) {
 
 // @Summary Get subscription
 // @Description Get a subscription by ID
-// @Tags subscriptions
+// @Tags Subscriptions
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Subscription ID"
@@ -69,7 +69,7 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 
 // @Summary List subscriptions
 // @Description Get subscriptions with optional filtering
-// @Tags subscriptions
+// @Tags Subscriptions
 // @Produce json
 // @Security BearerAuth
 // @Param customer_id query string false "Filter by customer ID"
@@ -100,7 +100,7 @@ func (h *SubscriptionHandler) GetSubscriptions(c *gin.Context) {
 
 // @Summary Cancel subscription
 // @Description Cancel a subscription
-// @Tags subscriptions
+// @Tags Subscriptions
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -125,7 +125,7 @@ func (h *SubscriptionHandler) CancelSubscription(c *gin.Context) {
 
 // @Summary Get usage by subscription
 // @Description Get usage by subscription
-// @Tags subscriptions
+// @Tags Subscriptions
 // @Produce json
 // @Security BearerAuth
 // @Param request body dto.GetUsageBySubscriptionRequest true "Request"

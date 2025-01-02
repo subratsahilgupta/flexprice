@@ -25,7 +25,7 @@ func NewWalletHandler(walletService service.WalletService, logger *logger.Logger
 // CreateWallet godoc
 // @Summary Create a new wallet
 // @Description Create a new wallet for a customer
-// @Tags wallets
+// @Tags Wallets
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -53,7 +53,7 @@ func (h *WalletHandler) CreateWallet(c *gin.Context) {
 // GetWalletsByCustomerID godoc
 // @Summary Get wallets by customer ID
 // @Description Get all wallets for a customer
-// @Tags wallets
+// @Tags Wallets
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -81,7 +81,7 @@ func (h *WalletHandler) GetWalletsByCustomerID(c *gin.Context) {
 // GetWalletByID godoc
 // @Summary Get wallet by ID
 // @Description Get a wallet by its ID
-// @Tags wallets
+// @Tags Wallets
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -110,7 +110,7 @@ func (h *WalletHandler) GetWalletByID(c *gin.Context) {
 // GetWalletTransactions godoc
 // @Summary Get wallet transactions
 // @Description Get transactions for a wallet with pagination
-// @Tags wallets
+// @Tags Wallets
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -149,7 +149,7 @@ func (h *WalletHandler) GetWalletTransactions(c *gin.Context) {
 // TopUpWallet godoc
 // @Summary Top up wallet
 // @Description Add credits to a wallet
-// @Tags wallets
+// @Tags Wallets
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -185,7 +185,7 @@ func (h *WalletHandler) TopUpWallet(c *gin.Context) {
 // GetWalletBalance godoc
 // @Summary Get wallet balance
 // @Description Get real-time balance of a wallet
-// @Tags wallets
+// @Tags Wallets
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -214,7 +214,7 @@ func (h *WalletHandler) GetWalletBalance(c *gin.Context) {
 // TerminateWallet godoc
 // @Summary Terminate a wallet
 // @Description Terminates a wallet by closing it and debiting remaining balance
-// @Tags wallets
+// @Tags Wallets
 // @Accept json
 // @Produce json
 // @Param id path string true "Wallet ID"

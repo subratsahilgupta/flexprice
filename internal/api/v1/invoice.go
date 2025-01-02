@@ -26,7 +26,7 @@ func NewInvoiceHandler(invoiceService service.InvoiceService, logger *logger.Log
 // CreateInvoice godoc
 // @Summary Create a new invoice
 // @Description Create a new invoice with the provided details
-// @Tags invoices
+// @Tags Invoices
 // @Accept json
 // @Produce json
 // @Param invoice body dto.CreateInvoiceRequest true "Invoice details"
@@ -55,7 +55,7 @@ func (h *InvoiceHandler) CreateInvoice(c *gin.Context) {
 // GetInvoice godoc
 // @Summary Get an invoice by ID
 // @Description Get detailed information about an invoice
-// @Tags invoices
+// @Tags Invoices
 // @Accept json
 // @Produce json
 // @Param id path string true "Invoice ID"
@@ -83,7 +83,7 @@ func (h *InvoiceHandler) GetInvoice(c *gin.Context) {
 // ListInvoices godoc
 // @Summary List invoices
 // @Description List invoices with optional filtering
-// @Tags invoices
+// @Tags Invoices
 // @Accept json
 // @Produce json
 // @Param customer_id query string false "Customer ID"
@@ -130,7 +130,7 @@ func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
 // FinalizeInvoice godoc
 // @Summary Finalize an invoice
 // @Description Finalize a draft invoice
-// @Tags invoices
+// @Tags Invoices
 // @Accept json
 // @Produce json
 // @Param id path string true "Invoice ID"
@@ -157,7 +157,7 @@ func (h *InvoiceHandler) FinalizeInvoice(c *gin.Context) {
 // VoidInvoice godoc
 // @Summary Void an invoice
 // @Description Void an invoice that hasn't been paid
-// @Tags invoices
+// @Tags Invoices
 // @Accept json
 // @Produce json
 // @Param id path string true "Invoice ID"
@@ -184,7 +184,7 @@ func (h *InvoiceHandler) VoidInvoice(c *gin.Context) {
 // UpdatePaymentStatus godoc
 // @Summary Update invoice payment status
 // @Description Update the payment status of an invoice
-// @Tags invoices
+// @Tags Invoices
 // @Accept json
 // @Produce json
 // @Security BearerAuth

@@ -22,7 +22,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "auth"
+                    "Auth"
                 ],
                 "summary": "Login",
                 "parameters": [
@@ -62,7 +62,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "auth"
+                    "Auth"
                 ],
                 "summary": "Sign up",
                 "parameters": [
@@ -107,7 +107,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Get customers",
                 "parameters": [
@@ -182,7 +182,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Create a customer",
                 "parameters": [
@@ -233,7 +233,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Get a customer",
                 "parameters": [
@@ -280,7 +280,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Update a customer",
                 "parameters": [
@@ -336,7 +336,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "customers"
+                    "Customers"
                 ],
                 "summary": "Delete a customer",
                 "parameters": [
@@ -382,7 +382,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Get wallets by customer ID",
                 "parameters": [
@@ -434,7 +434,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "environments"
+                    "Environments"
                 ],
                 "summary": "Get environments",
                 "parameters": [
@@ -509,7 +509,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "environments"
+                    "Environments"
                 ],
                 "summary": "Create an environment",
                 "parameters": [
@@ -560,7 +560,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "environments"
+                    "Environments"
                 ],
                 "summary": "Get an environment",
                 "parameters": [
@@ -613,7 +613,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "environments"
+                    "Environments"
                 ],
                 "summary": "Update an environment",
                 "parameters": [
@@ -674,7 +674,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "events"
+                    "Events"
                 ],
                 "summary": "Get raw events",
                 "parameters": [
@@ -756,7 +756,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "events"
+                    "Events"
                 ],
                 "summary": "Ingest event",
                 "parameters": [
@@ -807,7 +807,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "events"
+                    "Events"
                 ],
                 "summary": "Get usage statistics",
                 "parameters": [
@@ -855,7 +855,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "events"
+                    "Events"
                 ],
                 "summary": "Get usage by meter",
                 "parameters": [
@@ -907,7 +907,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "List invoices",
                 "parameters": [
@@ -994,7 +994,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Create a new invoice",
                 "parameters": [
@@ -1040,7 +1040,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Get an invoice by ID",
                 "parameters": [
@@ -1084,7 +1084,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Finalize an invoice",
                 "parameters": [
@@ -1133,7 +1133,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Update invoice payment status",
                 "parameters": [
@@ -1192,7 +1192,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "invoices"
+                    "Invoices"
                 ],
                 "summary": "Void an invoice",
                 "parameters": [
@@ -1238,7 +1238,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "List meters",
                 "responses": {
@@ -1273,7 +1273,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Create meter",
                 "parameters": [
@@ -1321,7 +1321,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Get meter",
                 "parameters": [
@@ -1368,7 +1368,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Update meter",
                 "parameters": [
@@ -1427,7 +1427,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Delete meter",
                 "parameters": [
@@ -1476,7 +1476,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "meters"
+                    "Meters"
                 ],
                 "summary": "Disable meter [TODO: Deprecate]",
                 "parameters": [
@@ -1528,7 +1528,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Get plans",
                 "parameters": [
@@ -1603,7 +1603,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Create a new plan",
                 "parameters": [
@@ -1654,7 +1654,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Get a plan by ID",
                 "parameters": [
@@ -1701,7 +1701,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Update a plan by ID",
                 "parameters": [
@@ -1757,7 +1757,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "plans"
+                    "Plans"
                 ],
                 "summary": "Delete a plan by ID",
                 "parameters": [
@@ -1806,7 +1806,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Get prices",
                 "parameters": [
@@ -1881,7 +1881,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Create a new price",
                 "parameters": [
@@ -1932,7 +1932,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Get a price by ID",
                 "parameters": [
@@ -1979,7 +1979,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Update a price",
                 "parameters": [
@@ -2035,7 +2035,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "prices"
+                    "Prices"
                 ],
                 "summary": "Delete a price",
                 "parameters": [
@@ -2081,7 +2081,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "List subscriptions",
                 "parameters": [
@@ -2151,7 +2151,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "Create subscription",
                 "parameters": [
@@ -2199,7 +2199,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "Get usage by subscription",
                 "parameters": [
@@ -2247,7 +2247,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "Get subscription",
                 "parameters": [
@@ -2296,7 +2296,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "subscriptions"
+                    "Subscriptions"
                 ],
                 "summary": "Cancel subscription",
                 "parameters": [
@@ -2351,7 +2351,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "tenants"
+                    "Tenants"
                 ],
                 "summary": "Create a new tenant",
                 "parameters": [
@@ -2402,7 +2402,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "tenants"
+                    "Tenants"
                 ],
                 "summary": "Get tenant by ID",
                 "parameters": [
@@ -2451,7 +2451,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "users"
+                    "Users"
                 ],
                 "summary": "Get user info",
                 "responses": {
@@ -2485,7 +2485,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Create a new wallet",
                 "parameters": [
@@ -2536,7 +2536,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Get wallet by ID",
                 "parameters": [
@@ -2591,7 +2591,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Get wallet balance",
                 "parameters": [
@@ -2641,7 +2641,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Terminate a wallet",
                 "parameters": [
@@ -2696,7 +2696,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Top up wallet",
                 "parameters": [
@@ -2760,7 +2760,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Get wallet transactions",
                 "parameters": [
