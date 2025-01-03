@@ -23,7 +23,7 @@ func NewMeterHandler(service service.MeterService, log *logger.Logger) *MeterHan
 // @Tags Meters
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param meter body dto.CreateMeterRequest true "Meter configuration"
 // @Success 201 {object} dto.MeterResponse
 // @Failure 400 {object} ErrorResponse
@@ -51,7 +51,7 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 // @Description Get all meters
 // @Tags Meters
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Success 200 {array} dto.MeterResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /meters [get]
@@ -75,7 +75,7 @@ func (h *MeterHandler) GetAllMeters(c *gin.Context) {
 // @Description Get a specific meter by ID
 // @Tags Meters
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Meter ID"
 // @Success 200 {object} dto.MeterResponse
 // @Failure 404 {object} ErrorResponse
@@ -97,7 +97,7 @@ func (h *MeterHandler) GetMeter(c *gin.Context) {
 // @Description Disable an existing meter
 // @Tags Meters
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Meter ID"
 // @Success 200 {object} map[string]string "message:Meter disabled successfully"
 // @Failure 404 {object} ErrorResponse
@@ -118,7 +118,7 @@ func (h *MeterHandler) DisableMeter(c *gin.Context) {
 // @Description Delete an existing meter
 // @Tags Meters
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Meter ID"
 // @Success 200 {object} map[string]string "message:Meter deleted successfully"
 // @Failure 404 {object} ErrorResponse
@@ -140,7 +140,7 @@ func (h *MeterHandler) DeleteMeter(c *gin.Context) {
 // @Tags Meters
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Meter ID"
 // @Param meter body dto.UpdateMeterRequest true "Meter configuration"
 // @Success 200 {object} dto.MeterResponse

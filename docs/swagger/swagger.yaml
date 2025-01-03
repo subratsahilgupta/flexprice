@@ -50,8 +50,7 @@ definitions:
       invoice_type:
         $ref: '#/definitions/types.InvoiceType'
       metadata:
-        additionalProperties: true
-        type: object
+        $ref: '#/definitions/types.Metadata'
       payment_status:
         $ref: '#/definitions/types.InvoicePaymentStatus'
       subscription_id:
@@ -527,8 +526,7 @@ definitions:
       invoice_type:
         $ref: '#/definitions/types.InvoiceType'
       metadata:
-        additionalProperties: true
-        type: object
+        $ref: '#/definitions/types.Metadata'
       paid_at:
         type: string
       payment_status:
@@ -1646,7 +1644,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get customers
       tags:
       - Customers
@@ -1677,7 +1675,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Create a customer
       tags:
       - Customers
@@ -1706,7 +1704,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Delete a customer
       tags:
       - Customers
@@ -1736,7 +1734,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get a customer
       tags:
       - Customers
@@ -1772,7 +1770,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Update a customer
       tags:
       - Customers
@@ -1805,7 +1803,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get wallets by customer ID
       tags:
       - Wallets
@@ -1854,7 +1852,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get environments
       tags:
       - Environments
@@ -1885,7 +1883,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Create an environment
       tags:
       - Environments
@@ -1920,7 +1918,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get an environment
       tags:
       - Environments
@@ -1960,7 +1958,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Update an environment
       tags:
       - Environments
@@ -2012,7 +2010,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get raw events
       tags:
       - Events
@@ -2045,7 +2043,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Ingest event
       tags:
       - Events
@@ -2075,7 +2073,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get usage statistics
       tags:
       - Events
@@ -2109,7 +2107,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get usage by meter
       tags:
       - Events
@@ -2296,7 +2294,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Update invoice payment status
       tags:
       - Invoices
@@ -2346,7 +2344,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: List meters
       tags:
       - Meters
@@ -2377,7 +2375,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Create meter
       tags:
       - Meters
@@ -2408,7 +2406,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Delete meter
       tags:
       - Meters
@@ -2436,7 +2434,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get meter
       tags:
       - Meters
@@ -2476,7 +2474,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Update meter
       tags:
       - Meters
@@ -2507,7 +2505,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: 'Disable meter [TODO: Deprecate]'
       tags:
       - Meters
@@ -2556,7 +2554,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get plans
       tags:
       - Plans
@@ -2587,7 +2585,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Create a new plan
       tags:
       - Plans
@@ -2618,7 +2616,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Delete a plan by ID
       tags:
       - Plans
@@ -2648,7 +2646,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get a plan by ID
       tags:
       - Plans
@@ -2684,7 +2682,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Update a plan by ID
       tags:
       - Plans
@@ -2733,7 +2731,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get prices
       tags:
       - Prices
@@ -2764,7 +2762,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Create a new price
       tags:
       - Prices
@@ -2795,7 +2793,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Delete a price
       tags:
       - Prices
@@ -2825,7 +2823,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get a price by ID
       tags:
       - Prices
@@ -2861,7 +2859,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Update a price
       tags:
       - Prices
@@ -2905,7 +2903,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: List subscriptions
       tags:
       - Subscriptions
@@ -2936,7 +2934,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Create subscription
       tags:
       - Subscriptions
@@ -2965,7 +2963,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get subscription
       tags:
       - Subscriptions
@@ -3000,7 +2998,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Cancel subscription
       tags:
       - Subscriptions
@@ -3030,7 +3028,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get usage by subscription
       tags:
       - Subscriptions
@@ -3062,7 +3060,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Create a new tenant
       tags:
       - Tenants
@@ -3093,7 +3091,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get tenant by ID
       tags:
       - Tenants
@@ -3114,7 +3112,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get user info
       tags:
       - Users
@@ -3146,7 +3144,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Create a new wallet
       tags:
       - Wallets
@@ -3181,7 +3179,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get wallet by ID
       tags:
       - Wallets
@@ -3216,7 +3214,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get wallet balance
       tags:
       - Wallets
@@ -3290,7 +3288,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Top up wallet
       tags:
       - Wallets
@@ -3348,7 +3346,7 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
-      - BearerAuth: []
+      - ApiKeyAuth: []
       summary: Get wallet transactions
       tags:
       - Wallets
@@ -3356,9 +3354,9 @@ schemes:
 - http
 - https
 securityDefinitions:
-  BearerAuth:
-    description: Enter your bearer token in the format **Bearer &lt;token&gt;**
+  ApiKeyAuth:
+    description: Enter your API key in the format *x-api-key &lt;api-key&gt;**
     in: header
-    name: Authorization
+    name: x-api-key
     type: apiKey
 swagger: "2.0"

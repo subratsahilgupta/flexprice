@@ -187,7 +187,7 @@ func (h *InvoiceHandler) VoidInvoice(c *gin.Context) {
 // @Tags Invoices
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Invoice ID"
 // @Param request body dto.UpdateInvoicePaymentStatusRequest true "Payment Status Update Request"
 // @Success 200 {object} dto.InvoiceResponse

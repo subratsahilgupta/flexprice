@@ -64,7 +64,7 @@ type Invoice struct {
 	// BillingReason holds the value of the "billing_reason" field.
 	BillingReason string `json:"billing_reason,omitempty"`
 	// Metadata holds the value of the "metadata" field.
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 	// Version holds the value of the "version" field.
 	Version      int `json:"version,omitempty"`
 	selectValues sql.SelectValues

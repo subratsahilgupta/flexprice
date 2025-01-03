@@ -29,7 +29,7 @@ func NewEventsHandler(eventService service.EventService, log *logger.Logger) *Ev
 // @Tags Events
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param event body dto.IngestEventRequest true "Event data"
 // @Success 202 {object} map[string]string "message:Event accepted for processing"
 // @Failure 400 {object} ErrorResponse
@@ -63,7 +63,7 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 // @Description Retrieve aggregated usage statistics using meter configuration
 // @Tags Events
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param request body dto.GetUsageByMeterRequest true "Request body"
 // @Success 200 {object} dto.GetUsageResponse
 // @Failure 400 {object} ErrorResponse
@@ -100,7 +100,7 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 // @Description Retrieve aggregated usage statistics for events
 // @Tags Events
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param request body dto.GetUsageRequest true "Request body"
 // @Success 200 {object} dto.GetUsageResponse
 // @Failure 400 {object} ErrorResponse
@@ -136,7 +136,7 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 // @Description Retrieve raw events with pagination and filtering
 // @Tags Events
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param external_customer_id query string false "External Customer ID"
 // @Param event_name query string false "Event Name"
 // @Param start_time query string false "Start Time (RFC3339)"

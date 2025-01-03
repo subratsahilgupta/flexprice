@@ -28,7 +28,7 @@ type Invoice struct {
 	FinalizedAt     *time.Time                 `json:"finalized_at,omitempty"`
 	InvoicePDFURL   *string                    `json:"invoice_pdf_url,omitempty"`
 	BillingReason   string                     `json:"billing_reason,omitempty"`
-	Metadata        map[string]interface{}     `json:"metadata,omitempty"`
+	Metadata        types.Metadata             `json:"metadata,omitempty"`
 	Version         int                        `json:"version"`
 	types.BaseModel
 }

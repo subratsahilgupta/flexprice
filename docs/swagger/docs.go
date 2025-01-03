@@ -99,7 +99,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get customers",
@@ -174,7 +174,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Create a customer",
@@ -225,7 +225,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get a customer",
@@ -272,7 +272,7 @@ const docTemplate = `{
             "put": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Update a customer",
@@ -328,7 +328,7 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Delete a customer",
@@ -374,7 +374,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get all wallets for a customer",
@@ -426,7 +426,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get environments",
@@ -501,7 +501,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Create an environment",
@@ -552,7 +552,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get an environment",
@@ -605,7 +605,7 @@ const docTemplate = `{
             "put": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Update an environment",
@@ -669,7 +669,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Retrieve raw events with pagination and filtering",
@@ -748,7 +748,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Ingest a new event into the system",
@@ -802,7 +802,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Retrieve aggregated usage statistics for events",
@@ -850,7 +850,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Retrieve aggregated usage statistics using meter configuration",
@@ -1125,7 +1125,7 @@ const docTemplate = `{
             "put": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Update the payment status of an invoice",
@@ -1233,7 +1233,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get all meters",
@@ -1265,7 +1265,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Create a new meter with the specified configuration",
@@ -1316,7 +1316,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get a specific meter by ID",
@@ -1360,7 +1360,7 @@ const docTemplate = `{
             "put": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Update an existing meter",
@@ -1422,7 +1422,7 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Delete an existing meter",
@@ -1471,7 +1471,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Disable an existing meter",
@@ -1520,7 +1520,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get plans with the specified filter",
@@ -1595,7 +1595,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Create a new plan with the specified configuration",
@@ -1646,7 +1646,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get a plan by ID",
@@ -1693,7 +1693,7 @@ const docTemplate = `{
             "put": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Update a plan by ID",
@@ -1749,7 +1749,7 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Delete a plan by ID",
@@ -1798,7 +1798,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get prices with the specified filter",
@@ -1873,7 +1873,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Create a new price with the specified configuration",
@@ -1924,7 +1924,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get a price by ID",
@@ -1971,7 +1971,7 @@ const docTemplate = `{
             "put": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Update a price with the specified configuration",
@@ -2027,7 +2027,7 @@ const docTemplate = `{
             "delete": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Delete a price",
@@ -2076,7 +2076,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get subscriptions with optional filtering",
@@ -2143,7 +2143,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Create a new subscription",
@@ -2194,7 +2194,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get usage by subscription",
@@ -2242,7 +2242,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get a subscription by ID",
@@ -2288,7 +2288,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Cancel a subscription",
@@ -2343,7 +2343,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Create a new tenant",
@@ -2394,7 +2394,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get tenant by ID",
@@ -2443,7 +2443,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get the current user's information",
@@ -2477,7 +2477,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Create a new wallet for a customer",
@@ -2528,7 +2528,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get a wallet by its ID",
@@ -2583,7 +2583,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get real-time balance of a wallet",
@@ -2688,7 +2688,7 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Add credits to a wallet",
@@ -2752,7 +2752,7 @@ const docTemplate = `{
             "get": {
                 "security": [
                     {
-                        "BearerAuth": []
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Get transactions for a wallet with pagination",
@@ -2918,8 +2918,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.InvoiceType"
                 },
                 "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "payment_status": {
                     "$ref": "#/definitions/types.InvoicePaymentStatus"
@@ -3612,8 +3611,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.InvoiceType"
                 },
                 "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "paid_at": {
                     "type": "string"
@@ -5066,10 +5064,10 @@ const docTemplate = `{
         }
     },
     "securityDefinitions": {
-        "BearerAuth": {
-            "description": "Enter your bearer token in the format **Bearer \u0026lt;token\u0026gt;**",
+        "ApiKeyAuth": {
+            "description": "Enter your API key in the format *x-api-key \u0026lt;api-key\u0026gt;**",
             "type": "apiKey",
-            "name": "Authorization",
+            "name": "x-api-key",
             "in": "header"
         }
     }

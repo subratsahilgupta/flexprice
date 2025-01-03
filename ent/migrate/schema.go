@@ -33,7 +33,7 @@ var (
 		{Name: "finalized_at", Type: field.TypeTime, Nullable: true},
 		{Name: "invoice_pdf_url", Type: field.TypeString, Nullable: true},
 		{Name: "billing_reason", Type: field.TypeString, Nullable: true},
-		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "version", Type: field.TypeInt, Default: 1},
 	}
 	// InvoicesTable holds the schema information for the "invoices" table.

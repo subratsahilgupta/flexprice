@@ -300,7 +300,7 @@ func (iu *InvoiceUpdate) ClearBillingReason() *InvoiceUpdate {
 }
 
 // SetMetadata sets the "metadata" field.
-func (iu *InvoiceUpdate) SetMetadata(m map[string]interface{}) *InvoiceUpdate {
+func (iu *InvoiceUpdate) SetMetadata(m map[string]string) *InvoiceUpdate {
 	iu.mutation.SetMetadata(m)
 	return iu
 }
@@ -763,7 +763,7 @@ func (iuo *InvoiceUpdateOne) ClearBillingReason() *InvoiceUpdateOne {
 }
 
 // SetMetadata sets the "metadata" field.
-func (iuo *InvoiceUpdateOne) SetMetadata(m map[string]interface{}) *InvoiceUpdateOne {
+func (iuo *InvoiceUpdateOne) SetMetadata(m map[string]string) *InvoiceUpdateOne {
 	iuo.mutation.SetMetadata(m)
 	return iuo
 }

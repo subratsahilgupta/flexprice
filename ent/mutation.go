@@ -62,7 +62,7 @@ type InvoiceMutation struct {
 	finalized_at     *time.Time
 	invoice_pdf_url  *string
 	billing_reason   *string
-	metadata         *map[string]interface{}
+	metadata         *map[string]string
 	version          *int
 	addversion       *int
 	clearedFields    map[string]struct{}
@@ -1098,12 +1098,12 @@ func (m *InvoiceMutation) ResetBillingReason() {
 }
 
 // SetMetadata sets the "metadata" field.
-func (m *InvoiceMutation) SetMetadata(value map[string]interface{}) {
+func (m *InvoiceMutation) SetMetadata(value map[string]string) {
 	m.metadata = &value
 }
 
 // Metadata returns the value of the "metadata" field in the mutation.
-func (m *InvoiceMutation) Metadata() (r map[string]interface{}, exists bool) {
+func (m *InvoiceMutation) Metadata() (r map[string]string, exists bool) {
 	v := m.metadata
 	if v == nil {
 		return
@@ -1114,7 +1114,7 @@ func (m *InvoiceMutation) Metadata() (r map[string]interface{}, exists bool) {
 // OldMetadata returns the old "metadata" field's value of the Invoice entity.
 // If the Invoice object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+func (m *InvoiceMutation) OldMetadata(ctx context.Context) (v map[string]string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
 	}
@@ -1586,7 +1586,7 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 		m.SetBillingReason(v)
 		return nil
 	case invoice.FieldMetadata:
-		v, ok := value.(map[string]interface{})
+		v, ok := value.(map[string]string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

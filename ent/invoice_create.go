@@ -298,7 +298,7 @@ func (ic *InvoiceCreate) SetNillableBillingReason(s *string) *InvoiceCreate {
 }
 
 // SetMetadata sets the "metadata" field.
-func (ic *InvoiceCreate) SetMetadata(m map[string]interface{}) *InvoiceCreate {
+func (ic *InvoiceCreate) SetMetadata(m map[string]string) *InvoiceCreate {
 	ic.mutation.SetMetadata(m)
 	return ic
 }

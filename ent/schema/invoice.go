@@ -77,8 +77,11 @@ func (Invoice) Fields() []ent.Field {
 			Nillable(),
 		field.String("billing_reason").
 			Optional(),
-		field.JSON("metadata", map[string]interface{}{}).
-			Optional(),
+		field.JSON("metadata", map[string]string{}).
+			Optional().
+			SchemaType(map[string]string{
+				"postgres": "jsonb",
+			}),
 		field.Int("version").
 			Default(1),
 	}

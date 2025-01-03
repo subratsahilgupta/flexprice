@@ -35,10 +35,10 @@ import (
 // @description FlexPrice API Service
 // @BasePath /v1
 // @schemes http https
-// @securityDefinitions.apikey BearerAuth
+// @securityDefinitions.apikey ApiKeyAuth
 // @in header
-// @name Authorization
-// @description Enter your bearer token in the format **Bearer &lt;token&gt;**
+// @name x-api-key
+// @description Enter your API key in the format *x-api-key &lt;api-key&gt;**
 
 func init() {
 	// Set UTC timezone for the entire application

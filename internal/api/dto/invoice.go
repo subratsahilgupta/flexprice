@@ -25,7 +25,7 @@ type CreateInvoiceRequest struct {
 	InvoiceStatus  *types.InvoiceStatus        `json:"invoice_status,omitempty"`
 	PaymentStatus  *types.InvoicePaymentStatus `json:"payment_status,omitempty"`
 	AmountPaid     *decimal.Decimal            `json:"amount_paid,omitempty"`
-	Metadata       map[string]interface{}      `json:"metadata,omitempty"`
+	Metadata       types.Metadata              `json:"metadata,omitempty"`
 }
 
 func (r *CreateInvoiceRequest) Validate() error {
@@ -122,7 +122,7 @@ type InvoiceResponse struct {
 	FinalizedAt     *time.Time                 `json:"finalized_at,omitempty"`
 	InvoicePDFURL   *string                    `json:"invoice_pdf_url,omitempty"`
 	BillingReason   string                     `json:"billing_reason,omitempty"`
-	Metadata        map[string]interface{}     `json:"metadata,omitempty"`
+	Metadata        types.Metadata             `json:"metadata,omitempty"`
 	Version         int                        `json:"version"`
 	TenantID        string                     `json:"tenant_id"`
 	Status          string                     `json:"status"`

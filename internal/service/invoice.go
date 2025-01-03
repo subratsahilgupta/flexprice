@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -247,6 +248,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 	amountDue := decimal.NewFromFloat(usage.Amount)
 	invoiceDueDate := periodEnd.Add(24 * time.Hour * types.InvoiceDefaultDueDays)
 
+	jsonUsage, _ := json.Marshal(usage)
 	// Create invoice using CreateInvoice
 	req := dto.CreateInvoiceRequest{
 		CustomerID:     sub.CustomerID,
@@ -259,10 +261,10 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 		Description:    fmt.Sprintf("Subscription charges for period %s to %s", periodStart.Format("2006-01-02"), periodEnd.Format("2006-01-02")),
 		DueDate:        lo.ToPtr(invoiceDueDate),
 		BillingReason:  types.InvoiceBillingReasonSubscriptionCycle,
-		Metadata: map[string]interface{}{
+		Metadata: types.Metadata{
 			"period_start": types.FormatTime(periodStart),
 			"period_end":   types.FormatTime(periodEnd),
-			"usage":        usage,
+			"usage":        string(jsonUsage),
 		},
 	}
 
