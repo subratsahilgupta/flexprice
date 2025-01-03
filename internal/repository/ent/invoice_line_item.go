@@ -74,6 +74,11 @@ func (r *invoiceLineItemRepository) CreateMany(ctx context.Context, items []*inv
 			item.ID = uuid.New().String()
 		}
 
+		// Set default status if not set
+		if item.Status == "" {
+			item.Status = types.StatusPublished
+		}
+
 		entItem, err := client.InvoiceLineItem.Create().
 			SetID(item.ID).
 			SetTenantID(item.TenantID).
@@ -102,7 +107,7 @@ func (r *invoiceLineItemRepository) CreateMany(ctx context.Context, items []*inv
 		entItems = append(entItems, entItem)
 	}
 
-	// Convert ent items back to domain items
+	// Convert back to domain model
 	result := make([]*invoice.InvoiceLineItem, len(entItems))
 	for i, entItem := range entItems {
 		result[i] = items[i].FromEnt(entItem)

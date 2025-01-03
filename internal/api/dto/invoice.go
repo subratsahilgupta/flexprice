@@ -152,7 +152,7 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
 		InvoiceID:      inv.ID,
 		CustomerID:     inv.CustomerID,
-		SubscriptionID: nil,
+		SubscriptionID: inv.SubscriptionID,
 		PriceID:        r.PriceID,
 		MeterID:        r.MeterID,
 		Amount:         r.Amount,

@@ -53,18 +53,53 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetUpdatedAt(inv.UpdatedAt).
 		SetCreatedBy(inv.CreatedBy).
 		SetUpdatedBy(inv.UpdatedBy).
+		SetNillablePeriodStart(inv.PeriodStart).
+		SetNillablePeriodEnd(inv.PeriodEnd).
 		Save(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create invoice: %w", err)
 	}
-	// Update the input invoice with created data
+
+	// If there are line items, create them
+	if len(inv.LineItems) > 0 {
+		// Create line items with invoice_id
+		for _, item := range inv.LineItems {
+			item.InvoiceID = invoice.ID // Set the invoice ID before creation
+			_, err := client.InvoiceLineItem.Create().
+				SetID(item.ID).
+				SetTenantID(item.TenantID).
+				SetInvoiceID(item.InvoiceID).
+				SetCustomerID(item.CustomerID).
+				SetNillableSubscriptionID(item.SubscriptionID).
+				SetPriceID(item.PriceID).
+				SetNillableMeterID(item.MeterID).
+				SetAmount(item.Amount).
+				SetQuantity(item.Quantity).
+				SetCurrency(item.Currency).
+				SetNillablePeriodStart(item.PeriodStart).
+				SetNillablePeriodEnd(item.PeriodEnd).
+				SetMetadata(item.Metadata).
+				SetStatus(string(item.Status)).
+				SetCreatedBy(item.CreatedBy).
+				SetUpdatedBy(item.UpdatedBy).
+				SetCreatedAt(item.CreatedAt).
+				SetUpdatedAt(item.UpdatedAt).
+				Save(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to create invoice line item: %w", err)
+			}
+		}
+	}
 	*inv = *domainInvoice.FromEnt(invoice)
 	return nil
 }
 
 func (r *invoiceRepository) Get(ctx context.Context, id string) (*domainInvoice.Invoice, error) {
 	client := r.client.Querier(ctx)
-	inv, err := client.Invoice.Get(ctx, id)
+	inv, err := client.Invoice.Query().
+		Where(invoice.ID(id)).
+		WithLineItems().
+		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil, domainInvoice.ErrInvoiceNotFound
@@ -99,6 +134,8 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetNillableVoidedAt(inv.VoidedAt).
 		SetNillableFinalizedAt(inv.FinalizedAt).
 		SetNillableInvoicePdfURL(inv.InvoicePDFURL).
+		SetNillablePeriodStart(inv.PeriodStart).
+		SetNillablePeriodEnd(inv.PeriodEnd).
 		SetBillingReason(string(inv.BillingReason)).
 		SetMetadata(inv.Metadata).
 		SetUpdatedAt(inv.UpdatedAt).
@@ -133,30 +170,33 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 
 func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilter) ([]*domainInvoice.Invoice, error) {
 	client := r.client.Querier(ctx)
-	query := client.Invoice.Query()
+	query := client.Invoice.Query().
+		WithLineItems()
 
-	if filter != nil {
-		query = ToEntQuery(ctx, filter, query)
-		if filter.Limit > 0 {
-			query = query.Limit(filter.Limit)
-		}
+	query = ToEntQuery(ctx, filter, query)
+
+	// Apply order by
+	query = query.Order(ent.Desc(invoice.FieldCreatedAt))
+
+	// Apply pagination
+	if filter != nil && filter.Limit > 0 {
+		query = query.Limit(filter.Limit)
 		if filter.Offset > 0 {
 			query = query.Offset(filter.Offset)
 		}
 	}
-
-	// Always order by created_at desc for consistency
-	query = query.Order(ent.Desc(invoice.FieldCreatedAt))
 
 	invoices, err := query.All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list invoices: %w", err)
 	}
 
+	// Convert to domain model
 	result := make([]*domainInvoice.Invoice, len(invoices))
 	for i, inv := range invoices {
 		result[i] = domainInvoice.FromEnt(inv)
 	}
+
 	return result, nil
 }
 
@@ -179,6 +219,10 @@ func (r *invoiceRepository) Count(ctx context.Context, filter *types.InvoiceFilt
 
 // Add a helper function to parse the InvoiceFilter struct to relevant ent base *ent.InvoiceQuery
 func ToEntQuery(ctx context.Context, f *types.InvoiceFilter, query *ent.InvoiceQuery) *ent.InvoiceQuery {
+	if f == nil {
+		return query
+	}
+
 	query.Where(
 		invoice.TenantID(types.GetTenantID(ctx)),
 		invoice.Status(string(types.StatusPublished)),

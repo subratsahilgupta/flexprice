@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -92,21 +91,11 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		return nil, err
 	}
 
-	var result *invoice.Invoice
+	// Create invoice with line items in a single transaction
 	err = s.db.WithTx(ctx, func(ctx context.Context) error {
-		// Create invoice
 		if err := s.invoiceRepo.Create(ctx, inv); err != nil {
 			return fmt.Errorf("failed to create invoice: %w", err)
 		}
-
-		// Create line items if present
-		if len(inv.LineItems) > 0 {
-			if _, err := s.lineItemRepo.CreateMany(ctx, inv.LineItems); err != nil {
-				return fmt.Errorf("failed to create invoice line items: %w", err)
-			}
-		}
-
-		result = inv
 		return nil
 	})
 
@@ -116,7 +105,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 
 	// TODO: add publisher event for invoice created
 
-	return dto.NewInvoiceResponse(result), nil
+	return dto.NewInvoiceResponse(inv), nil
 }
 
 func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.InvoiceResponse, error) {
@@ -269,7 +258,6 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 	amountDue := decimal.NewFromFloat(usage.Amount)
 	invoiceDueDate := periodEnd.Add(24 * time.Hour * types.InvoiceDefaultDueDays)
 
-	jsonUsage, _ := json.Marshal(usage)
 	// Create invoice using CreateInvoice
 	req := dto.CreateInvoiceRequest{
 		CustomerID:     sub.CustomerID,
@@ -284,11 +272,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 		PeriodStart:    &periodStart,
 		PeriodEnd:      &periodEnd,
 		BillingReason:  types.InvoiceBillingReasonSubscriptionCycle,
-		Metadata: types.Metadata{
-			"period_start": types.FormatTime(periodStart),
-			"period_end":   types.FormatTime(periodEnd),
-			"usage":        string(jsonUsage),
-		},
+		Metadata:       types.Metadata{},
 	}
 
 	// Create line items from usage charges
