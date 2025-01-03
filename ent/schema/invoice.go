@@ -75,10 +75,12 @@ func (Invoice) Fields() []ent.Field {
 			Nillable(),
 		field.Time("period_start").
 			Optional().
-			Nillable(),
+			Nillable().
+			Immutable(),
 		field.Time("period_end").
 			Optional().
-			Nillable(),
+			Nillable().
+			Immutable(),
 		field.String("invoice_pdf_url").
 			Optional().
 			Nillable(),

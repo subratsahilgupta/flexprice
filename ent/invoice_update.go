@@ -260,46 +260,6 @@ func (iu *InvoiceUpdate) ClearFinalizedAt() *InvoiceUpdate {
 	return iu
 }
 
-// SetPeriodStart sets the "period_start" field.
-func (iu *InvoiceUpdate) SetPeriodStart(t time.Time) *InvoiceUpdate {
-	iu.mutation.SetPeriodStart(t)
-	return iu
-}
-
-// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
-func (iu *InvoiceUpdate) SetNillablePeriodStart(t *time.Time) *InvoiceUpdate {
-	if t != nil {
-		iu.SetPeriodStart(*t)
-	}
-	return iu
-}
-
-// ClearPeriodStart clears the value of the "period_start" field.
-func (iu *InvoiceUpdate) ClearPeriodStart() *InvoiceUpdate {
-	iu.mutation.ClearPeriodStart()
-	return iu
-}
-
-// SetPeriodEnd sets the "period_end" field.
-func (iu *InvoiceUpdate) SetPeriodEnd(t time.Time) *InvoiceUpdate {
-	iu.mutation.SetPeriodEnd(t)
-	return iu
-}
-
-// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
-func (iu *InvoiceUpdate) SetNillablePeriodEnd(t *time.Time) *InvoiceUpdate {
-	if t != nil {
-		iu.SetPeriodEnd(*t)
-	}
-	return iu
-}
-
-// ClearPeriodEnd clears the value of the "period_end" field.
-func (iu *InvoiceUpdate) ClearPeriodEnd() *InvoiceUpdate {
-	iu.mutation.ClearPeriodEnd()
-	return iu
-}
-
 // SetInvoicePdfURL sets the "invoice_pdf_url" field.
 func (iu *InvoiceUpdate) SetInvoicePdfURL(s string) *InvoiceUpdate {
 	iu.mutation.SetInvoicePdfURL(s)
@@ -525,14 +485,8 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if iu.mutation.FinalizedAtCleared() {
 		_spec.ClearField(invoice.FieldFinalizedAt, field.TypeTime)
 	}
-	if value, ok := iu.mutation.PeriodStart(); ok {
-		_spec.SetField(invoice.FieldPeriodStart, field.TypeTime, value)
-	}
 	if iu.mutation.PeriodStartCleared() {
 		_spec.ClearField(invoice.FieldPeriodStart, field.TypeTime)
-	}
-	if value, ok := iu.mutation.PeriodEnd(); ok {
-		_spec.SetField(invoice.FieldPeriodEnd, field.TypeTime, value)
 	}
 	if iu.mutation.PeriodEndCleared() {
 		_spec.ClearField(invoice.FieldPeriodEnd, field.TypeTime)
@@ -856,46 +810,6 @@ func (iuo *InvoiceUpdateOne) ClearFinalizedAt() *InvoiceUpdateOne {
 	return iuo
 }
 
-// SetPeriodStart sets the "period_start" field.
-func (iuo *InvoiceUpdateOne) SetPeriodStart(t time.Time) *InvoiceUpdateOne {
-	iuo.mutation.SetPeriodStart(t)
-	return iuo
-}
-
-// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
-func (iuo *InvoiceUpdateOne) SetNillablePeriodStart(t *time.Time) *InvoiceUpdateOne {
-	if t != nil {
-		iuo.SetPeriodStart(*t)
-	}
-	return iuo
-}
-
-// ClearPeriodStart clears the value of the "period_start" field.
-func (iuo *InvoiceUpdateOne) ClearPeriodStart() *InvoiceUpdateOne {
-	iuo.mutation.ClearPeriodStart()
-	return iuo
-}
-
-// SetPeriodEnd sets the "period_end" field.
-func (iuo *InvoiceUpdateOne) SetPeriodEnd(t time.Time) *InvoiceUpdateOne {
-	iuo.mutation.SetPeriodEnd(t)
-	return iuo
-}
-
-// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
-func (iuo *InvoiceUpdateOne) SetNillablePeriodEnd(t *time.Time) *InvoiceUpdateOne {
-	if t != nil {
-		iuo.SetPeriodEnd(*t)
-	}
-	return iuo
-}
-
-// ClearPeriodEnd clears the value of the "period_end" field.
-func (iuo *InvoiceUpdateOne) ClearPeriodEnd() *InvoiceUpdateOne {
-	iuo.mutation.ClearPeriodEnd()
-	return iuo
-}
-
 // SetInvoicePdfURL sets the "invoice_pdf_url" field.
 func (iuo *InvoiceUpdateOne) SetInvoicePdfURL(s string) *InvoiceUpdateOne {
 	iuo.mutation.SetInvoicePdfURL(s)
@@ -1151,14 +1065,8 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	if iuo.mutation.FinalizedAtCleared() {
 		_spec.ClearField(invoice.FieldFinalizedAt, field.TypeTime)
 	}
-	if value, ok := iuo.mutation.PeriodStart(); ok {
-		_spec.SetField(invoice.FieldPeriodStart, field.TypeTime, value)
-	}
 	if iuo.mutation.PeriodStartCleared() {
 		_spec.ClearField(invoice.FieldPeriodStart, field.TypeTime)
-	}
-	if value, ok := iuo.mutation.PeriodEnd(); ok {
-		_spec.SetField(invoice.FieldPeriodEnd, field.TypeTime, value)
 	}
 	if iuo.mutation.PeriodEndCleared() {
 		_spec.ClearField(invoice.FieldPeriodEnd, field.TypeTime)
