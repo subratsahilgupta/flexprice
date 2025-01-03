@@ -24,7 +24,7 @@ func NewCustomerHandler(service service.CustomerService, log *logger.Logger) *Cu
 // @Tags Customers
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param customer body dto.CreateCustomerRequest true "Customer"
 // @Success 201 {object} dto.CustomerResponse
 // @Failure 400 {object} ErrorResponse
@@ -51,7 +51,7 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 // @Tags Customers
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Customer ID"
 // @Success 200 {object} dto.CustomerResponse
 // @Failure 400 {object} ErrorResponse
@@ -74,7 +74,7 @@ func (h *CustomerHandler) GetCustomer(c *gin.Context) {
 // @Tags Customers
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param filter query types.Filter false "Filter"
 // @Success 200 {object} dto.ListCustomersResponse
 // @Failure 400 {object} ErrorResponse
@@ -101,7 +101,7 @@ func (h *CustomerHandler) GetCustomers(c *gin.Context) {
 // @Tags Customers
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Customer ID"
 // @Param customer body dto.UpdateCustomerRequest true "Customer"
 // @Success 200 {object} dto.CustomerResponse
@@ -131,7 +131,7 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 // @Tags Customers
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Customer ID"
 // @Success 204
 // @Failure 400 {object} ErrorResponse

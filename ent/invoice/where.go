@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/shopspring/decimal"
 )
@@ -163,6 +164,16 @@ func VoidedAt(v time.Time) predicate.Invoice {
 // FinalizedAt applies equality check predicate on the "finalized_at" field. It's identical to FinalizedAtEQ.
 func FinalizedAt(v time.Time) predicate.Invoice {
 	return predicate.Invoice(sql.FieldEQ(FieldFinalizedAt, v))
+}
+
+// PeriodStart applies equality check predicate on the "period_start" field. It's identical to PeriodStartEQ.
+func PeriodStart(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldPeriodStart, v))
+}
+
+// PeriodEnd applies equality check predicate on the "period_end" field. It's identical to PeriodEndEQ.
+func PeriodEnd(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldPeriodEnd, v))
 }
 
 // InvoicePdfURL applies equality check predicate on the "invoice_pdf_url" field. It's identical to InvoicePdfURLEQ.
@@ -1335,6 +1346,106 @@ func FinalizedAtNotNil() predicate.Invoice {
 	return predicate.Invoice(sql.FieldNotNull(FieldFinalizedAt))
 }
 
+// PeriodStartEQ applies the EQ predicate on the "period_start" field.
+func PeriodStartEQ(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldPeriodStart, v))
+}
+
+// PeriodStartNEQ applies the NEQ predicate on the "period_start" field.
+func PeriodStartNEQ(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNEQ(FieldPeriodStart, v))
+}
+
+// PeriodStartIn applies the In predicate on the "period_start" field.
+func PeriodStartIn(vs ...time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldIn(FieldPeriodStart, vs...))
+}
+
+// PeriodStartNotIn applies the NotIn predicate on the "period_start" field.
+func PeriodStartNotIn(vs ...time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotIn(FieldPeriodStart, vs...))
+}
+
+// PeriodStartGT applies the GT predicate on the "period_start" field.
+func PeriodStartGT(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGT(FieldPeriodStart, v))
+}
+
+// PeriodStartGTE applies the GTE predicate on the "period_start" field.
+func PeriodStartGTE(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGTE(FieldPeriodStart, v))
+}
+
+// PeriodStartLT applies the LT predicate on the "period_start" field.
+func PeriodStartLT(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLT(FieldPeriodStart, v))
+}
+
+// PeriodStartLTE applies the LTE predicate on the "period_start" field.
+func PeriodStartLTE(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLTE(FieldPeriodStart, v))
+}
+
+// PeriodStartIsNil applies the IsNil predicate on the "period_start" field.
+func PeriodStartIsNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldIsNull(FieldPeriodStart))
+}
+
+// PeriodStartNotNil applies the NotNil predicate on the "period_start" field.
+func PeriodStartNotNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotNull(FieldPeriodStart))
+}
+
+// PeriodEndEQ applies the EQ predicate on the "period_end" field.
+func PeriodEndEQ(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldPeriodEnd, v))
+}
+
+// PeriodEndNEQ applies the NEQ predicate on the "period_end" field.
+func PeriodEndNEQ(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNEQ(FieldPeriodEnd, v))
+}
+
+// PeriodEndIn applies the In predicate on the "period_end" field.
+func PeriodEndIn(vs ...time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldIn(FieldPeriodEnd, vs...))
+}
+
+// PeriodEndNotIn applies the NotIn predicate on the "period_end" field.
+func PeriodEndNotIn(vs ...time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotIn(FieldPeriodEnd, vs...))
+}
+
+// PeriodEndGT applies the GT predicate on the "period_end" field.
+func PeriodEndGT(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGT(FieldPeriodEnd, v))
+}
+
+// PeriodEndGTE applies the GTE predicate on the "period_end" field.
+func PeriodEndGTE(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGTE(FieldPeriodEnd, v))
+}
+
+// PeriodEndLT applies the LT predicate on the "period_end" field.
+func PeriodEndLT(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLT(FieldPeriodEnd, v))
+}
+
+// PeriodEndLTE applies the LTE predicate on the "period_end" field.
+func PeriodEndLTE(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLTE(FieldPeriodEnd, v))
+}
+
+// PeriodEndIsNil applies the IsNil predicate on the "period_end" field.
+func PeriodEndIsNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldIsNull(FieldPeriodEnd))
+}
+
+// PeriodEndNotNil applies the NotNil predicate on the "period_end" field.
+func PeriodEndNotNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotNull(FieldPeriodEnd))
+}
+
 // InvoicePdfURLEQ applies the EQ predicate on the "invoice_pdf_url" field.
 func InvoicePdfURLEQ(v string) predicate.Invoice {
 	return predicate.Invoice(sql.FieldEQ(FieldInvoicePdfURL, v))
@@ -1533,6 +1644,29 @@ func VersionLT(v int) predicate.Invoice {
 // VersionLTE applies the LTE predicate on the "version" field.
 func VersionLTE(v int) predicate.Invoice {
 	return predicate.Invoice(sql.FieldLTE(FieldVersion, v))
+}
+
+// HasLineItems applies the HasEdge predicate on the "line_items" edge.
+func HasLineItems() predicate.Invoice {
+	return predicate.Invoice(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, LineItemsTable, LineItemsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasLineItemsWith applies the HasEdge predicate on the "line_items" edge with a given conditions (other predicates).
+func HasLineItemsWith(preds ...predicate.InvoiceLineItem) predicate.Invoice {
+	return predicate.Invoice(func(s *sql.Selector) {
+		step := newLineItemsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

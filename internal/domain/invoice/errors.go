@@ -9,6 +9,9 @@ var (
 	// ErrInvoiceNotFound is returned when an invoice is not found
 	ErrInvoiceNotFound = errors.New("invoice not found")
 
+	// ErrInvoiceLineItemNotFound is returned when an invoice line item is not found
+	ErrInvoiceLineItemNotFound = errors.New("invoice line item not found")
+
 	// ErrInvalidInvoiceAmount is returned when invoice amounts are invalid
 	ErrInvalidInvoiceAmount = errors.New("invalid invoice amount")
 
@@ -55,6 +58,11 @@ func IsValidationError(err error) bool {
 // IsNotFoundError checks if an error is a not found error
 func IsNotFoundError(err error) bool {
 	return errors.Is(err, ErrInvoiceNotFound)
+}
+
+// IsInvoiceLineItemNotFoundError checks if an error is an invoice line item not found error
+func IsInvoiceLineItemNotFoundError(err error) bool {
+	return errors.Is(err, ErrInvoiceLineItemNotFound)
 }
 
 // VersionConflictError represents an error that occurs during optimistic locking

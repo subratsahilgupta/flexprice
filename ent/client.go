@@ -14,7 +14,9 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/flexprice/flexprice/ent/invoice"
+	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
@@ -27,6 +29,8 @@ type Client struct {
 	Schema *migrate.Schema
 	// Invoice is the client for interacting with the Invoice builders.
 	Invoice *InvoiceClient
+	// InvoiceLineItem is the client for interacting with the InvoiceLineItem builders.
+	InvoiceLineItem *InvoiceLineItemClient
 	// Subscription is the client for interacting with the Subscription builders.
 	Subscription *SubscriptionClient
 	// Wallet is the client for interacting with the Wallet builders.
@@ -45,6 +49,7 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.Invoice = NewInvoiceClient(c.config)
+	c.InvoiceLineItem = NewInvoiceLineItemClient(c.config)
 	c.Subscription = NewSubscriptionClient(c.config)
 	c.Wallet = NewWalletClient(c.config)
 	c.WalletTransaction = NewWalletTransactionClient(c.config)
@@ -141,6 +146,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ctx:               ctx,
 		config:            cfg,
 		Invoice:           NewInvoiceClient(cfg),
+		InvoiceLineItem:   NewInvoiceLineItemClient(cfg),
 		Subscription:      NewSubscriptionClient(cfg),
 		Wallet:            NewWalletClient(cfg),
 		WalletTransaction: NewWalletTransactionClient(cfg),
@@ -164,6 +170,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ctx:               ctx,
 		config:            cfg,
 		Invoice:           NewInvoiceClient(cfg),
+		InvoiceLineItem:   NewInvoiceLineItemClient(cfg),
 		Subscription:      NewSubscriptionClient(cfg),
 		Wallet:            NewWalletClient(cfg),
 		WalletTransaction: NewWalletTransactionClient(cfg),
@@ -196,6 +203,7 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	c.Invoice.Use(hooks...)
+	c.InvoiceLineItem.Use(hooks...)
 	c.Subscription.Use(hooks...)
 	c.Wallet.Use(hooks...)
 	c.WalletTransaction.Use(hooks...)
@@ -205,6 +213,7 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	c.Invoice.Intercept(interceptors...)
+	c.InvoiceLineItem.Intercept(interceptors...)
 	c.Subscription.Intercept(interceptors...)
 	c.Wallet.Intercept(interceptors...)
 	c.WalletTransaction.Intercept(interceptors...)
@@ -215,6 +224,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *InvoiceMutation:
 		return c.Invoice.mutate(ctx, m)
+	case *InvoiceLineItemMutation:
+		return c.InvoiceLineItem.mutate(ctx, m)
 	case *SubscriptionMutation:
 		return c.Subscription.mutate(ctx, m)
 	case *WalletMutation:
@@ -334,6 +345,22 @@ func (c *InvoiceClient) GetX(ctx context.Context, id string) *Invoice {
 	return obj
 }
 
+// QueryLineItems queries the line_items edge of a Invoice.
+func (c *InvoiceClient) QueryLineItems(i *Invoice) *InvoiceLineItemQuery {
+	query := (&InvoiceLineItemClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := i.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(invoice.Table, invoice.FieldID, id),
+			sqlgraph.To(invoicelineitem.Table, invoicelineitem.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, invoice.LineItemsTable, invoice.LineItemsColumn),
+		)
+		fromV = sqlgraph.Neighbors(i.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *InvoiceClient) Hooks() []Hook {
 	return c.hooks.Invoice
@@ -356,6 +383,155 @@ func (c *InvoiceClient) mutate(ctx context.Context, m *InvoiceMutation) (Value, 
 		return (&InvoiceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Invoice mutation op: %q", m.Op())
+	}
+}
+
+// InvoiceLineItemClient is a client for the InvoiceLineItem schema.
+type InvoiceLineItemClient struct {
+	config
+}
+
+// NewInvoiceLineItemClient returns a client for the InvoiceLineItem from the given config.
+func NewInvoiceLineItemClient(c config) *InvoiceLineItemClient {
+	return &InvoiceLineItemClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `invoicelineitem.Hooks(f(g(h())))`.
+func (c *InvoiceLineItemClient) Use(hooks ...Hook) {
+	c.hooks.InvoiceLineItem = append(c.hooks.InvoiceLineItem, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `invoicelineitem.Intercept(f(g(h())))`.
+func (c *InvoiceLineItemClient) Intercept(interceptors ...Interceptor) {
+	c.inters.InvoiceLineItem = append(c.inters.InvoiceLineItem, interceptors...)
+}
+
+// Create returns a builder for creating a InvoiceLineItem entity.
+func (c *InvoiceLineItemClient) Create() *InvoiceLineItemCreate {
+	mutation := newInvoiceLineItemMutation(c.config, OpCreate)
+	return &InvoiceLineItemCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of InvoiceLineItem entities.
+func (c *InvoiceLineItemClient) CreateBulk(builders ...*InvoiceLineItemCreate) *InvoiceLineItemCreateBulk {
+	return &InvoiceLineItemCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *InvoiceLineItemClient) MapCreateBulk(slice any, setFunc func(*InvoiceLineItemCreate, int)) *InvoiceLineItemCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &InvoiceLineItemCreateBulk{err: fmt.Errorf("calling to InvoiceLineItemClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*InvoiceLineItemCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &InvoiceLineItemCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for InvoiceLineItem.
+func (c *InvoiceLineItemClient) Update() *InvoiceLineItemUpdate {
+	mutation := newInvoiceLineItemMutation(c.config, OpUpdate)
+	return &InvoiceLineItemUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *InvoiceLineItemClient) UpdateOne(ili *InvoiceLineItem) *InvoiceLineItemUpdateOne {
+	mutation := newInvoiceLineItemMutation(c.config, OpUpdateOne, withInvoiceLineItem(ili))
+	return &InvoiceLineItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *InvoiceLineItemClient) UpdateOneID(id string) *InvoiceLineItemUpdateOne {
+	mutation := newInvoiceLineItemMutation(c.config, OpUpdateOne, withInvoiceLineItemID(id))
+	return &InvoiceLineItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for InvoiceLineItem.
+func (c *InvoiceLineItemClient) Delete() *InvoiceLineItemDelete {
+	mutation := newInvoiceLineItemMutation(c.config, OpDelete)
+	return &InvoiceLineItemDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *InvoiceLineItemClient) DeleteOne(ili *InvoiceLineItem) *InvoiceLineItemDeleteOne {
+	return c.DeleteOneID(ili.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *InvoiceLineItemClient) DeleteOneID(id string) *InvoiceLineItemDeleteOne {
+	builder := c.Delete().Where(invoicelineitem.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &InvoiceLineItemDeleteOne{builder}
+}
+
+// Query returns a query builder for InvoiceLineItem.
+func (c *InvoiceLineItemClient) Query() *InvoiceLineItemQuery {
+	return &InvoiceLineItemQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeInvoiceLineItem},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a InvoiceLineItem entity by its id.
+func (c *InvoiceLineItemClient) Get(ctx context.Context, id string) (*InvoiceLineItem, error) {
+	return c.Query().Where(invoicelineitem.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *InvoiceLineItemClient) GetX(ctx context.Context, id string) *InvoiceLineItem {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryInvoice queries the invoice edge of a InvoiceLineItem.
+func (c *InvoiceLineItemClient) QueryInvoice(ili *InvoiceLineItem) *InvoiceQuery {
+	query := (&InvoiceClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ili.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(invoicelineitem.Table, invoicelineitem.FieldID, id),
+			sqlgraph.To(invoice.Table, invoice.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, invoicelineitem.InvoiceTable, invoicelineitem.InvoiceColumn),
+		)
+		fromV = sqlgraph.Neighbors(ili.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *InvoiceLineItemClient) Hooks() []Hook {
+	return c.hooks.InvoiceLineItem
+}
+
+// Interceptors returns the client interceptors.
+func (c *InvoiceLineItemClient) Interceptors() []Interceptor {
+	return c.inters.InvoiceLineItem
+}
+
+func (c *InvoiceLineItemClient) mutate(ctx context.Context, m *InvoiceLineItemMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&InvoiceLineItemCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&InvoiceLineItemUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&InvoiceLineItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&InvoiceLineItemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown InvoiceLineItem mutation op: %q", m.Op())
 	}
 }
 
@@ -761,9 +937,10 @@ func (c *WalletTransactionClient) mutate(ctx context.Context, m *WalletTransacti
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Invoice, Subscription, Wallet, WalletTransaction []ent.Hook
+		Invoice, InvoiceLineItem, Subscription, Wallet, WalletTransaction []ent.Hook
 	}
 	inters struct {
-		Invoice, Subscription, Wallet, WalletTransaction []ent.Interceptor
+		Invoice, InvoiceLineItem, Subscription, Wallet,
+		WalletTransaction []ent.Interceptor
 	}
 )

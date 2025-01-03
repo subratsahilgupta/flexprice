@@ -59,15 +59,40 @@ type Invoice struct {
 	VoidedAt *time.Time `json:"voided_at,omitempty"`
 	// FinalizedAt holds the value of the "finalized_at" field.
 	FinalizedAt *time.Time `json:"finalized_at,omitempty"`
+	// PeriodStart holds the value of the "period_start" field.
+	PeriodStart *time.Time `json:"period_start,omitempty"`
+	// PeriodEnd holds the value of the "period_end" field.
+	PeriodEnd *time.Time `json:"period_end,omitempty"`
 	// InvoicePdfURL holds the value of the "invoice_pdf_url" field.
 	InvoicePdfURL *string `json:"invoice_pdf_url,omitempty"`
 	// BillingReason holds the value of the "billing_reason" field.
 	BillingReason string `json:"billing_reason,omitempty"`
 	// Metadata holds the value of the "metadata" field.
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 	// Version holds the value of the "version" field.
-	Version      int `json:"version,omitempty"`
+	Version int `json:"version,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the InvoiceQuery when eager-loading is set.
+	Edges        InvoiceEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// InvoiceEdges holds the relations/edges for other nodes in the graph.
+type InvoiceEdges struct {
+	// LineItems holds the value of the line_items edge.
+	LineItems []*InvoiceLineItem `json:"line_items,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// LineItemsOrErr returns the LineItems value or an error if the edge
+// was not loaded in eager-loading.
+func (e InvoiceEdges) LineItemsOrErr() ([]*InvoiceLineItem, error) {
+	if e.loadedTypes[0] {
+		return e.LineItems, nil
+	}
+	return nil, &NotLoadedError{edge: "line_items"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -83,7 +108,7 @@ func (*Invoice) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case invoice.FieldID, invoice.FieldTenantID, invoice.FieldStatus, invoice.FieldCreatedBy, invoice.FieldUpdatedBy, invoice.FieldCustomerID, invoice.FieldSubscriptionID, invoice.FieldInvoiceType, invoice.FieldInvoiceStatus, invoice.FieldPaymentStatus, invoice.FieldCurrency, invoice.FieldDescription, invoice.FieldInvoicePdfURL, invoice.FieldBillingReason:
 			values[i] = new(sql.NullString)
-		case invoice.FieldCreatedAt, invoice.FieldUpdatedAt, invoice.FieldDueDate, invoice.FieldPaidAt, invoice.FieldVoidedAt, invoice.FieldFinalizedAt:
+		case invoice.FieldCreatedAt, invoice.FieldUpdatedAt, invoice.FieldDueDate, invoice.FieldPaidAt, invoice.FieldVoidedAt, invoice.FieldFinalizedAt, invoice.FieldPeriodStart, invoice.FieldPeriodEnd:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -231,6 +256,20 @@ func (i *Invoice) assignValues(columns []string, values []any) error {
 				i.FinalizedAt = new(time.Time)
 				*i.FinalizedAt = value.Time
 			}
+		case invoice.FieldPeriodStart:
+			if value, ok := values[j].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field period_start", values[j])
+			} else if value.Valid {
+				i.PeriodStart = new(time.Time)
+				*i.PeriodStart = value.Time
+			}
+		case invoice.FieldPeriodEnd:
+			if value, ok := values[j].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field period_end", values[j])
+			} else if value.Valid {
+				i.PeriodEnd = new(time.Time)
+				*i.PeriodEnd = value.Time
+			}
 		case invoice.FieldInvoicePdfURL:
 			if value, ok := values[j].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field invoice_pdf_url", values[j])
@@ -269,6 +308,11 @@ func (i *Invoice) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (i *Invoice) Value(name string) (ent.Value, error) {
 	return i.selectValues.Get(name)
+}
+
+// QueryLineItems queries the "line_items" edge of the Invoice entity.
+func (i *Invoice) QueryLineItems() *InvoiceLineItemQuery {
+	return NewInvoiceClient(i.config).QueryLineItems(i)
 }
 
 // Update returns a builder for updating this Invoice.
@@ -361,6 +405,16 @@ func (i *Invoice) String() string {
 	builder.WriteString(", ")
 	if v := i.FinalizedAt; v != nil {
 		builder.WriteString("finalized_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := i.PeriodStart; v != nil {
+		builder.WriteString("period_start=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := i.PeriodEnd; v != nil {
+		builder.WriteString("period_end=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")

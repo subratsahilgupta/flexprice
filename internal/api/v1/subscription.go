@@ -24,7 +24,7 @@ func NewSubscriptionHandler(service service.SubscriptionService, log *logger.Log
 // @Tags Subscriptions
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param subscription body dto.CreateSubscriptionRequest true "Subscription Request"
 // @Success 201 {object} dto.SubscriptionResponse
 // @Failure 400 {object} ErrorResponse
@@ -50,7 +50,7 @@ func (h *SubscriptionHandler) CreateSubscription(c *gin.Context) {
 // @Description Get a subscription by ID
 // @Tags Subscriptions
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Subscription ID"
 // @Success 200 {object} dto.SubscriptionResponse
 // @Failure 400 {object} ErrorResponse
@@ -71,7 +71,7 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 // @Description Get subscriptions with optional filtering
 // @Tags Subscriptions
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param customer_id query string false "Filter by customer ID"
 // @Param subscription_status query string false "Filter by subscription status"
 // @Param plan_id query string false "Filter by plan ID"
@@ -103,7 +103,7 @@ func (h *SubscriptionHandler) GetSubscriptions(c *gin.Context) {
 // @Tags Subscriptions
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Subscription ID"
 // @Param cancel_at_period_end query bool false "Cancel at period end"
 // @Success 200 {object} gin.H
@@ -127,7 +127,7 @@ func (h *SubscriptionHandler) CancelSubscription(c *gin.Context) {
 // @Description Get usage by subscription
 // @Tags Subscriptions
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param request body dto.GetUsageBySubscriptionRequest true "Request"
 // @Success 200 {object} dto.GetUsageBySubscriptionResponse
 // @Failure 400 {object} ErrorResponse

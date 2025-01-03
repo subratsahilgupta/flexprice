@@ -8,18 +8,18 @@ import (
 
 // Repository defines the interface for invoice persistence operations
 type Repository interface {
-	// Create creates a new invoice
-	Create(ctx context.Context, invoice *Invoice) error
-
-	// Get retrieves an invoice by ID
+	// Core invoice operations
+	Create(ctx context.Context, inv *Invoice) error
 	Get(ctx context.Context, id string) (*Invoice, error)
-
-	// Update updates an existing invoice
-	Update(ctx context.Context, invoice *Invoice) error
-
-	// List retrieves invoices based on filter criteria
+	Update(ctx context.Context, inv *Invoice) error
+	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, filter *types.InvoiceFilter) ([]*Invoice, error)
-
-	// Count returns the total count of invoices based on filter criteria
 	Count(ctx context.Context, filter *types.InvoiceFilter) (int, error)
+
+	// Edge-specific operations
+	AddLineItems(ctx context.Context, invoiceID string, items []*InvoiceLineItem) error
+	RemoveLineItems(ctx context.Context, invoiceID string, itemIDs []string) error
+
+	// Bulk operations with edges
+	CreateWithLineItems(ctx context.Context, inv *Invoice) error
 }

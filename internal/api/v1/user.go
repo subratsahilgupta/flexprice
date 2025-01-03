@@ -22,7 +22,7 @@ type UserHandler struct {
 // @Tags Users
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Success 200 {object} dto.UserResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /users/me [get]

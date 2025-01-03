@@ -23,7 +23,7 @@ func NewTenantHandler(service service.TenantService, log *logger.Logger) *Tenant
 // @Tags Tenants
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param request body dto.CreateTenantRequest true "Create tenant request"
 // @Success 201 {object} dto.TenantResponse
 // @Failure 400 {object} ErrorResponse
@@ -50,7 +50,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 // @Tags Tenants
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Tenant ID"
 // @Success 200 {object} dto.TenantResponse
 // @Failure 404 {object} ErrorResponse

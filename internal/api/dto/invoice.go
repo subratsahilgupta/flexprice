@@ -8,24 +8,26 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
 // CreateInvoiceRequest represents the request to create a new invoice
 type CreateInvoiceRequest struct {
-	CustomerID     string                      `json:"customer_id" validate:"required"`
-	SubscriptionID *string                     `json:"subscription_id,omitempty"`
-	InvoiceType    types.InvoiceType           `json:"invoice_type" validate:"required"`
-	Currency       string                      `json:"currency" validate:"required"`
-	AmountDue      decimal.Decimal             `json:"amount_due" validate:"required"`
-	Description    string                      `json:"description,omitempty"`
-	DueDate        *time.Time                  `json:"due_date,omitempty"`
-	BillingReason  types.InvoiceBillingReason  `json:"billing_reason"`
-	InvoiceStatus  *types.InvoiceStatus        `json:"invoice_status,omitempty"`
-	PaymentStatus  *types.InvoicePaymentStatus `json:"payment_status,omitempty"`
-	AmountPaid     *decimal.Decimal            `json:"amount_paid,omitempty"`
-	Metadata       map[string]interface{}      `json:"metadata,omitempty"`
+	CustomerID     string                         `json:"customer_id" validate:"required"`
+	SubscriptionID *string                        `json:"subscription_id,omitempty"`
+	InvoiceType    types.InvoiceType              `json:"invoice_type" validate:"required"`
+	Currency       string                         `json:"currency" validate:"required"`
+	AmountDue      decimal.Decimal                `json:"amount_due" validate:"required"`
+	Description    string                         `json:"description,omitempty"`
+	DueDate        *time.Time                     `json:"due_date,omitempty"`
+	PeriodStart    *time.Time                     `json:"period_start,omitempty"`
+	PeriodEnd      *time.Time                     `json:"period_end,omitempty"`
+	BillingReason  types.InvoiceBillingReason     `json:"billing_reason"`
+	InvoiceStatus  *types.InvoiceStatus           `json:"invoice_status,omitempty"`
+	PaymentStatus  *types.InvoicePaymentStatus    `json:"payment_status,omitempty"`
+	AmountPaid     *decimal.Decimal               `json:"amount_paid,omitempty"`
+	LineItems      []CreateInvoiceLineItemRequest `json:"line_items,omitempty"`
+	Metadata       types.Metadata                 `json:"metadata,omitempty"`
 }
 
 func (r *CreateInvoiceRequest) Validate() error {
@@ -42,12 +44,34 @@ func (r *CreateInvoiceRequest) Validate() error {
 		return fmt.Errorf("subscription_id is required for subscription invoice")
 	}
 
+	if r.PeriodStart != nil && r.PeriodEnd != nil {
+		if r.PeriodEnd.Before(*r.PeriodStart) {
+			return fmt.Errorf("period_end must be after period_start")
+		}
+	}
+
+	// Validate line items if present
+	if len(r.LineItems) > 0 {
+		var totalAmount decimal.Decimal
+		for _, item := range r.LineItems {
+			if err := item.Validate(); err != nil {
+				return fmt.Errorf("invalid line item: %w", err)
+			}
+			totalAmount = totalAmount.Add(item.Amount)
+		}
+
+		// Verify total amount matches invoice amount
+		if !totalAmount.Equal(r.AmountDue) {
+			return fmt.Errorf("sum of line item amounts (%s) must equal invoice amount_due (%s)", totalAmount.String(), r.AmountDue.String())
+		}
+	}
+
 	return nil
 }
 
 func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice, error) {
-	invoice := &invoice.Invoice{
-		ID:              uuid.New().String(),
+	inv := &invoice.Invoice{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
 		CustomerID:      r.CustomerID,
 		SubscriptionID:  r.SubscriptionID,
 		InvoiceType:     r.InvoiceType,
@@ -55,6 +79,8 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 		AmountDue:       r.AmountDue,
 		Description:     r.Description,
 		DueDate:         r.DueDate,
+		PeriodStart:     r.PeriodStart,
+		PeriodEnd:       r.PeriodEnd,
 		BillingReason:   string(r.BillingReason),
 		Metadata:        r.Metadata,
 		BaseModel:       types.GetDefaultBaseModel(ctx),
@@ -63,19 +89,129 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 
 	// Default invoice status and payment status
 	if r.InvoiceStatus != nil {
-		invoice.InvoiceStatus = *r.InvoiceStatus
+		inv.InvoiceStatus = *r.InvoiceStatus
 	}
 
 	if r.PaymentStatus != nil {
-		invoice.PaymentStatus = *r.PaymentStatus
+		inv.PaymentStatus = *r.PaymentStatus
 	} else {
-		invoice.PaymentStatus = types.InvoicePaymentStatusPending
+		inv.PaymentStatus = types.InvoicePaymentStatusPending
 	}
 
 	if r.AmountPaid != nil {
-		invoice.AmountPaid = *r.AmountPaid
+		inv.AmountPaid = *r.AmountPaid
 	}
-	return invoice, nil
+
+	// Convert line items
+	if len(r.LineItems) > 0 {
+		inv.LineItems = make([]*invoice.InvoiceLineItem, len(r.LineItems))
+		for i, item := range r.LineItems {
+			inv.LineItems[i] = item.ToInvoiceLineItem(ctx, inv)
+		}
+	}
+
+	return inv, nil
+}
+
+// CreateInvoiceLineItemRequest represents a request to create a line item
+type CreateInvoiceLineItemRequest struct {
+	PriceID     string          `json:"price_id" validate:"required"`
+	MeterID     *string         `json:"meter_id,omitempty"`
+	Amount      decimal.Decimal `json:"amount" validate:"required"`
+	Quantity    decimal.Decimal `json:"quantity" validate:"required"`
+	PeriodStart *time.Time      `json:"period_start,omitempty"`
+	PeriodEnd   *time.Time      `json:"period_end,omitempty"`
+	Metadata    types.Metadata  `json:"metadata,omitempty"`
+}
+
+func (r *CreateInvoiceLineItemRequest) Validate() error {
+	validate := validator.New()
+	if err := validate.Struct(r); err != nil {
+		return err
+	}
+
+	if r.Amount.IsNegative() {
+		return fmt.Errorf("amount must be non-negative")
+	}
+
+	if r.Quantity.IsNegative() {
+		return fmt.Errorf("quantity must be non-negative")
+	}
+
+	if r.PeriodStart != nil && r.PeriodEnd != nil {
+		if r.PeriodEnd.Before(*r.PeriodStart) {
+			return fmt.Errorf("period_end must be after period_start")
+		}
+	}
+
+	return nil
+}
+
+func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, inv *invoice.Invoice) *invoice.InvoiceLineItem {
+	return &invoice.InvoiceLineItem{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+		InvoiceID:      inv.ID,
+		CustomerID:     inv.CustomerID,
+		SubscriptionID: inv.SubscriptionID,
+		PriceID:        r.PriceID,
+		MeterID:        r.MeterID,
+		Amount:         r.Amount,
+		Quantity:       r.Quantity,
+		Currency:       inv.Currency,
+		PeriodStart:    r.PeriodStart,
+		PeriodEnd:      r.PeriodEnd,
+		Metadata:       r.Metadata,
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}
+}
+
+// InvoiceLineItemResponse represents a line item in responses
+type InvoiceLineItemResponse struct {
+	ID             string          `json:"id"`
+	InvoiceID      string          `json:"invoice_id"`
+	CustomerID     string          `json:"customer_id"`
+	SubscriptionID *string         `json:"subscription_id,omitempty"`
+	PriceID        string          `json:"price_id"`
+	MeterID        *string         `json:"meter_id,omitempty"`
+	Amount         decimal.Decimal `json:"amount"`
+	Quantity       decimal.Decimal `json:"quantity"`
+	Currency       string          `json:"currency"`
+	PeriodStart    *time.Time      `json:"period_start,omitempty"`
+	PeriodEnd      *time.Time      `json:"period_end,omitempty"`
+	Metadata       types.Metadata  `json:"metadata,omitempty"`
+	TenantID       string          `json:"tenant_id"`
+	Status         string          `json:"status"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+	CreatedBy      string          `json:"created_by,omitempty"`
+	UpdatedBy      string          `json:"updated_by,omitempty"`
+}
+
+func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemResponse {
+	if item == nil {
+		return nil
+	}
+
+	return &InvoiceLineItemResponse{
+		ID:             item.ID,
+		InvoiceID:      item.InvoiceID,
+		CustomerID:     item.CustomerID,
+		SubscriptionID: item.SubscriptionID,
+		PriceID:        item.PriceID,
+		MeterID:        item.MeterID,
+		Amount:         item.Amount,
+		Quantity:       item.Quantity,
+		Currency:       item.Currency,
+		PeriodStart:    item.PeriodStart,
+		PeriodEnd:      item.PeriodEnd,
+		Metadata:       item.Metadata,
+		TenantID:       item.TenantID,
+		Status:         string(item.Status),
+		CreatedAt:      item.CreatedAt,
+		UpdatedAt:      item.UpdatedAt,
+		CreatedBy:      item.CreatedBy,
+		UpdatedBy:      item.UpdatedBy,
+	}
 }
 
 // UpdateInvoicePaymentRequest represents the request to update invoice payment status
@@ -117,12 +253,15 @@ type InvoiceResponse struct {
 	AmountRemaining decimal.Decimal            `json:"amount_remaining"`
 	Description     string                     `json:"description,omitempty"`
 	DueDate         *time.Time                 `json:"due_date,omitempty"`
+	PeriodStart     *time.Time                 `json:"period_start,omitempty"`
+	PeriodEnd       *time.Time                 `json:"period_end,omitempty"`
 	PaidAt          *time.Time                 `json:"paid_at,omitempty"`
 	VoidedAt        *time.Time                 `json:"voided_at,omitempty"`
 	FinalizedAt     *time.Time                 `json:"finalized_at,omitempty"`
 	InvoicePDFURL   *string                    `json:"invoice_pdf_url,omitempty"`
 	BillingReason   string                     `json:"billing_reason,omitempty"`
-	Metadata        map[string]interface{}     `json:"metadata,omitempty"`
+	LineItems       []*InvoiceLineItemResponse `json:"line_items,omitempty"`
+	Metadata        types.Metadata             `json:"metadata,omitempty"`
 	Version         int                        `json:"version"`
 	TenantID        string                     `json:"tenant_id"`
 	Status          string                     `json:"status"`
@@ -138,9 +277,8 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 		return nil
 	}
 
-	return &InvoiceResponse{
+	resp := &InvoiceResponse{
 		ID:              inv.ID,
-		TenantID:        inv.TenantID,
 		CustomerID:      inv.CustomerID,
 		SubscriptionID:  inv.SubscriptionID,
 		InvoiceType:     inv.InvoiceType,
@@ -152,6 +290,8 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 		AmountRemaining: inv.AmountRemaining,
 		Description:     inv.Description,
 		DueDate:         inv.DueDate,
+		PeriodStart:     inv.PeriodStart,
+		PeriodEnd:       inv.PeriodEnd,
 		PaidAt:          inv.PaidAt,
 		VoidedAt:        inv.VoidedAt,
 		FinalizedAt:     inv.FinalizedAt,
@@ -159,12 +299,22 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 		BillingReason:   inv.BillingReason,
 		Metadata:        inv.Metadata,
 		Version:         inv.Version,
+		TenantID:        inv.TenantID,
 		Status:          string(inv.Status),
 		CreatedAt:       inv.CreatedAt,
 		UpdatedAt:       inv.UpdatedAt,
 		CreatedBy:       inv.CreatedBy,
 		UpdatedBy:       inv.UpdatedBy,
 	}
+
+	if inv.LineItems != nil {
+		resp.LineItems = make([]*InvoiceLineItemResponse, len(inv.LineItems))
+		for i, item := range inv.LineItems {
+			resp.LineItems[i] = NewInvoiceLineItemResponse(item)
+		}
+	}
+
+	return resp
 }
 
 // ListInvoicesResponse represents the response for listing invoices

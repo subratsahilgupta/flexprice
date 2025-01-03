@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
@@ -72,13 +73,24 @@ func (Invoice) Fields() []ent.Field {
 		field.Time("finalized_at").
 			Optional().
 			Nillable(),
+		field.Time("period_start").
+			Optional().
+			Nillable().
+			Immutable(),
+		field.Time("period_end").
+			Optional().
+			Nillable().
+			Immutable(),
 		field.String("invoice_pdf_url").
 			Optional().
 			Nillable(),
 		field.String("billing_reason").
 			Optional(),
-		field.JSON("metadata", map[string]interface{}{}).
-			Optional(),
+		field.JSON("metadata", map[string]string{}).
+			Optional().
+			SchemaType(map[string]string{
+				"postgres": "jsonb",
+			}),
 		field.Int("version").
 			Default(1),
 	}
@@ -86,7 +98,9 @@ func (Invoice) Fields() []ent.Field {
 
 // Edges of the Invoice.
 func (Invoice) Edges() []ent.Edge {
-	return nil
+	return []ent.Edge{
+		edge.To("line_items", InvoiceLineItem.Type),
+	}
 }
 
 // Indexes of the Invoice.
@@ -97,5 +111,7 @@ func (Invoice) Indexes() []ent.Index {
 		index.Fields("tenant_id", "subscription_id", "invoice_status", "payment_status", "status"),
 		index.Fields("tenant_id", "invoice_type", "invoice_status", "payment_status", "status"),
 		index.Fields("tenant_id", "due_date", "invoice_status", "payment_status", "status"),
+		// Period based queries
+		index.Fields("period_start", "period_end"),
 	}
 }

@@ -24,7 +24,7 @@ func NewPriceHandler(service service.PriceService, log *logger.Logger) *PriceHan
 // @Tags Prices
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param price body dto.CreatePriceRequest true "Price configuration"
 // @Success 201 {object} dto.PriceResponse
 // @Failure 400 {object} ErrorResponse
@@ -51,7 +51,7 @@ func (h *PriceHandler) CreatePrice(c *gin.Context) {
 // @Tags Prices
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Price ID"
 // @Success 200 {object} dto.PriceResponse
 // @Failure 400 {object} ErrorResponse
@@ -78,7 +78,7 @@ func (h *PriceHandler) GetPrice(c *gin.Context) {
 // @Tags Prices
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param filter query types.Filter true "Filter"
 // @Success 200 {object} dto.ListPricesResponse
 // @Failure 400 {object} ErrorResponse
@@ -105,7 +105,7 @@ func (h *PriceHandler) GetPrices(c *gin.Context) {
 // @Tags Prices
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Price ID"
 // @Param price body dto.UpdatePriceRequest true "Price configuration"
 // @Success 200 {object} dto.PriceResponse
@@ -139,7 +139,7 @@ func (h *PriceHandler) UpdatePrice(c *gin.Context) {
 // @Tags Prices
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Price ID"
 // @Success 200 {object} gin.H
 // @Failure 400 {object} ErrorResponse

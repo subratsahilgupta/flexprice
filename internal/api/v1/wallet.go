@@ -28,7 +28,7 @@ func NewWalletHandler(walletService service.WalletService, logger *logger.Logger
 // @Tags Wallets
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param request body dto.CreateWalletRequest true "Create wallet request"
 // @Success 200 {object} dto.WalletResponse
 // @Failure 400 {object} ErrorResponse
@@ -56,7 +56,7 @@ func (h *WalletHandler) CreateWallet(c *gin.Context) {
 // @Tags Wallets
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Customer ID"
 // @Success 200 {array} dto.WalletResponse
 // @Failure 400 {object} ErrorResponse
@@ -84,7 +84,7 @@ func (h *WalletHandler) GetWalletsByCustomerID(c *gin.Context) {
 // @Tags Wallets
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Wallet ID"
 // @Success 200 {object} dto.WalletResponse
 // @Failure 400 {object} ErrorResponse
@@ -113,7 +113,7 @@ func (h *WalletHandler) GetWalletByID(c *gin.Context) {
 // @Tags Wallets
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Wallet ID"
 // @Param limit query int false "Limit" default(50)
 // @Param offset query int false "Offset" default(0)
@@ -152,7 +152,7 @@ func (h *WalletHandler) GetWalletTransactions(c *gin.Context) {
 // @Tags Wallets
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Wallet ID"
 // @Param request body dto.TopUpWalletRequest true "Top up request"
 // @Success 200 {object} dto.WalletResponse
@@ -188,7 +188,7 @@ func (h *WalletHandler) TopUpWallet(c *gin.Context) {
 // @Tags Wallets
 // @Accept json
 // @Produce json
-// @Security BearerAuth
+// @Security ApiKeyAuth
 // @Param id path string true "Wallet ID"
 // @Success 200 {object} dto.WalletBalanceResponse
 // @Failure 400 {object} ErrorResponse

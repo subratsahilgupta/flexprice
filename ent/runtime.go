@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent/invoice"
+	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/wallet"
@@ -73,9 +74,56 @@ func init() {
 	// invoice.DefaultAmountRemaining holds the default value on creation for the amount_remaining field.
 	invoice.DefaultAmountRemaining = invoiceDescAmountRemaining.Default.(decimal.Decimal)
 	// invoiceDescVersion is the schema descriptor for version field.
-	invoiceDescVersion := invoiceFields[18].Descriptor()
+	invoiceDescVersion := invoiceFields[20].Descriptor()
 	// invoice.DefaultVersion holds the default value on creation for the version field.
 	invoice.DefaultVersion = invoiceDescVersion.Default.(int)
+	invoicelineitemMixin := schema.InvoiceLineItem{}.Mixin()
+	invoicelineitemMixinFields0 := invoicelineitemMixin[0].Fields()
+	_ = invoicelineitemMixinFields0
+	invoicelineitemFields := schema.InvoiceLineItem{}.Fields()
+	_ = invoicelineitemFields
+	// invoicelineitemDescTenantID is the schema descriptor for tenant_id field.
+	invoicelineitemDescTenantID := invoicelineitemMixinFields0[0].Descriptor()
+	// invoicelineitem.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	invoicelineitem.TenantIDValidator = invoicelineitemDescTenantID.Validators[0].(func(string) error)
+	// invoicelineitemDescStatus is the schema descriptor for status field.
+	invoicelineitemDescStatus := invoicelineitemMixinFields0[1].Descriptor()
+	// invoicelineitem.DefaultStatus holds the default value on creation for the status field.
+	invoicelineitem.DefaultStatus = invoicelineitemDescStatus.Default.(string)
+	// invoicelineitemDescCreatedAt is the schema descriptor for created_at field.
+	invoicelineitemDescCreatedAt := invoicelineitemMixinFields0[2].Descriptor()
+	// invoicelineitem.DefaultCreatedAt holds the default value on creation for the created_at field.
+	invoicelineitem.DefaultCreatedAt = invoicelineitemDescCreatedAt.Default.(func() time.Time)
+	// invoicelineitemDescUpdatedAt is the schema descriptor for updated_at field.
+	invoicelineitemDescUpdatedAt := invoicelineitemMixinFields0[3].Descriptor()
+	// invoicelineitem.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	invoicelineitem.DefaultUpdatedAt = invoicelineitemDescUpdatedAt.Default.(func() time.Time)
+	// invoicelineitem.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	invoicelineitem.UpdateDefaultUpdatedAt = invoicelineitemDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// invoicelineitemDescInvoiceID is the schema descriptor for invoice_id field.
+	invoicelineitemDescInvoiceID := invoicelineitemFields[1].Descriptor()
+	// invoicelineitem.InvoiceIDValidator is a validator for the "invoice_id" field. It is called by the builders before save.
+	invoicelineitem.InvoiceIDValidator = invoicelineitemDescInvoiceID.Validators[0].(func(string) error)
+	// invoicelineitemDescCustomerID is the schema descriptor for customer_id field.
+	invoicelineitemDescCustomerID := invoicelineitemFields[2].Descriptor()
+	// invoicelineitem.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
+	invoicelineitem.CustomerIDValidator = invoicelineitemDescCustomerID.Validators[0].(func(string) error)
+	// invoicelineitemDescPriceID is the schema descriptor for price_id field.
+	invoicelineitemDescPriceID := invoicelineitemFields[4].Descriptor()
+	// invoicelineitem.PriceIDValidator is a validator for the "price_id" field. It is called by the builders before save.
+	invoicelineitem.PriceIDValidator = invoicelineitemDescPriceID.Validators[0].(func(string) error)
+	// invoicelineitemDescAmount is the schema descriptor for amount field.
+	invoicelineitemDescAmount := invoicelineitemFields[6].Descriptor()
+	// invoicelineitem.DefaultAmount holds the default value on creation for the amount field.
+	invoicelineitem.DefaultAmount = invoicelineitemDescAmount.Default.(decimal.Decimal)
+	// invoicelineitemDescQuantity is the schema descriptor for quantity field.
+	invoicelineitemDescQuantity := invoicelineitemFields[7].Descriptor()
+	// invoicelineitem.DefaultQuantity holds the default value on creation for the quantity field.
+	invoicelineitem.DefaultQuantity = invoicelineitemDescQuantity.Default.(decimal.Decimal)
+	// invoicelineitemDescCurrency is the schema descriptor for currency field.
+	invoicelineitemDescCurrency := invoicelineitemFields[8].Descriptor()
+	// invoicelineitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	invoicelineitem.CurrencyValidator = invoicelineitemDescCurrency.Validators[0].(func(string) error)
 	subscriptionMixin := schema.Subscription{}.Mixin()
 	subscriptionMixinFields0 := subscriptionMixin[0].Fields()
 	_ = subscriptionMixinFields0
