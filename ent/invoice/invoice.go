@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/shopspring/decimal"
 )
 
@@ -54,6 +55,10 @@ const (
 	FieldVoidedAt = "voided_at"
 	// FieldFinalizedAt holds the string denoting the finalized_at field in the database.
 	FieldFinalizedAt = "finalized_at"
+	// FieldPeriodStart holds the string denoting the period_start field in the database.
+	FieldPeriodStart = "period_start"
+	// FieldPeriodEnd holds the string denoting the period_end field in the database.
+	FieldPeriodEnd = "period_end"
 	// FieldInvoicePdfURL holds the string denoting the invoice_pdf_url field in the database.
 	FieldInvoicePdfURL = "invoice_pdf_url"
 	// FieldBillingReason holds the string denoting the billing_reason field in the database.
@@ -62,8 +67,17 @@ const (
 	FieldMetadata = "metadata"
 	// FieldVersion holds the string denoting the version field in the database.
 	FieldVersion = "version"
+	// EdgeLineItems holds the string denoting the line_items edge name in mutations.
+	EdgeLineItems = "line_items"
 	// Table holds the table name of the invoice in the database.
 	Table = "invoices"
+	// LineItemsTable is the table that holds the line_items relation/edge.
+	LineItemsTable = "invoice_line_items"
+	// LineItemsInverseTable is the table name for the InvoiceLineItem entity.
+	// It exists in this package in order to avoid circular dependency with the "invoicelineitem" package.
+	LineItemsInverseTable = "invoice_line_items"
+	// LineItemsColumn is the table column denoting the line_items relation/edge.
+	LineItemsColumn = "invoice_id"
 )
 
 // Columns holds all SQL columns for invoice fields.
@@ -89,6 +103,8 @@ var Columns = []string{
 	FieldPaidAt,
 	FieldVoidedAt,
 	FieldFinalizedAt,
+	FieldPeriodStart,
+	FieldPeriodEnd,
 	FieldInvoicePdfURL,
 	FieldBillingReason,
 	FieldMetadata,
@@ -244,6 +260,16 @@ func ByFinalizedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFinalizedAt, opts...).ToFunc()
 }
 
+// ByPeriodStart orders the results by the period_start field.
+func ByPeriodStart(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeriodStart, opts...).ToFunc()
+}
+
+// ByPeriodEnd orders the results by the period_end field.
+func ByPeriodEnd(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPeriodEnd, opts...).ToFunc()
+}
+
 // ByInvoicePdfURL orders the results by the invoice_pdf_url field.
 func ByInvoicePdfURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldInvoicePdfURL, opts...).ToFunc()
@@ -257,4 +283,25 @@ func ByBillingReason(opts ...sql.OrderTermOption) OrderOption {
 // ByVersion orders the results by the version field.
 func ByVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVersion, opts...).ToFunc()
+}
+
+// ByLineItemsCount orders the results by line_items count.
+func ByLineItemsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newLineItemsStep(), opts...)
+	}
+}
+
+// ByLineItems orders the results by line_items terms.
+func ByLineItems(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newLineItemsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+func newLineItemsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(LineItemsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, LineItemsTable, LineItemsColumn),
+	)
 }

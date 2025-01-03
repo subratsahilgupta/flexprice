@@ -14,6 +14,8 @@ type Tx struct {
 	config
 	// Invoice is the client for interacting with the Invoice builders.
 	Invoice *InvoiceClient
+	// InvoiceLineItem is the client for interacting with the InvoiceLineItem builders.
+	InvoiceLineItem *InvoiceLineItemClient
 	// Subscription is the client for interacting with the Subscription builders.
 	Subscription *SubscriptionClient
 	// Wallet is the client for interacting with the Wallet builders.
@@ -152,6 +154,7 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.Invoice = NewInvoiceClient(tx.config)
+	tx.InvoiceLineItem = NewInvoiceLineItemClient(tx.config)
 	tx.Subscription = NewSubscriptionClient(tx.config)
 	tx.Wallet = NewWalletClient(tx.config)
 	tx.WalletTransaction = NewWalletTransactionClient(tx.config)

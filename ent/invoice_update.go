@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/invoice"
+	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/shopspring/decimal"
 )
@@ -259,6 +260,46 @@ func (iu *InvoiceUpdate) ClearFinalizedAt() *InvoiceUpdate {
 	return iu
 }
 
+// SetPeriodStart sets the "period_start" field.
+func (iu *InvoiceUpdate) SetPeriodStart(t time.Time) *InvoiceUpdate {
+	iu.mutation.SetPeriodStart(t)
+	return iu
+}
+
+// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
+func (iu *InvoiceUpdate) SetNillablePeriodStart(t *time.Time) *InvoiceUpdate {
+	if t != nil {
+		iu.SetPeriodStart(*t)
+	}
+	return iu
+}
+
+// ClearPeriodStart clears the value of the "period_start" field.
+func (iu *InvoiceUpdate) ClearPeriodStart() *InvoiceUpdate {
+	iu.mutation.ClearPeriodStart()
+	return iu
+}
+
+// SetPeriodEnd sets the "period_end" field.
+func (iu *InvoiceUpdate) SetPeriodEnd(t time.Time) *InvoiceUpdate {
+	iu.mutation.SetPeriodEnd(t)
+	return iu
+}
+
+// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
+func (iu *InvoiceUpdate) SetNillablePeriodEnd(t *time.Time) *InvoiceUpdate {
+	if t != nil {
+		iu.SetPeriodEnd(*t)
+	}
+	return iu
+}
+
+// ClearPeriodEnd clears the value of the "period_end" field.
+func (iu *InvoiceUpdate) ClearPeriodEnd() *InvoiceUpdate {
+	iu.mutation.ClearPeriodEnd()
+	return iu
+}
+
 // SetInvoicePdfURL sets the "invoice_pdf_url" field.
 func (iu *InvoiceUpdate) SetInvoicePdfURL(s string) *InvoiceUpdate {
 	iu.mutation.SetInvoicePdfURL(s)
@@ -332,9 +373,45 @@ func (iu *InvoiceUpdate) AddVersion(i int) *InvoiceUpdate {
 	return iu
 }
 
+// AddLineItemIDs adds the "line_items" edge to the InvoiceLineItem entity by IDs.
+func (iu *InvoiceUpdate) AddLineItemIDs(ids ...string) *InvoiceUpdate {
+	iu.mutation.AddLineItemIDs(ids...)
+	return iu
+}
+
+// AddLineItems adds the "line_items" edges to the InvoiceLineItem entity.
+func (iu *InvoiceUpdate) AddLineItems(i ...*InvoiceLineItem) *InvoiceUpdate {
+	ids := make([]string, len(i))
+	for j := range i {
+		ids[j] = i[j].ID
+	}
+	return iu.AddLineItemIDs(ids...)
+}
+
 // Mutation returns the InvoiceMutation object of the builder.
 func (iu *InvoiceUpdate) Mutation() *InvoiceMutation {
 	return iu.mutation
+}
+
+// ClearLineItems clears all "line_items" edges to the InvoiceLineItem entity.
+func (iu *InvoiceUpdate) ClearLineItems() *InvoiceUpdate {
+	iu.mutation.ClearLineItems()
+	return iu
+}
+
+// RemoveLineItemIDs removes the "line_items" edge to InvoiceLineItem entities by IDs.
+func (iu *InvoiceUpdate) RemoveLineItemIDs(ids ...string) *InvoiceUpdate {
+	iu.mutation.RemoveLineItemIDs(ids...)
+	return iu
+}
+
+// RemoveLineItems removes "line_items" edges to InvoiceLineItem entities.
+func (iu *InvoiceUpdate) RemoveLineItems(i ...*InvoiceLineItem) *InvoiceUpdate {
+	ids := make([]string, len(i))
+	for j := range i {
+		ids[j] = i[j].ID
+	}
+	return iu.RemoveLineItemIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -448,6 +525,18 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if iu.mutation.FinalizedAtCleared() {
 		_spec.ClearField(invoice.FieldFinalizedAt, field.TypeTime)
 	}
+	if value, ok := iu.mutation.PeriodStart(); ok {
+		_spec.SetField(invoice.FieldPeriodStart, field.TypeTime, value)
+	}
+	if iu.mutation.PeriodStartCleared() {
+		_spec.ClearField(invoice.FieldPeriodStart, field.TypeTime)
+	}
+	if value, ok := iu.mutation.PeriodEnd(); ok {
+		_spec.SetField(invoice.FieldPeriodEnd, field.TypeTime, value)
+	}
+	if iu.mutation.PeriodEndCleared() {
+		_spec.ClearField(invoice.FieldPeriodEnd, field.TypeTime)
+	}
 	if value, ok := iu.mutation.InvoicePdfURL(); ok {
 		_spec.SetField(invoice.FieldInvoicePdfURL, field.TypeString, value)
 	}
@@ -471,6 +560,51 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := iu.mutation.AddedVersion(); ok {
 		_spec.AddField(invoice.FieldVersion, field.TypeInt, value)
+	}
+	if iu.mutation.LineItemsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoice.LineItemsTable,
+			Columns: []string{invoice.LineItemsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := iu.mutation.RemovedLineItemsIDs(); len(nodes) > 0 && !iu.mutation.LineItemsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoice.LineItemsTable,
+			Columns: []string{invoice.LineItemsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := iu.mutation.LineItemsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoice.LineItemsTable,
+			Columns: []string{invoice.LineItemsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, iu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -722,6 +856,46 @@ func (iuo *InvoiceUpdateOne) ClearFinalizedAt() *InvoiceUpdateOne {
 	return iuo
 }
 
+// SetPeriodStart sets the "period_start" field.
+func (iuo *InvoiceUpdateOne) SetPeriodStart(t time.Time) *InvoiceUpdateOne {
+	iuo.mutation.SetPeriodStart(t)
+	return iuo
+}
+
+// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
+func (iuo *InvoiceUpdateOne) SetNillablePeriodStart(t *time.Time) *InvoiceUpdateOne {
+	if t != nil {
+		iuo.SetPeriodStart(*t)
+	}
+	return iuo
+}
+
+// ClearPeriodStart clears the value of the "period_start" field.
+func (iuo *InvoiceUpdateOne) ClearPeriodStart() *InvoiceUpdateOne {
+	iuo.mutation.ClearPeriodStart()
+	return iuo
+}
+
+// SetPeriodEnd sets the "period_end" field.
+func (iuo *InvoiceUpdateOne) SetPeriodEnd(t time.Time) *InvoiceUpdateOne {
+	iuo.mutation.SetPeriodEnd(t)
+	return iuo
+}
+
+// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
+func (iuo *InvoiceUpdateOne) SetNillablePeriodEnd(t *time.Time) *InvoiceUpdateOne {
+	if t != nil {
+		iuo.SetPeriodEnd(*t)
+	}
+	return iuo
+}
+
+// ClearPeriodEnd clears the value of the "period_end" field.
+func (iuo *InvoiceUpdateOne) ClearPeriodEnd() *InvoiceUpdateOne {
+	iuo.mutation.ClearPeriodEnd()
+	return iuo
+}
+
 // SetInvoicePdfURL sets the "invoice_pdf_url" field.
 func (iuo *InvoiceUpdateOne) SetInvoicePdfURL(s string) *InvoiceUpdateOne {
 	iuo.mutation.SetInvoicePdfURL(s)
@@ -795,9 +969,45 @@ func (iuo *InvoiceUpdateOne) AddVersion(i int) *InvoiceUpdateOne {
 	return iuo
 }
 
+// AddLineItemIDs adds the "line_items" edge to the InvoiceLineItem entity by IDs.
+func (iuo *InvoiceUpdateOne) AddLineItemIDs(ids ...string) *InvoiceUpdateOne {
+	iuo.mutation.AddLineItemIDs(ids...)
+	return iuo
+}
+
+// AddLineItems adds the "line_items" edges to the InvoiceLineItem entity.
+func (iuo *InvoiceUpdateOne) AddLineItems(i ...*InvoiceLineItem) *InvoiceUpdateOne {
+	ids := make([]string, len(i))
+	for j := range i {
+		ids[j] = i[j].ID
+	}
+	return iuo.AddLineItemIDs(ids...)
+}
+
 // Mutation returns the InvoiceMutation object of the builder.
 func (iuo *InvoiceUpdateOne) Mutation() *InvoiceMutation {
 	return iuo.mutation
+}
+
+// ClearLineItems clears all "line_items" edges to the InvoiceLineItem entity.
+func (iuo *InvoiceUpdateOne) ClearLineItems() *InvoiceUpdateOne {
+	iuo.mutation.ClearLineItems()
+	return iuo
+}
+
+// RemoveLineItemIDs removes the "line_items" edge to InvoiceLineItem entities by IDs.
+func (iuo *InvoiceUpdateOne) RemoveLineItemIDs(ids ...string) *InvoiceUpdateOne {
+	iuo.mutation.RemoveLineItemIDs(ids...)
+	return iuo
+}
+
+// RemoveLineItems removes "line_items" edges to InvoiceLineItem entities.
+func (iuo *InvoiceUpdateOne) RemoveLineItems(i ...*InvoiceLineItem) *InvoiceUpdateOne {
+	ids := make([]string, len(i))
+	for j := range i {
+		ids[j] = i[j].ID
+	}
+	return iuo.RemoveLineItemIDs(ids...)
 }
 
 // Where appends a list predicates to the InvoiceUpdate builder.
@@ -941,6 +1151,18 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	if iuo.mutation.FinalizedAtCleared() {
 		_spec.ClearField(invoice.FieldFinalizedAt, field.TypeTime)
 	}
+	if value, ok := iuo.mutation.PeriodStart(); ok {
+		_spec.SetField(invoice.FieldPeriodStart, field.TypeTime, value)
+	}
+	if iuo.mutation.PeriodStartCleared() {
+		_spec.ClearField(invoice.FieldPeriodStart, field.TypeTime)
+	}
+	if value, ok := iuo.mutation.PeriodEnd(); ok {
+		_spec.SetField(invoice.FieldPeriodEnd, field.TypeTime, value)
+	}
+	if iuo.mutation.PeriodEndCleared() {
+		_spec.ClearField(invoice.FieldPeriodEnd, field.TypeTime)
+	}
 	if value, ok := iuo.mutation.InvoicePdfURL(); ok {
 		_spec.SetField(invoice.FieldInvoicePdfURL, field.TypeString, value)
 	}
@@ -964,6 +1186,51 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	}
 	if value, ok := iuo.mutation.AddedVersion(); ok {
 		_spec.AddField(invoice.FieldVersion, field.TypeInt, value)
+	}
+	if iuo.mutation.LineItemsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoice.LineItemsTable,
+			Columns: []string{invoice.LineItemsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := iuo.mutation.RemovedLineItemsIDs(); len(nodes) > 0 && !iuo.mutation.LineItemsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoice.LineItemsTable,
+			Columns: []string{invoice.LineItemsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := iuo.mutation.LineItemsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoice.LineItemsTable,
+			Columns: []string{invoice.LineItemsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &Invoice{config: iuo.config}
 	_spec.Assign = _node.assignValues

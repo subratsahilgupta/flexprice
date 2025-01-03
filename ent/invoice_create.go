@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/invoice"
+	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/shopspring/decimal"
 )
 
@@ -269,6 +270,34 @@ func (ic *InvoiceCreate) SetNillableFinalizedAt(t *time.Time) *InvoiceCreate {
 	return ic
 }
 
+// SetPeriodStart sets the "period_start" field.
+func (ic *InvoiceCreate) SetPeriodStart(t time.Time) *InvoiceCreate {
+	ic.mutation.SetPeriodStart(t)
+	return ic
+}
+
+// SetNillablePeriodStart sets the "period_start" field if the given value is not nil.
+func (ic *InvoiceCreate) SetNillablePeriodStart(t *time.Time) *InvoiceCreate {
+	if t != nil {
+		ic.SetPeriodStart(*t)
+	}
+	return ic
+}
+
+// SetPeriodEnd sets the "period_end" field.
+func (ic *InvoiceCreate) SetPeriodEnd(t time.Time) *InvoiceCreate {
+	ic.mutation.SetPeriodEnd(t)
+	return ic
+}
+
+// SetNillablePeriodEnd sets the "period_end" field if the given value is not nil.
+func (ic *InvoiceCreate) SetNillablePeriodEnd(t *time.Time) *InvoiceCreate {
+	if t != nil {
+		ic.SetPeriodEnd(*t)
+	}
+	return ic
+}
+
 // SetInvoicePdfURL sets the "invoice_pdf_url" field.
 func (ic *InvoiceCreate) SetInvoicePdfURL(s string) *InvoiceCreate {
 	ic.mutation.SetInvoicePdfURL(s)
@@ -321,6 +350,21 @@ func (ic *InvoiceCreate) SetNillableVersion(i *int) *InvoiceCreate {
 func (ic *InvoiceCreate) SetID(s string) *InvoiceCreate {
 	ic.mutation.SetID(s)
 	return ic
+}
+
+// AddLineItemIDs adds the "line_items" edge to the InvoiceLineItem entity by IDs.
+func (ic *InvoiceCreate) AddLineItemIDs(ids ...string) *InvoiceCreate {
+	ic.mutation.AddLineItemIDs(ids...)
+	return ic
+}
+
+// AddLineItems adds the "line_items" edges to the InvoiceLineItem entity.
+func (ic *InvoiceCreate) AddLineItems(i ...*InvoiceLineItem) *InvoiceCreate {
+	ids := make([]string, len(i))
+	for j := range i {
+		ids[j] = i[j].ID
+	}
+	return ic.AddLineItemIDs(ids...)
 }
 
 // Mutation returns the InvoiceMutation object of the builder.
@@ -572,6 +616,14 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 		_spec.SetField(invoice.FieldFinalizedAt, field.TypeTime, value)
 		_node.FinalizedAt = &value
 	}
+	if value, ok := ic.mutation.PeriodStart(); ok {
+		_spec.SetField(invoice.FieldPeriodStart, field.TypeTime, value)
+		_node.PeriodStart = &value
+	}
+	if value, ok := ic.mutation.PeriodEnd(); ok {
+		_spec.SetField(invoice.FieldPeriodEnd, field.TypeTime, value)
+		_node.PeriodEnd = &value
+	}
 	if value, ok := ic.mutation.InvoicePdfURL(); ok {
 		_spec.SetField(invoice.FieldInvoicePdfURL, field.TypeString, value)
 		_node.InvoicePdfURL = &value
@@ -587,6 +639,22 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 	if value, ok := ic.mutation.Version(); ok {
 		_spec.SetField(invoice.FieldVersion, field.TypeInt, value)
 		_node.Version = value
+	}
+	if nodes := ic.mutation.LineItemsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoice.LineItemsTable,
+			Columns: []string{invoice.LineItemsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

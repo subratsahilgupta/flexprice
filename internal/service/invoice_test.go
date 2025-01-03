@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
@@ -48,7 +48,6 @@ func (s *InvoiceServiceSuite) SetupTest() {
 	s.setupTestData()
 }
 
-// TearDownTest is called after each test
 func (s *InvoiceServiceSuite) TearDownTest() {
 	s.BaseServiceTestSuite.TearDownTest()
 }
@@ -56,6 +55,7 @@ func (s *InvoiceServiceSuite) TearDownTest() {
 func (s *InvoiceServiceSuite) setupService() {
 	s.service = NewInvoiceService(
 		s.GetStores().InvoiceRepo,
+		s.GetStores().InvoiceLineItemRepo,
 		s.GetPublisher(),
 		s.GetLogger(),
 		s.GetDB(),
@@ -169,7 +169,6 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 	tests := []struct {
 		name    string
 		usage   *dto.GetUsageBySubscriptionResponse
-		want    *dto.InvoiceResponse
 		wantErr bool
 	}{
 		{
@@ -181,110 +180,146 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 				Currency:  "USD",
 				Charges: []*dto.SubscriptionUsageByMetersResponse{
 					{
+						Price:            s.testData.prices.apiCalls,
 						MeterDisplayName: "API Calls",
 						Quantity:         100,
 						Amount:           10,
 					},
 					{
+						Price:            s.testData.prices.storage,
 						MeterDisplayName: "Storage",
 						Quantity:         50,
 						Amount:           5,
 					},
 				},
 			},
-			want: &dto.InvoiceResponse{
-				CustomerID:     s.testData.customer.ID,
-				SubscriptionID: &s.testData.subscription.ID,
-				InvoiceType:    types.InvoiceTypeSubscription,
-				InvoiceStatus:  types.InvoiceStatusDraft,
-				PaymentStatus:  types.InvoicePaymentStatusPending,
-				Currency:       "USD",
-				AmountDue:      decimal.NewFromFloat(15),
-				BillingReason:  string(types.InvoiceBillingReasonSubscriptionCycle),
-			},
-			wantErr: false,
 		},
 		{
-			name: "zero amount invoice",
-			usage: &dto.GetUsageBySubscriptionResponse{
-				StartTime: s.testData.subscription.CurrentPeriodStart,
-				EndTime:   s.testData.subscription.CurrentPeriodEnd,
-				Amount:    0,
-				Currency:  "USD",
-				Charges:   []*dto.SubscriptionUsageByMetersResponse{},
-			},
+			name:    "error when usage is nil",
+			usage:   nil,
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			got, err := s.service.CreateSubscriptionInvoice(
-				s.GetContext(),
-				s.testData.subscription,
-				tt.usage.StartTime,
-				tt.usage.EndTime,
-				tt.usage,
-			)
+			got, err := s.service.CreateSubscriptionInvoice(s.GetContext(), s.testData.subscription, s.testData.subscription.CurrentPeriodStart, s.testData.subscription.CurrentPeriodEnd, tt.usage)
 			if tt.wantErr {
 				s.Error(err)
 				return
 			}
 
 			s.NoError(err)
-			s.Equal(tt.want.CustomerID, got.CustomerID)
-			s.Equal(tt.want.SubscriptionID, got.SubscriptionID)
-			s.Equal(tt.want.InvoiceType, got.InvoiceType)
-			s.Equal(tt.want.InvoiceStatus, got.InvoiceStatus)
-			s.Equal(tt.want.PaymentStatus, got.PaymentStatus)
-			s.Equal(tt.want.Currency, got.Currency)
-			s.Equal(tt.want.AmountDue.Equal(got.AmountDue), true)
-			s.Equal(tt.want.BillingReason, got.BillingReason)
+			s.NotEmpty(got.ID)
+			s.Equal(s.testData.customer.ID, got.CustomerID)
+			if got.SubscriptionID != nil {
+				s.Equal(s.testData.subscription.ID, *got.SubscriptionID)
+			}
+			s.Equal(types.InvoiceTypeSubscription, got.InvoiceType)
+			s.Equal(types.InvoiceStatusDraft, got.InvoiceStatus)
+			s.Equal(types.InvoicePaymentStatusPending, got.PaymentStatus)
+			s.Equal("USD", got.Currency)
+			s.True(decimal.NewFromFloat(15).Equal(got.AmountDue), "amount due mismatch")
+			s.True(decimal.Zero.Equal(got.AmountPaid), "amount paid mismatch")
+			s.True(decimal.NewFromFloat(15).Equal(got.AmountRemaining), "amount remaining mismatch")
+			s.Equal(fmt.Sprintf("Invoice for subscription %s", s.testData.subscription.ID), got.Description)
+			s.Equal(s.testData.subscription.CurrentPeriodStart.Unix(), got.PeriodStart.Unix())
+			s.Equal(s.testData.subscription.CurrentPeriodEnd.Unix(), got.PeriodEnd.Unix())
+			s.Equal(types.StatusPublished, types.Status(got.Status))
+
+			// Verify line items
+			items, err := s.GetStores().InvoiceLineItemRepo.GetByInvoiceID(s.GetContext(), got.ID)
+			s.NoError(err)
+			s.Len(items, len(tt.usage.Charges))
+
+			for i, charge := range tt.usage.Charges {
+				item := items[i]
+				s.Equal(got.ID, item.InvoiceID)
+				s.Equal(got.CustomerID, item.CustomerID)
+				if got.SubscriptionID != nil && item.SubscriptionID != nil {
+					s.Equal(*got.SubscriptionID, *item.SubscriptionID)
+				}
+				s.Equal(charge.Price.ID, item.PriceID)
+				s.Equal(charge.Price.MeterID, *item.MeterID)
+				s.True(decimal.NewFromFloat(charge.Amount).Equal(item.Amount))
+				s.True(decimal.NewFromFloat(charge.Quantity).Equal(item.Quantity))
+				s.Equal(got.Currency, item.Currency)
+				s.Equal(got.PeriodStart.Unix(), item.PeriodStart.Unix())
+				s.Equal(got.PeriodEnd.Unix(), item.PeriodEnd.Unix())
+				s.Equal(types.StatusPublished, types.Status(item.Status))
+				s.Equal(got.TenantID, item.TenantID)
+			}
 		})
 	}
 }
 
 func (s *InvoiceServiceSuite) TestFinalizeInvoice() {
-	// Create a draft invoice
+	// Create a draft invoice first
 	draftInvoice := &invoice.Invoice{
-		ID:             "inv_123",
-		CustomerID:     s.testData.customer.ID,
-		SubscriptionID: &s.testData.subscription.ID,
-		InvoiceType:    types.InvoiceTypeSubscription,
-		InvoiceStatus:  types.InvoiceStatusDraft,
-		PaymentStatus:  types.InvoicePaymentStatusPending,
-		Currency:       "USD",
-		AmountDue:      decimal.NewFromFloat(15),
-		BillingReason:  string(types.InvoiceBillingReasonSubscriptionCycle),
-		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+		CustomerID:      s.testData.customer.ID,
+		SubscriptionID:  &s.testData.subscription.ID,
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusDraft,
+		PaymentStatus:   types.InvoicePaymentStatusPending,
+		Currency:        "USD",
+		AmountDue:       decimal.NewFromFloat(15),
+		AmountPaid:      decimal.Zero,
+		AmountRemaining: decimal.NewFromFloat(15),
+		Description:     "Test Invoice",
+		PeriodStart:     &s.testData.subscription.CurrentPeriodStart,
+		PeriodEnd:       &s.testData.subscription.CurrentPeriodEnd,
+		BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().InvoiceRepo.Create(s.GetContext(), draftInvoice))
+
+	// Create line items
+	lineItems := []*invoice.InvoiceLineItem{
+		{
+			ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+			InvoiceID:      draftInvoice.ID,
+			CustomerID:     draftInvoice.CustomerID,
+			SubscriptionID: draftInvoice.SubscriptionID,
+			PriceID:        s.testData.prices.apiCalls.ID,
+			MeterID:        &s.testData.meters.apiCalls.ID,
+			Amount:         decimal.NewFromFloat(10),
+			Quantity:       decimal.NewFromFloat(100),
+			Currency:       draftInvoice.Currency,
+			PeriodStart:    draftInvoice.PeriodStart,
+			PeriodEnd:      draftInvoice.PeriodEnd,
+			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		},
+		{
+			ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+			InvoiceID:      draftInvoice.ID,
+			CustomerID:     draftInvoice.CustomerID,
+			SubscriptionID: draftInvoice.SubscriptionID,
+			PriceID:        s.testData.prices.storage.ID,
+			MeterID:        &s.testData.meters.storage.ID,
+			Amount:         decimal.NewFromFloat(5),
+			Quantity:       decimal.NewFromFloat(50),
+			Currency:       draftInvoice.Currency,
+			PeriodStart:    draftInvoice.PeriodStart,
+			PeriodEnd:      draftInvoice.PeriodEnd,
+			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		},
+	}
+
+	_, err := s.GetStores().InvoiceLineItemRepo.CreateMany(s.GetContext(), lineItems)
+	s.NoError(err)
 
 	tests := []struct {
 		name    string
 		id      string
-		want    *dto.InvoiceResponse
 		wantErr bool
 	}{
 		{
 			name: "successful finalization",
 			id:   draftInvoice.ID,
-			want: &dto.InvoiceResponse{
-				ID:             draftInvoice.ID,
-				CustomerID:     draftInvoice.CustomerID,
-				SubscriptionID: draftInvoice.SubscriptionID,
-				InvoiceType:    draftInvoice.InvoiceType,
-				InvoiceStatus:  types.InvoiceStatusFinalized,
-				PaymentStatus:  draftInvoice.PaymentStatus,
-				Currency:       draftInvoice.Currency,
-				AmountDue:      draftInvoice.AmountDue,
-				BillingReason:  draftInvoice.BillingReason,
-			},
-			wantErr: false,
 		},
 		{
-			name:    "non-existent invoice",
-			id:      "inv_nonexistent",
+			name:    "error when invoice not found",
+			id:      "invalid_id",
 			wantErr: true,
 		},
 	}
@@ -298,67 +333,128 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice() {
 			}
 
 			s.NoError(err)
+			// Verify invoice is finalized
+			inv, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), tt.id)
+			s.NoError(err)
+			s.Equal(types.InvoiceStatusFinalized, inv.InvoiceStatus)
+
+			// Verify line items are still present and published
+			items, err := s.GetStores().InvoiceLineItemRepo.GetByInvoiceID(s.GetContext(), tt.id)
+			s.NoError(err)
+			s.Len(items, 2)
+			for _, item := range items {
+				s.Equal(types.StatusPublished, types.Status(item.Status))
+			}
 		})
 	}
 }
 
 func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
-	// Create a finalized invoice
+	// Create a finalized invoice first
 	finalizedInvoice := &invoice.Invoice{
-		ID:             "inv_123",
-		CustomerID:     s.testData.customer.ID,
-		SubscriptionID: &s.testData.subscription.ID,
-		InvoiceType:    types.InvoiceTypeSubscription,
-		InvoiceStatus:  types.InvoiceStatusFinalized,
-		PaymentStatus:  types.InvoicePaymentStatusPending,
-		Currency:       "USD",
-		AmountDue:      decimal.NewFromFloat(15),
-		BillingReason:  string(types.InvoiceBillingReasonSubscriptionCycle),
-		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+		CustomerID:      s.testData.customer.ID,
+		SubscriptionID:  &s.testData.subscription.ID,
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusFinalized,
+		PaymentStatus:   types.InvoicePaymentStatusPending,
+		Currency:        "USD",
+		AmountDue:       decimal.NewFromFloat(15),
+		AmountPaid:      decimal.Zero,
+		AmountRemaining: decimal.NewFromFloat(15),
+		Description:     "Test Invoice",
+		PeriodStart:     &s.testData.subscription.CurrentPeriodStart,
+		PeriodEnd:       &s.testData.subscription.CurrentPeriodEnd,
+		BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().InvoiceRepo.Create(s.GetContext(), finalizedInvoice))
 
-	tests := []struct {
-		name      string
-		id        string
-		newStatus types.InvoicePaymentStatus
-		want      *dto.InvoiceResponse
-		wantErr   bool
-	}{
+	// Create line items
+	lineItems := []*invoice.InvoiceLineItem{
 		{
-			name:      "mark as paid",
-			id:        finalizedInvoice.ID,
-			newStatus: types.InvoicePaymentStatusSucceeded,
-			want: &dto.InvoiceResponse{
-				ID:             finalizedInvoice.ID,
-				CustomerID:     finalizedInvoice.CustomerID,
-				SubscriptionID: finalizedInvoice.SubscriptionID,
-				InvoiceType:    finalizedInvoice.InvoiceType,
-				InvoiceStatus:  finalizedInvoice.InvoiceStatus,
-				PaymentStatus:  types.InvoicePaymentStatusSucceeded,
-				Currency:       finalizedInvoice.Currency,
-				AmountDue:      finalizedInvoice.AmountDue,
-				BillingReason:  finalizedInvoice.BillingReason,
-			},
-			wantErr: false,
+			ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+			InvoiceID:      finalizedInvoice.ID,
+			CustomerID:     finalizedInvoice.CustomerID,
+			SubscriptionID: finalizedInvoice.SubscriptionID,
+			PriceID:        s.testData.prices.apiCalls.ID,
+			MeterID:        &s.testData.meters.apiCalls.ID,
+			Amount:         decimal.NewFromFloat(10),
+			Quantity:       decimal.NewFromFloat(100),
+			Currency:       finalizedInvoice.Currency,
+			PeriodStart:    finalizedInvoice.PeriodStart,
+			PeriodEnd:      finalizedInvoice.PeriodEnd,
+			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
 		},
 		{
-			name:      "non-existent invoice",
-			id:        "inv_nonexistent",
-			newStatus: types.InvoicePaymentStatusSucceeded,
-			wantErr:   true,
+			ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+			InvoiceID:      finalizedInvoice.ID,
+			CustomerID:     finalizedInvoice.CustomerID,
+			SubscriptionID: finalizedInvoice.SubscriptionID,
+			PriceID:        s.testData.prices.storage.ID,
+			MeterID:        &s.testData.meters.storage.ID,
+			Amount:         decimal.NewFromFloat(5),
+			Quantity:       decimal.NewFromFloat(50),
+			Currency:       finalizedInvoice.Currency,
+			PeriodStart:    finalizedInvoice.PeriodStart,
+			PeriodEnd:      finalizedInvoice.PeriodEnd,
+			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		},
+	}
+	_, err := s.GetStores().InvoiceLineItemRepo.CreateMany(s.GetContext(), lineItems)
+	s.NoError(err)
+
+	tests := []struct {
+		name    string
+		id      string
+		status  types.InvoicePaymentStatus
+		amount  *decimal.Decimal
+		wantErr bool
+	}{
+		{
+			name:   "successful payment status update to succeeded",
+			id:     finalizedInvoice.ID,
+			status: types.InvoicePaymentStatusSucceeded,
+			amount: &decimal.Decimal{},
+		},
+		{
+			name:    "error when invoice not found",
+			id:      "invalid_id",
+			status:  types.InvoicePaymentStatusSucceeded,
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.service.UpdatePaymentStatus(s.GetContext(), tt.id, tt.newStatus, lo.ToPtr(decimal.Zero))
+			// Set the amount to the full amount due for successful payment
+			if tt.status == types.InvoicePaymentStatusSucceeded {
+				amount := finalizedInvoice.AmountDue
+				tt.amount = &amount
+			}
+
+			err := s.service.UpdatePaymentStatus(s.GetContext(), tt.id, tt.status, tt.amount)
 			if tt.wantErr {
 				s.Error(err)
 				return
 			}
 
 			s.NoError(err)
+			// Verify invoice payment status
+			inv, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), tt.id)
+			s.NoError(err)
+			s.Equal(tt.status, inv.PaymentStatus)
+			if tt.status == types.InvoicePaymentStatusSucceeded {
+				s.True(inv.AmountDue.Equal(inv.AmountPaid), "amount paid should equal amount due")
+				s.True(decimal.Zero.Equal(inv.AmountRemaining), "amount remaining should be zero")
+			}
+
+			// Verify line items are still present and published
+			items, err := s.GetStores().InvoiceLineItemRepo.GetByInvoiceID(s.GetContext(), tt.id)
+			s.NoError(err)
+			s.Len(items, 2)
+			for _, item := range items {
+				s.Equal(types.StatusPublished, types.Status(item.Status))
+			}
 		})
 	}
 }

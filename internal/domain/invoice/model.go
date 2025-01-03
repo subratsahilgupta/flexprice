@@ -1,7 +1,6 @@
 package invoice
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
@@ -26,9 +25,12 @@ type Invoice struct {
 	PaidAt          *time.Time                 `json:"paid_at,omitempty"`
 	VoidedAt        *time.Time                 `json:"voided_at,omitempty"`
 	FinalizedAt     *time.Time                 `json:"finalized_at,omitempty"`
+	PeriodStart     *time.Time                 `json:"period_start,omitempty"`
+	PeriodEnd       *time.Time                 `json:"period_end,omitempty"`
 	InvoicePDFURL   *string                    `json:"invoice_pdf_url,omitempty"`
 	BillingReason   string                     `json:"billing_reason,omitempty"`
 	Metadata        types.Metadata             `json:"metadata,omitempty"`
+	LineItems       []*InvoiceLineItem         `json:"line_items,omitempty"`
 	Version         int                        `json:"version"`
 	types.BaseModel
 }
@@ -37,6 +39,15 @@ type Invoice struct {
 func FromEnt(e *ent.Invoice) *Invoice {
 	if e == nil {
 		return nil
+	}
+
+	var lineItems []*InvoiceLineItem
+	if e.Edges.LineItems != nil {
+		lineItems = make([]*InvoiceLineItem, len(e.Edges.LineItems))
+		for i, item := range e.Edges.LineItems {
+			lineItem := &InvoiceLineItem{}
+			lineItems[i] = lineItem.FromEnt(item)
+		}
 	}
 
 	return &Invoice{
@@ -55,9 +66,12 @@ func FromEnt(e *ent.Invoice) *Invoice {
 		PaidAt:          e.PaidAt,
 		VoidedAt:        e.VoidedAt,
 		FinalizedAt:     e.FinalizedAt,
+		PeriodStart:     e.PeriodStart,
+		PeriodEnd:       e.PeriodEnd,
 		InvoicePDFURL:   e.InvoicePdfURL,
 		BillingReason:   e.BillingReason,
 		Metadata:        e.Metadata,
+		LineItems:       lineItems,
 		Version:         e.Version,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
@@ -99,12 +113,25 @@ func (i *Invoice) Validate() error {
 	}
 
 	if !i.AmountPaid.Add(i.AmountRemaining).Equal(i.AmountDue) {
-		return NewValidationError("amount", "amount_paid + amount_remaining must be equal to amount_due")
+		return NewValidationError("amount_remaining", "must equal amount_due - amount_paid")
 	}
 
-	// Status validations
-	if !i.AmountDue.IsZero() && i.AmountPaid.Equal(i.AmountDue) && i.PaymentStatus != types.InvoicePaymentStatusSucceeded {
-		return NewValidationError("payment_status", fmt.Sprintf("must be %s if amount_paid is equal to amount_due", types.InvoicePaymentStatusSucceeded))
+	if i.PeriodStart != nil && i.PeriodEnd != nil {
+		if i.PeriodEnd.Before(*i.PeriodStart) {
+			return NewValidationError("period_end", "must be after period_start")
+		}
+	}
+
+	// validate line items if present
+	if i.LineItems != nil {
+		for _, item := range i.LineItems {
+			if item.Currency != i.Currency {
+				return NewValidationError("line_items", "currency must match invoice currency")
+			}
+			if err := item.Validate(); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil

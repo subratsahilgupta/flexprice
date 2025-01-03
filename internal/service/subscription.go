@@ -31,16 +31,17 @@ type SubscriptionService interface {
 }
 
 type subscriptionService struct {
-	subscriptionRepo subscription.Repository
-	planRepo         plan.Repository
-	priceRepo        price.Repository
-	eventRepo        events.Repository
-	meterRepo        meter.Repository
-	customerRepo     customer.Repository
-	invoiceRepo      invoice.Repository
-	publisher        publisher.EventPublisher
-	logger           *logger.Logger
-	db               postgres.IClient
+	subscriptionRepo    subscription.Repository
+	planRepo            plan.Repository
+	priceRepo           price.Repository
+	eventRepo           events.Repository
+	meterRepo           meter.Repository
+	customerRepo        customer.Repository
+	invoiceRepo         invoice.Repository
+	invoiceLineItemRepo invoice.LineItemRepository
+	publisher           publisher.EventPublisher
+	logger              *logger.Logger
+	db                  postgres.IClient
 }
 
 func NewSubscriptionService(
@@ -458,7 +459,7 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) error {
 
 // processSubscriptionPeriod handles the period transitions for a single subscription
 func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub *subscription.Subscription, now time.Time) error {
-	invoiceService := NewInvoiceService(s.invoiceRepo, s.publisher, s.logger, s.db)
+	invoiceService := NewInvoiceService(s.invoiceRepo, s.invoiceLineItemRepo, s.publisher, s.logger, s.db)
 
 	originalStart := sub.CurrentPeriodStart
 	originalEnd := sub.CurrentPeriodEnd

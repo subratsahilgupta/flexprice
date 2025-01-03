@@ -89,3 +89,7 @@ func NewEnvironmentRepository(p RepositoryParams) environment.Repository {
 func NewInvoiceRepository(p RepositoryParams) invoice.Repository {
 	return entRepo.NewInvoiceRepository(p.EntClient, p.Logger)
 }
+
+func NewInvoiceLineItemRepository(p RepositoryParams) invoice.LineItemRepository {
+	return entRepo.NewInvoiceLineItemRepository(p.EntClient, p.Logger)
+}

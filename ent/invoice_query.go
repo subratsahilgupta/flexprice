@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -12,16 +13,18 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/invoice"
+	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/predicate"
 )
 
 // InvoiceQuery is the builder for querying Invoice entities.
 type InvoiceQuery struct {
 	config
-	ctx        *QueryContext
-	order      []invoice.OrderOption
-	inters     []Interceptor
-	predicates []predicate.Invoice
+	ctx           *QueryContext
+	order         []invoice.OrderOption
+	inters        []Interceptor
+	predicates    []predicate.Invoice
+	withLineItems *InvoiceLineItemQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -56,6 +59,28 @@ func (iq *InvoiceQuery) Unique(unique bool) *InvoiceQuery {
 func (iq *InvoiceQuery) Order(o ...invoice.OrderOption) *InvoiceQuery {
 	iq.order = append(iq.order, o...)
 	return iq
+}
+
+// QueryLineItems chains the current query on the "line_items" edge.
+func (iq *InvoiceQuery) QueryLineItems() *InvoiceLineItemQuery {
+	query := (&InvoiceLineItemClient{config: iq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := iq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := iq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(invoice.Table, invoice.FieldID, selector),
+			sqlgraph.To(invoicelineitem.Table, invoicelineitem.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, invoice.LineItemsTable, invoice.LineItemsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(iq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // First returns the first Invoice entity from the query.
@@ -245,15 +270,27 @@ func (iq *InvoiceQuery) Clone() *InvoiceQuery {
 		return nil
 	}
 	return &InvoiceQuery{
-		config:     iq.config,
-		ctx:        iq.ctx.Clone(),
-		order:      append([]invoice.OrderOption{}, iq.order...),
-		inters:     append([]Interceptor{}, iq.inters...),
-		predicates: append([]predicate.Invoice{}, iq.predicates...),
+		config:        iq.config,
+		ctx:           iq.ctx.Clone(),
+		order:         append([]invoice.OrderOption{}, iq.order...),
+		inters:        append([]Interceptor{}, iq.inters...),
+		predicates:    append([]predicate.Invoice{}, iq.predicates...),
+		withLineItems: iq.withLineItems.Clone(),
 		// clone intermediate query.
 		sql:  iq.sql.Clone(),
 		path: iq.path,
 	}
+}
+
+// WithLineItems tells the query-builder to eager-load the nodes that are connected to
+// the "line_items" edge. The optional arguments are used to configure the query builder of the edge.
+func (iq *InvoiceQuery) WithLineItems(opts ...func(*InvoiceLineItemQuery)) *InvoiceQuery {
+	query := (&InvoiceLineItemClient{config: iq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	iq.withLineItems = query
+	return iq
 }
 
 // GroupBy is used to group vertices by one or more fields/columns.
@@ -332,8 +369,11 @@ func (iq *InvoiceQuery) prepareQuery(ctx context.Context) error {
 
 func (iq *InvoiceQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Invoice, error) {
 	var (
-		nodes = []*Invoice{}
-		_spec = iq.querySpec()
+		nodes       = []*Invoice{}
+		_spec       = iq.querySpec()
+		loadedTypes = [1]bool{
+			iq.withLineItems != nil,
+		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*Invoice).scanValues(nil, columns)
@@ -341,6 +381,7 @@ func (iq *InvoiceQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Invo
 	_spec.Assign = func(columns []string, values []any) error {
 		node := &Invoice{config: iq.config}
 		nodes = append(nodes, node)
+		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
 	}
 	for i := range hooks {
@@ -352,7 +393,45 @@ func (iq *InvoiceQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Invo
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := iq.withLineItems; query != nil {
+		if err := iq.loadLineItems(ctx, query, nodes,
+			func(n *Invoice) { n.Edges.LineItems = []*InvoiceLineItem{} },
+			func(n *Invoice, e *InvoiceLineItem) { n.Edges.LineItems = append(n.Edges.LineItems, e) }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
+}
+
+func (iq *InvoiceQuery) loadLineItems(ctx context.Context, query *InvoiceLineItemQuery, nodes []*Invoice, init func(*Invoice), assign func(*Invoice, *InvoiceLineItem)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*Invoice)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(invoicelineitem.FieldInvoiceID)
+	}
+	query.Where(predicate.InvoiceLineItem(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(invoice.LineItemsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.InvoiceID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "invoice_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
 }
 
 func (iq *InvoiceQuery) sqlCount(ctx context.Context) (int, error) {
