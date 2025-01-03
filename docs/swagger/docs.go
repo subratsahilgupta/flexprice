@@ -2881,6 +2881,37 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreateInvoiceLineItemRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "price_id",
+                "quantity"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                }
+            }
+        },
         "dto.CreateInvoiceRequest": {
             "type": "object",
             "required": [
@@ -2917,11 +2948,23 @@ const docTemplate = `{
                 "invoice_type": {
                     "$ref": "#/definitions/types.InvoiceType"
                 },
+                "line_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreateInvoiceLineItemRequest"
+                    }
+                },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
                 "payment_status": {
                     "$ref": "#/definitions/types.InvoicePaymentStatus"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
                 },
                 "subscription_id": {
                     "type": "string"
@@ -3562,6 +3605,65 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.InvoiceLineItemResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.InvoiceResponse": {
             "type": "object",
             "properties": {
@@ -3610,6 +3712,12 @@ const docTemplate = `{
                 "invoice_type": {
                     "$ref": "#/definitions/types.InvoiceType"
                 },
+                "line_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.InvoiceLineItemResponse"
+                    }
+                },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
@@ -3618,6 +3726,12 @@ const docTemplate = `{
                 },
                 "payment_status": {
                     "$ref": "#/definitions/types.InvoicePaymentStatus"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
