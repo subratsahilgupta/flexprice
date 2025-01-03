@@ -459,7 +459,11 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) error {
 
 // processSubscriptionPeriod handles the period transitions for a single subscription
 func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub *subscription.Subscription, now time.Time) error {
-	invoiceService := NewInvoiceService(s.invoiceRepo, s.invoiceLineItemRepo, s.publisher, s.logger, s.db)
+	invoiceService := NewInvoiceService(
+		s.invoiceRepo,
+		s.logger,
+		s.db,
+	)
 
 	originalStart := sub.CurrentPeriodStart
 	originalEnd := sub.CurrentPeriodEnd

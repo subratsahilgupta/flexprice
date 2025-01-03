@@ -87,7 +87,6 @@ func main() {
 			repository.NewTenantRepository,
 			repository.NewEnvironmentRepository,
 			repository.NewInvoiceRepository,
-			repository.NewInvoiceLineItemRepository,
 
 			// Services
 			service.NewMeterService,

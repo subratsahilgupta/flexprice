@@ -27,19 +27,18 @@ import (
 
 // Stores holds all the repository interfaces for testing
 type Stores struct {
-	SubscriptionRepo    subscription.Repository
-	EventRepo           events.Repository
-	PlanRepo            plan.Repository
-	PriceRepo           price.Repository
-	MeterRepo           meter.Repository
-	CustomerRepo        customer.Repository
-	InvoiceRepo         invoice.Repository
-	InvoiceLineItemRepo invoice.LineItemRepository
-	WalletRepo          wallet.Repository
-	AuthRepo            auth.Repository
-	UserRepo            user.Repository
-	TenantRepo          tenant.Repository
-	EnvironmentRepo     environment.Repository
+	SubscriptionRepo subscription.Repository
+	EventRepo        events.Repository
+	PlanRepo         plan.Repository
+	PriceRepo        price.Repository
+	MeterRepo        meter.Repository
+	CustomerRepo     customer.Repository
+	InvoiceRepo      invoice.Repository
+	WalletRepo       wallet.Repository
+	AuthRepo         auth.Repository
+	UserRepo         user.Repository
+	TenantRepo       tenant.Repository
+	EnvironmentRepo  environment.Repository
 }
 
 // BaseServiceTestSuite provides common functionality for all service test suites
@@ -89,19 +88,18 @@ func (s *BaseServiceTestSuite) setupContext() {
 
 func (s *BaseServiceTestSuite) setupStores() {
 	s.stores = Stores{
-		SubscriptionRepo:    NewInMemorySubscriptionStore(),
-		EventRepo:           NewInMemoryEventStore(),
-		PlanRepo:            NewInMemoryPlanStore(),
-		PriceRepo:           NewInMemoryPriceStore(),
-		MeterRepo:           NewInMemoryMeterStore(),
-		CustomerRepo:        NewInMemoryCustomerStore(),
-		InvoiceRepo:         NewInMemoryInvoiceStore(),
-		InvoiceLineItemRepo: NewInMemoryInvoiceLineItemStore(),
-		WalletRepo:          NewInMemoryWalletStore(),
-		AuthRepo:            NewInMemoryAuthRepository(),
-		UserRepo:            NewInMemoryUserStore(),
-		TenantRepo:          NewInMemoryTenantStore(),
-		EnvironmentRepo:     NewInMemoryEnvironmentStore(),
+		SubscriptionRepo: NewInMemorySubscriptionStore(),
+		EventRepo:        NewInMemoryEventStore(),
+		PlanRepo:         NewInMemoryPlanStore(),
+		PriceRepo:        NewInMemoryPriceStore(),
+		MeterRepo:        NewInMemoryMeterStore(),
+		CustomerRepo:     NewInMemoryCustomerStore(),
+		InvoiceRepo:      NewInMemoryInvoiceStore(),
+		WalletRepo:       NewInMemoryWalletStore(),
+		AuthRepo:         NewInMemoryAuthRepository(),
+		UserRepo:         NewInMemoryUserStore(),
+		TenantRepo:       NewInMemoryTenantStore(),
+		EnvironmentRepo:  NewInMemoryEnvironmentStore(),
 	}
 
 	s.db = NewMockPostgresClient(s.logger)
@@ -117,7 +115,6 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.MeterRepo.(*InMemoryMeterStore).Clear()
 	s.stores.CustomerRepo.(*InMemoryCustomerStore).Clear()
 	s.stores.InvoiceRepo.(*InMemoryInvoiceStore).Clear()
-	s.stores.InvoiceLineItemRepo.(*InMemoryInvoiceLineItemStore).Clear()
 	s.stores.WalletRepo.(*InMemoryWalletStore).Clear()
 	s.stores.AuthRepo.(*InMemoryAuthRepository).Clear()
 	s.stores.UserRepo.(*InMemoryUserStore).Clear()

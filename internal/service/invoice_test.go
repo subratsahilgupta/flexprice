@@ -55,8 +55,6 @@ func (s *InvoiceServiceSuite) TearDownTest() {
 func (s *InvoiceServiceSuite) setupService() {
 	s.service = NewInvoiceService(
 		s.GetStores().InvoiceRepo,
-		s.GetStores().InvoiceLineItemRepo,
-		s.GetPublisher(),
 		s.GetLogger(),
 		s.GetDB(),
 	)
@@ -228,12 +226,12 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 			s.Equal(types.StatusPublished, types.Status(got.Status))
 
 			// Verify line items
-			items, err := s.GetStores().InvoiceLineItemRepo.GetByInvoiceID(s.GetContext(), got.ID)
+			// Verify line items are still present and published
+			invoice, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), got.ID)
 			s.NoError(err)
-			s.Len(items, len(tt.usage.Charges))
-
+			s.Len(invoice.LineItems, len(tt.usage.Charges))
 			for i, charge := range tt.usage.Charges {
-				item := items[i]
+				item := invoice.LineItems[i]
 				s.Equal(got.ID, item.InvoiceID)
 				s.Equal(got.CustomerID, item.CustomerID)
 				if got.SubscriptionID != nil && item.SubscriptionID != nil {
@@ -254,7 +252,7 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 }
 
 func (s *InvoiceServiceSuite) TestFinalizeInvoice() {
-	// Create a draft invoice first
+	// Create a draft invoice first with line items
 	draftInvoice := &invoice.Invoice{
 		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
 		CustomerID:      s.testData.customer.ID,
@@ -270,43 +268,36 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice() {
 		PeriodStart:     &s.testData.subscription.CurrentPeriodStart,
 		PeriodEnd:       &s.testData.subscription.CurrentPeriodEnd,
 		BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
-	}
-	s.NoError(s.GetStores().InvoiceRepo.Create(s.GetContext(), draftInvoice))
-
-	// Create line items
-	lineItems := []*invoice.InvoiceLineItem{
-		{
-			ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
-			InvoiceID:      draftInvoice.ID,
-			CustomerID:     draftInvoice.CustomerID,
-			SubscriptionID: draftInvoice.SubscriptionID,
-			PriceID:        s.testData.prices.apiCalls.ID,
-			MeterID:        &s.testData.meters.apiCalls.ID,
-			Amount:         decimal.NewFromFloat(10),
-			Quantity:       decimal.NewFromFloat(100),
-			Currency:       draftInvoice.Currency,
-			PeriodStart:    draftInvoice.PeriodStart,
-			PeriodEnd:      draftInvoice.PeriodEnd,
-			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
-		},
-		{
-			ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
-			InvoiceID:      draftInvoice.ID,
-			CustomerID:     draftInvoice.CustomerID,
-			SubscriptionID: draftInvoice.SubscriptionID,
-			PriceID:        s.testData.prices.storage.ID,
-			MeterID:        &s.testData.meters.storage.ID,
-			Amount:         decimal.NewFromFloat(5),
-			Quantity:       decimal.NewFromFloat(50),
-			Currency:       draftInvoice.Currency,
-			PeriodStart:    draftInvoice.PeriodStart,
-			PeriodEnd:      draftInvoice.PeriodEnd,
-			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+				CustomerID:     s.testData.customer.ID,
+				SubscriptionID: &s.testData.subscription.ID,
+				PriceID:        s.testData.prices.apiCalls.ID,
+				MeterID:        &s.testData.meters.apiCalls.ID,
+				Amount:         decimal.NewFromFloat(10),
+				Quantity:       decimal.NewFromFloat(100),
+				Currency:       "USD",
+				PeriodStart:    &s.testData.subscription.CurrentPeriodStart,
+				PeriodEnd:      &s.testData.subscription.CurrentPeriodEnd,
+				BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+				CustomerID:     s.testData.customer.ID,
+				SubscriptionID: &s.testData.subscription.ID,
+				PriceID:        s.testData.prices.storage.ID,
+				MeterID:        &s.testData.meters.storage.ID,
+				Amount:         decimal.NewFromFloat(5),
+				Quantity:       decimal.NewFromFloat(50),
+				Currency:       "USD",
+				PeriodStart:    &s.testData.subscription.CurrentPeriodStart,
+				PeriodEnd:      &s.testData.subscription.CurrentPeriodEnd,
+				BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+			},
 		},
 	}
-
-	_, err := s.GetStores().InvoiceLineItemRepo.CreateMany(s.GetContext(), lineItems)
-	s.NoError(err)
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), draftInvoice))
 
 	tests := []struct {
 		name    string
@@ -339,10 +330,10 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice() {
 			s.Equal(types.InvoiceStatusFinalized, inv.InvoiceStatus)
 
 			// Verify line items are still present and published
-			items, err := s.GetStores().InvoiceLineItemRepo.GetByInvoiceID(s.GetContext(), tt.id)
+			invoice, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), tt.id)
 			s.NoError(err)
-			s.Len(items, 2)
-			for _, item := range items {
+			s.Len(invoice.LineItems, 2)
+			for _, item := range invoice.LineItems {
 				s.Equal(types.StatusPublished, types.Status(item.Status))
 			}
 		})
@@ -350,7 +341,7 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice() {
 }
 
 func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
-	// Create a finalized invoice first
+	// Create a finalized invoice first with line items
 	finalizedInvoice := &invoice.Invoice{
 		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
 		CustomerID:      s.testData.customer.ID,
@@ -366,42 +357,36 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
 		PeriodStart:     &s.testData.subscription.CurrentPeriodStart,
 		PeriodEnd:       &s.testData.subscription.CurrentPeriodEnd,
 		BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
-	}
-	s.NoError(s.GetStores().InvoiceRepo.Create(s.GetContext(), finalizedInvoice))
-
-	// Create line items
-	lineItems := []*invoice.InvoiceLineItem{
-		{
-			ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
-			InvoiceID:      finalizedInvoice.ID,
-			CustomerID:     finalizedInvoice.CustomerID,
-			SubscriptionID: finalizedInvoice.SubscriptionID,
-			PriceID:        s.testData.prices.apiCalls.ID,
-			MeterID:        &s.testData.meters.apiCalls.ID,
-			Amount:         decimal.NewFromFloat(10),
-			Quantity:       decimal.NewFromFloat(100),
-			Currency:       finalizedInvoice.Currency,
-			PeriodStart:    finalizedInvoice.PeriodStart,
-			PeriodEnd:      finalizedInvoice.PeriodEnd,
-			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
-		},
-		{
-			ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
-			InvoiceID:      finalizedInvoice.ID,
-			CustomerID:     finalizedInvoice.CustomerID,
-			SubscriptionID: finalizedInvoice.SubscriptionID,
-			PriceID:        s.testData.prices.storage.ID,
-			MeterID:        &s.testData.meters.storage.ID,
-			Amount:         decimal.NewFromFloat(5),
-			Quantity:       decimal.NewFromFloat(50),
-			Currency:       finalizedInvoice.Currency,
-			PeriodStart:    finalizedInvoice.PeriodStart,
-			PeriodEnd:      finalizedInvoice.PeriodEnd,
-			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+				CustomerID:     s.testData.customer.ID,
+				SubscriptionID: &s.testData.subscription.ID,
+				PriceID:        s.testData.prices.apiCalls.ID,
+				MeterID:        &s.testData.meters.apiCalls.ID,
+				Amount:         decimal.NewFromFloat(10),
+				Quantity:       decimal.NewFromFloat(100),
+				Currency:       "USD",
+				PeriodStart:    &s.testData.subscription.CurrentPeriodStart,
+				PeriodEnd:      &s.testData.subscription.CurrentPeriodEnd,
+				BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+				CustomerID:     s.testData.customer.ID,
+				SubscriptionID: &s.testData.subscription.ID,
+				PriceID:        s.testData.prices.storage.ID,
+				MeterID:        &s.testData.meters.storage.ID,
+				Amount:         decimal.NewFromFloat(5),
+				Quantity:       decimal.NewFromFloat(50),
+				Currency:       "USD",
+				PeriodStart:    &s.testData.subscription.CurrentPeriodStart,
+				PeriodEnd:      &s.testData.subscription.CurrentPeriodEnd,
+				BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+			},
 		},
 	}
-	_, err := s.GetStores().InvoiceLineItemRepo.CreateMany(s.GetContext(), lineItems)
-	s.NoError(err)
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), finalizedInvoice))
 
 	tests := []struct {
 		name    string
@@ -449,10 +434,10 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
 			}
 
 			// Verify line items are still present and published
-			items, err := s.GetStores().InvoiceLineItemRepo.GetByInvoiceID(s.GetContext(), tt.id)
+			invoice, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), tt.id)
 			s.NoError(err)
-			s.Len(items, 2)
-			for _, item := range items {
+			s.Len(invoice.LineItems, 2)
+			for _, item := range invoice.LineItems {
 				s.Equal(types.StatusPublished, types.Status(item.Status))
 			}
 		})

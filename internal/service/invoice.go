@@ -10,7 +10,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
-	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -27,26 +26,20 @@ type InvoiceService interface {
 }
 
 type invoiceService struct {
-	invoiceRepo  invoice.Repository
-	lineItemRepo invoice.LineItemRepository
-	publisher    publisher.EventPublisher
-	logger       *logger.Logger
-	db           postgres.IClient
+	db          postgres.IClient
+	logger      *logger.Logger
+	invoiceRepo invoice.Repository
 }
 
 func NewInvoiceService(
 	invoiceRepo invoice.Repository,
-	lineItemRepo invoice.LineItemRepository,
-	publisher publisher.EventPublisher,
 	logger *logger.Logger,
 	db postgres.IClient,
 ) InvoiceService {
 	return &invoiceService{
-		invoiceRepo:  invoiceRepo,
-		lineItemRepo: lineItemRepo,
-		publisher:    publisher,
-		logger:       logger,
-		db:           db,
+		db:          db,
+		logger:      logger,
+		invoiceRepo: invoiceRepo,
 	}
 }
 
@@ -55,47 +48,52 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	inv, err := req.ToInvoice(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create invoice: %w", err)
-	}
-
-	// Setting default values
-	if req.InvoiceType == types.InvoiceTypeOneOff {
-		if req.InvoiceStatus == nil {
-			inv.InvoiceStatus = types.InvoiceStatusFinalized
+	var resp *dto.InvoiceResponse
+	err := s.db.WithTx(ctx, func(tx context.Context) error {
+		// Convert request to domain model
+		inv, err := req.ToInvoice(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to convert request to invoice: %w", err)
 		}
-		if req.PaymentStatus == nil {
-			inv.PaymentStatus = types.InvoicePaymentStatusSucceeded
-		}
-	} else if req.InvoiceType == types.InvoiceTypeSubscription {
-		if req.InvoiceStatus == nil {
-			inv.InvoiceStatus = types.InvoiceStatusDraft
-		}
-		if req.PaymentStatus == nil {
-			inv.PaymentStatus = types.InvoicePaymentStatusPending
-		}
-	}
 
-	if req.AmountPaid == nil {
-		if req.PaymentStatus == nil {
-			inv.AmountPaid = inv.AmountDue
+		// Setting default values
+		if req.InvoiceType == types.InvoiceTypeOneOff {
+			if req.InvoiceStatus == nil {
+				inv.InvoiceStatus = types.InvoiceStatusFinalized
+			}
+			if req.PaymentStatus == nil {
+				inv.PaymentStatus = types.InvoicePaymentStatusSucceeded
+			}
+		} else if req.InvoiceType == types.InvoiceTypeSubscription {
+			if req.InvoiceStatus == nil {
+				inv.InvoiceStatus = types.InvoiceStatusDraft
+			}
+			if req.PaymentStatus == nil {
+				inv.PaymentStatus = types.InvoicePaymentStatusPending
+			}
 		}
-	}
 
-	// Calculated Amount Remaining
-	inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
+		if req.AmountPaid == nil {
+			if req.PaymentStatus == nil {
+				inv.AmountPaid = inv.AmountDue
+			}
+		}
 
-	// Validate invoice
-	if err := inv.Validate(); err != nil {
-		return nil, err
-	}
+		// Calculated Amount Remaining
+		inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
 
-	// Create invoice with line items in a single transaction
-	err = s.db.WithTx(ctx, func(ctx context.Context) error {
-		if err := s.invoiceRepo.Create(ctx, inv); err != nil {
+		// Validate invoice
+		if err := inv.Validate(); err != nil {
+			return err
+		}
+
+		// Create invoice with line items in a single transaction
+		if err := s.invoiceRepo.CreateWithLineItems(ctx, inv); err != nil {
 			return fmt.Errorf("failed to create invoice: %w", err)
 		}
+
+		// Convert to response
+		resp = dto.NewInvoiceResponse(inv)
 		return nil
 	})
 
@@ -103,9 +101,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		return nil, err
 	}
 
-	// TODO: add publisher event for invoice created
-
-	return dto.NewInvoiceResponse(inv), nil
+	return resp, nil
 }
 
 func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.InvoiceResponse, error) {
