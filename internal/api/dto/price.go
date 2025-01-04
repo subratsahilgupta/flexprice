@@ -13,7 +13,7 @@ import (
 )
 
 type CreatePriceRequest struct {
-	Amount             string                   `json:"amount" validate:"required"`
+	Amount             string                   `json:"amount"`
 	Currency           string                   `json:"currency" validate:"required,len=3"`
 	PlanID             string                   `json:"plan_id,omitempty"`
 	Type               types.PriceType          `json:"type" validate:"required"`
@@ -39,11 +39,14 @@ type CreatePriceTier struct {
 
 // TODO : add all price validations
 func (r *CreatePriceRequest) Validate() error {
-
+	var err error
 	// Base validations
-	amount, err := decimal.NewFromString(r.Amount)
-	if err != nil {
-		return fmt.Errorf("invalid amount format: %w", err)
+	amount := decimal.Zero
+	if r.Amount != "" {
+		amount, err = decimal.NewFromString(r.Amount)
+		if err != nil {
+			return fmt.Errorf("invalid amount format: %w", err)
+		}
 	}
 
 	if amount.LessThan(decimal.Zero) {
@@ -59,6 +62,28 @@ func (r *CreatePriceRequest) Validate() error {
 		return err
 	}
 
+	// valid input field types with available values
+
+	err = r.Type.Validate()
+	if err != nil {
+		return err
+	}
+
+	err = r.BillingCadence.Validate()
+	if err != nil {
+		return err
+	}
+
+	err = r.BillingModel.Validate()
+	if err != nil {
+		return err
+	}
+
+	err = r.BillingPeriod.Validate()
+	if err != nil {
+		return err
+	}
+
 	switch r.BillingModel {
 	case types.BILLING_MODEL_TIERED:
 		if len(r.Tiers) == 0 {
@@ -66,6 +91,10 @@ func (r *CreatePriceRequest) Validate() error {
 		}
 		if r.TierMode == "" {
 			return fmt.Errorf("tier_mode is required when billing model is TIERED")
+		}
+		err = r.TierMode.Validate()
+		if err != nil {
+			return err
 		}
 
 	case types.BILLING_MODEL_PACKAGE:
@@ -120,9 +149,13 @@ func (r *CreatePriceRequest) Validate() error {
 }
 
 func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*price.Price, error) {
-	amount, err := decimal.NewFromString(r.Amount)
-	if err != nil {
-		return nil, fmt.Errorf("invalid amount format: %w", err)
+	amount := decimal.Zero
+	if r.Amount != "" {
+		var err error
+		amount, err = decimal.NewFromString(r.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("invalid amount format: %w", err)
+		}
 	}
 
 	// Initialize empty JSONB fields with proper zero values
@@ -201,6 +234,7 @@ type UpdatePriceRequest struct {
 
 type PriceResponse struct {
 	*price.Price
+	Meter *MeterResponse `json:"meter,omitempty"`
 }
 
 type ListPricesResponse struct {

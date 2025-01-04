@@ -115,6 +115,11 @@ const docTemplate = `{
                 "summary": "Get customers",
                 "parameters": [
                     {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "name": "limit",
                         "in": "query"
@@ -441,6 +446,11 @@ const docTemplate = `{
                 ],
                 "summary": "Get environments",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
                     {
                         "type": "integer",
                         "name": "limit",
@@ -1536,6 +1546,11 @@ const docTemplate = `{
                 "summary": "Get plans",
                 "parameters": [
                     {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "name": "limit",
                         "in": "query"
@@ -1814,6 +1829,11 @@ const docTemplate = `{
                 "summary": "Get prices",
                 "parameters": [
                     {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "name": "limit",
                         "in": "query"
@@ -1826,6 +1846,15 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "plan_ids",
                         "in": "query"
                     },
                     {
@@ -3009,7 +3038,6 @@ const docTemplate = `{
         "dto.CreatePlanPriceRequest": {
             "type": "object",
             "required": [
-                "amount",
                 "billing_cadence",
                 "billing_model",
                 "billing_period",
@@ -3113,7 +3141,6 @@ const docTemplate = `{
         "dto.CreatePriceRequest": {
             "type": "object",
             "required": [
-                "amount",
                 "billing_cadence",
                 "billing_model",
                 "billing_period",
@@ -3822,7 +3849,7 @@ const docTemplate = `{
                 "plans": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/plan.Plan"
+                        "$ref": "#/definitions/dto.PlanResponse"
                     }
                 },
                 "total": {
@@ -4054,6 +4081,9 @@ const docTemplate = `{
                             "$ref": "#/definitions/price.JSONBMetadata"
                         }
                     ]
+                },
+                "meter": {
+                    "$ref": "#/definitions/dto.MeterResponse"
                 },
                 "meter_id": {
                     "description": "MeterID is the id of the meter for usage based pricing",
@@ -4365,7 +4395,6 @@ const docTemplate = `{
         "dto.UpdatePlanPriceRequest": {
             "type": "object",
             "required": [
-                "amount",
                 "billing_cadence",
                 "billing_model",
                 "billing_period",
@@ -4683,47 +4712,6 @@ const docTemplate = `{
                 }
             }
         },
-        "plan.Plan": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "invoice_cadence": {
-                    "$ref": "#/definitions/types.InvoiceCadence"
-                },
-                "lookup_key": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "trial_period": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
         "price.JSONBFilters": {
             "type": "object",
             "additionalProperties": {
@@ -4978,6 +4966,9 @@ const docTemplate = `{
         "types.Filter": {
             "type": "object",
             "properties": {
+                "expand": {
+                    "type": "string"
+                },
                 "limit": {
                     "type": "integer"
                 },

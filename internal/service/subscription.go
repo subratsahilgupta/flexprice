@@ -93,13 +93,19 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		return nil, fmt.Errorf("plan is not active")
 	}
 
-	prices, err := s.priceRepo.GetByPlanID(ctx, req.PlanID)
+	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
+	pricesResponse, err := priceService.GetPricesByPlanID(ctx, plan.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get prices: %w", err)
 	}
 
-	if len(prices) == 0 {
+	if len(pricesResponse.Prices) == 0 {
 		return nil, fmt.Errorf("no prices found for plan")
+	}
+
+	prices := make([]price.Price, len(pricesResponse.Prices))
+	for i, p := range pricesResponse.Prices {
+		prices[i] = *p.Price
 	}
 
 	subscription := req.ToSubscription(ctx)
@@ -158,7 +164,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 		return nil, fmt.Errorf("failed to get subscription: %w", err)
 	}
 
-	planService := NewPlanService(s.planRepo, s.priceRepo, s.logger)
+	planService := NewPlanService(s.planRepo, s.priceRepo, s.meterRepo, s.logger)
 	plan, err := planService.GetPlan(ctx, subscription.PlanID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan: %w", err)
@@ -227,7 +233,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	response := &dto.GetUsageBySubscriptionResponse{}
 
 	eventService := NewEventService(s.eventRepo, s.meterRepo, s.publisher, s.logger)
-	priceService := NewPriceService(s.priceRepo, s.logger)
+	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
 
 	subscriptionResponse, err := s.GetSubscription(ctx, req.SubscriptionID)
 	if err != nil {
