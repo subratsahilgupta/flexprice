@@ -31,17 +31,16 @@ type SubscriptionService interface {
 }
 
 type subscriptionService struct {
-	subscriptionRepo    subscription.Repository
-	planRepo            plan.Repository
-	priceRepo           price.Repository
-	eventRepo           events.Repository
-	meterRepo           meter.Repository
-	customerRepo        customer.Repository
-	invoiceRepo         invoice.Repository
-	invoiceLineItemRepo invoice.LineItemRepository
-	publisher           publisher.EventPublisher
-	logger              *logger.Logger
-	db                  postgres.IClient
+	subscriptionRepo subscription.Repository
+	planRepo         plan.Repository
+	priceRepo        price.Repository
+	eventRepo        events.Repository
+	meterRepo        meter.Repository
+	customerRepo     customer.Repository
+	invoiceRepo      invoice.Repository
+	publisher        publisher.EventPublisher
+	logger           *logger.Logger
+	db               postgres.IClient
 }
 
 func NewSubscriptionService(
