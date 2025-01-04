@@ -6,7 +6,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
 )
 
 type CreateCustomerRequest struct {
@@ -38,7 +37,7 @@ func (r *CreateCustomerRequest) Validate() error {
 
 func (r *CreateCustomerRequest) ToCustomer(ctx context.Context) *customer.Customer {
 	return &customer.Customer{
-		ID:         uuid.New().String(),
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
 		ExternalID: r.ExternalID,
 		Name:       r.Name,
 		Email:      r.Email,

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/google/uuid"
 )
 
 type Meter struct {
@@ -90,7 +89,7 @@ func (m *Meter) Validate() error {
 func NewMeter(name string, tenantID, createdBy string) *Meter {
 	now := time.Now().UTC()
 	return &Meter{
-		ID:   uuid.New().String(),
+		ID:   types.GenerateUUIDWithPrefix(types.UUID_PREFIX_METER),
 		Name: name,
 		BaseModel: types.BaseModel{
 			TenantID:  tenantID,
