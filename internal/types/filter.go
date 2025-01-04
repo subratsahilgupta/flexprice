@@ -6,6 +6,7 @@ type Filter struct {
 	Status Status `form:"status,default=published"`
 	Sort   string `form:"sort,default=created_at"`
 	Order  string `form:"order,default=desc"`
+	Expand string `form:"expand"`
 }
 
 const (
@@ -23,4 +24,9 @@ func GetDefaultFilter() Filter {
 		Sort:   FILTER_DEFAULT_SORT,
 		Order:  FILTER_DEFAULT_ORDER,
 	}
+}
+
+// GetExpand returns the parsed Expand object from the filter
+func (f Filter) GetExpand() Expand {
+	return NewExpand(f.Expand)
 }
