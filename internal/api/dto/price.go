@@ -8,7 +8,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -203,7 +202,7 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*price.Price, error) 
 	}
 
 	price := &price.Price{
-		ID:                 uuid.New().String(),
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 		Amount:             amount,
 		Currency:           r.Currency,
 		PlanID:             r.PlanID,

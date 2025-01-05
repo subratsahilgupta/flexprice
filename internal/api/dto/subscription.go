@@ -10,7 +10,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
 )
 
 type CreateSubscriptionRequest struct {
@@ -78,7 +77,7 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 	}
 
 	return &subscription.Subscription{
-		ID:                 uuid.New().String(),
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
 		CustomerID:         r.CustomerID,
 		PlanID:             r.PlanID,
 		Currency:           strings.ToLower(r.Currency),
