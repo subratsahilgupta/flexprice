@@ -466,6 +466,8 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) error {
 func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub *subscription.Subscription, now time.Time) error {
 	invoiceService := NewInvoiceService(
 		s.invoiceRepo,
+		s.priceRepo,
+		s.meterRepo,
 		s.logger,
 		s.db,
 	)
