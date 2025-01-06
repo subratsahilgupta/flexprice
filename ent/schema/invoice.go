@@ -26,22 +26,43 @@ func (Invoice) Mixin() []ent.Mixin {
 func (Invoice) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			Unique().
 			Immutable(),
 		field.String("customer_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			NotEmpty().
 			Immutable(),
 		field.String("subscription_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			Optional().
 			Nillable(),
 		field.String("invoice_type").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			NotEmpty().
 			Immutable(),
 		field.String("invoice_status").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			Default(string(types.InvoiceStatusDraft)),
 		field.String("payment_status").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			Default(string(types.InvoicePaymentStatusPending)),
 		field.String("currency").
+			SchemaType(map[string]string{
+				"postgres": "varchar(10)",
+			}).
 			NotEmpty().
 			Immutable(),
 		field.Other("amount_due", decimal.Decimal{}).
