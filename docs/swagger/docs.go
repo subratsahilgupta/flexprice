@@ -2971,6 +2971,9 @@ const docTemplate = `{
                 "due_date": {
                     "type": "string"
                 },
+                "idempotency_key": {
+                    "type": "string"
+                },
                 "invoice_status": {
                     "$ref": "#/definitions/types.InvoiceStatus"
                 },
@@ -3706,6 +3709,9 @@ const docTemplate = `{
                 "billing_reason": {
                     "type": "string"
                 },
+                "billing_sequence": {
+                    "type": "integer"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -3728,6 +3734,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "invoice_number": {
                     "type": "string"
                 },
                 "invoice_pdf_url": {

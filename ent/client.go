@@ -15,11 +15,15 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
+	"github.com/flexprice/flexprice/ent/invoicesequence"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
+
+	stdsql "database/sql"
 )
 
 // Client is the client that holds all ent builders.
@@ -27,10 +31,14 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// BillingSequence is the client for interacting with the BillingSequence builders.
+	BillingSequence *BillingSequenceClient
 	// Invoice is the client for interacting with the Invoice builders.
 	Invoice *InvoiceClient
 	// InvoiceLineItem is the client for interacting with the InvoiceLineItem builders.
 	InvoiceLineItem *InvoiceLineItemClient
+	// InvoiceSequence is the client for interacting with the InvoiceSequence builders.
+	InvoiceSequence *InvoiceSequenceClient
 	// Subscription is the client for interacting with the Subscription builders.
 	Subscription *SubscriptionClient
 	// Wallet is the client for interacting with the Wallet builders.
@@ -48,8 +56,10 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.BillingSequence = NewBillingSequenceClient(c.config)
 	c.Invoice = NewInvoiceClient(c.config)
 	c.InvoiceLineItem = NewInvoiceLineItemClient(c.config)
+	c.InvoiceSequence = NewInvoiceSequenceClient(c.config)
 	c.Subscription = NewSubscriptionClient(c.config)
 	c.Wallet = NewWalletClient(c.config)
 	c.WalletTransaction = NewWalletTransactionClient(c.config)
@@ -145,8 +155,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:               ctx,
 		config:            cfg,
+		BillingSequence:   NewBillingSequenceClient(cfg),
 		Invoice:           NewInvoiceClient(cfg),
 		InvoiceLineItem:   NewInvoiceLineItemClient(cfg),
+		InvoiceSequence:   NewInvoiceSequenceClient(cfg),
 		Subscription:      NewSubscriptionClient(cfg),
 		Wallet:            NewWalletClient(cfg),
 		WalletTransaction: NewWalletTransactionClient(cfg),
@@ -169,8 +181,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:               ctx,
 		config:            cfg,
+		BillingSequence:   NewBillingSequenceClient(cfg),
 		Invoice:           NewInvoiceClient(cfg),
 		InvoiceLineItem:   NewInvoiceLineItemClient(cfg),
+		InvoiceSequence:   NewInvoiceSequenceClient(cfg),
 		Subscription:      NewSubscriptionClient(cfg),
 		Wallet:            NewWalletClient(cfg),
 		WalletTransaction: NewWalletTransactionClient(cfg),
@@ -180,7 +194,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		Invoice.
+//		BillingSequence.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -202,30 +216,36 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
-	c.Invoice.Use(hooks...)
-	c.InvoiceLineItem.Use(hooks...)
-	c.Subscription.Use(hooks...)
-	c.Wallet.Use(hooks...)
-	c.WalletTransaction.Use(hooks...)
+	for _, n := range []interface{ Use(...Hook) }{
+		c.BillingSequence, c.Invoice, c.InvoiceLineItem, c.InvoiceSequence,
+		c.Subscription, c.Wallet, c.WalletTransaction,
+	} {
+		n.Use(hooks...)
+	}
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
-	c.Invoice.Intercept(interceptors...)
-	c.InvoiceLineItem.Intercept(interceptors...)
-	c.Subscription.Intercept(interceptors...)
-	c.Wallet.Intercept(interceptors...)
-	c.WalletTransaction.Intercept(interceptors...)
+	for _, n := range []interface{ Intercept(...Interceptor) }{
+		c.BillingSequence, c.Invoice, c.InvoiceLineItem, c.InvoiceSequence,
+		c.Subscription, c.Wallet, c.WalletTransaction,
+	} {
+		n.Intercept(interceptors...)
+	}
 }
 
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *BillingSequenceMutation:
+		return c.BillingSequence.mutate(ctx, m)
 	case *InvoiceMutation:
 		return c.Invoice.mutate(ctx, m)
 	case *InvoiceLineItemMutation:
 		return c.InvoiceLineItem.mutate(ctx, m)
+	case *InvoiceSequenceMutation:
+		return c.InvoiceSequence.mutate(ctx, m)
 	case *SubscriptionMutation:
 		return c.Subscription.mutate(ctx, m)
 	case *WalletMutation:
@@ -234,6 +254,139 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.WalletTransaction.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// BillingSequenceClient is a client for the BillingSequence schema.
+type BillingSequenceClient struct {
+	config
+}
+
+// NewBillingSequenceClient returns a client for the BillingSequence from the given config.
+func NewBillingSequenceClient(c config) *BillingSequenceClient {
+	return &BillingSequenceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `billingsequence.Hooks(f(g(h())))`.
+func (c *BillingSequenceClient) Use(hooks ...Hook) {
+	c.hooks.BillingSequence = append(c.hooks.BillingSequence, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `billingsequence.Intercept(f(g(h())))`.
+func (c *BillingSequenceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BillingSequence = append(c.inters.BillingSequence, interceptors...)
+}
+
+// Create returns a builder for creating a BillingSequence entity.
+func (c *BillingSequenceClient) Create() *BillingSequenceCreate {
+	mutation := newBillingSequenceMutation(c.config, OpCreate)
+	return &BillingSequenceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BillingSequence entities.
+func (c *BillingSequenceClient) CreateBulk(builders ...*BillingSequenceCreate) *BillingSequenceCreateBulk {
+	return &BillingSequenceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BillingSequenceClient) MapCreateBulk(slice any, setFunc func(*BillingSequenceCreate, int)) *BillingSequenceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BillingSequenceCreateBulk{err: fmt.Errorf("calling to BillingSequenceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BillingSequenceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BillingSequenceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BillingSequence.
+func (c *BillingSequenceClient) Update() *BillingSequenceUpdate {
+	mutation := newBillingSequenceMutation(c.config, OpUpdate)
+	return &BillingSequenceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BillingSequenceClient) UpdateOne(bs *BillingSequence) *BillingSequenceUpdateOne {
+	mutation := newBillingSequenceMutation(c.config, OpUpdateOne, withBillingSequence(bs))
+	return &BillingSequenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BillingSequenceClient) UpdateOneID(id int) *BillingSequenceUpdateOne {
+	mutation := newBillingSequenceMutation(c.config, OpUpdateOne, withBillingSequenceID(id))
+	return &BillingSequenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BillingSequence.
+func (c *BillingSequenceClient) Delete() *BillingSequenceDelete {
+	mutation := newBillingSequenceMutation(c.config, OpDelete)
+	return &BillingSequenceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BillingSequenceClient) DeleteOne(bs *BillingSequence) *BillingSequenceDeleteOne {
+	return c.DeleteOneID(bs.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BillingSequenceClient) DeleteOneID(id int) *BillingSequenceDeleteOne {
+	builder := c.Delete().Where(billingsequence.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BillingSequenceDeleteOne{builder}
+}
+
+// Query returns a query builder for BillingSequence.
+func (c *BillingSequenceClient) Query() *BillingSequenceQuery {
+	return &BillingSequenceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBillingSequence},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BillingSequence entity by its id.
+func (c *BillingSequenceClient) Get(ctx context.Context, id int) (*BillingSequence, error) {
+	return c.Query().Where(billingsequence.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BillingSequenceClient) GetX(ctx context.Context, id int) *BillingSequence {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *BillingSequenceClient) Hooks() []Hook {
+	return c.hooks.BillingSequence
+}
+
+// Interceptors returns the client interceptors.
+func (c *BillingSequenceClient) Interceptors() []Interceptor {
+	return c.inters.BillingSequence
+}
+
+func (c *BillingSequenceClient) mutate(ctx context.Context, m *BillingSequenceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BillingSequenceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BillingSequenceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BillingSequenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BillingSequenceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BillingSequence mutation op: %q", m.Op())
 	}
 }
 
@@ -532,6 +685,139 @@ func (c *InvoiceLineItemClient) mutate(ctx context.Context, m *InvoiceLineItemMu
 		return (&InvoiceLineItemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown InvoiceLineItem mutation op: %q", m.Op())
+	}
+}
+
+// InvoiceSequenceClient is a client for the InvoiceSequence schema.
+type InvoiceSequenceClient struct {
+	config
+}
+
+// NewInvoiceSequenceClient returns a client for the InvoiceSequence from the given config.
+func NewInvoiceSequenceClient(c config) *InvoiceSequenceClient {
+	return &InvoiceSequenceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `invoicesequence.Hooks(f(g(h())))`.
+func (c *InvoiceSequenceClient) Use(hooks ...Hook) {
+	c.hooks.InvoiceSequence = append(c.hooks.InvoiceSequence, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `invoicesequence.Intercept(f(g(h())))`.
+func (c *InvoiceSequenceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.InvoiceSequence = append(c.inters.InvoiceSequence, interceptors...)
+}
+
+// Create returns a builder for creating a InvoiceSequence entity.
+func (c *InvoiceSequenceClient) Create() *InvoiceSequenceCreate {
+	mutation := newInvoiceSequenceMutation(c.config, OpCreate)
+	return &InvoiceSequenceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of InvoiceSequence entities.
+func (c *InvoiceSequenceClient) CreateBulk(builders ...*InvoiceSequenceCreate) *InvoiceSequenceCreateBulk {
+	return &InvoiceSequenceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *InvoiceSequenceClient) MapCreateBulk(slice any, setFunc func(*InvoiceSequenceCreate, int)) *InvoiceSequenceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &InvoiceSequenceCreateBulk{err: fmt.Errorf("calling to InvoiceSequenceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*InvoiceSequenceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &InvoiceSequenceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for InvoiceSequence.
+func (c *InvoiceSequenceClient) Update() *InvoiceSequenceUpdate {
+	mutation := newInvoiceSequenceMutation(c.config, OpUpdate)
+	return &InvoiceSequenceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *InvoiceSequenceClient) UpdateOne(is *InvoiceSequence) *InvoiceSequenceUpdateOne {
+	mutation := newInvoiceSequenceMutation(c.config, OpUpdateOne, withInvoiceSequence(is))
+	return &InvoiceSequenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *InvoiceSequenceClient) UpdateOneID(id int) *InvoiceSequenceUpdateOne {
+	mutation := newInvoiceSequenceMutation(c.config, OpUpdateOne, withInvoiceSequenceID(id))
+	return &InvoiceSequenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for InvoiceSequence.
+func (c *InvoiceSequenceClient) Delete() *InvoiceSequenceDelete {
+	mutation := newInvoiceSequenceMutation(c.config, OpDelete)
+	return &InvoiceSequenceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *InvoiceSequenceClient) DeleteOne(is *InvoiceSequence) *InvoiceSequenceDeleteOne {
+	return c.DeleteOneID(is.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *InvoiceSequenceClient) DeleteOneID(id int) *InvoiceSequenceDeleteOne {
+	builder := c.Delete().Where(invoicesequence.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &InvoiceSequenceDeleteOne{builder}
+}
+
+// Query returns a query builder for InvoiceSequence.
+func (c *InvoiceSequenceClient) Query() *InvoiceSequenceQuery {
+	return &InvoiceSequenceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeInvoiceSequence},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a InvoiceSequence entity by its id.
+func (c *InvoiceSequenceClient) Get(ctx context.Context, id int) (*InvoiceSequence, error) {
+	return c.Query().Where(invoicesequence.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *InvoiceSequenceClient) GetX(ctx context.Context, id int) *InvoiceSequence {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *InvoiceSequenceClient) Hooks() []Hook {
+	return c.hooks.InvoiceSequence
+}
+
+// Interceptors returns the client interceptors.
+func (c *InvoiceSequenceClient) Interceptors() []Interceptor {
+	return c.inters.InvoiceSequence
+}
+
+func (c *InvoiceSequenceClient) mutate(ctx context.Context, m *InvoiceSequenceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&InvoiceSequenceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&InvoiceSequenceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&InvoiceSequenceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&InvoiceSequenceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown InvoiceSequence mutation op: %q", m.Op())
 	}
 }
 
@@ -937,10 +1223,35 @@ func (c *WalletTransactionClient) mutate(ctx context.Context, m *WalletTransacti
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Invoice, InvoiceLineItem, Subscription, Wallet, WalletTransaction []ent.Hook
+		BillingSequence, Invoice, InvoiceLineItem, InvoiceSequence, Subscription,
+		Wallet, WalletTransaction []ent.Hook
 	}
 	inters struct {
-		Invoice, InvoiceLineItem, Subscription, Wallet,
-		WalletTransaction []ent.Interceptor
+		BillingSequence, Invoice, InvoiceLineItem, InvoiceSequence, Subscription,
+		Wallet, WalletTransaction []ent.Interceptor
 	}
 )
+
+// ExecContext allows calling the underlying ExecContext method of the driver if it is supported by it.
+// See, database/sql#DB.ExecContext for more information.
+func (c *config) ExecContext(ctx context.Context, query string, args ...any) (stdsql.Result, error) {
+	ex, ok := c.driver.(interface {
+		ExecContext(context.Context, string, ...any) (stdsql.Result, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("Driver.ExecContext is not supported")
+	}
+	return ex.ExecContext(ctx, query, args...)
+}
+
+// QueryContext allows calling the underlying QueryContext method of the driver if it is supported by it.
+// See, database/sql#DB.QueryContext for more information.
+func (c *config) QueryContext(ctx context.Context, query string, args ...any) (*stdsql.Rows, error) {
+	q, ok := c.driver.(interface {
+		QueryContext(context.Context, string, ...any) (*stdsql.Rows, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("Driver.QueryContext is not supported")
+	}
+	return q.QueryContext(ctx, query, args...)
+}

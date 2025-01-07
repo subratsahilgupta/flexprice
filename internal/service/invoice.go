@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
@@ -33,6 +35,7 @@ type invoiceService struct {
 	invoiceRepo invoice.Repository
 	priceRepo   price.Repository
 	meterRepo   meter.Repository
+	idempGen    *idempotency.Generator
 }
 
 func NewInvoiceService(
@@ -48,6 +51,7 @@ func NewInvoiceService(
 		invoiceRepo: invoiceRepo,
 		priceRepo:   priceRepo,
 		meterRepo:   meterRepo,
+		idempGen:    idempotency.NewGenerator(),
 	}
 }
 
@@ -57,12 +61,76 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 	}
 
 	var resp *dto.InvoiceResponse
+
+	// Start transaction
 	err := s.db.WithTx(ctx, func(tx context.Context) error {
+		// 1. Generate idempotency key if not provided
+		var idempKey string
+		if req.IdempotencyKey == nil {
+			params := map[string]interface{}{
+				"tenant_id":    types.GetTenantID(ctx),
+				"customer_id":  req.CustomerID,
+				"period_start": req.PeriodStart,
+				"period_end":   req.PeriodEnd,
+			}
+			scope := idempotency.ScopeOneOffInvoice
+			if req.SubscriptionID != nil {
+				scope = idempotency.ScopeSubscriptionInvoice
+				params["subscription_id"] = req.SubscriptionID
+			}
+			idempKey = s.idempGen.GenerateKey(scope, params)
+		} else {
+			idempKey = *req.IdempotencyKey
+		}
+
+		// 2. Check for existing invoice with same idempotency key
+		existing, err := s.invoiceRepo.GetByIdempotencyKey(tx, idempKey)
+		if err != nil && !errors.Is(err, invoice.ErrInvoiceNotFound) {
+			return fmt.Errorf("failed to check idempotency: %w", err)
+		}
+		if existing != nil {
+			s.logger.Infow("returning existing invoice for idempotency key",
+				"idempotency_key", idempKey,
+				"invoice_id", existing.ID)
+			return nil
+		}
+
+		// 3. For subscription invoices, validate period uniqueness and get billing sequence
+		var billingSeq *int
+		if req.SubscriptionID != nil {
+			// Check period uniqueness
+			exists, err := s.invoiceRepo.ExistsForPeriod(ctx, *req.SubscriptionID, *req.PeriodStart, *req.PeriodEnd)
+			if err != nil {
+				return fmt.Errorf("failed to check period uniqueness: %w", err)
+			}
+			if exists {
+				return invoice.ErrInvoiceAlreadyExists
+			}
+
+			// Get billing sequence
+			seq, err := s.invoiceRepo.GetNextBillingSequence(ctx, *req.SubscriptionID)
+			if err != nil {
+				return fmt.Errorf("failed to get billing sequence: %w", err)
+			}
+			billingSeq = &seq
+		}
+
+		// 4. Generate invoice number
+		invoiceNumber, err := s.invoiceRepo.GetNextInvoiceNumber(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to generate invoice number: %w", err)
+		}
+
+		// 5. Create invoice
 		// Convert request to domain model
 		inv, err := req.ToInvoice(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to convert request to invoice: %w", err)
 		}
+
+		inv.InvoiceNumber = &invoiceNumber
+		inv.IdempotencyKey = &idempKey
+		inv.BillingSequence = billingSeq
 
 		// Setting default values
 		if req.InvoiceType == types.InvoiceTypeOneOff {
@@ -106,6 +174,10 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 	})
 
 	if err != nil {
+		s.logger.Errorw("failed to create invoice",
+			"error", err,
+			"customer_id", req.CustomerID,
+			"subscription_id", req.SubscriptionID)
 		return nil, err
 	}
 

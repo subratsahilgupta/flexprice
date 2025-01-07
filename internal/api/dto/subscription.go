@@ -121,3 +121,18 @@ type SubscriptionUsageByMetersResponse struct {
 	MeterDisplayName string             `json:"meter_display_name"`
 	Price            *price.Price       `json:"price"`
 }
+
+type SubscriptionUpdatePeriodResponse struct {
+	TotalSuccess int                                     `json:"total_success"`
+	TotalFailed  int                                     `json:"total_failed"`
+	Items        []*SubscriptionUpdatePeriodResponseItem `json:"items"`
+	StartAt      time.Time                               `json:"start_at"`
+}
+
+type SubscriptionUpdatePeriodResponseItem struct {
+	SubscriptionID string    `json:"subscription_id"`
+	PeriodStart    time.Time `json:"period_start"`
+	PeriodEnd      time.Time `json:"period_end"`
+	Success        bool      `json:"success"`
+	Error          string    `json:"error"`
+}
