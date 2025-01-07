@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/idempotency"
@@ -35,6 +36,7 @@ type invoiceService struct {
 	invoiceRepo invoice.Repository
 	priceRepo   price.Repository
 	meterRepo   meter.Repository
+	planRepo    plan.Repository
 	idempGen    *idempotency.Generator
 }
 
@@ -42,6 +44,7 @@ func NewInvoiceService(
 	invoiceRepo invoice.Repository,
 	priceRepo price.Repository,
 	meterRepo meter.Repository,
+	planRepo plan.Repository,
 	logger *logger.Logger,
 	db postgres.IClient,
 ) InvoiceService {
@@ -51,6 +54,7 @@ func NewInvoiceService(
 		invoiceRepo: invoiceRepo,
 		priceRepo:   priceRepo,
 		meterRepo:   meterRepo,
+		planRepo:    planRepo,
 		idempGen:    idempotency.NewGenerator(),
 	}
 }
@@ -337,6 +341,12 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 		return nil, fmt.Errorf("failed to get prices: %w", err)
 	}
 
+	// Fetch Plan info as well
+	plan, err := s.planRepo.Get(ctx, sub.PlanID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get plan: %w", err)
+	}
+
 	// Filter prices valid for this subscription
 	validPrices := filterValidPricesForSubscription(pricesResponse.Prices, sub)
 
@@ -344,23 +354,25 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 	usageAmount := decimal.NewFromFloat(usage.Amount)
 
 	// Calculate fixed charges
-	var fixedAmount decimal.Decimal
-	var fixedLineItems []dto.CreateInvoiceLineItemRequest
+	var fixedCost decimal.Decimal
+	var fixedCostLineItems []dto.CreateInvoiceLineItemRequest
 
 	for _, price := range validPrices {
 		if price.Price.Type == types.PRICE_TYPE_FIXED {
-			// For fixed prices, we directly use the unit amount as there's no usage calculation
-			amount := price.Price.Amount
-			fixedAmount = fixedAmount.Add(amount)
+			quantity := decimal.NewFromInt(1)
+			amount := priceService.CalculateCost(ctx, price.Price, quantity)
+			fixedCost = fixedCost.Add(amount)
 
-			fixedLineItems = append(fixedLineItems, dto.CreateInvoiceLineItemRequest{
-				PriceID:     price.Price.ID,
-				Amount:      amount,
-				Quantity:    decimal.NewFromInt(1), // Fixed prices always have quantity 1
-				PeriodStart: &periodStart,
-				PeriodEnd:   &periodEnd,
+			fixedCostLineItems = append(fixedCostLineItems, dto.CreateInvoiceLineItemRequest{
+				PlanID:          &price.Price.PlanID,
+				PlanDisplayName: lo.ToPtr(plan.Name),
+				PriceID:         price.Price.ID,
+				PriceType:       lo.ToPtr(string(price.Price.Type)),
+				Amount:          amount,
+				Quantity:        quantity,
+				PeriodStart:     &periodStart,
+				PeriodEnd:       &periodEnd,
 				Metadata: types.Metadata{
-					"price_type":  string(types.PRICE_TYPE_FIXED),
 					"description": fmt.Sprintf("%s (Fixed Charge)", price.Price.LookupKey),
 				},
 			})
@@ -368,7 +380,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 	}
 
 	// Total amount is sum of usage and fixed charges
-	amountDue := usageAmount.Add(fixedAmount)
+	amountDue := usageAmount.Add(fixedCost)
 	invoiceDueDate := periodEnd.Add(24 * time.Hour * types.InvoiceDefaultDueDays)
 
 	// Create invoice using CreateInvoice
@@ -389,21 +401,24 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 	}
 
 	// Add fixed charge line items
-	req.LineItems = append(req.LineItems, fixedLineItems...)
+	req.LineItems = append(req.LineItems, fixedCostLineItems...)
 
 	// Add usage charge line items
 	for _, item := range usage.Charges {
 		lineItemAmount := decimal.NewFromFloat(item.Amount)
 		req.LineItems = append(req.LineItems, dto.CreateInvoiceLineItemRequest{
-			PriceID:     item.Price.ID,
-			MeterID:     &item.Price.MeterID,
-			Amount:      lineItemAmount,
-			Quantity:    decimal.NewFromFloat(item.Quantity),
-			PeriodStart: &periodStart,
-			PeriodEnd:   &periodEnd,
+			PlanID:           &item.Price.PlanID,
+			PlanDisplayName:  lo.ToPtr(plan.Name),
+			PriceType:        lo.ToPtr(string(item.Price.Type)),
+			PriceID:          item.Price.ID,
+			MeterID:          &item.Price.MeterID,
+			MeterDisplayName: lo.ToPtr(item.MeterDisplayName),
+			Amount:           lineItemAmount,
+			Quantity:         decimal.NewFromFloat(item.Quantity),
+			PeriodStart:      &periodStart,
+			PeriodEnd:        &periodEnd,
 			Metadata: types.Metadata{
-				"price_type":         string(types.PRICE_TYPE_USAGE),
-				"meter_display_name": item.MeterDisplayName,
+				"description": fmt.Sprintf("%s (Usage Charge)", item.Price.LookupKey),
 			},
 		})
 	}
@@ -411,9 +426,9 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 	s.logger.Infow("creating invoice with fixed and usage charges",
 		"subscription_id", sub.ID,
 		"usage_amount", usageAmount,
-		"fixed_amount", fixedAmount,
+		"fixed_amount", fixedCost,
 		"total_amount", amountDue,
-		"fixed_line_items", len(fixedLineItems),
+		"fixed_line_items", len(fixedCostLineItems),
 		"usage_line_items", len(usage.Charges))
 
 	return s.CreateInvoice(ctx, req)
