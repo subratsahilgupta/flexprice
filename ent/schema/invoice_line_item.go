@@ -25,21 +25,39 @@ func (InvoiceLineItem) Mixin() []ent.Mixin {
 func (InvoiceLineItem) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			Unique().
 			Immutable(),
 		field.String("invoice_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			NotEmpty().
 			Immutable(),
 		field.String("customer_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			NotEmpty().
 			Immutable(),
 		field.String("subscription_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			Optional().
 			Nillable(),
 		field.String("price_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			NotEmpty().
 			Immutable(),
 		field.String("meter_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
 			Optional().
 			Nillable(),
 		field.Other("amount", decimal.Decimal{}).
@@ -53,6 +71,9 @@ func (InvoiceLineItem) Fields() []ent.Field {
 			}).
 			Default(decimal.Zero),
 		field.String("currency").
+			SchemaType(map[string]string{
+				"postgres": "varchar(10)",
+			}).
 			NotEmpty().
 			Immutable(),
 		field.Time("period_start").
