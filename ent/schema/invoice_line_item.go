@@ -47,29 +47,55 @@ func (InvoiceLineItem) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			Optional().
-			Nillable(),
+			Nillable().
+			Immutable(),
+		field.String("plan_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Optional().
+			Nillable().
+			Immutable(),
+		field.String("plan_display_name").
+			Optional().
+			Nillable().
+			Immutable(),
 		field.String("price_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
 			NotEmpty().
 			Immutable(),
+		field.String("price_type").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Optional().
+			Nillable().
+			Immutable(),
 		field.String("meter_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
 			Optional().
-			Nillable(),
+			Nillable().
+			Immutable(),
+		field.String("meter_display_name").
+			Optional().
+			Nillable().
+			Immutable(),
 		field.Other("amount", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,8)",
 			}).
-			Default(decimal.Zero),
+			Default(decimal.Zero).
+			Immutable(),
 		field.Other("quantity", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,8)",
 			}).
-			Default(decimal.Zero),
+			Default(decimal.Zero).
+			Immutable(),
 		field.String("currency").
 			SchemaType(map[string]string{
 				"postgres": "varchar(10)",

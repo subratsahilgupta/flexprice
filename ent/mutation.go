@@ -2935,31 +2935,35 @@ func (m *InvoiceMutation) ResetEdge(name string) error {
 // InvoiceLineItemMutation represents an operation that mutates the InvoiceLineItem nodes in the graph.
 type InvoiceLineItemMutation struct {
 	config
-	op              Op
-	typ             string
-	id              *string
-	tenant_id       *string
-	status          *string
-	created_at      *time.Time
-	updated_at      *time.Time
-	created_by      *string
-	updated_by      *string
-	customer_id     *string
-	subscription_id *string
-	price_id        *string
-	meter_id        *string
-	amount          *decimal.Decimal
-	quantity        *decimal.Decimal
-	currency        *string
-	period_start    *time.Time
-	period_end      *time.Time
-	metadata        *map[string]string
-	clearedFields   map[string]struct{}
-	invoice         *string
-	clearedinvoice  bool
-	done            bool
-	oldValue        func(context.Context) (*InvoiceLineItem, error)
-	predicates      []predicate.InvoiceLineItem
+	op                 Op
+	typ                string
+	id                 *string
+	tenant_id          *string
+	status             *string
+	created_at         *time.Time
+	updated_at         *time.Time
+	created_by         *string
+	updated_by         *string
+	customer_id        *string
+	subscription_id    *string
+	plan_id            *string
+	plan_display_name  *string
+	price_id           *string
+	price_type         *string
+	meter_id           *string
+	meter_display_name *string
+	amount             *decimal.Decimal
+	quantity           *decimal.Decimal
+	currency           *string
+	period_start       *time.Time
+	period_end         *time.Time
+	metadata           *map[string]string
+	clearedFields      map[string]struct{}
+	invoice            *string
+	clearedinvoice     bool
+	done               bool
+	oldValue           func(context.Context) (*InvoiceLineItem, error)
+	predicates         []predicate.InvoiceLineItem
 }
 
 var _ ent.Mutation = (*InvoiceLineItemMutation)(nil)
@@ -3429,6 +3433,104 @@ func (m *InvoiceLineItemMutation) ResetSubscriptionID() {
 	delete(m.clearedFields, invoicelineitem.FieldSubscriptionID)
 }
 
+// SetPlanID sets the "plan_id" field.
+func (m *InvoiceLineItemMutation) SetPlanID(s string) {
+	m.plan_id = &s
+}
+
+// PlanID returns the value of the "plan_id" field in the mutation.
+func (m *InvoiceLineItemMutation) PlanID() (r string, exists bool) {
+	v := m.plan_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlanID returns the old "plan_id" field's value of the InvoiceLineItem entity.
+// If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceLineItemMutation) OldPlanID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlanID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlanID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlanID: %w", err)
+	}
+	return oldValue.PlanID, nil
+}
+
+// ClearPlanID clears the value of the "plan_id" field.
+func (m *InvoiceLineItemMutation) ClearPlanID() {
+	m.plan_id = nil
+	m.clearedFields[invoicelineitem.FieldPlanID] = struct{}{}
+}
+
+// PlanIDCleared returns if the "plan_id" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) PlanIDCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldPlanID]
+	return ok
+}
+
+// ResetPlanID resets all changes to the "plan_id" field.
+func (m *InvoiceLineItemMutation) ResetPlanID() {
+	m.plan_id = nil
+	delete(m.clearedFields, invoicelineitem.FieldPlanID)
+}
+
+// SetPlanDisplayName sets the "plan_display_name" field.
+func (m *InvoiceLineItemMutation) SetPlanDisplayName(s string) {
+	m.plan_display_name = &s
+}
+
+// PlanDisplayName returns the value of the "plan_display_name" field in the mutation.
+func (m *InvoiceLineItemMutation) PlanDisplayName() (r string, exists bool) {
+	v := m.plan_display_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlanDisplayName returns the old "plan_display_name" field's value of the InvoiceLineItem entity.
+// If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceLineItemMutation) OldPlanDisplayName(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlanDisplayName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlanDisplayName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlanDisplayName: %w", err)
+	}
+	return oldValue.PlanDisplayName, nil
+}
+
+// ClearPlanDisplayName clears the value of the "plan_display_name" field.
+func (m *InvoiceLineItemMutation) ClearPlanDisplayName() {
+	m.plan_display_name = nil
+	m.clearedFields[invoicelineitem.FieldPlanDisplayName] = struct{}{}
+}
+
+// PlanDisplayNameCleared returns if the "plan_display_name" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) PlanDisplayNameCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldPlanDisplayName]
+	return ok
+}
+
+// ResetPlanDisplayName resets all changes to the "plan_display_name" field.
+func (m *InvoiceLineItemMutation) ResetPlanDisplayName() {
+	m.plan_display_name = nil
+	delete(m.clearedFields, invoicelineitem.FieldPlanDisplayName)
+}
+
 // SetPriceID sets the "price_id" field.
 func (m *InvoiceLineItemMutation) SetPriceID(s string) {
 	m.price_id = &s
@@ -3463,6 +3565,55 @@ func (m *InvoiceLineItemMutation) OldPriceID(ctx context.Context) (v string, err
 // ResetPriceID resets all changes to the "price_id" field.
 func (m *InvoiceLineItemMutation) ResetPriceID() {
 	m.price_id = nil
+}
+
+// SetPriceType sets the "price_type" field.
+func (m *InvoiceLineItemMutation) SetPriceType(s string) {
+	m.price_type = &s
+}
+
+// PriceType returns the value of the "price_type" field in the mutation.
+func (m *InvoiceLineItemMutation) PriceType() (r string, exists bool) {
+	v := m.price_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriceType returns the old "price_type" field's value of the InvoiceLineItem entity.
+// If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceLineItemMutation) OldPriceType(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriceType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriceType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriceType: %w", err)
+	}
+	return oldValue.PriceType, nil
+}
+
+// ClearPriceType clears the value of the "price_type" field.
+func (m *InvoiceLineItemMutation) ClearPriceType() {
+	m.price_type = nil
+	m.clearedFields[invoicelineitem.FieldPriceType] = struct{}{}
+}
+
+// PriceTypeCleared returns if the "price_type" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) PriceTypeCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldPriceType]
+	return ok
+}
+
+// ResetPriceType resets all changes to the "price_type" field.
+func (m *InvoiceLineItemMutation) ResetPriceType() {
+	m.price_type = nil
+	delete(m.clearedFields, invoicelineitem.FieldPriceType)
 }
 
 // SetMeterID sets the "meter_id" field.
@@ -3512,6 +3663,55 @@ func (m *InvoiceLineItemMutation) MeterIDCleared() bool {
 func (m *InvoiceLineItemMutation) ResetMeterID() {
 	m.meter_id = nil
 	delete(m.clearedFields, invoicelineitem.FieldMeterID)
+}
+
+// SetMeterDisplayName sets the "meter_display_name" field.
+func (m *InvoiceLineItemMutation) SetMeterDisplayName(s string) {
+	m.meter_display_name = &s
+}
+
+// MeterDisplayName returns the value of the "meter_display_name" field in the mutation.
+func (m *InvoiceLineItemMutation) MeterDisplayName() (r string, exists bool) {
+	v := m.meter_display_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMeterDisplayName returns the old "meter_display_name" field's value of the InvoiceLineItem entity.
+// If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceLineItemMutation) OldMeterDisplayName(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMeterDisplayName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMeterDisplayName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMeterDisplayName: %w", err)
+	}
+	return oldValue.MeterDisplayName, nil
+}
+
+// ClearMeterDisplayName clears the value of the "meter_display_name" field.
+func (m *InvoiceLineItemMutation) ClearMeterDisplayName() {
+	m.meter_display_name = nil
+	m.clearedFields[invoicelineitem.FieldMeterDisplayName] = struct{}{}
+}
+
+// MeterDisplayNameCleared returns if the "meter_display_name" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) MeterDisplayNameCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldMeterDisplayName]
+	return ok
+}
+
+// ResetMeterDisplayName resets all changes to the "meter_display_name" field.
+func (m *InvoiceLineItemMutation) ResetMeterDisplayName() {
+	m.meter_display_name = nil
+	delete(m.clearedFields, invoicelineitem.FieldMeterDisplayName)
 }
 
 // SetAmount sets the "amount" field.
@@ -3830,7 +4030,7 @@ func (m *InvoiceLineItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceLineItemMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 21)
 	if m.tenant_id != nil {
 		fields = append(fields, invoicelineitem.FieldTenantID)
 	}
@@ -3858,11 +4058,23 @@ func (m *InvoiceLineItemMutation) Fields() []string {
 	if m.subscription_id != nil {
 		fields = append(fields, invoicelineitem.FieldSubscriptionID)
 	}
+	if m.plan_id != nil {
+		fields = append(fields, invoicelineitem.FieldPlanID)
+	}
+	if m.plan_display_name != nil {
+		fields = append(fields, invoicelineitem.FieldPlanDisplayName)
+	}
 	if m.price_id != nil {
 		fields = append(fields, invoicelineitem.FieldPriceID)
 	}
+	if m.price_type != nil {
+		fields = append(fields, invoicelineitem.FieldPriceType)
+	}
 	if m.meter_id != nil {
 		fields = append(fields, invoicelineitem.FieldMeterID)
+	}
+	if m.meter_display_name != nil {
+		fields = append(fields, invoicelineitem.FieldMeterDisplayName)
 	}
 	if m.amount != nil {
 		fields = append(fields, invoicelineitem.FieldAmount)
@@ -3908,10 +4120,18 @@ func (m *InvoiceLineItemMutation) Field(name string) (ent.Value, bool) {
 		return m.CustomerID()
 	case invoicelineitem.FieldSubscriptionID:
 		return m.SubscriptionID()
+	case invoicelineitem.FieldPlanID:
+		return m.PlanID()
+	case invoicelineitem.FieldPlanDisplayName:
+		return m.PlanDisplayName()
 	case invoicelineitem.FieldPriceID:
 		return m.PriceID()
+	case invoicelineitem.FieldPriceType:
+		return m.PriceType()
 	case invoicelineitem.FieldMeterID:
 		return m.MeterID()
+	case invoicelineitem.FieldMeterDisplayName:
+		return m.MeterDisplayName()
 	case invoicelineitem.FieldAmount:
 		return m.Amount()
 	case invoicelineitem.FieldQuantity:
@@ -3951,10 +4171,18 @@ func (m *InvoiceLineItemMutation) OldField(ctx context.Context, name string) (en
 		return m.OldCustomerID(ctx)
 	case invoicelineitem.FieldSubscriptionID:
 		return m.OldSubscriptionID(ctx)
+	case invoicelineitem.FieldPlanID:
+		return m.OldPlanID(ctx)
+	case invoicelineitem.FieldPlanDisplayName:
+		return m.OldPlanDisplayName(ctx)
 	case invoicelineitem.FieldPriceID:
 		return m.OldPriceID(ctx)
+	case invoicelineitem.FieldPriceType:
+		return m.OldPriceType(ctx)
 	case invoicelineitem.FieldMeterID:
 		return m.OldMeterID(ctx)
+	case invoicelineitem.FieldMeterDisplayName:
+		return m.OldMeterDisplayName(ctx)
 	case invoicelineitem.FieldAmount:
 		return m.OldAmount(ctx)
 	case invoicelineitem.FieldQuantity:
@@ -4039,6 +4267,20 @@ func (m *InvoiceLineItemMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSubscriptionID(v)
 		return nil
+	case invoicelineitem.FieldPlanID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlanID(v)
+		return nil
+	case invoicelineitem.FieldPlanDisplayName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlanDisplayName(v)
+		return nil
 	case invoicelineitem.FieldPriceID:
 		v, ok := value.(string)
 		if !ok {
@@ -4046,12 +4288,26 @@ func (m *InvoiceLineItemMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetPriceID(v)
 		return nil
+	case invoicelineitem.FieldPriceType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriceType(v)
+		return nil
 	case invoicelineitem.FieldMeterID:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMeterID(v)
+		return nil
+	case invoicelineitem.FieldMeterDisplayName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMeterDisplayName(v)
 		return nil
 	case invoicelineitem.FieldAmount:
 		v, ok := value.(decimal.Decimal)
@@ -4134,8 +4390,20 @@ func (m *InvoiceLineItemMutation) ClearedFields() []string {
 	if m.FieldCleared(invoicelineitem.FieldSubscriptionID) {
 		fields = append(fields, invoicelineitem.FieldSubscriptionID)
 	}
+	if m.FieldCleared(invoicelineitem.FieldPlanID) {
+		fields = append(fields, invoicelineitem.FieldPlanID)
+	}
+	if m.FieldCleared(invoicelineitem.FieldPlanDisplayName) {
+		fields = append(fields, invoicelineitem.FieldPlanDisplayName)
+	}
+	if m.FieldCleared(invoicelineitem.FieldPriceType) {
+		fields = append(fields, invoicelineitem.FieldPriceType)
+	}
 	if m.FieldCleared(invoicelineitem.FieldMeterID) {
 		fields = append(fields, invoicelineitem.FieldMeterID)
+	}
+	if m.FieldCleared(invoicelineitem.FieldMeterDisplayName) {
+		fields = append(fields, invoicelineitem.FieldMeterDisplayName)
 	}
 	if m.FieldCleared(invoicelineitem.FieldPeriodStart) {
 		fields = append(fields, invoicelineitem.FieldPeriodStart)
@@ -4169,8 +4437,20 @@ func (m *InvoiceLineItemMutation) ClearField(name string) error {
 	case invoicelineitem.FieldSubscriptionID:
 		m.ClearSubscriptionID()
 		return nil
+	case invoicelineitem.FieldPlanID:
+		m.ClearPlanID()
+		return nil
+	case invoicelineitem.FieldPlanDisplayName:
+		m.ClearPlanDisplayName()
+		return nil
+	case invoicelineitem.FieldPriceType:
+		m.ClearPriceType()
+		return nil
 	case invoicelineitem.FieldMeterID:
 		m.ClearMeterID()
+		return nil
+	case invoicelineitem.FieldMeterDisplayName:
+		m.ClearMeterDisplayName()
 		return nil
 	case invoicelineitem.FieldPeriodStart:
 		m.ClearPeriodStart()
@@ -4216,11 +4496,23 @@ func (m *InvoiceLineItemMutation) ResetField(name string) error {
 	case invoicelineitem.FieldSubscriptionID:
 		m.ResetSubscriptionID()
 		return nil
+	case invoicelineitem.FieldPlanID:
+		m.ResetPlanID()
+		return nil
+	case invoicelineitem.FieldPlanDisplayName:
+		m.ResetPlanDisplayName()
+		return nil
 	case invoicelineitem.FieldPriceID:
 		m.ResetPriceID()
 		return nil
+	case invoicelineitem.FieldPriceType:
+		m.ResetPriceType()
+		return nil
 	case invoicelineitem.FieldMeterID:
 		m.ResetMeterID()
+		return nil
+	case invoicelineitem.FieldMeterDisplayName:
+		m.ResetMeterDisplayName()
 		return nil
 	case invoicelineitem.FieldAmount:
 		m.ResetAmount()
