@@ -7,7 +7,10 @@ install-swag:
 	@which swag > /dev/null || (go install github.com/swaggo/swag/cmd/swag@latest)
 
 .PHONY: swagger
-swagger: install-swag
+swagger: swagger-2-0 swagger-3-0
+
+.PHONY: swagger-2-0
+swagger-2-0: install-swag
 	$(shell go env GOPATH)/bin/swag init \
 		--generalInfo cmd/server/main.go \
 		--dir . \

@@ -27,7 +27,7 @@ type SubscriptionService interface {
 	CancelSubscription(ctx context.Context, id string, cancelAtPeriodEnd bool) error
 	ListSubscriptions(ctx context.Context, filter *types.SubscriptionFilter) (*dto.ListSubscriptionsResponse, error)
 	GetUsageBySubscription(ctx context.Context, req *dto.GetUsageBySubscriptionRequest) (*dto.GetUsageBySubscriptionResponse, error)
-	UpdateBillingPeriods(ctx context.Context) error
+	UpdateBillingPeriods(ctx context.Context) (*dto.SubscriptionUpdatePeriodResponse, error)
 }
 
 type subscriptionService struct {
@@ -408,12 +408,19 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 // UpdateBillingPeriods updates the current billing periods for all active subscriptions
 // This should be run every 15 minutes to ensure billing periods are up to date
-func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) error {
+func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.SubscriptionUpdatePeriodResponse, error) {
 	const batchSize = 100
 	now := time.Now().UTC()
 
 	s.logger.Infow("starting billing period updates",
 		"current_time", now)
+
+	response := &dto.SubscriptionUpdatePeriodResponse{
+		Items:        make([]*dto.SubscriptionUpdatePeriodResponseItem, 0),
+		TotalFailed:  0,
+		TotalSuccess: 0,
+		StartAt:      now,
+	}
 
 	offset := 0
 	for {
@@ -429,7 +436,7 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) error {
 
 		subs, err := s.subscriptionRepo.List(ctx, filter)
 		if err != nil {
-			return fmt.Errorf("failed to list subscriptions: %w", err)
+			return response, fmt.Errorf("failed to list subscriptions: %w", err)
 		}
 
 		s.logger.Infow("processing subscription batch",
@@ -442,13 +449,25 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) error {
 
 		// Process each subscription in the batch
 		for _, sub := range subs {
-			if err := s.processSubscriptionPeriod(ctx, sub, now); err != nil {
+			item := &dto.SubscriptionUpdatePeriodResponseItem{
+				SubscriptionID: sub.ID,
+				PeriodStart:    sub.CurrentPeriodStart,
+				PeriodEnd:      sub.CurrentPeriodEnd,
+			}
+			err = s.processSubscriptionPeriod(ctx, sub, now)
+			if err != nil {
 				s.logger.Errorw("failed to process subscription period",
 					"subscription_id", sub.ID,
 					"error", err)
-				// Continue processing other subscriptions
-				continue
+
+				response.TotalFailed++
+				item.Error = err.Error()
+			} else {
+				item.Success = true
+				response.TotalSuccess++
 			}
+
+			response.Items = append(response.Items, item)
 		}
 
 		offset += len(subs)
@@ -457,7 +476,7 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return response, nil
 }
 
 /// Helpers
