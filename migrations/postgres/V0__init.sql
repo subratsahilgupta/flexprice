@@ -1,3 +1,36 @@
+--
+-- PostgreSQL database dump
+--
+
+-- Dumped from database version 15.6
+-- Dumped by pg_dump version 17.2
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+CREATE SCHEMA public;
+
+
+--
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON SCHEMA public IS 'standard public schema';
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -58,9 +91,8 @@ CREATE TABLE public.environments (
 
 CREATE TABLE public.invoice_line_items (
     id character varying(50) NOT NULL,
-    invoice_id character varying(50) NOT NULL
     tenant_id character varying(50) NOT NULL,
-    status character varying(20) DEFAULT 'published'::character varying NOT NULL,
+    status character varying(50) DEFAULT 'published'::character varying NOT NULL,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     created_by character varying,
@@ -75,6 +107,7 @@ CREATE TABLE public.invoice_line_items (
     period_start timestamp with time zone,
     period_end timestamp with time zone,
     metadata jsonb,
+    invoice_id character varying(50) NOT NULL
 );
 
 
@@ -85,7 +118,7 @@ CREATE TABLE public.invoice_line_items (
 CREATE TABLE public.invoices (
     id character varying(50) NOT NULL,
     tenant_id character varying(50) NOT NULL,
-    status character varying(20) DEFAULT 'published'::character varying NOT NULL,
+    status character varying(50) DEFAULT 'published'::character varying NOT NULL,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     created_by character varying,
@@ -195,7 +228,7 @@ CREATE TABLE public.subscriptions (
     customer_id character varying(50) NOT NULL,
     plan_id character varying(50) NOT NULL,
     subscription_status character varying(50) DEFAULT 'active'::character varying NOT NULL,
-    status character varying(20) DEFAULT 'published'::character varying NOT NULL,
+    status character varying(50) DEFAULT 'published'::character varying NOT NULL,
     currency character varying(10) NOT NULL,
     billing_anchor timestamp with time zone NOT NULL,
     start_date timestamp with time zone NOT NULL,
@@ -240,7 +273,7 @@ CREATE TABLE public.users (
     id character varying(50) DEFAULT extensions.uuid_generate_v4() NOT NULL,
     email character varying NOT NULL,
     tenant_id character varying(50) NOT NULL,
-    status character varying(20) DEFAULT 'published'::character varying NOT NULL,
+    status character varying DEFAULT 'published'::character varying NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_by character varying NOT NULL,
@@ -265,7 +298,7 @@ CREATE TABLE public.wallet_transactions (
     reference_id character varying,
     description character varying,
     metadata jsonb,
-    status character varying(20) DEFAULT 'published'::character varying NOT NULL,
+    status character varying(50) DEFAULT 'published'::character varying NOT NULL,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     created_by character varying,
@@ -286,14 +319,13 @@ CREATE TABLE public.wallets (
     balance numeric(20,9) NOT NULL,
     wallet_status character varying(50) DEFAULT 'active'::character varying NOT NULL,
     metadata jsonb,
-    status character varying(20) DEFAULT 'published'::character varying NOT NULL,
+    status character varying(50) DEFAULT 'published'::character varying NOT NULL,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     created_by character varying,
     updated_by character varying,
     description character varying
 );
-
 
 
 --
