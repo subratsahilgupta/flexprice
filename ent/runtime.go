@@ -5,8 +5,10 @@ package ent
 import (
 	"time"
 
+	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
+	"github.com/flexprice/flexprice/ent/invoicesequence"
 	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/wallet"
@@ -18,6 +20,30 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	billingsequenceFields := schema.BillingSequence{}.Fields()
+	_ = billingsequenceFields
+	// billingsequenceDescTenantID is the schema descriptor for tenant_id field.
+	billingsequenceDescTenantID := billingsequenceFields[0].Descriptor()
+	// billingsequence.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	billingsequence.TenantIDValidator = billingsequenceDescTenantID.Validators[0].(func(string) error)
+	// billingsequenceDescSubscriptionID is the schema descriptor for subscription_id field.
+	billingsequenceDescSubscriptionID := billingsequenceFields[1].Descriptor()
+	// billingsequence.SubscriptionIDValidator is a validator for the "subscription_id" field. It is called by the builders before save.
+	billingsequence.SubscriptionIDValidator = billingsequenceDescSubscriptionID.Validators[0].(func(string) error)
+	// billingsequenceDescLastSequence is the schema descriptor for last_sequence field.
+	billingsequenceDescLastSequence := billingsequenceFields[2].Descriptor()
+	// billingsequence.DefaultLastSequence holds the default value on creation for the last_sequence field.
+	billingsequence.DefaultLastSequence = billingsequenceDescLastSequence.Default.(int)
+	// billingsequenceDescCreatedAt is the schema descriptor for created_at field.
+	billingsequenceDescCreatedAt := billingsequenceFields[3].Descriptor()
+	// billingsequence.DefaultCreatedAt holds the default value on creation for the created_at field.
+	billingsequence.DefaultCreatedAt = billingsequenceDescCreatedAt.Default.(func() time.Time)
+	// billingsequenceDescUpdatedAt is the schema descriptor for updated_at field.
+	billingsequenceDescUpdatedAt := billingsequenceFields[4].Descriptor()
+	// billingsequence.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	billingsequence.DefaultUpdatedAt = billingsequenceDescUpdatedAt.Default.(func() time.Time)
+	// billingsequence.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	billingsequence.UpdateDefaultUpdatedAt = billingsequenceDescUpdatedAt.UpdateDefault.(func() time.Time)
 	invoiceMixin := schema.Invoice{}.Mixin()
 	invoiceMixinFields0 := invoiceMixin[0].Fields()
 	_ = invoiceMixinFields0
@@ -124,6 +150,30 @@ func init() {
 	invoicelineitemDescCurrency := invoicelineitemFields[8].Descriptor()
 	// invoicelineitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	invoicelineitem.CurrencyValidator = invoicelineitemDescCurrency.Validators[0].(func(string) error)
+	invoicesequenceFields := schema.InvoiceSequence{}.Fields()
+	_ = invoicesequenceFields
+	// invoicesequenceDescTenantID is the schema descriptor for tenant_id field.
+	invoicesequenceDescTenantID := invoicesequenceFields[0].Descriptor()
+	// invoicesequence.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	invoicesequence.TenantIDValidator = invoicesequenceDescTenantID.Validators[0].(func(string) error)
+	// invoicesequenceDescYearMonth is the schema descriptor for year_month field.
+	invoicesequenceDescYearMonth := invoicesequenceFields[1].Descriptor()
+	// invoicesequence.YearMonthValidator is a validator for the "year_month" field. It is called by the builders before save.
+	invoicesequence.YearMonthValidator = invoicesequenceDescYearMonth.Validators[0].(func(string) error)
+	// invoicesequenceDescLastValue is the schema descriptor for last_value field.
+	invoicesequenceDescLastValue := invoicesequenceFields[2].Descriptor()
+	// invoicesequence.DefaultLastValue holds the default value on creation for the last_value field.
+	invoicesequence.DefaultLastValue = invoicesequenceDescLastValue.Default.(int64)
+	// invoicesequenceDescCreatedAt is the schema descriptor for created_at field.
+	invoicesequenceDescCreatedAt := invoicesequenceFields[3].Descriptor()
+	// invoicesequence.DefaultCreatedAt holds the default value on creation for the created_at field.
+	invoicesequence.DefaultCreatedAt = invoicesequenceDescCreatedAt.Default.(func() time.Time)
+	// invoicesequenceDescUpdatedAt is the schema descriptor for updated_at field.
+	invoicesequenceDescUpdatedAt := invoicesequenceFields[4].Descriptor()
+	// invoicesequence.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	invoicesequence.DefaultUpdatedAt = invoicesequenceDescUpdatedAt.Default.(func() time.Time)
+	// invoicesequence.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	invoicesequence.UpdateDefaultUpdatedAt = invoicesequenceDescUpdatedAt.UpdateDefault.(func() time.Time)
 	subscriptionMixin := schema.Subscription{}.Mixin()
 	subscriptionMixinFields0 := subscriptionMixin[0].Fields()
 	_ = subscriptionMixinFields0

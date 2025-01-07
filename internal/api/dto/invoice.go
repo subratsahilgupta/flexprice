@@ -15,6 +15,7 @@ import (
 type CreateInvoiceRequest struct {
 	CustomerID     string                         `json:"customer_id" validate:"required"`
 	SubscriptionID *string                        `json:"subscription_id,omitempty"`
+	IdempotencyKey *string                        `json:"idempotency_key"`
 	InvoiceType    types.InvoiceType              `json:"invoice_type" validate:"required"`
 	Currency       string                         `json:"currency" validate:"required"`
 	AmountDue      decimal.Decimal                `json:"amount_due" validate:"required"`
@@ -36,15 +37,23 @@ func (r *CreateInvoiceRequest) Validate() error {
 		return err
 	}
 
-	if r.AmountDue.IsZero() || r.AmountDue.IsNegative() {
-		return fmt.Errorf("amount_due must be greater than zero")
+	if r.AmountDue.IsNegative() {
+		return fmt.Errorf("amount_due must be non-negative")
 	}
 
-	if r.InvoiceType == types.InvoiceTypeSubscription && r.SubscriptionID == nil {
-		return fmt.Errorf("subscription_id is required for subscription invoice")
-	}
+	if r.InvoiceType == types.InvoiceTypeSubscription {
+		if r.SubscriptionID == nil {
+			return fmt.Errorf("subscription_id is required for subscription invoice")
+		}
 
-	if r.PeriodStart != nil && r.PeriodEnd != nil {
+		if r.PeriodStart == nil {
+			return fmt.Errorf("period_start is required for subscription invoice")
+		}
+
+		if r.PeriodEnd == nil {
+			return fmt.Errorf("period_end is required for subscription invoice")
+		}
+
 		if r.PeriodEnd.Before(*r.PeriodStart) {
 			return fmt.Errorf("period_end must be after period_start")
 		}
@@ -251,6 +260,9 @@ type InvoiceResponse struct {
 	AmountDue       decimal.Decimal            `json:"amount_due"`
 	AmountPaid      decimal.Decimal            `json:"amount_paid"`
 	AmountRemaining decimal.Decimal            `json:"amount_remaining"`
+	InvoiceNumber   *string                    `json:"invoice_number,omitempty"`
+	IdempotencyKey  *string                    `json:"idempotency_key,omitempty"`
+	BillingSequence *int                       `json:"billing_sequence,omitempty"`
 	Description     string                     `json:"description,omitempty"`
 	DueDate         *time.Time                 `json:"due_date,omitempty"`
 	PeriodStart     *time.Time                 `json:"period_start,omitempty"`
@@ -288,6 +300,9 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 		AmountDue:       inv.AmountDue,
 		AmountPaid:      inv.AmountPaid,
 		AmountRemaining: inv.AmountRemaining,
+		InvoiceNumber:   inv.InvoiceNumber,
+		IdempotencyKey:  inv.IdempotencyKey,
+		BillingSequence: inv.BillingSequence,
 		Description:     inv.Description,
 		DueDate:         inv.DueDate,
 		PeriodStart:     inv.PeriodStart,
