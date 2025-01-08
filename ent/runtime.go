@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent/billingsequence"
+	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/invoicesequence"
@@ -44,6 +45,41 @@ func init() {
 	billingsequence.DefaultUpdatedAt = billingsequenceDescUpdatedAt.Default.(func() time.Time)
 	// billingsequence.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	billingsequence.UpdateDefaultUpdatedAt = billingsequenceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	customerMixin := schema.Customer{}.Mixin()
+	customerMixinFields0 := customerMixin[0].Fields()
+	_ = customerMixinFields0
+	customerFields := schema.Customer{}.Fields()
+	_ = customerFields
+	// customerDescTenantID is the schema descriptor for tenant_id field.
+	customerDescTenantID := customerMixinFields0[0].Descriptor()
+	// customer.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	customer.TenantIDValidator = customerDescTenantID.Validators[0].(func(string) error)
+	// customerDescStatus is the schema descriptor for status field.
+	customerDescStatus := customerMixinFields0[1].Descriptor()
+	// customer.DefaultStatus holds the default value on creation for the status field.
+	customer.DefaultStatus = customerDescStatus.Default.(string)
+	// customerDescCreatedAt is the schema descriptor for created_at field.
+	customerDescCreatedAt := customerMixinFields0[2].Descriptor()
+	// customer.DefaultCreatedAt holds the default value on creation for the created_at field.
+	customer.DefaultCreatedAt = customerDescCreatedAt.Default.(func() time.Time)
+	// customerDescUpdatedAt is the schema descriptor for updated_at field.
+	customerDescUpdatedAt := customerMixinFields0[3].Descriptor()
+	// customer.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	customer.DefaultUpdatedAt = customerDescUpdatedAt.Default.(func() time.Time)
+	// customer.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	customer.UpdateDefaultUpdatedAt = customerDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// customerDescExternalID is the schema descriptor for external_id field.
+	customerDescExternalID := customerFields[1].Descriptor()
+	// customer.ExternalIDValidator is a validator for the "external_id" field. It is called by the builders before save.
+	customer.ExternalIDValidator = customerDescExternalID.Validators[0].(func(string) error)
+	// customerDescName is the schema descriptor for name field.
+	customerDescName := customerFields[2].Descriptor()
+	// customer.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	customer.NameValidator = customerDescName.Validators[0].(func(string) error)
+	// customerDescEmail is the schema descriptor for email field.
+	customerDescEmail := customerFields[3].Descriptor()
+	// customer.EmailValidator is a validator for the "email" field. It is called by the builders before save.
+	customer.EmailValidator = customerDescEmail.Validators[0].(func(string) error)
 	invoiceMixin := schema.Invoice{}.Mixin()
 	invoiceMixinFields0 := invoiceMixin[0].Fields()
 	_ = invoiceMixinFields0

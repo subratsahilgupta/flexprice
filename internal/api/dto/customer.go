@@ -15,9 +15,9 @@ type CreateCustomerRequest struct {
 }
 
 type UpdateCustomerRequest struct {
-	ExternalID string `json:"external_id"`
-	Name       string `json:"name"`
-	Email      string `json:"email"`
+	ExternalID *string `json:"external_id"`
+	Name       *string `json:"name"`
+	Email      *string `json:"email"`
 }
 
 type CustomerResponse struct {
