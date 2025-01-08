@@ -166,6 +166,6 @@ func (Invoice) Indexes() []ent.Index {
 			Annotations(entsql.IndexWhere("idempotency_key IS NOT NULL")),
 		index.Fields("subscription_id", "period_start", "period_end").
 			StorageKey("idx_subscription_period_unique").
-			Annotations(entsql.IndexWhere("status != 'VOIDED' AND subscription_id IS NOT NULL")),
+			Annotations(entsql.IndexWhere("invoice_status != 'VOIDED' AND subscription_id IS NOT NULL")),
 	}
 }
