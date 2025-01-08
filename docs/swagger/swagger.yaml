@@ -35,13 +35,21 @@ definitions:
         type: number
       metadata:
         $ref: '#/definitions/types.Metadata'
+      meter_display_name:
+        type: string
       meter_id:
         type: string
       period_end:
         type: string
       period_start:
         type: string
+      plan_display_name:
+        type: string
+      plan_id:
+        type: string
       price_id:
+        type: string
+      price_type:
         type: string
       quantity:
         type: number
@@ -540,13 +548,21 @@ definitions:
         type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
+      meter_display_name:
+        type: string
       meter_id:
         type: string
       period_end:
         type: string
       period_start:
         type: string
+      plan_display_name:
+        type: string
+      plan_id:
+        type: string
       price_id:
+        type: string
+      price_type:
         type: string
       quantity:
         type: number

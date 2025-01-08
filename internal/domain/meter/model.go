@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -54,6 +56,77 @@ type Aggregation struct {
 	// Field is the key in $event.properties on which the aggregation is to be applied
 	// For ex if the aggregation type is sum for API usage, the field could be "duration_ms"
 	Field string `json:"field,omitempty"`
+}
+
+// FromEnt converts an Ent Meter to a domain Meter
+func FromEnt(e *ent.Meter) *Meter {
+	if e == nil {
+		return nil
+	}
+
+	// Convert filters from schema to domain model
+	filters := make([]Filter, len(e.Filters))
+	for i, f := range e.Filters {
+		filters[i] = Filter{
+			Key:    f.Key,
+			Values: f.Values,
+		}
+	}
+
+	return &Meter{
+		ID:        e.ID,
+		EventName: e.EventName,
+		Name:      e.Name,
+		Aggregation: Aggregation{
+			Type:  e.Aggregation.Type,
+			Field: e.Aggregation.Field,
+		},
+		Filters:    filters,
+		ResetUsage: types.ResetUsage(e.ResetUsage),
+		BaseModel: types.BaseModel{
+			TenantID:  e.TenantID,
+			Status:    types.Status(e.Status),
+			CreatedAt: e.CreatedAt,
+			UpdatedAt: e.UpdatedAt,
+			CreatedBy: e.CreatedBy,
+			UpdatedBy: e.UpdatedBy,
+		},
+	}
+}
+
+// FromEntList converts a list of Ent Meters to domain Meters
+func FromEntList(list []*ent.Meter) []*Meter {
+	if list == nil {
+		return nil
+	}
+	meters := make([]*Meter, len(list))
+	for i, item := range list {
+		meters[i] = FromEnt(item)
+	}
+	return meters
+}
+
+// ToEntFilters converts domain Filters to Ent Filters
+func (m *Meter) ToEntFilters() []schema.MeterFilter {
+	if len(m.Filters) == 0 {
+		return nil
+	}
+	filters := make([]schema.MeterFilter, len(m.Filters))
+	for i, f := range m.Filters {
+		filters[i] = schema.MeterFilter{
+			Key:    f.Key,
+			Values: f.Values,
+		}
+	}
+	return filters
+}
+
+// ToEntAggregation converts domain Aggregation to Ent Aggregation
+func (m *Meter) ToEntAggregation() schema.MeterAggregation {
+	return schema.MeterAggregation{
+		Type:  m.Aggregation.Type,
+		Field: m.Aggregation.Field,
+	}
 }
 
 // Validate validates the meter configuration
