@@ -17,6 +17,7 @@ import (
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/invoicesequence"
+	"github.com/flexprice/flexprice/ent/plan"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
@@ -85,6 +86,7 @@ func checkColumn(table, column string) error {
 			invoice.Table:           invoice.ValidColumn,
 			invoicelineitem.Table:   invoicelineitem.ValidColumn,
 			invoicesequence.Table:   invoicesequence.ValidColumn,
+			plan.Table:              plan.ValidColumn,
 			subscription.Table:      subscription.ValidColumn,
 			wallet.Table:            wallet.ValidColumn,
 			wallettransaction.Table: wallettransaction.ValidColumn,
