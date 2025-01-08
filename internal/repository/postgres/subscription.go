@@ -216,3 +216,34 @@ func (r *subscriptionRepository) List(ctx context.Context, filter *types.Subscri
 
 	return subscriptions, nil
 }
+
+func (r *subscriptionRepository) ListAll(ctx context.Context, filter *types.SubscriptionFilter) ([]*subscription.Subscription, error) {
+	query := `SELECT * FROM subscriptions`
+	// Add ordering and pagination
+	params := filter.ToMap()
+
+	if filter.Status != "" {
+		query += " AND status = :status"
+	}
+	if filter.SubscriptionStatus != "" {
+		query += " AND subscription_status = :subscription_status"
+	}
+	query += " ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+
+	rows, err := r.db.NamedQueryContext(ctx, query, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
+	}
+	defer rows.Close()
+
+	var subscriptions []*subscription.Subscription
+	for rows.Next() {
+		var sub subscription.Subscription
+		if err := rows.StructScan(&sub); err != nil {
+			return nil, fmt.Errorf("failed to scan subscription: %w", err)
+		}
+		subscriptions = append(subscriptions, &sub)
+	}
+
+	return subscriptions, nil
+}
