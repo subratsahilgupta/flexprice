@@ -434,7 +434,7 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.Su
 			CurrentPeriodEndBefore: &now,
 		}
 
-		subs, err := s.subscriptionRepo.List(ctx, filter)
+		subs, err := s.subscriptionRepo.ListAll(ctx, filter)
 		if err != nil {
 			return response, fmt.Errorf("failed to list subscriptions: %w", err)
 		}
