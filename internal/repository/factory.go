@@ -49,7 +49,7 @@ func NewAuthRepository(p RepositoryParams) auth.Repository {
 }
 
 func NewPriceRepository(p RepositoryParams) price.Repository {
-	return postgresRepo.NewPriceRepository(p.DB, p.Logger)
+	return entRepo.NewPriceRepository(p.EntClient, p.Logger)
 }
 
 func NewCustomerRepository(p RepositoryParams) customer.Repository {

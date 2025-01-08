@@ -24,6 +24,9 @@ type InvoiceSequence func(*sql.Selector)
 // Plan is the predicate function for plan builders.
 type Plan func(*sql.Selector)
 
+// Price is the predicate function for price builders.
+type Price func(*sql.Selector)
+
 // Subscription is the predicate function for subscription builders.
 type Subscription func(*sql.Selector)
 

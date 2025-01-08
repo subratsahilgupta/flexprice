@@ -2924,6 +2924,9 @@ const docTemplate = `{
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
+                "meter_display_name": {
+                    "type": "string"
+                },
                 "meter_id": {
                     "type": "string"
                 },
@@ -2933,7 +2936,16 @@ const docTemplate = `{
                 "period_start": {
                     "type": "string"
                 },
+                "plan_display_name": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
                 "price_id": {
+                    "type": "string"
+                },
+                "price_type": {
                     "type": "string"
                 },
                 "quantity": {
@@ -3662,6 +3674,9 @@ const docTemplate = `{
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
+                "meter_display_name": {
+                    "type": "string"
+                },
                 "meter_id": {
                     "type": "string"
                 },
@@ -3671,7 +3686,16 @@ const docTemplate = `{
                 "period_start": {
                     "type": "string"
                 },
+                "plan_display_name": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
                 "price_id": {
+                    "type": "string"
+                },
+                "price_type": {
                     "type": "string"
                 },
                 "quantity": {
