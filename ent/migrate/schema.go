@@ -240,6 +240,42 @@ var (
 			},
 		},
 	}
+	// PlansColumns holds the columns for the "plans" table.
+	PlansColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "lookup_key", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "invoice_cadence", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "trial_period", Type: field.TypeInt, Default: 0},
+	}
+	// PlansTable holds the schema information for the "plans" table.
+	PlansTable = &schema.Table{
+		Name:       "plans",
+		Columns:    PlansColumns,
+		PrimaryKey: []*schema.Column{PlansColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "plan_tenant_id_lookup_key",
+				Unique:  true,
+				Columns: []*schema.Column{PlansColumns[1], PlansColumns[7]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status != 'deleted'",
+				},
+			},
+			{
+				Name:    "plan_tenant_id",
+				Unique:  false,
+				Columns: []*schema.Column{PlansColumns[1]},
+			},
+		},
+	}
 	// SubscriptionsColumns holds the columns for the "subscriptions" table.
 	SubscriptionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -382,6 +418,7 @@ var (
 		InvoicesTable,
 		InvoiceLineItemsTable,
 		InvoiceSequencesTable,
+		PlansTable,
 		SubscriptionsTable,
 		WalletsTable,
 		WalletTransactionsTable,

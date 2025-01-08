@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/invoicesequence"
+	"github.com/flexprice/flexprice/ent/plan"
 	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/wallet"
@@ -210,6 +211,45 @@ func init() {
 	invoicesequence.DefaultUpdatedAt = invoicesequenceDescUpdatedAt.Default.(func() time.Time)
 	// invoicesequence.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	invoicesequence.UpdateDefaultUpdatedAt = invoicesequenceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	planMixin := schema.Plan{}.Mixin()
+	planMixinFields0 := planMixin[0].Fields()
+	_ = planMixinFields0
+	planFields := schema.Plan{}.Fields()
+	_ = planFields
+	// planDescTenantID is the schema descriptor for tenant_id field.
+	planDescTenantID := planMixinFields0[0].Descriptor()
+	// plan.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	plan.TenantIDValidator = planDescTenantID.Validators[0].(func(string) error)
+	// planDescStatus is the schema descriptor for status field.
+	planDescStatus := planMixinFields0[1].Descriptor()
+	// plan.DefaultStatus holds the default value on creation for the status field.
+	plan.DefaultStatus = planDescStatus.Default.(string)
+	// planDescCreatedAt is the schema descriptor for created_at field.
+	planDescCreatedAt := planMixinFields0[2].Descriptor()
+	// plan.DefaultCreatedAt holds the default value on creation for the created_at field.
+	plan.DefaultCreatedAt = planDescCreatedAt.Default.(func() time.Time)
+	// planDescUpdatedAt is the schema descriptor for updated_at field.
+	planDescUpdatedAt := planMixinFields0[3].Descriptor()
+	// plan.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	plan.DefaultUpdatedAt = planDescUpdatedAt.Default.(func() time.Time)
+	// plan.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	plan.UpdateDefaultUpdatedAt = planDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// planDescLookupKey is the schema descriptor for lookup_key field.
+	planDescLookupKey := planFields[1].Descriptor()
+	// plan.LookupKeyValidator is a validator for the "lookup_key" field. It is called by the builders before save.
+	plan.LookupKeyValidator = planDescLookupKey.Validators[0].(func(string) error)
+	// planDescName is the schema descriptor for name field.
+	planDescName := planFields[2].Descriptor()
+	// plan.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	plan.NameValidator = planDescName.Validators[0].(func(string) error)
+	// planDescInvoiceCadence is the schema descriptor for invoice_cadence field.
+	planDescInvoiceCadence := planFields[4].Descriptor()
+	// plan.InvoiceCadenceValidator is a validator for the "invoice_cadence" field. It is called by the builders before save.
+	plan.InvoiceCadenceValidator = planDescInvoiceCadence.Validators[0].(func(string) error)
+	// planDescTrialPeriod is the schema descriptor for trial_period field.
+	planDescTrialPeriod := planFields[5].Descriptor()
+	// plan.DefaultTrialPeriod holds the default value on creation for the trial_period field.
+	plan.DefaultTrialPeriod = planDescTrialPeriod.Default.(int)
 	subscriptionMixin := schema.Subscription{}.Mixin()
 	subscriptionMixinFields0 := subscriptionMixin[0].Fields()
 	_ = subscriptionMixinFields0
