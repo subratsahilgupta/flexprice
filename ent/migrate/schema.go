@@ -240,6 +240,34 @@ var (
 			},
 		},
 	}
+	// MetersColumns holds the columns for the "meters" table.
+	MetersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "event_name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "aggregation", Type: field.TypeJSON},
+		{Name: "filters", Type: field.TypeJSON},
+		{Name: "reset_usage", Type: field.TypeString, Default: "BILLING_PERIOD", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+	}
+	// MetersTable holds the schema information for the "meters" table.
+	MetersTable = &schema.Table{
+		Name:       "meters",
+		Columns:    MetersColumns,
+		PrimaryKey: []*schema.Column{MetersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "meter_tenant_id",
+				Unique:  false,
+				Columns: []*schema.Column{MetersColumns[1]},
+			},
+		},
+	}
 	// PlansColumns holds the columns for the "plans" table.
 	PlansColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -471,6 +499,7 @@ var (
 		InvoicesTable,
 		InvoiceLineItemsTable,
 		InvoiceSequencesTable,
+		MetersTable,
 		PlansTable,
 		PricesTable,
 		SubscriptionsTable,

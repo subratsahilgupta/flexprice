@@ -21,6 +21,9 @@ type InvoiceLineItem func(*sql.Selector)
 // InvoiceSequence is the predicate function for invoicesequence builders.
 type InvoiceSequence func(*sql.Selector)
 
+// Meter is the predicate function for meter builders.
+type Meter func(*sql.Selector)
+
 // Plan is the predicate function for plan builders.
 type Plan func(*sql.Selector)
 

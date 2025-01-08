@@ -69,6 +69,18 @@ func (f InvoiceSequenceFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.InvoiceSequenceMutation", m)
 }
 
+// The MeterFunc type is an adapter to allow the use of ordinary
+// function as Meter mutator.
+type MeterFunc func(context.Context, *ent.MeterMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MeterFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MeterMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MeterMutation", m)
+}
+
 // The PlanFunc type is an adapter to allow the use of ordinary
 // function as Plan mutator.
 type PlanFunc func(context.Context, *ent.PlanMutation) (ent.Value, error)

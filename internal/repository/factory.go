@@ -37,7 +37,7 @@ func NewEventRepository(p RepositoryParams) events.Repository {
 }
 
 func NewMeterRepository(p RepositoryParams) meter.Repository {
-	return postgresRepo.NewMeterRepository(p.DB, p.Logger)
+	return entRepo.NewMeterRepository(p.EntClient, p.Logger)
 }
 
 func NewUserRepository(p RepositoryParams) user.Repository {

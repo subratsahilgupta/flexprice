@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/invoicesequence"
+	"github.com/flexprice/flexprice/ent/meter"
 	"github.com/flexprice/flexprice/ent/plan"
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/schema"
@@ -212,6 +213,49 @@ func init() {
 	invoicesequence.DefaultUpdatedAt = invoicesequenceDescUpdatedAt.Default.(func() time.Time)
 	// invoicesequence.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	invoicesequence.UpdateDefaultUpdatedAt = invoicesequenceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	meterMixin := schema.Meter{}.Mixin()
+	meterMixinFields0 := meterMixin[0].Fields()
+	_ = meterMixinFields0
+	meterFields := schema.Meter{}.Fields()
+	_ = meterFields
+	// meterDescTenantID is the schema descriptor for tenant_id field.
+	meterDescTenantID := meterMixinFields0[0].Descriptor()
+	// meter.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	meter.TenantIDValidator = meterDescTenantID.Validators[0].(func(string) error)
+	// meterDescStatus is the schema descriptor for status field.
+	meterDescStatus := meterMixinFields0[1].Descriptor()
+	// meter.DefaultStatus holds the default value on creation for the status field.
+	meter.DefaultStatus = meterDescStatus.Default.(string)
+	// meterDescCreatedAt is the schema descriptor for created_at field.
+	meterDescCreatedAt := meterMixinFields0[2].Descriptor()
+	// meter.DefaultCreatedAt holds the default value on creation for the created_at field.
+	meter.DefaultCreatedAt = meterDescCreatedAt.Default.(func() time.Time)
+	// meterDescUpdatedAt is the schema descriptor for updated_at field.
+	meterDescUpdatedAt := meterMixinFields0[3].Descriptor()
+	// meter.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	meter.DefaultUpdatedAt = meterDescUpdatedAt.Default.(func() time.Time)
+	// meter.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	meter.UpdateDefaultUpdatedAt = meterDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// meterDescEventName is the schema descriptor for event_name field.
+	meterDescEventName := meterFields[1].Descriptor()
+	// meter.EventNameValidator is a validator for the "event_name" field. It is called by the builders before save.
+	meter.EventNameValidator = meterDescEventName.Validators[0].(func(string) error)
+	// meterDescName is the schema descriptor for name field.
+	meterDescName := meterFields[2].Descriptor()
+	// meter.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	meter.NameValidator = meterDescName.Validators[0].(func(string) error)
+	// meterDescAggregation is the schema descriptor for aggregation field.
+	meterDescAggregation := meterFields[3].Descriptor()
+	// meter.DefaultAggregation holds the default value on creation for the aggregation field.
+	meter.DefaultAggregation = meterDescAggregation.Default.(schema.MeterAggregation)
+	// meterDescFilters is the schema descriptor for filters field.
+	meterDescFilters := meterFields[4].Descriptor()
+	// meter.DefaultFilters holds the default value on creation for the filters field.
+	meter.DefaultFilters = meterDescFilters.Default.([]schema.MeterFilter)
+	// meterDescResetUsage is the schema descriptor for reset_usage field.
+	meterDescResetUsage := meterFields[5].Descriptor()
+	// meter.DefaultResetUsage holds the default value on creation for the reset_usage field.
+	meter.DefaultResetUsage = meterDescResetUsage.Default.(string)
 	planMixin := schema.Plan{}.Mixin()
 	planMixinFields0 := planMixin[0].Fields()
 	_ = planMixinFields0
