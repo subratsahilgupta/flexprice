@@ -449,19 +449,19 @@ func init() {
 	// wallet.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	wallet.UpdateDefaultUpdatedAt = walletDescUpdatedAt.UpdateDefault.(func() time.Time)
 	// walletDescCustomerID is the schema descriptor for customer_id field.
-	walletDescCustomerID := walletFields[1].Descriptor()
+	walletDescCustomerID := walletFields[2].Descriptor()
 	// wallet.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
 	wallet.CustomerIDValidator = walletDescCustomerID.Validators[0].(func(string) error)
 	// walletDescCurrency is the schema descriptor for currency field.
-	walletDescCurrency := walletFields[2].Descriptor()
+	walletDescCurrency := walletFields[3].Descriptor()
 	// wallet.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	wallet.CurrencyValidator = walletDescCurrency.Validators[0].(func(string) error)
 	// walletDescBalance is the schema descriptor for balance field.
-	walletDescBalance := walletFields[5].Descriptor()
+	walletDescBalance := walletFields[6].Descriptor()
 	// wallet.DefaultBalance holds the default value on creation for the balance field.
 	wallet.DefaultBalance = walletDescBalance.Default.(decimal.Decimal)
 	// walletDescWalletStatus is the schema descriptor for wallet_status field.
-	walletDescWalletStatus := walletFields[6].Descriptor()
+	walletDescWalletStatus := walletFields[7].Descriptor()
 	// wallet.DefaultWalletStatus holds the default value on creation for the wallet_status field.
 	wallet.DefaultWalletStatus = walletDescWalletStatus.Default.(string)
 	wallettransactionMixin := schema.WalletTransaction{}.Mixin()

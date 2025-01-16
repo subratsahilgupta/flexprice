@@ -425,6 +425,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "name", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "customer_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
 		{Name: "description", Type: field.TypeString, Nullable: true},
@@ -441,12 +442,12 @@ var (
 			{
 				Name:    "wallet_tenant_id_customer_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[7], WalletsColumns[2]},
+				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[8], WalletsColumns[2]},
 			},
 			{
 				Name:    "wallet_tenant_id_status_wallet_status",
 				Unique:  false,
-				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[2], WalletsColumns[12]},
+				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[2], WalletsColumns[13]},
 			},
 		},
 	}

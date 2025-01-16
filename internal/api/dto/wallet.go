@@ -12,16 +12,20 @@ import (
 
 // CreateWalletRequest represents the request to create a new wallet
 type CreateWalletRequest struct {
-	CustomerID string         `json:"customer_id" binding:"required"`
-	Currency   string         `json:"currency" binding:"required"`
-	Metadata   types.Metadata `json:"metadata,omitempty"`
+	CustomerID  string         `json:"customer_id" binding:"required"`
+	Name        string         `json:"name,omitempty"`
+	Currency    string         `json:"currency" binding:"required"`
+	Description string         `json:"description,omitempty"`
+	Metadata    types.Metadata `json:"metadata,omitempty"`
 }
 
 func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 	return &wallet.Wallet{
 		ID:           types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET),
 		CustomerID:   r.CustomerID,
+		Name:         r.Name,
 		Currency:     r.Currency,
+		Description:  r.Description,
 		Metadata:     r.Metadata,
 		Balance:      decimal.Zero,
 		WalletStatus: types.WalletStatusActive,
@@ -37,12 +41,29 @@ func (r *CreateWalletRequest) Validate() error {
 type WalletResponse struct {
 	ID           string             `json:"id"`
 	CustomerID   string             `json:"customer_id"`
+	Name         string             `json:"name,omitempty"`
 	Currency     string             `json:"currency"`
+	Description  string             `json:"description,omitempty"`
 	Balance      decimal.Decimal    `json:"balance"`
 	WalletStatus types.WalletStatus `json:"wallet_status"`
 	Metadata     types.Metadata     `json:"metadata,omitempty"`
 	CreatedAt    time.Time          `json:"created_at"`
 	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+func FromWallet(w *wallet.Wallet) *WalletResponse {
+	return &WalletResponse{
+		ID:           w.ID,
+		CustomerID:   w.CustomerID,
+		Currency:     w.Currency,
+		Balance:      w.Balance,
+		Name:         w.Name,
+		Description:  w.Description,
+		WalletStatus: w.WalletStatus,
+		Metadata:     w.Metadata,
+		CreatedAt:    w.CreatedAt,
+		UpdatedAt:    w.UpdatedAt,
+	}
 }
 
 // WalletTransactionResponse represents a wallet transaction in API responses

@@ -350,7 +350,8 @@ CREATE TABLE public.wallets (
     updated_at timestamp with time zone NOT NULL,
     created_by character varying,
     updated_by character varying,
-    description character varying
+    description character varying,
+    name character varying
 );
 
 

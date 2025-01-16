@@ -35,6 +35,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetID(w.ID).
 		SetTenantID(w.TenantID).
 		SetCustomerID(w.CustomerID).
+		SetName(w.Name).
 		SetCurrency(w.Currency).
 		SetDescription(w.Description).
 		SetMetadata(w.Metadata).
@@ -338,6 +339,7 @@ func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id strin
 func toDomainWallet(w *ent.Wallet) *walletdomain.Wallet {
 	return &walletdomain.Wallet{
 		ID:           w.ID,
+		Name:         w.Name,
 		CustomerID:   w.CustomerID,
 		Currency:     w.Currency,
 		Description:  w.Description,
