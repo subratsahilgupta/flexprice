@@ -11708,6 +11708,7 @@ type WalletMutation struct {
 	updated_at    *time.Time
 	created_by    *string
 	updated_by    *string
+	name          *string
 	customer_id   *string
 	currency      *string
 	description   *string
@@ -12066,6 +12067,55 @@ func (m *WalletMutation) ResetUpdatedBy() {
 	delete(m.clearedFields, wallet.FieldUpdatedBy)
 }
 
+// SetName sets the "name" field.
+func (m *WalletMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *WalletMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the Wallet entity.
+// If the Wallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ClearName clears the value of the "name" field.
+func (m *WalletMutation) ClearName() {
+	m.name = nil
+	m.clearedFields[wallet.FieldName] = struct{}{}
+}
+
+// NameCleared returns if the "name" field was cleared in this mutation.
+func (m *WalletMutation) NameCleared() bool {
+	_, ok := m.clearedFields[wallet.FieldName]
+	return ok
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *WalletMutation) ResetName() {
+	m.name = nil
+	delete(m.clearedFields, wallet.FieldName)
+}
+
 // SetCustomerID sets the "customer_id" field.
 func (m *WalletMutation) SetCustomerID(s string) {
 	m.customer_id = &s
@@ -12342,7 +12392,7 @@ func (m *WalletMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.tenant_id != nil {
 		fields = append(fields, wallet.FieldTenantID)
 	}
@@ -12360,6 +12410,9 @@ func (m *WalletMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, wallet.FieldUpdatedBy)
+	}
+	if m.name != nil {
+		fields = append(fields, wallet.FieldName)
 	}
 	if m.customer_id != nil {
 		fields = append(fields, wallet.FieldCustomerID)
@@ -12399,6 +12452,8 @@ func (m *WalletMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case wallet.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case wallet.FieldName:
+		return m.Name()
 	case wallet.FieldCustomerID:
 		return m.CustomerID()
 	case wallet.FieldCurrency:
@@ -12432,6 +12487,8 @@ func (m *WalletMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldCreatedBy(ctx)
 	case wallet.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case wallet.FieldName:
+		return m.OldName(ctx)
 	case wallet.FieldCustomerID:
 		return m.OldCustomerID(ctx)
 	case wallet.FieldCurrency:
@@ -12494,6 +12551,13 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case wallet.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
 		return nil
 	case wallet.FieldCustomerID:
 		v, ok := value.(string)
@@ -12573,6 +12637,9 @@ func (m *WalletMutation) ClearedFields() []string {
 	if m.FieldCleared(wallet.FieldUpdatedBy) {
 		fields = append(fields, wallet.FieldUpdatedBy)
 	}
+	if m.FieldCleared(wallet.FieldName) {
+		fields = append(fields, wallet.FieldName)
+	}
 	if m.FieldCleared(wallet.FieldDescription) {
 		fields = append(fields, wallet.FieldDescription)
 	}
@@ -12598,6 +12665,9 @@ func (m *WalletMutation) ClearField(name string) error {
 		return nil
 	case wallet.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case wallet.FieldName:
+		m.ClearName()
 		return nil
 	case wallet.FieldDescription:
 		m.ClearDescription()
@@ -12630,6 +12700,9 @@ func (m *WalletMutation) ResetField(name string) error {
 		return nil
 	case wallet.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case wallet.FieldName:
+		m.ResetName()
 		return nil
 	case wallet.FieldCustomerID:
 		m.ResetCustomerID()

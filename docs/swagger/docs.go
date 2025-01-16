@@ -3576,8 +3576,14 @@ const docTemplate = `{
                 "customer_id": {
                     "type": "string"
                 },
+                "description": {
+                    "type": "string"
+                },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -4853,6 +4859,9 @@ const docTemplate = `{
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
+                "name": {
+                    "type": "string"
+                },
                 "real_time_balance": {
                     "type": "number"
                 },
@@ -4888,11 +4897,17 @@ const docTemplate = `{
                 "customer_id": {
                     "type": "string"
                 },
+                "description": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
+                },
+                "name": {
+                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"

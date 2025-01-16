@@ -123,16 +123,7 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	)
 
 	// Convert to response DTO
-	return &dto.WalletResponse{
-		ID:           w.ID,
-		CustomerID:   w.CustomerID,
-		Currency:     w.Currency,
-		Balance:      w.Balance,
-		WalletStatus: w.WalletStatus,
-		Metadata:     w.Metadata,
-		CreatedAt:    w.CreatedAt,
-		UpdatedAt:    w.UpdatedAt,
-	}, nil
+	return dto.FromWallet(w), nil
 }
 
 func (s *walletService) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*dto.WalletResponse, error) {
@@ -143,16 +134,7 @@ func (s *walletService) GetWalletsByCustomerID(ctx context.Context, customerID s
 
 	response := make([]*dto.WalletResponse, len(wallets))
 	for i, w := range wallets {
-		response[i] = &dto.WalletResponse{
-			ID:           w.ID,
-			CustomerID:   w.CustomerID,
-			Currency:     w.Currency,
-			Balance:      w.Balance,
-			WalletStatus: w.WalletStatus,
-			Metadata:     w.Metadata,
-			CreatedAt:    w.CreatedAt,
-			UpdatedAt:    w.UpdatedAt,
-		}
+		response[i] = dto.FromWallet(w)
 	}
 
 	return response, nil
@@ -164,16 +146,7 @@ func (s *walletService) GetWalletByID(ctx context.Context, id string) (*dto.Wall
 		return nil, fmt.Errorf("failed to get wallet: %w", err)
 	}
 
-	return &dto.WalletResponse{
-		ID:           w.ID,
-		CustomerID:   w.CustomerID,
-		Currency:     w.Currency,
-		Balance:      w.Balance,
-		WalletStatus: w.WalletStatus,
-		Metadata:     w.Metadata,
-		CreatedAt:    w.CreatedAt,
-		UpdatedAt:    w.UpdatedAt,
-	}, nil
+	return dto.FromWallet(w), nil
 }
 
 func (s *walletService) GetWalletTransactions(ctx context.Context, walletID string, filter *types.WalletTransactionFilter) (*dto.ListWalletTransactionsResponse, error) {
