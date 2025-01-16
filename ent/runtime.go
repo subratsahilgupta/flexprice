@@ -178,15 +178,15 @@ func init() {
 	// invoicelineitem.PriceIDValidator is a validator for the "price_id" field. It is called by the builders before save.
 	invoicelineitem.PriceIDValidator = invoicelineitemDescPriceID.Validators[0].(func(string) error)
 	// invoicelineitemDescAmount is the schema descriptor for amount field.
-	invoicelineitemDescAmount := invoicelineitemFields[10].Descriptor()
+	invoicelineitemDescAmount := invoicelineitemFields[11].Descriptor()
 	// invoicelineitem.DefaultAmount holds the default value on creation for the amount field.
 	invoicelineitem.DefaultAmount = invoicelineitemDescAmount.Default.(decimal.Decimal)
 	// invoicelineitemDescQuantity is the schema descriptor for quantity field.
-	invoicelineitemDescQuantity := invoicelineitemFields[11].Descriptor()
+	invoicelineitemDescQuantity := invoicelineitemFields[12].Descriptor()
 	// invoicelineitem.DefaultQuantity holds the default value on creation for the quantity field.
 	invoicelineitem.DefaultQuantity = invoicelineitemDescQuantity.Default.(decimal.Decimal)
 	// invoicelineitemDescCurrency is the schema descriptor for currency field.
-	invoicelineitemDescCurrency := invoicelineitemFields[12].Descriptor()
+	invoicelineitemDescCurrency := invoicelineitemFields[13].Descriptor()
 	// invoicelineitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	invoicelineitem.CurrencyValidator = invoicelineitemDescCurrency.Validators[0].(func(string) error)
 	invoicesequenceFields := schema.InvoiceSequence{}.Fields()
