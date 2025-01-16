@@ -18,6 +18,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -99,12 +100,12 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		return nil, fmt.Errorf("failed to get prices: %w", err)
 	}
 
-	if len(pricesResponse.Prices) == 0 {
+	if len(pricesResponse.Items) == 0 {
 		return nil, fmt.Errorf("no prices found for plan")
 	}
 
-	prices := make([]price.Price, len(pricesResponse.Prices))
-	for i, p := range pricesResponse.Prices {
+	prices := make([]price.Price, len(pricesResponse.Items))
+	for i, p := range pricesResponse.Items {
 		prices[i] = *p.Price
 	}
 
@@ -196,33 +197,48 @@ func (s *subscriptionService) CancelSubscription(ctx context.Context, id string,
 }
 
 func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *types.SubscriptionFilter) (*dto.ListSubscriptionsResponse, error) {
-	if filter.Limit == 0 {
-		filter.Limit = 10
-	}
+	planService := NewPlanService(s.planRepo, s.priceRepo, s.meterRepo, s.logger)
 
 	subscriptions, err := s.subscriptionRepo.List(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
 	}
 
+	count, err := s.subscriptionRepo.Count(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count subscriptions: %w", err)
+	}
+
 	response := &dto.ListSubscriptionsResponse{
-		Subscriptions: make([]*dto.SubscriptionResponse, len(subscriptions)),
-		Total:         len(subscriptions),
-		Offset:        filter.Offset,
-		Limit:         filter.Limit,
+		Items: make([]*dto.SubscriptionResponse, len(subscriptions)),
+		Pagination: types.NewPaginationResponse(
+			count,
+			filter.GetLimit(),
+			filter.GetOffset(),
+		),
+	}
+
+	planIDMap := make(map[string]*dto.PlanResponse, 0)
+	for _, sub := range subscriptions {
+		planIDMap[sub.PlanID] = nil
+	}
+
+	// Get plans
+	planFilter := types.NewNoLimitPlanFilter()
+	planFilter.PlanIDs = lo.Keys(planIDMap)
+	planResponse, err := planService.GetPlans(ctx, planFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get plans: %w", err)
+	}
+
+	for _, plan := range planResponse.Items {
+		planIDMap[plan.Plan.ID] = plan
 	}
 
 	for i, sub := range subscriptions {
-		plan, err := s.planRepo.Get(ctx, sub.PlanID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get plan: %w", err)
-		}
-
-		response.Subscriptions[i] = &dto.SubscriptionResponse{
+		response.Items[i] = &dto.SubscriptionResponse{
 			Subscription: sub,
-			Plan: &dto.PlanResponse{
-				Plan: plan,
-			},
+			Plan:         planIDMap[sub.PlanID],
 		}
 	}
 
@@ -270,7 +286,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	// Maintain meter order as they first appear in pricesResponse
 	meterOrder := []string{}
 	seenMeters := make(map[string]bool)
-	meterPrices := make(map[string][]dto.PriceResponse)
+	meterPrices := make(map[string][]*dto.PriceResponse)
 
 	// Build meterPrices in the order of appearance in pricesResponse
 	for _, priceResponse := range pricesResponse {
@@ -425,13 +441,15 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.Su
 	offset := 0
 	for {
 		filter := &types.SubscriptionFilter{
-			Filter: types.Filter{
-				Limit:  batchSize,
-				Offset: offset,
+			QueryFilter: &types.QueryFilter{
+				Limit:  lo.ToPtr(batchSize),
+				Offset: lo.ToPtr(offset),
+				Status: lo.ToPtr(types.StatusPublished),
 			},
-			SubscriptionStatus:     types.SubscriptionStatusActive,
-			Status:                 types.StatusPublished,
-			CurrentPeriodEndBefore: &now,
+			SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive},
+			TimeRangeFilter: &types.TimeRangeFilter{
+				EndTime: &now,
+			},
 		}
 
 		subs, err := s.subscriptionRepo.ListAll(ctx, filter)
@@ -653,8 +671,8 @@ func getMeterDisplayName(ctx context.Context, meterRepo meter.Repository, meterI
 	return displayName
 }
 
-func filterValidPricesForSubscription(prices []dto.PriceResponse, subscriptionObj *subscription.Subscription) []dto.PriceResponse {
-	var validPrices []dto.PriceResponse
+func filterValidPricesForSubscription(prices []*dto.PriceResponse, subscriptionObj *subscription.Subscription) []*dto.PriceResponse {
+	var validPrices []*dto.PriceResponse
 	for _, p := range prices {
 		if p.Price.Currency == subscriptionObj.Currency &&
 			p.Price.BillingPeriod == subscriptionObj.BillingPeriod &&

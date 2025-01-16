@@ -12,5 +12,6 @@ type Repository interface {
 	Update(ctx context.Context, subscription *Subscription) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, filter *types.SubscriptionFilter) ([]*Subscription, error)
+	Count(ctx context.Context, filter *types.SubscriptionFilter) (int, error)
 	ListAll(ctx context.Context, filter *types.SubscriptionFilter) ([]*Subscription, error)
 }

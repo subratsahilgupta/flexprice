@@ -61,12 +61,26 @@ type WalletTransactionResponse struct {
 	CreatedAt         time.Time               `json:"created_at"`
 }
 
-// WalletTransactionsResponse represents a paginated list of wallet transactions
-type WalletTransactionsResponse struct {
-	Transactions []*WalletTransactionResponse `json:"transactions"`
-	Total        int64                        `json:"total"`
-	Filter       types.Filter                 `json:"filter"`
+// FromWalletTransaction converts a wallet transaction to a WalletTransactionResponse
+func FromWalletTransaction(t *wallet.Transaction) *WalletTransactionResponse {
+	return &WalletTransactionResponse{
+		ID:                t.ID,
+		WalletID:          t.WalletID,
+		Type:              string(t.Type),
+		Amount:            t.Amount,
+		BalanceBefore:     t.BalanceBefore,
+		BalanceAfter:      t.BalanceAfter,
+		TransactionStatus: t.TxStatus,
+		ReferenceType:     t.ReferenceType,
+		ReferenceID:       t.ReferenceID,
+		Description:       t.Description,
+		Metadata:          t.Metadata,
+		CreatedAt:         t.CreatedAt,
+	}
 }
+
+// ListWalletTransactionsResponse represents the response for listing wallet transactions
+type ListWalletTransactionsResponse = types.ListResponse[*WalletTransactionResponse]
 
 // TopUpWalletRequest represents a request to add credits to a wallet
 type TopUpWalletRequest struct {

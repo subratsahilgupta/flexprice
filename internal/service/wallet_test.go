@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
@@ -58,6 +59,7 @@ func (s *WalletServiceSuite) setupTestData() {
 		Currency:     "USD",
 		Balance:      decimal.NewFromInt(1000),
 		WalletStatus: types.WalletStatusActive,
+		BaseModel:    types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), s.testData.wallet))
 }
@@ -94,6 +96,7 @@ func (s *WalletServiceSuite) TestGetWalletsByCustomerID() {
 		Currency:     "EUR",
 		Balance:      decimal.NewFromInt(500),
 		WalletStatus: types.WalletStatusActive,
+		BaseModel:    types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), wallet2))
 
@@ -123,7 +126,11 @@ func (s *WalletServiceSuite) TestTerminateWallet() {
 	s.Equal(decimal.NewFromInt(0).Equal(updatedWallet.Balance), true)
 
 	// Verify transaction creation
-	transactions, err := s.GetStores().WalletRepo.GetTransactionsByWalletID(s.GetContext(), s.testData.wallet.ID, 10, 0)
+	filter := types.NewWalletTransactionFilter()
+	filter.WalletID = &s.testData.wallet.ID
+	filter.QueryFilter.Limit = lo.ToPtr(10)
+
+	transactions, err := s.GetStores().WalletRepo.ListWalletTransactions(s.GetContext(), filter)
 	s.NoError(err)
 	s.Len(transactions, 1)
 	s.Equal(types.TransactionTypeDebit, transactions[0].Type)
