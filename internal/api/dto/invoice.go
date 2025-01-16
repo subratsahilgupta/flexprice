@@ -349,7 +349,4 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 }
 
 // ListInvoicesResponse represents the response for listing invoices
-type ListInvoicesResponse struct {
-	Items []*InvoiceResponse `json:"items"`
-	Total int                `json:"total"`
-}
+type ListInvoicesResponse = types.ListResponse[*InvoiceResponse]

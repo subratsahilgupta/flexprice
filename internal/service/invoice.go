@@ -214,7 +214,11 @@ func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.Invoice
 
 	return &dto.ListInvoicesResponse{
 		Items: items,
-		Total: count,
+		Pagination: types.PaginationResponse{
+			Total:  count,
+			Limit:  filter.GetLimit(),
+			Offset: filter.GetOffset(),
+		},
 	}, nil
 }
 
@@ -348,7 +352,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 	}
 
 	// Filter prices valid for this subscription
-	validPrices := filterValidPricesForSubscription(pricesResponse.Prices, sub)
+	validPrices := filterValidPricesForSubscription(pricesResponse.Items, sub)
 
 	// Calculate total amount from usage
 	usageAmount := decimal.NewFromFloat(usage.Amount)

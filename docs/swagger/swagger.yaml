@@ -646,16 +646,12 @@ definitions:
     type: object
   dto.ListCustomersResponse:
     properties:
-      customers:
+      items:
         items:
           $ref: '#/definitions/dto.CustomerResponse'
         type: array
-      limit:
-        type: integer
-      offset:
-        type: integer
-      total:
-        type: integer
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.ListEnvironmentsResponse:
     properties:
@@ -676,47 +672,44 @@ definitions:
         items:
           $ref: '#/definitions/dto.InvoiceResponse'
         type: array
-      total:
-        type: integer
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.ListPlansResponse:
     properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      plans:
+      items:
         items:
           $ref: '#/definitions/dto.PlanResponse'
         type: array
-      total:
-        type: integer
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.ListPricesResponse:
     properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      prices:
+      items:
         items:
           $ref: '#/definitions/dto.PriceResponse'
         type: array
-      total:
-        type: integer
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.ListSubscriptionsResponse:
     properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      subscriptions:
+      items:
         items:
           $ref: '#/definitions/dto.SubscriptionResponse'
         type: array
-      total:
-        type: integer
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
+  dto.ListWalletTransactionsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.WalletTransactionResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.LoginRequest:
     properties:
@@ -1238,17 +1231,6 @@ definitions:
       wallet_id:
         type: string
     type: object
-  dto.WalletTransactionsResponse:
-    properties:
-      filter:
-        $ref: '#/definitions/types.Filter'
-      total:
-        type: integer
-      transactions:
-        items:
-          $ref: '#/definitions/dto.WalletTransactionResponse'
-        type: array
-    type: object
   gin.H:
     additionalProperties: {}
     type: object
@@ -1461,21 +1443,6 @@ definitions:
     x-enum-varnames:
     - BILLING_TIER_VOLUME
     - BILLING_TIER_SLAB
-  types.Filter:
-    properties:
-      expand:
-        type: string
-      limit:
-        type: integer
-      offset:
-        type: integer
-      order:
-        type: string
-      sort:
-        type: string
-      status:
-        $ref: '#/definitions/types.Status'
-    type: object
   types.InvoiceBillingReason:
     enum:
     - SUBSCRIPTION_CREATE
@@ -1529,6 +1496,15 @@ definitions:
   types.Metadata:
     additionalProperties:
       type: string
+    type: object
+  types.PaginationResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
     type: object
   types.PriceType:
     enum:
@@ -1586,6 +1562,14 @@ definitions:
     - TransactionStatusPending
     - TransactionStatusCompleted
     - TransactionStatusFailed
+  types.TransactionType:
+    enum:
+    - credit
+    - debit
+    type: string
+    x-enum-varnames:
+    - TransactionTypeCredit
+    - TransactionTypeDebit
   types.WalletStatus:
     enum:
     - active
@@ -1680,19 +1664,37 @@ paths:
       description: Get customers
       parameters:
       - in: query
+        name: email
+        type: string
+      - in: query
+        name: end_time
+        type: string
+      - in: query
         name: expand
         type: string
       - in: query
+        name: external_id
+        type: string
+      - in: query
+        maximum: 1000
+        minimum: 1
         name: limit
         type: integer
       - in: query
+        minimum: 0
         name: offset
         type: integer
-      - in: query
+      - enum:
+        - asc
+        - desc
+        in: query
         name: order
         type: string
       - in: query
         name: sort
+        type: string
+      - in: query
+        name: start_time
         type: string
       - enum:
         - published
@@ -2197,41 +2199,81 @@ paths:
       - application/json
       description: List invoices with optional filtering
       parameters:
-      - description: Customer ID
-        in: query
+      - in: query
         name: customer_id
         type: string
-      - description: Subscription ID
-        in: query
-        name: subscription_id
-        type: string
-      - description: Wallet ID
-        in: query
-        name: wallet_id
-        type: string
-      - collectionFormat: csv
-        description: Invoice statuses
-        in: query
-        items:
-          type: string
-        name: status
-        type: array
-      - description: Start time (RFC3339)
-        in: query
-        name: start_time
-        type: string
-      - description: End time (RFC3339)
-        in: query
+      - in: query
         name: end_time
         type: string
-      - description: Limit
+      - in: query
+        name: expand
+        type: string
+      - collectionFormat: csv
         in: query
+        items:
+          enum:
+          - DRAFT
+          - FINALIZED
+          - VOIDED
+          type: string
+        name: invoice_status
+        type: array
+      - enum:
+        - SUBSCRIPTION
+        - ONE_OFF
+        - CREDIT
+        in: query
+        name: invoice_type
+        type: string
+        x-enum-varnames:
+        - InvoiceTypeSubscription
+        - InvoiceTypeOneOff
+        - InvoiceTypeCredit
+      - in: query
+        maximum: 1000
+        minimum: 1
         name: limit
         type: integer
-      - description: Offset
-        in: query
+      - in: query
+        minimum: 0
         name: offset
         type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          enum:
+          - PENDING
+          - SUCCEEDED
+          - FAILED
+          type: string
+        name: payment_status
+        type: array
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      - in: query
+        name: subscription_id
+        type: string
       produces:
       - application/json
       responses:
@@ -2410,6 +2452,48 @@ paths:
   /meters:
     get:
       description: Get all meters
+      parameters:
+      - in: query
+        name: end_time
+        type: string
+      - in: query
+        name: event_name
+        type: string
+      - in: query
+        name: expand
+        type: string
+      - in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      - in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
       produces:
       - application/json
       responses:
@@ -2596,19 +2680,37 @@ paths:
       description: Get plans with the specified filter
       parameters:
       - in: query
+        name: end_time
+        type: string
+      - in: query
         name: expand
         type: string
       - in: query
+        maximum: 1000
+        minimum: 1
         name: limit
         type: integer
       - in: query
+        minimum: 0
         name: offset
         type: integer
-      - in: query
+      - enum:
+        - asc
+        - desc
+        in: query
         name: order
         type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: plan_ids
+        type: array
       - in: query
         name: sort
+        type: string
+      - in: query
+        name: start_time
         type: string
       - enum:
         - published
@@ -2776,15 +2878,24 @@ paths:
       description: Get prices with the specified filter
       parameters:
       - in: query
+        name: end_time
+        type: string
+      - in: query
         name: expand
         type: string
       - in: query
+        maximum: 1000
+        minimum: 1
         name: limit
         type: integer
       - in: query
+        minimum: 0
         name: offset
         type: integer
-      - in: query
+      - enum:
+        - asc
+        - desc
+        in: query
         name: order
         type: string
       - collectionFormat: csv
@@ -2795,6 +2906,9 @@ paths:
         type: array
       - in: query
         name: sort
+        type: string
+      - in: query
+        name: start_time
         type: string
       - enum:
         - published
@@ -3390,33 +3504,72 @@ paths:
       - application/json
       description: Get transactions for a wallet with pagination
       parameters:
-      - description: Wallet ID
-        in: path
-        name: id
-        required: true
+      - in: query
+        name: end_time
         type: string
-      - default: 50
-        description: Limit
-        in: query
+      - in: query
+        name: expand
+        type: string
+      - in: query
+        maximum: 1000
+        minimum: 1
         name: limit
         type: integer
-      - default: 0
-        description: Offset
-        in: query
+      - in: query
+        minimum: 0
         name: offset
         type: integer
-      - default: created_at
-        description: Sort field
-        in: query
-        name: sort
-        type: string
-      - default: desc
-        description: Sort order
-        enum:
+      - enum:
         - asc
         - desc
         in: query
         name: order
+        type: string
+      - in: query
+        name: reference_id
+        type: string
+      - in: query
+        name: reference_type
+        type: string
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      - enum:
+        - pending
+        - completed
+        - failed
+        in: query
+        name: transaction_status
+        type: string
+        x-enum-varnames:
+        - TransactionStatusPending
+        - TransactionStatusCompleted
+        - TransactionStatusFailed
+      - enum:
+        - credit
+        - debit
+        in: query
+        name: type
+        type: string
+        x-enum-varnames:
+        - TransactionTypeCredit
+        - TransactionTypeDebit
+      - in: query
+        name: wallet_id
         type: string
       produces:
       - application/json
@@ -3424,7 +3577,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/dto.WalletTransactionsResponse'
+            $ref: '#/definitions/dto.ListWalletTransactionsResponse'
         "400":
           description: Bad Request
           schema:

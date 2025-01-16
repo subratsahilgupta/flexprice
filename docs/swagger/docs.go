@@ -116,20 +116,42 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "name": "email",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "name": "expand",
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "name": "external_id",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
                         "type": "integer",
                         "name": "limit",
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
                         "type": "integer",
                         "name": "offset",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
                         "type": "string",
                         "name": "order",
                         "in": "query"
@@ -137,6 +159,11 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
                         "in": "query"
                     },
                     {
@@ -926,54 +953,112 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Customer ID",
                         "name": "customer_id",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Subscription ID",
-                        "name": "subscription_id",
+                        "name": "end_time",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Wallet ID",
-                        "name": "wallet_id",
+                        "name": "expand",
                         "in": "query"
                     },
                     {
                         "type": "array",
                         "items": {
+                            "enum": [
+                                "DRAFT",
+                                "FINALIZED",
+                                "VOIDED"
+                            ],
                             "type": "string"
                         },
                         "collectionFormat": "csv",
-                        "description": "Invoice statuses",
+                        "name": "invoice_status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "SUBSCRIPTION",
+                            "ONE_OFF",
+                            "CREDIT"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "InvoiceTypeSubscription",
+                            "InvoiceTypeOneOff",
+                            "InvoiceTypeCredit"
+                        ],
+                        "name": "invoice_type",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "enum": [
+                                "PENDING",
+                                "SUCCEEDED",
+                                "FAILED"
+                            ],
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "payment_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
                         "name": "status",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Start time (RFC3339)",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "End time (RFC3339)",
-                        "name": "end_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Limit",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Offset",
-                        "name": "offset",
+                        "name": "subscription_id",
                         "in": "query"
                     }
                 ],
@@ -1254,6 +1339,70 @@ const docTemplate = `{
                     "Meters"
                 ],
                 "summary": "List meters",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "event_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1547,27 +1696,53 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "name": "expand",
                         "in": "query"
                     },
                     {
+                        "maximum": 1000,
+                        "minimum": 1,
                         "type": "integer",
                         "name": "limit",
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
                         "type": "integer",
                         "name": "offset",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
                         "type": "string",
                         "name": "order",
                         "in": "query"
                     },
                     {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "plan_ids",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
                         "in": "query"
                     },
                     {
@@ -1830,20 +2005,32 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "name": "expand",
                         "in": "query"
                     },
                     {
+                        "maximum": 1000,
+                        "minimum": 1,
                         "type": "integer",
                         "name": "limit",
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
                         "type": "integer",
                         "name": "offset",
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
                         "type": "string",
                         "name": "order",
                         "in": "query"
@@ -1860,6 +2047,11 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
                         "in": "query"
                     },
                     {
@@ -2798,30 +2990,25 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Wallet ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "default": 50,
-                        "description": "Limit",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "Offset",
-                        "name": "offset",
+                        "name": "end_time",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "default": "created_at",
-                        "description": "Sort field",
-                        "name": "sort",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "name": "offset",
                         "in": "query"
                     },
                     {
@@ -2830,9 +3017,75 @@ const docTemplate = `{
                             "desc"
                         ],
                         "type": "string",
-                        "default": "desc",
-                        "description": "Sort order",
                         "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "reference_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "reference_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "pending",
+                            "completed",
+                            "failed"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "TransactionStatusPending",
+                            "TransactionStatusCompleted",
+                            "TransactionStatusFailed"
+                        ],
+                        "name": "transaction_status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "credit",
+                            "debit"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "TransactionTypeCredit",
+                            "TransactionTypeDebit"
+                        ],
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "wallet_id",
                         "in": "query"
                     }
                 ],
@@ -2840,7 +3093,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/dto.WalletTransactionsResponse"
+                            "$ref": "#/definitions/dto.ListWalletTransactionsResponse"
                         }
                     },
                     "400": {
@@ -3822,20 +4075,14 @@ const docTemplate = `{
         "dto.ListCustomersResponse": {
             "type": "object",
             "properties": {
-                "customers": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.CustomerResponse"
                     }
                 },
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
                 }
             }
         },
@@ -3868,68 +4115,64 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.InvoiceResponse"
                     }
                 },
-                "total": {
-                    "type": "integer"
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
                 }
             }
         },
         "dto.ListPlansResponse": {
             "type": "object",
             "properties": {
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "plans": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.PlanResponse"
                     }
                 },
-                "total": {
-                    "type": "integer"
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
                 }
             }
         },
         "dto.ListPricesResponse": {
             "type": "object",
             "properties": {
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "prices": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.PriceResponse"
                     }
                 },
-                "total": {
-                    "type": "integer"
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
                 }
             }
         },
         "dto.ListSubscriptionsResponse": {
             "type": "object",
             "properties": {
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "subscriptions": {
+                "items": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.SubscriptionResponse"
                     }
                 },
-                "total": {
-                    "type": "integer"
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "dto.ListWalletTransactionsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.WalletTransactionResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
                 }
             }
         },
@@ -4694,23 +4937,6 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.WalletTransactionsResponse": {
-            "type": "object",
-            "properties": {
-                "filter": {
-                    "$ref": "#/definitions/types.Filter"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "transactions": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.WalletTransactionResponse"
-                    }
-                }
-            }
-        },
         "gin.H": {
             "type": "object",
             "additionalProperties": {}
@@ -4999,29 +5225,6 @@ const docTemplate = `{
                 "BILLING_TIER_SLAB"
             ]
         },
-        "types.Filter": {
-            "type": "object",
-            "properties": {
-                "expand": {
-                    "type": "string"
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "order": {
-                    "type": "string"
-                },
-                "sort": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                }
-            }
-        },
         "types.InvoiceBillingReason": {
             "type": "string",
             "enum": [
@@ -5093,6 +5296,20 @@ const docTemplate = `{
                 "type": "string"
             }
         },
+        "types.PaginationResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "types.PriceType": {
             "type": "string",
             "enum": [
@@ -5162,6 +5379,17 @@ const docTemplate = `{
                 "TransactionStatusPending",
                 "TransactionStatusCompleted",
                 "TransactionStatusFailed"
+            ]
+        },
+        "types.TransactionType": {
+            "type": "string",
+            "enum": [
+                "credit",
+                "debit"
+            ],
+            "x-enum-varnames": [
+                "TransactionTypeCredit",
+                "TransactionTypeDebit"
             ]
         },
         "types.WalletStatus": {
