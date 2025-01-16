@@ -3174,6 +3174,9 @@ const docTemplate = `{
                 "amount": {
                     "type": "number"
                 },
+                "display_name": {
+                    "type": "string"
+                },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
@@ -3916,6 +3919,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "customer_id": {
+                    "type": "string"
+                },
+                "display_name": {
                     "type": "string"
                 },
                 "id": {

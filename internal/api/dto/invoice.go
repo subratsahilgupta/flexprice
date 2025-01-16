@@ -130,6 +130,7 @@ type CreateInvoiceLineItemRequest struct {
 	PriceType        *string         `json:"price_type,omitempty"`
 	MeterID          *string         `json:"meter_id,omitempty"`
 	MeterDisplayName *string         `json:"meter_display_name,omitempty"`
+	DisplayName      *string         `json:"display_name,omitempty"`
 	Amount           decimal.Decimal `json:"amount" validate:"required"`
 	Quantity         decimal.Decimal `json:"quantity" validate:"required"`
 	PeriodStart      *time.Time      `json:"period_start,omitempty"`
@@ -172,6 +173,7 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		PriceType:        r.PriceType,
 		MeterID:          r.MeterID,
 		MeterDisplayName: r.MeterDisplayName,
+		DisplayName:      r.DisplayName,
 		Amount:           r.Amount,
 		Quantity:         r.Quantity,
 		Currency:         inv.Currency,
@@ -194,6 +196,7 @@ type InvoiceLineItemResponse struct {
 	PriceType        *string         `json:"price_type,omitempty"`
 	MeterID          *string         `json:"meter_id,omitempty"`
 	MeterDisplayName *string         `json:"meter_display_name,omitempty"`
+	DisplayName      *string         `json:"display_name,omitempty"`
 	Amount           decimal.Decimal `json:"amount"`
 	Quantity         decimal.Decimal `json:"quantity"`
 	Currency         string          `json:"currency"`
@@ -224,6 +227,7 @@ func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemR
 		PriceType:        item.PriceType,
 		MeterID:          item.MeterID,
 		MeterDisplayName: item.MeterDisplayName,
+		DisplayName:      item.DisplayName,
 		Amount:           item.Amount,
 		Quantity:         item.Quantity,
 		Currency:         item.Currency,

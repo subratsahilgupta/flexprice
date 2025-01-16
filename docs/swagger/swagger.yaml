@@ -33,6 +33,8 @@ definitions:
     properties:
       amount:
         type: number
+      display_name:
+        type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
       meter_display_name:
@@ -541,6 +543,8 @@ definitions:
       currency:
         type: string
       customer_id:
+        type: string
+      display_name:
         type: string
       id:
         type: string

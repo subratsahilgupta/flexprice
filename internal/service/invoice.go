@@ -193,6 +193,10 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 	if err != nil {
 		return nil, fmt.Errorf("failed to get invoice: %w", err)
 	}
+
+	for _, lineItem := range inv.LineItems {
+		s.logger.Debugw("got invoice line item", "id", lineItem.ID, "display_name", lineItem.DisplayName)
+	}
 	return dto.NewInvoiceResponse(inv), nil
 }
 
@@ -372,6 +376,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 				PlanDisplayName: lo.ToPtr(plan.Name),
 				PriceID:         price.Price.ID,
 				PriceType:       lo.ToPtr(string(price.Price.Type)),
+				DisplayName:     lo.ToPtr(plan.Name), // For fixed prices, use plan name
 				Amount:          amount,
 				Quantity:        quantity,
 				PeriodStart:     &periodStart,
@@ -417,6 +422,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 			PriceID:          item.Price.ID,
 			MeterID:          &item.Price.MeterID,
 			MeterDisplayName: lo.ToPtr(item.MeterDisplayName),
+			DisplayName:      lo.ToPtr(item.MeterDisplayName), // For usage prices, use meter display name
 			Amount:           lineItemAmount,
 			Quantity:         decimal.NewFromFloat(item.Quantity),
 			PeriodStart:      &periodStart,
