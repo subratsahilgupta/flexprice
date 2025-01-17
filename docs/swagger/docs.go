@@ -1128,6 +1128,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/invoices/preview": {
+            "post": {
+                "description": "Get a preview invoice",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Get a preview invoice",
+                "parameters": [
+                    {
+                        "description": "Preview Invoice Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetPreviewInvoiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.InvoiceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/invoices/{id}": {
             "get": {
                 "description": "Get detailed information about an invoice",
@@ -3692,6 +3738,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "iter_last_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.GetPreviewInvoiceRequest": {
+            "type": "object",
+            "required": [
+                "subscription_id"
+            ],
+            "properties": {
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "subscription_id": {
                     "type": "string"
                 }
             }

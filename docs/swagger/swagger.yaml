@@ -390,6 +390,17 @@ definitions:
       iter_last_key:
         type: string
     type: object
+  dto.GetPreviewInvoiceRequest:
+    properties:
+      period_end:
+        type: string
+      period_start:
+        type: string
+      subscription_id:
+        type: string
+    required:
+    - subscription_id
+    type: object
   dto.GetUsageByMeterRequest:
     properties:
       customer_id:
@@ -2461,6 +2472,36 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       summary: Void an invoice
+      tags:
+      - Invoices
+  /invoices/preview:
+    post:
+      consumes:
+      - application/json
+      description: Get a preview invoice
+      parameters:
+      - description: Preview Invoice Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.GetPreviewInvoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.InvoiceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Get a preview invoice
       tags:
       - Invoices
   /meters:

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -15,6 +17,7 @@ import (
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
+	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -27,35 +30,48 @@ type InvoiceService interface {
 	FinalizeInvoice(ctx context.Context, id string) error
 	VoidInvoice(ctx context.Context, id string) error
 	UpdatePaymentStatus(ctx context.Context, id string, status types.InvoicePaymentStatus, amount *decimal.Decimal) error
-	CreateSubscriptionInvoice(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, usage *dto.GetUsageBySubscriptionResponse) (*dto.InvoiceResponse, error)
+	CreateSubscriptionInvoice(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (*dto.InvoiceResponse, error)
+	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 }
 
 type invoiceService struct {
-	db          postgres.IClient
-	logger      *logger.Logger
-	invoiceRepo invoice.Repository
-	priceRepo   price.Repository
-	meterRepo   meter.Repository
-	planRepo    plan.Repository
-	idempGen    *idempotency.Generator
+	subscriptionRepo subscription.Repository
+	planRepo         plan.Repository
+	priceRepo        price.Repository
+	eventRepo        events.Repository
+	meterRepo        meter.Repository
+	customerRepo     customer.Repository
+	invoiceRepo      invoice.Repository
+	publisher        publisher.EventPublisher
+	logger           *logger.Logger
+	db               postgres.IClient
+	idempGen         *idempotency.Generator
 }
 
 func NewInvoiceService(
-	invoiceRepo invoice.Repository,
-	priceRepo price.Repository,
-	meterRepo meter.Repository,
+	subscriptionRepo subscription.Repository,
 	planRepo plan.Repository,
-	logger *logger.Logger,
+	priceRepo price.Repository,
+	eventRepo events.Repository,
+	meterRepo meter.Repository,
+	customerRepo customer.Repository,
+	invoiceRepo invoice.Repository,
+	publisher publisher.EventPublisher,
 	db postgres.IClient,
+	logger *logger.Logger,
 ) InvoiceService {
 	return &invoiceService{
-		db:          db,
-		logger:      logger,
-		invoiceRepo: invoiceRepo,
-		priceRepo:   priceRepo,
-		meterRepo:   meterRepo,
-		planRepo:    planRepo,
-		idempGen:    idempotency.NewGenerator(),
+		subscriptionRepo: subscriptionRepo,
+		planRepo:         planRepo,
+		priceRepo:        priceRepo,
+		eventRepo:        eventRepo,
+		meterRepo:        meterRepo,
+		customerRepo:     customerRepo,
+		invoiceRepo:      invoiceRepo,
+		publisher:        publisher,
+		db:               db,
+		logger:           logger,
+		idempGen:         idempotency.NewGenerator(),
 	}
 }
 
@@ -332,116 +348,77 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 	return nil
 }
 
-func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, usage *dto.GetUsageBySubscriptionResponse) (*dto.InvoiceResponse, error) {
+func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (*dto.InvoiceResponse, error) {
 	s.logger.Infow("creating subscription invoice",
 		"subscription_id", sub.ID,
 		"period_start", periodStart,
 		"period_end", periodEnd)
 
-	if usage == nil {
-		return nil, fmt.Errorf("usage is required")
-	}
+	billingService := NewBillingService(
+		s.subscriptionRepo,
+		s.planRepo,
+		s.priceRepo,
+		s.eventRepo,
+		s.meterRepo,
+		s.customerRepo,
+		s.invoiceRepo,
+		s.publisher,
+		s.db,
+		s.logger,
+	)
 
-	// Get all prices for the subscription's plan
-	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
-	pricesResponse, err := priceService.GetPricesByPlanID(ctx, sub.PlanID)
+	// Prepare invoice request using billing service
+	req, err := billingService.PrepareSubscriptionInvoiceRequest(ctx, sub, periodStart, periodEnd, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get prices: %w", err)
+		return nil, fmt.Errorf("failed to prepare invoice request: %w", err)
 	}
 
-	// Fetch Plan info as well
-	plan, err := s.planRepo.Get(ctx, sub.PlanID)
+	// Create the invoice
+	return s.CreateInvoice(ctx, *req)
+}
+
+func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error) {
+	billingService := NewBillingService(
+		s.subscriptionRepo,
+		s.planRepo,
+		s.priceRepo,
+		s.eventRepo,
+		s.meterRepo,
+		s.customerRepo,
+		s.invoiceRepo,
+		s.publisher,
+		s.db,
+		s.logger,
+	)
+
+	sub, err := s.subscriptionRepo.Get(ctx, req.SubscriptionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get plan: %w", err)
+		return nil, fmt.Errorf("failed to get subscription: %w", err)
 	}
 
-	// Filter prices valid for this subscription
-	validPrices := filterValidPricesForSubscription(pricesResponse.Items, sub)
-
-	// Calculate total amount from usage
-	usageAmount := decimal.NewFromFloat(usage.Amount)
-
-	// Calculate fixed charges
-	var fixedCost decimal.Decimal
-	var fixedCostLineItems []dto.CreateInvoiceLineItemRequest
-
-	for _, price := range validPrices {
-		if price.Price.Type == types.PRICE_TYPE_FIXED {
-			quantity := decimal.NewFromInt(1)
-			amount := priceService.CalculateCost(ctx, price.Price, quantity)
-			fixedCost = fixedCost.Add(amount)
-
-			fixedCostLineItems = append(fixedCostLineItems, dto.CreateInvoiceLineItemRequest{
-				PlanID:          &price.Price.PlanID,
-				PlanDisplayName: lo.ToPtr(plan.Name),
-				PriceID:         price.Price.ID,
-				PriceType:       lo.ToPtr(string(price.Price.Type)),
-				DisplayName:     lo.ToPtr(plan.Name), // For fixed prices, use plan name
-				Amount:          amount,
-				Quantity:        quantity,
-				PeriodStart:     &periodStart,
-				PeriodEnd:       &periodEnd,
-				Metadata: types.Metadata{
-					"description": fmt.Sprintf("%s (Fixed Charge)", price.Price.LookupKey),
-				},
-			})
-		}
+	if req.PeriodStart == nil {
+		req.PeriodStart = &sub.CurrentPeriodStart
 	}
 
-	// Total amount is sum of usage and fixed charges
-	amountDue := usageAmount.Add(fixedCost)
-	invoiceDueDate := periodEnd.Add(24 * time.Hour * types.InvoiceDefaultDueDays)
-
-	// Create invoice using CreateInvoice
-	req := dto.CreateInvoiceRequest{
-		CustomerID:     sub.CustomerID,
-		SubscriptionID: lo.ToPtr(sub.ID),
-		InvoiceType:    types.InvoiceTypeSubscription,
-		InvoiceStatus:  lo.ToPtr(types.InvoiceStatusDraft),
-		PaymentStatus:  lo.ToPtr(types.InvoicePaymentStatusPending),
-		Currency:       sub.Currency,
-		AmountDue:      amountDue,
-		Description:    fmt.Sprintf("Invoice for subscription %s", sub.ID),
-		DueDate:        lo.ToPtr(invoiceDueDate),
-		PeriodStart:    &periodStart,
-		PeriodEnd:      &periodEnd,
-		BillingReason:  types.InvoiceBillingReasonSubscriptionCycle,
-		Metadata:       types.Metadata{},
+	if req.PeriodEnd == nil {
+		req.PeriodEnd = &sub.CurrentPeriodEnd
 	}
 
-	// Add fixed charge line items
-	req.LineItems = append(req.LineItems, fixedCostLineItems...)
-
-	// Add usage charge line items
-	for _, item := range usage.Charges {
-		lineItemAmount := decimal.NewFromFloat(item.Amount)
-		req.LineItems = append(req.LineItems, dto.CreateInvoiceLineItemRequest{
-			PlanID:           &item.Price.PlanID,
-			PlanDisplayName:  lo.ToPtr(plan.Name),
-			PriceType:        lo.ToPtr(string(item.Price.Type)),
-			PriceID:          item.Price.ID,
-			MeterID:          &item.Price.MeterID,
-			MeterDisplayName: lo.ToPtr(item.MeterDisplayName),
-			DisplayName:      lo.ToPtr(item.MeterDisplayName), // For usage prices, use meter display name
-			Amount:           lineItemAmount,
-			Quantity:         decimal.NewFromFloat(item.Quantity),
-			PeriodStart:      &periodStart,
-			PeriodEnd:        &periodEnd,
-			Metadata: types.Metadata{
-				"description": fmt.Sprintf("%s (Usage Charge)", item.Price.LookupKey),
-			},
-		})
+	// Prepare invoice request using billing service
+	invReq, err := billingService.PrepareSubscriptionInvoiceRequest(
+		ctx, sub, *req.PeriodStart, *req.PeriodEnd, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare invoice request: %w", err)
 	}
 
-	s.logger.Infow("creating invoice with fixed and usage charges",
-		"subscription_id", sub.ID,
-		"usage_amount", usageAmount,
-		"fixed_amount", fixedCost,
-		"total_amount", amountDue,
-		"fixed_line_items", len(fixedCostLineItems),
-		"usage_line_items", len(usage.Charges))
+	// Create a draft invoice object for preview
+	inv, err := invReq.ToInvoice(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert request to invoice: %w", err)
+	}
 
-	return s.CreateInvoice(ctx, req)
+	// Return preview response
+	return dto.NewInvoiceResponse(inv), nil
 }
 
 func (s *invoiceService) validatePaymentStatusTransition(from, to types.InvoicePaymentStatus) error {

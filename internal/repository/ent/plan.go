@@ -30,7 +30,7 @@ func NewPlanRepository(client postgres.IClient, log *logger.Logger) domainPlan.R
 func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 	client := r.client.Querier(ctx)
 
-	r.log.Debug("creating plan",
+	r.log.Debugw("creating plan",
 		"plan_id", p.ID,
 		"tenant_id", p.TenantID,
 		"lookup_key", p.LookupKey,
@@ -62,7 +62,7 @@ func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 func (r *planRepository) Get(ctx context.Context, id string) (*domainPlan.Plan, error) {
 	client := r.client.Querier(ctx)
 
-	r.log.Debug("getting plan",
+	r.log.Debugw("getting plan",
 		"plan_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)
@@ -156,7 +156,7 @@ func (r *planRepository) Count(ctx context.Context, filter *types.PlanFilter) (i
 func (r *planRepository) Update(ctx context.Context, p *domainPlan.Plan) error {
 	client := r.client.Querier(ctx)
 
-	r.log.Debug("updating plan",
+	r.log.Debugw("updating plan",
 		"plan_id", p.ID,
 		"tenant_id", p.TenantID,
 	)
@@ -188,7 +188,7 @@ func (r *planRepository) Update(ctx context.Context, p *domainPlan.Plan) error {
 func (r *planRepository) Delete(ctx context.Context, id string) error {
 	client := r.client.Querier(ctx)
 
-	r.log.Debug("deleting plan",
+	r.log.Debugw("deleting plan",
 		"plan_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)

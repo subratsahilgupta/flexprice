@@ -354,3 +354,9 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 
 // ListInvoicesResponse represents the response for listing invoices
 type ListInvoicesResponse = types.ListResponse[*InvoiceResponse]
+
+type GetPreviewInvoiceRequest struct {
+	SubscriptionID string     `json:"subscription_id" binding:"required"`
+	PeriodStart    *time.Time `json:"period_start,omitempty"`
+	PeriodEnd      *time.Time `json:"period_end,omitempty"`
+}

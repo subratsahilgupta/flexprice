@@ -30,7 +30,7 @@ func NewCustomerRepository(client postgres.IClient, log *logger.Logger) domainCu
 func (r *customerRepository) Create(ctx context.Context, c *domainCustomer.Customer) error {
 	client := r.client.Querier(ctx)
 
-	r.log.Debug("creating customer",
+	r.log.Debugw("creating customer",
 		"customer_id", c.ID,
 		"tenant_id", c.TenantID,
 		"external_id", c.ExternalID,
@@ -124,7 +124,7 @@ func (r *customerRepository) ListAll(ctx context.Context, filter *types.Customer
 func (r *customerRepository) Update(ctx context.Context, c *domainCustomer.Customer) error {
 	client := r.client.Querier(ctx)
 
-	r.log.Debug("updating customer",
+	r.log.Debugw("updating customer",
 		"customer_id", c.ID,
 		"tenant_id", c.TenantID,
 		"external_id", c.ExternalID,
@@ -155,7 +155,7 @@ func (r *customerRepository) Update(ctx context.Context, c *domainCustomer.Custo
 func (r *customerRepository) Delete(ctx context.Context, id string) error {
 	client := r.client.Querier(ctx)
 
-	r.log.Debug("deleting customer",
+	r.log.Debugw("deleting customer",
 		"customer_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)

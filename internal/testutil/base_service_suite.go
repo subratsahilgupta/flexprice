@@ -80,8 +80,8 @@ func (s *BaseServiceTestSuite) TearDownTest() {
 
 func (s *BaseServiceTestSuite) setupContext() {
 	s.ctx = context.Background()
-	s.ctx = context.WithValue(s.ctx, types.CtxTenantID, "tenant_test")
-	s.ctx = context.WithValue(s.ctx, types.CtxUserID, "user_test")
+	s.ctx = context.WithValue(s.ctx, types.CtxTenantID, types.DefaultTenantID)
+	s.ctx = context.WithValue(s.ctx, types.CtxUserID, types.DefaultUserID)
 	s.ctx = context.WithValue(s.ctx, types.CtxRequestID, types.GenerateUUID())
 }
 
@@ -119,6 +119,10 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.UserRepo.(*InMemoryUserStore).Clear()
 	s.stores.TenantRepo.(*InMemoryTenantStore).Clear()
 	s.stores.EnvironmentRepo.(*InMemoryEnvironmentStore).Clear()
+}
+
+func (s *BaseServiceTestSuite) ClearStores() {
+	s.clearStores()
 }
 
 // GetContext returns the test context

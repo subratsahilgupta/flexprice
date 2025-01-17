@@ -502,12 +502,16 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.Su
 func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub *subscription.Subscription, now time.Time) error {
 	// Initialize services
 	invoiceService := NewInvoiceService(
-		s.invoiceRepo,
-		s.priceRepo,
-		s.meterRepo,
+		s.subscriptionRepo,
 		s.planRepo,
-		s.logger,
+		s.priceRepo,
+		s.eventRepo,
+		s.meterRepo,
+		s.customerRepo,
+		s.invoiceRepo,
+		s.publisher,
 		s.db,
+		s.logger,
 	)
 
 	currentStart := sub.CurrentPeriodStart
@@ -564,18 +568,8 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		for i := 0; i < len(periods)-1; i++ {
 			period := periods[i]
 
-			// Get usage for this period
-			usage, err := s.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
-				SubscriptionID: sub.ID,
-				StartTime:      period.start,
-				EndTime:        period.end,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to get subscription usage for period: %w", err)
-			}
-
 			// Create and finalize invoice for this period
-			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, sub, period.start, period.end, usage)
+			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, sub, period.start, period.end)
 			if err != nil {
 				return fmt.Errorf("failed to create subscription invoice for period: %w", err)
 			}
