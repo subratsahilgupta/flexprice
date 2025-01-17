@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -20,8 +20,10 @@ import (
 
 type InvoiceServiceSuite struct {
 	testutil.BaseServiceTestSuite
-	service  InvoiceService
-	testData struct {
+	service     InvoiceService
+	eventRepo   *testutil.InMemoryEventStore
+	invoiceRepo *testutil.InMemoryInvoiceStore
+	testData    struct {
 		customer *customer.Customer
 		plan     *plan.Plan
 		meters   struct {
@@ -35,6 +37,12 @@ type InvoiceServiceSuite struct {
 		}
 		subscription *subscription.Subscription
 		now          time.Time
+		events       struct {
+			apiCalls  *events.Event
+			storage   *events.Event
+			archived  *events.Event
+			archived2 *events.Event
+		}
 	}
 }
 
@@ -50,20 +58,33 @@ func (s *InvoiceServiceSuite) SetupTest() {
 
 func (s *InvoiceServiceSuite) TearDownTest() {
 	s.BaseServiceTestSuite.TearDownTest()
+	s.eventRepo.Clear()
+	s.invoiceRepo.Clear()
 }
 
 func (s *InvoiceServiceSuite) setupService() {
+	s.eventRepo = testutil.NewInMemoryEventStore()
+	s.invoiceRepo = testutil.NewInMemoryInvoiceStore()
+
 	s.service = NewInvoiceService(
-		s.GetStores().InvoiceRepo,
-		s.GetStores().PriceRepo,
-		s.GetStores().MeterRepo,
+		s.GetStores().SubscriptionRepo,
 		s.GetStores().PlanRepo,
-		s.GetLogger(),
+		s.GetStores().PriceRepo,
+		s.eventRepo,
+		s.GetStores().MeterRepo,
+		s.GetStores().CustomerRepo,
+		s.invoiceRepo,
+		s.GetPublisher(),
 		s.GetDB(),
+		s.GetLogger(),
 	)
+
 }
 
 func (s *InvoiceServiceSuite) setupTestData() {
+	// Clear any existing data
+	s.BaseServiceTestSuite.ClearStores()
+
 	// Create test customer
 	s.testData.customer = &customer.Customer{
 		ID:         "cust_123",
@@ -149,7 +170,23 @@ func (s *InvoiceServiceSuite) setupTestData() {
 	}
 	s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), s.testData.prices.storage))
 
-	s.testData.now = s.GetNow()
+	// s.testData.prices.storageArchive = &price.Price{
+	// 	ID:                 "price_storage_archive",
+	// 	Amount:             decimal.NewFromFloat(0.03),
+	// 	Currency:           "USD",
+	// 	PlanID:             s.testData.plan.ID,
+	// 	Type:               types.PRICE_TYPE_USAGE,
+	// 	BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+	// 	BillingPeriodCount: 1,
+	// 	BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+	// 	BillingCadence:     types.BILLING_CADENCE_RECURRING,
+	// 	MeterID:            s.testData.meters.storage.ID,
+	// 	FilterValues:       map[string][]string{"region": {"us-east-1"}, "tier": {"archive"}},
+	// 	BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+	// }
+	// s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), s.testData.prices.storageArchive))
+
+	s.testData.now = time.Now().UTC()
 	s.testData.subscription = &subscription.Subscription{
 		ID:                 "sub_123",
 		PlanID:             s.testData.plan.ID,
@@ -164,47 +201,88 @@ func (s *InvoiceServiceSuite) setupTestData() {
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().SubscriptionRepo.Create(s.GetContext(), s.testData.subscription))
+
+	// Create test events
+	for i := 0; i < 500; i++ {
+		event := &events.Event{
+			ID:                 s.GetUUID(),
+			TenantID:           s.testData.subscription.TenantID,
+			EventName:          s.testData.meters.apiCalls.EventName,
+			ExternalCustomerID: s.testData.customer.ExternalID,
+			Timestamp:          s.testData.now.Add(-1 * time.Hour),
+			Properties:         map[string]interface{}{},
+		}
+		s.NoError(s.eventRepo.InsertEvent(s.GetContext(), event))
+	}
+
+	storageEvents := []struct {
+		bytes float64
+		tier  string
+	}{
+		{bytes: 30, tier: "standard"},
+		{bytes: 20, tier: "standard"},
+		{bytes: 300, tier: "archive"},
+	}
+
+	for _, se := range storageEvents {
+		event := &events.Event{
+			ID:                 s.GetUUID(),
+			TenantID:           s.testData.subscription.TenantID,
+			EventName:          s.testData.meters.storage.EventName,
+			ExternalCustomerID: s.testData.customer.ExternalID,
+			Timestamp:          s.testData.now.Add(-30 * time.Minute),
+			Properties: map[string]interface{}{
+				"bytes_used": se.bytes,
+				"region":     "us-east-1",
+				"tier":       se.tier,
+			},
+		}
+		s.NoError(s.eventRepo.InsertEvent(s.GetContext(), event))
+	}
 }
 
 func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 	tests := []struct {
-		name    string
-		usage   *dto.GetUsageBySubscriptionResponse
-		wantErr bool
+		name            string
+		setupFunc       func()
+		wantErr         bool
+		expectedAmount  decimal.Decimal
+		expectedCharges int
 	}{
 		{
 			name: "successful invoice creation with usage",
-			usage: &dto.GetUsageBySubscriptionResponse{
-				StartTime: s.testData.subscription.CurrentPeriodStart,
-				EndTime:   s.testData.subscription.CurrentPeriodEnd,
-				Amount:    15,
-				Currency:  "USD",
-				Charges: []*dto.SubscriptionUsageByMetersResponse{
-					{
-						Price:            s.testData.prices.apiCalls,
-						MeterDisplayName: "API Calls",
-						Quantity:         100,
-						Amount:           10,
-					},
-					{
-						Price:            s.testData.prices.storage,
-						MeterDisplayName: "Storage",
-						Quantity:         50,
-						Amount:           5,
-					},
-				},
+			setupFunc: func() {
+				s.invoiceRepo.Clear()
 			},
+			expectedAmount:  decimal.NewFromFloat(15),
+			expectedCharges: 2,
 		},
 		{
-			name:    "error when usage is nil",
-			usage:   nil,
-			wantErr: true,
+			name: "no usage data available",
+			setupFunc: func() {
+				s.invoiceRepo.Clear()
+				s.eventRepo.Clear()
+			},
+			expectedAmount:  decimal.Zero,
+			expectedCharges: 0,
+			wantErr:         false,
 		},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			got, err := s.service.CreateSubscriptionInvoice(s.GetContext(), s.testData.subscription, s.testData.subscription.CurrentPeriodStart, s.testData.subscription.CurrentPeriodEnd, tt.usage)
+			if tt.setupFunc != nil {
+				tt.setupFunc()
+			}
+
+			// Create subscription invoice
+			got, err := s.service.CreateSubscriptionInvoice(
+				s.GetContext(),
+				s.testData.subscription,
+				s.testData.subscription.CurrentPeriodStart,
+				s.testData.subscription.CurrentPeriodEnd,
+			)
+
 			if tt.wantErr {
 				s.Error(err)
 				return
@@ -220,30 +298,45 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 			s.Equal(types.InvoiceStatusDraft, got.InvoiceStatus)
 			s.Equal(types.InvoicePaymentStatusPending, got.PaymentStatus)
 			s.Equal("USD", got.Currency)
-			s.True(decimal.NewFromFloat(15).Equal(got.AmountDue), "amount due mismatch")
+			s.True(tt.expectedAmount.Equal(got.AmountDue), "amount due mismatch")
 			s.True(decimal.Zero.Equal(got.AmountPaid), "amount paid mismatch")
-			s.True(decimal.NewFromFloat(15).Equal(got.AmountRemaining), "amount remaining mismatch")
+			s.True(tt.expectedAmount.Equal(got.AmountRemaining), "amount remaining mismatch")
 			s.Equal(fmt.Sprintf("Invoice for subscription %s", s.testData.subscription.ID), got.Description)
 			s.Equal(s.testData.subscription.CurrentPeriodStart.Unix(), got.PeriodStart.Unix())
 			s.Equal(s.testData.subscription.CurrentPeriodEnd.Unix(), got.PeriodEnd.Unix())
 			s.Equal(types.StatusPublished, types.Status(got.Status))
 
-			// Verify line items
-			// Verify line items are still present and published
-			invoice, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), got.ID)
+			// Verify invoice and line items in DB
+			invoice, err := s.invoiceRepo.Get(s.GetContext(), got.ID)
 			s.NoError(err)
-			s.Len(invoice.LineItems, len(tt.usage.Charges))
-			for i, charge := range tt.usage.Charges {
-				item := invoice.LineItems[i]
+			s.Len(invoice.LineItems, tt.expectedCharges)
+
+			if tt.expectedCharges > 0 {
+				// Verify line item (Storage)
+				item := invoice.LineItems[0]
 				s.Equal(got.ID, item.InvoiceID)
 				s.Equal(got.CustomerID, item.CustomerID)
 				if got.SubscriptionID != nil && item.SubscriptionID != nil {
 					s.Equal(*got.SubscriptionID, *item.SubscriptionID)
 				}
-				s.Equal(charge.Price.ID, item.PriceID)
-				s.Equal(charge.Price.MeterID, *item.MeterID)
-				s.True(decimal.NewFromFloat(charge.Amount).Equal(item.Amount))
-				s.True(decimal.NewFromFloat(charge.Quantity).Equal(item.Quantity))
+				s.Equal(s.testData.prices.storage.ID, item.PriceID)
+				s.Equal(s.testData.prices.storage.MeterID, *item.MeterID)
+				s.True(decimal.NewFromFloat(5).Equal(item.Amount)) // 50 storage * $0.1
+				s.True(decimal.NewFromFloat(50).Equal(item.Quantity))
+				s.Equal(got.Currency, item.Currency)
+				s.Equal(got.PeriodStart.Unix(), item.PeriodStart.Unix())
+				s.Equal(got.PeriodEnd.Unix(), item.PeriodEnd.Unix())
+				s.Equal(types.StatusPublished, types.Status(item.Status))
+				s.Equal(got.TenantID, item.TenantID)
+
+				// Verify line item (API Calls)
+				item = invoice.LineItems[1]
+				s.Equal(got.ID, item.InvoiceID)
+				s.Equal(got.CustomerID, item.CustomerID)
+				s.Equal(s.testData.prices.apiCalls.ID, item.PriceID)
+				s.Equal(s.testData.prices.apiCalls.MeterID, *item.MeterID)
+				s.True(decimal.NewFromFloat(10).Equal(item.Amount))
+				s.True(decimal.NewFromFloat(500).Equal(item.Quantity))
 				s.Equal(got.Currency, item.Currency)
 				s.Equal(got.PeriodStart.Unix(), item.PeriodStart.Unix())
 				s.Equal(got.PeriodEnd.Unix(), item.PeriodEnd.Unix())
@@ -300,7 +393,7 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice() {
 			},
 		},
 	}
-	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), draftInvoice))
+	s.NoError(s.invoiceRepo.CreateWithLineItems(s.GetContext(), draftInvoice))
 
 	tests := []struct {
 		name    string
@@ -328,12 +421,12 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice() {
 
 			s.NoError(err)
 			// Verify invoice is finalized
-			inv, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), tt.id)
+			inv, err := s.invoiceRepo.Get(s.GetContext(), tt.id)
 			s.NoError(err)
 			s.Equal(types.InvoiceStatusFinalized, inv.InvoiceStatus)
 
 			// Verify line items are still present and published
-			invoice, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), tt.id)
+			invoice, err := s.invoiceRepo.Get(s.GetContext(), tt.id)
 			s.NoError(err)
 			s.Len(invoice.LineItems, 2)
 			for _, item := range invoice.LineItems {
@@ -389,7 +482,7 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
 			},
 		},
 	}
-	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), finalizedInvoice))
+	s.NoError(s.invoiceRepo.CreateWithLineItems(s.GetContext(), finalizedInvoice))
 
 	tests := []struct {
 		name    string
@@ -428,7 +521,7 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
 
 			s.NoError(err)
 			// Verify invoice payment status
-			inv, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), tt.id)
+			inv, err := s.invoiceRepo.Get(s.GetContext(), tt.id)
 			s.NoError(err)
 			s.Equal(tt.status, inv.PaymentStatus)
 			if tt.status == types.InvoicePaymentStatusSucceeded {
@@ -437,7 +530,7 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
 			}
 
 			// Verify line items are still present and published
-			invoice, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), tt.id)
+			invoice, err := s.invoiceRepo.Get(s.GetContext(), tt.id)
 			s.NoError(err)
 			s.Len(invoice.LineItems, 2)
 			for _, item := range invoice.LineItems {

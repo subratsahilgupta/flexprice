@@ -229,3 +229,32 @@ func (h *InvoiceHandler) UpdatePaymentStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
+// GetPreviewInvoice godoc
+// @Summary Get a preview invoice
+// @Description Get a preview invoice
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Param request body dto.GetPreviewInvoiceRequest true "Preview Invoice Request"
+// @Success 200 {object} dto.InvoiceResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /invoices/preview [post]
+func (h *InvoiceHandler) GetPreviewInvoice(c *gin.Context) {
+	var req dto.GetPreviewInvoiceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Error("Failed to bind request body", "error", err)
+		NewErrorResponse(c, http.StatusBadRequest, "failed to bind request body", err)
+		return
+	}
+
+	resp, err := h.invoiceService.GetPreviewInvoice(c.Request.Context(), req)
+	if err != nil {
+		h.logger.Error("Failed to get preview invoice", "error", err)
+		NewErrorResponse(c, http.StatusInternalServerError, "failed to get preview invoice", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}

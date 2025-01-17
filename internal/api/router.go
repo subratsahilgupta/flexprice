@@ -154,6 +154,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			invoices.POST("/:id/finalize", handlers.Invoice.FinalizeInvoice)
 			invoices.POST("/:id/void", handlers.Invoice.VoidInvoice)
 			invoices.PUT("/:id/payment", handlers.Invoice.UpdatePaymentStatus)
+			invoices.POST("/preview", handlers.Invoice.GetPreviewInvoice)
 		}
 
 		// Admin routes (API Key only)
