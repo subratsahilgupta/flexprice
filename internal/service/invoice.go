@@ -32,6 +32,7 @@ type InvoiceService interface {
 	UpdatePaymentStatus(ctx context.Context, id string, status types.InvoicePaymentStatus, amount *decimal.Decimal) error
 	CreateSubscriptionInvoice(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (*dto.InvoiceResponse, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
+	GetCustomerInvoiceSummary(ctx context.Context, customerID string, currency string) (*dto.CustomerInvoiceSummary, error)
 }
 
 type invoiceService struct {
@@ -444,6 +445,88 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 
 	// Return preview response
 	return dto.NewInvoiceResponse(inv), nil
+}
+
+func (s *invoiceService) GetCustomerInvoiceSummary(ctx context.Context, customerID, currency string) (*dto.CustomerInvoiceSummary, error) {
+	s.logger.Debugw("getting customer invoice summary",
+		"customer_id", customerID,
+		"currency", currency,
+	)
+
+	// Get all non-voided invoices for the customer
+	filter := types.NewNoLimitInvoiceFilter()
+	filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+	filter.CustomerID = customerID
+	filter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusDraft, types.InvoiceStatusFinalized}
+
+	invoicesResp, err := s.ListInvoices(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list invoices: %w", err)
+	}
+
+	summary := &dto.CustomerInvoiceSummary{
+		CustomerID:          customerID,
+		Currency:            currency,
+		TotalRevenueAmount:  decimal.Zero,
+		TotalUnpaidAmount:   decimal.Zero,
+		TotalOverdueAmount:  decimal.Zero,
+		TotalInvoiceCount:   0,
+		UnpaidInvoiceCount:  0,
+		OverdueInvoiceCount: 0,
+		UnpaidUsageCharges:  decimal.Zero,
+		UnpaidFixedCharges:  decimal.Zero,
+	}
+
+	now := time.Now().UTC()
+
+	// Process each invoice
+	for _, inv := range invoicesResp.Items {
+		summary.TotalRevenueAmount = summary.TotalRevenueAmount.Add(inv.AmountDue)
+		summary.TotalInvoiceCount++
+
+		// Skip paid and void invoices
+		if inv.PaymentStatus == types.InvoicePaymentStatusSucceeded {
+			continue
+		}
+
+		// Skip invoices with different currency
+		if !types.IsMatchingCurrency(inv.Currency, currency) {
+			continue
+		}
+
+		summary.TotalUnpaidAmount = summary.TotalUnpaidAmount.Add(inv.AmountRemaining)
+		summary.UnpaidInvoiceCount++
+
+		// Check if invoice is overdue
+		if inv.DueDate != nil && inv.DueDate.Before(now) {
+			summary.TotalOverdueAmount = summary.TotalOverdueAmount.Add(inv.AmountRemaining)
+			summary.OverdueInvoiceCount++
+		}
+
+		// Split charges by type
+		for _, item := range inv.LineItems {
+			if *item.PriceType == string(types.PRICE_TYPE_USAGE) {
+				summary.UnpaidUsageCharges = summary.UnpaidUsageCharges.Add(item.Amount)
+			} else {
+				summary.UnpaidFixedCharges = summary.UnpaidFixedCharges.Add(item.Amount)
+			}
+		}
+	}
+
+	s.logger.Debugw("customer invoice summary calculated",
+		"customer_id", customerID,
+		"currency", currency,
+		"total_revenue", summary.TotalRevenueAmount,
+		"total_unpaid", summary.TotalUnpaidAmount,
+		"total_overdue", summary.TotalOverdueAmount,
+		"total_invoice_count", summary.TotalInvoiceCount,
+		"unpaid_invoice_count", summary.UnpaidInvoiceCount,
+		"overdue_invoice_count", summary.OverdueInvoiceCount,
+		"unpaid_usage_charges", summary.UnpaidUsageCharges,
+		"unpaid_fixed_charges", summary.UnpaidFixedCharges,
+	)
+
+	return summary, nil
 }
 
 func (s *invoiceService) validatePaymentStatusTransition(from, to types.InvoicePaymentStatus) error {

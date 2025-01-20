@@ -110,9 +110,11 @@ type TopUpWalletRequest struct {
 	Metadata    types.Metadata  `json:"metadata,omitempty"`
 }
 
-// WalletBalanceResponse represents the real-time balance of a wallet
+// WalletBalanceResponse represents the response for getting wallet balance
 type WalletBalanceResponse struct {
-	RealTimeBalance  decimal.Decimal `json:"real_time_balance"`
-	BalanceUpdatedAt time.Time       `json:"balance_updated_at"`
 	*wallet.Wallet
+	RealTimeBalance     decimal.Decimal `json:"real_time_balance"`
+	BalanceUpdatedAt    time.Time       `json:"balance_updated_at"`
+	UnpaidInvoiceAmount decimal.Decimal `json:"unpaid_invoice_amount"`
+	CurrentPeriodUsage  decimal.Decimal `json:"current_period_usage"`
 }

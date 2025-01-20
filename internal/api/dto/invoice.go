@@ -368,3 +368,17 @@ type GetPreviewInvoiceRequest struct {
 	PeriodStart    *time.Time `json:"period_start,omitempty"`
 	PeriodEnd      *time.Time `json:"period_end,omitempty"`
 }
+
+// CustomerInvoiceSummary represents a summary of customer's invoice status
+type CustomerInvoiceSummary struct {
+	CustomerID          string          `json:"customer_id"`
+	Currency            string          `json:"currency"`
+	TotalRevenueAmount  decimal.Decimal `json:"total_revenue_amount"`
+	TotalUnpaidAmount   decimal.Decimal `json:"total_unpaid_amount"`
+	TotalOverdueAmount  decimal.Decimal `json:"total_overdue_amount"`
+	TotalInvoiceCount   int             `json:"total_invoice_count"`
+	UnpaidInvoiceCount  int             `json:"unpaid_invoice_count"`
+	OverdueInvoiceCount int             `json:"overdue_invoice_count"`
+	UnpaidUsageCharges  decimal.Decimal `json:"unpaid_usage_charges"`
+	UnpaidFixedCharges  decimal.Decimal `json:"unpaid_fixed_charges"`
+}
