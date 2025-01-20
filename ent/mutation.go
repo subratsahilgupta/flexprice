@@ -1097,9 +1097,22 @@ func (m *CustomerMutation) OldEmail(ctx context.Context) (v string, err error) {
 	return oldValue.Email, nil
 }
 
+// ClearEmail clears the value of the "email" field.
+func (m *CustomerMutation) ClearEmail() {
+	m.email = nil
+	m.clearedFields[customer.FieldEmail] = struct{}{}
+}
+
+// EmailCleared returns if the "email" field was cleared in this mutation.
+func (m *CustomerMutation) EmailCleared() bool {
+	_, ok := m.clearedFields[customer.FieldEmail]
+	return ok
+}
+
 // ResetEmail resets all changes to the "email" field.
 func (m *CustomerMutation) ResetEmail() {
 	m.email = nil
+	delete(m.clearedFields, customer.FieldEmail)
 }
 
 // Where appends a list predicates to the CustomerMutation builder.
@@ -1325,6 +1338,9 @@ func (m *CustomerMutation) ClearedFields() []string {
 	if m.FieldCleared(customer.FieldUpdatedBy) {
 		fields = append(fields, customer.FieldUpdatedBy)
 	}
+	if m.FieldCleared(customer.FieldEmail) {
+		fields = append(fields, customer.FieldEmail)
+	}
 	return fields
 }
 
@@ -1344,6 +1360,9 @@ func (m *CustomerMutation) ClearField(name string) error {
 		return nil
 	case customer.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case customer.FieldEmail:
+		m.ClearEmail()
 		return nil
 	}
 	return fmt.Errorf("unknown Customer nullable field %s", name)
