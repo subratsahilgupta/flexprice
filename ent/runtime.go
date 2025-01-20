@@ -79,10 +79,6 @@ func init() {
 	customerDescName := customerFields[2].Descriptor()
 	// customer.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	customer.NameValidator = customerDescName.Validators[0].(func(string) error)
-	// customerDescEmail is the schema descriptor for email field.
-	customerDescEmail := customerFields[3].Descriptor()
-	// customer.EmailValidator is a validator for the "email" field. It is called by the builders before save.
-	customer.EmailValidator = customerDescEmail.Validators[0].(func(string) error)
 	invoiceMixin := schema.Invoice{}.Mixin()
 	invoiceMixinFields0 := invoiceMixin[0].Fields()
 	_ = invoiceMixinFields0

@@ -180,6 +180,9 @@ func (o MeterQueryOptions) ApplyTenantFilter(ctx context.Context, query MeterQue
 }
 
 func (o MeterQueryOptions) ApplyStatusFilter(query MeterQuery, status string) MeterQuery {
+	if status == "" {
+		return query.Where(meter.StatusNotIn(string(types.StatusDeleted)))
+	}
 	return query.Where(meter.Status(status))
 }
 

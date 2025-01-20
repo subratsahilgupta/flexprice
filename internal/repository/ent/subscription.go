@@ -146,7 +146,7 @@ func (r *subscriptionRepository) Delete(ctx context.Context, id string) error {
 			subscription.TenantID(types.GetTenantID(ctx)),
 			subscription.Status(string(types.StatusPublished)),
 		).
-		SetStatus(string(types.StatusDeleted)).
+		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		Exec(ctx)
@@ -240,6 +240,9 @@ func (o SubscriptionQueryOptions) ApplyTenantFilter(ctx context.Context, query S
 }
 
 func (o SubscriptionQueryOptions) ApplyStatusFilter(query SubscriptionQuery, status string) SubscriptionQuery {
+	if status == "" {
+		return query.Where(subscription.StatusNotIn(string(types.StatusDeleted)))
+	}
 	return query.Where(subscription.Status(status))
 }
 
