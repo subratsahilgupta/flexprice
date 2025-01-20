@@ -213,7 +213,32 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 	for _, lineItem := range inv.LineItems {
 		s.logger.Debugw("got invoice line item", "id", lineItem.ID, "display_name", lineItem.DisplayName)
 	}
-	return dto.NewInvoiceResponse(inv), nil
+
+	// expand subscription
+	subscriptionService := NewSubscriptionService(
+		s.subscriptionRepo,
+		s.planRepo,
+		s.priceRepo,
+		s.eventRepo,
+		s.meterRepo,
+		s.customerRepo,
+		s.invoiceRepo,
+		s.publisher,
+		s.db,
+		s.logger,
+	)
+
+	response := dto.NewInvoiceResponse(inv)
+
+	if inv.InvoiceType == types.InvoiceTypeSubscription {
+		subscription, err := subscriptionService.GetSubscription(ctx, *inv.SubscriptionID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get subscription: %w", err)
+		}
+		response.WithSubscription(subscription)
+	}
+
+	return response, nil
 }
 
 func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error) {

@@ -165,13 +165,21 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 		return nil, fmt.Errorf("failed to get subscription: %w", err)
 	}
 
+	// expand plan
 	planService := NewPlanService(s.planRepo, s.priceRepo, s.meterRepo, s.logger)
 	plan, err := planService.GetPlan(ctx, subscription.PlanID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan: %w", err)
 	}
 
-	return &dto.SubscriptionResponse{Subscription: subscription, Plan: plan}, nil
+	// expand customer
+	customerService := NewCustomerService(s.customerRepo)
+	customer, err := customerService.GetCustomer(ctx, subscription.CustomerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer: %w", err)
+	}
+
+	return &dto.SubscriptionResponse{Subscription: subscription, Plan: plan, Customer: customer}, nil
 }
 
 func (s *subscriptionService) CancelSubscription(ctx context.Context, id string, cancelAtPeriodEnd bool) error {
