@@ -105,34 +105,15 @@ func (r *planRepository) List(ctx context.Context, filter *types.PlanFilter) ([]
 }
 
 func (r *planRepository) ListAll(ctx context.Context, filter *types.PlanFilter) ([]*domainPlan.Plan, error) {
-	client := r.client.Querier(ctx)
-
 	if filter == nil {
 		filter = types.NewNoLimitPlanFilter()
 	}
 
-	if err := filter.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid filter: %w", err)
+	if filter.QueryFilter == nil {
+		filter.QueryFilter = types.NewNoLimitQueryFilter()
 	}
 
-	r.log.Debugw("listing all plans",
-		"tenant_id", types.GetTenantID(ctx),
-		"limit", filter.GetLimit(),
-		"offset", filter.GetOffset(),
-	)
-
-	query := client.Plan.Query()
-	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
-	if filter != nil {
-		query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
-	}
-
-	plans, err := query.All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list all plans: %w", err)
-	}
-
-	return domainPlan.FromEntList(plans), nil
+	return r.List(ctx, filter)
 }
 
 func (r *planRepository) Count(ctx context.Context, filter *types.PlanFilter) (int, error) {
@@ -144,6 +125,7 @@ func (r *planRepository) Count(ctx context.Context, filter *types.PlanFilter) (i
 
 	query := client.Plan.Query()
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
+	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 
 	count, err := query.Count(ctx)
 	if err != nil {

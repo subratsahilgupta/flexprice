@@ -87,7 +87,7 @@ func (s *meterService) GetMeters(ctx context.Context, filter *types.MeterFilter)
 }
 
 func (s *meterService) GetAllMeters(ctx context.Context) (*dto.ListMetersResponse, error) {
-	filter := types.NewUnlimitedMeterFilter()
+	filter := types.NewNoLimitMeterFilter()
 	meters, err := s.meterRepo.ListAll(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list meters: %w", err)

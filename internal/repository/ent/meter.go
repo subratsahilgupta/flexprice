@@ -99,9 +99,15 @@ func (r *meterRepository) List(ctx context.Context, filter *types.MeterFilter) (
 }
 
 func (r *meterRepository) ListAll(ctx context.Context, filter *types.MeterFilter) ([]*domainMeter.Meter, error) {
-	f := *filter
-	f.QueryFilter = types.NewNoLimitQueryFilter()
-	return r.List(ctx, &f)
+	if filter == nil {
+		filter = types.NewNoLimitMeterFilter()
+	}
+
+	if filter.QueryFilter == nil {
+		filter.QueryFilter = types.NewNoLimitQueryFilter()
+	}
+
+	return r.List(ctx, filter)
 }
 
 func (r *meterRepository) Count(ctx context.Context, filter *types.MeterFilter) (int, error) {

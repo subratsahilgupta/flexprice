@@ -14,8 +14,8 @@ func NewMeterFilter() *MeterFilter {
 	}
 }
 
-// NewUnlimitedMeterFilter creates a new MeterFilter with no pagination limits
-func NewUnlimitedMeterFilter() *MeterFilter {
+// NewNoLimitMeterFilter creates a new MeterFilter with no pagination limits
+func NewNoLimitMeterFilter() *MeterFilter {
 	return &MeterFilter{
 		QueryFilter: NewNoLimitQueryFilter(),
 	}
