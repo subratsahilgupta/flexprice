@@ -211,7 +211,7 @@ func (r *priceRepository) Delete(ctx context.Context, id string) error {
 			price.ID(id),
 			price.TenantID(types.GetTenantID(ctx)),
 		).
-		SetStatus(string(types.StatusDeleted)).
+		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		Save(ctx)
@@ -237,6 +237,9 @@ func (o PriceQueryOptions) ApplyTenantFilter(ctx context.Context, query PriceQue
 }
 
 func (o PriceQueryOptions) ApplyStatusFilter(query PriceQuery, status string) PriceQuery {
+	if status == "" {
+		return query.Where(price.StatusNotIn(string(types.StatusDeleted)))
+	}
 	return query.Where(price.Status(status))
 }
 

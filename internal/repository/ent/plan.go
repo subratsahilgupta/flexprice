@@ -198,7 +198,7 @@ func (r *planRepository) Delete(ctx context.Context, id string) error {
 			plan.ID(id),
 			plan.TenantID(types.GetTenantID(ctx)),
 		).
-		SetStatus(string(types.StatusDeleted)).
+		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		Save(ctx)
@@ -224,6 +224,9 @@ func (o PlanQueryOptions) ApplyTenantFilter(ctx context.Context, query PlanQuery
 }
 
 func (o PlanQueryOptions) ApplyStatusFilter(query PlanQuery, status string) PlanQuery {
+	if status == "" {
+		return query.Where(plan.StatusNotIn(string(types.StatusDeleted)))
+	}
 	return query.Where(plan.Status(status))
 }
 

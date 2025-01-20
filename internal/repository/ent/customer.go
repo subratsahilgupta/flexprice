@@ -165,7 +165,7 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 			customer.ID(id),
 			customer.TenantID(types.GetTenantID(ctx)),
 		).
-		SetStatus(string(types.StatusDeleted)).
+		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		Save(ctx)
@@ -195,10 +195,10 @@ func (o CustomerQueryOptions) ApplyTenantFilter(ctx context.Context, query Custo
 }
 
 func (o CustomerQueryOptions) ApplyStatusFilter(query CustomerQuery, status string) CustomerQuery {
-	if status != "" {
-		query = query.Where(customer.Status(status))
+	if status == "" {
+		return query.Where(customer.StatusNotIn(string(types.StatusDeleted)))
 	}
-	return query
+	return query.Where(customer.Status(status))
 }
 
 func (o CustomerQueryOptions) ApplySortFilter(query CustomerQuery, field string, order string) CustomerQuery {

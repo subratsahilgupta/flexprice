@@ -393,6 +393,9 @@ func (o WalletTransactionQueryOptions) ApplyTenantFilter(ctx context.Context, qu
 }
 
 func (o WalletTransactionQueryOptions) ApplyStatusFilter(query WalletTransactionQuery, status string) WalletTransactionQuery {
+	if status == "" {
+		return query.Where(wallettransaction.StatusNotIn(string(types.StatusDeleted)))
+	}
 	return query.Where(wallettransaction.Status(status))
 }
 

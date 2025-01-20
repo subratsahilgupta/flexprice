@@ -515,6 +515,9 @@ func (o InvoiceQueryOptions) ApplyTenantFilter(ctx context.Context, query Invoic
 }
 
 func (o InvoiceQueryOptions) ApplyStatusFilter(query InvoiceQuery, status string) InvoiceQuery {
+	if status == "" {
+		query = query.Where(invoice.StatusNotIn(string(types.StatusDeleted)))
+	}
 	return query.Where(invoice.Status(status))
 }
 

@@ -72,7 +72,7 @@ func NewDefaultQueryFilter() *QueryFilter {
 	return &QueryFilter{
 		Limit:  lo.ToPtr(50),
 		Offset: lo.ToPtr(0),
-		Status: lo.ToPtr(StatusPublished),
+		Status: nil,
 		Sort:   lo.ToPtr("created_at"),
 		Order:  lo.ToPtr("desc"),
 	}
@@ -83,7 +83,7 @@ func NewNoLimitQueryFilter() *QueryFilter {
 	return &QueryFilter{
 		Limit:  nil, // No limit for unlimited queries
 		Offset: lo.ToPtr(0),
-		Status: lo.ToPtr(StatusPublished),
+		Status: nil,
 		Sort:   lo.ToPtr("created_at"),
 		Order:  lo.ToPtr("desc"),
 	}
@@ -140,7 +140,7 @@ func (f QueryFilter) GetExpand() Expand {
 // GetStatus returns the status value or default if not set
 func (f QueryFilter) GetStatus() string {
 	if f.Status == nil {
-		return string(*NewDefaultQueryFilter().Status)
+		return ""
 	}
 	return string(*f.Status)
 }
