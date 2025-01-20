@@ -14,4 +14,5 @@ type Repository interface {
 	List(ctx context.Context, filter *types.SubscriptionFilter) ([]*Subscription, error)
 	Count(ctx context.Context, filter *types.SubscriptionFilter) (int, error)
 	ListAll(ctx context.Context, filter *types.SubscriptionFilter) ([]*Subscription, error)
+	ListAllTenant(ctx context.Context, filter *types.SubscriptionFilter) ([]*Subscription, error)
 }

@@ -150,3 +150,9 @@ func (s *InMemorySubscriptionStore) ListAll(ctx context.Context, filter *types.S
 
 	return s.List(ctx, unlimitedFilter)
 }
+
+// ListAllTenant returns all subscriptions across all tenants
+// NOTE: This is a potentially expensive operation and to be used only for CRONs
+func (s *InMemorySubscriptionStore) ListAllTenant(ctx context.Context, filter *types.SubscriptionFilter) ([]*subscription.Subscription, error) {
+	return s.ListAll(ctx, filter)
+}

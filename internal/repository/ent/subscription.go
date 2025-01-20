@@ -213,6 +213,47 @@ func (r *subscriptionRepository) ListAll(ctx context.Context, filter *types.Subs
 	return r.List(ctx, filter)
 }
 
+// ListAllTenant retrieves all subscriptions across all tenants
+// NOTE: This is a potentially expensive operation and to be used only for CRONs
+func (r *subscriptionRepository) ListAllTenant(ctx context.Context, filter *types.SubscriptionFilter) ([]*domainSub.Subscription, error) {
+	r.logger.Debugw("listing subscriptions for all tenants", "filter", filter)
+
+	if filter == nil {
+		filter = &types.SubscriptionFilter{
+			QueryFilter: types.NewDefaultQueryFilter(),
+		}
+	}
+
+	if err := filter.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid filter: %w", err)
+	}
+
+	client := r.client.Querier(ctx)
+	query := client.Subscription.Query()
+
+	// Apply entity-specific filters
+	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+
+	// Apply all query options except tenant filter
+	query = ApplySorting(query, filter, r.queryOpts)
+	query = ApplyPagination(query, filter, r.queryOpts)
+	query = r.queryOpts.ApplyStatusFilter(query, filter.GetStatus())
+
+	subs, err := query.All(ctx)
+	if err != nil {
+		r.logger.Errorw("failed to list subscriptions", "error", err)
+		return nil, fmt.Errorf("listing subscriptions: %w", err)
+	}
+
+	// Convert to domain model
+	result := make([]*domainSub.Subscription, len(subs))
+	for i, sub := range subs {
+		result[i] = toDomainSubscription(sub)
+	}
+
+	return result, nil
+}
+
 // Count returns the total number of subscriptions based on the provided filter
 func (r *subscriptionRepository) Count(ctx context.Context, filter *types.SubscriptionFilter) (int, error) {
 	client := r.client.Querier(ctx)

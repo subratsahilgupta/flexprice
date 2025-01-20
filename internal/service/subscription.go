@@ -452,7 +452,7 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.Su
 			},
 		}
 
-		subs, err := s.subscriptionRepo.ListAll(ctx, filter)
+		subs, err := s.subscriptionRepo.ListAllTenant(ctx, filter)
 		if err != nil {
 			return response, fmt.Errorf("failed to list subscriptions: %w", err)
 		}
