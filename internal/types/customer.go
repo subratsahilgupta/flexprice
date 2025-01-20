@@ -19,8 +19,8 @@ func NewCustomerFilter() *CustomerFilter {
 	}
 }
 
-// NewUnlimitedCustomerFilter creates a new CustomerFilter with no pagination limits
-func NewUnlimitedCustomerFilter() *CustomerFilter {
+// NewNoLimitCustomerFilter creates a new CustomerFilter with no pagination limits
+func NewNoLimitCustomerFilter() *CustomerFilter {
 	return &CustomerFilter{
 		QueryFilter: NewNoLimitQueryFilter(),
 	}

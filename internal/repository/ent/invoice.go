@@ -383,9 +383,8 @@ func (r *invoiceRepository) Count(ctx context.Context, filter *types.InvoiceFilt
 	client := r.client.Querier(ctx)
 	query := client.Invoice.Query()
 
-	if filter != nil {
-		query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
-	}
+	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
+	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 
 	count, err := query.Count(ctx)
 	if err != nil {
@@ -516,7 +515,7 @@ func (o InvoiceQueryOptions) ApplyTenantFilter(ctx context.Context, query Invoic
 
 func (o InvoiceQueryOptions) ApplyStatusFilter(query InvoiceQuery, status string) InvoiceQuery {
 	if status == "" {
-		query = query.Where(invoice.StatusNotIn(string(types.StatusDeleted)))
+		return query.Where(invoice.StatusNotIn(string(types.StatusDeleted)))
 	}
 	return query.Where(invoice.Status(status))
 }

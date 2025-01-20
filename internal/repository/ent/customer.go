@@ -99,9 +99,7 @@ func (r *customerRepository) Count(ctx context.Context, filter *types.CustomerFi
 	query := client.Customer.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
-	if filter != nil {
-		query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
-	}
+	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 
 	return query.Count(ctx)
 }
@@ -110,8 +108,8 @@ func (r *customerRepository) ListAll(ctx context.Context, filter *types.Customer
 	client := r.client.Querier(ctx)
 
 	query := client.Customer.Query()
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
+	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 
 	customers, err := query.All(ctx)
 	if err != nil {

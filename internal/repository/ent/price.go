@@ -127,11 +127,9 @@ func (r *priceRepository) Count(ctx context.Context, filter *types.PriceFilter) 
 	client := r.client.Querier(ctx)
 	query := client.Price.Query()
 
-	if filter != nil {
-		query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
-	}
-
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
+	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+
 	count, err := query.Count(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count prices: %w", err)

@@ -74,8 +74,8 @@ func NewSubscriptionFilter() *SubscriptionFilter {
 	}
 }
 
-// NewUnlimitedSubscriptionFilter creates a new SubscriptionFilter with no pagination limits
-func NewUnlimitedSubscriptionFilter() *SubscriptionFilter {
+// NewNoLimitSubscriptionFilter creates a new SubscriptionFilter with no pagination limits
+func NewNoLimitSubscriptionFilter() *SubscriptionFilter {
 	return &SubscriptionFilter{
 		QueryFilter: NewNoLimitQueryFilter(),
 	}
