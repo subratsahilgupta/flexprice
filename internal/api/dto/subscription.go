@@ -35,7 +35,8 @@ type UpdateSubscriptionRequest struct {
 
 type SubscriptionResponse struct {
 	*subscription.Subscription
-	Plan *PlanResponse `json:"plan"`
+	Plan     *PlanResponse     `json:"plan"`
+	Customer *CustomerResponse `json:"customer"`
 }
 
 // ListSubscriptionsResponse represents the response for listing subscriptions

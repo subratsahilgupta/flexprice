@@ -301,6 +301,9 @@ type InvoiceResponse struct {
 	UpdatedAt       time.Time                  `json:"updated_at"`
 	CreatedBy       string                     `json:"created_by,omitempty"`
 	UpdatedBy       string                     `json:"updated_by,omitempty"`
+
+	// Edges
+	Subscription *SubscriptionResponse `json:"subscription,omitempty"`
 }
 
 // NewInvoiceResponse creates a new invoice response from domain invoice
@@ -350,6 +353,11 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 	}
 
 	return resp
+}
+
+func (r *InvoiceResponse) WithSubscription(sub *SubscriptionResponse) *InvoiceResponse {
+	r.Subscription = sub
+	return r
 }
 
 // ListInvoicesResponse represents the response for listing invoices
