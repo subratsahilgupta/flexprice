@@ -258,3 +258,28 @@ func (h *InvoiceHandler) GetPreviewInvoice(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
+// GetCustomerInvoiceSummary godoc
+// @Summary Get a customer invoice summary
+// @Description Get a customer invoice summary
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Customer ID"
+// @Success 200 {object} dto.CustomerMultiCurrencyInvoiceSummary
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /customers/{id}/invoices/summary [get]
+func (h *InvoiceHandler) GetCustomerInvoiceSummary(c *gin.Context) {
+	id := c.Param("id")
+
+	resp, err := h.invoiceService.GetCustomerMultiCurrencyInvoiceSummary(c.Request.Context(), id)
+	if err != nil {
+		h.logger.Errorw("failed to get customer invoice summary", "error", err, "customer_id", id)
+		NewErrorResponse(c, http.StatusInternalServerError, "failed to get customer invoice summary", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}

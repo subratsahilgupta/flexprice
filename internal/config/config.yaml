@@ -18,6 +18,16 @@ auth:
         user_id: "00000000-0000-0000-0000-000000000000"
         name: "Dev API Keys"
         is_active: true
+      "45634aed82b7eaebc6b4814adeebf0932e0253338cf69ac80e7c5b9ad6830b77":
+        tenant_id: "tenant_01JJ20ZF9M5GQQXJG2AQSMZCVM"
+        user_id: "dc609f12-f9c5-4c88-9786-6200180b43c0"
+        name: "Dev API Keys"
+        is_active: true
+      "f3d39ad24ef9a5461eade5d4b21e30bf11e822bc8213154f5138c987c1d2864b":
+        tenant_id: "tenant_01JH280NTMS33TWJ8V8V8M2KTR"
+        user_id: "afc67bd8-ffe7-49b2-b90d-37ecd3fff9f5"
+        name: "Dev API Keys"
+        is_active: true
 
 kafka:
   brokers:

@@ -33,6 +33,7 @@ type InvoiceService interface {
 	CreateSubscriptionInvoice(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (*dto.InvoiceResponse, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetCustomerInvoiceSummary(ctx context.Context, customerID string, currency string) (*dto.CustomerInvoiceSummary, error)
+	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
 }
 
 type invoiceService struct {
@@ -527,6 +528,54 @@ func (s *invoiceService) GetCustomerInvoiceSummary(ctx context.Context, customer
 	)
 
 	return summary, nil
+}
+
+func (s *invoiceService) GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error) {
+	subscriptionFilter := types.NewNoLimitSubscriptionFilter()
+	subscriptionFilter.CustomerID = customerID
+	subscriptionFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+	subscriptionFilter.IncludeCanceled = true
+
+	subs, err := s.subscriptionRepo.List(ctx, subscriptionFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
+	}
+
+	currencies := make([]string, 0, len(subs))
+	for _, sub := range subs {
+		currencies = append(currencies, sub.Currency)
+		
+	}
+	currencies = lo.Uniq(currencies)
+
+	if len(currencies) == 0 {
+		return &dto.CustomerMultiCurrencyInvoiceSummary{
+			CustomerID: customerID,
+			Summaries:  []*dto.CustomerInvoiceSummary{},
+		}, nil
+	}
+
+	defaultCurrency := currencies[0] // fallback to first currency
+
+	summaries := make([]*dto.CustomerInvoiceSummary, 0, len(currencies))
+	for _, currency := range currencies {
+		summary, err := s.GetCustomerInvoiceSummary(ctx, customerID, currency)
+		if err != nil {
+			s.logger.Errorw("failed to get customer invoice summary",
+				"error", err,
+				"customer_id", customerID,
+				"currency", currency)
+			continue
+		}
+
+		summaries = append(summaries, summary)
+	}
+
+	return &dto.CustomerMultiCurrencyInvoiceSummary{
+		CustomerID:      customerID,
+		DefaultCurrency: defaultCurrency,
+		Summaries:       summaries,
+	}, nil
 }
 
 func (s *invoiceService) validatePaymentStatusTransition(from, to types.InvoicePaymentStatus) error {

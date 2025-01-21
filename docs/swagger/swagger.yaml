@@ -317,6 +317,40 @@ definitions:
     - currency
     - customer_id
     type: object
+  dto.CustomerInvoiceSummary:
+    properties:
+      currency:
+        type: string
+      customer_id:
+        type: string
+      overdue_invoice_count:
+        type: integer
+      total_invoice_count:
+        type: integer
+      total_overdue_amount:
+        type: number
+      total_revenue_amount:
+        type: number
+      total_unpaid_amount:
+        type: number
+      unpaid_fixed_charges:
+        type: number
+      unpaid_invoice_count:
+        type: integer
+      unpaid_usage_charges:
+        type: number
+    type: object
+  dto.CustomerMultiCurrencyInvoiceSummary:
+    properties:
+      customer_id:
+        type: string
+      default_currency:
+        type: string
+      summaries:
+        items:
+          $ref: '#/definitions/dto.CustomerInvoiceSummary'
+        type: array
+    type: object
   dto.CustomerResponse:
     properties:
       created_at:
@@ -650,6 +684,10 @@ definitions:
         type: string
       status:
         type: string
+      subscription:
+        allOf:
+        - $ref: '#/definitions/dto.SubscriptionResponse'
+        description: Edges
       subscription_id:
         type: string
       tenant_id:
@@ -953,6 +991,8 @@ definitions:
           CurrentPeriodStart is the end of the current period that the subscription has been invoiced for.
           At the end of this period, a new invoice will be created.
         type: string
+      customer:
+        $ref: '#/definitions/dto.CustomerResponse'
       customer_id:
         description: CustomerID is the identifier for the customer in our system
         type: string
@@ -1183,6 +1223,8 @@ definitions:
         type: string
       currency:
         type: string
+      current_period_usage:
+        type: number
       customer_id:
         type: string
       description:
@@ -1199,6 +1241,8 @@ definitions:
         $ref: '#/definitions/types.Status'
       tenant_id:
         type: string
+      unpaid_invoice_amount:
+        type: number
       updated_at:
         type: string
       updated_by:
@@ -1878,6 +1922,37 @@ paths:
       summary: Update a customer
       tags:
       - Customers
+  /customers/{id}/invoices/summary:
+    get:
+      consumes:
+      - application/json
+      description: Get a customer invoice summary
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CustomerMultiCurrencyInvoiceSummary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a customer invoice summary
+      tags:
+      - Invoices
   /customers/{id}/wallets:
     get:
       consumes:

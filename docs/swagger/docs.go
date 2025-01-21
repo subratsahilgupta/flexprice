@@ -402,6 +402,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/customers/{id}/invoices/summary": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get a customer invoice summary",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Get a customer invoice summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CustomerMultiCurrencyInvoiceSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/customers/{id}/wallets": {
             "get": {
                 "security": [
@@ -3633,6 +3682,58 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CustomerInvoiceSummary": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "overdue_invoice_count": {
+                    "type": "integer"
+                },
+                "total_invoice_count": {
+                    "type": "integer"
+                },
+                "total_overdue_amount": {
+                    "type": "number"
+                },
+                "total_revenue_amount": {
+                    "type": "number"
+                },
+                "total_unpaid_amount": {
+                    "type": "number"
+                },
+                "unpaid_fixed_charges": {
+                    "type": "number"
+                },
+                "unpaid_invoice_count": {
+                    "type": "integer"
+                },
+                "unpaid_usage_charges": {
+                    "type": "number"
+                }
+            }
+        },
+        "dto.CustomerMultiCurrencyInvoiceSummary": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "string"
+                },
+                "default_currency": {
+                    "type": "string"
+                },
+                "summaries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CustomerInvoiceSummary"
+                    }
+                }
+            }
+        },
         "dto.CustomerResponse": {
             "type": "object",
             "properties": {
@@ -4127,6 +4228,14 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
+                "subscription": {
+                    "description": "Edges",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.SubscriptionResponse"
+                        }
+                    ]
+                },
                 "subscription_id": {
                     "type": "string"
                 },
@@ -4565,6 +4674,9 @@ const docTemplate = `{
                     "description": "CurrentPeriodStart is the end of the current period that the subscription has been invoiced for.\nAt the end of this period, a new invoice will be created.",
                     "type": "string"
                 },
+                "customer": {
+                    "$ref": "#/definitions/dto.CustomerResponse"
+                },
                 "customer_id": {
                     "description": "CustomerID is the identifier for the customer in our system",
                     "type": "string"
@@ -4910,6 +5022,9 @@ const docTemplate = `{
                 "currency": {
                     "type": "string"
                 },
+                "current_period_usage": {
+                    "type": "number"
+                },
                 "customer_id": {
                     "type": "string"
                 },
@@ -4933,6 +5048,9 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "string"
+                },
+                "unpaid_invoice_amount": {
+                    "type": "number"
                 },
                 "updated_at": {
                     "type": "string"
