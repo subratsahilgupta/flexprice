@@ -71,7 +71,7 @@ func (s *planService) GetPlan(ctx context.Context, id string) (*dto.PlanResponse
 	response := &dto.PlanResponse{Plan: plan}
 	for _, p := range pricesResponse.Items {
 		if p.Price.PlanID == plan.ID {
-			response.Prices = append(response.Prices, &dto.PriceResponse{Price: p.Price})
+			response.Prices = append(response.Prices, p)
 		}
 	}
 
