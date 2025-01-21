@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -29,14 +28,41 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 		return nil
 	}
 
-	// Convert to ent model and back to get a deep copy
-	entInv := &ent.Invoice{
+	// Deep copy line items
+	lineItems := make([]*invoice.InvoiceLineItem, 0, len(inv.LineItems))
+	for _, item := range inv.LineItems {
+		if item == nil {
+			continue
+		}
+		lineItems = append(lineItems, &invoice.InvoiceLineItem{
+			ID:               item.ID,
+			InvoiceID:        item.InvoiceID,
+			CustomerID:       item.CustomerID,
+			SubscriptionID:   item.SubscriptionID,
+			PlanID:           item.PlanID,
+			PlanDisplayName:  item.PlanDisplayName,
+			PriceID:          item.PriceID,
+			PriceType:        item.PriceType,
+			MeterID:          item.MeterID,
+			MeterDisplayName: item.MeterDisplayName,
+			DisplayName:      item.DisplayName,
+			Amount:           item.Amount,
+			Quantity:         item.Quantity,
+			Currency:         item.Currency,
+			PeriodStart:      item.PeriodStart,
+			PeriodEnd:        item.PeriodEnd,
+			Metadata:         item.Metadata,
+			BaseModel:        item.BaseModel,
+		})
+	}
+
+	return &invoice.Invoice{
 		ID:              inv.ID,
 		CustomerID:      inv.CustomerID,
 		SubscriptionID:  inv.SubscriptionID,
-		InvoiceType:     string(inv.InvoiceType),
-		InvoiceStatus:   string(inv.InvoiceStatus),
-		PaymentStatus:   string(inv.PaymentStatus),
+		InvoiceType:     inv.InvoiceType,
+		InvoiceStatus:   inv.InvoiceStatus,
+		PaymentStatus:   inv.PaymentStatus,
 		Currency:        inv.Currency,
 		AmountDue:       inv.AmountDue,
 		AmountPaid:      inv.AmountPaid,
@@ -48,45 +74,11 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 		FinalizedAt:     inv.FinalizedAt,
 		PeriodStart:     inv.PeriodStart,
 		PeriodEnd:       inv.PeriodEnd,
-		InvoicePdfURL:   inv.InvoicePDFURL,
-		BillingReason:   inv.BillingReason,
+		InvoicePDFURL:   inv.InvoicePDFURL,
+		LineItems:       lineItems,
 		Metadata:        inv.Metadata,
-		Version:         inv.Version,
-		Status:          string(inv.Status),
-		TenantID:        inv.TenantID,
-		CreatedAt:       inv.CreatedAt,
-		CreatedBy:       inv.CreatedBy,
-		UpdatedAt:       inv.UpdatedAt,
-		UpdatedBy:       inv.UpdatedBy,
+		BaseModel:       inv.BaseModel,
 	}
-
-	// Copy line items
-	if len(inv.LineItems) > 0 {
-		entInv.Edges.LineItems = make([]*ent.InvoiceLineItem, len(inv.LineItems))
-		for i, item := range inv.LineItems {
-			entInv.Edges.LineItems[i] = &ent.InvoiceLineItem{
-				ID:             item.ID,
-				InvoiceID:      item.InvoiceID,
-				CustomerID:     item.CustomerID,
-				SubscriptionID: item.SubscriptionID,
-				PriceID:        item.PriceID,
-				MeterID:        item.MeterID,
-				Amount:         item.Amount,
-				Quantity:       item.Quantity,
-				Currency:       item.Currency,
-				PeriodStart:    item.PeriodStart,
-				PeriodEnd:      item.PeriodEnd,
-				Status:         string(item.Status),
-				TenantID:       item.TenantID,
-				CreatedAt:      item.CreatedAt,
-				CreatedBy:      item.CreatedBy,
-				UpdatedAt:      item.UpdatedAt,
-				UpdatedBy:      item.UpdatedBy,
-			}
-		}
-	}
-
-	return invoice.FromEnt(entInv)
 }
 
 func (s *InMemoryInvoiceStore) Create(ctx context.Context, inv *invoice.Invoice) error {
@@ -271,6 +263,11 @@ func invoiceFilterFn(ctx context.Context, inv *invoice.Invoice, filter interface
 
 	// Filter by payment status
 	if len(f.PaymentStatus) > 0 && !lo.Contains(f.PaymentStatus, inv.PaymentStatus) {
+		return false
+	}
+
+	// Filter by status
+	if f.Status != nil && inv.Status != *f.Status {
 		return false
 	}
 

@@ -260,16 +260,13 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 
 	currentPeriodUsage := decimal.Zero
 	for _, sub := range subscriptionsResp.Items {
-		// Skip if subscription currency doesn't match wallet currency
+		// Skip subscriptions with different currency
 		if !types.IsMatchingCurrency(sub.Subscription.Currency, w.Currency) {
-			s.logger.Debugw("skipping subscription with different currency",
-				"subscription_id", sub.Subscription.ID,
-				"subscription_currency", sub.Subscription.Currency,
-				"wallet_currency", w.Currency,
-			)
+
 			continue
 		}
 
+		// Get current period usage for subscription
 		usageResp, err := subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
 			SubscriptionID: sub.Subscription.ID,
 			StartTime:      sub.Subscription.CurrentPeriodStart,
@@ -277,8 +274,9 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 			LifetimeUsage:  false, // Only get current period usage
 		})
 		if err != nil {
-			s.logger.Errorw("failed to get subscription usage",
-				"subscription_id", sub.Subscription.ID,
+			s.logger.Errorw("failed to get current period usage",
+				"wallet_id", walletID,
+				"subscription_id", sub.ID,
 				"error", err,
 			)
 			continue

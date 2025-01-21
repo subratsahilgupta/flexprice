@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -14,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
@@ -169,22 +171,6 @@ func (s *InvoiceServiceSuite) setupTestData() {
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), s.testData.prices.storage))
-
-	// s.testData.prices.storageArchive = &price.Price{
-	// 	ID:                 "price_storage_archive",
-	// 	Amount:             decimal.NewFromFloat(0.03),
-	// 	Currency:           "USD",
-	// 	PlanID:             s.testData.plan.ID,
-	// 	Type:               types.PRICE_TYPE_USAGE,
-	// 	BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-	// 	BillingPeriodCount: 1,
-	// 	BillingModel:       types.BILLING_MODEL_FLAT_FEE,
-	// 	BillingCadence:     types.BILLING_CADENCE_RECURRING,
-	// 	MeterID:            s.testData.meters.storage.ID,
-	// 	FilterValues:       map[string][]string{"region": {"us-east-1"}, "tier": {"archive"}},
-	// 	BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
-	// }
-	// s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), s.testData.prices.storageArchive))
 
 	s.testData.now = time.Now().UTC()
 	s.testData.subscription = &subscription.Subscription{
@@ -536,6 +522,208 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
 			for _, item := range invoice.LineItems {
 				s.Equal(types.StatusPublished, types.Status(item.Status))
 			}
+		})
+	}
+}
+
+func (s *InvoiceServiceSuite) TestGetCustomerInvoiceSummary() {
+	// Setup test data
+	customer := s.testData.customer
+	now := s.testData.now
+
+	// Create test invoices with different states and currencies
+	invoices := []*invoice.Invoice{
+		{
+			ID:              "inv_1",
+			CustomerID:      customer.ID,
+			Currency:        "USD",
+			InvoiceStatus:   types.InvoiceStatusFinalized,
+			PaymentStatus:   types.InvoicePaymentStatusPending,
+			AmountDue:       decimal.NewFromInt(100),
+			AmountRemaining: decimal.NewFromInt(100),
+			DueDate:         lo.ToPtr(now.Add(-24 * time.Hour)), // Overdue
+			LineItems: []*invoice.InvoiceLineItem{
+				{
+					ID:        "line_1",
+					InvoiceID: "inv_1",
+					Amount:    decimal.NewFromInt(60),
+					PriceType: lo.ToPtr(string(types.PRICE_TYPE_USAGE)),
+					Currency:  "USD",
+				},
+				{
+					ID:        "line_2",
+					InvoiceID: "inv_1",
+					Amount:    decimal.NewFromInt(40),
+					PriceType: lo.ToPtr(string(types.PRICE_TYPE_FIXED)),
+					Currency:  "USD",
+				},
+			},
+			BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+		},
+		{
+			ID:              "inv_2",
+			CustomerID:      customer.ID,
+			Currency:        "USD",
+			InvoiceStatus:   types.InvoiceStatusFinalized,
+			PaymentStatus:   types.InvoicePaymentStatusSucceeded,
+			AmountDue:       decimal.NewFromInt(200),
+			AmountRemaining: decimal.Zero,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		},
+		{
+			ID:              "inv_3",
+			CustomerID:      customer.ID,
+			Currency:        "EUR", // Different currency
+			InvoiceStatus:   types.InvoiceStatusFinalized,
+			PaymentStatus:   types.InvoicePaymentStatusPending,
+			AmountDue:       decimal.NewFromInt(300),
+			AmountRemaining: decimal.NewFromInt(300),
+			LineItems: []*invoice.InvoiceLineItem{
+				{
+					ID:        "line_3",
+					InvoiceID: "inv_3",
+					Amount:    decimal.NewFromInt(300),
+					PriceType: lo.ToPtr(string(types.PRICE_TYPE_USAGE)),
+					Currency:  "EUR",
+				},
+			},
+			BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+		},
+		{
+			ID:              "inv_4",
+			CustomerID:      customer.ID,
+			Currency:        "usd", // Same as USD but different case
+			InvoiceStatus:   types.InvoiceStatusFinalized,
+			PaymentStatus:   types.InvoicePaymentStatusPending,
+			AmountDue:       decimal.NewFromInt(150),
+			AmountRemaining: decimal.NewFromInt(150),
+			LineItems: []*invoice.InvoiceLineItem{
+				{
+					ID:        "line_4",
+					InvoiceID: "inv_4",
+					Amount:    decimal.NewFromInt(150),
+					PriceType: lo.ToPtr(string(types.PRICE_TYPE_FIXED)),
+					Currency:  "usd",
+				},
+			},
+			BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+		},
+	}
+
+	// Store test invoices
+	for _, inv := range invoices {
+		err := s.invoiceRepo.CreateWithLineItems(s.GetContext(), inv)
+		s.NoError(err)
+	}
+
+	// Test cases
+	testCases := []struct {
+		name            string
+		customerID      string
+		currency        string
+		expectedError   bool
+		expectedSummary *dto.CustomerInvoiceSummary
+	}{
+		{
+			name:       "Success - USD currency",
+			customerID: customer.ID,
+			currency:   "USD",
+			expectedSummary: &dto.CustomerInvoiceSummary{
+				CustomerID:          customer.ID,
+				Currency:            "USD",
+				TotalRevenueAmount:  decimal.NewFromInt(450), // 100 + 200 + 150
+				TotalUnpaidAmount:   decimal.NewFromInt(250), // 100 + 150
+				TotalOverdueAmount:  decimal.NewFromInt(100), // inv_1
+				TotalInvoiceCount:   3,                       // USD invoices only
+				UnpaidInvoiceCount:  2,                       // inv_1 and inv_4
+				OverdueInvoiceCount: 1,                       // inv_1
+				UnpaidUsageCharges:  decimal.NewFromInt(60),  // from inv_1
+				UnpaidFixedCharges:  decimal.NewFromInt(190), // 40 from inv_1 + 150 from inv_4
+			},
+		},
+		{
+			name:       "Success - EUR currency",
+			customerID: customer.ID,
+			currency:   "EUR",
+			expectedSummary: &dto.CustomerInvoiceSummary{
+				CustomerID:          customer.ID,
+				Currency:            "EUR",
+				TotalRevenueAmount:  decimal.NewFromInt(300),
+				TotalUnpaidAmount:   decimal.NewFromInt(300),
+				TotalOverdueAmount:  decimal.Zero,
+				TotalInvoiceCount:   1,
+				UnpaidInvoiceCount:  1,
+				OverdueInvoiceCount: 0,
+				UnpaidUsageCharges:  decimal.NewFromInt(300),
+				UnpaidFixedCharges:  decimal.Zero,
+			},
+		},
+		{
+			name:       "Success - No invoices found",
+			customerID: customer.ID,
+			currency:   "GBP",
+			expectedSummary: &dto.CustomerInvoiceSummary{
+				CustomerID:          customer.ID,
+				Currency:            "GBP",
+				TotalRevenueAmount:  decimal.Zero,
+				TotalUnpaidAmount:   decimal.Zero,
+				TotalOverdueAmount:  decimal.Zero,
+				TotalInvoiceCount:   0,
+				UnpaidInvoiceCount:  0,
+				OverdueInvoiceCount: 0,
+				UnpaidUsageCharges:  decimal.Zero,
+				UnpaidFixedCharges:  decimal.Zero,
+			},
+		},
+		{
+			name:       "Success - Invalid customer ID",
+			customerID: "invalid_id",
+			currency:   "USD",
+			expectedSummary: &dto.CustomerInvoiceSummary{
+				CustomerID:          "invalid_id",
+				Currency:            "USD",
+				TotalRevenueAmount:  decimal.Zero,
+				TotalUnpaidAmount:   decimal.Zero,
+				TotalOverdueAmount:  decimal.Zero,
+				TotalInvoiceCount:   0,
+				UnpaidInvoiceCount:  0,
+				OverdueInvoiceCount: 0,
+				UnpaidUsageCharges:  decimal.Zero,
+				UnpaidFixedCharges:  decimal.Zero,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			summary, err := s.service.GetCustomerInvoiceSummary(s.GetContext(), tc.customerID, tc.currency)
+			if tc.expectedError {
+				s.Error(err)
+				return
+			}
+
+			s.NoError(err)
+			s.NotNil(summary)
+			s.Equal(tc.expectedSummary.CustomerID, summary.CustomerID)
+			s.Equal(tc.expectedSummary.Currency, summary.Currency)
+			s.True(tc.expectedSummary.TotalRevenueAmount.Equal(summary.TotalRevenueAmount),
+				"TotalRevenueAmount mismatch: expected %s, got %s",
+				tc.expectedSummary.TotalRevenueAmount, summary.TotalRevenueAmount)
+			s.True(tc.expectedSummary.TotalUnpaidAmount.Equal(summary.TotalUnpaidAmount),
+				"TotalUnpaidAmount mismatch: expected %s, got %s",
+				tc.expectedSummary.TotalUnpaidAmount, summary.TotalUnpaidAmount)
+			s.True(tc.expectedSummary.TotalOverdueAmount.Equal(summary.TotalOverdueAmount),
+				"TotalOverdueAmount mismatch: expected %s, got %s",
+				tc.expectedSummary.TotalOverdueAmount, summary.TotalOverdueAmount)
+			s.Equal(tc.expectedSummary.TotalInvoiceCount, summary.TotalInvoiceCount)
+			s.Equal(tc.expectedSummary.UnpaidInvoiceCount, summary.UnpaidInvoiceCount)
+			s.Equal(tc.expectedSummary.OverdueInvoiceCount, summary.OverdueInvoiceCount)
+			s.True(tc.expectedSummary.UnpaidUsageCharges.Equal(summary.UnpaidUsageCharges),
+				"UnpaidUsageCharges mismatch: expected %s, got %s",
+				tc.expectedSummary.UnpaidUsageCharges, summary.UnpaidUsageCharges)
+			s.True(tc.expectedSummary.UnpaidFixedCharges.Equal(summary.UnpaidFixedCharges),
+				"UnpaidFixedCharges mismatch: expected %s, got %s",
+				tc.expectedSummary.UnpaidFixedCharges, summary.UnpaidFixedCharges)
 		})
 	}
 }

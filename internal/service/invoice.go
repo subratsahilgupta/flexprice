@@ -481,16 +481,16 @@ func (s *invoiceService) GetCustomerInvoiceSummary(ctx context.Context, customer
 
 	// Process each invoice
 	for _, inv := range invoicesResp.Items {
+		// Skip invoices with different currency
+		if !types.IsMatchingCurrency(inv.Currency, currency) {
+			continue
+		}
+
 		summary.TotalRevenueAmount = summary.TotalRevenueAmount.Add(inv.AmountDue)
 		summary.TotalInvoiceCount++
 
 		// Skip paid and void invoices
 		if inv.PaymentStatus == types.InvoicePaymentStatusSucceeded {
-			continue
-		}
-
-		// Skip invoices with different currency
-		if !types.IsMatchingCurrency(inv.Currency, currency) {
 			continue
 		}
 
