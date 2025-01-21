@@ -382,3 +382,10 @@ type CustomerInvoiceSummary struct {
 	UnpaidUsageCharges  decimal.Decimal `json:"unpaid_usage_charges"`
 	UnpaidFixedCharges  decimal.Decimal `json:"unpaid_fixed_charges"`
 }
+
+// CustomerMultiCurrencyInvoiceSummary represents invoice summaries across all currencies
+type CustomerMultiCurrencyInvoiceSummary struct {
+	CustomerID      string                    `json:"customer_id"`
+	DefaultCurrency string                    `json:"default_currency"`
+	Summaries       []*CustomerInvoiceSummary `json:"summaries"`
+}

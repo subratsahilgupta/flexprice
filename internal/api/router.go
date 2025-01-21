@@ -110,6 +110,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 			// other routes for customer
 			customer.GET("/:id/wallets", handlers.Wallet.GetWalletsByCustomerID)
+			customer.GET("/:id/invoices/summary", handlers.Invoice.GetCustomerInvoiceSummary)
 		}
 
 		plan := v1Private.Group("/plans")
