@@ -475,6 +475,8 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.Su
 
 		// Process each subscription in the batch
 		for _, sub := range subs {
+			// update context to include the tenant id
+			ctx = context.WithValue(ctx, types.CtxTenantID, sub.TenantID)
 			item := &dto.SubscriptionUpdatePeriodResponseItem{
 				SubscriptionID: sub.ID,
 				PeriodStart:    sub.CurrentPeriodStart,
