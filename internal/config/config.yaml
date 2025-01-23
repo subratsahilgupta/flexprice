@@ -65,3 +65,17 @@ dynamodb:
 
 logging:
   level: "debug"
+
+webhook:
+  enabled: true
+  topic: "webhook_events"
+  pubsub: "memory"
+  tenants:
+    "00000000-0000-0000-0000-000000000000":
+      enabled: true
+      endpoint: "http://localhost:8080/health"
+      headers:
+        "X-Api-Key": "api-key-provided-by-tenant"
+      excluded_events:
+        - "tenant.created"
+        - "tenant.updated"

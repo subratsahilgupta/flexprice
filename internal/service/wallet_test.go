@@ -68,8 +68,10 @@ func (s *WalletServiceSuite) setupService() {
 		stores.MeterRepo,
 		stores.CustomerRepo,
 		stores.InvoiceRepo,
-		s.GetDB(),
 		s.GetPublisher(),
+		s.GetWebhookPublisher(),
+		s.GetDB(),
+		s.GetConfig(),
 	)
 }
 

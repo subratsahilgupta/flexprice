@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -17,6 +18,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
+	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -52,9 +54,11 @@ type billingService struct {
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
 	invoiceRepo      invoice.Repository
-	publisher        publisher.EventPublisher
+	eventPublisher   publisher.EventPublisher
+	webhookPublisher webhookPublisher.WebhookPublisher
 	logger           *logger.Logger
 	db               postgres.IClient
+	config           *config.Configuration
 }
 
 func NewBillingService(
@@ -65,9 +69,11 @@ func NewBillingService(
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
 	invoiceRepo invoice.Repository,
-	publisher publisher.EventPublisher,
+	eventPublisher publisher.EventPublisher,
+	webhookPublisher webhookPublisher.WebhookPublisher,
 	db postgres.IClient,
 	logger *logger.Logger,
+	config *config.Configuration,
 ) BillingService {
 	return &billingService{
 		subscriptionRepo: subscriptionRepo,
@@ -77,9 +83,11 @@ func NewBillingService(
 		meterRepo:        meterRepo,
 		customerRepo:     customerRepo,
 		invoiceRepo:      invoiceRepo,
-		publisher:        publisher,
+		eventPublisher:   eventPublisher,
+		webhookPublisher: webhookPublisher,
 		db:               db,
 		logger:           logger,
+		config:           config,
 	}
 }
 
@@ -231,9 +239,11 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
-		s.publisher,
+		s.eventPublisher,
+		s.webhookPublisher,
 		s.db,
 		s.logger,
+		s.config,
 	)
 
 	usage, err := subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{

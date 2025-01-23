@@ -20,6 +20,7 @@ import (
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/webhook"
 	"go.uber.org/fx"
 
 	lambdaEvents "github.com/aws/aws-lambda-go/events"
@@ -46,7 +47,10 @@ func init() {
 }
 
 func main() {
+	// Initialize Fx application
 	var opts []fx.Option
+
+	// Core dependencies
 	opts = append(opts,
 		fx.Provide(
 			// Config
@@ -87,27 +91,46 @@ func main() {
 			repository.NewTenantRepository,
 			repository.NewEnvironmentRepository,
 			repository.NewInvoiceRepository,
+		),
+	)
 
-			// Services
+	// Webhook module (must be initialised before services)
+	opts = append(opts, webhook.Module)
+
+	// Service layer
+	opts = append(opts,
+		fx.Provide(
+			// Core services
+			service.NewAuthService,
+			service.NewUserService,
+			service.NewTenantService,
+
+			// Business services
 			service.NewMeterService,
 			service.NewEventService,
-			service.NewUserService,
-			service.NewAuthService,
 			service.NewPriceService,
 			service.NewCustomerService,
 			service.NewPlanService,
 			service.NewSubscriptionService,
 			service.NewWalletService,
-			service.NewTenantService,
 			service.NewInvoiceService,
+		),
+	)
 
-			// Handlers
+	// API layer
+	opts = append(opts,
+		fx.Provide(
 			provideHandlers,
-
-			// Router
 			provideRouter,
 		),
-		fx.Invoke(sentry.RegisterHooks, startServer),
+	)
+
+	// Server startup
+	opts = append(opts,
+		fx.Invoke(
+			sentry.RegisterHooks,
+			startServer,
+		),
 	)
 
 	app := fx.New(opts...)
@@ -134,6 +157,7 @@ func provideHandlers(
 		Meter:        v1.NewMeterHandler(meterService, logger),
 		Auth:         v1.NewAuthHandler(cfg, authService, logger),
 		User:         v1.NewUserHandler(userService, logger),
+		Health:       v1.NewHealthHandler(logger),
 		Price:        v1.NewPriceHandler(priceService, logger),
 		Customer:     v1.NewCustomerHandler(customerService, logger),
 		Plan:         v1.NewPlanHandler(planService, logger),
@@ -155,9 +179,13 @@ func startServer(
 	r *gin.Engine,
 	consumer kafka.MessageConsumer,
 	eventRepo events.Repository,
+	webhookService *webhook.WebhookService,
 	log *logger.Logger,
 ) {
 	mode := cfg.Deployment.Mode
+	if mode == "" {
+		mode = types.ModeLocal
+	}
 
 	switch mode {
 	case types.ModeLocal:
@@ -166,8 +194,10 @@ func startServer(
 		}
 		startAPIServer(lc, r, cfg, log)
 		startConsumer(lc, consumer, eventRepo, cfg, log)
+		startWebhookService(lc, webhookService, cfg, log)
 	case types.ModeAPI:
 		startAPIServer(lc, r, cfg, log)
+		startWebhookService(lc, webhookService, cfg, log)
 	case types.ModeConsumer:
 		if consumer == nil {
 			log.Fatal("Kafka consumer required for consumer mode")
@@ -175,11 +205,39 @@ func startServer(
 		startConsumer(lc, consumer, eventRepo, cfg, log)
 	case types.ModeAWSLambdaAPI:
 		startAWSLambdaAPI(r)
+		startWebhookService(lc, webhookService, cfg, log)
 	case types.ModeAWSLambdaConsumer:
 		startAWSLambdaConsumer(eventRepo, log)
 	default:
 		log.Fatalf("Unknown deployment mode: %s", mode)
 	}
+}
+
+func startWebhookService(
+	lc fx.Lifecycle,
+	webhookService *webhook.WebhookService,
+	cfg *config.Configuration,
+	logger *logger.Logger,
+) {
+	if !cfg.Webhook.Enabled {
+		logger.Info("webhook service disabled")
+		return
+	}
+
+	// Create a background context that will be used for the webhook service
+	ctx, cancel := context.WithCancel(context.Background())
+
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			logger.Info("starting webhook service")
+			return webhookService.Start(ctx)
+		},
+		OnStop: func(context.Context) error {
+			logger.Info("stopping webhook service")
+			cancel() // Cancel our background context
+			return webhookService.Stop()
+		},
+	})
 }
 
 func startAPIServer(

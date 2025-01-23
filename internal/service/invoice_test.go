@@ -77,8 +77,10 @@ func (s *InvoiceServiceSuite) setupService() {
 		s.GetStores().CustomerRepo,
 		s.invoiceRepo,
 		s.GetPublisher(),
+		s.GetWebhookPublisher(),
 		s.GetDB(),
 		s.GetLogger(),
+		s.GetConfig(),
 	)
 
 }

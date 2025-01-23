@@ -48,6 +48,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 	// Health check
 	router.GET("/health", handlers.Health.Health)
+	router.POST("/health", handlers.Health.Health)
 	// Swagger documentation
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 

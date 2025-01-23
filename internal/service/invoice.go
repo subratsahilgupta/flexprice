@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -19,6 +21,8 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
+	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
+	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -44,10 +48,12 @@ type invoiceService struct {
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
 	invoiceRepo      invoice.Repository
-	publisher        publisher.EventPublisher
+	eventPublisher   publisher.EventPublisher
+	webhookPublisher webhookPublisher.WebhookPublisher
 	logger           *logger.Logger
 	db               postgres.IClient
 	idempGen         *idempotency.Generator
+	config           *config.Configuration
 }
 
 func NewInvoiceService(
@@ -58,9 +64,11 @@ func NewInvoiceService(
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
 	invoiceRepo invoice.Repository,
-	publisher publisher.EventPublisher,
+	eventPublisher publisher.EventPublisher,
+	webhookPublisher webhookPublisher.WebhookPublisher,
 	db postgres.IClient,
 	logger *logger.Logger,
+	config *config.Configuration,
 ) InvoiceService {
 	return &invoiceService{
 		subscriptionRepo: subscriptionRepo,
@@ -70,7 +78,9 @@ func NewInvoiceService(
 		meterRepo:        meterRepo,
 		customerRepo:     customerRepo,
 		invoiceRepo:      invoiceRepo,
-		publisher:        publisher,
+		eventPublisher:   eventPublisher,
+		webhookPublisher: webhookPublisher,
+		config:           config,
 		db:               db,
 		logger:           logger,
 		idempGen:         idempotency.NewGenerator(),
@@ -203,6 +213,32 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		return nil, err
 	}
 
+	webhookPayload, err := json.Marshal(struct {
+		InvoiceID string `json:"invoice_id"`
+		TenantID  string `json:"tenant_id"`
+	}{
+		InvoiceID: resp.ID,
+		TenantID:  resp.TenantID,
+	})
+	if err != nil {
+		return resp, fmt.Errorf("failed to marshal webhook payload: %w", err)
+	}
+
+	eventName := types.WebhookEventInvoiceCreateDraft
+	if resp.InvoiceStatus == types.InvoiceStatusFinalized {
+		eventName = types.WebhookEventInvoiceUpdateFinalized
+	}
+
+	if err := s.webhookPublisher.PublishWebhook(ctx, &types.WebhookEvent{
+		EventName: eventName,
+		TenantID:  resp.TenantID,
+		Payload:   webhookPayload,
+		ID:        uuid.New().String(),
+		Timestamp: time.Now().UTC(),
+	}); err != nil {
+		return resp, fmt.Errorf("failed to publish invoice created webhook: %w", err)
+	}
+
 	return resp, nil
 }
 
@@ -225,9 +261,11 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
-		s.publisher,
+		s.eventPublisher,
+		s.webhookPublisher,
 		s.db,
 		s.logger,
+		s.config,
 	)
 
 	response := dto.NewInvoiceResponse(inv)
@@ -287,8 +325,29 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to update invoice: %w", err)
 	}
 
-	// TODO: add publisher event for invoice finalized
+	// Publish invoice finalized event
+	webhookPayload, err := json.Marshal(struct {
+		InvoiceID string `json:"invoice_id"`
+		TenantID  string `json:"tenant_id"`
+	}{
+		InvoiceID: inv.ID,
+		TenantID:  inv.TenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook payload: %w", err)
+	}
 
+	webhookEvent := &types.WebhookEvent{
+		EventName: types.WebhookEventInvoiceUpdateFinalized,
+		Payload:   json.RawMessage(webhookPayload),
+		ID:        uuid.New().String(),
+		TenantID:  inv.TenantID,
+		Timestamp: time.Now().UTC(),
+	}
+	if err := s.webhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
+		s.logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
+		// Don't return error as the invoice is already finalized
+	}
 	return nil
 }
 
@@ -314,8 +373,29 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to update invoice: %w", err)
 	}
 
-	// TODO: add publisher event for invoice voided
+	webhookPayload, err := json.Marshal(struct {
+		InvoiceID string `json:"invoice_id"`
+		TenantID  string `json:"tenant_id"`
+	}{
+		InvoiceID: inv.ID,
+		TenantID:  inv.TenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook payload: %w", err)
+	}
 
+	// Publish invoice voided event
+	webhookEvent := &types.WebhookEvent{
+		EventName: types.WebhookEventInvoiceUpdateVoided,
+		Payload:   json.RawMessage(webhookPayload),
+		ID:        uuid.New().String(),
+		TenantID:  inv.TenantID,
+		Timestamp: time.Now().UTC(),
+	}
+	if err := s.webhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
+		s.logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
+		// Don't return error as the invoice is already voided
+	}
 	return nil
 }
 
@@ -372,6 +452,30 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 		return fmt.Errorf("failed to update invoice: %w", err)
 	}
 
+	// Publish invoice payment update event
+	webhookPayload, err := json.Marshal(struct {
+		InvoiceID string `json:"invoice_id"`
+		TenantID  string `json:"tenant_id"`
+	}{
+		InvoiceID: inv.ID,
+		TenantID:  inv.TenantID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook payload: %w", err)
+	}
+
+	webhookEvent := &types.WebhookEvent{
+		EventName: types.WebhookEventInvoiceUpdatePayment,
+		Payload:   json.RawMessage(webhookPayload),
+		ID:        uuid.New().String(),
+		TenantID:  inv.TenantID,
+		Timestamp: time.Now().UTC(),
+	}
+	if err := s.webhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
+		s.logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
+		// Don't return error as the invoice is already updated
+	}
+
 	return nil
 }
 
@@ -389,9 +493,11 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, sub *sub
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
-		s.publisher,
+		s.eventPublisher,
+		s.webhookPublisher,
 		s.db,
 		s.logger,
+		s.config,
 	)
 
 	// Prepare invoice request using billing service
@@ -413,9 +519,11 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
-		s.publisher,
+		s.eventPublisher,
+		s.webhookPublisher,
 		s.db,
 		s.logger,
+		s.config,
 	)
 
 	sub, err := s.subscriptionRepo.Get(ctx, req.SubscriptionID)
@@ -544,7 +652,7 @@ func (s *invoiceService) GetCustomerMultiCurrencyInvoiceSummary(ctx context.Cont
 	currencies := make([]string, 0, len(subs))
 	for _, sub := range subs {
 		currencies = append(currencies, sub.Currency)
-		
+
 	}
 	currencies = lo.Uniq(currencies)
 
