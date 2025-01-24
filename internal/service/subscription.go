@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -18,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
+	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -39,9 +41,11 @@ type subscriptionService struct {
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
 	invoiceRepo      invoice.Repository
-	publisher        publisher.EventPublisher
+	eventPublisher   publisher.EventPublisher
+	webhookPublisher webhookPublisher.WebhookPublisher
 	logger           *logger.Logger
 	db               postgres.IClient
+	config           *config.Configuration
 }
 
 func NewSubscriptionService(
@@ -52,9 +56,11 @@ func NewSubscriptionService(
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
 	invoiceRepo invoice.Repository,
-	publisher publisher.EventPublisher,
+	eventPublisher publisher.EventPublisher,
+	webhookPublisher webhookPublisher.WebhookPublisher,
 	db postgres.IClient,
 	logger *logger.Logger,
+	config *config.Configuration,
 ) SubscriptionService {
 	return &subscriptionService{
 		subscriptionRepo: subscriptionRepo,
@@ -64,9 +70,11 @@ func NewSubscriptionService(
 		meterRepo:        meterRepo,
 		customerRepo:     customerRepo,
 		invoiceRepo:      invoiceRepo,
-		publisher:        publisher,
+		eventPublisher:   eventPublisher,
+		webhookPublisher: webhookPublisher,
 		db:               db,
 		logger:           logger,
+		config:           config,
 	}
 }
 
@@ -256,7 +264,7 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *dto.GetUsageBySubscriptionRequest) (*dto.GetUsageBySubscriptionResponse, error) {
 	response := &dto.GetUsageBySubscriptionResponse{}
 
-	eventService := NewEventService(s.eventRepo, s.meterRepo, s.publisher, s.logger)
+	eventService := NewEventService(s.eventRepo, s.meterRepo, s.eventPublisher, s.logger)
 	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
 
 	subscriptionResponse, err := s.GetSubscription(ctx, req.SubscriptionID)
@@ -519,9 +527,11 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
-		s.publisher,
+		s.eventPublisher,
+		s.webhookPublisher,
 		s.db,
 		s.logger,
+		s.config,
 	)
 
 	currentStart := sub.CurrentPeriodStart

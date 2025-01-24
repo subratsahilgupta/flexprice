@@ -285,8 +285,8 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetNillableInvoicePdfURL(inv.InvoicePDFURL).
 		SetBillingReason(string(inv.BillingReason)).
 		SetMetadata(inv.Metadata).
-		SetUpdatedAt(inv.UpdatedAt).
-		SetUpdatedBy(inv.UpdatedBy).
+		SetUpdatedAt(time.Now()).
+		SetUpdatedBy(types.GetUserID(ctx)).
 		AddVersion(1) // Increment version atomically
 
 	// Execute update

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -18,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
+	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/shopspring/decimal"
 )
 
@@ -54,9 +56,11 @@ type walletService struct {
 	eventRepo        events.Repository
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
-	publisher        publisher.EventPublisher
+	eventPublisher   publisher.EventPublisher
+	webhookPublisher webhookPublisher.WebhookPublisher
 	invoiceRepo      invoice.Repository
 	db               postgres.IClient
+	config           *config.Configuration
 }
 
 // NewWalletService creates a new instance of WalletService
@@ -70,8 +74,10 @@ func NewWalletService(
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
 	invoiceRepo invoice.Repository,
+	eventPublisher publisher.EventPublisher,
+	webhookPublisher webhookPublisher.WebhookPublisher,
 	db postgres.IClient,
-	publisher publisher.EventPublisher,
+	config *config.Configuration,
 ) WalletService {
 	return &walletService{
 		walletRepo:       walletRepo,
@@ -83,8 +89,10 @@ func NewWalletService(
 		meterRepo:        meterRepo,
 		customerRepo:     customerRepo,
 		invoiceRepo:      invoiceRepo,
+		eventPublisher:   eventPublisher,
+		webhookPublisher: webhookPublisher,
 		db:               db,
-		publisher:        publisher,
+		config:           config,
 	}
 }
 
@@ -223,9 +231,11 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
-		s.publisher,
+		s.eventPublisher,
+		s.webhookPublisher,
 		s.db,
 		s.logger,
+		s.config,
 	)
 
 	invoiceSummary, err := invoiceService.GetCustomerInvoiceSummary(ctx, w.CustomerID, w.Currency)
@@ -242,9 +252,11 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
-		s.publisher,
+		s.eventPublisher,
+		s.webhookPublisher,
 		s.db,
 		s.logger,
+		s.config,
 	)
 
 	filter := types.NewSubscriptionFilter()

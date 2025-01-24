@@ -16,10 +16,12 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
+	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/webhook"
 	"go.uber.org/fx"
 
 	lambdaEvents "github.com/aws/aws-lambda-go/events"
@@ -46,7 +48,10 @@ func init() {
 }
 
 func main() {
+	// Initialize Fx application
 	var opts []fx.Option
+
+	// Core dependencies
 	opts = append(opts,
 		fx.Provide(
 			// Config
@@ -88,26 +93,48 @@ func main() {
 			repository.NewEnvironmentRepository,
 			repository.NewInvoiceRepository,
 
-			// Services
+			// PubSub
+			pubsubRouter.NewRouter,
+		),
+	)
+
+	// Webhook module (must be initialised before services)
+	opts = append(opts, webhook.Module)
+
+	// Service layer
+	opts = append(opts,
+		fx.Provide(
+			// Core services
+			service.NewAuthService,
+			service.NewUserService,
+			service.NewTenantService,
+
+			// Business services
 			service.NewMeterService,
 			service.NewEventService,
-			service.NewUserService,
-			service.NewAuthService,
 			service.NewPriceService,
 			service.NewCustomerService,
 			service.NewPlanService,
 			service.NewSubscriptionService,
 			service.NewWalletService,
-			service.NewTenantService,
 			service.NewInvoiceService,
+		),
+	)
 
-			// Handlers
+	// API layer
+	opts = append(opts,
+		fx.Provide(
 			provideHandlers,
-
-			// Router
 			provideRouter,
 		),
-		fx.Invoke(sentry.RegisterHooks, startServer),
+	)
+
+	// Server startup
+	opts = append(opts,
+		fx.Invoke(
+			sentry.RegisterHooks,
+			startServer,
+		),
 	)
 
 	app := fx.New(opts...)
@@ -134,6 +161,7 @@ func provideHandlers(
 		Meter:        v1.NewMeterHandler(meterService, logger),
 		Auth:         v1.NewAuthHandler(cfg, authService, logger),
 		User:         v1.NewUserHandler(userService, logger),
+		Health:       v1.NewHealthHandler(logger),
 		Price:        v1.NewPriceHandler(priceService, logger),
 		Customer:     v1.NewCustomerHandler(customerService, logger),
 		Plan:         v1.NewPlanHandler(planService, logger),
@@ -155,9 +183,14 @@ func startServer(
 	r *gin.Engine,
 	consumer kafka.MessageConsumer,
 	eventRepo events.Repository,
+	webhookService *webhook.WebhookService,
+	router *pubsubRouter.Router,
 	log *logger.Logger,
 ) {
 	mode := cfg.Deployment.Mode
+	if mode == "" {
+		mode = types.ModeLocal
+	}
 
 	switch mode {
 	case types.ModeLocal:
@@ -166,8 +199,12 @@ func startServer(
 		}
 		startAPIServer(lc, r, cfg, log)
 		startConsumer(lc, consumer, eventRepo, cfg, log)
+		startMessageRouter(lc, router, webhookService, log)
+		// startWebhookService(lc, webhookService, cfg, log)
 	case types.ModeAPI:
 		startAPIServer(lc, r, cfg, log)
+		// startWebhookService(lc, webhookService, cfg, log)
+		startMessageRouter(lc, router, webhookService, log)
 	case types.ModeConsumer:
 		if consumer == nil {
 			log.Fatal("Kafka consumer required for consumer mode")
@@ -175,11 +212,41 @@ func startServer(
 		startConsumer(lc, consumer, eventRepo, cfg, log)
 	case types.ModeAWSLambdaAPI:
 		startAWSLambdaAPI(r)
+		// startWebhookService(lc, webhookService, cfg, log)
+		startMessageRouter(lc, router, webhookService, log)
 	case types.ModeAWSLambdaConsumer:
 		startAWSLambdaConsumer(eventRepo, log)
 	default:
 		log.Fatalf("Unknown deployment mode: %s", mode)
 	}
+}
+
+func startWebhookService(
+	lc fx.Lifecycle,
+	webhookService *webhook.WebhookService,
+	cfg *config.Configuration,
+	logger *logger.Logger,
+) {
+	if !cfg.Webhook.Enabled {
+		logger.Info("webhook service disabled")
+		return
+	}
+
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			logger.Info("starting webhook service")
+			go func() {
+				if err := webhookService.Start(ctx); err != nil {
+					logger.Errorw("webhook service failed", "error", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			logger.Info("stopping webhook service")
+			return webhookService.Stop()
+		},
+	})
 }
 
 func startAPIServer(
@@ -295,4 +362,30 @@ func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository
 			time.Since(event.Timestamp).Milliseconds(), event,
 		)
 	}
+}
+
+func startMessageRouter(
+	lc fx.Lifecycle,
+	router *pubsubRouter.Router,
+	webhookService *webhook.WebhookService,
+	logger *logger.Logger,
+) {
+	// Register handlers before starting the router
+	webhookService.RegisterHandler(router)
+
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			logger.Info("starting message router")
+			go func() {
+				if err := router.Run(); err != nil {
+					logger.Errorw("message router failed", "error", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			logger.Info("stopping message router")
+			return router.Close()
+		},
+	})
 }

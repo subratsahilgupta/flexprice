@@ -6,7 +6,7 @@ require (
 	entgo.io/ent v0.14.1
 	github.com/ClickHouse/clickhouse-go/v2 v2.10.1
 	github.com/Shopify/sarama v1.38.0
-	github.com/ThreeDotsLabs/watermill v1.2.0
+	github.com/ThreeDotsLabs/watermill v1.4.4
 	github.com/ThreeDotsLabs/watermill-kafka/v2 v2.2.2
 	github.com/aws/aws-lambda-go v1.47.0
 	github.com/aws/aws-sdk-go-v2 v1.32.7
@@ -64,6 +64,7 @@ require (
 	github.com/aws/smithy-go v1.22.1 // indirect
 	github.com/bytedance/sonic v1.12.4 // indirect
 	github.com/bytedance/sonic/loader v0.2.1 // indirect
+	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -125,6 +126,7 @@ require (
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
+	github.com/sony/gobreaker v1.0.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
