@@ -16,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
+	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
@@ -91,6 +92,9 @@ func main() {
 			repository.NewTenantRepository,
 			repository.NewEnvironmentRepository,
 			repository.NewInvoiceRepository,
+
+			// PubSub
+			pubsubRouter.NewRouter,
 		),
 	)
 
@@ -180,6 +184,7 @@ func startServer(
 	consumer kafka.MessageConsumer,
 	eventRepo events.Repository,
 	webhookService *webhook.WebhookService,
+	router *pubsubRouter.Router,
 	log *logger.Logger,
 ) {
 	mode := cfg.Deployment.Mode
@@ -194,10 +199,12 @@ func startServer(
 		}
 		startAPIServer(lc, r, cfg, log)
 		startConsumer(lc, consumer, eventRepo, cfg, log)
-		startWebhookService(lc, webhookService, cfg, log)
+		startMessageRouter(lc, router, webhookService, log)
+		// startWebhookService(lc, webhookService, cfg, log)
 	case types.ModeAPI:
 		startAPIServer(lc, r, cfg, log)
-		startWebhookService(lc, webhookService, cfg, log)
+		// startWebhookService(lc, webhookService, cfg, log)
+		startMessageRouter(lc, router, webhookService, log)
 	case types.ModeConsumer:
 		if consumer == nil {
 			log.Fatal("Kafka consumer required for consumer mode")
@@ -205,7 +212,8 @@ func startServer(
 		startConsumer(lc, consumer, eventRepo, cfg, log)
 	case types.ModeAWSLambdaAPI:
 		startAWSLambdaAPI(r)
-		startWebhookService(lc, webhookService, cfg, log)
+		// startWebhookService(lc, webhookService, cfg, log)
+		startMessageRouter(lc, router, webhookService, log)
 	case types.ModeAWSLambdaConsumer:
 		startAWSLambdaConsumer(eventRepo, log)
 	default:
@@ -224,17 +232,18 @@ func startWebhookService(
 		return
 	}
 
-	// Create a background context that will be used for the webhook service
-	ctx, cancel := context.WithCancel(context.Background())
-
 	lc.Append(fx.Hook{
-		OnStart: func(context.Context) error {
+		OnStart: func(ctx context.Context) error {
 			logger.Info("starting webhook service")
-			return webhookService.Start(ctx)
+			go func() {
+				if err := webhookService.Start(ctx); err != nil {
+					logger.Errorw("webhook service failed", "error", err)
+				}
+			}()
+			return nil
 		},
-		OnStop: func(context.Context) error {
+		OnStop: func(ctx context.Context) error {
 			logger.Info("stopping webhook service")
-			cancel() // Cancel our background context
 			return webhookService.Stop()
 		},
 	})
@@ -353,4 +362,30 @@ func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository
 			time.Since(event.Timestamp).Milliseconds(), event,
 		)
 	}
+}
+
+func startMessageRouter(
+	lc fx.Lifecycle,
+	router *pubsubRouter.Router,
+	webhookService *webhook.WebhookService,
+	logger *logger.Logger,
+) {
+	// Register handlers before starting the router
+	webhookService.RegisterHandler(router)
+
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			logger.Info("starting message router")
+			go func() {
+				if err := router.Run(); err != nil {
+					logger.Errorw("message router failed", "error", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			logger.Info("stopping message router")
+			return router.Close()
+		},
+	})
 }

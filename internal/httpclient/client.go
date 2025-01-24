@@ -92,6 +92,11 @@ func (c *DefaultClient) Send(ctx context.Context, req *Request) (*Response, erro
 		}
 	}
 
+	// Return HTTP error for non-2xx responses
+	if resp.StatusCode >= 400 {
+		return nil, NewError(resp.StatusCode, respBody)
+	}
+
 	return &Response{
 		StatusCode: resp.StatusCode,
 		Body:       respBody,

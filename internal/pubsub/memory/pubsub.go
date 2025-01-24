@@ -5,10 +5,12 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/pubsub"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // PubSub implements both Publisher and Subscriber interfaces using watermill's gochannel
@@ -44,6 +46,8 @@ func NewPubSub(
 
 // Publish publishes a webhook event
 func (p *PubSub) Publish(ctx context.Context, topic string, msg *message.Message) error {
+	msg.SetContext(ctx)
+	middleware.SetCorrelationID(types.GetRequestID(ctx), msg)
 	return p.pubsub.Publish(topic, msg)
 }
 

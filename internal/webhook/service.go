@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/logger"
+	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/webhook/handler"
 	"github.com/flexprice/flexprice/internal/webhook/payload"
 	"github.com/flexprice/flexprice/internal/webhook/publisher"
@@ -41,6 +42,11 @@ func NewWebhookService(
 	}
 }
 
+// RegisterHandler registers the webhook handler with the router
+func (s *WebhookService) RegisterHandler(router *pubsubRouter.Router) {
+	s.handler.RegisterHandler(router)
+}
+
 // Start starts the webhook service
 func (s *WebhookService) Start(ctx context.Context) error {
 	if !s.config.Webhook.Enabled {
@@ -49,9 +55,6 @@ func (s *WebhookService) Start(ctx context.Context) error {
 	}
 
 	s.logger.Debug("starting webhook service")
-	if err := s.handler.HandleWebhookEvents(ctx); err != nil {
-		return fmt.Errorf("failed to start webhook handler: %w", err)
-	}
 
 	s.logger.Info("webhook service started successfully")
 	return nil
@@ -60,12 +63,6 @@ func (s *WebhookService) Start(ctx context.Context) error {
 // Stop stops the webhook service
 func (s *WebhookService) Stop() error {
 	s.logger.Debug("stopping webhook service")
-
-	// First stop the handler to stop processing new messages
-	if err := s.handler.Close(); err != nil {
-		s.logger.Errorw("failed to close webhook handler", "error", err)
-		return fmt.Errorf("failed to close webhook handler: %w", err)
-	}
 
 	// Then close the publisher
 	if err := s.publisher.Close(); err != nil {
