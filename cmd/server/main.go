@@ -200,10 +200,8 @@ func startServer(
 		startAPIServer(lc, r, cfg, log)
 		startConsumer(lc, consumer, eventRepo, cfg, log)
 		startMessageRouter(lc, router, webhookService, log)
-		// startWebhookService(lc, webhookService, cfg, log)
 	case types.ModeAPI:
 		startAPIServer(lc, r, cfg, log)
-		// startWebhookService(lc, webhookService, cfg, log)
 		startMessageRouter(lc, router, webhookService, log)
 	case types.ModeConsumer:
 		if consumer == nil {
@@ -212,41 +210,12 @@ func startServer(
 		startConsumer(lc, consumer, eventRepo, cfg, log)
 	case types.ModeAWSLambdaAPI:
 		startAWSLambdaAPI(r)
-		// startWebhookService(lc, webhookService, cfg, log)
 		startMessageRouter(lc, router, webhookService, log)
 	case types.ModeAWSLambdaConsumer:
 		startAWSLambdaConsumer(eventRepo, log)
 	default:
 		log.Fatalf("Unknown deployment mode: %s", mode)
 	}
-}
-
-func startWebhookService(
-	lc fx.Lifecycle,
-	webhookService *webhook.WebhookService,
-	cfg *config.Configuration,
-	logger *logger.Logger,
-) {
-	if !cfg.Webhook.Enabled {
-		logger.Info("webhook service disabled")
-		return
-	}
-
-	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			logger.Info("starting webhook service")
-			go func() {
-				if err := webhookService.Start(ctx); err != nil {
-					logger.Errorw("webhook service failed", "error", err)
-				}
-			}()
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			logger.Info("stopping webhook service")
-			return webhookService.Stop()
-		},
-	})
 }
 
 func startAPIServer(
