@@ -1210,6 +1210,8 @@ definitions:
         type: string
       id:
         type: string
+      tenant:
+        $ref: '#/definitions/dto.TenantResponse'
     type: object
   dto.WalletBalanceResponse:
     properties:

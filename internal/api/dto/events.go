@@ -132,7 +132,16 @@ func (r *GetUsageRequest) ToUsageParams() *events.UsageParams {
 }
 
 func (r *GetUsageByMeterRequest) Validate() error {
-	return validator.New().Struct(r)
+	err := validator.New().Struct(r)
+	if err != nil {
+		return err
+	}
+
+	if err := r.WindowSize.Validate(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (r *GetEventsRequest) Validate() error {
