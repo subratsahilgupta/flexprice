@@ -277,12 +277,14 @@ func (o PriceQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types
 		return query
 	}
 
-	// Apply tenant filter first
-	query = o.ApplyTenantFilter(ctx, query)
-
 	// Apply plan IDs filter if specified
 	if len(f.PlanIDs) > 0 {
 		query = query.Where(price.PlanIDIn(f.PlanIDs...))
+	}
+
+	// Apply price IDs filter if specified
+	if len(f.PriceIDs) > 0 {
+		query = query.Where(price.IDIn(f.PriceIDs...))
 	}
 
 	// Apply time range filters if specified

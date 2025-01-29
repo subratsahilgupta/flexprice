@@ -389,3 +389,11 @@ type CustomerMultiCurrencyInvoiceSummary struct {
 	DefaultCurrency string                    `json:"default_currency"`
 	Summaries       []*CustomerInvoiceSummary `json:"summaries"`
 }
+
+// CreateSubscriptionInvoiceRequest represents a request to create a subscription invoice
+type CreateSubscriptionInvoiceRequest struct {
+	SubscriptionID string    `json:"subscription_id" binding:"required"`
+	PeriodStart    time.Time `json:"period_start" binding:"required"`
+	PeriodEnd      time.Time `json:"period_end" binding:"required"`
+	IsPreview      bool      `json:"is_preview"`
+}
