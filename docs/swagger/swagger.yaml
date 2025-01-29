@@ -274,10 +274,6 @@ definitions:
         type: string
       invoice_cadence:
         $ref: '#/definitions/types.InvoiceCadence'
-      line_items:
-        items:
-          $ref: '#/definitions/dto.SubscriptionLineItemRequest'
-        type: array
       lookup_key:
         type: string
       metadata:
@@ -299,6 +295,7 @@ definitions:
     - currency
     - customer_id
     - invoice_cadence
+    - plan_id
     - start_date
     type: object
   dto.CreateTenantRequest:
@@ -950,22 +947,6 @@ definitions:
     required:
     - email
     - password
-    type: object
-  dto.SubscriptionLineItemRequest:
-    properties:
-      display_name:
-        type: string
-      metadata:
-        additionalProperties:
-          type: string
-        type: object
-      price_id:
-        type: string
-      quantity:
-        type: number
-    required:
-    - price_id
-    - quantity
     type: object
   dto.SubscriptionResponse:
     properties:

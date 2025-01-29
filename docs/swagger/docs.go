@@ -3613,6 +3613,7 @@ const docTemplate = `{
                 "currency",
                 "customer_id",
                 "invoice_cadence",
+                "plan_id",
                 "start_date"
             ],
             "properties": {
@@ -3637,12 +3638,6 @@ const docTemplate = `{
                 },
                 "invoice_cadence": {
                     "$ref": "#/definitions/types.InvoiceCadence"
-                },
-                "line_items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/dto.SubscriptionLineItemRequest"
-                    }
                 },
                 "lookup_key": {
                     "type": "string"
@@ -4634,30 +4629,6 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "minLength": 8
-                }
-            }
-        },
-        "dto.SubscriptionLineItemRequest": {
-            "type": "object",
-            "required": [
-                "price_id",
-                "quantity"
-            ],
-            "properties": {
-                "display_name": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "price_id": {
-                    "type": "string"
-                },
-                "quantity": {
-                    "type": "number"
                 }
             }
         },
