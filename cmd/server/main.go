@@ -105,9 +105,9 @@ func main() {
 	opts = append(opts,
 		fx.Provide(
 			// Core services
+			service.NewTenantService,
 			service.NewAuthService,
 			service.NewUserService,
-			service.NewTenantService,
 
 			// Business services
 			service.NewMeterService,

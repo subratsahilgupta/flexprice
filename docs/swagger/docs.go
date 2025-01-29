@@ -5001,6 +5001,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "tenant": {
+                    "$ref": "#/definitions/dto.TenantResponse"
                 }
             }
         },
