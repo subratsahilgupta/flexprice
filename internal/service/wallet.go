@@ -274,7 +274,6 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	for _, sub := range subscriptionsResp.Items {
 		// Skip subscriptions with different currency
 		if !types.IsMatchingCurrency(sub.Subscription.Currency, w.Currency) {
-
 			continue
 		}
 

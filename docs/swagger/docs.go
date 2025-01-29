@@ -2140,6 +2140,15 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "price_ids",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "name": "sort",
                         "in": "query"
@@ -3604,7 +3613,6 @@ const docTemplate = `{
                 "currency",
                 "customer_id",
                 "invoice_cadence",
-                "plan_id",
                 "start_date"
             ],
             "properties": {
@@ -3630,8 +3638,20 @@ const docTemplate = `{
                 "invoice_cadence": {
                     "$ref": "#/definitions/types.InvoiceCadence"
                 },
+                "line_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SubscriptionLineItemRequest"
+                    }
+                },
                 "lookup_key": {
                     "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "plan_id": {
                     "type": "string"
@@ -4617,6 +4637,30 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SubscriptionLineItemRequest": {
+            "type": "object",
+            "required": [
+                "price_id",
+                "quantity"
+            ],
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                }
+            }
+        },
         "dto.SubscriptionResponse": {
             "type": "object",
             "properties": {
@@ -4697,9 +4741,23 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "line_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/subscription.SubscriptionLineItem"
+                    }
+                },
                 "lookup_key": {
                     "description": "LookupKey is the key used to lookup the subscription in our system",
                     "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata is a map of key-value pairs that can be attached to the subscription",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Metadata"
+                        }
+                    ]
                 },
                 "plan": {
                     "$ref": "#/definitions/dto.PlanResponse"
@@ -4741,6 +4799,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
+                    "description": "Version is used for optimistic locking",
                     "type": "integer"
                 }
             }
@@ -5363,6 +5422,80 @@ const docTemplate = `{
                 },
                 "round": {
                     "description": "up or down",
+                    "type": "string"
+                }
+            }
+        },
+        "subscription.SubscriptionLineItem": {
+            "type": "object",
+            "properties": {
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "meter_display_name": {
+                    "type": "string"
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "plan_display_name": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "price_type": {
+                    "$ref": "#/definitions/types.PriceType"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
                     "type": "string"
                 }
             }

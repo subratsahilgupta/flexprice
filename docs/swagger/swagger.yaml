@@ -274,8 +274,16 @@ definitions:
         type: string
       invoice_cadence:
         $ref: '#/definitions/types.InvoiceCadence'
+      line_items:
+        items:
+          $ref: '#/definitions/dto.SubscriptionLineItemRequest'
+        type: array
       lookup_key:
         type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
       plan_id:
         type: string
       start_date:
@@ -291,7 +299,6 @@ definitions:
     - currency
     - customer_id
     - invoice_cadence
-    - plan_id
     - start_date
     type: object
   dto.CreateTenantRequest:
@@ -944,6 +951,22 @@ definitions:
     - email
     - password
     type: object
+  dto.SubscriptionLineItemRequest:
+    properties:
+      display_name:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      price_id:
+        type: string
+      quantity:
+        type: number
+    required:
+    - price_id
+    - quantity
+    type: object
   dto.SubscriptionResponse:
     properties:
       billing_anchor:
@@ -1007,9 +1030,18 @@ definitions:
         - $ref: '#/definitions/types.InvoiceCadence'
         description: InvoiceCadence is the cadence of the invoice. This overrides
           the plan's invoice cadence.
+      line_items:
+        items:
+          $ref: '#/definitions/subscription.SubscriptionLineItem'
+        type: array
       lookup_key:
         description: LookupKey is the key used to lookup the subscription in our system
         type: string
+      metadata:
+        allOf:
+        - $ref: '#/definitions/types.Metadata'
+        description: Metadata is a map of key-value pairs that can be attached to
+          the subscription
       plan:
         $ref: '#/definitions/dto.PlanResponse'
       plan_id:
@@ -1037,6 +1069,7 @@ definitions:
       updated_by:
         type: string
       version:
+        description: Version is used for optimistic locking
         type: integer
     type: object
   dto.SubscriptionUsageByMetersResponse:
@@ -1464,6 +1497,55 @@ definitions:
         type: integer
       round:
         description: up or down
+        type: string
+    type: object
+  subscription.SubscriptionLineItem:
+    properties:
+      billing_period:
+        $ref: '#/definitions/types.BillingPeriod'
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      customer_id:
+        type: string
+      display_name:
+        type: string
+      end_date:
+        type: string
+      id:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      meter_display_name:
+        type: string
+      meter_id:
+        type: string
+      plan_display_name:
+        type: string
+      plan_id:
+        type: string
+      price_id:
+        type: string
+      price_type:
+        $ref: '#/definitions/types.PriceType'
+      quantity:
+        type: number
+      start_date:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
         type: string
     type: object
   types.AggregationType:
@@ -3035,6 +3117,12 @@ paths:
         items:
           type: string
         name: plan_ids
+        type: array
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: price_ids
         type: array
       - in: query
         name: sort
