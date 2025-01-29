@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/subscription"
+	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
 	"github.com/shopspring/decimal"
@@ -421,6 +422,53 @@ func init() {
 	subscriptionDescVersion := subscriptionFields[20].Descriptor()
 	// subscription.DefaultVersion holds the default value on creation for the version field.
 	subscription.DefaultVersion = subscriptionDescVersion.Default.(int)
+	subscriptionlineitemMixin := schema.SubscriptionLineItem{}.Mixin()
+	subscriptionlineitemMixinFields0 := subscriptionlineitemMixin[0].Fields()
+	_ = subscriptionlineitemMixinFields0
+	subscriptionlineitemFields := schema.SubscriptionLineItem{}.Fields()
+	_ = subscriptionlineitemFields
+	// subscriptionlineitemDescTenantID is the schema descriptor for tenant_id field.
+	subscriptionlineitemDescTenantID := subscriptionlineitemMixinFields0[0].Descriptor()
+	// subscriptionlineitem.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	subscriptionlineitem.TenantIDValidator = subscriptionlineitemDescTenantID.Validators[0].(func(string) error)
+	// subscriptionlineitemDescStatus is the schema descriptor for status field.
+	subscriptionlineitemDescStatus := subscriptionlineitemMixinFields0[1].Descriptor()
+	// subscriptionlineitem.DefaultStatus holds the default value on creation for the status field.
+	subscriptionlineitem.DefaultStatus = subscriptionlineitemDescStatus.Default.(string)
+	// subscriptionlineitemDescCreatedAt is the schema descriptor for created_at field.
+	subscriptionlineitemDescCreatedAt := subscriptionlineitemMixinFields0[2].Descriptor()
+	// subscriptionlineitem.DefaultCreatedAt holds the default value on creation for the created_at field.
+	subscriptionlineitem.DefaultCreatedAt = subscriptionlineitemDescCreatedAt.Default.(func() time.Time)
+	// subscriptionlineitemDescUpdatedAt is the schema descriptor for updated_at field.
+	subscriptionlineitemDescUpdatedAt := subscriptionlineitemMixinFields0[3].Descriptor()
+	// subscriptionlineitem.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	subscriptionlineitem.DefaultUpdatedAt = subscriptionlineitemDescUpdatedAt.Default.(func() time.Time)
+	// subscriptionlineitem.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	subscriptionlineitem.UpdateDefaultUpdatedAt = subscriptionlineitemDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// subscriptionlineitemDescSubscriptionID is the schema descriptor for subscription_id field.
+	subscriptionlineitemDescSubscriptionID := subscriptionlineitemFields[1].Descriptor()
+	// subscriptionlineitem.SubscriptionIDValidator is a validator for the "subscription_id" field. It is called by the builders before save.
+	subscriptionlineitem.SubscriptionIDValidator = subscriptionlineitemDescSubscriptionID.Validators[0].(func(string) error)
+	// subscriptionlineitemDescCustomerID is the schema descriptor for customer_id field.
+	subscriptionlineitemDescCustomerID := subscriptionlineitemFields[2].Descriptor()
+	// subscriptionlineitem.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
+	subscriptionlineitem.CustomerIDValidator = subscriptionlineitemDescCustomerID.Validators[0].(func(string) error)
+	// subscriptionlineitemDescPriceID is the schema descriptor for price_id field.
+	subscriptionlineitemDescPriceID := subscriptionlineitemFields[5].Descriptor()
+	// subscriptionlineitem.PriceIDValidator is a validator for the "price_id" field. It is called by the builders before save.
+	subscriptionlineitem.PriceIDValidator = subscriptionlineitemDescPriceID.Validators[0].(func(string) error)
+	// subscriptionlineitemDescQuantity is the schema descriptor for quantity field.
+	subscriptionlineitemDescQuantity := subscriptionlineitemFields[10].Descriptor()
+	// subscriptionlineitem.DefaultQuantity holds the default value on creation for the quantity field.
+	subscriptionlineitem.DefaultQuantity = subscriptionlineitemDescQuantity.Default.(decimal.Decimal)
+	// subscriptionlineitemDescCurrency is the schema descriptor for currency field.
+	subscriptionlineitemDescCurrency := subscriptionlineitemFields[11].Descriptor()
+	// subscriptionlineitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	subscriptionlineitem.CurrencyValidator = subscriptionlineitemDescCurrency.Validators[0].(func(string) error)
+	// subscriptionlineitemDescBillingPeriod is the schema descriptor for billing_period field.
+	subscriptionlineitemDescBillingPeriod := subscriptionlineitemFields[12].Descriptor()
+	// subscriptionlineitem.BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
+	subscriptionlineitem.BillingPeriodValidator = subscriptionlineitemDescBillingPeriod.Validators[0].(func(string) error)
 	walletMixin := schema.Wallet{}.Mixin()
 	walletMixinFields0 := walletMixin[0].Fields()
 	_ = walletMixinFields0
