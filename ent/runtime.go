@@ -136,7 +136,7 @@ func init() {
 	// invoice.DefaultAmountRemaining holds the default value on creation for the amount_remaining field.
 	invoice.DefaultAmountRemaining = invoiceDescAmountRemaining.Default.(decimal.Decimal)
 	// invoiceDescVersion is the schema descriptor for version field.
-	invoiceDescVersion := invoiceFields[20].Descriptor()
+	invoiceDescVersion := invoiceFields[21].Descriptor()
 	// invoice.DefaultVersion holds the default value on creation for the version field.
 	invoice.DefaultVersion = invoiceDescVersion.Default.(int)
 	invoicelineitemMixin := schema.InvoiceLineItem{}.Mixin()

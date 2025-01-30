@@ -293,6 +293,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		AmountDue:      result.TotalAmount,
 		Description:    description,
 		DueDate:        lo.ToPtr(invoiceDueDate),
+		BillingPeriod:  lo.ToPtr(string(sub.BillingPeriod)),
 		PeriodStart:    &periodStart,
 		PeriodEnd:      &periodEnd,
 		BillingReason:  types.InvoiceBillingReasonSubscriptionCycle,
