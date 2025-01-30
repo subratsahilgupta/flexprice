@@ -88,6 +88,7 @@ var (
 		{Name: "paid_at", Type: field.TypeTime, Nullable: true},
 		{Name: "voided_at", Type: field.TypeTime, Nullable: true},
 		{Name: "finalized_at", Type: field.TypeTime, Nullable: true},
+		{Name: "billing_period", Type: field.TypeString, Nullable: true},
 		{Name: "period_start", Type: field.TypeTime, Nullable: true},
 		{Name: "period_end", Type: field.TypeTime, Nullable: true},
 		{Name: "invoice_pdf_url", Type: field.TypeString, Nullable: true},
@@ -127,12 +128,12 @@ var (
 			{
 				Name:    "idx_tenant_invoice_number_unique",
 				Unique:  true,
-				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[27]},
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[28]},
 			},
 			{
 				Name:    "idx_idempotency_key_unique",
 				Unique:  true,
-				Columns: []*schema.Column{InvoicesColumns[29]},
+				Columns: []*schema.Column{InvoicesColumns[30]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "idempotency_key IS NOT NULL",
 				},
@@ -140,7 +141,7 @@ var (
 			{
 				Name:    "idx_subscription_period_unique",
 				Unique:  false,
-				Columns: []*schema.Column{InvoicesColumns[8], InvoicesColumns[21], InvoicesColumns[22]},
+				Columns: []*schema.Column{InvoicesColumns[8], InvoicesColumns[22], InvoicesColumns[23]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "invoice_status != 'VOIDED' AND subscription_id IS NOT NULL",
 				},

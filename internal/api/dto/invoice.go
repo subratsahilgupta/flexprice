@@ -21,6 +21,7 @@ type CreateInvoiceRequest struct {
 	AmountDue      decimal.Decimal                `json:"amount_due" validate:"required"`
 	Description    string                         `json:"description,omitempty"`
 	DueDate        *time.Time                     `json:"due_date,omitempty"`
+	BillingPeriod  *string                        `json:"billing_period,omitempty"`
 	PeriodStart    *time.Time                     `json:"period_start,omitempty"`
 	PeriodEnd      *time.Time                     `json:"period_end,omitempty"`
 	BillingReason  types.InvoiceBillingReason     `json:"billing_reason"`
@@ -44,6 +45,10 @@ func (r *CreateInvoiceRequest) Validate() error {
 	if r.InvoiceType == types.InvoiceTypeSubscription {
 		if r.SubscriptionID == nil {
 			return fmt.Errorf("subscription_id is required for subscription invoice")
+		}
+
+		if r.BillingPeriod == nil {
+			return fmt.Errorf("billing_period is required for subscription invoice")
 		}
 
 		if r.PeriodStart == nil {
@@ -89,6 +94,7 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 		Description:     r.Description,
 		DueDate:         r.DueDate,
 		PeriodStart:     r.PeriodStart,
+		BillingPeriod:   r.BillingPeriod,
 		PeriodEnd:       r.PeriodEnd,
 		BillingReason:   string(r.BillingReason),
 		Metadata:        r.Metadata,
@@ -285,6 +291,7 @@ type InvoiceResponse struct {
 	BillingSequence *int                       `json:"billing_sequence,omitempty"`
 	Description     string                     `json:"description,omitempty"`
 	DueDate         *time.Time                 `json:"due_date,omitempty"`
+	BillingPeriod   *string                    `json:"billing_period,omitempty"`
 	PeriodStart     *time.Time                 `json:"period_start,omitempty"`
 	PeriodEnd       *time.Time                 `json:"period_end,omitempty"`
 	PaidAt          *time.Time                 `json:"paid_at,omitempty"`
@@ -328,6 +335,7 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 		BillingSequence: inv.BillingSequence,
 		Description:     inv.Description,
 		DueDate:         inv.DueDate,
+		BillingPeriod:   inv.BillingPeriod,
 		PeriodStart:     inv.PeriodStart,
 		PeriodEnd:       inv.PeriodEnd,
 		PaidAt:          inv.PaidAt,
