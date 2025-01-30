@@ -117,6 +117,11 @@ func customerFilterFn(ctx context.Context, c *customer.Customer, filter interfac
 		return false
 	}
 
+	// Apply customer ID filter
+	if len(f.CustomerIDs) > 0 && !lo.Contains(f.CustomerIDs, c.ID) {
+		return false
+	}
+
 	// Apply time range filter if present
 	if f.TimeRangeFilter != nil {
 		if f.StartTime != nil && c.CreatedAt.Before(*f.StartTime) {

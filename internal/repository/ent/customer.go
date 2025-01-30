@@ -269,5 +269,9 @@ func (o CustomerQueryOptions) applyEntityQueryOptions(ctx context.Context, f *ty
 		query = query.Where(customer.Email(f.Email))
 	}
 
+	if len(f.CustomerIDs) > 0 {
+		query = query.Where(customer.IDIn(f.CustomerIDs...))
+	}
+
 	return query
 }

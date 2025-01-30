@@ -258,6 +258,13 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 		response.WithSubscription(subscription)
 	}
 
+	// Get customer information
+	customer, err := s.customerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer: %w", err)
+	}
+	response.WithCustomer(&dto.CustomerResponse{Customer: customer})
+
 	return response, nil
 }
 
@@ -272,9 +279,31 @@ func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.Invoice
 		return nil, fmt.Errorf("failed to count invoices: %w", err)
 	}
 
+	customerMap := make(map[string]*customer.Customer)
 	items := make([]*dto.InvoiceResponse, len(invoices))
 	for i, inv := range invoices {
 		items[i] = dto.NewInvoiceResponse(inv)
+		customerMap[inv.CustomerID] = nil
+	}
+
+	customerFilter := types.NewNoLimitCustomerFilter()
+	customerFilter.CustomerIDs = lo.Keys(customerMap)
+	customers, err := s.customerRepo.List(ctx, customerFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list customers: %w", err)
+	}
+
+	for _, cust := range customers {
+		customerMap[cust.ID] = cust
+	}
+
+	// Get customer information for each invoice
+	for _, inv := range items {
+		customer, ok := customerMap[inv.CustomerID]
+		if !ok {
+			continue
+		}
+		inv.WithCustomer(&dto.CustomerResponse{Customer: customer})
 	}
 
 	return &dto.ListInvoicesResponse{
@@ -479,8 +508,17 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		return nil, fmt.Errorf("failed to convert request to invoice: %w", err)
 	}
 
-	// Return preview response
-	return dto.NewInvoiceResponse(inv), nil
+	// Create preview response
+	response := dto.NewInvoiceResponse(inv)
+
+	// Get customer information
+	customer, err := s.customerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer: %w", err)
+	}
+	response.WithCustomer(&dto.CustomerResponse{Customer: customer})
+
+	return response, nil
 }
 
 func (s *invoiceService) GetCustomerInvoiceSummary(ctx context.Context, customerID, currency string) (*dto.CustomerInvoiceSummary, error) {
