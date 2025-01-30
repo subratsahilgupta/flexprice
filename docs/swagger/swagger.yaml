@@ -7,10 +7,31 @@ definitions:
     type: object
   dto.CreateCustomerRequest:
     properties:
+      address_city:
+        maxLength: 100
+        type: string
+      address_country:
+        type: string
+      address_line1:
+        maxLength: 255
+        type: string
+      address_line2:
+        maxLength: 255
+        type: string
+      address_postal_code:
+        maxLength: 20
+        type: string
+      address_state:
+        maxLength: 100
+        type: string
       email:
         type: string
       external_id:
         type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
       name:
         type: string
     required:
@@ -66,6 +87,8 @@ definitions:
         type: number
       amount_paid:
         type: number
+      billing_period:
+        type: string
       billing_reason:
         $ref: '#/definitions/types.InvoiceBillingReason'
       currency:
@@ -357,6 +380,25 @@ definitions:
     type: object
   dto.CustomerResponse:
     properties:
+      address_city:
+        description: AddressCity is the city of the customer's address
+        type: string
+      address_country:
+        description: AddressCountry is the country of the customer's address (ISO
+          3166-1 alpha-2)
+        type: string
+      address_line1:
+        description: AddressLine1 is the first line of the customer's address
+        type: string
+      address_line2:
+        description: AddressLine2 is the second line of the customer's address
+        type: string
+      address_postal_code:
+        description: AddressPostalCode is the postal code of the customer's address
+        type: string
+      address_state:
+        description: AddressState is the state of the customer's address
+        type: string
       created_at:
         type: string
       created_by:
@@ -370,6 +412,11 @@ definitions:
       id:
         description: ID is the unique identifier for the customer
         type: string
+      metadata:
+        additionalProperties:
+          type: string
+        description: Metadata
+        type: object
       name:
         description: Name is the name of the customer
         type: string
@@ -642,6 +689,8 @@ definitions:
         type: number
       amount_remaining:
         type: number
+      billing_period:
+        type: string
       billing_reason:
         type: string
       billing_sequence:
@@ -1094,10 +1143,31 @@ definitions:
     type: object
   dto.UpdateCustomerRequest:
     properties:
+      address_city:
+        maxLength: 100
+        type: string
+      address_country:
+        type: string
+      address_line1:
+        maxLength: 255
+        type: string
+      address_line2:
+        maxLength: 255
+        type: string
+      address_postal_code:
+        maxLength: 20
+        type: string
+      address_state:
+        maxLength: 100
+        type: string
       email:
         type: string
       external_id:
         type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
       name:
         type: string
     type: object
