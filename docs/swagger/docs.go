@@ -115,6 +115,15 @@ const docTemplate = `{
                 "summary": "Get customers",
                 "parameters": [
                     {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "customer_ids",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "name": "email",
                         "in": "query"
@@ -4254,6 +4263,9 @@ const docTemplate = `{
                 },
                 "currency": {
                     "type": "string"
+                },
+                "customer": {
+                    "$ref": "#/definitions/dto.CustomerResponse"
                 },
                 "customer_id": {
                     "type": "string"
