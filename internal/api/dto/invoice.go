@@ -311,6 +311,7 @@ type InvoiceResponse struct {
 
 	// Edges
 	Subscription *SubscriptionResponse `json:"subscription,omitempty"`
+	Customer     *CustomerResponse     `json:"customer,omitempty"`
 }
 
 // NewInvoiceResponse creates a new invoice response from domain invoice
@@ -365,6 +366,12 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 
 func (r *InvoiceResponse) WithSubscription(sub *SubscriptionResponse) *InvoiceResponse {
 	r.Subscription = sub
+	return r
+}
+
+// WithCustomer adds customer information to the invoice response
+func (r *InvoiceResponse) WithCustomer(customer *CustomerResponse) *InvoiceResponse {
+	r.Customer = customer
 	return r
 }
 

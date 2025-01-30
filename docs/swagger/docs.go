@@ -3237,11 +3237,40 @@ const docTemplate = `{
                 "external_id"
             ],
             "properties": {
+                "address_city": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "address_country": {
+                    "type": "string"
+                },
+                "address_line1": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "address_line2": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "address_postal_code": {
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "address_state": {
+                    "type": "string",
+                    "maxLength": 100
+                },
                 "email": {
                     "type": "string"
                 },
                 "external_id": {
                     "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "name": {
                     "type": "string"
@@ -3327,6 +3356,9 @@ const docTemplate = `{
                 },
                 "amount_paid": {
                     "type": "number"
+                },
+                "billing_period": {
+                    "type": "string"
                 },
                 "billing_reason": {
                     "$ref": "#/definitions/types.InvoiceBillingReason"
@@ -3752,6 +3784,30 @@ const docTemplate = `{
         "dto.CustomerResponse": {
             "type": "object",
             "properties": {
+                "address_city": {
+                    "description": "AddressCity is the city of the customer's address",
+                    "type": "string"
+                },
+                "address_country": {
+                    "description": "AddressCountry is the country of the customer's address (ISO 3166-1 alpha-2)",
+                    "type": "string"
+                },
+                "address_line1": {
+                    "description": "AddressLine1 is the first line of the customer's address",
+                    "type": "string"
+                },
+                "address_line2": {
+                    "description": "AddressLine2 is the second line of the customer's address",
+                    "type": "string"
+                },
+                "address_postal_code": {
+                    "description": "AddressPostalCode is the postal code of the customer's address",
+                    "type": "string"
+                },
+                "address_state": {
+                    "description": "AddressState is the state of the customer's address",
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -3769,6 +3825,13 @@ const docTemplate = `{
                 "id": {
                     "description": "ID is the unique identifier for the customer",
                     "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "name": {
                     "description": "Name is the name of the customer",
@@ -4173,6 +4236,9 @@ const docTemplate = `{
                 },
                 "amount_remaining": {
                     "type": "number"
+                },
+                "billing_period": {
+                    "type": "string"
                 },
                 "billing_reason": {
                     "type": "string"
@@ -4838,11 +4904,40 @@ const docTemplate = `{
         "dto.UpdateCustomerRequest": {
             "type": "object",
             "properties": {
+                "address_city": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "address_country": {
+                    "type": "string"
+                },
+                "address_line1": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "address_line2": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "address_postal_code": {
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "address_state": {
+                    "type": "string",
+                    "maxLength": 100
+                },
                 "email": {
                     "type": "string"
                 },
                 "external_id": {
                     "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "name": {
                     "type": "string"

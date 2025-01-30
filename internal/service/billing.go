@@ -130,7 +130,7 @@ func (s *billingService) CalculateFixedCharges(
 				"description": fmt.Sprintf("%s (Fixed Charge)", item.DisplayName),
 			},
 		})
-		
+
 		fixedCost = fixedCost.Add(amount)
 	}
 
@@ -167,7 +167,7 @@ func (s *billingService) CalculateUsageCharges(
 		}
 
 		if matchingCharge == nil {
-			s.logger.Warnw("no matching charge found for usage line item",
+			s.logger.Debugw("no matching charge found for usage line item",
 				"subscription_id", sub.ID,
 				"line_item_id", item.ID,
 				"price_id", item.PriceID)
