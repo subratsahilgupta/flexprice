@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -78,4 +79,8 @@ func NewEnvironmentRepository(p RepositoryParams) environment.Repository {
 
 func NewInvoiceRepository(p RepositoryParams) invoice.Repository {
 	return entRepo.NewInvoiceRepository(p.EntClient, p.Logger)
+}
+
+func NewFeatureRepository(p RepositoryParams) feature.Repository {
+	return entRepo.NewFeatureRepository(p.EntClient, p.Logger)
 }

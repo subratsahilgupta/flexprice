@@ -50,6 +50,25 @@ definitions:
     - slug
     - type
     type: object
+  dto.CreateFeatureRequest:
+    properties:
+      description:
+        type: string
+      lookup_key:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      meter_id:
+        type: string
+      name:
+        type: string
+      type:
+        $ref: '#/definitions/types.FeatureType'
+    required:
+    - lookup_key
+    - name
+    - type
+    type: object
   dto.CreateInvoiceLineItemRequest:
     properties:
       amount:
@@ -462,6 +481,37 @@ definitions:
       timestamp:
         type: string
     type: object
+  dto.FeatureResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      lookupKey:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      meter:
+        $ref: '#/definitions/dto.MeterResponse'
+      meterID:
+        type: string
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      type:
+        $ref: '#/definitions/types.FeatureType'
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   dto.GetEventsResponse:
     properties:
       events:
@@ -777,6 +827,15 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  dto.ListFeaturesResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.FeatureResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.ListInvoicesResponse:
     properties:
@@ -1180,6 +1239,17 @@ definitions:
       slug:
         type: string
       type:
+        type: string
+    type: object
+  dto.UpdateFeatureRequest:
+    properties:
+      description:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      meter_id:
+        type: string
+      name:
         type: string
     type: object
   dto.UpdateInvoicePaymentStatusRequest:
@@ -1649,6 +1719,16 @@ definitions:
     x-enum-varnames:
     - BILLING_TIER_VOLUME
     - BILLING_TIER_SLAB
+  types.FeatureType:
+    enum:
+    - metered
+    - boolean
+    - static
+    type: string
+    x-enum-varnames:
+    - FeatureTypeMetered
+    - FeatureTypeBoolean
+    - FeatureTypeStatic
   types.InvoiceBillingReason:
     enum:
     - SUBSCRIPTION_CREATE
@@ -2436,6 +2516,208 @@ paths:
       summary: Get usage by meter
       tags:
       - Events
+  /features:
+    get:
+      consumes:
+      - application/json
+      description: Get features with the specified filter
+      parameters:
+      - in: query
+        name: end_time
+        type: string
+      - in: query
+        name: expand
+        type: string
+      - collectionFormat: csv
+        description: Feature specific filters
+        in: query
+        items:
+          type: string
+        name: feature_ids
+        type: array
+      - in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      - in: query
+        name: lookup_key
+        type: string
+      - in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListFeaturesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get features
+      tags:
+      - Features
+    post:
+      consumes:
+      - application/json
+      description: Create a new feature with the specified configuration
+      parameters:
+      - description: Feature configuration
+        in: body
+        name: feature
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateFeatureRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.FeatureResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new feature
+      tags:
+      - Features
+  /features/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a feature
+      parameters:
+      - description: Feature ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a feature
+      tags:
+      - Features
+    get:
+      consumes:
+      - application/json
+      description: Get a feature by ID
+      parameters:
+      - description: Feature ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.FeatureResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a feature by ID
+      tags:
+      - Features
+    put:
+      consumes:
+      - application/json
+      description: Update a feature with the specified configuration
+      parameters:
+      - description: Feature ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Feature configuration
+        in: body
+        name: feature
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateFeatureRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.FeatureResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update a feature
+      tags:
+      - Features
   /invoices:
     get:
       consumes:
@@ -2740,6 +3022,12 @@ paths:
         minimum: 1
         name: limit
         type: integer
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: meter_ids
+        type: array
       - in: query
         minimum: 0
         name: offset
