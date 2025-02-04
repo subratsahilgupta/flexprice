@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/customer"
+	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/invoicesequence"
@@ -80,6 +81,37 @@ func init() {
 	customerDescName := customerFields[2].Descriptor()
 	// customer.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	customer.NameValidator = customerDescName.Validators[0].(func(string) error)
+	featureMixin := schema.Feature{}.Mixin()
+	featureMixinFields0 := featureMixin[0].Fields()
+	_ = featureMixinFields0
+	featureFields := schema.Feature{}.Fields()
+	_ = featureFields
+	// featureDescTenantID is the schema descriptor for tenant_id field.
+	featureDescTenantID := featureMixinFields0[0].Descriptor()
+	// feature.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	feature.TenantIDValidator = featureDescTenantID.Validators[0].(func(string) error)
+	// featureDescStatus is the schema descriptor for status field.
+	featureDescStatus := featureMixinFields0[1].Descriptor()
+	// feature.DefaultStatus holds the default value on creation for the status field.
+	feature.DefaultStatus = featureDescStatus.Default.(string)
+	// featureDescCreatedAt is the schema descriptor for created_at field.
+	featureDescCreatedAt := featureMixinFields0[2].Descriptor()
+	// feature.DefaultCreatedAt holds the default value on creation for the created_at field.
+	feature.DefaultCreatedAt = featureDescCreatedAt.Default.(func() time.Time)
+	// featureDescUpdatedAt is the schema descriptor for updated_at field.
+	featureDescUpdatedAt := featureMixinFields0[3].Descriptor()
+	// feature.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	feature.DefaultUpdatedAt = featureDescUpdatedAt.Default.(func() time.Time)
+	// feature.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	feature.UpdateDefaultUpdatedAt = featureDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// featureDescName is the schema descriptor for name field.
+	featureDescName := featureFields[2].Descriptor()
+	// feature.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	feature.NameValidator = featureDescName.Validators[0].(func(string) error)
+	// featureDescType is the schema descriptor for type field.
+	featureDescType := featureFields[4].Descriptor()
+	// feature.TypeValidator is a validator for the "type" field. It is called by the builders before save.
+	feature.TypeValidator = featureDescType.Validators[0].(func(string) error)
 	invoiceMixin := schema.Invoice{}.Mixin()
 	invoiceMixinFields0 := invoiceMixin[0].Fields()
 	_ = invoiceMixinFields0
