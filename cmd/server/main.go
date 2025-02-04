@@ -92,6 +92,7 @@ func main() {
 			repository.NewTenantRepository,
 			repository.NewEnvironmentRepository,
 			repository.NewInvoiceRepository,
+			repository.NewFeatureRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -118,6 +119,7 @@ func main() {
 			service.NewSubscriptionService,
 			service.NewWalletService,
 			service.NewInvoiceService,
+			service.NewFeatureService,
 		),
 	)
 
@@ -155,6 +157,7 @@ func provideHandlers(
 	walletService service.WalletService,
 	tenantService service.TenantService,
 	invoiceService service.InvoiceService,
+	featureService service.FeatureService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:       v1.NewEventsHandler(eventService, logger),
@@ -170,6 +173,7 @@ func provideHandlers(
 		Tenant:       v1.NewTenantHandler(tenantService, logger),
 		Cron:         cron.NewSubscriptionHandler(subscriptionService, logger),
 		Invoice:      v1.NewInvoiceHandler(invoiceService, logger),
+		Feature:      v1.NewFeatureHandler(featureService, logger),
 	}
 }
 

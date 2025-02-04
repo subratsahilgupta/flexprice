@@ -26,6 +26,7 @@ type Handlers struct {
 	Tenant       *v1.TenantHandler
 	Cron         *cron.SubscriptionHandler
 	Invoice      *v1.InvoiceHandler
+	Feature      *v1.FeatureHandler
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
@@ -157,6 +158,15 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			invoices.POST("/:id/void", handlers.Invoice.VoidInvoice)
 			invoices.PUT("/:id/payment", handlers.Invoice.UpdatePaymentStatus)
 			invoices.POST("/preview", handlers.Invoice.GetPreviewInvoice)
+		}
+
+		feature := v1Private.Group("/features")
+		{
+			feature.POST("", handlers.Feature.CreateFeature)
+			feature.GET("", handlers.Feature.GetFeatures)
+			feature.GET("/:id", handlers.Feature.GetFeature)
+			feature.PUT("/:id", handlers.Feature.UpdateFeature)
+			feature.DELETE("/:id", handlers.Feature.DeleteFeature)
 		}
 
 		// Admin routes (API Key only)
