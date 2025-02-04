@@ -17,6 +17,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/customer"
+	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/invoicesequence"
@@ -40,6 +41,8 @@ type Client struct {
 	BillingSequence *BillingSequenceClient
 	// Customer is the client for interacting with the Customer builders.
 	Customer *CustomerClient
+	// Feature is the client for interacting with the Feature builders.
+	Feature *FeatureClient
 	// Invoice is the client for interacting with the Invoice builders.
 	Invoice *InvoiceClient
 	// InvoiceLineItem is the client for interacting with the InvoiceLineItem builders.
@@ -73,6 +76,7 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.BillingSequence = NewBillingSequenceClient(c.config)
 	c.Customer = NewCustomerClient(c.config)
+	c.Feature = NewFeatureClient(c.config)
 	c.Invoice = NewInvoiceClient(c.config)
 	c.InvoiceLineItem = NewInvoiceLineItemClient(c.config)
 	c.InvoiceSequence = NewInvoiceSequenceClient(c.config)
@@ -177,6 +181,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:               cfg,
 		BillingSequence:      NewBillingSequenceClient(cfg),
 		Customer:             NewCustomerClient(cfg),
+		Feature:              NewFeatureClient(cfg),
 		Invoice:              NewInvoiceClient(cfg),
 		InvoiceLineItem:      NewInvoiceLineItemClient(cfg),
 		InvoiceSequence:      NewInvoiceSequenceClient(cfg),
@@ -208,6 +213,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:               cfg,
 		BillingSequence:      NewBillingSequenceClient(cfg),
 		Customer:             NewCustomerClient(cfg),
+		Feature:              NewFeatureClient(cfg),
 		Invoice:              NewInvoiceClient(cfg),
 		InvoiceLineItem:      NewInvoiceLineItemClient(cfg),
 		InvoiceSequence:      NewInvoiceSequenceClient(cfg),
@@ -247,9 +253,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.BillingSequence, c.Customer, c.Invoice, c.InvoiceLineItem, c.InvoiceSequence,
-		c.Meter, c.Plan, c.Price, c.Subscription, c.SubscriptionLineItem, c.Wallet,
-		c.WalletTransaction,
+		c.BillingSequence, c.Customer, c.Feature, c.Invoice, c.InvoiceLineItem,
+		c.InvoiceSequence, c.Meter, c.Plan, c.Price, c.Subscription,
+		c.SubscriptionLineItem, c.Wallet, c.WalletTransaction,
 	} {
 		n.Use(hooks...)
 	}
@@ -259,9 +265,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.BillingSequence, c.Customer, c.Invoice, c.InvoiceLineItem, c.InvoiceSequence,
-		c.Meter, c.Plan, c.Price, c.Subscription, c.SubscriptionLineItem, c.Wallet,
-		c.WalletTransaction,
+		c.BillingSequence, c.Customer, c.Feature, c.Invoice, c.InvoiceLineItem,
+		c.InvoiceSequence, c.Meter, c.Plan, c.Price, c.Subscription,
+		c.SubscriptionLineItem, c.Wallet, c.WalletTransaction,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -274,6 +280,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.BillingSequence.mutate(ctx, m)
 	case *CustomerMutation:
 		return c.Customer.mutate(ctx, m)
+	case *FeatureMutation:
+		return c.Feature.mutate(ctx, m)
 	case *InvoiceMutation:
 		return c.Invoice.mutate(ctx, m)
 	case *InvoiceLineItemMutation:
@@ -562,6 +570,139 @@ func (c *CustomerClient) mutate(ctx context.Context, m *CustomerMutation) (Value
 		return (&CustomerDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Customer mutation op: %q", m.Op())
+	}
+}
+
+// FeatureClient is a client for the Feature schema.
+type FeatureClient struct {
+	config
+}
+
+// NewFeatureClient returns a client for the Feature from the given config.
+func NewFeatureClient(c config) *FeatureClient {
+	return &FeatureClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `feature.Hooks(f(g(h())))`.
+func (c *FeatureClient) Use(hooks ...Hook) {
+	c.hooks.Feature = append(c.hooks.Feature, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `feature.Intercept(f(g(h())))`.
+func (c *FeatureClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Feature = append(c.inters.Feature, interceptors...)
+}
+
+// Create returns a builder for creating a Feature entity.
+func (c *FeatureClient) Create() *FeatureCreate {
+	mutation := newFeatureMutation(c.config, OpCreate)
+	return &FeatureCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Feature entities.
+func (c *FeatureClient) CreateBulk(builders ...*FeatureCreate) *FeatureCreateBulk {
+	return &FeatureCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *FeatureClient) MapCreateBulk(slice any, setFunc func(*FeatureCreate, int)) *FeatureCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &FeatureCreateBulk{err: fmt.Errorf("calling to FeatureClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*FeatureCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &FeatureCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Feature.
+func (c *FeatureClient) Update() *FeatureUpdate {
+	mutation := newFeatureMutation(c.config, OpUpdate)
+	return &FeatureUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *FeatureClient) UpdateOne(f *Feature) *FeatureUpdateOne {
+	mutation := newFeatureMutation(c.config, OpUpdateOne, withFeature(f))
+	return &FeatureUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *FeatureClient) UpdateOneID(id string) *FeatureUpdateOne {
+	mutation := newFeatureMutation(c.config, OpUpdateOne, withFeatureID(id))
+	return &FeatureUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Feature.
+func (c *FeatureClient) Delete() *FeatureDelete {
+	mutation := newFeatureMutation(c.config, OpDelete)
+	return &FeatureDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *FeatureClient) DeleteOne(f *Feature) *FeatureDeleteOne {
+	return c.DeleteOneID(f.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *FeatureClient) DeleteOneID(id string) *FeatureDeleteOne {
+	builder := c.Delete().Where(feature.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &FeatureDeleteOne{builder}
+}
+
+// Query returns a query builder for Feature.
+func (c *FeatureClient) Query() *FeatureQuery {
+	return &FeatureQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeFeature},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Feature entity by its id.
+func (c *FeatureClient) Get(ctx context.Context, id string) (*Feature, error) {
+	return c.Query().Where(feature.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *FeatureClient) GetX(ctx context.Context, id string) *Feature {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *FeatureClient) Hooks() []Hook {
+	return c.hooks.Feature
+}
+
+// Interceptors returns the client interceptors.
+func (c *FeatureClient) Interceptors() []Interceptor {
+	return c.inters.Feature
+}
+
+func (c *FeatureClient) mutate(ctx context.Context, m *FeatureMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&FeatureCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&FeatureUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&FeatureUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&FeatureDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Feature mutation op: %q", m.Op())
 	}
 }
 
@@ -1962,13 +2103,13 @@ func (c *WalletTransactionClient) mutate(ctx context.Context, m *WalletTransacti
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		BillingSequence, Customer, Invoice, InvoiceLineItem, InvoiceSequence, Meter,
-		Plan, Price, Subscription, SubscriptionLineItem, Wallet,
+		BillingSequence, Customer, Feature, Invoice, InvoiceLineItem, InvoiceSequence,
+		Meter, Plan, Price, Subscription, SubscriptionLineItem, Wallet,
 		WalletTransaction []ent.Hook
 	}
 	inters struct {
-		BillingSequence, Customer, Invoice, InvoiceLineItem, InvoiceSequence, Meter,
-		Plan, Price, Subscription, SubscriptionLineItem, Wallet,
+		BillingSequence, Customer, Feature, Invoice, InvoiceLineItem, InvoiceSequence,
+		Meter, Plan, Price, Subscription, SubscriptionLineItem, Wallet,
 		WalletTransaction []ent.Interceptor
 	}
 )

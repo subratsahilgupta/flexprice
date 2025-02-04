@@ -14,6 +14,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/customer"
+	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/invoicesequence"
@@ -86,6 +87,7 @@ func checkColumn(table, column string) error {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			billingsequence.Table:      billingsequence.ValidColumn,
 			customer.Table:             customer.ValidColumn,
+			feature.Table:              feature.ValidColumn,
 			invoice.Table:              invoice.ValidColumn,
 			invoicelineitem.Table:      invoicelineitem.ValidColumn,
 			invoicesequence.Table:      invoicesequence.ValidColumn,
