@@ -36,5 +36,6 @@ const (
 	UUID_PREFIX_ENVIRONMENT            = "env"
 	UUID_PREFIX_USER                   = "user"
 	UUID_PREFIX_TENANT                 = "tenant"
-	UUID_PREFIX_FEATURE                = "feature"
+	UUID_PREFIX_FEATURE                = "feat"
+	UUID_PREFIX_ENTITLEMENT            = "ent"
 )

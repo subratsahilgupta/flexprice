@@ -76,6 +76,8 @@ func (s *InvoiceServiceSuite) setupService() {
 		s.GetStores().MeterRepo,
 		s.GetStores().CustomerRepo,
 		s.invoiceRepo,
+		s.GetStores().EntitlementRepo,
+		s.GetStores().FeatureRepo,
 		s.GetPublisher(),
 		s.GetWebhookPublisher(),
 		s.GetDB(),

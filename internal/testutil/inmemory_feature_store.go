@@ -14,6 +14,7 @@ type InMemoryFeatureStore struct {
 	*InMemoryStore[*feature.Feature]
 }
 
+// NewInMemoryFeatureStore creates a new in-memory feature store
 func NewInMemoryFeatureStore() *InMemoryFeatureStore {
 	return &InMemoryFeatureStore{
 		InMemoryStore: NewInMemoryStore[*feature.Feature](),
@@ -26,7 +27,7 @@ func featureFilterFn(ctx context.Context, f *feature.Feature, filter interface{}
 		return false
 	}
 
-	featureFilter, ok := filter.(*types.FeatureFilter)
+	filter_, ok := filter.(*types.FeatureFilter)
 	if !ok {
 		return true // No filter applied
 	}
@@ -39,22 +40,22 @@ func featureFilterFn(ctx context.Context, f *feature.Feature, filter interface{}
 	}
 
 	// Filter by feature IDs
-	if len(featureFilter.FeatureIDs) > 0 {
-		if !lo.Contains(featureFilter.FeatureIDs, f.ID) {
+	if len(filter_.FeatureIDs) > 0 {
+		if !lo.Contains(filter_.FeatureIDs, f.ID) {
 			return false
 		}
 	}
 
 	// Filter by lookup key
-	if featureFilter.LookupKey != "" {
-		if f.LookupKey != featureFilter.LookupKey {
+	if filter_.LookupKey != "" {
+		if f.LookupKey != filter_.LookupKey {
 			return false
 		}
 	}
 
 	// Filter by status - if no status is specified, only show published features
-	if featureFilter.Status != nil {
-		if f.Status != *featureFilter.Status {
+	if filter_.Status != nil {
+		if f.Status != *filter_.Status {
 			return false
 		}
 	} else if f.Status == types.StatusArchived {
@@ -62,11 +63,11 @@ func featureFilterFn(ctx context.Context, f *feature.Feature, filter interface{}
 	}
 
 	// Filter by time range
-	if featureFilter.TimeRangeFilter != nil {
-		if featureFilter.StartTime != nil && f.CreatedAt.Before(*featureFilter.StartTime) {
+	if filter_.TimeRangeFilter != nil {
+		if filter_.StartTime != nil && f.CreatedAt.Before(*filter_.StartTime) {
 			return false
 		}
-		if featureFilter.EndTime != nil && f.CreatedAt.After(*featureFilter.EndTime) {
+		if filter_.EndTime != nil && f.CreatedAt.After(*filter_.EndTime) {
 			return false
 		}
 	}
@@ -123,4 +124,30 @@ func (s *InMemoryFeatureStore) ListAll(ctx context.Context, filter *types.Featur
 	}
 
 	return s.List(ctx, unlimitedFilter)
+}
+
+func (s *InMemoryFeatureStore) CreateBulk(ctx context.Context, features []*feature.Feature) ([]*feature.Feature, error) {
+	for _, f := range features {
+		if f == nil {
+			return nil, fmt.Errorf("feature cannot be nil")
+		}
+		if err := s.InMemoryStore.Create(ctx, f.ID, f); err != nil {
+			return nil, err
+		}
+	}
+	return features, nil
+}
+
+func (s *InMemoryFeatureStore) DeleteBulk(ctx context.Context, ids []string) error {
+	for _, id := range ids {
+		if err := s.InMemoryStore.Delete(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Clear clears the feature store
+func (s *InMemoryFeatureStore) Clear() {
+	s.InMemoryStore.Clear()
 }

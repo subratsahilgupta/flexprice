@@ -37,6 +37,28 @@ definitions:
     required:
     - external_id
     type: object
+  dto.CreateEntitlementRequest:
+    properties:
+      feature_id:
+        type: string
+      feature_type:
+        $ref: '#/definitions/types.FeatureType'
+      is_enabled:
+        type: boolean
+      is_soft_limit:
+        type: boolean
+      plan_id:
+        type: string
+      static_value:
+        type: string
+      usage_limit:
+        type: integer
+      usage_reset_period:
+        $ref: '#/definitions/types.BillingPeriod'
+    required:
+    - feature_id
+    - feature_type
+    type: object
   dto.CreateEnvironmentRequest:
     properties:
       name:
@@ -167,6 +189,28 @@ definitions:
     - event_name
     - name
     type: object
+  dto.CreatePlanEntitlementRequest:
+    properties:
+      feature_id:
+        type: string
+      feature_type:
+        $ref: '#/definitions/types.FeatureType'
+      is_enabled:
+        type: boolean
+      is_soft_limit:
+        type: boolean
+      plan_id:
+        type: string
+      static_value:
+        type: string
+      usage_limit:
+        type: integer
+      usage_reset_period:
+        $ref: '#/definitions/types.BillingPeriod'
+    required:
+    - feature_id
+    - feature_type
+    type: object
   dto.CreatePlanPriceRequest:
     properties:
       amount:
@@ -222,6 +266,10 @@ definitions:
     properties:
       description:
         type: string
+      entitlements:
+        items:
+          $ref: '#/definitions/dto.CreatePlanEntitlementRequest'
+        type: array
       invoice_cadence:
         $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
@@ -448,6 +496,43 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.EntitlementResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      feature:
+        $ref: '#/definitions/dto.FeatureResponse'
+      feature_id:
+        type: string
+      feature_type:
+        $ref: '#/definitions/types.FeatureType'
+      id:
+        type: string
+      is_enabled:
+        type: boolean
+      is_soft_limit:
+        type: boolean
+      plan:
+        $ref: '#/definitions/dto.PlanResponse'
+      plan_id:
+        type: string
+      static_value:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      usage_limit:
+        type: integer
+      usage_reset_period:
+        $ref: '#/definitions/types.BillingPeriod'
+    type: object
   dto.EnvironmentResponse:
     properties:
       created_at:
@@ -491,13 +576,13 @@ definitions:
         type: string
       id:
         type: string
-      lookupKey:
+      lookup_key:
         type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
       meter:
         $ref: '#/definitions/dto.MeterResponse'
-      meterID:
+      meter_id:
         type: string
       name:
         type: string
@@ -815,6 +900,15 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
+  dto.ListEntitlementsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.EntitlementResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
   dto.ListEnvironmentsResponse:
     properties:
       environments:
@@ -933,6 +1027,10 @@ definitions:
         type: string
       description:
         type: string
+      entitlements:
+        items:
+          $ref: '#/definitions/dto.EntitlementResponse'
+        type: array
       id:
         type: string
       invoice_cadence:
@@ -1232,6 +1330,19 @@ definitions:
       name:
         type: string
     type: object
+  dto.UpdateEntitlementRequest:
+    properties:
+      is_enabled:
+        type: boolean
+      is_soft_limit:
+        type: boolean
+      static_value:
+        type: string
+      usage_limit:
+        type: integer
+      usage_reset_period:
+        $ref: '#/definitions/types.BillingPeriod'
+    type: object
   dto.UpdateEnvironmentRequest:
     properties:
       name:
@@ -1247,8 +1358,6 @@ definitions:
         type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
-      meter_id:
-        type: string
       name:
         type: string
     type: object
@@ -1267,6 +1376,32 @@ definitions:
         items:
           $ref: '#/definitions/meter.Filter'
         type: array
+    type: object
+  dto.UpdatePlanEntitlementRequest:
+    properties:
+      feature_id:
+        type: string
+      feature_type:
+        $ref: '#/definitions/types.FeatureType'
+      id:
+        description: The ID of the entitlement to update (present if the entitlement
+          is being updated)
+        type: string
+      is_enabled:
+        type: boolean
+      is_soft_limit:
+        type: boolean
+      plan_id:
+        type: string
+      static_value:
+        type: string
+      usage_limit:
+        type: integer
+      usage_reset_period:
+        $ref: '#/definitions/types.BillingPeriod'
+    required:
+    - feature_id
+    - feature_type
     type: object
   dto.UpdatePlanPriceRequest:
     properties:
@@ -1327,6 +1462,10 @@ definitions:
     properties:
       description:
         type: string
+      entitlements:
+        items:
+          $ref: '#/definitions/dto.UpdatePlanEntitlementRequest'
+        type: array
       invoice_cadence:
         $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
@@ -1339,8 +1478,6 @@ definitions:
         type: array
       trial_period:
         type: integer
-    required:
-    - name
     type: object
   dto.UpdatePriceRequest:
     properties:
@@ -2209,6 +2346,225 @@ paths:
       summary: Get wallets by customer ID
       tags:
       - Wallets
+  /entitlements:
+    get:
+      consumes:
+      - application/json
+      description: Get entitlements with the specified filter
+      parameters:
+      - in: query
+        name: end_time
+        type: string
+      - in: query
+        name: expand
+        type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: feature_ids
+        type: array
+      - enum:
+        - metered
+        - boolean
+        - static
+        in: query
+        name: feature_type
+        type: string
+        x-enum-varnames:
+        - FeatureTypeMetered
+        - FeatureTypeBoolean
+        - FeatureTypeStatic
+      - in: query
+        name: is_enabled
+        type: boolean
+      - in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      - in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - collectionFormat: csv
+        description: Specific filters for entitlements
+        in: query
+        items:
+          type: string
+        name: plan_ids
+        type: array
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListEntitlementsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get entitlements
+      tags:
+      - Entitlements
+    post:
+      consumes:
+      - application/json
+      description: Create a new entitlement with the specified configuration
+      parameters:
+      - description: Entitlement configuration
+        in: body
+        name: entitlement
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateEntitlementRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.EntitlementResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new entitlement
+      tags:
+      - Entitlements
+  /entitlements/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an entitlement
+      parameters:
+      - description: Entitlement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete an entitlement
+      tags:
+      - Entitlements
+    get:
+      consumes:
+      - application/json
+      description: Get an entitlement by ID
+      parameters:
+      - description: Entitlement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.EntitlementResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get an entitlement by ID
+      tags:
+      - Entitlements
+    put:
+      consumes:
+      - application/json
+      description: Update an entitlement with the specified configuration
+      parameters:
+      - description: Entitlement ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Entitlement configuration
+        in: body
+        name: entitlement
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateEntitlementRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.EntitlementResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update an entitlement
+      tags:
+      - Entitlements
   /environments:
     get:
       consumes:
@@ -3432,6 +3788,37 @@ paths:
       summary: Update a plan by ID
       tags:
       - Plans
+  /plans/{id}/entitlements:
+    get:
+      consumes:
+      - application/json
+      description: Get all entitlements for a plan
+      parameters:
+      - description: Plan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PlanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get plan entitlements
+      tags:
+      - Entitlements
   /prices:
     get:
       consumes:
