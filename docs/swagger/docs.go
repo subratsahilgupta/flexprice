@@ -512,6 +512,345 @@ const docTemplate = `{
                 }
             }
         },
+        "/entitlements": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get entitlements with the specified filter",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entitlements"
+                ],
+                "summary": "Get entitlements",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "feature_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "metered",
+                            "boolean",
+                            "static"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "FeatureTypeMetered",
+                            "FeatureTypeBoolean",
+                            "FeatureTypeStatic"
+                        ],
+                        "name": "feature_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "name": "is_enabled",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Specific filters for entitlements",
+                        "name": "plan_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListEntitlementsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a new entitlement with the specified configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entitlements"
+                ],
+                "summary": "Create a new entitlement",
+                "parameters": [
+                    {
+                        "description": "Entitlement configuration",
+                        "name": "entitlement",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateEntitlementRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.EntitlementResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/entitlements/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get an entitlement by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entitlements"
+                ],
+                "summary": "Get an entitlement by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entitlement ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.EntitlementResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update an entitlement with the specified configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entitlements"
+                ],
+                "summary": "Update an entitlement",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entitlement ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Entitlement configuration",
+                        "name": "entitlement",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateEntitlementRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.EntitlementResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Delete an entitlement",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entitlements"
+                ],
+                "summary": "Delete an entitlement",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entitlement ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/environments": {
             "get": {
                 "security": [
@@ -2412,6 +2751,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/plans/{id}/entitlements": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get all entitlements for a plan",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entitlements"
+                ],
+                "summary": "Get plan entitlements",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/prices": {
             "get": {
                 "security": [
@@ -3610,6 +3998,39 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreateEntitlementRequest": {
+            "type": "object",
+            "required": [
+                "feature_id",
+                "feature_type"
+            ],
+            "properties": {
+                "feature_id": {
+                    "type": "string"
+                },
+                "feature_type": {
+                    "$ref": "#/definitions/types.FeatureType"
+                },
+                "is_enabled": {
+                    "type": "boolean"
+                },
+                "is_soft_limit": {
+                    "type": "boolean"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "static_value": {
+                    "type": "string"
+                },
+                "usage_limit": {
+                    "type": "integer"
+                },
+                "usage_reset_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                }
+            }
+        },
         "dto.CreateEnvironmentRequest": {
             "type": "object",
             "required": [
@@ -3803,6 +4224,39 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreatePlanEntitlementRequest": {
+            "type": "object",
+            "required": [
+                "feature_id",
+                "feature_type"
+            ],
+            "properties": {
+                "feature_id": {
+                    "type": "string"
+                },
+                "feature_type": {
+                    "$ref": "#/definitions/types.FeatureType"
+                },
+                "is_enabled": {
+                    "type": "boolean"
+                },
+                "is_soft_limit": {
+                    "type": "boolean"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "static_value": {
+                    "type": "string"
+                },
+                "usage_limit": {
+                    "type": "integer"
+                },
+                "usage_reset_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                }
+            }
+        },
         "dto.CreatePlanPriceRequest": {
             "type": "object",
             "required": [
@@ -3885,6 +4339,12 @@ const docTemplate = `{
             "properties": {
                 "description": {
                     "type": "string"
+                },
+                "entitlements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreatePlanEntitlementRequest"
+                    }
                 },
                 "invoice_cadence": {
                     "$ref": "#/definitions/types.InvoiceCadence"
@@ -4212,6 +4672,62 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.EntitlementResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "feature": {
+                    "$ref": "#/definitions/dto.FeatureResponse"
+                },
+                "feature_id": {
+                    "type": "string"
+                },
+                "feature_type": {
+                    "$ref": "#/definitions/types.FeatureType"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_enabled": {
+                    "type": "boolean"
+                },
+                "is_soft_limit": {
+                    "type": "boolean"
+                },
+                "plan": {
+                    "$ref": "#/definitions/dto.PlanResponse"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "static_value": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                },
+                "usage_limit": {
+                    "type": "integer"
+                },
+                "usage_reset_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                }
+            }
+        },
         "dto.EnvironmentResponse": {
             "type": "object",
             "properties": {
@@ -4277,7 +4793,7 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
-                "lookupKey": {
+                "lookup_key": {
                     "type": "string"
                 },
                 "metadata": {
@@ -4286,7 +4802,7 @@ const docTemplate = `{
                 "meter": {
                     "$ref": "#/definitions/dto.MeterResponse"
                 },
-                "meterID": {
+                "meter_id": {
                     "type": "string"
                 },
                 "name": {
@@ -4762,6 +5278,20 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ListEntitlementsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EntitlementResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
         "dto.ListEnvironmentsResponse": {
             "type": "object",
             "properties": {
@@ -4938,6 +5468,12 @@ const docTemplate = `{
                 },
                 "description": {
                     "type": "string"
+                },
+                "entitlements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EntitlementResponse"
+                    }
                 },
                 "id": {
                     "type": "string"
@@ -5369,6 +5905,26 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdateEntitlementRequest": {
+            "type": "object",
+            "properties": {
+                "is_enabled": {
+                    "type": "boolean"
+                },
+                "is_soft_limit": {
+                    "type": "boolean"
+                },
+                "static_value": {
+                    "type": "string"
+                },
+                "usage_limit": {
+                    "type": "integer"
+                },
+                "usage_reset_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                }
+            }
+        },
         "dto.UpdateEnvironmentRequest": {
             "type": "object",
             "properties": {
@@ -5391,9 +5947,6 @@ const docTemplate = `{
                 },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
-                },
-                "meter_id": {
-                    "type": "string"
                 },
                 "name": {
                     "type": "string"
@@ -5422,6 +5975,43 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/meter.Filter"
                     }
+                }
+            }
+        },
+        "dto.UpdatePlanEntitlementRequest": {
+            "type": "object",
+            "required": [
+                "feature_id",
+                "feature_type"
+            ],
+            "properties": {
+                "feature_id": {
+                    "type": "string"
+                },
+                "feature_type": {
+                    "$ref": "#/definitions/types.FeatureType"
+                },
+                "id": {
+                    "description": "The ID of the entitlement to update (present if the entitlement is being updated)",
+                    "type": "string"
+                },
+                "is_enabled": {
+                    "type": "boolean"
+                },
+                "is_soft_limit": {
+                    "type": "boolean"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "static_value": {
+                    "type": "string"
+                },
+                "usage_limit": {
+                    "type": "integer"
+                },
+                "usage_reset_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
                 }
             }
         },
@@ -5505,12 +6095,15 @@ const docTemplate = `{
         },
         "dto.UpdatePlanRequest": {
             "type": "object",
-            "required": [
-                "name"
-            ],
             "properties": {
                 "description": {
                     "type": "string"
+                },
+                "entitlements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.UpdatePlanEntitlementRequest"
+                    }
                 },
                 "invoice_cadence": {
                     "$ref": "#/definitions/types.InvoiceCadence"

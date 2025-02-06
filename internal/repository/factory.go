@@ -4,6 +4,7 @@ import (
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
@@ -83,4 +84,8 @@ func NewInvoiceRepository(p RepositoryParams) invoice.Repository {
 
 func NewFeatureRepository(p RepositoryParams) feature.Repository {
 	return entRepo.NewFeatureRepository(p.EntClient, p.Logger)
+}
+
+func NewEntitlementRepository(p RepositoryParams) entitlement.Repository {
+	return entRepo.NewEntitlementRepository(p.EntClient, p.Logger)
 }

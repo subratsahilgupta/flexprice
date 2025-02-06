@@ -8,7 +8,9 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -55,6 +57,8 @@ type billingService struct {
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
 	invoiceRepo      invoice.Repository
+	entitlementRepo  entitlement.Repository
+	featureRepo      feature.Repository
 	eventPublisher   publisher.EventPublisher
 	webhookPublisher webhookPublisher.WebhookPublisher
 	logger           *logger.Logger
@@ -70,6 +74,8 @@ func NewBillingService(
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
 	invoiceRepo invoice.Repository,
+	entitlementRepo entitlement.Repository,
+	featureRepo feature.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
 	db postgres.IClient,
@@ -84,6 +90,8 @@ func NewBillingService(
 		meterRepo:        meterRepo,
 		customerRepo:     customerRepo,
 		invoiceRepo:      invoiceRepo,
+		entitlementRepo:  entitlementRepo,
+		featureRepo:      featureRepo,
 		eventPublisher:   eventPublisher,
 		webhookPublisher: webhookPublisher,
 		db:               db,
@@ -251,6 +259,8 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
+		s.entitlementRepo,
+		s.featureRepo,
 		s.eventPublisher,
 		s.webhookPublisher,
 		s.db,

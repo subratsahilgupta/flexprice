@@ -9,7 +9,9 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -41,6 +43,8 @@ type subscriptionService struct {
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
 	invoiceRepo      invoice.Repository
+	entitlementRepo  entitlement.Repository
+	featureRepo      feature.Repository
 	eventPublisher   publisher.EventPublisher
 	webhookPublisher webhookPublisher.WebhookPublisher
 	logger           *logger.Logger
@@ -56,6 +60,8 @@ func NewSubscriptionService(
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
 	invoiceRepo invoice.Repository,
+	entitlementRepo entitlement.Repository,
+	featureRepo feature.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
 	db postgres.IClient,
@@ -70,6 +76,8 @@ func NewSubscriptionService(
 		meterRepo:        meterRepo,
 		customerRepo:     customerRepo,
 		invoiceRepo:      invoiceRepo,
+		entitlementRepo:  entitlementRepo,
+		featureRepo:      featureRepo,
 		eventPublisher:   eventPublisher,
 		webhookPublisher: webhookPublisher,
 		db:               db,
@@ -242,7 +250,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 	response := &dto.SubscriptionResponse{Subscription: subscription}
 
 	// expand plan
-	planService := NewPlanService(s.planRepo, s.priceRepo, s.meterRepo, s.logger)
+	planService := NewPlanService(s.db, s.planRepo, s.priceRepo, s.meterRepo, s.entitlementRepo, s.featureRepo, s.logger)
 
 	plan, err := planService.GetPlan(ctx, subscription.PlanID)
 	if err != nil {
@@ -283,7 +291,7 @@ func (s *subscriptionService) CancelSubscription(ctx context.Context, id string,
 }
 
 func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *types.SubscriptionFilter) (*dto.ListSubscriptionsResponse, error) {
-	planService := NewPlanService(s.planRepo, s.priceRepo, s.meterRepo, s.logger)
+	planService := NewPlanService(s.db, s.planRepo, s.priceRepo, s.meterRepo, s.entitlementRepo, s.featureRepo, s.logger)
 
 	subscriptions, err := s.subscriptionRepo.List(ctx, filter)
 	if err != nil {
@@ -630,6 +638,8 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
+		s.entitlementRepo,
+		s.featureRepo,
 		s.eventPublisher,
 		s.webhookPublisher,
 		s.db,

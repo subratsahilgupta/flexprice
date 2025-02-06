@@ -79,7 +79,7 @@ func (Entitlement) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "plan_id", "feature_id").
 			Unique().
-			Annotations(entsql.IndexWhere("status == 'published'")),
+			Annotations(entsql.IndexWhere("status = 'published'")),
 		index.Fields("tenant_id", "plan_id"),
 		index.Fields("tenant_id", "feature_id"),
 	}

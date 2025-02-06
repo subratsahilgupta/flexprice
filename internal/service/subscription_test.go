@@ -64,6 +64,8 @@ func (s *SubscriptionServiceSuite) setupService() {
 		stores.MeterRepo,
 		stores.CustomerRepo,
 		stores.InvoiceRepo,
+		stores.EntitlementRepo,
+		stores.FeatureRepo,
 		s.GetPublisher(),
 		s.GetWebhookPublisher(),
 		s.GetDB(),

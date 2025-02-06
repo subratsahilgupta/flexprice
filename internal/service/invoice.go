@@ -10,7 +10,9 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -48,12 +50,14 @@ type invoiceService struct {
 	meterRepo        meter.Repository
 	customerRepo     customer.Repository
 	invoiceRepo      invoice.Repository
+	entitlementRepo  entitlement.Repository
+	featureRepo      feature.Repository
 	eventPublisher   publisher.EventPublisher
 	webhookPublisher webhookPublisher.WebhookPublisher
 	logger           *logger.Logger
 	db               postgres.IClient
-	idempGen         *idempotency.Generator
 	config           *config.Configuration
+	idempGen         *idempotency.Generator
 }
 
 func NewInvoiceService(
@@ -64,6 +68,8 @@ func NewInvoiceService(
 	meterRepo meter.Repository,
 	customerRepo customer.Repository,
 	invoiceRepo invoice.Repository,
+	entitlementRepo entitlement.Repository,
+	featureRepo feature.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
 	db postgres.IClient,
@@ -78,6 +84,8 @@ func NewInvoiceService(
 		meterRepo:        meterRepo,
 		customerRepo:     customerRepo,
 		invoiceRepo:      invoiceRepo,
+		entitlementRepo:  entitlementRepo,
+		featureRepo:      featureRepo,
 		eventPublisher:   eventPublisher,
 		webhookPublisher: webhookPublisher,
 		config:           config,
@@ -241,6 +249,8 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
+		s.entitlementRepo,
+		s.featureRepo,
 		s.eventPublisher,
 		s.webhookPublisher,
 		s.db,
@@ -443,6 +453,8 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
+		s.entitlementRepo,
+		s.featureRepo,
 		s.eventPublisher,
 		s.webhookPublisher,
 		s.db,
@@ -475,6 +487,8 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		s.meterRepo,
 		s.customerRepo,
 		s.invoiceRepo,
+		s.entitlementRepo,
+		s.featureRepo,
 		s.eventPublisher,
 		s.webhookPublisher,
 		s.db,

@@ -109,7 +109,7 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[14], EntitlementsColumns[7]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "status == 'published'",
+					Where: "status = 'published'",
 				},
 			},
 			{
