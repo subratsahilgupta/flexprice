@@ -72,6 +72,58 @@ var (
 			},
 		},
 	}
+	// EntitlementsColumns holds the columns for the "entitlements" table.
+	EntitlementsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "feature_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "feature_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "is_enabled", Type: field.TypeBool, Default: false},
+		{Name: "usage_limit", Type: field.TypeInt64, Nullable: true},
+		{Name: "usage_reset_period", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "is_soft_limit", Type: field.TypeBool, Default: false},
+		{Name: "static_value", Type: field.TypeString, Nullable: true},
+		{Name: "plan_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+	}
+	// EntitlementsTable holds the schema information for the "entitlements" table.
+	EntitlementsTable = &schema.Table{
+		Name:       "entitlements",
+		Columns:    EntitlementsColumns,
+		PrimaryKey: []*schema.Column{EntitlementsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "entitlements_plans_entitlements",
+				Columns:    []*schema.Column{EntitlementsColumns[14]},
+				RefColumns: []*schema.Column{PlansColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "entitlement_tenant_id_plan_id_feature_id",
+				Unique:  true,
+				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[14], EntitlementsColumns[7]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status == 'published'",
+				},
+			},
+			{
+				Name:    "entitlement_tenant_id_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[14]},
+			},
+			{
+				Name:    "entitlement_tenant_id_feature_id",
+				Unique:  false,
+				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7]},
+			},
+		},
+	}
 	// FeaturesColumns holds the columns for the "features" table.
 	FeaturesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -635,6 +687,7 @@ var (
 	Tables = []*schema.Table{
 		BillingSequencesTable,
 		CustomersTable,
+		EntitlementsTable,
 		FeaturesTable,
 		InvoicesTable,
 		InvoiceLineItemsTable,
@@ -650,6 +703,7 @@ var (
 )
 
 func init() {
+	EntitlementsTable.ForeignKeys[0].RefTable = PlansTable
 	InvoiceLineItemsTable.ForeignKeys[0].RefTable = InvoicesTable
 	SubscriptionLineItemsTable.ForeignKeys[0].RefTable = SubscriptionsTable
 }

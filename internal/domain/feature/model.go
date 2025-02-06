@@ -7,13 +7,13 @@ import (
 )
 
 type Feature struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	LookupKey   string         `json:"lookup_key"`
-	Description string         `json:"description"`
-	MeterID     string         `json:"meter_id"`
-	Metadata    types.Metadata `json:"metadata"`
-	Type        types.FeatureType
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	LookupKey   string            `json:"lookup_key"`
+	Description string            `json:"description"`
+	MeterID     string            `json:"meter_id"`
+	Metadata    types.Metadata    `json:"metadata"`
+	Type        types.FeatureType `json:"type"`
 	types.BaseModel
 }
 
