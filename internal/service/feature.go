@@ -177,6 +177,13 @@ func (s *featureService) UpdateFeature(ctx context.Context, id string, req dto.U
 		feature.Name = *req.Name
 	}
 
+	if req.UnitSingular != nil {
+		feature.UnitSingular = *req.UnitSingular
+	}
+	if req.UnitPlural != nil {
+		feature.UnitPlural = *req.UnitPlural
+	}
+
 	if err := s.repo.Update(ctx, feature); err != nil {
 		return nil, fmt.Errorf("failed to update feature: %w", err)
 	}

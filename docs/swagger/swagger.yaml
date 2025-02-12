@@ -86,6 +86,10 @@ definitions:
         type: string
       type:
         $ref: '#/definitions/types.FeatureType'
+      unit_plural:
+        type: string
+      unit_singular:
+        type: string
     required:
     - lookup_key
     - name
@@ -592,6 +596,10 @@ definitions:
         type: string
       type:
         $ref: '#/definitions/types.FeatureType'
+      unit_plural:
+        type: string
+      unit_singular:
+        type: string
       updated_at:
         type: string
       updated_by:
@@ -1359,6 +1367,10 @@ definitions:
       metadata:
         $ref: '#/definitions/types.Metadata'
       name:
+        type: string
+      unit_plural:
+        type: string
+      unit_singular:
         type: string
     type: object
   dto.UpdateInvoicePaymentStatusRequest:

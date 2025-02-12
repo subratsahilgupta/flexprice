@@ -9,12 +9,14 @@ import (
 )
 
 type CreateFeatureRequest struct {
-	Name        string            `json:"name" binding:"required"`
-	Description string            `json:"description"`
-	LookupKey   string            `json:"lookup_key" binding:"required"`
-	Type        types.FeatureType `json:"type" binding:"required"`
-	MeterID     string            `json:"meter_id"`
-	Metadata    types.Metadata    `json:"metadata"`
+	Name         string            `json:"name" binding:"required"`
+	Description  string            `json:"description"`
+	LookupKey    string            `json:"lookup_key" binding:"required"`
+	Type         types.FeatureType `json:"type" binding:"required"`
+	MeterID      string            `json:"meter_id,omitempty"`
+	Metadata     types.Metadata    `json:"metadata,omitempty"`
+	UnitSingular string            `json:"unit_singular,omitempty"`
+	UnitPlural   string            `json:"unit_plural,omitempty"`
 }
 
 func (r *CreateFeatureRequest) Validate() error {
@@ -36,6 +38,10 @@ func (r *CreateFeatureRequest) Validate() error {
 		}
 	}
 
+	if (r.UnitSingular == "" && r.UnitPlural != "") || (r.UnitPlural == "" && r.UnitSingular != "") {
+		return errors.New("unit_singular and unit_plural must be set together")
+	}
+
 	return nil
 }
 
@@ -53,9 +59,11 @@ func (r *CreateFeatureRequest) ToFeature(ctx context.Context) (*feature.Feature,
 }
 
 type UpdateFeatureRequest struct {
-	Name        *string         `json:"name"`
-	Description *string         `json:"description"`
-	Metadata    *types.Metadata `json:"metadata"`
+	Name         *string         `json:"name,omitempty"`
+	Description  *string         `json:"description,omitempty"`
+	Metadata     *types.Metadata `json:"metadata,omitempty"`
+	UnitSingular *string         `json:"unit_singular,omitempty"`
+	UnitPlural   *string         `json:"unit_plural,omitempty"`
 }
 
 type FeatureResponse struct {

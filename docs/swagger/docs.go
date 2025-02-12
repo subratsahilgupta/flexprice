@@ -4075,6 +4075,12 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.FeatureType"
+                },
+                "unit_plural": {
+                    "type": "string"
+                },
+                "unit_singular": {
+                    "type": "string"
                 }
             }
         },
@@ -4816,6 +4822,12 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.FeatureType"
+                },
+                "unit_plural": {
+                    "type": "string"
+                },
+                "unit_singular": {
+                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"
@@ -5949,6 +5961,12 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.Metadata"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "unit_plural": {
+                    "type": "string"
+                },
+                "unit_singular": {
                     "type": "string"
                 }
             }

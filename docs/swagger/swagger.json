@@ -4072,6 +4072,12 @@
                 },
                 "type": {
                     "$ref": "#/definitions/types.FeatureType"
+                },
+                "unit_plural": {
+                    "type": "string"
+                },
+                "unit_singular": {
+                    "type": "string"
                 }
             }
         },
@@ -4813,6 +4819,12 @@
                 },
                 "type": {
                     "$ref": "#/definitions/types.FeatureType"
+                },
+                "unit_plural": {
+                    "type": "string"
+                },
+                "unit_singular": {
+                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"
@@ -5946,6 +5958,12 @@
                     "$ref": "#/definitions/types.Metadata"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "unit_plural": {
+                    "type": "string"
+                },
+                "unit_singular": {
                     "type": "string"
                 }
             }

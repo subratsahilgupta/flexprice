@@ -44,6 +44,8 @@ func (r *featureRepository) Create(ctx context.Context, f *domainFeature.Feature
 		SetDescription(f.Description).
 		SetLookupKey(f.LookupKey).
 		SetStatus(string(f.Status)).
+		SetUnitSingular(f.UnitSingular).
+		SetUnitPlural(f.UnitPlural).
 		SetMetadata(map[string]string(f.Metadata)).
 		SetMeterID(f.MeterID).
 		SetTenantID(f.TenantID).
@@ -161,6 +163,8 @@ func (r *featureRepository) Update(ctx context.Context, f *domainFeature.Feature
 		SetName(f.Name).
 		SetDescription(f.Description).
 		SetStatus(string(f.Status)).
+		SetUnitSingular(f.UnitSingular).
+		SetUnitPlural(f.UnitPlural).
 		SetMetadata(map[string]string(f.Metadata)).
 		SetMeterID(f.MeterID).
 		SetUpdatedAt(time.Now().UTC()).
