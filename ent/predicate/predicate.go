@@ -30,6 +30,12 @@ type InvoiceSequence func(*sql.Selector)
 // Meter is the predicate function for meter builders.
 type Meter func(*sql.Selector)
 
+// Payment is the predicate function for payment builders.
+type Payment func(*sql.Selector)
+
+// PaymentAttempt is the predicate function for paymentattempt builders.
+type PaymentAttempt func(*sql.Selector)
+
 // Plan is the predicate function for plan builders.
 type Plan func(*sql.Selector)
 
