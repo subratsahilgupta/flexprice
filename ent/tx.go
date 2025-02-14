@@ -30,6 +30,10 @@ type Tx struct {
 	InvoiceSequence *InvoiceSequenceClient
 	// Meter is the client for interacting with the Meter builders.
 	Meter *MeterClient
+	// Payment is the client for interacting with the Payment builders.
+	Payment *PaymentClient
+	// PaymentAttempt is the client for interacting with the PaymentAttempt builders.
+	PaymentAttempt *PaymentAttemptClient
 	// Plan is the client for interacting with the Plan builders.
 	Plan *PlanClient
 	// Price is the client for interacting with the Price builders.
@@ -181,6 +185,8 @@ func (tx *Tx) init() {
 	tx.InvoiceLineItem = NewInvoiceLineItemClient(tx.config)
 	tx.InvoiceSequence = NewInvoiceSequenceClient(tx.config)
 	tx.Meter = NewMeterClient(tx.config)
+	tx.Payment = NewPaymentClient(tx.config)
+	tx.PaymentAttempt = NewPaymentAttemptClient(tx.config)
 	tx.Plan = NewPlanClient(tx.config)
 	tx.Price = NewPriceClient(tx.config)
 	tx.Subscription = NewSubscriptionClient(tx.config)
