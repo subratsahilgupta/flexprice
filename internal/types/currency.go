@@ -1,6 +1,10 @@
 package types
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/flexprice/flexprice/internal/errors"
+)
 
 // CurrencyConfig holds configuration for different currencies and their symbols
 var CURRENCY_CONFIG = map[string]CurrencyConfig{
@@ -58,4 +62,15 @@ func GetCurrencyConfig(code string) CurrencyConfig {
 
 func IsMatchingCurrency(a, b string) bool {
 	return strings.EqualFold(a, b)
+}
+
+// ValidateCurrencyCode validates a currency code
+// it checks if the currency code is 3 characters long
+// and if it is a valid currency code
+// TODO : use some library to validate iso 3166-1 alpha-3 currency codes
+func ValidateCurrencyCode(currency string) error {
+	if len(currency) != 3 {
+		return errors.New(errors.ErrCodeValidation, "invalid currency code")
+	}
+	return nil
 }

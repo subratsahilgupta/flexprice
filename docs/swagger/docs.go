@@ -1734,8 +1734,11 @@ const docTemplate = `{
                         "items": {
                             "enum": [
                                 "PENDING",
+                                "PROCESSING",
                                 "SUCCEEDED",
-                                "FAILED"
+                                "FAILED",
+                                "REFUNDED",
+                                "PARTIALLY_REFUNDED"
                             ],
                             "type": "string"
                         },
@@ -2006,7 +2009,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.UpdateInvoicePaymentStatusRequest"
+                            "$ref": "#/definitions/dto.UpdatePaymentStatusRequest"
                         }
                     }
                 ],
@@ -2429,6 +2432,394 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/payments": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List payments with the specified filter",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "List payments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "name": "currency",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "destination_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "destination_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "payment_gateway",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "payment_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "payment_method_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "payment_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListPaymentsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a new payment with the specified configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Create a new payment",
+                "parameters": [
+                    {
+                        "description": "Payment configuration",
+                        "name": "payment",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreatePaymentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PaymentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/payments/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get a payment by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Get a payment by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Payment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PaymentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update a payment with the specified configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Update a payment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Payment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Payment configuration",
+                        "name": "payment",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatePaymentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PaymentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Delete a payment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Delete a payment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Payment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/payments/{id}/process": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Process a payment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Payments"
+                ],
+                "summary": "Process a payment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Payment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PaymentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/v1.ErrorResponse"
                         }
@@ -4182,7 +4573,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.Metadata"
                 },
                 "payment_status": {
-                    "$ref": "#/definitions/types.InvoicePaymentStatus"
+                    "$ref": "#/definitions/types.PaymentStatus"
                 },
                 "period_end": {
                     "type": "string"
@@ -4227,6 +4618,46 @@ const docTemplate = `{
                         }
                     ],
                     "example": "BILLING_PERIOD"
+                }
+            }
+        },
+        "dto.CreatePaymentRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "currency",
+                "destination_id",
+                "destination_type",
+                "payment_method_type"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "destination_id": {
+                    "type": "string"
+                },
+                "destination_type": {
+                    "$ref": "#/definitions/types.PaymentDestinationType"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "payment_method_id": {
+                    "type": "string"
+                },
+                "payment_method_type": {
+                    "$ref": "#/definitions/types.PaymentMethodType"
+                },
+                "process_payment": {
+                    "type": "boolean",
+                    "default": true
                 }
             }
         },
@@ -5237,7 +5668,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "payment_status": {
-                    "$ref": "#/definitions/types.InvoicePaymentStatus"
+                    "$ref": "#/definitions/types.PaymentStatus"
                 },
                 "period_end": {
                     "type": "string"
@@ -5345,6 +5776,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.InvoiceResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "dto.ListPaymentsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.PaymentResponse"
                     }
                 },
                 "pagination": {
@@ -5466,6 +5911,112 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2024-03-20T15:04:05Z"
+                }
+            }
+        },
+        "dto.PaymentAttemptResponse": {
+            "type": "object",
+            "properties": {
+                "attempt_number": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "payment_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.PaymentResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "attempts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.PaymentAttemptResponse"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "destination_id": {
+                    "type": "string"
+                },
+                "destination_type": {
+                    "$ref": "#/definitions/types.PaymentDestinationType"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "failed_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "payment_method_id": {
+                    "type": "string"
+                },
+                "payment_method_type": {
+                    "$ref": "#/definitions/types.PaymentMethodType"
+                },
+                "payment_status": {
+                    "$ref": "#/definitions/types.PaymentStatus"
+                },
+                "refunded_at": {
+                    "type": "string"
+                },
+                "succeeded_at": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "track_attempts": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
                 }
             }
         },
@@ -5971,7 +6522,29 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.UpdateInvoicePaymentStatusRequest": {
+        "dto.UpdateMeterRequest": {
+            "type": "object",
+            "properties": {
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meter.Filter"
+                    }
+                }
+            }
+        },
+        "dto.UpdatePaymentRequest": {
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "payment_status": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UpdatePaymentStatusRequest": {
             "type": "object",
             "required": [
                 "payment_status"
@@ -5981,18 +6554,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "payment_status": {
-                    "$ref": "#/definitions/types.InvoicePaymentStatus"
-                }
-            }
-        },
-        "dto.UpdateMeterRequest": {
-            "type": "object",
-            "properties": {
-                "filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/meter.Filter"
-                    }
+                    "$ref": "#/definitions/types.PaymentStatus"
                 }
             }
         },
@@ -6721,19 +7283,6 @@ const docTemplate = `{
                 "InvoiceCadenceAdvance"
             ]
         },
-        "types.InvoicePaymentStatus": {
-            "type": "string",
-            "enum": [
-                "PENDING",
-                "SUCCEEDED",
-                "FAILED"
-            ],
-            "x-enum-varnames": [
-                "InvoicePaymentStatusPending",
-                "InvoicePaymentStatusSucceeded",
-                "InvoicePaymentStatusFailed"
-            ]
-        },
         "types.InvoiceStatus": {
             "type": "string",
             "enum": [
@@ -6779,6 +7328,49 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
+        },
+        "types.PaymentDestinationType": {
+            "type": "string",
+            "enum": [
+                "INVOICE"
+            ],
+            "x-enum-varnames": [
+                "PaymentDestinationTypeInvoice"
+            ]
+        },
+        "types.PaymentMethodType": {
+            "type": "string",
+            "enum": [
+                "CARD",
+                "ACH",
+                "OFFLINE",
+                "CREDITS"
+            ],
+            "x-enum-varnames": [
+                "PaymentMethodTypeCard",
+                "PaymentMethodTypeACH",
+                "PaymentMethodTypeOffline",
+                "PaymentMethodTypeCredits"
+            ]
+        },
+        "types.PaymentStatus": {
+            "type": "string",
+            "enum": [
+                "PENDING",
+                "PROCESSING",
+                "SUCCEEDED",
+                "FAILED",
+                "REFUNDED",
+                "PARTIALLY_REFUNDED"
+            ],
+            "x-enum-varnames": [
+                "PaymentStatusPending",
+                "PaymentStatusProcessing",
+                "PaymentStatusSucceeded",
+                "PaymentStatusFailed",
+                "PaymentStatusRefunded",
+                "PaymentStatusPartiallyRefunded"
+            ]
         },
         "types.PriceType": {
             "type": "string",
