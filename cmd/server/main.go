@@ -94,6 +94,7 @@ func main() {
 			repository.NewInvoiceRepository,
 			repository.NewFeatureRepository,
 			repository.NewEntitlementRepository,
+			repository.NewPaymentRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -122,6 +123,8 @@ func main() {
 			service.NewInvoiceService,
 			service.NewFeatureService,
 			service.NewEntitlementService,
+			service.NewPaymentService,
+			service.NewPaymentProcessorService,
 		),
 	)
 
@@ -161,6 +164,8 @@ func provideHandlers(
 	invoiceService service.InvoiceService,
 	featureService service.FeatureService,
 	entitlementService service.EntitlementService,
+	paymentService service.PaymentService,
+	paymentProcessorService service.PaymentProcessorService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:       v1.NewEventsHandler(eventService, logger),
@@ -178,6 +183,7 @@ func provideHandlers(
 		Invoice:      v1.NewInvoiceHandler(invoiceService, logger),
 		Feature:      v1.NewFeatureHandler(featureService, logger),
 		Entitlement:  v1.NewEntitlementHandler(entitlementService, logger),
+		Payment:      v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
 	}
 }
 

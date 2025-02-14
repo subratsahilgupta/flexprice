@@ -157,7 +157,7 @@ definitions:
       metadata:
         $ref: '#/definitions/types.Metadata'
       payment_status:
-        $ref: '#/definitions/types.InvoicePaymentStatus'
+        $ref: '#/definitions/types.PaymentStatus'
       period_end:
         type: string
       period_start:
@@ -192,6 +192,34 @@ definitions:
     - aggregation
     - event_name
     - name
+    type: object
+  dto.CreatePaymentRequest:
+    properties:
+      amount:
+        type: number
+      currency:
+        type: string
+      destination_id:
+        type: string
+      destination_type:
+        $ref: '#/definitions/types.PaymentDestinationType'
+      idempotency_key:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      payment_method_id:
+        type: string
+      payment_method_type:
+        $ref: '#/definitions/types.PaymentMethodType'
+      process_payment:
+        default: true
+        type: boolean
+    required:
+    - amount
+    - currency
+    - destination_id
+    - destination_type
+    - payment_method_type
     type: object
   dto.CreatePlanEntitlementRequest:
     properties:
@@ -875,7 +903,7 @@ definitions:
       paid_at:
         type: string
       payment_status:
-        $ref: '#/definitions/types.InvoicePaymentStatus'
+        $ref: '#/definitions/types.PaymentStatus'
       period_end:
         type: string
       period_start:
@@ -944,6 +972,15 @@ definitions:
       items:
         items:
           $ref: '#/definitions/dto.InvoiceResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
+  dto.ListPaymentsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.PaymentResponse'
         type: array
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
@@ -1025,6 +1062,76 @@ definitions:
         type: string
       updated_at:
         example: "2024-03-20T15:04:05Z"
+        type: string
+    type: object
+  dto.PaymentAttemptResponse:
+    properties:
+      attempt_number:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: string
+      error_message:
+        type: string
+      id:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      payment_id:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  dto.PaymentResponse:
+    properties:
+      amount:
+        type: number
+      attempts:
+        items:
+          $ref: '#/definitions/dto.PaymentAttemptResponse'
+        type: array
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      destination_id:
+        type: string
+      destination_type:
+        $ref: '#/definitions/types.PaymentDestinationType'
+      error_message:
+        type: string
+      failed_at:
+        type: string
+      id:
+        type: string
+      idempotency_key:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      payment_method_id:
+        type: string
+      payment_method_type:
+        $ref: '#/definitions/types.PaymentMethodType'
+      payment_status:
+        $ref: '#/definitions/types.PaymentStatus'
+      refunded_at:
+        type: string
+      succeeded_at:
+        type: string
+      tenant_id:
+        type: string
+      track_attempts:
+        type: boolean
+      updated_at:
+        type: string
+      updated_by:
         type: string
     type: object
   dto.PlanResponse:
@@ -1373,21 +1480,28 @@ definitions:
       unit_singular:
         type: string
     type: object
-  dto.UpdateInvoicePaymentStatusRequest:
-    properties:
-      amount:
-        type: number
-      payment_status:
-        $ref: '#/definitions/types.InvoicePaymentStatus'
-    required:
-    - payment_status
-    type: object
   dto.UpdateMeterRequest:
     properties:
       filters:
         items:
           $ref: '#/definitions/meter.Filter'
         type: array
+    type: object
+  dto.UpdatePaymentRequest:
+    properties:
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      payment_status:
+        type: string
+    type: object
+  dto.UpdatePaymentStatusRequest:
+    properties:
+      amount:
+        type: number
+      payment_status:
+        $ref: '#/definitions/types.PaymentStatus'
+    required:
+    - payment_status
     type: object
   dto.UpdatePlanEntitlementRequest:
     properties:
@@ -1898,16 +2012,6 @@ definitions:
     x-enum-varnames:
     - InvoiceCadenceArrear
     - InvoiceCadenceAdvance
-  types.InvoicePaymentStatus:
-    enum:
-    - PENDING
-    - SUCCEEDED
-    - FAILED
-    type: string
-    x-enum-varnames:
-    - InvoicePaymentStatusPending
-    - InvoicePaymentStatusSucceeded
-    - InvoicePaymentStatusFailed
   types.InvoiceStatus:
     enum:
     - DRAFT
@@ -1941,6 +2045,40 @@ definitions:
       total:
         type: integer
     type: object
+  types.PaymentDestinationType:
+    enum:
+    - INVOICE
+    type: string
+    x-enum-varnames:
+    - PaymentDestinationTypeInvoice
+  types.PaymentMethodType:
+    enum:
+    - CARD
+    - ACH
+    - OFFLINE
+    - CREDITS
+    type: string
+    x-enum-varnames:
+    - PaymentMethodTypeCard
+    - PaymentMethodTypeACH
+    - PaymentMethodTypeOffline
+    - PaymentMethodTypeCredits
+  types.PaymentStatus:
+    enum:
+    - PENDING
+    - PROCESSING
+    - SUCCEEDED
+    - FAILED
+    - REFUNDED
+    - PARTIALLY_REFUNDED
+    type: string
+    x-enum-varnames:
+    - PaymentStatusPending
+    - PaymentStatusProcessing
+    - PaymentStatusSucceeded
+    - PaymentStatusFailed
+    - PaymentStatusRefunded
+    - PaymentStatusPartiallyRefunded
   types.PriceType:
     enum:
     - USAGE
@@ -3142,8 +3280,11 @@ paths:
         items:
           enum:
           - PENDING
+          - PROCESSING
           - SUCCEEDED
           - FAILED
+          - REFUNDED
+          - PARTIALLY_REFUNDED
           type: string
         name: payment_status
         type: array
@@ -3288,7 +3429,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/dto.UpdateInvoicePaymentStatusRequest'
+          $ref: '#/definitions/dto.UpdatePaymentStatusRequest'
       produces:
       - application/json
       responses:
@@ -3602,6 +3743,253 @@ paths:
       summary: 'Disable meter [TODO: Deprecate]'
       tags:
       - Meters
+  /payments:
+    get:
+      consumes:
+      - application/json
+      description: List payments with the specified filter
+      parameters:
+      - in: query
+        name: currency
+        type: string
+      - in: query
+        name: destination_id
+        type: string
+      - in: query
+        name: destination_type
+        type: string
+      - in: query
+        name: end_time
+        type: string
+      - in: query
+        name: expand
+        type: string
+      - in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      - in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - in: query
+        name: payment_gateway
+        type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: payment_ids
+        type: array
+      - in: query
+        name: payment_method_type
+        type: string
+      - in: query
+        name: payment_status
+        type: string
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListPaymentsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List payments
+      tags:
+      - Payments
+    post:
+      consumes:
+      - application/json
+      description: Create a new payment with the specified configuration
+      parameters:
+      - description: Payment configuration
+        in: body
+        name: payment
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreatePaymentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.PaymentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new payment
+      tags:
+      - Payments
+  /payments/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a payment
+      parameters:
+      - description: Payment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a payment
+      tags:
+      - Payments
+    get:
+      consumes:
+      - application/json
+      description: Get a payment by ID
+      parameters:
+      - description: Payment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PaymentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a payment by ID
+      tags:
+      - Payments
+    put:
+      consumes:
+      - application/json
+      description: Update a payment with the specified configuration
+      parameters:
+      - description: Payment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Payment configuration
+        in: body
+        name: payment
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdatePaymentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PaymentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update a payment
+      tags:
+      - Payments
+  /payments/{id}/process:
+    post:
+      consumes:
+      - application/json
+      description: Process a payment
+      parameters:
+      - description: Payment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PaymentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Process a payment
+      tags:
+      - Payments
   /plans:
     get:
       consumes:

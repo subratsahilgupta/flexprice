@@ -35,6 +35,13 @@ type InternalError struct {
 }
 
 func (e *InternalError) Error() string {
+	if e.Err == nil {
+		return e.DisplayError()
+	}
+	return fmt.Sprintf("%s: %s", e.Code, e.Err.Error())
+}
+
+func (e *InternalError) DisplayError() string {
 	return fmt.Sprintf("%s: %s", e.Code, e.Message)
 }
 

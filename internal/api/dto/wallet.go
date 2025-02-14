@@ -2,6 +2,7 @@ package dto
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/wallet"
@@ -19,12 +20,18 @@ type CreateWalletRequest struct {
 	Metadata    types.Metadata `json:"metadata,omitempty"`
 }
 
+// ToWallet converts a create wallet request to a wallet
 func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
+	// Validate currency
+	if err := types.ValidateCurrencyCode(r.Currency); err != nil {
+		return nil
+	}
+
 	return &wallet.Wallet{
 		ID:           types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET),
 		CustomerID:   r.CustomerID,
 		Name:         r.Name,
-		Currency:     r.Currency,
+		Currency:     strings.ToLower(r.Currency),
 		Description:  r.Description,
 		Metadata:     r.Metadata,
 		Balance:      decimal.Zero,
