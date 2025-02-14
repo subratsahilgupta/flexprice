@@ -63,24 +63,58 @@ func (s *paymentService) CreatePayment(ctx context.Context, req dto.CreatePaymen
 		return nil, err
 	}
 
+	if p.DestinationType != types.PaymentDestinationTypeInvoice {
+		return nil, errors.New(errors.ErrCodeValidation, "invalid destination type")
+	}
+
 	// validate the destination
-	if p.DestinationType == types.PaymentDestinationTypeInvoice {
-		invoice, err := s.invoiceRepo.Get(ctx, p.DestinationID)
+
+	invoice, err := s.invoiceRepo.Get(ctx, p.DestinationID)
+	if err != nil {
+		return nil, err
+	}
+
+	// invoice validations
+	if invoice.PaymentStatus == types.PaymentStatusSucceeded {
+		return nil, errors.New(errors.ErrCodeValidation, "invoice is already paid")
+	}
+
+	if invoice.InvoiceStatus == types.InvoiceStatusVoided {
+		return nil, errors.New(errors.ErrCodeValidation, "invoice is voided")
+	}
+
+	if !types.IsMatchingCurrency(invoice.Currency, p.Currency) {
+		return nil, errors.New(errors.ErrCodeValidation, "invoice currency does not match payment currency")
+	}
+
+	// check if the payment method is credits
+	if p.PaymentMethodType == types.PaymentMethodTypeCredits {
+		// Find wallets for the customer
+		wallets, err := s.walletRepo.GetWalletsByCustomerID(ctx, invoice.CustomerID)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to find wallets")
 		}
 
-		if invoice.PaymentStatus == types.PaymentStatusSucceeded {
-			return nil, errors.New(errors.ErrCodeValidation, "invoice is already paid")
+		if len(wallets) == 0 {
+			return nil, errors.New(errors.ErrCodeNotFound, "no wallets found for customer")
 		}
 
-		if invoice.InvoiceStatus == types.InvoiceStatusVoided {
-			return nil, errors.New(errors.ErrCodeValidation, "invoice is voided")
+		// Find first active wallet with matching currency and sufficient balance
+		var selectedWallet *wallet.Wallet
+		for _, w := range wallets {
+			if w.WalletStatus == types.WalletStatusActive &&
+				w.Currency == p.Currency &&
+				w.Balance.GreaterThanOrEqual(p.Amount) {
+				selectedWallet = w
+				break
+			}
 		}
 
-		if !types.IsMatchingCurrency(invoice.Currency, p.Currency) {
-			return nil, errors.New(errors.ErrCodeValidation, "invoice currency does not match payment currency")
+		if selectedWallet == nil {
+			return nil, errors.New(errors.ErrCodeInvalidOperation, "no wallet with sufficient balance found")
 		}
+
+		p.PaymentMethodID = selectedWallet.ID
 	}
 
 	// Generate idempotency key
@@ -92,6 +126,11 @@ func (s *paymentService) CreatePayment(ctx context.Context, req dto.CreatePaymen
 			// TODO: think of a better way to generate this key rather than using the current timestamp
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		})
+	}
+
+	// validate the payment object before creating it
+	if err := p.Validate(); err != nil {
+		return nil, err
 	}
 
 	if err := s.paymentRepo.Create(ctx, p); err != nil {

@@ -18,6 +18,7 @@ var (
 
 const (
 	ErrCodeHTTPClient       = "http_client_error"
+	ErrCodeSystemError      = "system_error"
 	ErrCodeNotFound         = "not_found"
 	ErrCodeAlreadyExists    = "already_exists"
 	ErrCodeVersionConflict  = "version_conflict"

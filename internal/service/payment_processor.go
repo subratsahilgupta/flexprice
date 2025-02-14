@@ -137,8 +137,62 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 }
 
 func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj *payment.Payment) error {
-	// TODO: Implement credits payment processing
-	return errors.New(errors.ErrCodeInvalidOperation, "credits payment processing not implemented")
+	// In case of credits, we need to find the wallet by the set payment method id
+	selectedWallet, err := p.walletRepo.GetWalletByID(ctx, paymentObj.PaymentMethodID)
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeNotFound, "wallet not found")
+	}
+
+	if selectedWallet.WalletStatus != types.WalletStatusActive {
+		return errors.New(errors.ErrCodeInvalidOperation, "wallet is not active")
+	}
+
+	if !types.IsMatchingCurrency(selectedWallet.Currency, paymentObj.Currency) {
+		return errors.New(errors.ErrCodeInvalidOperation, "wallet currency does not match payment currency")
+	}
+
+	if selectedWallet.Balance.LessThan(paymentObj.Amount) {
+		return errors.New(errors.ErrCodeInvalidOperation, "wallet balance is less than payment amount")
+	}
+
+	// Update payment method ID with selected wallet
+	paymentObj.PaymentMethodID = selectedWallet.ID
+
+	// Create wallet operation
+	operation := &wallet.WalletOperation{
+		WalletID:      selectedWallet.ID,
+		Type:          types.TransactionTypeDebit,
+		Amount:        paymentObj.Amount,
+		ReferenceType: "PAYMENT",
+		ReferenceID:   paymentObj.ID,
+		Description:   fmt.Sprintf("Payment for invoice %s", paymentObj.DestinationID),
+		Metadata: types.Metadata{
+			"payment_id":     paymentObj.ID,
+			"invoice_id":     paymentObj.DestinationID,
+			"payment_method": string(paymentObj.PaymentMethodType),
+		},
+	}
+
+	// Transactional workflow begins here
+	err = p.db.WithTx(ctx, func(ctx context.Context) error {
+		// Debit wallet
+		if err := p.walletRepo.DebitWallet(ctx, operation); err != nil {
+			return errors.Wrap(err, errors.ErrCodeSystemError, "failed to debit wallet")
+		}
+
+		// Update payment with wallet ID
+		if err := p.paymentRepo.Update(ctx, paymentObj); err != nil {
+			return errors.Wrap(err, errors.ErrCodeSystemError, "failed to update payment")
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return errors.Wrap(err, errors.ErrCodeSystemError, "failed to process payment")
+	}
+
+	return nil
 }
 
 func (p *paymentProcessor) handlePostProcessing(ctx context.Context, paymentObj *payment.Payment) error {

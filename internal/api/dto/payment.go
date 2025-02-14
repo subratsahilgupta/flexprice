@@ -149,7 +149,7 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 	// Set payment status to pending
 	p.PaymentStatus = types.PaymentStatusPending
 
-	if r.PaymentMethodType == types.PaymentMethodTypeOffline {
+	if r.PaymentMethodType == types.PaymentMethodTypeOffline || r.PaymentMethodType == types.PaymentMethodTypeCredits {
 		p.TrackAttempts = false
 		p.PaymentGateway = nil
 		p.GatewayPaymentID = nil
@@ -163,5 +163,5 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 		p.TrackAttempts = true
 	}
 
-	return p, p.Validate()
+	return p, nil
 }
