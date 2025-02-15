@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/dynamodb"
+	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -79,6 +80,9 @@ func main() {
 			// Event Publisher
 			publisher.NewEventPublisher,
 
+			// HTTP Client
+			httpclient.NewDefaultClient,
+
 			// Repositories
 			repository.NewEventRepository,
 			repository.NewMeterRepository,
@@ -95,6 +99,7 @@ func main() {
 			repository.NewFeatureRepository,
 			repository.NewEntitlementRepository,
 			repository.NewPaymentRepository,
+			repository.NewTaskRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -125,6 +130,7 @@ func main() {
 			service.NewEntitlementService,
 			service.NewPaymentService,
 			service.NewPaymentProcessorService,
+			service.NewTaskService,
 		),
 	)
 
@@ -166,6 +172,7 @@ func provideHandlers(
 	entitlementService service.EntitlementService,
 	paymentService service.PaymentService,
 	paymentProcessorService service.PaymentProcessorService,
+	taskService service.TaskService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:       v1.NewEventsHandler(eventService, logger),
@@ -184,6 +191,7 @@ func provideHandlers(
 		Feature:      v1.NewFeatureHandler(featureService, logger),
 		Entitlement:  v1.NewEntitlementHandler(entitlementService, logger),
 		Payment:      v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
+		Task:         v1.NewTaskHandler(taskService, logger),
 	}
 }
 

@@ -420,6 +420,25 @@ definitions:
     - plan_id
     - start_date
     type: object
+  dto.CreateTaskRequest:
+    properties:
+      entity_type:
+        $ref: '#/definitions/types.EntityType'
+      file_type:
+        $ref: '#/definitions/types.FileType'
+      file_url:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      task_type:
+        $ref: '#/definitions/types.TaskType'
+    required:
+    - entity_type
+    - file_type
+    - file_url
+    - task_type
+    type: object
   dto.CreateTenantRequest:
     properties:
       name:
@@ -789,6 +808,7 @@ definitions:
       properties:
         additionalProperties:
           type: string
+        description: Handled separately for dynamic columns
         example:
           '"response_status"': 200}
           '{"request_size"': "100"
@@ -797,6 +817,7 @@ definitions:
         example: api
         type: string
       timestamp:
+        description: Handled separately due to parsing
         example: "2024-03-20T15:04:05Z"
         type: string
     required:
@@ -1008,6 +1029,15 @@ definitions:
       items:
         items:
           $ref: '#/definitions/dto.SubscriptionResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
+  dto.ListTasksResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.TaskResponse'
         type: array
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
@@ -1393,6 +1423,52 @@ definitions:
       quantity:
         type: number
     type: object
+  dto.TaskResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.EntityType'
+      error_summary:
+        type: string
+      failed_at:
+        type: string
+      failed_records:
+        type: integer
+      file_type:
+        $ref: '#/definitions/types.FileType'
+      file_url:
+        type: string
+      id:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      processed_records:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+      successful_records:
+        type: integer
+      task_status:
+        $ref: '#/definitions/types.TaskStatus'
+      task_type:
+        $ref: '#/definitions/types.TaskType'
+      tenant_id:
+        type: string
+      total_records:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   dto.TenantResponse:
     properties:
       created_at:
@@ -1615,6 +1691,13 @@ definitions:
         additionalProperties:
           type: string
         type: object
+    type: object
+  dto.UpdateTaskStatusRequest:
+    properties:
+      task_status:
+        $ref: '#/definitions/types.TaskStatus'
+    required:
+    - task_status
     type: object
   dto.UsageResult:
     properties:
@@ -1982,6 +2065,14 @@ definitions:
     x-enum-varnames:
     - BILLING_TIER_VOLUME
     - BILLING_TIER_SLAB
+  types.EntityType:
+    enum:
+    - EVENTS
+    - PRICES
+    type: string
+    x-enum-varnames:
+    - EntityTypeEvents
+    - EntityTypePrices
   types.FeatureType:
     enum:
     - metered
@@ -1992,6 +2083,14 @@ definitions:
     - FeatureTypeMetered
     - FeatureTypeBoolean
     - FeatureTypeStatic
+  types.FileType:
+    enum:
+    - CSV
+    - JSON
+    type: string
+    x-enum-varnames:
+    - FileTypeCSV
+    - FileTypeJSON
   types.InvoiceBillingReason:
     enum:
     - SUBSCRIPTION_CREATE
@@ -2125,6 +2224,26 @@ definitions:
     - SubscriptionStatusPastDue
     - SubscriptionStatusTrialing
     - SubscriptionStatusUnpaid
+  types.TaskStatus:
+    enum:
+    - PENDING
+    - PROCESSING
+    - COMPLETED
+    - FAILED
+    type: string
+    x-enum-varnames:
+    - TaskStatusPending
+    - TaskStatusProcessing
+    - TaskStatusCompleted
+    - TaskStatusFailed
+  types.TaskType:
+    enum:
+    - IMPORT
+    - EXPORT
+    type: string
+    x-enum-varnames:
+    - TaskTypeImport
+    - TaskTypeExport
   types.TransactionStatus:
     enum:
     - pending
@@ -4592,6 +4711,232 @@ paths:
       summary: Get usage by subscription
       tags:
       - Subscriptions
+  /tasks:
+    get:
+      consumes:
+      - application/json
+      description: List tasks with optional filtering
+      parameters:
+      - in: query
+        name: created_by
+        type: string
+      - in: query
+        name: end_time
+        type: string
+      - enum:
+        - EVENTS
+        - PRICES
+        in: query
+        name: entity_type
+        type: string
+        x-enum-varnames:
+        - EntityTypeEvents
+        - EntityTypePrices
+      - in: query
+        name: expand
+        type: string
+      - in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      - in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      - enum:
+        - PENDING
+        - PROCESSING
+        - COMPLETED
+        - FAILED
+        in: query
+        name: task_status
+        type: string
+        x-enum-varnames:
+        - TaskStatusPending
+        - TaskStatusProcessing
+        - TaskStatusCompleted
+        - TaskStatusFailed
+      - enum:
+        - IMPORT
+        - EXPORT
+        in: query
+        name: task_type
+        type: string
+        x-enum-varnames:
+        - TaskTypeImport
+        - TaskTypeExport
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListTasksResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: List tasks
+      tags:
+      - Tasks
+    post:
+      consumes:
+      - application/json
+      description: Create a new import/export task
+      parameters:
+      - description: Task details
+        in: body
+        name: task
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.TaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Create a new task
+      tags:
+      - Tasks
+  /tasks/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a task
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TaskResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Get a task by ID
+      tags:
+      - Tasks
+  /tasks/{id}/process:
+    post:
+      consumes:
+      - application/json
+      description: Start processing a task
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Process a task
+      tags:
+      - Tasks
+  /tasks/{id}/status:
+    put:
+      consumes:
+      - application/json
+      description: Update the status of a task
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New status
+        in: body
+        name: status
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateTaskStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Update task status
+      tags:
+      - Tasks
   /tenants:
     post:
       consumes:

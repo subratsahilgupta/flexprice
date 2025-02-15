@@ -3776,6 +3776,345 @@ const docTemplate = `{
                 }
             }
         },
+        "/tasks": {
+            "get": {
+                "description": "List tasks with optional filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "List tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "name": "created_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "EVENTS",
+                            "PRICES"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "EntityTypeEvents",
+                            "EntityTypePrices"
+                        ],
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "PENDING",
+                            "PROCESSING",
+                            "COMPLETED",
+                            "FAILED"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "TaskStatusPending",
+                            "TaskStatusProcessing",
+                            "TaskStatusCompleted",
+                            "TaskStatusFailed"
+                        ],
+                        "name": "task_status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "IMPORT",
+                            "EXPORT"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "TaskTypeImport",
+                            "TaskTypeExport"
+                        ],
+                        "name": "task_type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListTasksResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new import/export task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "Create a new task",
+                "parameters": [
+                    {
+                        "description": "Task details",
+                        "name": "task",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{id}": {
+            "get": {
+                "description": "Get detailed information about a task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "Get a task by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaskResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{id}/process": {
+            "post": {
+                "description": "Start processing a task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "Process a task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{id}/status": {
+            "put": {
+                "description": "Update the status of a task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "Update task status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New status",
+                        "name": "status",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateTaskStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/tenants": {
             "post": {
                 "security": [
@@ -4952,6 +5291,33 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreateTaskRequest": {
+            "type": "object",
+            "required": [
+                "entity_type",
+                "file_type",
+                "file_url",
+                "task_type"
+            ],
+            "properties": {
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntityType"
+                },
+                "file_type": {
+                    "$ref": "#/definitions/types.FileType"
+                },
+                "file_url": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "task_type": {
+                    "$ref": "#/definitions/types.TaskType"
+                }
+            }
+        },
         "dto.CreateTenantRequest": {
             "type": "object",
             "required": [
@@ -5499,6 +5865,7 @@ const docTemplate = `{
                     "example": "customer456"
                 },
                 "properties": {
+                    "description": "Handled separately for dynamic columns",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -5513,6 +5880,7 @@ const docTemplate = `{
                     "example": "api"
                 },
                 "timestamp": {
+                    "description": "Handled separately due to parsing",
                     "type": "string",
                     "example": "2024-03-20T15:04:05Z"
                 }
@@ -5832,6 +6200,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.SubscriptionResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "dto.ListTasksResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.TaskResponse"
                     }
                 },
                 "pagination": {
@@ -6391,6 +6773,75 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.TaskResponse": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntityType"
+                },
+                "error_summary": {
+                    "type": "string"
+                },
+                "failed_at": {
+                    "type": "string"
+                },
+                "failed_records": {
+                    "type": "integer"
+                },
+                "file_type": {
+                    "$ref": "#/definitions/types.FileType"
+                },
+                "file_url": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "processed_records": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "successful_records": {
+                    "type": "integer"
+                },
+                "task_status": {
+                    "$ref": "#/definitions/types.TaskStatus"
+                },
+                "task_type": {
+                    "$ref": "#/definitions/types.TaskType"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_records": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.TenantResponse": {
             "type": "object",
             "properties": {
@@ -6719,6 +7170,17 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "dto.UpdateTaskStatusRequest": {
+            "type": "object",
+            "required": [
+                "task_status"
+            ],
+            "properties": {
+                "task_status": {
+                    "$ref": "#/definitions/types.TaskStatus"
                 }
             }
         },
@@ -7244,6 +7706,17 @@ const docTemplate = `{
                 "BILLING_TIER_SLAB"
             ]
         },
+        "types.EntityType": {
+            "type": "string",
+            "enum": [
+                "EVENTS",
+                "PRICES"
+            ],
+            "x-enum-varnames": [
+                "EntityTypeEvents",
+                "EntityTypePrices"
+            ]
+        },
         "types.FeatureType": {
             "type": "string",
             "enum": [
@@ -7255,6 +7728,17 @@ const docTemplate = `{
                 "FeatureTypeMetered",
                 "FeatureTypeBoolean",
                 "FeatureTypeStatic"
+            ]
+        },
+        "types.FileType": {
+            "type": "string",
+            "enum": [
+                "CSV",
+                "JSON"
+            ],
+            "x-enum-varnames": [
+                "FileTypeCSV",
+                "FileTypeJSON"
             ]
         },
         "types.InvoiceBillingReason": {
@@ -7428,6 +7912,32 @@ const docTemplate = `{
                 "SubscriptionStatusPastDue",
                 "SubscriptionStatusTrialing",
                 "SubscriptionStatusUnpaid"
+            ]
+        },
+        "types.TaskStatus": {
+            "type": "string",
+            "enum": [
+                "PENDING",
+                "PROCESSING",
+                "COMPLETED",
+                "FAILED"
+            ],
+            "x-enum-varnames": [
+                "TaskStatusPending",
+                "TaskStatusProcessing",
+                "TaskStatusCompleted",
+                "TaskStatusFailed"
+            ]
+        },
+        "types.TaskType": {
+            "type": "string",
+            "enum": [
+                "IMPORT",
+                "EXPORT"
+            ],
+            "x-enum-varnames": [
+                "TaskTypeImport",
+                "TaskTypeExport"
             ]
         },
         "types.TransactionStatus": {

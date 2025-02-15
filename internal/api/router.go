@@ -29,6 +29,7 @@ type Handlers struct {
 	Feature      *v1.FeatureHandler
 	Entitlement  *v1.EntitlementHandler
 	Payment      *v1.PaymentHandler
+	Task         *v1.TaskHandler
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
@@ -191,6 +192,15 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			payments.PUT("/:id", handlers.Payment.UpdatePayment)
 			payments.DELETE("/:id", handlers.Payment.DeletePayment)
 			payments.POST("/:id/process", handlers.Payment.ProcessPayment)
+		}
+
+		tasks := v1Private.Group("/tasks")
+		{
+			tasks.POST("", handlers.Task.CreateTask)
+			tasks.GET("", handlers.Task.ListTasks)
+			tasks.GET("/:id", handlers.Task.GetTask)
+			tasks.PUT("/:id/status", handlers.Task.UpdateTaskStatus)
+			tasks.POST("/:id/process", handlers.Task.ProcessTask)
 		}
 
 		// Admin routes (API Key only)
