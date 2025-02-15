@@ -707,6 +707,53 @@ var (
 			},
 		},
 	}
+	// TasksColumns holds the columns for the "tasks" table.
+	TasksColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "task_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "entity_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "file_url", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "file_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
+		{Name: "task_status", Type: field.TypeString, Default: "PENDING", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "total_records", Type: field.TypeInt, Nullable: true},
+		{Name: "processed_records", Type: field.TypeInt, Default: 0},
+		{Name: "successful_records", Type: field.TypeInt, Default: 0},
+		{Name: "failed_records", Type: field.TypeInt, Default: 0},
+		{Name: "error_summary", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "failed_at", Type: field.TypeTime, Nullable: true},
+	}
+	// TasksTable holds the schema information for the "tasks" table.
+	TasksTable = &schema.Table{
+		Name:       "tasks",
+		Columns:    TasksColumns,
+		PrimaryKey: []*schema.Column{TasksColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_tasks_tenant_type_status",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[7], TasksColumns[8], TasksColumns[2]},
+			},
+			{
+				Name:    "idx_tasks_tenant_user",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[5], TasksColumns[2]},
+			},
+			{
+				Name:    "idx_tasks_tenant_task_status",
+				Unique:  false,
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[11], TasksColumns[2]},
+			},
+		},
+	}
 	// WalletsColumns holds the columns for the "wallets" table.
 	WalletsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -801,6 +848,7 @@ var (
 		PricesTable,
 		SubscriptionsTable,
 		SubscriptionLineItemsTable,
+		TasksTable,
 		WalletsTable,
 		WalletTransactionsTable,
 	}

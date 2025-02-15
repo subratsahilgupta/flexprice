@@ -48,6 +48,9 @@ type Subscription func(*sql.Selector)
 // SubscriptionLineItem is the predicate function for subscriptionlineitem builders.
 type SubscriptionLineItem func(*sql.Selector)
 
+// Task is the predicate function for task builders.
+type Task func(*sql.Selector)
+
 // Wallet is the predicate function for wallet builders.
 type Wallet func(*sql.Selector)
 
