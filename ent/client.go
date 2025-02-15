@@ -29,6 +29,7 @@ import (
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/ent/task"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
 
@@ -68,6 +69,8 @@ type Client struct {
 	Subscription *SubscriptionClient
 	// SubscriptionLineItem is the client for interacting with the SubscriptionLineItem builders.
 	SubscriptionLineItem *SubscriptionLineItemClient
+	// Task is the client for interacting with the Task builders.
+	Task *TaskClient
 	// Wallet is the client for interacting with the Wallet builders.
 	Wallet *WalletClient
 	// WalletTransaction is the client for interacting with the WalletTransaction builders.
@@ -97,6 +100,7 @@ func (c *Client) init() {
 	c.Price = NewPriceClient(c.config)
 	c.Subscription = NewSubscriptionClient(c.config)
 	c.SubscriptionLineItem = NewSubscriptionLineItemClient(c.config)
+	c.Task = NewTaskClient(c.config)
 	c.Wallet = NewWalletClient(c.config)
 	c.WalletTransaction = NewWalletTransactionClient(c.config)
 }
@@ -205,6 +209,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Price:                NewPriceClient(cfg),
 		Subscription:         NewSubscriptionClient(cfg),
 		SubscriptionLineItem: NewSubscriptionLineItemClient(cfg),
+		Task:                 NewTaskClient(cfg),
 		Wallet:               NewWalletClient(cfg),
 		WalletTransaction:    NewWalletTransactionClient(cfg),
 	}, nil
@@ -240,6 +245,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Price:                NewPriceClient(cfg),
 		Subscription:         NewSubscriptionClient(cfg),
 		SubscriptionLineItem: NewSubscriptionLineItemClient(cfg),
+		Task:                 NewTaskClient(cfg),
 		Wallet:               NewWalletClient(cfg),
 		WalletTransaction:    NewWalletTransactionClient(cfg),
 	}, nil
@@ -273,7 +279,7 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.BillingSequence, c.Customer, c.Entitlement, c.Feature, c.Invoice,
 		c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt,
-		c.Plan, c.Price, c.Subscription, c.SubscriptionLineItem, c.Wallet,
+		c.Plan, c.Price, c.Subscription, c.SubscriptionLineItem, c.Task, c.Wallet,
 		c.WalletTransaction,
 	} {
 		n.Use(hooks...)
@@ -286,7 +292,7 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.BillingSequence, c.Customer, c.Entitlement, c.Feature, c.Invoice,
 		c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt,
-		c.Plan, c.Price, c.Subscription, c.SubscriptionLineItem, c.Wallet,
+		c.Plan, c.Price, c.Subscription, c.SubscriptionLineItem, c.Task, c.Wallet,
 		c.WalletTransaction,
 	} {
 		n.Intercept(interceptors...)
@@ -324,6 +330,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Subscription.mutate(ctx, m)
 	case *SubscriptionLineItemMutation:
 		return c.SubscriptionLineItem.mutate(ctx, m)
+	case *TaskMutation:
+		return c.Task.mutate(ctx, m)
 	case *WalletMutation:
 		return c.Wallet.mutate(ctx, m)
 	case *WalletTransactionMutation:
@@ -2323,6 +2331,139 @@ func (c *SubscriptionLineItemClient) mutate(ctx context.Context, m *Subscription
 	}
 }
 
+// TaskClient is a client for the Task schema.
+type TaskClient struct {
+	config
+}
+
+// NewTaskClient returns a client for the Task from the given config.
+func NewTaskClient(c config) *TaskClient {
+	return &TaskClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `task.Hooks(f(g(h())))`.
+func (c *TaskClient) Use(hooks ...Hook) {
+	c.hooks.Task = append(c.hooks.Task, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `task.Intercept(f(g(h())))`.
+func (c *TaskClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Task = append(c.inters.Task, interceptors...)
+}
+
+// Create returns a builder for creating a Task entity.
+func (c *TaskClient) Create() *TaskCreate {
+	mutation := newTaskMutation(c.config, OpCreate)
+	return &TaskCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Task entities.
+func (c *TaskClient) CreateBulk(builders ...*TaskCreate) *TaskCreateBulk {
+	return &TaskCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TaskClient) MapCreateBulk(slice any, setFunc func(*TaskCreate, int)) *TaskCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TaskCreateBulk{err: fmt.Errorf("calling to TaskClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TaskCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TaskCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Task.
+func (c *TaskClient) Update() *TaskUpdate {
+	mutation := newTaskMutation(c.config, OpUpdate)
+	return &TaskUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TaskClient) UpdateOne(t *Task) *TaskUpdateOne {
+	mutation := newTaskMutation(c.config, OpUpdateOne, withTask(t))
+	return &TaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TaskClient) UpdateOneID(id string) *TaskUpdateOne {
+	mutation := newTaskMutation(c.config, OpUpdateOne, withTaskID(id))
+	return &TaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Task.
+func (c *TaskClient) Delete() *TaskDelete {
+	mutation := newTaskMutation(c.config, OpDelete)
+	return &TaskDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TaskClient) DeleteOne(t *Task) *TaskDeleteOne {
+	return c.DeleteOneID(t.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TaskClient) DeleteOneID(id string) *TaskDeleteOne {
+	builder := c.Delete().Where(task.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TaskDeleteOne{builder}
+}
+
+// Query returns a query builder for Task.
+func (c *TaskClient) Query() *TaskQuery {
+	return &TaskQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTask},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Task entity by its id.
+func (c *TaskClient) Get(ctx context.Context, id string) (*Task, error) {
+	return c.Query().Where(task.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TaskClient) GetX(ctx context.Context, id string) *Task {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TaskClient) Hooks() []Hook {
+	return c.hooks.Task
+}
+
+// Interceptors returns the client interceptors.
+func (c *TaskClient) Interceptors() []Interceptor {
+	return c.inters.Task
+}
+
+func (c *TaskClient) mutate(ctx context.Context, m *TaskMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TaskCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TaskUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TaskUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TaskDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Task mutation op: %q", m.Op())
+	}
+}
+
 // WalletClient is a client for the Wallet schema.
 type WalletClient struct {
 	config
@@ -2594,12 +2735,12 @@ type (
 	hooks struct {
 		BillingSequence, Customer, Entitlement, Feature, Invoice, InvoiceLineItem,
 		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, Subscription,
-		SubscriptionLineItem, Wallet, WalletTransaction []ent.Hook
+		SubscriptionLineItem, Task, Wallet, WalletTransaction []ent.Hook
 	}
 	inters struct {
 		BillingSequence, Customer, Entitlement, Feature, Invoice, InvoiceLineItem,
 		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, Subscription,
-		SubscriptionLineItem, Wallet, WalletTransaction []ent.Interceptor
+		SubscriptionLineItem, Task, Wallet, WalletTransaction []ent.Interceptor
 	}
 )
 

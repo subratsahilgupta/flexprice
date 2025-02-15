@@ -20,6 +20,7 @@ import (
 	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/ent/task"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
 	"github.com/shopspring/decimal"
@@ -639,6 +640,61 @@ func init() {
 	subscriptionlineitemDescBillingPeriod := subscriptionlineitemFields[12].Descriptor()
 	// subscriptionlineitem.BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
 	subscriptionlineitem.BillingPeriodValidator = subscriptionlineitemDescBillingPeriod.Validators[0].(func(string) error)
+	taskMixin := schema.Task{}.Mixin()
+	taskMixinFields0 := taskMixin[0].Fields()
+	_ = taskMixinFields0
+	taskFields := schema.Task{}.Fields()
+	_ = taskFields
+	// taskDescTenantID is the schema descriptor for tenant_id field.
+	taskDescTenantID := taskMixinFields0[0].Descriptor()
+	// task.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	task.TenantIDValidator = taskDescTenantID.Validators[0].(func(string) error)
+	// taskDescStatus is the schema descriptor for status field.
+	taskDescStatus := taskMixinFields0[1].Descriptor()
+	// task.DefaultStatus holds the default value on creation for the status field.
+	task.DefaultStatus = taskDescStatus.Default.(string)
+	// taskDescCreatedAt is the schema descriptor for created_at field.
+	taskDescCreatedAt := taskMixinFields0[2].Descriptor()
+	// task.DefaultCreatedAt holds the default value on creation for the created_at field.
+	task.DefaultCreatedAt = taskDescCreatedAt.Default.(func() time.Time)
+	// taskDescUpdatedAt is the schema descriptor for updated_at field.
+	taskDescUpdatedAt := taskMixinFields0[3].Descriptor()
+	// task.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	task.DefaultUpdatedAt = taskDescUpdatedAt.Default.(func() time.Time)
+	// task.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	task.UpdateDefaultUpdatedAt = taskDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// taskDescTaskType is the schema descriptor for task_type field.
+	taskDescTaskType := taskFields[1].Descriptor()
+	// task.TaskTypeValidator is a validator for the "task_type" field. It is called by the builders before save.
+	task.TaskTypeValidator = taskDescTaskType.Validators[0].(func(string) error)
+	// taskDescEntityType is the schema descriptor for entity_type field.
+	taskDescEntityType := taskFields[2].Descriptor()
+	// task.EntityTypeValidator is a validator for the "entity_type" field. It is called by the builders before save.
+	task.EntityTypeValidator = taskDescEntityType.Validators[0].(func(string) error)
+	// taskDescFileURL is the schema descriptor for file_url field.
+	taskDescFileURL := taskFields[3].Descriptor()
+	// task.FileURLValidator is a validator for the "file_url" field. It is called by the builders before save.
+	task.FileURLValidator = taskDescFileURL.Validators[0].(func(string) error)
+	// taskDescFileType is the schema descriptor for file_type field.
+	taskDescFileType := taskFields[4].Descriptor()
+	// task.FileTypeValidator is a validator for the "file_type" field. It is called by the builders before save.
+	task.FileTypeValidator = taskDescFileType.Validators[0].(func(string) error)
+	// taskDescTaskStatus is the schema descriptor for task_status field.
+	taskDescTaskStatus := taskFields[5].Descriptor()
+	// task.DefaultTaskStatus holds the default value on creation for the task_status field.
+	task.DefaultTaskStatus = taskDescTaskStatus.Default.(string)
+	// taskDescProcessedRecords is the schema descriptor for processed_records field.
+	taskDescProcessedRecords := taskFields[7].Descriptor()
+	// task.DefaultProcessedRecords holds the default value on creation for the processed_records field.
+	task.DefaultProcessedRecords = taskDescProcessedRecords.Default.(int)
+	// taskDescSuccessfulRecords is the schema descriptor for successful_records field.
+	taskDescSuccessfulRecords := taskFields[8].Descriptor()
+	// task.DefaultSuccessfulRecords holds the default value on creation for the successful_records field.
+	task.DefaultSuccessfulRecords = taskDescSuccessfulRecords.Default.(int)
+	// taskDescFailedRecords is the schema descriptor for failed_records field.
+	taskDescFailedRecords := taskFields[9].Descriptor()
+	// task.DefaultFailedRecords holds the default value on creation for the failed_records field.
+	task.DefaultFailedRecords = taskDescFailedRecords.Default.(int)
 	walletMixin := schema.Wallet{}.Mixin()
 	walletMixinFields0 := walletMixin[0].Fields()
 	_ = walletMixinFields0
