@@ -218,11 +218,15 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 	resp, err := s.client.Send(ctx, req)
 	if err != nil {
 		s.logger.Error("failed to download file", "error", err, "url", downloadURL)
+		errorSummary := fmt.Sprintf("Failed to download file: %v", err)
+		t.ErrorSummary = &errorSummary
 		return errors.Wrap(err, errors.ErrCodeHTTPClient, "failed to download file")
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		s.logger.Error("failed to download file", "status_code", resp.StatusCode, "url", downloadURL)
+		errorSummary := fmt.Sprintf("Failed to download file: HTTP %d", resp.StatusCode)
+		t.ErrorSummary = &errorSummary
 		return errors.New(errors.ErrCodeHTTPClient, fmt.Sprintf("failed to download file: %d", resp.StatusCode))
 	}
 
@@ -250,6 +254,8 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 		s.logger.Error("failed to read CSV headers",
 			"error", err,
 			"content_preview", string(resp.Body[:previewLen]))
+		errorSummary := fmt.Sprintf("Failed to read CSV headers: %v", err)
+		t.ErrorSummary = &errorSummary
 		return errors.Wrap(err, errors.ErrCodeValidation, "failed to read CSV headers")
 	}
 
@@ -269,12 +275,15 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 
 	// Validate required columns
 	if err := validateRequiredColumns(standardHeaders); err != nil {
+		errorSummary := fmt.Sprintf("Invalid CSV format: %v", err)
+		t.ErrorSummary = &errorSummary
 		return err
 	}
 
 	// Process rows
 	lineNum := 1 // Start after headers
 	var failureCount int
+	var errorLines []string // Track line numbers with errors
 
 	for {
 		lineNum++
@@ -284,6 +293,7 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 		}
 		if err != nil {
 			s.logger.Error("failed to read CSV line", "line", lineNum, "error", err)
+			errorLines = append(errorLines, fmt.Sprintf("Line %d: Failed to read - %v", lineNum, err))
 			tracker.Increment(false, err)
 			failureCount++
 			continue
@@ -317,6 +327,7 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 		// Parse property fields
 		if err := s.parsePropertyFields(record, propertyColumns, eventReq); err != nil {
 			s.logger.Error("failed to parse property fields", "line", lineNum, "error", err)
+			errorLines = append(errorLines, fmt.Sprintf("Line %d: Failed to parse properties - %v", lineNum, err))
 			tracker.Increment(false, err)
 			failureCount++
 			continue
@@ -325,6 +336,7 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 		// Validate the event request
 		if err := eventReq.Validate(); err != nil {
 			s.logger.Error("failed to validate event", "line", lineNum, "error", err)
+			errorLines = append(errorLines, fmt.Sprintf("Line %d: Validation failed - %v", lineNum, err))
 			tracker.Increment(false, err)
 			failureCount++
 			continue
@@ -333,6 +345,7 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 		// Parse timestamp
 		if err := s.parseTimestamp(eventReq); err != nil {
 			s.logger.Error("failed to parse timestamp", "line", lineNum, "error", err)
+			errorLines = append(errorLines, fmt.Sprintf("Line %d: Invalid timestamp - %v", lineNum, err))
 			tracker.Increment(false, err)
 			failureCount++
 			continue
@@ -348,6 +361,7 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 		err = eventSvc.CreateEvent(ctx, eventReq)
 		if err != nil {
 			s.logger.Error("failed to create event", "line", lineNum, "error", err)
+			errorLines = append(errorLines, fmt.Sprintf("Line %d: Failed to create event - %v", lineNum, err))
 			tracker.Increment(false, err)
 			failureCount++
 			continue
@@ -361,6 +375,28 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 
 	// Return error if any events failed
 	if failureCount > 0 {
+		// Create a summary of errors
+		// Keep only the first 10 error lines to avoid too long summaries
+		maxErrors := 10
+		if len(errorLines) > maxErrors {
+			errorSummary := fmt.Sprintf("%d events failed to process. First %d errors:\n%s\n(and %d more errors...)",
+				failureCount,
+				maxErrors,
+				strings.Join(errorLines[:maxErrors], "\n"),
+				len(errorLines)-maxErrors)
+			t.ErrorSummary = &errorSummary
+		} else {
+			errorSummary := fmt.Sprintf("%d events failed to process:\n%s",
+				failureCount,
+				strings.Join(errorLines, "\n"))
+			t.ErrorSummary = &errorSummary
+		}
+
+		// Update the task one final time to ensure error summary is saved
+		if err := s.taskRepo.Update(ctx, t); err != nil {
+			s.logger.Error("failed to update task with error summary", "error", err)
+		}
+
 		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("%d events failed to process", failureCount))
 	}
 
