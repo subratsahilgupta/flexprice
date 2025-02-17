@@ -2621,6 +2621,41 @@ paths:
       summary: Get wallets by customer ID
       tags:
       - Wallets
+  /customers/lookup/{lookup_key}:
+    get:
+      consumes:
+      - application/json
+      description: Get a customer by lookup key (external_id)
+      parameters:
+      - description: Customer Lookup Key (external_id)
+        in: path
+        name: lookup_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CustomerResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a customer by lookup key
+      tags:
+      - Customers
   /entitlements:
     get:
       consumes:
