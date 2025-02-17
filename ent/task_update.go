@@ -110,6 +110,26 @@ func (tu *TaskUpdate) SetNillableFileURL(s *string) *TaskUpdate {
 	return tu
 }
 
+// SetFileName sets the "file_name" field.
+func (tu *TaskUpdate) SetFileName(s string) *TaskUpdate {
+	tu.mutation.SetFileName(s)
+	return tu
+}
+
+// SetNillableFileName sets the "file_name" field if the given value is not nil.
+func (tu *TaskUpdate) SetNillableFileName(s *string) *TaskUpdate {
+	if s != nil {
+		tu.SetFileName(*s)
+	}
+	return tu
+}
+
+// ClearFileName clears the value of the "file_name" field.
+func (tu *TaskUpdate) ClearFileName() *TaskUpdate {
+	tu.mutation.ClearFileName()
+	return tu
+}
+
 // SetFileType sets the "file_type" field.
 func (tu *TaskUpdate) SetFileType(s string) *TaskUpdate {
 	tu.mutation.SetFileType(s)
@@ -422,6 +442,12 @@ func (tu *TaskUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := tu.mutation.FileURL(); ok {
 		_spec.SetField(task.FieldFileURL, field.TypeString, value)
 	}
+	if value, ok := tu.mutation.FileName(); ok {
+		_spec.SetField(task.FieldFileName, field.TypeString, value)
+	}
+	if tu.mutation.FileNameCleared() {
+		_spec.ClearField(task.FieldFileName, field.TypeString)
+	}
 	if value, ok := tu.mutation.FileType(); ok {
 		_spec.SetField(task.FieldFileType, field.TypeString, value)
 	}
@@ -584,6 +610,26 @@ func (tuo *TaskUpdateOne) SetNillableFileURL(s *string) *TaskUpdateOne {
 	if s != nil {
 		tuo.SetFileURL(*s)
 	}
+	return tuo
+}
+
+// SetFileName sets the "file_name" field.
+func (tuo *TaskUpdateOne) SetFileName(s string) *TaskUpdateOne {
+	tuo.mutation.SetFileName(s)
+	return tuo
+}
+
+// SetNillableFileName sets the "file_name" field if the given value is not nil.
+func (tuo *TaskUpdateOne) SetNillableFileName(s *string) *TaskUpdateOne {
+	if s != nil {
+		tuo.SetFileName(*s)
+	}
+	return tuo
+}
+
+// ClearFileName clears the value of the "file_name" field.
+func (tuo *TaskUpdateOne) ClearFileName() *TaskUpdateOne {
+	tuo.mutation.ClearFileName()
 	return tuo
 }
 
@@ -928,6 +974,12 @@ func (tuo *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) 
 	}
 	if value, ok := tuo.mutation.FileURL(); ok {
 		_spec.SetField(task.FieldFileURL, field.TypeString, value)
+	}
+	if value, ok := tuo.mutation.FileName(); ok {
+		_spec.SetField(task.FieldFileName, field.TypeString, value)
+	}
+	if tuo.mutation.FileNameCleared() {
+		_spec.ClearField(task.FieldFileName, field.TypeString)
 	}
 	if value, ok := tuo.mutation.FileType(); ok {
 		_spec.SetField(task.FieldFileType, field.TypeString, value)

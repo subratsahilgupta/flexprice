@@ -31,6 +31,8 @@ const (
 	FieldEntityType = "entity_type"
 	// FieldFileURL holds the string denoting the file_url field in the database.
 	FieldFileURL = "file_url"
+	// FieldFileName holds the string denoting the file_name field in the database.
+	FieldFileName = "file_name"
 	// FieldFileType holds the string denoting the file_type field in the database.
 	FieldFileType = "file_type"
 	// FieldTaskStatus holds the string denoting the task_status field in the database.
@@ -69,6 +71,7 @@ var Columns = []string{
 	FieldTaskType,
 	FieldEntityType,
 	FieldFileURL,
+	FieldFileName,
 	FieldFileType,
 	FieldTaskStatus,
 	FieldTotalRecords,
@@ -172,6 +175,11 @@ func ByEntityType(opts ...sql.OrderTermOption) OrderOption {
 // ByFileURL orders the results by the file_url field.
 func ByFileURL(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFileURL, opts...).ToFunc()
+}
+
+// ByFileName orders the results by the file_name field.
+func ByFileName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFileName, opts...).ToFunc()
 }
 
 // ByFileType orders the results by the file_type field.

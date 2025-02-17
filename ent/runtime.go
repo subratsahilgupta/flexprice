@@ -676,23 +676,23 @@ func init() {
 	// task.FileURLValidator is a validator for the "file_url" field. It is called by the builders before save.
 	task.FileURLValidator = taskDescFileURL.Validators[0].(func(string) error)
 	// taskDescFileType is the schema descriptor for file_type field.
-	taskDescFileType := taskFields[4].Descriptor()
+	taskDescFileType := taskFields[5].Descriptor()
 	// task.FileTypeValidator is a validator for the "file_type" field. It is called by the builders before save.
 	task.FileTypeValidator = taskDescFileType.Validators[0].(func(string) error)
 	// taskDescTaskStatus is the schema descriptor for task_status field.
-	taskDescTaskStatus := taskFields[5].Descriptor()
+	taskDescTaskStatus := taskFields[6].Descriptor()
 	// task.DefaultTaskStatus holds the default value on creation for the task_status field.
 	task.DefaultTaskStatus = taskDescTaskStatus.Default.(string)
 	// taskDescProcessedRecords is the schema descriptor for processed_records field.
-	taskDescProcessedRecords := taskFields[7].Descriptor()
+	taskDescProcessedRecords := taskFields[8].Descriptor()
 	// task.DefaultProcessedRecords holds the default value on creation for the processed_records field.
 	task.DefaultProcessedRecords = taskDescProcessedRecords.Default.(int)
 	// taskDescSuccessfulRecords is the schema descriptor for successful_records field.
-	taskDescSuccessfulRecords := taskFields[8].Descriptor()
+	taskDescSuccessfulRecords := taskFields[9].Descriptor()
 	// task.DefaultSuccessfulRecords holds the default value on creation for the successful_records field.
 	task.DefaultSuccessfulRecords = taskDescSuccessfulRecords.Default.(int)
 	// taskDescFailedRecords is the schema descriptor for failed_records field.
-	taskDescFailedRecords := taskFields[9].Descriptor()
+	taskDescFailedRecords := taskFields[10].Descriptor()
 	// task.DefaultFailedRecords holds the default value on creation for the failed_records field.
 	task.DefaultFailedRecords = taskDescFailedRecords.Default.(int)
 	walletMixin := schema.Wallet{}.Mixin()

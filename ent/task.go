@@ -36,6 +36,8 @@ type Task struct {
 	EntityType string `json:"entity_type,omitempty"`
 	// FileURL holds the value of the "file_url" field.
 	FileURL string `json:"file_url,omitempty"`
+	// FileName holds the value of the "file_name" field.
+	FileName *string `json:"file_name,omitempty"`
 	// FileType holds the value of the "file_type" field.
 	FileType string `json:"file_type,omitempty"`
 	// TaskStatus holds the value of the "task_status" field.
@@ -70,7 +72,7 @@ func (*Task) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case task.FieldTotalRecords, task.FieldProcessedRecords, task.FieldSuccessfulRecords, task.FieldFailedRecords:
 			values[i] = new(sql.NullInt64)
-		case task.FieldID, task.FieldTenantID, task.FieldStatus, task.FieldCreatedBy, task.FieldUpdatedBy, task.FieldTaskType, task.FieldEntityType, task.FieldFileURL, task.FieldFileType, task.FieldTaskStatus, task.FieldErrorSummary:
+		case task.FieldID, task.FieldTenantID, task.FieldStatus, task.FieldCreatedBy, task.FieldUpdatedBy, task.FieldTaskType, task.FieldEntityType, task.FieldFileURL, task.FieldFileName, task.FieldFileType, task.FieldTaskStatus, task.FieldErrorSummary:
 			values[i] = new(sql.NullString)
 		case task.FieldCreatedAt, task.FieldUpdatedAt, task.FieldStartedAt, task.FieldCompletedAt, task.FieldFailedAt:
 			values[i] = new(sql.NullTime)
@@ -148,6 +150,13 @@ func (t *Task) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field file_url", values[i])
 			} else if value.Valid {
 				t.FileURL = value.String
+			}
+		case task.FieldFileName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field file_name", values[i])
+			} else if value.Valid {
+				t.FileName = new(string)
+				*t.FileName = value.String
 			}
 		case task.FieldFileType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -284,6 +293,11 @@ func (t *Task) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("file_url=")
 	builder.WriteString(t.FileURL)
+	builder.WriteString(", ")
+	if v := t.FileName; v != nil {
+		builder.WriteString("file_name=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("file_type=")
 	builder.WriteString(t.FileType)

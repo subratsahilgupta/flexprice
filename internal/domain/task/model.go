@@ -12,6 +12,7 @@ type Task struct {
 	TaskType          types.TaskType         `json:"task_type"`
 	EntityType        types.EntityType       `json:"entity_type"`
 	FileURL           string                 `json:"file_url"`
+	FileName          *string                `json:"file_name,omitempty"`
 	FileType          types.FileType         `json:"file_type"`
 	TaskStatus        types.TaskStatus       `json:"task_status"`
 	TotalRecords      *int                   `json:"total_records"`
@@ -37,6 +38,7 @@ func FromEnt(e *ent.Task) *Task {
 		TaskType:          types.TaskType(e.TaskType),
 		EntityType:        types.EntityType(e.EntityType),
 		FileURL:           e.FileURL,
+		FileName:          e.FileName,
 		FileType:          types.FileType(e.FileType),
 		TaskStatus:        types.TaskStatus(e.TaskStatus),
 		TotalRecords:      e.TotalRecords,

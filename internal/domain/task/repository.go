@@ -15,8 +15,4 @@ type Repository interface {
 	Count(ctx context.Context, filter *types.TaskFilter) (int, error)
 	Update(ctx context.Context, task *Task) error
 	Delete(ctx context.Context, id string) error
-
-	// Task-specific operations
-	UpdateProgress(ctx context.Context, id string, processed, success, failed int, errorSummary string) error
-	UpdateStatus(ctx context.Context, id string, status types.TaskStatus) error
 }

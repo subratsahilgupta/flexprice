@@ -15,6 +15,7 @@ type CreateTaskRequest struct {
 	TaskType   types.TaskType         `json:"task_type" binding:"required"`
 	EntityType types.EntityType       `json:"entity_type" binding:"required"`
 	FileURL    string                 `json:"file_url" binding:"required"`
+	FileName   *string                `json:"file_name,omitempty"`
 	FileType   types.FileType         `json:"file_type" binding:"required"`
 	Metadata   map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -48,6 +49,7 @@ func (r *CreateTaskRequest) ToTask(ctx context.Context) *task.Task {
 		TaskType:   r.TaskType,
 		EntityType: r.EntityType,
 		FileURL:    r.FileURL,
+		FileName:   r.FileName,
 		FileType:   r.FileType,
 		TaskStatus: types.TaskStatusPending,
 		Metadata:   r.Metadata,
@@ -61,6 +63,7 @@ type TaskResponse struct {
 	TaskType          types.TaskType         `json:"task_type"`
 	EntityType        types.EntityType       `json:"entity_type"`
 	FileURL           string                 `json:"file_url"`
+	FileName          *string                `json:"file_name,omitempty"`
 	FileType          types.FileType         `json:"file_type"`
 	TaskStatus        types.TaskStatus       `json:"task_status"`
 	TotalRecords      *int                   `json:"total_records,omitempty"`
@@ -91,6 +94,7 @@ func NewTaskResponse(t *task.Task) *TaskResponse {
 		TaskType:          t.TaskType,
 		EntityType:        t.EntityType,
 		FileURL:           t.FileURL,
+		FileName:          t.FileName,
 		FileType:          t.FileType,
 		TaskStatus:        t.TaskStatus,
 		TotalRecords:      t.TotalRecords,

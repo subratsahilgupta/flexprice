@@ -719,6 +719,7 @@ var (
 		{Name: "task_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "entity_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "file_url", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "file_name", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "file_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
 		{Name: "task_status", Type: field.TypeString, Default: "PENDING", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "total_records", Type: field.TypeInt, Nullable: true},
@@ -750,7 +751,7 @@ var (
 			{
 				Name:    "idx_tasks_tenant_task_status",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[11], TasksColumns[2]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[12], TasksColumns[2]},
 			},
 		},
 	}

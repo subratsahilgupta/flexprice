@@ -43,6 +43,12 @@ func (Task) Fields() []ent.Field {
 				"postgres": "varchar(255)",
 			}).
 			NotEmpty(),
+		field.String("file_name").
+			SchemaType(map[string]string{
+				"postgres": "varchar(255)",
+			}).
+			Optional().
+			Nillable(),
 		field.String("file_type").
 			SchemaType(map[string]string{
 				"postgres": "varchar(10)",
