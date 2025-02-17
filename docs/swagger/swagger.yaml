@@ -424,6 +424,8 @@ definitions:
     properties:
       entity_type:
         $ref: '#/definitions/types.EntityType'
+      file_name:
+        type: string
       file_type:
         $ref: '#/definitions/types.FileType'
       file_url:
@@ -1439,6 +1441,8 @@ definitions:
         type: string
       failed_records:
         type: integer
+      file_name:
+        type: string
       file_type:
         $ref: '#/definitions/types.FileType'
       file_url:
@@ -2022,11 +2026,13 @@ definitions:
     - COUNT
     - SUM
     - AVG
+    - COUNT_UNIQUE
     type: string
     x-enum-varnames:
     - AggregationCount
     - AggregationSum
     - AggregationAvg
+    - AggregationCountUnique
   types.BillingCadence:
     enum:
     - RECURRING
