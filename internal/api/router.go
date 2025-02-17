@@ -220,6 +220,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	subscriptionGroup := cron.Group("/subscriptions")
 	{
 		subscriptionGroup.POST("/update-periods", handlers.Cron.UpdateBillingPeriods)
+		subscriptionGroup.POST("/generate-invoice", handlers.Cron.GenerateInvoice)
 	}
 	return router
 }

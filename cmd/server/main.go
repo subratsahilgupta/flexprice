@@ -21,6 +21,7 @@ import (
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/temporal"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/webhook"
 	"go.uber.org/fx"
@@ -103,6 +104,10 @@ func main() {
 
 			// PubSub
 			pubsubRouter.NewRouter,
+
+			// Temporal
+			provideTemporalClient,
+			provideTemporalService,
 		),
 	)
 
@@ -134,16 +139,13 @@ func main() {
 		),
 	)
 
-	// API layer
+	// API and Temporal
 	opts = append(opts,
 		fx.Provide(
 			provideHandlers,
 			provideRouter,
+			provideTemporalConfig,
 		),
-	)
-
-	// Server startup
-	opts = append(opts,
 		fx.Invoke(
 			sentry.RegisterHooks,
 			startServer,
@@ -168,6 +170,7 @@ func provideHandlers(
 	walletService service.WalletService,
 	tenantService service.TenantService,
 	invoiceService service.InvoiceService,
+	temporalService *temporal.Service,
 	featureService service.FeatureService,
 	entitlementService service.EntitlementService,
 	paymentService service.PaymentService,
@@ -186,8 +189,8 @@ func provideHandlers(
 		Subscription: v1.NewSubscriptionHandler(subscriptionService, logger),
 		Wallet:       v1.NewWalletHandler(walletService, logger),
 		Tenant:       v1.NewTenantHandler(tenantService, logger),
-		Cron:         cron.NewSubscriptionHandler(subscriptionService, logger),
-		Invoice:      v1.NewInvoiceHandler(invoiceService, logger),
+		Cron:         cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
+		Invoice:      v1.NewInvoiceHandler(invoiceService, temporalService, logger),
 		Feature:      v1.NewFeatureHandler(featureService, logger),
 		Entitlement:  v1.NewEntitlementHandler(entitlementService, logger),
 		Payment:      v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
@@ -199,12 +202,26 @@ func provideRouter(handlers api.Handlers, cfg *config.Configuration, logger *log
 	return api.NewRouter(handlers, cfg, logger)
 }
 
+func provideTemporalConfig(cfg *config.Configuration) *config.TemporalConfig {
+	return &cfg.Temporal
+}
+
+func provideTemporalClient(cfg *config.TemporalConfig, log *logger.Logger) (*temporal.TemporalClient, error) {
+	return temporal.NewTemporalClient(cfg, log)
+}
+
+func provideTemporalService(temporalClient *temporal.TemporalClient, cfg *config.TemporalConfig, log *logger.Logger) (*temporal.Service, error) {
+	return temporal.NewService(temporalClient, cfg, log)
+}
+
 func startServer(
 	lc fx.Lifecycle,
 	cfg *config.Configuration,
 	r *gin.Engine,
 	consumer kafka.MessageConsumer,
 	eventRepo events.Repository,
+	temporalClient *temporal.TemporalClient,
+	temporalService *temporal.Service,
 	webhookService *webhook.WebhookService,
 	router *pubsubRouter.Router,
 	log *logger.Logger,
@@ -222,9 +239,13 @@ func startServer(
 		startAPIServer(lc, r, cfg, log)
 		startConsumer(lc, consumer, eventRepo, cfg, log)
 		startMessageRouter(lc, router, webhookService, log)
+		startTemporalWorker(lc, temporalClient, &cfg.Temporal, log)
 	case types.ModeAPI:
 		startAPIServer(lc, r, cfg, log)
 		startMessageRouter(lc, router, webhookService, log)
+
+	case types.ModeTemporalWorker:
+		startTemporalWorker(lc, temporalClient, &cfg.Temporal, log)
 	case types.ModeConsumer:
 		if consumer == nil {
 			log.Fatal("Kafka consumer required for consumer mode")
@@ -240,14 +261,26 @@ func startServer(
 	}
 }
 
+func startTemporalWorker(
+	lc fx.Lifecycle,
+	temporalClient *temporal.TemporalClient,
+	cfg *config.TemporalConfig,
+	log *logger.Logger,
+) {
+	worker := temporal.NewWorker(temporalClient, *cfg, log)
+	worker.RegisterWithLifecycle(lc)
+}
+
 func startAPIServer(
 	lc fx.Lifecycle,
 	r *gin.Engine,
 	cfg *config.Configuration,
 	log *logger.Logger,
 ) {
+	log.Info("Registering API server start hook")
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
+			log.Info("Starting API server...")
 			go func() {
 				if err := r.Run(cfg.Server.Address); err != nil {
 					log.Fatalf("Failed to start server: %v", err)

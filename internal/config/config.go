@@ -26,6 +26,7 @@ type Configuration struct {
 	Sentry     SentryConfig     `validate:"required"`
 	Event      EventConfig      `validate:"required"`
 	DynamoDB   DynamoDBConfig   `validate:"required"`
+	Temporal   TemporalConfig   `validate:"required"`
 	Webhook    Webhook
 }
 
@@ -104,6 +105,14 @@ type SentryConfig struct {
 	SampleRate  float64 `mapstructure:"sample_rate" default:"1.0"`
 }
 
+type TemporalConfig struct {
+	Address    string `mapstructure:"address" validate:"required"`
+	TaskQueue  string `mapstructure:"task_queue" validate:"required"`
+	Namespace  string `mapstructure:"namespace" validate:"required"`
+	APIKey     string `mapstructure:"api_key"`
+	APIKeyName string `mapstructure:"api_key_name"`
+}
+
 func NewConfig() (*Configuration, error) {
 	v := viper.New()
 
@@ -124,6 +133,7 @@ func NewConfig() (*Configuration, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	// Step 5: Read the YAML file
+	// Step 5: Read the YAML file
 	if err := v.ReadInConfig(); err != nil {
 		fmt.Printf("Error reading config file: %v\n", err)
 		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
@@ -138,6 +148,7 @@ func NewConfig() (*Configuration, error) {
 		return nil, fmt.Errorf("unable to decode into config struct, %v", err)
 	}
 
+	// Step 6: Parse API keys
 	apiKeysStr := v.GetString("auth.api_key.keys")
 	// Parse API keys JSON if present
 	if apiKeysStr != "" {
