@@ -36,6 +36,7 @@ func (r *taskRepository) Create(ctx context.Context, t *domainTask.Task) error {
 		SetTaskType(string(t.TaskType)).
 		SetEntityType(string(t.EntityType)).
 		SetFileURL(t.FileURL).
+		SetNillableFileName(t.FileName).
 		SetFileType(string(t.FileType)).
 		SetTaskStatus(string(t.TaskStatus)).
 		SetNillableTotalRecords(t.TotalRecords).
@@ -126,6 +127,7 @@ func (r *taskRepository) Update(ctx context.Context, t *domainTask.Task) error {
 		SetTaskType(string(t.TaskType)).
 		SetEntityType(string(t.EntityType)).
 		SetFileURL(t.FileURL).
+		SetNillableFileName(t.FileName).
 		SetFileType(string(t.FileType)).
 		SetTaskStatus(string(t.TaskStatus)).
 		SetNillableTotalRecords(t.TotalRecords).
@@ -166,47 +168,6 @@ func (r *taskRepository) Delete(ctx context.Context, id string) error {
 
 	if err != nil {
 		return fmt.Errorf("deleting task: %w", err)
-	}
-
-	return nil
-}
-
-func (r *taskRepository) UpdateProgress(ctx context.Context, id string, processed, success, failed int, errorSummary string) error {
-	_, err := r.client.Querier(ctx).Task.Update().
-		Where(
-			task.ID(id),
-			task.TenantID(types.GetTenantID(ctx)),
-			task.Status(string(types.StatusPublished)),
-		).
-		SetProcessedRecords(processed).
-		SetSuccessfulRecords(success).
-		SetFailedRecords(failed).
-		SetErrorSummary(errorSummary).
-		SetUpdatedAt(time.Now()).
-		SetUpdatedBy(types.GetUserID(ctx)).
-		Save(ctx)
-
-	if err != nil {
-		return fmt.Errorf("updating task progress: %w", err)
-	}
-
-	return nil
-}
-
-func (r *taskRepository) UpdateStatus(ctx context.Context, id string, status types.TaskStatus) error {
-	_, err := r.client.Querier(ctx).Task.Update().
-		Where(
-			task.ID(id),
-			task.TenantID(types.GetTenantID(ctx)),
-			task.Status(string(types.StatusPublished)),
-		).
-		SetTaskStatus(string(status)).
-		SetUpdatedAt(time.Now()).
-		SetUpdatedBy(types.GetUserID(ctx)).
-		Save(ctx)
-
-	if err != nil {
-		return fmt.Errorf("updating task status: %w", err)
 	}
 
 	return nil

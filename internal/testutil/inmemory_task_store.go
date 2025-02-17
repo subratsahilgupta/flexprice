@@ -3,7 +3,6 @@ package testutil
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/task"
 	"github.com/flexprice/flexprice/internal/errors"
@@ -80,35 +79,6 @@ func (s *InMemoryTaskStore) List(ctx context.Context, filter *types.TaskFilter) 
 
 func (s *InMemoryTaskStore) Count(ctx context.Context, filter *types.TaskFilter) (int, error) {
 	return s.InMemoryStore.Count(ctx, filter, taskFilterFn)
-}
-
-func (s *InMemoryTaskStore) UpdateProgress(ctx context.Context, id string, processed, success, failed int, errorSummary string) error {
-	t, err := s.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	t.ProcessedRecords = processed
-	t.SuccessfulRecords = success
-	t.FailedRecords = failed
-	t.ErrorSummary = &errorSummary
-	t.UpdatedAt = time.Now()
-	t.UpdatedBy = types.GetUserID(ctx)
-
-	return s.Update(ctx, t)
-}
-
-func (s *InMemoryTaskStore) UpdateStatus(ctx context.Context, id string, status types.TaskStatus) error {
-	t, err := s.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	t.TaskStatus = status
-	t.UpdatedAt = time.Now()
-	t.UpdatedBy = types.GetUserID(ctx)
-
-	return s.Update(ctx, t)
 }
 
 // taskFilterFn implements filtering logic for tasks

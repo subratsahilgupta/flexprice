@@ -19522,6 +19522,7 @@ type TaskMutation struct {
 	task_type             *string
 	entity_type           *string
 	file_url              *string
+	file_name             *string
 	file_type             *string
 	task_status           *string
 	total_records         *int
@@ -19995,6 +19996,55 @@ func (m *TaskMutation) OldFileURL(ctx context.Context) (v string, err error) {
 // ResetFileURL resets all changes to the "file_url" field.
 func (m *TaskMutation) ResetFileURL() {
 	m.file_url = nil
+}
+
+// SetFileName sets the "file_name" field.
+func (m *TaskMutation) SetFileName(s string) {
+	m.file_name = &s
+}
+
+// FileName returns the value of the "file_name" field in the mutation.
+func (m *TaskMutation) FileName() (r string, exists bool) {
+	v := m.file_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFileName returns the old "file_name" field's value of the Task entity.
+// If the Task object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaskMutation) OldFileName(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFileName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFileName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFileName: %w", err)
+	}
+	return oldValue.FileName, nil
+}
+
+// ClearFileName clears the value of the "file_name" field.
+func (m *TaskMutation) ClearFileName() {
+	m.file_name = nil
+	m.clearedFields[task.FieldFileName] = struct{}{}
+}
+
+// FileNameCleared returns if the "file_name" field was cleared in this mutation.
+func (m *TaskMutation) FileNameCleared() bool {
+	_, ok := m.clearedFields[task.FieldFileName]
+	return ok
+}
+
+// ResetFileName resets all changes to the "file_name" field.
+func (m *TaskMutation) ResetFileName() {
+	m.file_name = nil
+	delete(m.clearedFields, task.FieldFileName)
 }
 
 // SetFileType sets the "file_type" field.
@@ -20586,7 +20636,7 @@ func (m *TaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TaskMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 21)
 	if m.tenant_id != nil {
 		fields = append(fields, task.FieldTenantID)
 	}
@@ -20613,6 +20663,9 @@ func (m *TaskMutation) Fields() []string {
 	}
 	if m.file_url != nil {
 		fields = append(fields, task.FieldFileURL)
+	}
+	if m.file_name != nil {
+		fields = append(fields, task.FieldFileName)
 	}
 	if m.file_type != nil {
 		fields = append(fields, task.FieldFileType)
@@ -20673,6 +20726,8 @@ func (m *TaskMutation) Field(name string) (ent.Value, bool) {
 		return m.EntityType()
 	case task.FieldFileURL:
 		return m.FileURL()
+	case task.FieldFileName:
+		return m.FileName()
 	case task.FieldFileType:
 		return m.FileType()
 	case task.FieldTaskStatus:
@@ -20722,6 +20777,8 @@ func (m *TaskMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldEntityType(ctx)
 	case task.FieldFileURL:
 		return m.OldFileURL(ctx)
+	case task.FieldFileName:
+		return m.OldFileName(ctx)
 	case task.FieldFileType:
 		return m.OldFileType(ctx)
 	case task.FieldTaskStatus:
@@ -20815,6 +20872,13 @@ func (m *TaskMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetFileURL(v)
+		return nil
+	case task.FieldFileName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFileName(v)
 		return nil
 	case task.FieldFileType:
 		v, ok := value.(string)
@@ -20980,6 +21044,9 @@ func (m *TaskMutation) ClearedFields() []string {
 	if m.FieldCleared(task.FieldUpdatedBy) {
 		fields = append(fields, task.FieldUpdatedBy)
 	}
+	if m.FieldCleared(task.FieldFileName) {
+		fields = append(fields, task.FieldFileName)
+	}
 	if m.FieldCleared(task.FieldTotalRecords) {
 		fields = append(fields, task.FieldTotalRecords)
 	}
@@ -21017,6 +21084,9 @@ func (m *TaskMutation) ClearField(name string) error {
 		return nil
 	case task.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case task.FieldFileName:
+		m.ClearFileName()
 		return nil
 	case task.FieldTotalRecords:
 		m.ClearTotalRecords()
@@ -21070,6 +21140,9 @@ func (m *TaskMutation) ResetField(name string) error {
 		return nil
 	case task.FieldFileURL:
 		m.ResetFileURL()
+		return nil
+	case task.FieldFileName:
+		m.ResetFileName()
 		return nil
 	case task.FieldFileType:
 		m.ResetFileType()

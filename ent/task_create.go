@@ -114,6 +114,20 @@ func (tc *TaskCreate) SetFileURL(s string) *TaskCreate {
 	return tc
 }
 
+// SetFileName sets the "file_name" field.
+func (tc *TaskCreate) SetFileName(s string) *TaskCreate {
+	tc.mutation.SetFileName(s)
+	return tc
+}
+
+// SetNillableFileName sets the "file_name" field if the given value is not nil.
+func (tc *TaskCreate) SetNillableFileName(s *string) *TaskCreate {
+	if s != nil {
+		tc.SetFileName(*s)
+	}
+	return tc
+}
+
 // SetFileType sets the "file_type" field.
 func (tc *TaskCreate) SetFileType(s string) *TaskCreate {
 	tc.mutation.SetFileType(s)
@@ -456,6 +470,10 @@ func (tc *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 	if value, ok := tc.mutation.FileURL(); ok {
 		_spec.SetField(task.FieldFileURL, field.TypeString, value)
 		_node.FileURL = value
+	}
+	if value, ok := tc.mutation.FileName(); ok {
+		_spec.SetField(task.FieldFileName, field.TypeString, value)
+		_node.FileName = &value
 	}
 	if value, ok := tc.mutation.FileType(); ok {
 		_spec.SetField(task.FieldFileType, field.TypeString, value)

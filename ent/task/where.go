@@ -109,6 +109,11 @@ func FileURL(v string) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldFileURL, v))
 }
 
+// FileName applies equality check predicate on the "file_name" field. It's identical to FileNameEQ.
+func FileName(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldFileName, v))
+}
+
 // FileType applies equality check predicate on the "file_type" field. It's identical to FileTypeEQ.
 func FileType(v string) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldFileType, v))
@@ -712,6 +717,81 @@ func FileURLEqualFold(v string) predicate.Task {
 // FileURLContainsFold applies the ContainsFold predicate on the "file_url" field.
 func FileURLContainsFold(v string) predicate.Task {
 	return predicate.Task(sql.FieldContainsFold(FieldFileURL, v))
+}
+
+// FileNameEQ applies the EQ predicate on the "file_name" field.
+func FileNameEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldFileName, v))
+}
+
+// FileNameNEQ applies the NEQ predicate on the "file_name" field.
+func FileNameNEQ(v string) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldFileName, v))
+}
+
+// FileNameIn applies the In predicate on the "file_name" field.
+func FileNameIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldFileName, vs...))
+}
+
+// FileNameNotIn applies the NotIn predicate on the "file_name" field.
+func FileNameNotIn(vs ...string) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldFileName, vs...))
+}
+
+// FileNameGT applies the GT predicate on the "file_name" field.
+func FileNameGT(v string) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldFileName, v))
+}
+
+// FileNameGTE applies the GTE predicate on the "file_name" field.
+func FileNameGTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldFileName, v))
+}
+
+// FileNameLT applies the LT predicate on the "file_name" field.
+func FileNameLT(v string) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldFileName, v))
+}
+
+// FileNameLTE applies the LTE predicate on the "file_name" field.
+func FileNameLTE(v string) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldFileName, v))
+}
+
+// FileNameContains applies the Contains predicate on the "file_name" field.
+func FileNameContains(v string) predicate.Task {
+	return predicate.Task(sql.FieldContains(FieldFileName, v))
+}
+
+// FileNameHasPrefix applies the HasPrefix predicate on the "file_name" field.
+func FileNameHasPrefix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasPrefix(FieldFileName, v))
+}
+
+// FileNameHasSuffix applies the HasSuffix predicate on the "file_name" field.
+func FileNameHasSuffix(v string) predicate.Task {
+	return predicate.Task(sql.FieldHasSuffix(FieldFileName, v))
+}
+
+// FileNameIsNil applies the IsNil predicate on the "file_name" field.
+func FileNameIsNil() predicate.Task {
+	return predicate.Task(sql.FieldIsNull(FieldFileName))
+}
+
+// FileNameNotNil applies the NotNil predicate on the "file_name" field.
+func FileNameNotNil() predicate.Task {
+	return predicate.Task(sql.FieldNotNull(FieldFileName))
+}
+
+// FileNameEqualFold applies the EqualFold predicate on the "file_name" field.
+func FileNameEqualFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldEqualFold(FieldFileName, v))
+}
+
+// FileNameContainsFold applies the ContainsFold predicate on the "file_name" field.
+func FileNameContainsFold(v string) predicate.Task {
+	return predicate.Task(sql.FieldContainsFold(FieldFileName, v))
 }
 
 // FileTypeEQ applies the EQ predicate on the "file_type" field.

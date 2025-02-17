@@ -134,6 +134,7 @@ func (s *taskService) UpdateTaskStatus(ctx context.Context, id string, status ty
 	}
 
 	now := time.Now().UTC()
+	t.TaskStatus = status
 	switch status {
 	case types.TaskStatusProcessing:
 		t.StartedAt = &now
@@ -143,7 +144,6 @@ func (s *taskService) UpdateTaskStatus(ctx context.Context, id string, status ty
 		t.FailedAt = &now
 	}
 
-	t.TaskStatus = status
 	if err := s.taskRepo.Update(ctx, t); err != nil {
 		return fmt.Errorf("updating task: %w", err)
 	}
@@ -152,18 +152,19 @@ func (s *taskService) UpdateTaskStatus(ctx context.Context, id string, status ty
 }
 
 func (s *taskService) ProcessTask(ctx context.Context, id string) error {
-	t, err := s.taskRepo.Get(ctx, id)
-	if err != nil {
-		return fmt.Errorf("getting task: %w", err)
-	}
-
 	// Update status to processing
 	if err := s.UpdateTaskStatus(ctx, id, types.TaskStatusProcessing); err != nil {
 		return fmt.Errorf("updating task status: %w", err)
 	}
 
-	// Create progress tracker
-	tracker := newProgressTracker(t.ID, 1000, 30*time.Second, s.taskRepo, s.logger)
+	// Refresh task after status update
+	t, err := s.taskRepo.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("getting task: %w", err)
+	}
+
+	// Create progress tracker with the task object
+	tracker := newProgressTracker(ctx, t, 100, 30*time.Second, s.taskRepo, s.logger)
 
 	// Process based on entity type
 	var processErr error
@@ -173,6 +174,9 @@ func (s *taskService) ProcessTask(ctx context.Context, id string) error {
 	default:
 		processErr = errors.New(errors.ErrCodeInvalidOperation, fmt.Sprintf("unsupported entity type: %s", t.EntityType))
 	}
+
+	// Ensure all progress is updated before updating final status
+	tracker.Complete()
 
 	// Update final status based on error
 	if processErr != nil {
@@ -352,6 +356,9 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 		tracker.Increment(true, nil)
 	}
 
+	// Ensure all progress is updated
+	tracker.Complete()
+
 	// Return error if any events failed
 	if failureCount > 0 {
 		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("%d events failed to process", failureCount))
@@ -439,22 +446,28 @@ func isValidStatusTransition(from, to types.TaskStatus) bool {
 
 // ProgressTracker is a simple implementation of the ProgressTracker interface
 type progressTracker struct {
-	taskID         string
-	processed      int
-	successful     int
-	failed         int
-	errors         []string
+	ctx            context.Context
+	task           *task.Task
 	lastUpdateTime time.Time
 	batchSize      int
 	updateInterval time.Duration
 	repo           task.Repository
 	logger         *logger.Logger
+	errors         []string
 }
 
 // NewProgressTracker creates a new progress tracker
-func newProgressTracker(taskID string, batchSize int, updateInterval time.Duration, repo task.Repository, logger *logger.Logger) task.ProgressTracker {
+func newProgressTracker(
+	ctx context.Context,
+	task *task.Task,
+	batchSize int,
+	updateInterval time.Duration,
+	repo task.Repository,
+	logger *logger.Logger,
+) task.ProgressTracker {
 	return &progressTracker{
-		taskID:         taskID,
+		ctx:            ctx,
+		task:           task,
 		batchSize:      batchSize,
 		updateInterval: updateInterval,
 		lastUpdateTime: time.Now(),
@@ -465,11 +478,11 @@ func newProgressTracker(taskID string, batchSize int, updateInterval time.Durati
 
 // Increment updates the progress counters
 func (t *progressTracker) Increment(success bool, err error) {
-	t.processed++
+	t.task.ProcessedRecords++
 	if success {
-		t.successful++
+		t.task.SuccessfulRecords++
 	} else {
-		t.failed++
+		t.task.FailedRecords++
 		if err != nil && len(t.errors) < 10 {
 			t.errors = append(t.errors, err.Error())
 		}
@@ -480,19 +493,25 @@ func (t *progressTracker) Increment(success bool, err error) {
 	}
 }
 
+// Complete ensures any remaining updates are flushed
+func (t *progressTracker) Complete() {
+	if t.task.ProcessedRecords > 0 {
+		t.flush()
+	}
+}
+
 func (t *progressTracker) shouldUpdate() bool {
-	return t.processed%t.batchSize == 0 ||
+	return t.task.ProcessedRecords%t.batchSize == 0 ||
 		time.Since(t.lastUpdateTime) >= t.updateInterval
 }
 
 func (t *progressTracker) flush() {
-	errorSummary := ""
 	if len(t.errors) > 0 {
-		errorSummary = "Last errors: " + t.errors[len(t.errors)-1]
+		errorSummary := "Last errors: " + t.errors[len(t.errors)-1]
+		t.task.ErrorSummary = &errorSummary
 	}
 
-	if err := t.repo.UpdateProgress(context.Background(), t.taskID,
-		t.processed, t.successful, t.failed, errorSummary); err != nil {
+	if err := t.repo.Update(t.ctx, t.task); err != nil {
 		// Log error but continue processing
 		t.logger.Error("failed to update progress", "error", err)
 	}
