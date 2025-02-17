@@ -4408,6 +4408,63 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "put": {
+                "description": "Update a wallet's details including auto top-up configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "wallets"
+                ],
+                "summary": "Update a wallet",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Wallet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update wallet request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateWalletRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.WalletResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/wallets/{id}/balance/real-time": {
@@ -5394,6 +5451,20 @@ const docTemplate = `{
                 "customer_id"
             ],
             "properties": {
+                "auto_topup_amount": {
+                    "type": "number"
+                },
+                "auto_topup_min_balance": {
+                    "type": "number"
+                },
+                "auto_topup_trigger": {
+                    "default": "disabled",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.AutoTopupTrigger"
+                        }
+                    ]
+                },
                 "currency": {
                     "type": "string"
                 },
@@ -7245,6 +7316,34 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdateWalletRequest": {
+            "type": "object",
+            "properties": {
+                "auto_topup_amount": {
+                    "type": "number"
+                },
+                "auto_topup_min_balance": {
+                    "type": "number"
+                },
+                "auto_topup_trigger": {
+                    "default": "disabled",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.AutoTopupTrigger"
+                        }
+                    ]
+                },
+                "description": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.UsageResult": {
             "type": "object",
             "properties": {
@@ -7273,6 +7372,15 @@ const docTemplate = `{
         "dto.WalletBalanceResponse": {
             "type": "object",
             "properties": {
+                "auto_topup_amount": {
+                    "type": "number"
+                },
+                "auto_topup_min_balance": {
+                    "type": "number"
+                },
+                "auto_topup_trigger": {
+                    "$ref": "#/definitions/types.AutoTopupTrigger"
+                },
                 "balance": {
                     "type": "number"
                 },
@@ -7332,6 +7440,15 @@ const docTemplate = `{
         "dto.WalletResponse": {
             "type": "object",
             "properties": {
+                "auto_topup_amount": {
+                    "type": "number"
+                },
+                "auto_topup_min_balance": {
+                    "type": "number"
+                },
+                "auto_topup_trigger": {
+                    "$ref": "#/definitions/types.AutoTopupTrigger"
+                },
                 "balance": {
                     "type": "number"
                 },
@@ -7717,6 +7834,17 @@ const docTemplate = `{
                 "AggregationSum",
                 "AggregationAvg",
                 "AggregationCountUnique"
+            ]
+        },
+        "types.AutoTopupTrigger": {
+            "type": "string",
+            "enum": [
+                "disabled",
+                "balance_below_threshold"
+            ],
+            "x-enum-varnames": [
+                "AutoTopupTriggerDisabled",
+                "AutoTopupTriggerBalanceBelowThreshold"
             ]
         },
         "types.BillingCadence": {

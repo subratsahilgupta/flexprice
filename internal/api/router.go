@@ -148,6 +148,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			wallet.POST("/:id/top-up", handlers.Wallet.TopUpWallet)
 			wallet.POST("/:id/terminate", handlers.Wallet.TerminateWallet)
 			wallet.GET("/:id/balance/real-time", handlers.Wallet.GetWalletBalance)
+			wallet.PUT("/:id", handlers.Wallet.UpdateWallet)
 		}
 		// Tenant routes
 		tenantRoutes := v1Private.Group("/tenants")

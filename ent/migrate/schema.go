@@ -771,6 +771,9 @@ var (
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "balance", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 		{Name: "wallet_status", Type: field.TypeString, Default: "active", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "auto_topup_trigger", Type: field.TypeString, Nullable: true, Default: "disabled", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "auto_topup_min_balance", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
+		{Name: "auto_topup_amount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 	}
 	// WalletsTable holds the schema information for the "wallets" table.
 	WalletsTable = &schema.Table{

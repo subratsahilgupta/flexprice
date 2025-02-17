@@ -450,6 +450,14 @@ definitions:
     type: object
   dto.CreateWalletRequest:
     properties:
+      auto_topup_amount:
+        type: number
+      auto_topup_min_balance:
+        type: number
+      auto_topup_trigger:
+        allOf:
+        - $ref: '#/definitions/types.AutoTopupTrigger'
+        default: disabled
       currency:
         type: string
       customer_id:
@@ -1703,6 +1711,23 @@ definitions:
     required:
     - task_status
     type: object
+  dto.UpdateWalletRequest:
+    properties:
+      auto_topup_amount:
+        type: number
+      auto_topup_min_balance:
+        type: number
+      auto_topup_trigger:
+        allOf:
+        - $ref: '#/definitions/types.AutoTopupTrigger'
+        default: disabled
+      description:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      name:
+        type: string
+    type: object
   dto.UsageResult:
     properties:
       value:
@@ -1721,6 +1746,12 @@ definitions:
     type: object
   dto.WalletBalanceResponse:
     properties:
+      auto_topup_amount:
+        type: number
+      auto_topup_min_balance:
+        type: number
+      auto_topup_trigger:
+        $ref: '#/definitions/types.AutoTopupTrigger'
       balance:
         type: number
       balance_updated_at:
@@ -1760,6 +1791,12 @@ definitions:
     type: object
   dto.WalletResponse:
     properties:
+      auto_topup_amount:
+        type: number
+      auto_topup_min_balance:
+        type: number
+      auto_topup_trigger:
+        $ref: '#/definitions/types.AutoTopupTrigger'
       balance:
         type: number
       created_at:
@@ -2033,6 +2070,14 @@ definitions:
     - AggregationSum
     - AggregationAvg
     - AggregationCountUnique
+  types.AutoTopupTrigger:
+    enum:
+    - disabled
+    - balance_below_threshold
+    type: string
+    x-enum-varnames:
+    - AutoTopupTriggerDisabled
+    - AutoTopupTriggerBalanceBelowThreshold
   types.BillingCadence:
     enum:
     - RECURRING
@@ -5129,6 +5174,44 @@ paths:
       summary: Get wallet by ID
       tags:
       - Wallets
+    put:
+      consumes:
+      - application/json
+      description: Update a wallet's details including auto top-up configuration
+      parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update wallet request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateWalletRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.WalletResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Update a wallet
+      tags:
+      - wallets
   /wallets/{id}/balance/real-time:
     get:
       consumes:

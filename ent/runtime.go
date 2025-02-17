@@ -734,6 +734,10 @@ func init() {
 	walletDescWalletStatus := walletFields[7].Descriptor()
 	// wallet.DefaultWalletStatus holds the default value on creation for the wallet_status field.
 	wallet.DefaultWalletStatus = walletDescWalletStatus.Default.(string)
+	// walletDescAutoTopupTrigger is the schema descriptor for auto_topup_trigger field.
+	walletDescAutoTopupTrigger := walletFields[8].Descriptor()
+	// wallet.DefaultAutoTopupTrigger holds the default value on creation for the auto_topup_trigger field.
+	wallet.DefaultAutoTopupTrigger = walletDescAutoTopupTrigger.Default.(string)
 	wallettransactionMixin := schema.WalletTransaction{}.Mixin()
 	wallettransactionMixinFields0 := wallettransactionMixin[0].Fields()
 	_ = wallettransactionMixinFields0
