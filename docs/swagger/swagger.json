@@ -5300,6 +5300,9 @@
                 "entity_type": {
                     "$ref": "#/definitions/types.EntityType"
                 },
+                "file_name": {
+                    "type": "string"
+                },
                 "file_type": {
                     "$ref": "#/definitions/types.FileType"
                 },
@@ -6794,6 +6797,9 @@
                 "failed_records": {
                     "type": "integer"
                 },
+                "file_name": {
+                    "type": "string"
+                },
                 "file_type": {
                     "$ref": "#/definitions/types.FileType"
                 },
@@ -7645,12 +7651,14 @@
             "enum": [
                 "COUNT",
                 "SUM",
-                "AVG"
+                "AVG",
+                "COUNT_UNIQUE"
             ],
             "x-enum-varnames": [
                 "AggregationCount",
                 "AggregationSum",
-                "AggregationAvg"
+                "AggregationAvg",
+                "AggregationCountUnique"
             ]
         },
         "types.BillingCadence": {

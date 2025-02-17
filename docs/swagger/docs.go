@@ -5303,6 +5303,9 @@ const docTemplate = `{
                 "entity_type": {
                     "$ref": "#/definitions/types.EntityType"
                 },
+                "file_name": {
+                    "type": "string"
+                },
                 "file_type": {
                     "$ref": "#/definitions/types.FileType"
                 },
@@ -6797,6 +6800,9 @@ const docTemplate = `{
                 "failed_records": {
                     "type": "integer"
                 },
+                "file_name": {
+                    "type": "string"
+                },
                 "file_type": {
                     "$ref": "#/definitions/types.FileType"
                 },
@@ -7648,12 +7654,14 @@ const docTemplate = `{
             "enum": [
                 "COUNT",
                 "SUM",
-                "AVG"
+                "AVG",
+                "COUNT_UNIQUE"
             ],
             "x-enum-varnames": [
                 "AggregationCount",
                 "AggregationSum",
-                "AggregationAvg"
+                "AggregationAvg",
+                "AggregationCountUnique"
             ]
         },
         "types.BillingCadence": {
