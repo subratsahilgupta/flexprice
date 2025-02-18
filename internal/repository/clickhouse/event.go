@@ -92,7 +92,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 			var value decimal.Decimal
 
 			switch params.AggregationType {
-			case types.AggregationCount:
+			case types.AggregationCount, types.AggregationCountUnique:
 				var countValue uint64
 				if err := rows.Scan(&windowSize, &countValue); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
@@ -117,7 +117,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 		// Non-windowed query - process single row
 		if rows.Next() {
 			switch params.AggregationType {
-			case types.AggregationCount:
+			case types.AggregationCount, types.AggregationCountUnique:
 				var value uint64
 				if err := rows.Scan(&value); err != nil {
 					return nil, fmt.Errorf("scan result: %w", err)
@@ -176,7 +176,7 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 
 		// Use appropriate type based on aggregation
 		switch params.AggregationType {
-		case types.AggregationCount:
+		case types.AggregationCount, types.AggregationCountUnique:
 			var value uint64
 			if err := rows.Scan(&filterGroupID, &value); err != nil {
 				return nil, fmt.Errorf("failed to scan count row: %w", err)
