@@ -46,6 +46,12 @@ const (
 	FieldMetadata = "metadata"
 	// FieldTransactionStatus holds the string denoting the transaction_status field in the database.
 	FieldTransactionStatus = "transaction_status"
+	// FieldExpiryDate holds the string denoting the expiry_date field in the database.
+	FieldExpiryDate = "expiry_date"
+	// FieldAmountUsed holds the string denoting the amount_used field in the database.
+	FieldAmountUsed = "amount_used"
+	// FieldTransactionReason holds the string denoting the transaction_reason field in the database.
+	FieldTransactionReason = "transaction_reason"
 	// Table holds the table name of the wallettransaction in the database.
 	Table = "wallet_transactions"
 )
@@ -69,6 +75,9 @@ var Columns = []string{
 	FieldDescription,
 	FieldMetadata,
 	FieldTransactionStatus,
+	FieldExpiryDate,
+	FieldAmountUsed,
+	FieldTransactionReason,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -104,6 +113,8 @@ var (
 	DefaultBalanceAfter decimal.Decimal
 	// DefaultTransactionStatus holds the default value on creation for the "transaction_status" field.
 	DefaultTransactionStatus string
+	// DefaultTransactionReason holds the default value on creation for the "transaction_reason" field.
+	DefaultTransactionReason string
 )
 
 // OrderOption defines the ordering options for the WalletTransaction queries.
@@ -187,4 +198,19 @@ func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 // ByTransactionStatus orders the results by the transaction_status field.
 func ByTransactionStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTransactionStatus, opts...).ToFunc()
+}
+
+// ByExpiryDate orders the results by the expiry_date field.
+func ByExpiryDate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExpiryDate, opts...).ToFunc()
+}
+
+// ByAmountUsed orders the results by the amount_used field.
+func ByAmountUsed(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAmountUsed, opts...).ToFunc()
+}
+
+// ByTransactionReason orders the results by the transaction_reason field.
+func ByTransactionReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTransactionReason, opts...).ToFunc()
 }

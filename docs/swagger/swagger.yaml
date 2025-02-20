@@ -455,9 +455,12 @@ definitions:
       auto_topup_min_balance:
         type: number
       auto_topup_trigger:
-        allOf:
-        - $ref: '#/definitions/types.AutoTopupTrigger'
-        default: disabled
+        $ref: '#/definitions/types.AutoTopupTrigger'
+      config:
+        $ref: '#/definitions/types.WalletConfig'
+      conversion_rate:
+        default: 1
+        type: integer
       currency:
         type: string
       customer_id:
@@ -468,6 +471,10 @@ definitions:
         $ref: '#/definitions/types.Metadata'
       name:
         type: string
+      wallet_type:
+        allOf:
+        - $ref: '#/definitions/types.WalletType'
+        default: PRE_PAID
     required:
     - currency
     - customer_id
@@ -1498,10 +1505,16 @@ definitions:
         type: number
       description:
         type: string
+      generate_invoice:
+        default: false
+        type: boolean
       metadata:
         $ref: '#/definitions/types.Metadata'
+      transaction_reason:
+        $ref: '#/definitions/types.TransactionReason'
     required:
     - amount
+    - generate_invoice
     type: object
   dto.UpdateCustomerRequest:
     properties:
@@ -1721,6 +1734,8 @@ definitions:
         allOf:
         - $ref: '#/definitions/types.AutoTopupTrigger'
         default: disabled
+      config:
+        $ref: '#/definitions/types.WalletConfig'
       description:
         type: string
       metadata:
@@ -1756,6 +1771,10 @@ definitions:
         type: number
       balance_updated_at:
         type: string
+      config:
+        $ref: '#/definitions/types.WalletConfig'
+      conversion_rate:
+        type: integer
       created_at:
         type: string
       created_by:
@@ -1788,6 +1807,8 @@ definitions:
         type: string
       wallet_status:
         $ref: '#/definitions/types.WalletStatus'
+      wallet_type:
+        $ref: '#/definitions/types.WalletType'
     type: object
   dto.WalletResponse:
     properties:
@@ -1799,6 +1820,10 @@ definitions:
         $ref: '#/definitions/types.AutoTopupTrigger'
       balance:
         type: number
+      config:
+        $ref: '#/definitions/types.WalletConfig'
+      conversion_rate:
+        type: integer
       created_at:
         type: string
       currency:
@@ -1817,10 +1842,14 @@ definitions:
         type: string
       wallet_status:
         $ref: '#/definitions/types.WalletStatus'
+      wallet_type:
+        $ref: '#/definitions/types.WalletType'
     type: object
   dto.WalletTransactionResponse:
     properties:
       amount:
+        type: number
+      amount_used:
         type: number
       balance_after:
         type: number
@@ -1830,6 +1859,8 @@ definitions:
         type: string
       description:
         type: string
+      expiry_date:
+        type: string
       id:
         type: string
       metadata:
@@ -1838,6 +1869,8 @@ definitions:
         type: string
       reference_type:
         type: string
+      transaction_reason:
+        $ref: '#/definitions/types.TransactionReason'
       transaction_status:
         $ref: '#/definitions/types.TransactionStatus'
       type:
@@ -2295,6 +2328,24 @@ definitions:
     x-enum-varnames:
     - TaskTypeImport
     - TaskTypeExport
+  types.TransactionReason:
+    enum:
+    - INVOICE_PAYMENT
+    - FREE_CREDIT_GRANT
+    - SUBSCRIPTION_CREDIT_GRANT
+    - PURCHASED_CREDIT_INVOICED
+    - PURCHASED_CREDIT_DIRECT
+    - INVOICE_REFUND
+    - CREDIT_EXPIRED
+    type: string
+    x-enum-varnames:
+    - TransactionReasonInvoicePayment
+    - TransactionReasonFreeCredit
+    - TransactionReasonSubscriptionCredit
+    - TransactionReasonPurchasedCreditInvoiced
+    - TransactionReasonPurchasedCreditDirect
+    - TransactionReasonInvoiceRefund
+    - TransactionReasonCreditExpired
   types.TransactionStatus:
     enum:
     - pending
@@ -2313,6 +2364,26 @@ definitions:
     x-enum-varnames:
     - TransactionTypeCredit
     - TransactionTypeDebit
+  types.WalletConfig:
+    properties:
+      allowed_price_types:
+        description: |-
+          AllowedPriceTypes is a list of price types that are allowed for the wallet
+          nil means all price types are allowed
+        items:
+          $ref: '#/definitions/types.WalletConfigPriceType'
+        type: array
+    type: object
+  types.WalletConfigPriceType:
+    enum:
+    - ALL
+    - USAGE
+    - FIXED
+    type: string
+    x-enum-varnames:
+    - WalletConfigPriceTypeAll
+    - WalletConfigPriceTypeUsage
+    - WalletConfigPriceTypeFixed
   types.WalletStatus:
     enum:
     - active
@@ -2323,6 +2394,14 @@ definitions:
     - WalletStatusActive
     - WalletStatusFrozen
     - WalletStatusClosed
+  types.WalletType:
+    enum:
+    - PROMOTIONAL
+    - PRE_PAID
+    type: string
+    x-enum-varnames:
+    - WalletTypePromotional
+    - WalletTypePrePaid
   types.WindowSize:
     enum:
     - MINUTE
@@ -5328,10 +5407,19 @@ paths:
       description: Get transactions for a wallet with pagination
       parameters:
       - in: query
+        name: amount_used_less_than
+        type: number
+      - in: query
         name: end_time
         type: string
       - in: query
         name: expand
+        type: string
+      - in: query
+        name: expiry_date_after
+        type: string
+      - in: query
+        name: expiry_date_before
         type: string
       - in: query
         maximum: 1000
@@ -5371,6 +5459,25 @@ paths:
         - StatusPublished
         - StatusDeleted
         - StatusArchived
+      - enum:
+        - INVOICE_PAYMENT
+        - FREE_CREDIT_GRANT
+        - SUBSCRIPTION_CREDIT_GRANT
+        - PURCHASED_CREDIT_INVOICED
+        - PURCHASED_CREDIT_DIRECT
+        - INVOICE_REFUND
+        - CREDIT_EXPIRED
+        in: query
+        name: transaction_reason
+        type: string
+        x-enum-varnames:
+        - TransactionReasonInvoicePayment
+        - TransactionReasonFreeCredit
+        - TransactionReasonSubscriptionCredit
+        - TransactionReasonPurchasedCreditInvoiced
+        - TransactionReasonPurchasedCreditDirect
+        - TransactionReasonInvoiceRefund
+        - TransactionReasonCreditExpired
       - enum:
         - pending
         - completed

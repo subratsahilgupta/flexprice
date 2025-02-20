@@ -213,6 +213,40 @@ func (wtc *WalletTransactionCreate) SetNillableTransactionStatus(s *string) *Wal
 	return wtc
 }
 
+// SetExpiryDate sets the "expiry_date" field.
+func (wtc *WalletTransactionCreate) SetExpiryDate(t time.Time) *WalletTransactionCreate {
+	wtc.mutation.SetExpiryDate(t)
+	return wtc
+}
+
+// SetNillableExpiryDate sets the "expiry_date" field if the given value is not nil.
+func (wtc *WalletTransactionCreate) SetNillableExpiryDate(t *time.Time) *WalletTransactionCreate {
+	if t != nil {
+		wtc.SetExpiryDate(*t)
+	}
+	return wtc
+}
+
+// SetAmountUsed sets the "amount_used" field.
+func (wtc *WalletTransactionCreate) SetAmountUsed(d decimal.Decimal) *WalletTransactionCreate {
+	wtc.mutation.SetAmountUsed(d)
+	return wtc
+}
+
+// SetTransactionReason sets the "transaction_reason" field.
+func (wtc *WalletTransactionCreate) SetTransactionReason(s string) *WalletTransactionCreate {
+	wtc.mutation.SetTransactionReason(s)
+	return wtc
+}
+
+// SetNillableTransactionReason sets the "transaction_reason" field if the given value is not nil.
+func (wtc *WalletTransactionCreate) SetNillableTransactionReason(s *string) *WalletTransactionCreate {
+	if s != nil {
+		wtc.SetTransactionReason(*s)
+	}
+	return wtc
+}
+
 // SetID sets the "id" field.
 func (wtc *WalletTransactionCreate) SetID(s string) *WalletTransactionCreate {
 	wtc.mutation.SetID(s)
@@ -282,6 +316,10 @@ func (wtc *WalletTransactionCreate) defaults() {
 		v := wallettransaction.DefaultTransactionStatus
 		wtc.mutation.SetTransactionStatus(v)
 	}
+	if _, ok := wtc.mutation.TransactionReason(); !ok {
+		v := wallettransaction.DefaultTransactionReason
+		wtc.mutation.SetTransactionReason(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -330,6 +368,12 @@ func (wtc *WalletTransactionCreate) check() error {
 	}
 	if _, ok := wtc.mutation.TransactionStatus(); !ok {
 		return &ValidationError{Name: "transaction_status", err: errors.New(`ent: missing required field "WalletTransaction.transaction_status"`)}
+	}
+	if _, ok := wtc.mutation.AmountUsed(); !ok {
+		return &ValidationError{Name: "amount_used", err: errors.New(`ent: missing required field "WalletTransaction.amount_used"`)}
+	}
+	if _, ok := wtc.mutation.TransactionReason(); !ok {
+		return &ValidationError{Name: "transaction_reason", err: errors.New(`ent: missing required field "WalletTransaction.transaction_reason"`)}
 	}
 	return nil
 }
@@ -429,6 +473,18 @@ func (wtc *WalletTransactionCreate) createSpec() (*WalletTransaction, *sqlgraph.
 	if value, ok := wtc.mutation.TransactionStatus(); ok {
 		_spec.SetField(wallettransaction.FieldTransactionStatus, field.TypeString, value)
 		_node.TransactionStatus = value
+	}
+	if value, ok := wtc.mutation.ExpiryDate(); ok {
+		_spec.SetField(wallettransaction.FieldExpiryDate, field.TypeTime, value)
+		_node.ExpiryDate = &value
+	}
+	if value, ok := wtc.mutation.AmountUsed(); ok {
+		_spec.SetField(wallettransaction.FieldAmountUsed, field.TypeOther, value)
+		_node.AmountUsed = value
+	}
+	if value, ok := wtc.mutation.TransactionReason(); ok {
+		_spec.SetField(wallettransaction.FieldTransactionReason, field.TypeString, value)
+		_node.TransactionReason = value
 	}
 	return _node, _spec
 }

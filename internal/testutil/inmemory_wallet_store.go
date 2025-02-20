@@ -103,6 +103,22 @@ func transactionFilterFn(ctx context.Context, t *wallet.Transaction, filter inte
 		}
 	}
 
+	if f.AmountUsedLessThan != nil && t.AmountUsed.GreaterThan(*f.AmountUsedLessThan) {
+		return false
+	}
+
+	if f.ExpiryDateBefore != nil && t.ExpiryDate != nil && t.ExpiryDate.After(*f.ExpiryDateBefore) {
+		return false
+	}
+
+	if f.ExpiryDateAfter != nil && t.ExpiryDate != nil && t.ExpiryDate.Before(*f.ExpiryDateAfter) {
+		return false
+	}
+
+	if f.TransactionReason != nil && t.TransactionReason != *f.TransactionReason {
+		return false
+	}
+
 	return true
 }
 

@@ -9,19 +9,23 @@ import (
 	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
-// CreateWalletRequest represents the request to create a new wallet
+// CreateWalletRequest represents the request to create a wallet
 type CreateWalletRequest struct {
 	CustomerID          string                 `json:"customer_id" binding:"required"`
 	Name                string                 `json:"name,omitempty"`
 	Currency            string                 `json:"currency" binding:"required"`
 	Description         string                 `json:"description,omitempty"`
 	Metadata            types.Metadata         `json:"metadata,omitempty"`
-	AutoTopupTrigger    types.AutoTopupTrigger `json:"auto_topup_trigger,omitempty" default:"disabled"`
+	AutoTopupTrigger    types.AutoTopupTrigger `json:"auto_topup_trigger,omitempty"`
 	AutoTopupMinBalance decimal.Decimal        `json:"auto_topup_min_balance,omitempty"`
 	AutoTopupAmount     decimal.Decimal        `json:"auto_topup_amount,omitempty"`
+	WalletType          types.WalletType       `json:"wallet_type" default:"PRE_PAID"`
+	Config              *types.WalletConfig    `json:"config,omitempty"`
+	ConversionRate      int                    `json:"conversion_rate" default:"1"`
 }
 
 // UpdateWalletRequest represents the request to update a wallet
@@ -32,6 +36,7 @@ type UpdateWalletRequest struct {
 	AutoTopupTrigger    *types.AutoTopupTrigger `json:"auto_topup_trigger,omitempty" default:"disabled"`
 	AutoTopupMinBalance *decimal.Decimal        `json:"auto_topup_min_balance,omitempty"`
 	AutoTopupAmount     *decimal.Decimal        `json:"auto_topup_amount,omitempty"`
+	Config              *types.WalletConfig     `json:"config,omitempty"`
 }
 
 func (r *UpdateWalletRequest) Validate() error {
@@ -53,6 +58,12 @@ func (r *UpdateWalletRequest) Validate() error {
 		}
 	}
 
+	if r.Config != nil {
+		if err := r.Config.Validate(); err != nil {
+			return errors.Wrap(err, errors.ErrCodeValidation, "invalid wallet config")
+		}
+	}
+
 	return validator.New().Struct(r)
 }
 
@@ -61,6 +72,18 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 	// Validate currency
 	if err := types.ValidateCurrencyCode(r.Currency); err != nil {
 		return nil
+	}
+
+	if r.Config == nil {
+		r.Config = types.GetDefaultWalletConfig()
+	}
+
+	if r.WalletType == "" {
+		r.WalletType = types.WalletTypePrePaid
+	}
+
+	if r.ConversionRate < 1 {
+		r.ConversionRate = 1
 	}
 
 	return &wallet.Wallet{
@@ -76,6 +99,9 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 		Balance:             decimal.Zero,
 		WalletStatus:        types.WalletStatusActive,
 		BaseModel:           types.GetDefaultBaseModel(ctx),
+		WalletType:          r.WalletType,
+		Config:              lo.FromPtr(r.Config),
+		ConversionRate:      r.ConversionRate,
 	}
 }
 
@@ -85,6 +111,12 @@ func (r *CreateWalletRequest) Validate() error {
 	}
 	if err := types.AutoTopupTrigger(r.AutoTopupTrigger).Validate(); err != nil {
 		return err
+	}
+	if err := r.WalletType.Validate(); err != nil {
+		return err
+	}
+	if r.ConversionRate < 0 {
+		return errors.New(errors.ErrCodeValidation, "conversion_rate must be greater than 0")
 	}
 	return validator.New().Struct(r)
 }
@@ -102,6 +134,9 @@ type WalletResponse struct {
 	AutoTopupTrigger    types.AutoTopupTrigger `json:"auto_topup_trigger"`
 	AutoTopupMinBalance decimal.Decimal        `json:"auto_topup_min_balance"`
 	AutoTopupAmount     decimal.Decimal        `json:"auto_topup_amount"`
+	WalletType          types.WalletType       `json:"wallet_type"`
+	Config              types.WalletConfig     `json:"config,omitempty"`
+	ConversionRate      int                    `json:"conversion_rate"`
 	CreatedAt           time.Time              `json:"created_at"`
 	UpdatedAt           time.Time              `json:"updated_at"`
 }
@@ -123,6 +158,9 @@ func FromWallet(w *wallet.Wallet) *WalletResponse {
 		AutoTopupTrigger:    w.AutoTopupTrigger,
 		AutoTopupMinBalance: w.AutoTopupMinBalance,
 		AutoTopupAmount:     w.AutoTopupAmount,
+		WalletType:          w.WalletType,
+		Config:              w.Config,
+		ConversionRate:      w.ConversionRate,
 		CreatedAt:           w.CreatedAt,
 		UpdatedAt:           w.UpdatedAt,
 	}
@@ -137,6 +175,9 @@ type WalletTransactionResponse struct {
 	BalanceBefore     decimal.Decimal         `json:"balance_before"`
 	BalanceAfter      decimal.Decimal         `json:"balance_after"`
 	TransactionStatus types.TransactionStatus `json:"transaction_status"`
+	ExpiryDate        *time.Time              `json:"expiry_date,omitempty"`
+	AmountUsed        decimal.Decimal         `json:"amount_used,omitempty"`
+	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty"`
 	ReferenceType     string                  `json:"reference_type,omitempty"`
 	ReferenceID       string                  `json:"reference_id,omitempty"`
 	Description       string                  `json:"description,omitempty"`
@@ -154,6 +195,9 @@ func FromWalletTransaction(t *wallet.Transaction) *WalletTransactionResponse {
 		BalanceBefore:     t.BalanceBefore,
 		BalanceAfter:      t.BalanceAfter,
 		TransactionStatus: t.TxStatus,
+		ExpiryDate:        t.ExpiryDate,
+		AmountUsed:        t.AmountUsed,
+		TransactionReason: t.TransactionReason,
 		ReferenceType:     t.ReferenceType,
 		ReferenceID:       t.ReferenceID,
 		Description:       t.Description,
@@ -167,9 +211,24 @@ type ListWalletTransactionsResponse = types.ListResponse[*WalletTransactionRespo
 
 // TopUpWalletRequest represents a request to add credits to a wallet
 type TopUpWalletRequest struct {
-	Amount      decimal.Decimal `json:"amount" binding:"required"`
-	Description string          `json:"description,omitempty"`
-	Metadata    types.Metadata  `json:"metadata,omitempty"`
+	Amount            decimal.Decimal         `json:"amount" binding:"required"`
+	Description       string                  `json:"description,omitempty"`
+	GenerateInvoice   bool                    `json:"generate_invoice" binding:"required" default:"false"`
+	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty"`
+	Metadata          types.Metadata          `json:"metadata,omitempty"`
+}
+
+func (r *TopUpWalletRequest) Validate() error {
+	if r.Amount.LessThanOrEqual(decimal.Zero) {
+		return errors.New(errors.ErrCodeValidation, "amount must be greater than 0")
+	}
+
+	if r.TransactionReason != "" {
+		if err := r.TransactionReason.Validate(); err != nil {
+			return errors.Wrap(err, errors.ErrCodeValidation, "invalid transaction_reason")
+		}
+	}
+	return nil
 }
 
 // WalletBalanceResponse represents the response for getting wallet balance

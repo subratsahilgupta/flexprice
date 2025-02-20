@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
@@ -72,6 +73,26 @@ func (WalletTransaction) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			Default(string(types.TransactionStatusPending)),
+		field.Time("expiry_date").
+			SchemaType(map[string]string{
+				"postgres": "timestamp",
+			}).
+			Immutable().
+			Optional().
+			Nillable(),
+		field.Other("amount_used", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(20,8)",
+			}).
+			Annotations(
+				entsql.Default("0"),
+			),
+		field.String("transaction_reason").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Immutable().
+			Default(string(types.TransactionReasonFreeCredit)),
 	}
 }
 

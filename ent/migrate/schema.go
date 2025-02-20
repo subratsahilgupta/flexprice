@@ -774,6 +774,9 @@ var (
 		{Name: "auto_topup_trigger", Type: field.TypeString, Nullable: true, Default: "disabled", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "auto_topup_min_balance", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 		{Name: "auto_topup_amount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
+		{Name: "wallet_type", Type: field.TypeString, Default: "PRE_PAID", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "conversion_rate", Type: field.TypeInt, Default: 1, SchemaType: map[string]string{"postgres": "integer"}},
+		{Name: "config", Type: field.TypeJSON, Nullable: true},
 	}
 	// WalletsTable holds the schema information for the "wallets" table.
 	WalletsTable = &schema.Table{
@@ -812,6 +815,9 @@ var (
 		{Name: "description", Type: field.TypeString, Nullable: true},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "transaction_status", Type: field.TypeString, Default: "pending", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "expiry_date", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamp"}},
+		{Name: "amount_used", Type: field.TypeOther, Default: "0", SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "transaction_reason", Type: field.TypeString, Default: "FREE_CREDIT_GRANT", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// WalletTransactionsTable holds the schema information for the "wallet_transactions" table.
 	WalletTransactionsTable = &schema.Table{

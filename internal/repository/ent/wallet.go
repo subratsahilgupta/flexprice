@@ -45,8 +45,14 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetAutoTopupTrigger(string(w.AutoTopupTrigger)).
 		SetAutoTopupMinBalance(w.AutoTopupMinBalance).
 		SetAutoTopupAmount(w.AutoTopupAmount).
+		SetWalletType(string(w.WalletType)).
+		SetConfig(w.Config).
+		SetConversionRate(w.ConversionRate).
 		SetStatus(string(w.Status)).
 		SetCreatedBy(w.CreatedBy).
+		SetCreatedAt(w.CreatedAt).
+		SetUpdatedBy(w.UpdatedBy).
+		SetUpdatedAt(w.UpdatedAt).
 		Save(ctx)
 
 	if err != nil {
@@ -54,7 +60,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 	}
 
 	// Update the input wallet with created data
-	*w = *toDomainWallet(wallet)
+	*w = *walletdomain.FromEnt(wallet)
 	return nil
 }
 
@@ -75,7 +81,7 @@ func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walle
 		return nil, fmt.Errorf("failed to query wallet: %w", err)
 	}
 
-	return toDomainWallet(w), nil
+	return walletdomain.FromEnt(w), nil
 }
 
 func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*walletdomain.Wallet, error) {
@@ -95,7 +101,7 @@ func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerI
 
 	result := make([]*walletdomain.Wallet, len(wallets))
 	for i, w := range wallets {
-		result[i] = toDomainWallet(w)
+		result[i] = walletdomain.FromEnt(w)
 	}
 	return result, nil
 }
@@ -245,7 +251,7 @@ func (r *walletRepository) GetTransactionByID(ctx context.Context, id string) (*
 		return nil, fmt.Errorf("failed to query transaction: %w", err)
 	}
 
-	return toDomainTransaction(t), nil
+	return walletdomain.TransactionFromEnt(t), nil
 }
 
 func (r *walletRepository) ListWalletTransactions(ctx context.Context, f *types.WalletTransactionFilter) ([]*walletdomain.Transaction, error) {
@@ -261,12 +267,7 @@ func (r *walletRepository) ListWalletTransactions(ctx context.Context, f *types.
 		return nil, fmt.Errorf("failed to query transactions: %w", err)
 	}
 
-	transactions := make([]*walletdomain.Transaction, len(result))
-	for i, t := range result {
-		transactions[i] = toDomainTransaction(t)
-	}
-
-	return transactions, nil
+	return walletdomain.TransactionListFromEnt(result), nil
 }
 
 func (r *walletRepository) ListAllWalletTransactions(ctx context.Context, f *types.WalletTransactionFilter) ([]*walletdomain.Transaction, error) {
@@ -286,12 +287,7 @@ func (r *walletRepository) ListAllWalletTransactions(ctx context.Context, f *typ
 		return nil, fmt.Errorf("failed to query transactions: %w", err)
 	}
 
-	transactions := make([]*walletdomain.Transaction, len(result))
-	for i, t := range result {
-		transactions[i] = toDomainTransaction(t)
-	}
-
-	return transactions, nil
+	return walletdomain.TransactionListFromEnt(result), nil
 }
 
 func (r *walletRepository) CountWalletTransactions(ctx context.Context, f *types.WalletTransactionFilter) (int, error) {
@@ -337,72 +333,6 @@ func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id strin
 	}
 
 	return nil
-}
-
-// Helper function to convert Ent wallet to domain wallet
-func toDomainWallet(w *ent.Wallet) *walletdomain.Wallet {
-	// Set default values for nullable fields
-	autoTopupTrigger := types.AutoTopupTriggerDisabled
-	if w.AutoTopupTrigger != nil {
-		autoTopupTrigger = types.AutoTopupTrigger(*w.AutoTopupTrigger)
-	}
-
-	autoTopupMinBalance := decimal.Zero
-	if w.AutoTopupMinBalance != nil {
-		autoTopupMinBalance = *w.AutoTopupMinBalance
-	}
-
-	autoTopupAmount := decimal.Zero
-	if w.AutoTopupAmount != nil && !w.AutoTopupAmount.IsZero() {
-		autoTopupAmount = *w.AutoTopupAmount
-	}
-
-	return &walletdomain.Wallet{
-		ID:                  w.ID,
-		Name:                w.Name,
-		CustomerID:          w.CustomerID,
-		Currency:            w.Currency,
-		Description:         w.Description,
-		Metadata:            w.Metadata,
-		Balance:             w.Balance,
-		WalletStatus:        types.WalletStatus(w.WalletStatus),
-		AutoTopupTrigger:    autoTopupTrigger,
-		AutoTopupMinBalance: autoTopupMinBalance,
-		AutoTopupAmount:     autoTopupAmount,
-		BaseModel: types.BaseModel{
-			TenantID:  w.TenantID,
-			Status:    types.Status(w.Status),
-			CreatedAt: w.CreatedAt,
-			CreatedBy: w.CreatedBy,
-			UpdatedAt: w.UpdatedAt,
-			UpdatedBy: w.UpdatedBy,
-		},
-	}
-}
-
-// Helper function to convert Ent transaction to domain transaction
-func toDomainTransaction(t *ent.WalletTransaction) *walletdomain.Transaction {
-	return &walletdomain.Transaction{
-		ID:            t.ID,
-		WalletID:      t.WalletID,
-		Type:          types.TransactionType(t.Type),
-		Amount:        t.Amount,
-		ReferenceType: t.ReferenceType,
-		ReferenceID:   t.ReferenceID,
-		Description:   t.Description,
-		Metadata:      t.Metadata,
-		TxStatus:      types.TransactionStatus(t.TransactionStatus),
-		BalanceBefore: t.BalanceBefore,
-		BalanceAfter:  t.BalanceAfter,
-		BaseModel: types.BaseModel{
-			TenantID:  t.TenantID,
-			Status:    types.Status(t.Status),
-			CreatedAt: t.CreatedAt,
-			CreatedBy: t.CreatedBy,
-			UpdatedAt: t.UpdatedAt,
-			UpdatedBy: t.UpdatedBy,
-		},
-	}
 }
 
 // WalletTransactionQuery type alias for better readability
@@ -485,6 +415,22 @@ func (o WalletTransactionQueryOptions) applyEntityQueryOptions(ctx context.Conte
 		}
 	}
 
+	if f.AmountUsedLessThan != nil {
+		query = query.Where(wallettransaction.AmountUsedLT(*f.AmountUsedLessThan))
+	}
+
+	if f.ExpiryDateBefore != nil {
+		query = query.Where(wallettransaction.ExpiryDateLTE(*f.ExpiryDateBefore))
+	}
+
+	if f.ExpiryDateAfter != nil {
+		query = query.Where(wallettransaction.ExpiryDateGTE(*f.ExpiryDateAfter))
+	}
+
+	if f.TransactionReason != nil {
+		query = query.Where(wallettransaction.TransactionReason(string(*f.TransactionReason)))
+	}
+
 	return query
 }
 
@@ -495,17 +441,15 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 			wallet.ID(id),
 			wallet.TenantID(types.GetTenantID(ctx)),
 			wallet.StatusEQ(string(types.StatusPublished)),
-		)
+		).
+		SetWalletStatus(string(w.WalletStatus)).
+		SetName(w.Name).
+		SetDescription(w.Description).
+		SetMetadata(w.Metadata).
+		SetConfig(w.Config).
+		SetUpdatedBy(types.GetUserID(ctx)).
+		SetUpdatedAt(time.Now().UTC())
 
-	if w.Name != "" {
-		update.SetName(w.Name)
-	}
-	if w.Description != "" {
-		update.SetDescription(w.Description)
-	}
-	if w.Metadata != nil {
-		update.SetMetadata(w.Metadata)
-	}
 	if w.AutoTopupTrigger != "" {
 		if w.AutoTopupTrigger == types.AutoTopupTriggerDisabled {
 			// When disabling auto top-up, set all related fields to NULL
@@ -519,9 +463,6 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 			update.SetAutoTopupAmount(w.AutoTopupAmount)
 		}
 	}
-
-	update.SetUpdatedBy(types.GetUserID(ctx))
-	update.SetUpdatedAt(time.Now().UTC())
 
 	count, err := update.Save(ctx)
 	if err != nil {

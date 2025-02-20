@@ -4656,6 +4656,11 @@ const docTemplate = `{
                 "summary": "Get wallet transactions",
                 "parameters": [
                     {
+                        "type": "number",
+                        "name": "amount_used_less_than",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "name": "end_time",
                         "in": "query"
@@ -4663,6 +4668,16 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "expiry_date_after",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "expiry_date_before",
                         "in": "query"
                     },
                     {
@@ -4720,6 +4735,29 @@ const docTemplate = `{
                             "StatusArchived"
                         ],
                         "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "INVOICE_PAYMENT",
+                            "FREE_CREDIT_GRANT",
+                            "SUBSCRIPTION_CREDIT_GRANT",
+                            "PURCHASED_CREDIT_INVOICED",
+                            "PURCHASED_CREDIT_DIRECT",
+                            "INVOICE_REFUND",
+                            "CREDIT_EXPIRED"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "TransactionReasonInvoicePayment",
+                            "TransactionReasonFreeCredit",
+                            "TransactionReasonSubscriptionCredit",
+                            "TransactionReasonPurchasedCreditInvoiced",
+                            "TransactionReasonPurchasedCreditDirect",
+                            "TransactionReasonInvoiceRefund",
+                            "TransactionReasonCreditExpired"
+                        ],
+                        "name": "transaction_reason",
                         "in": "query"
                     },
                     {
@@ -5458,12 +5496,14 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "auto_topup_trigger": {
-                    "default": "disabled",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.AutoTopupTrigger"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.AutoTopupTrigger"
+                },
+                "config": {
+                    "$ref": "#/definitions/types.WalletConfig"
+                },
+                "conversion_rate": {
+                    "type": "integer",
+                    "default": 1
                 },
                 "currency": {
                     "type": "string"
@@ -5479,6 +5519,14 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "wallet_type": {
+                    "default": "PRE_PAID",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WalletType"
+                        }
+                    ]
                 }
             }
         },
@@ -6994,7 +7042,8 @@ const docTemplate = `{
         "dto.TopUpWalletRequest": {
             "type": "object",
             "required": [
-                "amount"
+                "amount",
+                "generate_invoice"
             ],
             "properties": {
                 "amount": {
@@ -7003,8 +7052,15 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "generate_invoice": {
+                    "type": "boolean",
+                    "default": false
+                },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
+                },
+                "transaction_reason": {
+                    "$ref": "#/definitions/types.TransactionReason"
                 }
             }
         },
@@ -7333,6 +7389,9 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "config": {
+                    "$ref": "#/definitions/types.WalletConfig"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -7387,6 +7446,12 @@ const docTemplate = `{
                 "balance_updated_at": {
                     "type": "string"
                 },
+                "config": {
+                    "$ref": "#/definitions/types.WalletConfig"
+                },
+                "conversion_rate": {
+                    "type": "integer"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -7434,6 +7499,9 @@ const docTemplate = `{
                 },
                 "wallet_status": {
                     "$ref": "#/definitions/types.WalletStatus"
+                },
+                "wallet_type": {
+                    "$ref": "#/definitions/types.WalletType"
                 }
             }
         },
@@ -7451,6 +7519,12 @@ const docTemplate = `{
                 },
                 "balance": {
                     "type": "number"
+                },
+                "config": {
+                    "$ref": "#/definitions/types.WalletConfig"
+                },
+                "conversion_rate": {
+                    "type": "integer"
                 },
                 "created_at": {
                     "type": "string"
@@ -7478,6 +7552,9 @@ const docTemplate = `{
                 },
                 "wallet_status": {
                     "$ref": "#/definitions/types.WalletStatus"
+                },
+                "wallet_type": {
+                    "$ref": "#/definitions/types.WalletType"
                 }
             }
         },
@@ -7485,6 +7562,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "amount": {
+                    "type": "number"
+                },
+                "amount_used": {
                     "type": "number"
                 },
                 "balance_after": {
@@ -7499,6 +7579,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "expiry_date": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -7510,6 +7593,9 @@ const docTemplate = `{
                 },
                 "reference_type": {
                     "type": "string"
+                },
+                "transaction_reason": {
+                    "$ref": "#/definitions/types.TransactionReason"
                 },
                 "transaction_status": {
                     "$ref": "#/definitions/types.TransactionStatus"
@@ -8131,6 +8217,27 @@ const docTemplate = `{
                 "TaskTypeExport"
             ]
         },
+        "types.TransactionReason": {
+            "type": "string",
+            "enum": [
+                "INVOICE_PAYMENT",
+                "FREE_CREDIT_GRANT",
+                "SUBSCRIPTION_CREDIT_GRANT",
+                "PURCHASED_CREDIT_INVOICED",
+                "PURCHASED_CREDIT_DIRECT",
+                "INVOICE_REFUND",
+                "CREDIT_EXPIRED"
+            ],
+            "x-enum-varnames": [
+                "TransactionReasonInvoicePayment",
+                "TransactionReasonFreeCredit",
+                "TransactionReasonSubscriptionCredit",
+                "TransactionReasonPurchasedCreditInvoiced",
+                "TransactionReasonPurchasedCreditDirect",
+                "TransactionReasonInvoiceRefund",
+                "TransactionReasonCreditExpired"
+            ]
+        },
         "types.TransactionStatus": {
             "type": "string",
             "enum": [
@@ -8155,6 +8262,31 @@ const docTemplate = `{
                 "TransactionTypeDebit"
             ]
         },
+        "types.WalletConfig": {
+            "type": "object",
+            "properties": {
+                "allowed_price_types": {
+                    "description": "AllowedPriceTypes is a list of price types that are allowed for the wallet\nnil means all price types are allowed",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.WalletConfigPriceType"
+                    }
+                }
+            }
+        },
+        "types.WalletConfigPriceType": {
+            "type": "string",
+            "enum": [
+                "ALL",
+                "USAGE",
+                "FIXED"
+            ],
+            "x-enum-varnames": [
+                "WalletConfigPriceTypeAll",
+                "WalletConfigPriceTypeUsage",
+                "WalletConfigPriceTypeFixed"
+            ]
+        },
         "types.WalletStatus": {
             "type": "string",
             "enum": [
@@ -8166,6 +8298,17 @@ const docTemplate = `{
                 "WalletStatusActive",
                 "WalletStatusFrozen",
                 "WalletStatusClosed"
+            ]
+        },
+        "types.WalletType": {
+            "type": "string",
+            "enum": [
+                "PROMOTIONAL",
+                "PRE_PAID"
+            ],
+            "x-enum-varnames": [
+                "WalletTypePromotional",
+                "WalletTypePrePaid"
             ]
         },
         "types.WindowSize": {

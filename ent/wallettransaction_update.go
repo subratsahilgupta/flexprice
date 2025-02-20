@@ -211,6 +211,20 @@ func (wtu *WalletTransactionUpdate) SetNillableTransactionStatus(s *string) *Wal
 	return wtu
 }
 
+// SetAmountUsed sets the "amount_used" field.
+func (wtu *WalletTransactionUpdate) SetAmountUsed(d decimal.Decimal) *WalletTransactionUpdate {
+	wtu.mutation.SetAmountUsed(d)
+	return wtu
+}
+
+// SetNillableAmountUsed sets the "amount_used" field if the given value is not nil.
+func (wtu *WalletTransactionUpdate) SetNillableAmountUsed(d *decimal.Decimal) *WalletTransactionUpdate {
+	if d != nil {
+		wtu.SetAmountUsed(*d)
+	}
+	return wtu
+}
+
 // Mutation returns the WalletTransactionMutation object of the builder.
 func (wtu *WalletTransactionUpdate) Mutation() *WalletTransactionMutation {
 	return wtu.mutation
@@ -327,6 +341,12 @@ func (wtu *WalletTransactionUpdate) sqlSave(ctx context.Context) (n int, err err
 	}
 	if value, ok := wtu.mutation.TransactionStatus(); ok {
 		_spec.SetField(wallettransaction.FieldTransactionStatus, field.TypeString, value)
+	}
+	if wtu.mutation.ExpiryDateCleared() {
+		_spec.ClearField(wallettransaction.FieldExpiryDate, field.TypeTime)
+	}
+	if value, ok := wtu.mutation.AmountUsed(); ok {
+		_spec.SetField(wallettransaction.FieldAmountUsed, field.TypeOther, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, wtu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -530,6 +550,20 @@ func (wtuo *WalletTransactionUpdateOne) SetNillableTransactionStatus(s *string) 
 	return wtuo
 }
 
+// SetAmountUsed sets the "amount_used" field.
+func (wtuo *WalletTransactionUpdateOne) SetAmountUsed(d decimal.Decimal) *WalletTransactionUpdateOne {
+	wtuo.mutation.SetAmountUsed(d)
+	return wtuo
+}
+
+// SetNillableAmountUsed sets the "amount_used" field if the given value is not nil.
+func (wtuo *WalletTransactionUpdateOne) SetNillableAmountUsed(d *decimal.Decimal) *WalletTransactionUpdateOne {
+	if d != nil {
+		wtuo.SetAmountUsed(*d)
+	}
+	return wtuo
+}
+
 // Mutation returns the WalletTransactionMutation object of the builder.
 func (wtuo *WalletTransactionUpdateOne) Mutation() *WalletTransactionMutation {
 	return wtuo.mutation
@@ -676,6 +710,12 @@ func (wtuo *WalletTransactionUpdateOne) sqlSave(ctx context.Context) (_node *Wal
 	}
 	if value, ok := wtuo.mutation.TransactionStatus(); ok {
 		_spec.SetField(wallettransaction.FieldTransactionStatus, field.TypeString, value)
+	}
+	if wtuo.mutation.ExpiryDateCleared() {
+		_spec.ClearField(wallettransaction.FieldExpiryDate, field.TypeTime)
+	}
+	if value, ok := wtuo.mutation.AmountUsed(); ok {
+		_spec.SetField(wallettransaction.FieldAmountUsed, field.TypeOther, value)
 	}
 	_node = &WalletTransaction{config: wtuo.config}
 	_spec.Assign = _node.assignValues

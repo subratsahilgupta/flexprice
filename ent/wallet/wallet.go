@@ -46,6 +46,12 @@ const (
 	FieldAutoTopupMinBalance = "auto_topup_min_balance"
 	// FieldAutoTopupAmount holds the string denoting the auto_topup_amount field in the database.
 	FieldAutoTopupAmount = "auto_topup_amount"
+	// FieldWalletType holds the string denoting the wallet_type field in the database.
+	FieldWalletType = "wallet_type"
+	// FieldConversionRate holds the string denoting the conversion_rate field in the database.
+	FieldConversionRate = "conversion_rate"
+	// FieldConfig holds the string denoting the config field in the database.
+	FieldConfig = "config"
 	// Table holds the table name of the wallet in the database.
 	Table = "wallets"
 )
@@ -69,6 +75,9 @@ var Columns = []string{
 	FieldAutoTopupTrigger,
 	FieldAutoTopupMinBalance,
 	FieldAutoTopupAmount,
+	FieldWalletType,
+	FieldConversionRate,
+	FieldConfig,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -102,6 +111,10 @@ var (
 	DefaultWalletStatus string
 	// DefaultAutoTopupTrigger holds the default value on creation for the "auto_topup_trigger" field.
 	DefaultAutoTopupTrigger string
+	// DefaultWalletType holds the default value on creation for the "wallet_type" field.
+	DefaultWalletType string
+	// DefaultConversionRate holds the default value on creation for the "conversion_rate" field.
+	DefaultConversionRate int
 )
 
 // OrderOption defines the ordering options for the Wallet queries.
@@ -185,4 +198,14 @@ func ByAutoTopupMinBalance(opts ...sql.OrderTermOption) OrderOption {
 // ByAutoTopupAmount orders the results by the auto_topup_amount field.
 func ByAutoTopupAmount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAutoTopupAmount, opts...).ToFunc()
+}
+
+// ByWalletType orders the results by the wallet_type field.
+func ByWalletType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWalletType, opts...).ToFunc()
+}
+
+// ByConversionRate orders the results by the conversion_rate field.
+func ByConversionRate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConversionRate, opts...).ToFunc()
 }

@@ -2,8 +2,10 @@ package types
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 )
 
 // WalletStatus represents the current state of a wallet
@@ -14,6 +16,78 @@ const (
 	WalletStatusFrozen WalletStatus = "frozen"
 	WalletStatusClosed WalletStatus = "closed"
 )
+
+// WalletType represents the type of wallet
+type WalletType string
+
+const (
+	WalletTypePromotional WalletType = "PROMOTIONAL"
+	WalletTypePrePaid     WalletType = "PRE_PAID"
+)
+
+func (t WalletType) Validate() error {
+	if t == "" {
+		return nil
+	}
+
+	allowedValues := []string{
+		string(WalletTypePromotional),
+		string(WalletTypePrePaid),
+	}
+	if !lo.Contains(allowedValues, string(t)) {
+		return fmt.Errorf("invalid wallet type: %s", t)
+	}
+	return nil
+}
+
+// TransactionReason represents the reason for a wallet transaction
+type TransactionReason string
+
+const (
+	TransactionReasonInvoicePayment          TransactionReason = "INVOICE_PAYMENT"
+	TransactionReasonFreeCredit              TransactionReason = "FREE_CREDIT_GRANT"
+	TransactionReasonSubscriptionCredit      TransactionReason = "SUBSCRIPTION_CREDIT_GRANT"
+	TransactionReasonPurchasedCreditInvoiced TransactionReason = "PURCHASED_CREDIT_INVOICED"
+	TransactionReasonPurchasedCreditDirect   TransactionReason = "PURCHASED_CREDIT_DIRECT"
+	TransactionReasonInvoiceRefund           TransactionReason = "INVOICE_REFUND"
+	TransactionReasonCreditExpired           TransactionReason = "CREDIT_EXPIRED"
+)
+
+func (t TransactionReason) Validate() error {
+	allowedValues := []string{
+		string(TransactionReasonInvoicePayment),
+		string(TransactionReasonFreeCredit),
+		string(TransactionReasonSubscriptionCredit),
+		string(TransactionReasonPurchasedCreditInvoiced),
+		string(TransactionReasonPurchasedCreditDirect),
+		string(TransactionReasonInvoiceRefund),
+		string(TransactionReasonCreditExpired),
+	}
+	if !lo.Contains(allowedValues, string(t)) {
+		return fmt.Errorf("invalid transaction reason: %s", t)
+	}
+	return nil
+}
+
+type WalletTxReferenceType string
+
+const (
+	WalletTxReferenceTypeInvoice  WalletTxReferenceType = "INVOICE"
+	WalletTxReferenceTypePayment  WalletTxReferenceType = "PAYMENT"
+	WalletTxReferenceTypeExternal WalletTxReferenceType = "EXTERNAL"
+)
+
+func (t WalletTxReferenceType) Validate() error {
+	allowedValues := []string{
+		string(WalletTxReferenceTypeInvoice),
+		string(WalletTxReferenceTypePayment),
+		string(WalletTxReferenceTypeExternal),
+	}
+	if !lo.Contains(allowedValues, string(t)) {
+		return fmt.Errorf("invalid wallet transaction reference type: %s", t)
+	}
+	return nil
+}
 
 // AutoTopupTrigger represents the type of trigger for auto top-up
 type AutoTopupTrigger string
@@ -45,14 +119,19 @@ func (t AutoTopupTrigger) String() string {
 	return string(t)
 }
 
+// WalletTransactionFilter represents the filter options for wallet transactions
 type WalletTransactionFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
-	WalletID          *string            `json:"wallet_id,omitempty"`
-	Type              *TransactionType   `json:"type,omitempty"`
-	TransactionStatus *TransactionStatus `json:"transaction_status,omitempty"`
-	ReferenceType     *string            `json:"reference_type,omitempty"`
-	ReferenceID       *string            `json:"reference_id,omitempty"`
+	WalletID           *string            `json:"wallet_id,omitempty"`
+	Type               *TransactionType   `json:"type,omitempty"`
+	TransactionStatus  *TransactionStatus `json:"transaction_status,omitempty"`
+	ReferenceType      *string            `json:"reference_type,omitempty"`
+	ReferenceID        *string            `json:"reference_id,omitempty"`
+	ExpiryDateBefore   *time.Time         `json:"expiry_date_before,omitempty"`
+	ExpiryDateAfter    *time.Time         `json:"expiry_date_after,omitempty"`
+	AmountUsedLessThan *decimal.Decimal   `json:"amount_used_less_than,omitempty"`
+	TransactionReason  *TransactionReason `json:"transaction_reason,omitempty"`
 }
 
 func NewWalletTransactionFilter() *WalletTransactionFilter {
@@ -95,6 +174,17 @@ func (f WalletTransactionFilter) Validate() error {
 			return err
 		}
 	}
+
+	if f.ExpiryDateBefore != nil && f.ExpiryDateAfter != nil {
+		if f.ExpiryDateBefore.Before(*f.ExpiryDateAfter) {
+			return fmt.Errorf("expiry_date_before must be after expiry_date_after")
+		}
+	}
+
+	if f.TransactionReason != nil {
+		// Add validation for transaction reason if needed
+	}
+
 	return nil
 }
 
@@ -151,4 +241,42 @@ func (f *WalletTransactionFilter) IsUnlimited() bool {
 		return NewDefaultQueryFilter().IsUnlimited()
 	}
 	return f.QueryFilter.IsUnlimited()
+}
+
+type WalletConfigPriceType string
+
+const (
+	WalletConfigPriceTypeAll   WalletConfigPriceType = "ALL"
+	WalletConfigPriceTypeUsage WalletConfigPriceType = WalletConfigPriceType(PRICE_TYPE_USAGE)
+	WalletConfigPriceTypeFixed WalletConfigPriceType = WalletConfigPriceType(PRICE_TYPE_FIXED)
+)
+
+// WalletConfig represents configuration constraints for a wallet
+type WalletConfig struct {
+	// AllowedPriceTypes is a list of price types that are allowed for the wallet
+	// nil means all price types are allowed
+	AllowedPriceTypes []WalletConfigPriceType `json:"allowed_price_types,omitempty"`
+}
+
+func GetDefaultWalletConfig() *WalletConfig {
+	return &WalletConfig{
+		AllowedPriceTypes: []WalletConfigPriceType{WalletConfigPriceTypeAll},
+	}
+}
+
+func (c WalletConfig) Validate() error {
+	allowedPriceTypes := []string{
+		string(WalletConfigPriceTypeAll),
+		string(WalletConfigPriceTypeUsage),
+		string(WalletConfigPriceTypeFixed),
+	}
+
+	if c.AllowedPriceTypes != nil {
+		for _, priceType := range c.AllowedPriceTypes {
+			if !lo.Contains(allowedPriceTypes, string(priceType)) {
+				return fmt.Errorf("invalid price type: %s", priceType)
+			}
+		}
+	}
+	return nil
 }

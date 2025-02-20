@@ -405,6 +405,9 @@ func (s *walletService) UpdateWallet(ctx context.Context, id string, req *dto.Up
 	if req.AutoTopupAmount != nil {
 		existing.AutoTopupAmount = *req.AutoTopupAmount
 	}
+	if req.Config != nil {
+		existing.Config = *req.Config
+	}
 
 	// Update wallet
 	if err := s.walletRepo.UpdateWallet(ctx, id, existing); err != nil {

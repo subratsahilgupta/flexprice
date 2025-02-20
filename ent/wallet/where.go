@@ -140,6 +140,16 @@ func AutoTopupAmount(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldEQ(FieldAutoTopupAmount, v))
 }
 
+// WalletType applies equality check predicate on the "wallet_type" field. It's identical to WalletTypeEQ.
+func WalletType(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldEQ(FieldWalletType, v))
+}
+
+// ConversionRate applies equality check predicate on the "conversion_rate" field. It's identical to ConversionRateEQ.
+func ConversionRate(v int) predicate.Wallet {
+	return predicate.Wallet(sql.FieldEQ(FieldConversionRate, v))
+}
+
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.Wallet {
 	return predicate.Wallet(sql.FieldEQ(FieldTenantID, v))
@@ -1068,6 +1078,121 @@ func AutoTopupAmountIsNil() predicate.Wallet {
 // AutoTopupAmountNotNil applies the NotNil predicate on the "auto_topup_amount" field.
 func AutoTopupAmountNotNil() predicate.Wallet {
 	return predicate.Wallet(sql.FieldNotNull(FieldAutoTopupAmount))
+}
+
+// WalletTypeEQ applies the EQ predicate on the "wallet_type" field.
+func WalletTypeEQ(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldEQ(FieldWalletType, v))
+}
+
+// WalletTypeNEQ applies the NEQ predicate on the "wallet_type" field.
+func WalletTypeNEQ(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldNEQ(FieldWalletType, v))
+}
+
+// WalletTypeIn applies the In predicate on the "wallet_type" field.
+func WalletTypeIn(vs ...string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldIn(FieldWalletType, vs...))
+}
+
+// WalletTypeNotIn applies the NotIn predicate on the "wallet_type" field.
+func WalletTypeNotIn(vs ...string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldNotIn(FieldWalletType, vs...))
+}
+
+// WalletTypeGT applies the GT predicate on the "wallet_type" field.
+func WalletTypeGT(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldGT(FieldWalletType, v))
+}
+
+// WalletTypeGTE applies the GTE predicate on the "wallet_type" field.
+func WalletTypeGTE(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldGTE(FieldWalletType, v))
+}
+
+// WalletTypeLT applies the LT predicate on the "wallet_type" field.
+func WalletTypeLT(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldLT(FieldWalletType, v))
+}
+
+// WalletTypeLTE applies the LTE predicate on the "wallet_type" field.
+func WalletTypeLTE(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldLTE(FieldWalletType, v))
+}
+
+// WalletTypeContains applies the Contains predicate on the "wallet_type" field.
+func WalletTypeContains(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldContains(FieldWalletType, v))
+}
+
+// WalletTypeHasPrefix applies the HasPrefix predicate on the "wallet_type" field.
+func WalletTypeHasPrefix(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldHasPrefix(FieldWalletType, v))
+}
+
+// WalletTypeHasSuffix applies the HasSuffix predicate on the "wallet_type" field.
+func WalletTypeHasSuffix(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldHasSuffix(FieldWalletType, v))
+}
+
+// WalletTypeEqualFold applies the EqualFold predicate on the "wallet_type" field.
+func WalletTypeEqualFold(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldEqualFold(FieldWalletType, v))
+}
+
+// WalletTypeContainsFold applies the ContainsFold predicate on the "wallet_type" field.
+func WalletTypeContainsFold(v string) predicate.Wallet {
+	return predicate.Wallet(sql.FieldContainsFold(FieldWalletType, v))
+}
+
+// ConversionRateEQ applies the EQ predicate on the "conversion_rate" field.
+func ConversionRateEQ(v int) predicate.Wallet {
+	return predicate.Wallet(sql.FieldEQ(FieldConversionRate, v))
+}
+
+// ConversionRateNEQ applies the NEQ predicate on the "conversion_rate" field.
+func ConversionRateNEQ(v int) predicate.Wallet {
+	return predicate.Wallet(sql.FieldNEQ(FieldConversionRate, v))
+}
+
+// ConversionRateIn applies the In predicate on the "conversion_rate" field.
+func ConversionRateIn(vs ...int) predicate.Wallet {
+	return predicate.Wallet(sql.FieldIn(FieldConversionRate, vs...))
+}
+
+// ConversionRateNotIn applies the NotIn predicate on the "conversion_rate" field.
+func ConversionRateNotIn(vs ...int) predicate.Wallet {
+	return predicate.Wallet(sql.FieldNotIn(FieldConversionRate, vs...))
+}
+
+// ConversionRateGT applies the GT predicate on the "conversion_rate" field.
+func ConversionRateGT(v int) predicate.Wallet {
+	return predicate.Wallet(sql.FieldGT(FieldConversionRate, v))
+}
+
+// ConversionRateGTE applies the GTE predicate on the "conversion_rate" field.
+func ConversionRateGTE(v int) predicate.Wallet {
+	return predicate.Wallet(sql.FieldGTE(FieldConversionRate, v))
+}
+
+// ConversionRateLT applies the LT predicate on the "conversion_rate" field.
+func ConversionRateLT(v int) predicate.Wallet {
+	return predicate.Wallet(sql.FieldLT(FieldConversionRate, v))
+}
+
+// ConversionRateLTE applies the LTE predicate on the "conversion_rate" field.
+func ConversionRateLTE(v int) predicate.Wallet {
+	return predicate.Wallet(sql.FieldLTE(FieldConversionRate, v))
+}
+
+// ConfigIsNil applies the IsNil predicate on the "config" field.
+func ConfigIsNil() predicate.Wallet {
+	return predicate.Wallet(sql.FieldIsNull(FieldConfig))
+}
+
+// ConfigNotNil applies the NotNil predicate on the "config" field.
+func ConfigNotNil() predicate.Wallet {
+	return predicate.Wallet(sql.FieldNotNull(FieldConfig))
 }
 
 // And groups predicates with the AND operator between them.

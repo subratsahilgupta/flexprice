@@ -51,6 +51,12 @@ type WalletTransaction struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 	// TransactionStatus holds the value of the "transaction_status" field.
 	TransactionStatus string `json:"transaction_status,omitempty"`
+	// ExpiryDate holds the value of the "expiry_date" field.
+	ExpiryDate *time.Time `json:"expiry_date,omitempty"`
+	// AmountUsed holds the value of the "amount_used" field.
+	AmountUsed decimal.Decimal `json:"amount_used,omitempty"`
+	// TransactionReason holds the value of the "transaction_reason" field.
+	TransactionReason string `json:"transaction_reason,omitempty"`
 	selectValues      sql.SelectValues
 }
 
@@ -61,11 +67,11 @@ func (*WalletTransaction) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case wallettransaction.FieldMetadata:
 			values[i] = new([]byte)
-		case wallettransaction.FieldAmount, wallettransaction.FieldBalanceBefore, wallettransaction.FieldBalanceAfter:
+		case wallettransaction.FieldAmount, wallettransaction.FieldBalanceBefore, wallettransaction.FieldBalanceAfter, wallettransaction.FieldAmountUsed:
 			values[i] = new(decimal.Decimal)
-		case wallettransaction.FieldID, wallettransaction.FieldTenantID, wallettransaction.FieldStatus, wallettransaction.FieldCreatedBy, wallettransaction.FieldUpdatedBy, wallettransaction.FieldWalletID, wallettransaction.FieldType, wallettransaction.FieldReferenceType, wallettransaction.FieldReferenceID, wallettransaction.FieldDescription, wallettransaction.FieldTransactionStatus:
+		case wallettransaction.FieldID, wallettransaction.FieldTenantID, wallettransaction.FieldStatus, wallettransaction.FieldCreatedBy, wallettransaction.FieldUpdatedBy, wallettransaction.FieldWalletID, wallettransaction.FieldType, wallettransaction.FieldReferenceType, wallettransaction.FieldReferenceID, wallettransaction.FieldDescription, wallettransaction.FieldTransactionStatus, wallettransaction.FieldTransactionReason:
 			values[i] = new(sql.NullString)
-		case wallettransaction.FieldCreatedAt, wallettransaction.FieldUpdatedAt:
+		case wallettransaction.FieldCreatedAt, wallettransaction.FieldUpdatedAt, wallettransaction.FieldExpiryDate:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -186,6 +192,25 @@ func (wt *WalletTransaction) assignValues(columns []string, values []any) error 
 			} else if value.Valid {
 				wt.TransactionStatus = value.String
 			}
+		case wallettransaction.FieldExpiryDate:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field expiry_date", values[i])
+			} else if value.Valid {
+				wt.ExpiryDate = new(time.Time)
+				*wt.ExpiryDate = value.Time
+			}
+		case wallettransaction.FieldAmountUsed:
+			if value, ok := values[i].(*decimal.Decimal); !ok {
+				return fmt.Errorf("unexpected type %T for field amount_used", values[i])
+			} else if value != nil {
+				wt.AmountUsed = *value
+			}
+		case wallettransaction.FieldTransactionReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field transaction_reason", values[i])
+			} else if value.Valid {
+				wt.TransactionReason = value.String
+			}
 		default:
 			wt.selectValues.Set(columns[i], values[i])
 		}
@@ -269,6 +294,17 @@ func (wt *WalletTransaction) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("transaction_status=")
 	builder.WriteString(wt.TransactionStatus)
+	builder.WriteString(", ")
+	if v := wt.ExpiryDate; v != nil {
+		builder.WriteString("expiry_date=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("amount_used=")
+	builder.WriteString(fmt.Sprintf("%v", wt.AmountUsed))
+	builder.WriteString(", ")
+	builder.WriteString("transaction_reason=")
+	builder.WriteString(wt.TransactionReason)
 	builder.WriteByte(')')
 	return builder.String()
 }

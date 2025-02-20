@@ -738,6 +738,14 @@ func init() {
 	walletDescAutoTopupTrigger := walletFields[8].Descriptor()
 	// wallet.DefaultAutoTopupTrigger holds the default value on creation for the auto_topup_trigger field.
 	wallet.DefaultAutoTopupTrigger = walletDescAutoTopupTrigger.Default.(string)
+	// walletDescWalletType is the schema descriptor for wallet_type field.
+	walletDescWalletType := walletFields[11].Descriptor()
+	// wallet.DefaultWalletType holds the default value on creation for the wallet_type field.
+	wallet.DefaultWalletType = walletDescWalletType.Default.(string)
+	// walletDescConversionRate is the schema descriptor for conversion_rate field.
+	walletDescConversionRate := walletFields[12].Descriptor()
+	// wallet.DefaultConversionRate holds the default value on creation for the conversion_rate field.
+	wallet.DefaultConversionRate = walletDescConversionRate.Default.(int)
 	wallettransactionMixin := schema.WalletTransaction{}.Mixin()
 	wallettransactionMixinFields0 := wallettransactionMixin[0].Fields()
 	_ = wallettransactionMixinFields0
@@ -783,4 +791,8 @@ func init() {
 	wallettransactionDescTransactionStatus := wallettransactionFields[10].Descriptor()
 	// wallettransaction.DefaultTransactionStatus holds the default value on creation for the transaction_status field.
 	wallettransaction.DefaultTransactionStatus = wallettransactionDescTransactionStatus.Default.(string)
+	// wallettransactionDescTransactionReason is the schema descriptor for transaction_reason field.
+	wallettransactionDescTransactionReason := wallettransactionFields[13].Descriptor()
+	// wallettransaction.DefaultTransactionReason holds the default value on creation for the transaction_reason field.
+	wallettransaction.DefaultTransactionReason = wallettransactionDescTransactionReason.Default.(string)
 }

@@ -40,11 +40,12 @@ type Repository interface {
 
 // WalletOperation represents the request to credit or debit a wallet
 type WalletOperation struct {
-	WalletID      string                `json:"wallet_id"`
-	Type          types.TransactionType `json:"type"`
-	Amount        decimal.Decimal       `json:"amount"`
-	ReferenceType string                `json:"reference_type,omitempty"`
-	ReferenceID   string                `json:"reference_id,omitempty"`
-	Description   string                `json:"description,omitempty"`
-	Metadata      types.Metadata        `json:"metadata,omitempty"`
+	WalletID          string                  `json:"wallet_id"`
+	Type              types.TransactionType   `json:"type"`
+	Amount            decimal.Decimal         `json:"amount"`
+	ReferenceType     string                  `json:"reference_type,omitempty"`
+	ReferenceID       string                  `json:"reference_id,omitempty"`
+	Description       string                  `json:"description,omitempty"`
+	Metadata          types.Metadata          `json:"metadata,omitempty"`
+	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty"`
 }

@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/wallet"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -213,6 +214,48 @@ func (wc *WalletCreate) SetNillableAutoTopupAmount(d *decimal.Decimal) *WalletCr
 	return wc
 }
 
+// SetWalletType sets the "wallet_type" field.
+func (wc *WalletCreate) SetWalletType(s string) *WalletCreate {
+	wc.mutation.SetWalletType(s)
+	return wc
+}
+
+// SetNillableWalletType sets the "wallet_type" field if the given value is not nil.
+func (wc *WalletCreate) SetNillableWalletType(s *string) *WalletCreate {
+	if s != nil {
+		wc.SetWalletType(*s)
+	}
+	return wc
+}
+
+// SetConversionRate sets the "conversion_rate" field.
+func (wc *WalletCreate) SetConversionRate(i int) *WalletCreate {
+	wc.mutation.SetConversionRate(i)
+	return wc
+}
+
+// SetNillableConversionRate sets the "conversion_rate" field if the given value is not nil.
+func (wc *WalletCreate) SetNillableConversionRate(i *int) *WalletCreate {
+	if i != nil {
+		wc.SetConversionRate(*i)
+	}
+	return wc
+}
+
+// SetConfig sets the "config" field.
+func (wc *WalletCreate) SetConfig(tc types.WalletConfig) *WalletCreate {
+	wc.mutation.SetConfig(tc)
+	return wc
+}
+
+// SetNillableConfig sets the "config" field if the given value is not nil.
+func (wc *WalletCreate) SetNillableConfig(tc *types.WalletConfig) *WalletCreate {
+	if tc != nil {
+		wc.SetConfig(*tc)
+	}
+	return wc
+}
+
 // SetID sets the "id" field.
 func (wc *WalletCreate) SetID(s string) *WalletCreate {
 	wc.mutation.SetID(s)
@@ -278,6 +321,14 @@ func (wc *WalletCreate) defaults() {
 		v := wallet.DefaultAutoTopupTrigger
 		wc.mutation.SetAutoTopupTrigger(v)
 	}
+	if _, ok := wc.mutation.WalletType(); !ok {
+		v := wallet.DefaultWalletType
+		wc.mutation.SetWalletType(v)
+	}
+	if _, ok := wc.mutation.ConversionRate(); !ok {
+		v := wallet.DefaultConversionRate
+		wc.mutation.SetConversionRate(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -320,6 +371,17 @@ func (wc *WalletCreate) check() error {
 	}
 	if _, ok := wc.mutation.WalletStatus(); !ok {
 		return &ValidationError{Name: "wallet_status", err: errors.New(`ent: missing required field "Wallet.wallet_status"`)}
+	}
+	if _, ok := wc.mutation.WalletType(); !ok {
+		return &ValidationError{Name: "wallet_type", err: errors.New(`ent: missing required field "Wallet.wallet_type"`)}
+	}
+	if _, ok := wc.mutation.ConversionRate(); !ok {
+		return &ValidationError{Name: "conversion_rate", err: errors.New(`ent: missing required field "Wallet.conversion_rate"`)}
+	}
+	if v, ok := wc.mutation.Config(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "config", err: fmt.Errorf(`ent: validator failed for field "Wallet.config": %w`, err)}
+		}
 	}
 	return nil
 }
@@ -419,6 +481,18 @@ func (wc *WalletCreate) createSpec() (*Wallet, *sqlgraph.CreateSpec) {
 	if value, ok := wc.mutation.AutoTopupAmount(); ok {
 		_spec.SetField(wallet.FieldAutoTopupAmount, field.TypeOther, value)
 		_node.AutoTopupAmount = &value
+	}
+	if value, ok := wc.mutation.WalletType(); ok {
+		_spec.SetField(wallet.FieldWalletType, field.TypeString, value)
+		_node.WalletType = value
+	}
+	if value, ok := wc.mutation.ConversionRate(); ok {
+		_spec.SetField(wallet.FieldConversionRate, field.TypeInt, value)
+		_node.ConversionRate = value
+	}
+	if value, ok := wc.mutation.Config(); ok {
+		_spec.SetField(wallet.FieldConfig, field.TypeJSON, value)
+		_node.Config = value
 	}
 	return _node, _spec
 }

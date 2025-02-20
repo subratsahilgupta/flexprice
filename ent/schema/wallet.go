@@ -5,6 +5,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -61,14 +62,14 @@ func (Wallet) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			Default("active"),
+			Default(string(types.WalletStatusActive)),
 		field.String("auto_topup_trigger").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
 			Optional().
 			Nillable().
-			Default("disabled"),
+			Default(string(types.AutoTopupTriggerDisabled)),
 		field.Other("auto_topup_min_balance", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,9)",
@@ -81,6 +82,20 @@ func (Wallet) Fields() []ent.Field {
 			}).
 			Optional().
 			Nillable(),
+		field.String("wallet_type").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Immutable().
+			Default(string(types.WalletTypePrePaid)),
+		field.Int("conversion_rate").
+			SchemaType(map[string]string{
+				"postgres": "integer",
+			}).
+			Immutable().
+			Default(1),
+		field.JSON("config", types.WalletConfig{}).
+			Optional(),
 	}
 }
 

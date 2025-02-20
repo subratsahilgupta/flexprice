@@ -30,6 +30,7 @@ import (
 	"github.com/flexprice/flexprice/ent/task"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -21251,6 +21252,10 @@ type WalletMutation struct {
 	auto_topup_trigger     *string
 	auto_topup_min_balance *decimal.Decimal
 	auto_topup_amount      *decimal.Decimal
+	wallet_type            *string
+	conversion_rate        *int
+	addconversion_rate     *int
+	_config                *types.WalletConfig
 	clearedFields          map[string]struct{}
 	done                   bool
 	oldValue               func(context.Context) (*Wallet, error)
@@ -22041,6 +22046,147 @@ func (m *WalletMutation) ResetAutoTopupAmount() {
 	delete(m.clearedFields, wallet.FieldAutoTopupAmount)
 }
 
+// SetWalletType sets the "wallet_type" field.
+func (m *WalletMutation) SetWalletType(s string) {
+	m.wallet_type = &s
+}
+
+// WalletType returns the value of the "wallet_type" field in the mutation.
+func (m *WalletMutation) WalletType() (r string, exists bool) {
+	v := m.wallet_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWalletType returns the old "wallet_type" field's value of the Wallet entity.
+// If the Wallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletMutation) OldWalletType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWalletType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWalletType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWalletType: %w", err)
+	}
+	return oldValue.WalletType, nil
+}
+
+// ResetWalletType resets all changes to the "wallet_type" field.
+func (m *WalletMutation) ResetWalletType() {
+	m.wallet_type = nil
+}
+
+// SetConversionRate sets the "conversion_rate" field.
+func (m *WalletMutation) SetConversionRate(i int) {
+	m.conversion_rate = &i
+	m.addconversion_rate = nil
+}
+
+// ConversionRate returns the value of the "conversion_rate" field in the mutation.
+func (m *WalletMutation) ConversionRate() (r int, exists bool) {
+	v := m.conversion_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConversionRate returns the old "conversion_rate" field's value of the Wallet entity.
+// If the Wallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletMutation) OldConversionRate(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConversionRate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConversionRate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConversionRate: %w", err)
+	}
+	return oldValue.ConversionRate, nil
+}
+
+// AddConversionRate adds i to the "conversion_rate" field.
+func (m *WalletMutation) AddConversionRate(i int) {
+	if m.addconversion_rate != nil {
+		*m.addconversion_rate += i
+	} else {
+		m.addconversion_rate = &i
+	}
+}
+
+// AddedConversionRate returns the value that was added to the "conversion_rate" field in this mutation.
+func (m *WalletMutation) AddedConversionRate() (r int, exists bool) {
+	v := m.addconversion_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetConversionRate resets all changes to the "conversion_rate" field.
+func (m *WalletMutation) ResetConversionRate() {
+	m.conversion_rate = nil
+	m.addconversion_rate = nil
+}
+
+// SetConfig sets the "config" field.
+func (m *WalletMutation) SetConfig(tc types.WalletConfig) {
+	m._config = &tc
+}
+
+// Config returns the value of the "config" field in the mutation.
+func (m *WalletMutation) Config() (r types.WalletConfig, exists bool) {
+	v := m._config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfig returns the old "config" field's value of the Wallet entity.
+// If the Wallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletMutation) OldConfig(ctx context.Context) (v types.WalletConfig, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfig is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfig requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfig: %w", err)
+	}
+	return oldValue.Config, nil
+}
+
+// ClearConfig clears the value of the "config" field.
+func (m *WalletMutation) ClearConfig() {
+	m._config = nil
+	m.clearedFields[wallet.FieldConfig] = struct{}{}
+}
+
+// ConfigCleared returns if the "config" field was cleared in this mutation.
+func (m *WalletMutation) ConfigCleared() bool {
+	_, ok := m.clearedFields[wallet.FieldConfig]
+	return ok
+}
+
+// ResetConfig resets all changes to the "config" field.
+func (m *WalletMutation) ResetConfig() {
+	m._config = nil
+	delete(m.clearedFields, wallet.FieldConfig)
+}
+
 // Where appends a list predicates to the WalletMutation builder.
 func (m *WalletMutation) Where(ps ...predicate.Wallet) {
 	m.predicates = append(m.predicates, ps...)
@@ -22075,7 +22221,7 @@ func (m *WalletMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 19)
 	if m.tenant_id != nil {
 		fields = append(fields, wallet.FieldTenantID)
 	}
@@ -22124,6 +22270,15 @@ func (m *WalletMutation) Fields() []string {
 	if m.auto_topup_amount != nil {
 		fields = append(fields, wallet.FieldAutoTopupAmount)
 	}
+	if m.wallet_type != nil {
+		fields = append(fields, wallet.FieldWalletType)
+	}
+	if m.conversion_rate != nil {
+		fields = append(fields, wallet.FieldConversionRate)
+	}
+	if m._config != nil {
+		fields = append(fields, wallet.FieldConfig)
+	}
 	return fields
 }
 
@@ -22164,6 +22319,12 @@ func (m *WalletMutation) Field(name string) (ent.Value, bool) {
 		return m.AutoTopupMinBalance()
 	case wallet.FieldAutoTopupAmount:
 		return m.AutoTopupAmount()
+	case wallet.FieldWalletType:
+		return m.WalletType()
+	case wallet.FieldConversionRate:
+		return m.ConversionRate()
+	case wallet.FieldConfig:
+		return m.Config()
 	}
 	return nil, false
 }
@@ -22205,6 +22366,12 @@ func (m *WalletMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldAutoTopupMinBalance(ctx)
 	case wallet.FieldAutoTopupAmount:
 		return m.OldAutoTopupAmount(ctx)
+	case wallet.FieldWalletType:
+		return m.OldWalletType(ctx)
+	case wallet.FieldConversionRate:
+		return m.OldConversionRate(ctx)
+	case wallet.FieldConfig:
+		return m.OldConfig(ctx)
 	}
 	return nil, fmt.Errorf("unknown Wallet field %s", name)
 }
@@ -22326,6 +22493,27 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAutoTopupAmount(v)
 		return nil
+	case wallet.FieldWalletType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWalletType(v)
+		return nil
+	case wallet.FieldConversionRate:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConversionRate(v)
+		return nil
+	case wallet.FieldConfig:
+		v, ok := value.(types.WalletConfig)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfig(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Wallet field %s", name)
 }
@@ -22333,13 +22521,21 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *WalletMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addconversion_rate != nil {
+		fields = append(fields, wallet.FieldConversionRate)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *WalletMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case wallet.FieldConversionRate:
+		return m.AddedConversionRate()
+	}
 	return nil, false
 }
 
@@ -22348,6 +22544,13 @@ func (m *WalletMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *WalletMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case wallet.FieldConversionRate:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddConversionRate(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Wallet numeric field %s", name)
 }
@@ -22379,6 +22582,9 @@ func (m *WalletMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(wallet.FieldAutoTopupAmount) {
 		fields = append(fields, wallet.FieldAutoTopupAmount)
+	}
+	if m.FieldCleared(wallet.FieldConfig) {
+		fields = append(fields, wallet.FieldConfig)
 	}
 	return fields
 }
@@ -22417,6 +22623,9 @@ func (m *WalletMutation) ClearField(name string) error {
 		return nil
 	case wallet.FieldAutoTopupAmount:
 		m.ClearAutoTopupAmount()
+		return nil
+	case wallet.FieldConfig:
+		m.ClearConfig()
 		return nil
 	}
 	return fmt.Errorf("unknown Wallet nullable field %s", name)
@@ -22473,6 +22682,15 @@ func (m *WalletMutation) ResetField(name string) error {
 		return nil
 	case wallet.FieldAutoTopupAmount:
 		m.ResetAutoTopupAmount()
+		return nil
+	case wallet.FieldWalletType:
+		m.ResetWalletType()
+		return nil
+	case wallet.FieldConversionRate:
+		m.ResetConversionRate()
+		return nil
+	case wallet.FieldConfig:
+		m.ResetConfig()
 		return nil
 	}
 	return fmt.Errorf("unknown Wallet field %s", name)
@@ -22548,6 +22766,9 @@ type WalletTransactionMutation struct {
 	description        *string
 	metadata           *map[string]string
 	transaction_status *string
+	expiry_date        *time.Time
+	amount_used        *decimal.Decimal
+	transaction_reason *string
 	clearedFields      map[string]struct{}
 	done               bool
 	oldValue           func(context.Context) (*WalletTransaction, error)
@@ -23312,6 +23533,127 @@ func (m *WalletTransactionMutation) ResetTransactionStatus() {
 	m.transaction_status = nil
 }
 
+// SetExpiryDate sets the "expiry_date" field.
+func (m *WalletTransactionMutation) SetExpiryDate(t time.Time) {
+	m.expiry_date = &t
+}
+
+// ExpiryDate returns the value of the "expiry_date" field in the mutation.
+func (m *WalletTransactionMutation) ExpiryDate() (r time.Time, exists bool) {
+	v := m.expiry_date
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiryDate returns the old "expiry_date" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldExpiryDate(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiryDate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiryDate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiryDate: %w", err)
+	}
+	return oldValue.ExpiryDate, nil
+}
+
+// ClearExpiryDate clears the value of the "expiry_date" field.
+func (m *WalletTransactionMutation) ClearExpiryDate() {
+	m.expiry_date = nil
+	m.clearedFields[wallettransaction.FieldExpiryDate] = struct{}{}
+}
+
+// ExpiryDateCleared returns if the "expiry_date" field was cleared in this mutation.
+func (m *WalletTransactionMutation) ExpiryDateCleared() bool {
+	_, ok := m.clearedFields[wallettransaction.FieldExpiryDate]
+	return ok
+}
+
+// ResetExpiryDate resets all changes to the "expiry_date" field.
+func (m *WalletTransactionMutation) ResetExpiryDate() {
+	m.expiry_date = nil
+	delete(m.clearedFields, wallettransaction.FieldExpiryDate)
+}
+
+// SetAmountUsed sets the "amount_used" field.
+func (m *WalletTransactionMutation) SetAmountUsed(d decimal.Decimal) {
+	m.amount_used = &d
+}
+
+// AmountUsed returns the value of the "amount_used" field in the mutation.
+func (m *WalletTransactionMutation) AmountUsed() (r decimal.Decimal, exists bool) {
+	v := m.amount_used
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAmountUsed returns the old "amount_used" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldAmountUsed(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAmountUsed is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAmountUsed requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAmountUsed: %w", err)
+	}
+	return oldValue.AmountUsed, nil
+}
+
+// ResetAmountUsed resets all changes to the "amount_used" field.
+func (m *WalletTransactionMutation) ResetAmountUsed() {
+	m.amount_used = nil
+}
+
+// SetTransactionReason sets the "transaction_reason" field.
+func (m *WalletTransactionMutation) SetTransactionReason(s string) {
+	m.transaction_reason = &s
+}
+
+// TransactionReason returns the value of the "transaction_reason" field in the mutation.
+func (m *WalletTransactionMutation) TransactionReason() (r string, exists bool) {
+	v := m.transaction_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTransactionReason returns the old "transaction_reason" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldTransactionReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTransactionReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTransactionReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTransactionReason: %w", err)
+	}
+	return oldValue.TransactionReason, nil
+}
+
+// ResetTransactionReason resets all changes to the "transaction_reason" field.
+func (m *WalletTransactionMutation) ResetTransactionReason() {
+	m.transaction_reason = nil
+}
+
 // Where appends a list predicates to the WalletTransactionMutation builder.
 func (m *WalletTransactionMutation) Where(ps ...predicate.WalletTransaction) {
 	m.predicates = append(m.predicates, ps...)
@@ -23346,7 +23688,7 @@ func (m *WalletTransactionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletTransactionMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 19)
 	if m.tenant_id != nil {
 		fields = append(fields, wallettransaction.FieldTenantID)
 	}
@@ -23395,6 +23737,15 @@ func (m *WalletTransactionMutation) Fields() []string {
 	if m.transaction_status != nil {
 		fields = append(fields, wallettransaction.FieldTransactionStatus)
 	}
+	if m.expiry_date != nil {
+		fields = append(fields, wallettransaction.FieldExpiryDate)
+	}
+	if m.amount_used != nil {
+		fields = append(fields, wallettransaction.FieldAmountUsed)
+	}
+	if m.transaction_reason != nil {
+		fields = append(fields, wallettransaction.FieldTransactionReason)
+	}
 	return fields
 }
 
@@ -23435,6 +23786,12 @@ func (m *WalletTransactionMutation) Field(name string) (ent.Value, bool) {
 		return m.Metadata()
 	case wallettransaction.FieldTransactionStatus:
 		return m.TransactionStatus()
+	case wallettransaction.FieldExpiryDate:
+		return m.ExpiryDate()
+	case wallettransaction.FieldAmountUsed:
+		return m.AmountUsed()
+	case wallettransaction.FieldTransactionReason:
+		return m.TransactionReason()
 	}
 	return nil, false
 }
@@ -23476,6 +23833,12 @@ func (m *WalletTransactionMutation) OldField(ctx context.Context, name string) (
 		return m.OldMetadata(ctx)
 	case wallettransaction.FieldTransactionStatus:
 		return m.OldTransactionStatus(ctx)
+	case wallettransaction.FieldExpiryDate:
+		return m.OldExpiryDate(ctx)
+	case wallettransaction.FieldAmountUsed:
+		return m.OldAmountUsed(ctx)
+	case wallettransaction.FieldTransactionReason:
+		return m.OldTransactionReason(ctx)
 	}
 	return nil, fmt.Errorf("unknown WalletTransaction field %s", name)
 }
@@ -23597,6 +23960,27 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetTransactionStatus(v)
 		return nil
+	case wallettransaction.FieldExpiryDate:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiryDate(v)
+		return nil
+	case wallettransaction.FieldAmountUsed:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAmountUsed(v)
+		return nil
+	case wallettransaction.FieldTransactionReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTransactionReason(v)
+		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction field %s", name)
 }
@@ -23645,6 +24029,9 @@ func (m *WalletTransactionMutation) ClearedFields() []string {
 	if m.FieldCleared(wallettransaction.FieldMetadata) {
 		fields = append(fields, wallettransaction.FieldMetadata)
 	}
+	if m.FieldCleared(wallettransaction.FieldExpiryDate) {
+		fields = append(fields, wallettransaction.FieldExpiryDate)
+	}
 	return fields
 }
 
@@ -23676,6 +24063,9 @@ func (m *WalletTransactionMutation) ClearField(name string) error {
 		return nil
 	case wallettransaction.FieldMetadata:
 		m.ClearMetadata()
+		return nil
+	case wallettransaction.FieldExpiryDate:
+		m.ClearExpiryDate()
 		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction nullable field %s", name)
@@ -23732,6 +24122,15 @@ func (m *WalletTransactionMutation) ResetField(name string) error {
 		return nil
 	case wallettransaction.FieldTransactionStatus:
 		m.ResetTransactionStatus()
+		return nil
+	case wallettransaction.FieldExpiryDate:
+		m.ResetExpiryDate()
+		return nil
+	case wallettransaction.FieldAmountUsed:
+		m.ResetAmountUsed()
+		return nil
+	case wallettransaction.FieldTransactionReason:
+		m.ResetTransactionReason()
 		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction field %s", name)
