@@ -160,12 +160,13 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 
 	// Create wallet operation
 	operation := &wallet.WalletOperation{
-		WalletID:      selectedWallet.ID,
-		Type:          types.TransactionTypeDebit,
-		Amount:        paymentObj.Amount,
-		ReferenceType: "PAYMENT",
-		ReferenceID:   paymentObj.ID,
-		Description:   fmt.Sprintf("Payment for invoice %s", paymentObj.DestinationID),
+		WalletID:          selectedWallet.ID,
+		Type:              types.TransactionTypeDebit,
+		Amount:            paymentObj.Amount,
+		ReferenceType:     "PAYMENT",
+		ReferenceID:       paymentObj.ID,
+		Description:       fmt.Sprintf("Payment for invoice %s", paymentObj.DestinationID),
+		TransactionReason: types.TransactionReasonInvoicePayment,
 		Metadata: types.Metadata{
 			"payment_id":     paymentObj.ID,
 			"invoice_id":     paymentObj.DestinationID,

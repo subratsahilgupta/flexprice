@@ -179,20 +179,12 @@ func (s *InMemoryWalletStore) CreditWallet(ctx context.Context, req *wallet.Wall
 		return fmt.Errorf("invalid transaction type")
 	}
 
-	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("amount must be greater than 0")
-	}
-
 	return s.performWalletOperation(ctx, req)
 }
 
 func (s *InMemoryWalletStore) DebitWallet(ctx context.Context, req *wallet.WalletOperation) error {
 	if req.Type != types.TransactionTypeDebit {
 		return fmt.Errorf("invalid transaction type")
-	}
-
-	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("amount must be greater than 0")
 	}
 	return s.performWalletOperation(ctx, req)
 }
@@ -223,6 +215,10 @@ func (s *InMemoryWalletStore) performWalletOperation(ctx context.Context, req *w
 		}
 	} else {
 		return fmt.Errorf("invalid transaction type")
+	}
+
+	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
+		return fmt.Errorf("wallet transaction amount must be greater than 0")
 	}
 
 	// final balance

@@ -13,7 +13,6 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -135,21 +134,12 @@ func (r *walletRepository) CreditWallet(ctx context.Context, req *walletdomain.W
 	if req.Type != types.TransactionTypeCredit {
 		return fmt.Errorf("invalid transaction type")
 	}
-
-	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("amount must be greater than 0")
-	}
-
 	return r.processWalletOperation(ctx, req)
 }
 
 func (r *walletRepository) DebitWallet(ctx context.Context, req *walletdomain.WalletOperation) error {
 	if req.Type != types.TransactionTypeDebit {
 		return fmt.Errorf("invalid transaction type")
-	}
-
-	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("amount must be greater than 0")
 	}
 	return r.processWalletOperation(ctx, req)
 }
@@ -187,6 +177,10 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 			return errors.New(errors.ErrCodeInvalidOperation, "amount or credit amount is required")
 		}
 
+		if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
+			return errors.New(errors.ErrCodeInvalidOperation, "wallet transaction amount must be greater than 0")
+		}
+
 		// Calculate new balance
 		var newCreditBalance decimal.Decimal
 		if req.Type == types.TransactionTypeCredit {
@@ -205,7 +199,7 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 
 		// Create transaction record
 		txn, err := r.client.Querier(ctx).WalletTransaction.Create().
-			SetID(uuid.NewString()).
+			SetID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION)).
 			SetTenantID(types.GetTenantID(ctx)).
 			SetWalletID(req.WalletID).
 			SetType(string(req.Type)).
@@ -217,8 +211,12 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 			SetMetadata(req.Metadata).
 			SetStatus(string(types.StatusPublished)).
 			SetTransactionStatus(string(types.TransactionStatusCompleted)).
+			SetTransactionReason(string(req.TransactionReason)).
 			SetAmountUsed(decimal.Zero).
+			SetCreatedAt(time.Now().UTC()).
 			SetCreatedBy(types.GetUserID(ctx)).
+			SetUpdatedAt(time.Now().UTC()).
+			SetUpdatedBy(types.GetUserID(ctx)).
 			SetCreditBalanceBefore(w.CreditBalance).
 			SetCreditBalanceAfter(newCreditBalance).
 			Save(ctx)

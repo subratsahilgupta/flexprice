@@ -209,11 +209,20 @@ func (s *walletService) GetWalletTransactions(ctx context.Context, walletID stri
 func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *dto.TopUpWalletRequest) (*dto.WalletResponse, error) {
 	// Create a credit operation
 	creditReq := &wallet.WalletOperation{
-		WalletID:     walletID,
-		Type:         types.TransactionTypeCredit,
-		CreditAmount: req.Amount,
-		Description:  req.Description,
-		Metadata:     req.Metadata,
+		WalletID:          walletID,
+		Type:              types.TransactionTypeCredit,
+		CreditAmount:      req.Amount,
+		Description:       req.Description,
+		Metadata:          req.Metadata,
+		TransactionReason: types.TransactionReasonFreeCredit,
+	}
+
+	if req.PurchasedCredits {
+		if req.GenerateInvoice {
+			creditReq.TransactionReason = types.TransactionReasonPurchasedCreditInvoiced
+		} else {
+			creditReq.TransactionReason = types.TransactionReasonPurchasedCreditDirect
+		}
 	}
 
 	if err := s.walletRepo.CreditWallet(ctx, creditReq); err != nil {
@@ -225,13 +234,21 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 }
 
 func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error) {
+	response := &dto.WalletBalanceResponse{
+		RealTimeBalance: decimal.Zero,
+	}
+
 	w, err := s.walletRepo.GetWalletByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wallet: %w", err)
 	}
 
 	if w.WalletStatus != types.WalletStatusActive {
-		return nil, fmt.Errorf("wallet is not active")
+		response.Wallet = w
+		response.RealTimeBalance = decimal.Zero
+		response.RealTimeCreditBalance = decimal.Zero
+		response.BalanceUpdatedAt = w.UpdatedAt
+		return response, nil
 	}
 
 	// Get invoice summary for unpaid amounts
@@ -332,11 +349,12 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	)
 
 	return &dto.WalletBalanceResponse{
-		Wallet:              w,
-		RealTimeBalance:     realTimeBalance,
-		BalanceUpdatedAt:    time.Now().UTC(),
-		UnpaidInvoiceAmount: invoiceSummary.TotalUnpaidAmount,
-		CurrentPeriodUsage:  currentPeriodUsage,
+		Wallet:                w,
+		RealTimeBalance:       realTimeBalance,
+		RealTimeCreditBalance: realTimeBalance.Div(w.ConversionRate),
+		BalanceUpdatedAt:      time.Now().UTC(),
+		UnpaidInvoiceAmount:   invoiceSummary.TotalUnpaidAmount,
+		CurrentPeriodUsage:    currentPeriodUsage,
 	}, nil
 }
 
@@ -355,10 +373,11 @@ func (s *walletService) TerminateWallet(ctx context.Context, walletID string) er
 		// Debit remaining balance if any
 		if w.CreditBalance.GreaterThan(decimal.Zero) {
 			debitReq := &wallet.WalletOperation{
-				WalletID:     walletID,
-				CreditAmount: w.CreditBalance,
-				Type:         types.TransactionTypeDebit,
-				Description:  "Wallet termination - remaining balance debit",
+				WalletID:          walletID,
+				CreditAmount:      w.CreditBalance,
+				Type:              types.TransactionTypeDebit,
+				Description:       "Wallet termination - remaining balance debit",
+				TransactionReason: types.TransactionReasonWalletTermination,
 			}
 
 			if err := s.walletRepo.DebitWallet(ctx, debitReq); err != nil {

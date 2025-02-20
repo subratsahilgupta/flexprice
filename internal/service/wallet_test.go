@@ -496,9 +496,12 @@ func (s *WalletServiceSuite) TestGetWalletBalance() {
 			expectedError: true,
 		},
 		{
-			name:          "Error - Inactive wallet",
-			walletID:      "wallet_inactive",
-			expectedError: true,
+			name:                    "Inactive wallet",
+			walletID:                "wallet_inactive",
+			expectedRealTimeBalance: decimal.NewFromInt(0),
+			expectedUnpaidAmount:    decimal.NewFromInt(0),
+			expectedCurrentUsage:    decimal.NewFromInt(0),
+			expectedError:           false,
 		},
 	}
 

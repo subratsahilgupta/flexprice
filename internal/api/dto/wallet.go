@@ -2,6 +2,7 @@ package dto
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -82,12 +83,20 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 		r.WalletType = types.WalletTypePrePaid
 	}
 
-	if r.ConversionRate.LessThan(decimal.NewFromInt(1)) {
+	if r.ConversionRate.LessThanOrEqual(decimal.NewFromInt(0)) {
 		r.ConversionRate = decimal.NewFromInt(1)
 	}
 
 	if r.AutoTopupTrigger == "" {
 		r.AutoTopupTrigger = types.AutoTopupTriggerDisabled
+	}
+
+	if r.Name == "" {
+		if r.WalletType == types.WalletTypePrePaid {
+			r.Name = fmt.Sprintf("Prepaid Wallet - %s", r.Currency)
+		} else if r.WalletType == types.WalletTypePromotional {
+			r.Name = fmt.Sprintf("Promotional Wallet - %s", r.Currency)
+		}
 	}
 
 	return &wallet.Wallet{
@@ -224,10 +233,10 @@ type TopUpWalletRequest struct {
 	Amount decimal.Decimal `json:"amount" binding:"required"`
 	// description to add any specific details about the transaction
 	Description string `json:"description,omitempty"`
+	// purchased_credits when true, the credits are added as purchased credits
+	PurchasedCredits bool `json:"purchased_credits"`
 	// generate_invoice when true, an invoice will be generated for the transaction
 	GenerateInvoice bool `json:"generate_invoice"`
-	// transaction_reason defines the flow from which the credits are added to the wallet
-	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty"`
 	// metadata to add any additional information about the transaction
 	Metadata types.Metadata `json:"metadata,omitempty"`
 }
@@ -237,19 +246,15 @@ func (r *TopUpWalletRequest) Validate() error {
 		return errors.New(errors.ErrCodeValidation, "amount must be greater than 0")
 	}
 
-	if r.TransactionReason != "" {
-		if err := r.TransactionReason.Validate(); err != nil {
-			return errors.Wrap(err, errors.ErrCodeValidation, "invalid transaction_reason")
-		}
-	}
 	return nil
 }
 
 // WalletBalanceResponse represents the response for getting wallet balance
 type WalletBalanceResponse struct {
 	*wallet.Wallet
-	RealTimeBalance     decimal.Decimal `json:"real_time_balance"`
-	BalanceUpdatedAt    time.Time       `json:"balance_updated_at"`
-	UnpaidInvoiceAmount decimal.Decimal `json:"unpaid_invoice_amount"`
-	CurrentPeriodUsage  decimal.Decimal `json:"current_period_usage"`
+	RealTimeBalance       decimal.Decimal `json:"real_time_balance"`
+	RealTimeCreditBalance decimal.Decimal `json:"real_time_credit_balance"`
+	BalanceUpdatedAt      time.Time       `json:"balance_updated_at"`
+	UnpaidInvoiceAmount   decimal.Decimal `json:"unpaid_invoice_amount"`
+	CurrentPeriodUsage    decimal.Decimal `json:"current_period_usage"`
 }

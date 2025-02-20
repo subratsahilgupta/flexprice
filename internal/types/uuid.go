@@ -33,6 +33,7 @@ const (
 	UUID_PREFIX_SUBSCRIPTION_LINE_ITEM = "subs_line"
 	UUID_PREFIX_CUSTOMER               = "cust"
 	UUID_PREFIX_WALLET                 = "wallet"
+	UUID_PREFIX_WALLET_TRANSACTION     = "wtxn"
 	UUID_PREFIX_ENVIRONMENT            = "env"
 	UUID_PREFIX_USER                   = "user"
 	UUID_PREFIX_TENANT                 = "tenant"
