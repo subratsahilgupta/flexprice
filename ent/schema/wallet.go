@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
@@ -58,6 +59,13 @@ func (Wallet) Fields() []ent.Field {
 				"postgres": "numeric(20,9)",
 			}).
 			Default(decimal.Zero),
+		field.Other("credit_balance", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(20,9)",
+			}).
+			Annotations(
+				entsql.Default("0"),
+			),
 		field.String("wallet_status").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
@@ -88,12 +96,14 @@ func (Wallet) Fields() []ent.Field {
 			}).
 			Immutable().
 			Default(string(types.WalletTypePrePaid)),
-		field.Int("conversion_rate").
+		field.Other("conversion_rate", decimal.Decimal{}).
 			SchemaType(map[string]string{
-				"postgres": "integer",
+				"postgres": "numeric(10,5)",
 			}).
 			Immutable().
-			Default(1),
+			Annotations(
+				entsql.Default("1"),
+			),
 		field.JSON("config", types.WalletConfig{}).
 			Optional(),
 	}

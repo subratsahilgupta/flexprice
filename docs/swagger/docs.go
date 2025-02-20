@@ -5502,7 +5502,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.WalletConfig"
                 },
                 "conversion_rate": {
-                    "type": "integer",
+                    "type": "number",
                     "default": 1
                 },
                 "currency": {
@@ -7047,20 +7047,33 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
+                    "description": "Amount is the number of credits to add to the wallet",
                     "type": "number"
                 },
                 "description": {
+                    "description": "Description to add any specific details about the transaction",
                     "type": "string"
                 },
                 "generate_invoice": {
+                    "description": "GenerateInvoice when true, an invoice will be generated for the transaction",
                     "type": "boolean",
                     "default": false
                 },
                 "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
+                    "description": "Metadata to add any additional information about the transaction",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Metadata"
+                        }
+                    ]
                 },
                 "transaction_reason": {
-                    "$ref": "#/definitions/types.TransactionReason"
+                    "description": "TransactionReason defines the flow from which the credits are added to the wallet",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TransactionReason"
+                        }
+                    ]
                 }
             }
         },
@@ -7450,13 +7463,16 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.WalletConfig"
                 },
                 "conversion_rate": {
-                    "type": "integer"
+                    "type": "number"
                 },
                 "created_at": {
                     "type": "string"
                 },
                 "created_by": {
                     "type": "string"
+                },
+                "credit_balance": {
+                    "type": "number"
                 },
                 "currency": {
                     "type": "string"
@@ -7524,10 +7540,13 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.WalletConfig"
                 },
                 "conversion_rate": {
-                    "type": "integer"
+                    "type": "number"
                 },
                 "created_at": {
                     "type": "string"
+                },
+                "credit_balance": {
+                    "type": "number"
                 },
                 "currency": {
                     "type": "string"
@@ -7575,6 +7594,15 @@ const docTemplate = `{
                 },
                 "created_at": {
                     "type": "string"
+                },
+                "credit_amount": {
+                    "type": "number"
+                },
+                "credit_balance_after": {
+                    "type": "number"
+                },
+                "credit_balance_before": {
+                    "type": "number"
                 },
                 "description": {
                     "type": "string"

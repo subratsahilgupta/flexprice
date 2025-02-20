@@ -158,6 +158,12 @@ func (wc *WalletCreate) SetNillableBalance(d *decimal.Decimal) *WalletCreate {
 	return wc
 }
 
+// SetCreditBalance sets the "credit_balance" field.
+func (wc *WalletCreate) SetCreditBalance(d decimal.Decimal) *WalletCreate {
+	wc.mutation.SetCreditBalance(d)
+	return wc
+}
+
 // SetWalletStatus sets the "wallet_status" field.
 func (wc *WalletCreate) SetWalletStatus(s string) *WalletCreate {
 	wc.mutation.SetWalletStatus(s)
@@ -229,16 +235,8 @@ func (wc *WalletCreate) SetNillableWalletType(s *string) *WalletCreate {
 }
 
 // SetConversionRate sets the "conversion_rate" field.
-func (wc *WalletCreate) SetConversionRate(i int) *WalletCreate {
-	wc.mutation.SetConversionRate(i)
-	return wc
-}
-
-// SetNillableConversionRate sets the "conversion_rate" field if the given value is not nil.
-func (wc *WalletCreate) SetNillableConversionRate(i *int) *WalletCreate {
-	if i != nil {
-		wc.SetConversionRate(*i)
-	}
+func (wc *WalletCreate) SetConversionRate(d decimal.Decimal) *WalletCreate {
+	wc.mutation.SetConversionRate(d)
 	return wc
 }
 
@@ -325,10 +323,6 @@ func (wc *WalletCreate) defaults() {
 		v := wallet.DefaultWalletType
 		wc.mutation.SetWalletType(v)
 	}
-	if _, ok := wc.mutation.ConversionRate(); !ok {
-		v := wallet.DefaultConversionRate
-		wc.mutation.SetConversionRate(v)
-	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -368,6 +362,9 @@ func (wc *WalletCreate) check() error {
 	}
 	if _, ok := wc.mutation.Balance(); !ok {
 		return &ValidationError{Name: "balance", err: errors.New(`ent: missing required field "Wallet.balance"`)}
+	}
+	if _, ok := wc.mutation.CreditBalance(); !ok {
+		return &ValidationError{Name: "credit_balance", err: errors.New(`ent: missing required field "Wallet.credit_balance"`)}
 	}
 	if _, ok := wc.mutation.WalletStatus(); !ok {
 		return &ValidationError{Name: "wallet_status", err: errors.New(`ent: missing required field "Wallet.wallet_status"`)}
@@ -466,6 +463,10 @@ func (wc *WalletCreate) createSpec() (*Wallet, *sqlgraph.CreateSpec) {
 		_spec.SetField(wallet.FieldBalance, field.TypeOther, value)
 		_node.Balance = value
 	}
+	if value, ok := wc.mutation.CreditBalance(); ok {
+		_spec.SetField(wallet.FieldCreditBalance, field.TypeOther, value)
+		_node.CreditBalance = value
+	}
 	if value, ok := wc.mutation.WalletStatus(); ok {
 		_spec.SetField(wallet.FieldWalletStatus, field.TypeString, value)
 		_node.WalletStatus = value
@@ -487,7 +488,7 @@ func (wc *WalletCreate) createSpec() (*Wallet, *sqlgraph.CreateSpec) {
 		_node.WalletType = value
 	}
 	if value, ok := wc.mutation.ConversionRate(); ok {
-		_spec.SetField(wallet.FieldConversionRate, field.TypeInt, value)
+		_spec.SetField(wallet.FieldConversionRate, field.TypeOther, value)
 		_node.ConversionRate = value
 	}
 	if value, ok := wc.mutation.Config(); ok {

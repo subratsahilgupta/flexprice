@@ -770,12 +770,13 @@ var (
 		{Name: "description", Type: field.TypeString, Nullable: true},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "balance", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
+		{Name: "credit_balance", Type: field.TypeOther, Default: "0", SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 		{Name: "wallet_status", Type: field.TypeString, Default: "active", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "auto_topup_trigger", Type: field.TypeString, Nullable: true, Default: "disabled", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "auto_topup_min_balance", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 		{Name: "auto_topup_amount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 		{Name: "wallet_type", Type: field.TypeString, Default: "PRE_PAID", SchemaType: map[string]string{"postgres": "varchar(50)"}},
-		{Name: "conversion_rate", Type: field.TypeInt, Default: 1, SchemaType: map[string]string{"postgres": "integer"}},
+		{Name: "conversion_rate", Type: field.TypeOther, Default: "1", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
 		{Name: "config", Type: field.TypeJSON, Nullable: true},
 	}
 	// WalletsTable holds the schema information for the "wallets" table.
@@ -792,7 +793,7 @@ var (
 			{
 				Name:    "wallet_tenant_id_status_wallet_status",
 				Unique:  false,
-				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[2], WalletsColumns[13]},
+				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[2], WalletsColumns[14]},
 			},
 		},
 	}
@@ -808,8 +809,11 @@ var (
 		{Name: "wallet_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "type", Type: field.TypeString, Default: "credit"},
 		{Name: "amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
+		{Name: "credit_amount", Type: field.TypeOther, Default: "0", SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 		{Name: "balance_before", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 		{Name: "balance_after", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
+		{Name: "credit_balance_before", Type: field.TypeOther, Default: "0", SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
+		{Name: "credit_balance_after", Type: field.TypeOther, Default: "0", SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 		{Name: "reference_type", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "reference_id", Type: field.TypeString, Nullable: true},
 		{Name: "description", Type: field.TypeString, Nullable: true},
@@ -833,7 +837,7 @@ var (
 			{
 				Name:    "wallettransaction_tenant_id_reference_type_reference_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[12], WalletTransactionsColumns[13], WalletTransactionsColumns[2]},
+				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[15], WalletTransactionsColumns[16], WalletTransactionsColumns[2]},
 			},
 			{
 				Name:    "wallettransaction_created_at",

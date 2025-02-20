@@ -110,6 +110,11 @@ func Amount(v decimal.Decimal) predicate.WalletTransaction {
 	return predicate.WalletTransaction(sql.FieldEQ(FieldAmount, v))
 }
 
+// CreditAmount applies equality check predicate on the "credit_amount" field. It's identical to CreditAmountEQ.
+func CreditAmount(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldEQ(FieldCreditAmount, v))
+}
+
 // BalanceBefore applies equality check predicate on the "balance_before" field. It's identical to BalanceBeforeEQ.
 func BalanceBefore(v decimal.Decimal) predicate.WalletTransaction {
 	return predicate.WalletTransaction(sql.FieldEQ(FieldBalanceBefore, v))
@@ -118,6 +123,16 @@ func BalanceBefore(v decimal.Decimal) predicate.WalletTransaction {
 // BalanceAfter applies equality check predicate on the "balance_after" field. It's identical to BalanceAfterEQ.
 func BalanceAfter(v decimal.Decimal) predicate.WalletTransaction {
 	return predicate.WalletTransaction(sql.FieldEQ(FieldBalanceAfter, v))
+}
+
+// CreditBalanceBefore applies equality check predicate on the "credit_balance_before" field. It's identical to CreditBalanceBeforeEQ.
+func CreditBalanceBefore(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldEQ(FieldCreditBalanceBefore, v))
+}
+
+// CreditBalanceAfter applies equality check predicate on the "credit_balance_after" field. It's identical to CreditBalanceAfterEQ.
+func CreditBalanceAfter(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldEQ(FieldCreditBalanceAfter, v))
 }
 
 // ReferenceType applies equality check predicate on the "reference_type" field. It's identical to ReferenceTypeEQ.
@@ -685,6 +700,46 @@ func AmountLTE(v decimal.Decimal) predicate.WalletTransaction {
 	return predicate.WalletTransaction(sql.FieldLTE(FieldAmount, v))
 }
 
+// CreditAmountEQ applies the EQ predicate on the "credit_amount" field.
+func CreditAmountEQ(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldEQ(FieldCreditAmount, v))
+}
+
+// CreditAmountNEQ applies the NEQ predicate on the "credit_amount" field.
+func CreditAmountNEQ(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldNEQ(FieldCreditAmount, v))
+}
+
+// CreditAmountIn applies the In predicate on the "credit_amount" field.
+func CreditAmountIn(vs ...decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldIn(FieldCreditAmount, vs...))
+}
+
+// CreditAmountNotIn applies the NotIn predicate on the "credit_amount" field.
+func CreditAmountNotIn(vs ...decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldNotIn(FieldCreditAmount, vs...))
+}
+
+// CreditAmountGT applies the GT predicate on the "credit_amount" field.
+func CreditAmountGT(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldGT(FieldCreditAmount, v))
+}
+
+// CreditAmountGTE applies the GTE predicate on the "credit_amount" field.
+func CreditAmountGTE(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldGTE(FieldCreditAmount, v))
+}
+
+// CreditAmountLT applies the LT predicate on the "credit_amount" field.
+func CreditAmountLT(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldLT(FieldCreditAmount, v))
+}
+
+// CreditAmountLTE applies the LTE predicate on the "credit_amount" field.
+func CreditAmountLTE(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldLTE(FieldCreditAmount, v))
+}
+
 // BalanceBeforeEQ applies the EQ predicate on the "balance_before" field.
 func BalanceBeforeEQ(v decimal.Decimal) predicate.WalletTransaction {
 	return predicate.WalletTransaction(sql.FieldEQ(FieldBalanceBefore, v))
@@ -763,6 +818,86 @@ func BalanceAfterLT(v decimal.Decimal) predicate.WalletTransaction {
 // BalanceAfterLTE applies the LTE predicate on the "balance_after" field.
 func BalanceAfterLTE(v decimal.Decimal) predicate.WalletTransaction {
 	return predicate.WalletTransaction(sql.FieldLTE(FieldBalanceAfter, v))
+}
+
+// CreditBalanceBeforeEQ applies the EQ predicate on the "credit_balance_before" field.
+func CreditBalanceBeforeEQ(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldEQ(FieldCreditBalanceBefore, v))
+}
+
+// CreditBalanceBeforeNEQ applies the NEQ predicate on the "credit_balance_before" field.
+func CreditBalanceBeforeNEQ(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldNEQ(FieldCreditBalanceBefore, v))
+}
+
+// CreditBalanceBeforeIn applies the In predicate on the "credit_balance_before" field.
+func CreditBalanceBeforeIn(vs ...decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldIn(FieldCreditBalanceBefore, vs...))
+}
+
+// CreditBalanceBeforeNotIn applies the NotIn predicate on the "credit_balance_before" field.
+func CreditBalanceBeforeNotIn(vs ...decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldNotIn(FieldCreditBalanceBefore, vs...))
+}
+
+// CreditBalanceBeforeGT applies the GT predicate on the "credit_balance_before" field.
+func CreditBalanceBeforeGT(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldGT(FieldCreditBalanceBefore, v))
+}
+
+// CreditBalanceBeforeGTE applies the GTE predicate on the "credit_balance_before" field.
+func CreditBalanceBeforeGTE(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldGTE(FieldCreditBalanceBefore, v))
+}
+
+// CreditBalanceBeforeLT applies the LT predicate on the "credit_balance_before" field.
+func CreditBalanceBeforeLT(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldLT(FieldCreditBalanceBefore, v))
+}
+
+// CreditBalanceBeforeLTE applies the LTE predicate on the "credit_balance_before" field.
+func CreditBalanceBeforeLTE(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldLTE(FieldCreditBalanceBefore, v))
+}
+
+// CreditBalanceAfterEQ applies the EQ predicate on the "credit_balance_after" field.
+func CreditBalanceAfterEQ(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldEQ(FieldCreditBalanceAfter, v))
+}
+
+// CreditBalanceAfterNEQ applies the NEQ predicate on the "credit_balance_after" field.
+func CreditBalanceAfterNEQ(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldNEQ(FieldCreditBalanceAfter, v))
+}
+
+// CreditBalanceAfterIn applies the In predicate on the "credit_balance_after" field.
+func CreditBalanceAfterIn(vs ...decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldIn(FieldCreditBalanceAfter, vs...))
+}
+
+// CreditBalanceAfterNotIn applies the NotIn predicate on the "credit_balance_after" field.
+func CreditBalanceAfterNotIn(vs ...decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldNotIn(FieldCreditBalanceAfter, vs...))
+}
+
+// CreditBalanceAfterGT applies the GT predicate on the "credit_balance_after" field.
+func CreditBalanceAfterGT(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldGT(FieldCreditBalanceAfter, v))
+}
+
+// CreditBalanceAfterGTE applies the GTE predicate on the "credit_balance_after" field.
+func CreditBalanceAfterGTE(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldGTE(FieldCreditBalanceAfter, v))
+}
+
+// CreditBalanceAfterLT applies the LT predicate on the "credit_balance_after" field.
+func CreditBalanceAfterLT(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldLT(FieldCreditBalanceAfter, v))
+}
+
+// CreditBalanceAfterLTE applies the LTE predicate on the "credit_balance_after" field.
+func CreditBalanceAfterLTE(v decimal.Decimal) predicate.WalletTransaction {
+	return predicate.WalletTransaction(sql.FieldLTE(FieldCreditBalanceAfter, v))
 }
 
 // ReferenceTypeEQ applies the EQ predicate on the "reference_type" field.

@@ -44,6 +44,8 @@ type Wallet struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 	// Balance holds the value of the "balance" field.
 	Balance decimal.Decimal `json:"balance,omitempty"`
+	// CreditBalance holds the value of the "credit_balance" field.
+	CreditBalance decimal.Decimal `json:"credit_balance,omitempty"`
 	// WalletStatus holds the value of the "wallet_status" field.
 	WalletStatus string `json:"wallet_status,omitempty"`
 	// AutoTopupTrigger holds the value of the "auto_topup_trigger" field.
@@ -55,7 +57,7 @@ type Wallet struct {
 	// WalletType holds the value of the "wallet_type" field.
 	WalletType string `json:"wallet_type,omitempty"`
 	// ConversionRate holds the value of the "conversion_rate" field.
-	ConversionRate int `json:"conversion_rate,omitempty"`
+	ConversionRate decimal.Decimal `json:"conversion_rate,omitempty"`
 	// Config holds the value of the "config" field.
 	Config       types.WalletConfig `json:"config,omitempty"`
 	selectValues sql.SelectValues
@@ -70,10 +72,8 @@ func (*Wallet) scanValues(columns []string) ([]any, error) {
 			values[i] = &sql.NullScanner{S: new(decimal.Decimal)}
 		case wallet.FieldMetadata, wallet.FieldConfig:
 			values[i] = new([]byte)
-		case wallet.FieldBalance:
+		case wallet.FieldBalance, wallet.FieldCreditBalance, wallet.FieldConversionRate:
 			values[i] = new(decimal.Decimal)
-		case wallet.FieldConversionRate:
-			values[i] = new(sql.NullInt64)
 		case wallet.FieldID, wallet.FieldTenantID, wallet.FieldStatus, wallet.FieldCreatedBy, wallet.FieldUpdatedBy, wallet.FieldName, wallet.FieldCustomerID, wallet.FieldCurrency, wallet.FieldDescription, wallet.FieldWalletStatus, wallet.FieldAutoTopupTrigger, wallet.FieldWalletType:
 			values[i] = new(sql.NullString)
 		case wallet.FieldCreatedAt, wallet.FieldUpdatedAt:
@@ -173,6 +173,12 @@ func (w *Wallet) assignValues(columns []string, values []any) error {
 			} else if value != nil {
 				w.Balance = *value
 			}
+		case wallet.FieldCreditBalance:
+			if value, ok := values[i].(*decimal.Decimal); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_balance", values[i])
+			} else if value != nil {
+				w.CreditBalance = *value
+			}
 		case wallet.FieldWalletStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field wallet_status", values[i])
@@ -207,10 +213,10 @@ func (w *Wallet) assignValues(columns []string, values []any) error {
 				w.WalletType = value.String
 			}
 		case wallet.FieldConversionRate:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
+			if value, ok := values[i].(*decimal.Decimal); !ok {
 				return fmt.Errorf("unexpected type %T for field conversion_rate", values[i])
-			} else if value.Valid {
-				w.ConversionRate = int(value.Int64)
+			} else if value != nil {
+				w.ConversionRate = *value
 			}
 		case wallet.FieldConfig:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -291,6 +297,9 @@ func (w *Wallet) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("balance=")
 	builder.WriteString(fmt.Sprintf("%v", w.Balance))
+	builder.WriteString(", ")
+	builder.WriteString("credit_balance=")
+	builder.WriteString(fmt.Sprintf("%v", w.CreditBalance))
 	builder.WriteString(", ")
 	builder.WriteString("wallet_status=")
 	builder.WriteString(w.WalletStatus)

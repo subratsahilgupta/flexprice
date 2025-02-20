@@ -41,6 +41,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetDescription(w.Description).
 		SetMetadata(w.Metadata).
 		SetBalance(w.Balance).
+		SetCreditBalance(w.CreditBalance).
 		SetWalletStatus(string(w.WalletStatus)).
 		SetAutoTopupTrigger(string(w.AutoTopupTrigger)).
 		SetAutoTopupMinBalance(w.AutoTopupMinBalance).
@@ -135,7 +136,7 @@ func (r *walletRepository) CreditWallet(ctx context.Context, req *walletdomain.W
 		return fmt.Errorf("invalid transaction type")
 	}
 
-	if req.Amount.LessThanOrEqual(decimal.Zero) {
+	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
 		return fmt.Errorf("amount must be greater than 0")
 	}
 
@@ -147,7 +148,7 @@ func (r *walletRepository) DebitWallet(ctx context.Context, req *walletdomain.Wa
 		return fmt.Errorf("invalid transaction type")
 	}
 
-	if req.Amount.LessThanOrEqual(decimal.Zero) {
+	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
 		return fmt.Errorf("amount must be greater than 0")
 	}
 	return r.processWalletOperation(ctx, req)
@@ -157,6 +158,8 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 	if req.Type == "" {
 		return fmt.Errorf("transaction type is required")
 	}
+
+	r.logger.Debugw("Processing wallet operation", "req", req)
 
 	return r.client.WithTx(ctx, func(ctx context.Context) error {
 		// Get wallet
@@ -175,18 +178,30 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 			return fmt.Errorf("querying wallet: %w", err)
 		}
 
+		// Convert amount to credit amount if provided and perform credit operation
+		if req.Amount.GreaterThan(decimal.Zero) {
+			req.CreditAmount = req.Amount.Div(w.ConversionRate)
+		} else if req.CreditAmount.GreaterThan(decimal.Zero) {
+			req.Amount = req.CreditAmount.Mul(w.ConversionRate)
+		} else {
+			return errors.New(errors.ErrCodeInvalidOperation, "amount or credit amount is required")
+		}
+
 		// Calculate new balance
-		var newBalance decimal.Decimal
+		var newCreditBalance decimal.Decimal
 		if req.Type == types.TransactionTypeCredit {
-			newBalance = w.Balance.Add(req.Amount)
+			newCreditBalance = w.CreditBalance.Add(req.CreditAmount)
 		} else if req.Type == types.TransactionTypeDebit {
-			newBalance = w.Balance.Sub(req.Amount)
-			if newBalance.LessThan(decimal.Zero) {
-				return fmt.Errorf("insufficient balance: current=%s, requested=%s", w.Balance, req.Amount)
+			newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
+			if newCreditBalance.LessThan(decimal.Zero) {
+				return fmt.Errorf("insufficient balance: current=%s, requested=%s", w.CreditBalance, req.CreditAmount)
 			}
 		} else {
 			return fmt.Errorf("invalid transaction type")
 		}
+
+		// final balance
+		finalBalance := newCreditBalance.Mul(w.ConversionRate)
 
 		// Create transaction record
 		txn, err := r.client.Querier(ctx).WalletTransaction.Create().
@@ -195,15 +210,18 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 			SetWalletID(req.WalletID).
 			SetType(string(req.Type)).
 			SetAmount(req.Amount).
+			SetCreditAmount(req.CreditAmount).
 			SetReferenceType(req.ReferenceType).
 			SetReferenceID(req.ReferenceID).
 			SetDescription(req.Description).
 			SetMetadata(req.Metadata).
 			SetStatus(string(types.StatusPublished)).
-			SetTransactionStatus(string(types.TransactionStatusPending)).
+			SetTransactionStatus(string(types.TransactionStatusCompleted)).
 			SetCreatedBy(types.GetUserID(ctx)).
 			SetBalanceBefore(w.Balance).
-			SetBalanceAfter(newBalance).
+			SetBalanceAfter(finalBalance).
+			SetCreditBalanceBefore(w.CreditBalance).
+			SetCreditBalanceAfter(newCreditBalance).
 			Save(ctx)
 
 		if err != nil {
@@ -213,23 +231,15 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 		// Update wallet balance
 		if err := r.client.Querier(ctx).Wallet.Update().
 			Where(wallet.ID(req.WalletID)).
-			SetBalance(newBalance).
+			SetBalance(finalBalance).
+			SetCreditBalance(newCreditBalance).
 			SetUpdatedBy(types.GetUserID(ctx)).
 			SetUpdatedAt(time.Now().UTC()).
 			Exec(ctx); err != nil {
 			return fmt.Errorf("updating wallet balance: %w", err)
 		}
 
-		// Update transaction status to completed
-		if err := r.client.Querier(ctx).WalletTransaction.Update().
-			Where(wallettransaction.ID(txn.ID)).
-			SetTransactionStatus(string(types.TransactionStatusCompleted)).
-			SetUpdatedBy(types.GetUserID(ctx)).
-			SetUpdatedAt(time.Now().UTC()).
-			Exec(ctx); err != nil {
-			return fmt.Errorf("updating transaction status: %w", err)
-		}
-
+		r.logger.Debugw("Wallet operation completed", "txn", txn)
 		return nil
 	})
 }
@@ -442,7 +452,6 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 			wallet.TenantID(types.GetTenantID(ctx)),
 			wallet.StatusEQ(string(types.StatusPublished)),
 		).
-		SetWalletStatus(string(w.WalletStatus)).
 		SetName(w.Name).
 		SetDescription(w.Description).
 		SetMetadata(w.Metadata).

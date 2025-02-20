@@ -38,6 +38,8 @@ const (
 	FieldMetadata = "metadata"
 	// FieldBalance holds the string denoting the balance field in the database.
 	FieldBalance = "balance"
+	// FieldCreditBalance holds the string denoting the credit_balance field in the database.
+	FieldCreditBalance = "credit_balance"
 	// FieldWalletStatus holds the string denoting the wallet_status field in the database.
 	FieldWalletStatus = "wallet_status"
 	// FieldAutoTopupTrigger holds the string denoting the auto_topup_trigger field in the database.
@@ -71,6 +73,7 @@ var Columns = []string{
 	FieldDescription,
 	FieldMetadata,
 	FieldBalance,
+	FieldCreditBalance,
 	FieldWalletStatus,
 	FieldAutoTopupTrigger,
 	FieldAutoTopupMinBalance,
@@ -113,8 +116,6 @@ var (
 	DefaultAutoTopupTrigger string
 	// DefaultWalletType holds the default value on creation for the "wallet_type" field.
 	DefaultWalletType string
-	// DefaultConversionRate holds the default value on creation for the "conversion_rate" field.
-	DefaultConversionRate int
 )
 
 // OrderOption defines the ordering options for the Wallet queries.
@@ -178,6 +179,11 @@ func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 // ByBalance orders the results by the balance field.
 func ByBalance(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBalance, opts...).ToFunc()
+}
+
+// ByCreditBalance orders the results by the credit_balance field.
+func ByCreditBalance(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditBalance, opts...).ToFunc()
 }
 
 // ByWalletStatus orders the results by the wallet_status field.

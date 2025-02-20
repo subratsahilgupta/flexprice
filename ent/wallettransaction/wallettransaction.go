@@ -32,10 +32,16 @@ const (
 	FieldType = "type"
 	// FieldAmount holds the string denoting the amount field in the database.
 	FieldAmount = "amount"
+	// FieldCreditAmount holds the string denoting the credit_amount field in the database.
+	FieldCreditAmount = "credit_amount"
 	// FieldBalanceBefore holds the string denoting the balance_before field in the database.
 	FieldBalanceBefore = "balance_before"
 	// FieldBalanceAfter holds the string denoting the balance_after field in the database.
 	FieldBalanceAfter = "balance_after"
+	// FieldCreditBalanceBefore holds the string denoting the credit_balance_before field in the database.
+	FieldCreditBalanceBefore = "credit_balance_before"
+	// FieldCreditBalanceAfter holds the string denoting the credit_balance_after field in the database.
+	FieldCreditBalanceAfter = "credit_balance_after"
 	// FieldReferenceType holds the string denoting the reference_type field in the database.
 	FieldReferenceType = "reference_type"
 	// FieldReferenceID holds the string denoting the reference_id field in the database.
@@ -68,8 +74,11 @@ var Columns = []string{
 	FieldWalletID,
 	FieldType,
 	FieldAmount,
+	FieldCreditAmount,
 	FieldBalanceBefore,
 	FieldBalanceAfter,
+	FieldCreditBalanceBefore,
+	FieldCreditBalanceAfter,
 	FieldReferenceType,
 	FieldReferenceID,
 	FieldDescription,
@@ -170,6 +179,11 @@ func ByAmount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAmount, opts...).ToFunc()
 }
 
+// ByCreditAmount orders the results by the credit_amount field.
+func ByCreditAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditAmount, opts...).ToFunc()
+}
+
 // ByBalanceBefore orders the results by the balance_before field.
 func ByBalanceBefore(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBalanceBefore, opts...).ToFunc()
@@ -178,6 +192,16 @@ func ByBalanceBefore(opts ...sql.OrderTermOption) OrderOption {
 // ByBalanceAfter orders the results by the balance_after field.
 func ByBalanceAfter(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBalanceAfter, opts...).ToFunc()
+}
+
+// ByCreditBalanceBefore orders the results by the credit_balance_before field.
+func ByCreditBalanceBefore(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditBalanceBefore, opts...).ToFunc()
+}
+
+// ByCreditBalanceAfter orders the results by the credit_balance_after field.
+func ByCreditBalanceAfter(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditBalanceAfter, opts...).ToFunc()
 }
 
 // ByReferenceType orders the results by the reference_type field.

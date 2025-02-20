@@ -120,6 +120,11 @@ func Balance(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldEQ(FieldBalance, v))
 }
 
+// CreditBalance applies equality check predicate on the "credit_balance" field. It's identical to CreditBalanceEQ.
+func CreditBalance(v decimal.Decimal) predicate.Wallet {
+	return predicate.Wallet(sql.FieldEQ(FieldCreditBalance, v))
+}
+
 // WalletStatus applies equality check predicate on the "wallet_status" field. It's identical to WalletStatusEQ.
 func WalletStatus(v string) predicate.Wallet {
 	return predicate.Wallet(sql.FieldEQ(FieldWalletStatus, v))
@@ -146,7 +151,7 @@ func WalletType(v string) predicate.Wallet {
 }
 
 // ConversionRate applies equality check predicate on the "conversion_rate" field. It's identical to ConversionRateEQ.
-func ConversionRate(v int) predicate.Wallet {
+func ConversionRate(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldEQ(FieldConversionRate, v))
 }
 
@@ -840,6 +845,46 @@ func BalanceLTE(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldLTE(FieldBalance, v))
 }
 
+// CreditBalanceEQ applies the EQ predicate on the "credit_balance" field.
+func CreditBalanceEQ(v decimal.Decimal) predicate.Wallet {
+	return predicate.Wallet(sql.FieldEQ(FieldCreditBalance, v))
+}
+
+// CreditBalanceNEQ applies the NEQ predicate on the "credit_balance" field.
+func CreditBalanceNEQ(v decimal.Decimal) predicate.Wallet {
+	return predicate.Wallet(sql.FieldNEQ(FieldCreditBalance, v))
+}
+
+// CreditBalanceIn applies the In predicate on the "credit_balance" field.
+func CreditBalanceIn(vs ...decimal.Decimal) predicate.Wallet {
+	return predicate.Wallet(sql.FieldIn(FieldCreditBalance, vs...))
+}
+
+// CreditBalanceNotIn applies the NotIn predicate on the "credit_balance" field.
+func CreditBalanceNotIn(vs ...decimal.Decimal) predicate.Wallet {
+	return predicate.Wallet(sql.FieldNotIn(FieldCreditBalance, vs...))
+}
+
+// CreditBalanceGT applies the GT predicate on the "credit_balance" field.
+func CreditBalanceGT(v decimal.Decimal) predicate.Wallet {
+	return predicate.Wallet(sql.FieldGT(FieldCreditBalance, v))
+}
+
+// CreditBalanceGTE applies the GTE predicate on the "credit_balance" field.
+func CreditBalanceGTE(v decimal.Decimal) predicate.Wallet {
+	return predicate.Wallet(sql.FieldGTE(FieldCreditBalance, v))
+}
+
+// CreditBalanceLT applies the LT predicate on the "credit_balance" field.
+func CreditBalanceLT(v decimal.Decimal) predicate.Wallet {
+	return predicate.Wallet(sql.FieldLT(FieldCreditBalance, v))
+}
+
+// CreditBalanceLTE applies the LTE predicate on the "credit_balance" field.
+func CreditBalanceLTE(v decimal.Decimal) predicate.Wallet {
+	return predicate.Wallet(sql.FieldLTE(FieldCreditBalance, v))
+}
+
 // WalletStatusEQ applies the EQ predicate on the "wallet_status" field.
 func WalletStatusEQ(v string) predicate.Wallet {
 	return predicate.Wallet(sql.FieldEQ(FieldWalletStatus, v))
@@ -1146,42 +1191,42 @@ func WalletTypeContainsFold(v string) predicate.Wallet {
 }
 
 // ConversionRateEQ applies the EQ predicate on the "conversion_rate" field.
-func ConversionRateEQ(v int) predicate.Wallet {
+func ConversionRateEQ(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldEQ(FieldConversionRate, v))
 }
 
 // ConversionRateNEQ applies the NEQ predicate on the "conversion_rate" field.
-func ConversionRateNEQ(v int) predicate.Wallet {
+func ConversionRateNEQ(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldNEQ(FieldConversionRate, v))
 }
 
 // ConversionRateIn applies the In predicate on the "conversion_rate" field.
-func ConversionRateIn(vs ...int) predicate.Wallet {
+func ConversionRateIn(vs ...decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldIn(FieldConversionRate, vs...))
 }
 
 // ConversionRateNotIn applies the NotIn predicate on the "conversion_rate" field.
-func ConversionRateNotIn(vs ...int) predicate.Wallet {
+func ConversionRateNotIn(vs ...decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldNotIn(FieldConversionRate, vs...))
 }
 
 // ConversionRateGT applies the GT predicate on the "conversion_rate" field.
-func ConversionRateGT(v int) predicate.Wallet {
+func ConversionRateGT(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldGT(FieldConversionRate, v))
 }
 
 // ConversionRateGTE applies the GTE predicate on the "conversion_rate" field.
-func ConversionRateGTE(v int) predicate.Wallet {
+func ConversionRateGTE(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldGTE(FieldConversionRate, v))
 }
 
 // ConversionRateLT applies the LT predicate on the "conversion_rate" field.
-func ConversionRateLT(v int) predicate.Wallet {
+func ConversionRateLT(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldLT(FieldConversionRate, v))
 }
 
 // ConversionRateLTE applies the LTE predicate on the "conversion_rate" field.
-func ConversionRateLTE(v int) predicate.Wallet {
+func ConversionRateLTE(v decimal.Decimal) predicate.Wallet {
 	return predicate.Wallet(sql.FieldLTE(FieldConversionRate, v))
 }
 

@@ -10,20 +10,23 @@ import (
 
 // Transaction represents a wallet transaction
 type Transaction struct {
-	ID                string                  `db:"id" json:"id"`
-	WalletID          string                  `db:"wallet_id" json:"wallet_id"`
-	Type              types.TransactionType   `db:"type" json:"type"`
-	Amount            decimal.Decimal         `db:"amount" json:"amount"`
-	BalanceBefore     decimal.Decimal         `db:"balance_before" json:"balance_before"`
-	BalanceAfter      decimal.Decimal         `db:"balance_after" json:"balance_after"`
-	TxStatus          types.TransactionStatus `db:"transaction_status" json:"transaction_status"`
-	ReferenceType     string                  `db:"reference_type" json:"reference_type"`
-	ReferenceID       string                  `db:"reference_id" json:"reference_id"`
-	Description       string                  `db:"description" json:"description"`
-	Metadata          types.Metadata          `db:"metadata" json:"metadata"`
-	ExpiryDate        *time.Time              `db:"expiry_date" json:"expiry_date"`
-	AmountUsed        decimal.Decimal         `db:"amount_used" json:"amount_used"`
-	TransactionReason types.TransactionReason `db:"transaction_reason" json:"transaction_reason"`
+	ID                  string                  `db:"id" json:"id"`
+	WalletID            string                  `db:"wallet_id" json:"wallet_id"`
+	Type                types.TransactionType   `db:"type" json:"type"`
+	Amount              decimal.Decimal         `db:"amount" json:"amount"`
+	CreditAmount        decimal.Decimal         `db:"credit_amount" json:"credit_amount"`
+	BalanceBefore       decimal.Decimal         `db:"balance_before" json:"balance_before"`
+	BalanceAfter        decimal.Decimal         `db:"balance_after" json:"balance_after"`
+	CreditBalanceBefore decimal.Decimal         `db:"credit_balance_before" json:"credit_balance_before"`
+	CreditBalanceAfter  decimal.Decimal         `db:"credit_balance_after" json:"credit_balance_after"`
+	TxStatus            types.TransactionStatus `db:"transaction_status" json:"transaction_status"`
+	ReferenceType       string                  `db:"reference_type" json:"reference_type"`
+	ReferenceID         string                  `db:"reference_id" json:"reference_id"`
+	Description         string                  `db:"description" json:"description"`
+	Metadata            types.Metadata          `db:"metadata" json:"metadata"`
+	ExpiryDate          *time.Time              `db:"expiry_date" json:"expiry_date"`
+	AmountUsed          decimal.Decimal         `db:"amount_used" json:"amount_used"`
+	TransactionReason   types.TransactionReason `db:"transaction_reason" json:"transaction_reason"`
 	types.BaseModel
 }
 
@@ -31,29 +34,46 @@ func (t *Transaction) TableName() string {
 	return "wallet_transactions"
 }
 
+func (t *Transaction) Validate() error {
+	return nil
+}
+
+// ApplyConversionRate applies the conversion rate to the transaction
+// so for conversion rate of 2 means 1 credit = 2 dollars (assuming USD)
+// and similarly for conversion rate of 0.5 means 1 dollar = 0.5 credits
+func (t Transaction) ApplyConversionRate(rate decimal.Decimal) Transaction {
+	t.Amount = t.CreditAmount.Mul(rate)
+	t.BalanceBefore = t.BalanceBefore.Mul(rate)
+	t.BalanceAfter = t.BalanceAfter.Mul(rate)
+	return t
+}
+
 // ToEnt converts a domain transaction to an ent transaction
 func (t *Transaction) ToEnt() *ent.WalletTransaction {
 	return &ent.WalletTransaction{
-		ID:                t.ID,
-		WalletID:          t.WalletID,
-		Type:              string(t.Type),
-		Amount:            t.Amount,
-		BalanceBefore:     t.BalanceBefore,
-		BalanceAfter:      t.BalanceAfter,
-		TransactionStatus: string(t.TxStatus),
-		ReferenceType:     t.ReferenceType,
-		ReferenceID:       t.ReferenceID,
-		Description:       t.Description,
-		Metadata:          t.Metadata,
-		ExpiryDate:        t.ExpiryDate,
-		AmountUsed:        t.AmountUsed,
-		TransactionReason: string(t.TransactionReason),
-		TenantID:          t.TenantID,
-		Status:            string(t.Status),
-		CreatedBy:         t.CreatedBy,
-		UpdatedBy:         t.UpdatedBy,
-		CreatedAt:         t.CreatedAt,
-		UpdatedAt:         t.UpdatedAt,
+		ID:                  t.ID,
+		WalletID:            t.WalletID,
+		Type:                string(t.Type),
+		Amount:              t.Amount,
+		CreditAmount:        t.CreditAmount,
+		BalanceBefore:       t.BalanceBefore,
+		BalanceAfter:        t.BalanceAfter,
+		CreditBalanceBefore: t.CreditBalanceBefore,
+		CreditBalanceAfter:  t.CreditBalanceAfter,
+		TransactionStatus:   string(t.TxStatus),
+		ReferenceType:       t.ReferenceType,
+		ReferenceID:         t.ReferenceID,
+		Description:         t.Description,
+		Metadata:            t.Metadata,
+		ExpiryDate:          t.ExpiryDate,
+		AmountUsed:          t.AmountUsed,
+		TransactionReason:   string(t.TransactionReason),
+		TenantID:            t.TenantID,
+		Status:              string(t.Status),
+		CreatedBy:           t.CreatedBy,
+		UpdatedBy:           t.UpdatedBy,
+		CreatedAt:           t.CreatedAt,
+		UpdatedAt:           t.UpdatedAt,
 	}
 }
 

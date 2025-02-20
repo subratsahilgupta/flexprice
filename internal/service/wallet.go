@@ -209,11 +209,11 @@ func (s *walletService) GetWalletTransactions(ctx context.Context, walletID stri
 func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *dto.TopUpWalletRequest) (*dto.WalletResponse, error) {
 	// Create a credit operation
 	creditReq := &wallet.WalletOperation{
-		WalletID:    walletID,
-		Type:        types.TransactionTypeCredit,
-		Amount:      req.Amount,
-		Description: req.Description,
-		Metadata:    req.Metadata,
+		WalletID:     walletID,
+		Type:         types.TransactionTypeCredit,
+		CreditAmount: req.Amount,
+		Description:  req.Description,
+		Metadata:     req.Metadata,
 	}
 
 	if err := s.walletRepo.CreditWallet(ctx, creditReq); err != nil {
@@ -353,12 +353,12 @@ func (s *walletService) TerminateWallet(ctx context.Context, walletID string) er
 	// Use client's WithTx for atomic operations
 	return s.db.WithTx(ctx, func(ctx context.Context) error {
 		// Debit remaining balance if any
-		if w.Balance.GreaterThan(decimal.Zero) {
+		if w.CreditBalance.GreaterThan(decimal.Zero) {
 			debitReq := &wallet.WalletOperation{
-				WalletID:    walletID,
-				Amount:      w.Balance,
-				Type:        types.TransactionTypeDebit,
-				Description: "Wallet termination - remaining balance debit",
+				WalletID:     walletID,
+				CreditAmount: w.CreditBalance,
+				Type:         types.TransactionTypeDebit,
+				Description:  "Wallet termination - remaining balance debit",
 			}
 
 			if err := s.walletRepo.DebitWallet(ctx, debitReq); err != nil {

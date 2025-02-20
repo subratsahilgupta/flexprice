@@ -21248,13 +21248,13 @@ type WalletMutation struct {
 	description            *string
 	metadata               *map[string]string
 	balance                *decimal.Decimal
+	credit_balance         *decimal.Decimal
 	wallet_status          *string
 	auto_topup_trigger     *string
 	auto_topup_min_balance *decimal.Decimal
 	auto_topup_amount      *decimal.Decimal
 	wallet_type            *string
-	conversion_rate        *int
-	addconversion_rate     *int
+	conversion_rate        *decimal.Decimal
 	_config                *types.WalletConfig
 	clearedFields          map[string]struct{}
 	done                   bool
@@ -21863,6 +21863,42 @@ func (m *WalletMutation) ResetBalance() {
 	m.balance = nil
 }
 
+// SetCreditBalance sets the "credit_balance" field.
+func (m *WalletMutation) SetCreditBalance(d decimal.Decimal) {
+	m.credit_balance = &d
+}
+
+// CreditBalance returns the value of the "credit_balance" field in the mutation.
+func (m *WalletMutation) CreditBalance() (r decimal.Decimal, exists bool) {
+	v := m.credit_balance
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditBalance returns the old "credit_balance" field's value of the Wallet entity.
+// If the Wallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletMutation) OldCreditBalance(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditBalance is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditBalance requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditBalance: %w", err)
+	}
+	return oldValue.CreditBalance, nil
+}
+
+// ResetCreditBalance resets all changes to the "credit_balance" field.
+func (m *WalletMutation) ResetCreditBalance() {
+	m.credit_balance = nil
+}
+
 // SetWalletStatus sets the "wallet_status" field.
 func (m *WalletMutation) SetWalletStatus(s string) {
 	m.wallet_status = &s
@@ -22083,13 +22119,12 @@ func (m *WalletMutation) ResetWalletType() {
 }
 
 // SetConversionRate sets the "conversion_rate" field.
-func (m *WalletMutation) SetConversionRate(i int) {
-	m.conversion_rate = &i
-	m.addconversion_rate = nil
+func (m *WalletMutation) SetConversionRate(d decimal.Decimal) {
+	m.conversion_rate = &d
 }
 
 // ConversionRate returns the value of the "conversion_rate" field in the mutation.
-func (m *WalletMutation) ConversionRate() (r int, exists bool) {
+func (m *WalletMutation) ConversionRate() (r decimal.Decimal, exists bool) {
 	v := m.conversion_rate
 	if v == nil {
 		return
@@ -22100,7 +22135,7 @@ func (m *WalletMutation) ConversionRate() (r int, exists bool) {
 // OldConversionRate returns the old "conversion_rate" field's value of the Wallet entity.
 // If the Wallet object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletMutation) OldConversionRate(ctx context.Context) (v int, err error) {
+func (m *WalletMutation) OldConversionRate(ctx context.Context) (v decimal.Decimal, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldConversionRate is only allowed on UpdateOne operations")
 	}
@@ -22114,28 +22149,9 @@ func (m *WalletMutation) OldConversionRate(ctx context.Context) (v int, err erro
 	return oldValue.ConversionRate, nil
 }
 
-// AddConversionRate adds i to the "conversion_rate" field.
-func (m *WalletMutation) AddConversionRate(i int) {
-	if m.addconversion_rate != nil {
-		*m.addconversion_rate += i
-	} else {
-		m.addconversion_rate = &i
-	}
-}
-
-// AddedConversionRate returns the value that was added to the "conversion_rate" field in this mutation.
-func (m *WalletMutation) AddedConversionRate() (r int, exists bool) {
-	v := m.addconversion_rate
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ResetConversionRate resets all changes to the "conversion_rate" field.
 func (m *WalletMutation) ResetConversionRate() {
 	m.conversion_rate = nil
-	m.addconversion_rate = nil
 }
 
 // SetConfig sets the "config" field.
@@ -22221,7 +22237,7 @@ func (m *WalletMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 20)
 	if m.tenant_id != nil {
 		fields = append(fields, wallet.FieldTenantID)
 	}
@@ -22257,6 +22273,9 @@ func (m *WalletMutation) Fields() []string {
 	}
 	if m.balance != nil {
 		fields = append(fields, wallet.FieldBalance)
+	}
+	if m.credit_balance != nil {
+		fields = append(fields, wallet.FieldCreditBalance)
 	}
 	if m.wallet_status != nil {
 		fields = append(fields, wallet.FieldWalletStatus)
@@ -22311,6 +22330,8 @@ func (m *WalletMutation) Field(name string) (ent.Value, bool) {
 		return m.Metadata()
 	case wallet.FieldBalance:
 		return m.Balance()
+	case wallet.FieldCreditBalance:
+		return m.CreditBalance()
 	case wallet.FieldWalletStatus:
 		return m.WalletStatus()
 	case wallet.FieldAutoTopupTrigger:
@@ -22358,6 +22379,8 @@ func (m *WalletMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldMetadata(ctx)
 	case wallet.FieldBalance:
 		return m.OldBalance(ctx)
+	case wallet.FieldCreditBalance:
+		return m.OldCreditBalance(ctx)
 	case wallet.FieldWalletStatus:
 		return m.OldWalletStatus(ctx)
 	case wallet.FieldAutoTopupTrigger:
@@ -22465,6 +22488,13 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetBalance(v)
 		return nil
+	case wallet.FieldCreditBalance:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditBalance(v)
+		return nil
 	case wallet.FieldWalletStatus:
 		v, ok := value.(string)
 		if !ok {
@@ -22501,7 +22531,7 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 		m.SetWalletType(v)
 		return nil
 	case wallet.FieldConversionRate:
-		v, ok := value.(int)
+		v, ok := value.(decimal.Decimal)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -22521,21 +22551,13 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *WalletMutation) AddedFields() []string {
-	var fields []string
-	if m.addconversion_rate != nil {
-		fields = append(fields, wallet.FieldConversionRate)
-	}
-	return fields
+	return nil
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *WalletMutation) AddedField(name string) (ent.Value, bool) {
-	switch name {
-	case wallet.FieldConversionRate:
-		return m.AddedConversionRate()
-	}
 	return nil, false
 }
 
@@ -22544,13 +22566,6 @@ func (m *WalletMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *WalletMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case wallet.FieldConversionRate:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddConversionRate(v)
-		return nil
 	}
 	return fmt.Errorf("unknown Wallet numeric field %s", name)
 }
@@ -22671,6 +22686,9 @@ func (m *WalletMutation) ResetField(name string) error {
 	case wallet.FieldBalance:
 		m.ResetBalance()
 		return nil
+	case wallet.FieldCreditBalance:
+		m.ResetCreditBalance()
+		return nil
 	case wallet.FieldWalletStatus:
 		m.ResetWalletStatus()
 		return nil
@@ -22747,32 +22765,35 @@ func (m *WalletMutation) ResetEdge(name string) error {
 // WalletTransactionMutation represents an operation that mutates the WalletTransaction nodes in the graph.
 type WalletTransactionMutation struct {
 	config
-	op                 Op
-	typ                string
-	id                 *string
-	tenant_id          *string
-	status             *string
-	created_at         *time.Time
-	updated_at         *time.Time
-	created_by         *string
-	updated_by         *string
-	wallet_id          *string
-	_type              *string
-	amount             *decimal.Decimal
-	balance_before     *decimal.Decimal
-	balance_after      *decimal.Decimal
-	reference_type     *string
-	reference_id       *string
-	description        *string
-	metadata           *map[string]string
-	transaction_status *string
-	expiry_date        *time.Time
-	amount_used        *decimal.Decimal
-	transaction_reason *string
-	clearedFields      map[string]struct{}
-	done               bool
-	oldValue           func(context.Context) (*WalletTransaction, error)
-	predicates         []predicate.WalletTransaction
+	op                    Op
+	typ                   string
+	id                    *string
+	tenant_id             *string
+	status                *string
+	created_at            *time.Time
+	updated_at            *time.Time
+	created_by            *string
+	updated_by            *string
+	wallet_id             *string
+	_type                 *string
+	amount                *decimal.Decimal
+	credit_amount         *decimal.Decimal
+	balance_before        *decimal.Decimal
+	balance_after         *decimal.Decimal
+	credit_balance_before *decimal.Decimal
+	credit_balance_after  *decimal.Decimal
+	reference_type        *string
+	reference_id          *string
+	description           *string
+	metadata              *map[string]string
+	transaction_status    *string
+	expiry_date           *time.Time
+	amount_used           *decimal.Decimal
+	transaction_reason    *string
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*WalletTransaction, error)
+	predicates            []predicate.WalletTransaction
 }
 
 var _ ent.Mutation = (*WalletTransactionMutation)(nil)
@@ -23229,6 +23250,42 @@ func (m *WalletTransactionMutation) ResetAmount() {
 	m.amount = nil
 }
 
+// SetCreditAmount sets the "credit_amount" field.
+func (m *WalletTransactionMutation) SetCreditAmount(d decimal.Decimal) {
+	m.credit_amount = &d
+}
+
+// CreditAmount returns the value of the "credit_amount" field in the mutation.
+func (m *WalletTransactionMutation) CreditAmount() (r decimal.Decimal, exists bool) {
+	v := m.credit_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditAmount returns the old "credit_amount" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldCreditAmount(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditAmount: %w", err)
+	}
+	return oldValue.CreditAmount, nil
+}
+
+// ResetCreditAmount resets all changes to the "credit_amount" field.
+func (m *WalletTransactionMutation) ResetCreditAmount() {
+	m.credit_amount = nil
+}
+
 // SetBalanceBefore sets the "balance_before" field.
 func (m *WalletTransactionMutation) SetBalanceBefore(d decimal.Decimal) {
 	m.balance_before = &d
@@ -23299,6 +23356,78 @@ func (m *WalletTransactionMutation) OldBalanceAfter(ctx context.Context) (v deci
 // ResetBalanceAfter resets all changes to the "balance_after" field.
 func (m *WalletTransactionMutation) ResetBalanceAfter() {
 	m.balance_after = nil
+}
+
+// SetCreditBalanceBefore sets the "credit_balance_before" field.
+func (m *WalletTransactionMutation) SetCreditBalanceBefore(d decimal.Decimal) {
+	m.credit_balance_before = &d
+}
+
+// CreditBalanceBefore returns the value of the "credit_balance_before" field in the mutation.
+func (m *WalletTransactionMutation) CreditBalanceBefore() (r decimal.Decimal, exists bool) {
+	v := m.credit_balance_before
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditBalanceBefore returns the old "credit_balance_before" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldCreditBalanceBefore(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditBalanceBefore is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditBalanceBefore requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditBalanceBefore: %w", err)
+	}
+	return oldValue.CreditBalanceBefore, nil
+}
+
+// ResetCreditBalanceBefore resets all changes to the "credit_balance_before" field.
+func (m *WalletTransactionMutation) ResetCreditBalanceBefore() {
+	m.credit_balance_before = nil
+}
+
+// SetCreditBalanceAfter sets the "credit_balance_after" field.
+func (m *WalletTransactionMutation) SetCreditBalanceAfter(d decimal.Decimal) {
+	m.credit_balance_after = &d
+}
+
+// CreditBalanceAfter returns the value of the "credit_balance_after" field in the mutation.
+func (m *WalletTransactionMutation) CreditBalanceAfter() (r decimal.Decimal, exists bool) {
+	v := m.credit_balance_after
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditBalanceAfter returns the old "credit_balance_after" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldCreditBalanceAfter(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditBalanceAfter is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditBalanceAfter requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditBalanceAfter: %w", err)
+	}
+	return oldValue.CreditBalanceAfter, nil
+}
+
+// ResetCreditBalanceAfter resets all changes to the "credit_balance_after" field.
+func (m *WalletTransactionMutation) ResetCreditBalanceAfter() {
+	m.credit_balance_after = nil
 }
 
 // SetReferenceType sets the "reference_type" field.
@@ -23688,7 +23817,7 @@ func (m *WalletTransactionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletTransactionMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 22)
 	if m.tenant_id != nil {
 		fields = append(fields, wallettransaction.FieldTenantID)
 	}
@@ -23716,11 +23845,20 @@ func (m *WalletTransactionMutation) Fields() []string {
 	if m.amount != nil {
 		fields = append(fields, wallettransaction.FieldAmount)
 	}
+	if m.credit_amount != nil {
+		fields = append(fields, wallettransaction.FieldCreditAmount)
+	}
 	if m.balance_before != nil {
 		fields = append(fields, wallettransaction.FieldBalanceBefore)
 	}
 	if m.balance_after != nil {
 		fields = append(fields, wallettransaction.FieldBalanceAfter)
+	}
+	if m.credit_balance_before != nil {
+		fields = append(fields, wallettransaction.FieldCreditBalanceBefore)
+	}
+	if m.credit_balance_after != nil {
+		fields = append(fields, wallettransaction.FieldCreditBalanceAfter)
 	}
 	if m.reference_type != nil {
 		fields = append(fields, wallettransaction.FieldReferenceType)
@@ -23772,10 +23910,16 @@ func (m *WalletTransactionMutation) Field(name string) (ent.Value, bool) {
 		return m.GetType()
 	case wallettransaction.FieldAmount:
 		return m.Amount()
+	case wallettransaction.FieldCreditAmount:
+		return m.CreditAmount()
 	case wallettransaction.FieldBalanceBefore:
 		return m.BalanceBefore()
 	case wallettransaction.FieldBalanceAfter:
 		return m.BalanceAfter()
+	case wallettransaction.FieldCreditBalanceBefore:
+		return m.CreditBalanceBefore()
+	case wallettransaction.FieldCreditBalanceAfter:
+		return m.CreditBalanceAfter()
 	case wallettransaction.FieldReferenceType:
 		return m.ReferenceType()
 	case wallettransaction.FieldReferenceID:
@@ -23819,10 +23963,16 @@ func (m *WalletTransactionMutation) OldField(ctx context.Context, name string) (
 		return m.OldType(ctx)
 	case wallettransaction.FieldAmount:
 		return m.OldAmount(ctx)
+	case wallettransaction.FieldCreditAmount:
+		return m.OldCreditAmount(ctx)
 	case wallettransaction.FieldBalanceBefore:
 		return m.OldBalanceBefore(ctx)
 	case wallettransaction.FieldBalanceAfter:
 		return m.OldBalanceAfter(ctx)
+	case wallettransaction.FieldCreditBalanceBefore:
+		return m.OldCreditBalanceBefore(ctx)
+	case wallettransaction.FieldCreditBalanceAfter:
+		return m.OldCreditBalanceAfter(ctx)
 	case wallettransaction.FieldReferenceType:
 		return m.OldReferenceType(ctx)
 	case wallettransaction.FieldReferenceID:
@@ -23911,6 +24061,13 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetAmount(v)
 		return nil
+	case wallettransaction.FieldCreditAmount:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditAmount(v)
+		return nil
 	case wallettransaction.FieldBalanceBefore:
 		v, ok := value.(decimal.Decimal)
 		if !ok {
@@ -23924,6 +24081,20 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBalanceAfter(v)
+		return nil
+	case wallettransaction.FieldCreditBalanceBefore:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditBalanceBefore(v)
+		return nil
+	case wallettransaction.FieldCreditBalanceAfter:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditBalanceAfter(v)
 		return nil
 	case wallettransaction.FieldReferenceType:
 		v, ok := value.(string)
@@ -24102,11 +24273,20 @@ func (m *WalletTransactionMutation) ResetField(name string) error {
 	case wallettransaction.FieldAmount:
 		m.ResetAmount()
 		return nil
+	case wallettransaction.FieldCreditAmount:
+		m.ResetCreditAmount()
+		return nil
 	case wallettransaction.FieldBalanceBefore:
 		m.ResetBalanceBefore()
 		return nil
 	case wallettransaction.FieldBalanceAfter:
 		m.ResetBalanceAfter()
+		return nil
+	case wallettransaction.FieldCreditBalanceBefore:
+		m.ResetCreditBalanceBefore()
+		return nil
+	case wallettransaction.FieldCreditBalanceAfter:
+		m.ResetCreditBalanceAfter()
 		return nil
 	case wallettransaction.FieldReferenceType:
 		m.ResetReferenceType()

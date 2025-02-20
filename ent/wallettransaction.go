@@ -37,10 +37,16 @@ type WalletTransaction struct {
 	Type string `json:"type,omitempty"`
 	// Amount holds the value of the "amount" field.
 	Amount decimal.Decimal `json:"amount,omitempty"`
+	// CreditAmount holds the value of the "credit_amount" field.
+	CreditAmount decimal.Decimal `json:"credit_amount,omitempty"`
 	// BalanceBefore holds the value of the "balance_before" field.
 	BalanceBefore decimal.Decimal `json:"balance_before,omitempty"`
 	// BalanceAfter holds the value of the "balance_after" field.
 	BalanceAfter decimal.Decimal `json:"balance_after,omitempty"`
+	// CreditBalanceBefore holds the value of the "credit_balance_before" field.
+	CreditBalanceBefore decimal.Decimal `json:"credit_balance_before,omitempty"`
+	// CreditBalanceAfter holds the value of the "credit_balance_after" field.
+	CreditBalanceAfter decimal.Decimal `json:"credit_balance_after,omitempty"`
 	// ReferenceType holds the value of the "reference_type" field.
 	ReferenceType string `json:"reference_type,omitempty"`
 	// ReferenceID holds the value of the "reference_id" field.
@@ -67,7 +73,7 @@ func (*WalletTransaction) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case wallettransaction.FieldMetadata:
 			values[i] = new([]byte)
-		case wallettransaction.FieldAmount, wallettransaction.FieldBalanceBefore, wallettransaction.FieldBalanceAfter, wallettransaction.FieldAmountUsed:
+		case wallettransaction.FieldAmount, wallettransaction.FieldCreditAmount, wallettransaction.FieldBalanceBefore, wallettransaction.FieldBalanceAfter, wallettransaction.FieldCreditBalanceBefore, wallettransaction.FieldCreditBalanceAfter, wallettransaction.FieldAmountUsed:
 			values[i] = new(decimal.Decimal)
 		case wallettransaction.FieldID, wallettransaction.FieldTenantID, wallettransaction.FieldStatus, wallettransaction.FieldCreatedBy, wallettransaction.FieldUpdatedBy, wallettransaction.FieldWalletID, wallettransaction.FieldType, wallettransaction.FieldReferenceType, wallettransaction.FieldReferenceID, wallettransaction.FieldDescription, wallettransaction.FieldTransactionStatus, wallettransaction.FieldTransactionReason:
 			values[i] = new(sql.NullString)
@@ -148,6 +154,12 @@ func (wt *WalletTransaction) assignValues(columns []string, values []any) error 
 			} else if value != nil {
 				wt.Amount = *value
 			}
+		case wallettransaction.FieldCreditAmount:
+			if value, ok := values[i].(*decimal.Decimal); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_amount", values[i])
+			} else if value != nil {
+				wt.CreditAmount = *value
+			}
 		case wallettransaction.FieldBalanceBefore:
 			if value, ok := values[i].(*decimal.Decimal); !ok {
 				return fmt.Errorf("unexpected type %T for field balance_before", values[i])
@@ -159,6 +171,18 @@ func (wt *WalletTransaction) assignValues(columns []string, values []any) error 
 				return fmt.Errorf("unexpected type %T for field balance_after", values[i])
 			} else if value != nil {
 				wt.BalanceAfter = *value
+			}
+		case wallettransaction.FieldCreditBalanceBefore:
+			if value, ok := values[i].(*decimal.Decimal); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_balance_before", values[i])
+			} else if value != nil {
+				wt.CreditBalanceBefore = *value
+			}
+		case wallettransaction.FieldCreditBalanceAfter:
+			if value, ok := values[i].(*decimal.Decimal); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_balance_after", values[i])
+			} else if value != nil {
+				wt.CreditBalanceAfter = *value
 			}
 		case wallettransaction.FieldReferenceType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -274,11 +298,20 @@ func (wt *WalletTransaction) String() string {
 	builder.WriteString("amount=")
 	builder.WriteString(fmt.Sprintf("%v", wt.Amount))
 	builder.WriteString(", ")
+	builder.WriteString("credit_amount=")
+	builder.WriteString(fmt.Sprintf("%v", wt.CreditAmount))
+	builder.WriteString(", ")
 	builder.WriteString("balance_before=")
 	builder.WriteString(fmt.Sprintf("%v", wt.BalanceBefore))
 	builder.WriteString(", ")
 	builder.WriteString("balance_after=")
 	builder.WriteString(fmt.Sprintf("%v", wt.BalanceAfter))
+	builder.WriteString(", ")
+	builder.WriteString("credit_balance_before=")
+	builder.WriteString(fmt.Sprintf("%v", wt.CreditBalanceBefore))
+	builder.WriteString(", ")
+	builder.WriteString("credit_balance_after=")
+	builder.WriteString(fmt.Sprintf("%v", wt.CreditBalanceAfter))
 	builder.WriteString(", ")
 	builder.WriteString("reference_type=")
 	builder.WriteString(wt.ReferenceType)

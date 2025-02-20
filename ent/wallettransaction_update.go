@@ -97,6 +97,20 @@ func (wtu *WalletTransactionUpdate) SetNillableAmount(d *decimal.Decimal) *Walle
 	return wtu
 }
 
+// SetCreditAmount sets the "credit_amount" field.
+func (wtu *WalletTransactionUpdate) SetCreditAmount(d decimal.Decimal) *WalletTransactionUpdate {
+	wtu.mutation.SetCreditAmount(d)
+	return wtu
+}
+
+// SetNillableCreditAmount sets the "credit_amount" field if the given value is not nil.
+func (wtu *WalletTransactionUpdate) SetNillableCreditAmount(d *decimal.Decimal) *WalletTransactionUpdate {
+	if d != nil {
+		wtu.SetCreditAmount(*d)
+	}
+	return wtu
+}
+
 // SetBalanceBefore sets the "balance_before" field.
 func (wtu *WalletTransactionUpdate) SetBalanceBefore(d decimal.Decimal) *WalletTransactionUpdate {
 	wtu.mutation.SetBalanceBefore(d)
@@ -121,6 +135,34 @@ func (wtu *WalletTransactionUpdate) SetBalanceAfter(d decimal.Decimal) *WalletTr
 func (wtu *WalletTransactionUpdate) SetNillableBalanceAfter(d *decimal.Decimal) *WalletTransactionUpdate {
 	if d != nil {
 		wtu.SetBalanceAfter(*d)
+	}
+	return wtu
+}
+
+// SetCreditBalanceBefore sets the "credit_balance_before" field.
+func (wtu *WalletTransactionUpdate) SetCreditBalanceBefore(d decimal.Decimal) *WalletTransactionUpdate {
+	wtu.mutation.SetCreditBalanceBefore(d)
+	return wtu
+}
+
+// SetNillableCreditBalanceBefore sets the "credit_balance_before" field if the given value is not nil.
+func (wtu *WalletTransactionUpdate) SetNillableCreditBalanceBefore(d *decimal.Decimal) *WalletTransactionUpdate {
+	if d != nil {
+		wtu.SetCreditBalanceBefore(*d)
+	}
+	return wtu
+}
+
+// SetCreditBalanceAfter sets the "credit_balance_after" field.
+func (wtu *WalletTransactionUpdate) SetCreditBalanceAfter(d decimal.Decimal) *WalletTransactionUpdate {
+	wtu.mutation.SetCreditBalanceAfter(d)
+	return wtu
+}
+
+// SetNillableCreditBalanceAfter sets the "credit_balance_after" field if the given value is not nil.
+func (wtu *WalletTransactionUpdate) SetNillableCreditBalanceAfter(d *decimal.Decimal) *WalletTransactionUpdate {
+	if d != nil {
+		wtu.SetCreditBalanceAfter(*d)
 	}
 	return wtu
 }
@@ -309,11 +351,20 @@ func (wtu *WalletTransactionUpdate) sqlSave(ctx context.Context) (n int, err err
 	if value, ok := wtu.mutation.Amount(); ok {
 		_spec.SetField(wallettransaction.FieldAmount, field.TypeOther, value)
 	}
+	if value, ok := wtu.mutation.CreditAmount(); ok {
+		_spec.SetField(wallettransaction.FieldCreditAmount, field.TypeOther, value)
+	}
 	if value, ok := wtu.mutation.BalanceBefore(); ok {
 		_spec.SetField(wallettransaction.FieldBalanceBefore, field.TypeOther, value)
 	}
 	if value, ok := wtu.mutation.BalanceAfter(); ok {
 		_spec.SetField(wallettransaction.FieldBalanceAfter, field.TypeOther, value)
+	}
+	if value, ok := wtu.mutation.CreditBalanceBefore(); ok {
+		_spec.SetField(wallettransaction.FieldCreditBalanceBefore, field.TypeOther, value)
+	}
+	if value, ok := wtu.mutation.CreditBalanceAfter(); ok {
+		_spec.SetField(wallettransaction.FieldCreditBalanceAfter, field.TypeOther, value)
 	}
 	if value, ok := wtu.mutation.ReferenceType(); ok {
 		_spec.SetField(wallettransaction.FieldReferenceType, field.TypeString, value)
@@ -436,6 +487,20 @@ func (wtuo *WalletTransactionUpdateOne) SetNillableAmount(d *decimal.Decimal) *W
 	return wtuo
 }
 
+// SetCreditAmount sets the "credit_amount" field.
+func (wtuo *WalletTransactionUpdateOne) SetCreditAmount(d decimal.Decimal) *WalletTransactionUpdateOne {
+	wtuo.mutation.SetCreditAmount(d)
+	return wtuo
+}
+
+// SetNillableCreditAmount sets the "credit_amount" field if the given value is not nil.
+func (wtuo *WalletTransactionUpdateOne) SetNillableCreditAmount(d *decimal.Decimal) *WalletTransactionUpdateOne {
+	if d != nil {
+		wtuo.SetCreditAmount(*d)
+	}
+	return wtuo
+}
+
 // SetBalanceBefore sets the "balance_before" field.
 func (wtuo *WalletTransactionUpdateOne) SetBalanceBefore(d decimal.Decimal) *WalletTransactionUpdateOne {
 	wtuo.mutation.SetBalanceBefore(d)
@@ -460,6 +525,34 @@ func (wtuo *WalletTransactionUpdateOne) SetBalanceAfter(d decimal.Decimal) *Wall
 func (wtuo *WalletTransactionUpdateOne) SetNillableBalanceAfter(d *decimal.Decimal) *WalletTransactionUpdateOne {
 	if d != nil {
 		wtuo.SetBalanceAfter(*d)
+	}
+	return wtuo
+}
+
+// SetCreditBalanceBefore sets the "credit_balance_before" field.
+func (wtuo *WalletTransactionUpdateOne) SetCreditBalanceBefore(d decimal.Decimal) *WalletTransactionUpdateOne {
+	wtuo.mutation.SetCreditBalanceBefore(d)
+	return wtuo
+}
+
+// SetNillableCreditBalanceBefore sets the "credit_balance_before" field if the given value is not nil.
+func (wtuo *WalletTransactionUpdateOne) SetNillableCreditBalanceBefore(d *decimal.Decimal) *WalletTransactionUpdateOne {
+	if d != nil {
+		wtuo.SetCreditBalanceBefore(*d)
+	}
+	return wtuo
+}
+
+// SetCreditBalanceAfter sets the "credit_balance_after" field.
+func (wtuo *WalletTransactionUpdateOne) SetCreditBalanceAfter(d decimal.Decimal) *WalletTransactionUpdateOne {
+	wtuo.mutation.SetCreditBalanceAfter(d)
+	return wtuo
+}
+
+// SetNillableCreditBalanceAfter sets the "credit_balance_after" field if the given value is not nil.
+func (wtuo *WalletTransactionUpdateOne) SetNillableCreditBalanceAfter(d *decimal.Decimal) *WalletTransactionUpdateOne {
+	if d != nil {
+		wtuo.SetCreditBalanceAfter(*d)
 	}
 	return wtuo
 }
@@ -678,11 +771,20 @@ func (wtuo *WalletTransactionUpdateOne) sqlSave(ctx context.Context) (_node *Wal
 	if value, ok := wtuo.mutation.Amount(); ok {
 		_spec.SetField(wallettransaction.FieldAmount, field.TypeOther, value)
 	}
+	if value, ok := wtuo.mutation.CreditAmount(); ok {
+		_spec.SetField(wallettransaction.FieldCreditAmount, field.TypeOther, value)
+	}
 	if value, ok := wtuo.mutation.BalanceBefore(); ok {
 		_spec.SetField(wallettransaction.FieldBalanceBefore, field.TypeOther, value)
 	}
 	if value, ok := wtuo.mutation.BalanceAfter(); ok {
 		_spec.SetField(wallettransaction.FieldBalanceAfter, field.TypeOther, value)
+	}
+	if value, ok := wtuo.mutation.CreditBalanceBefore(); ok {
+		_spec.SetField(wallettransaction.FieldCreditBalanceBefore, field.TypeOther, value)
+	}
+	if value, ok := wtuo.mutation.CreditBalanceAfter(); ok {
+		_spec.SetField(wallettransaction.FieldCreditBalanceAfter, field.TypeOther, value)
 	}
 	if value, ok := wtuo.mutation.ReferenceType(); ok {
 		_spec.SetField(wallettransaction.FieldReferenceType, field.TypeString, value)

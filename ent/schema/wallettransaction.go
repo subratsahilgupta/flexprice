@@ -44,6 +44,13 @@ func (WalletTransaction) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,9)",
 			}),
+		field.Other("credit_amount", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(20,9)",
+			}).
+			Annotations(
+				entsql.Default("0"),
+			),
 		field.Other("balance_before", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,9)",
@@ -54,6 +61,20 @@ func (WalletTransaction) Fields() []ent.Field {
 				"postgres": "numeric(20,9)",
 			}).
 			Default(decimal.Zero),
+		field.Other("credit_balance_before", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(20,9)",
+			}).
+			Annotations(
+				entsql.Default("0"),
+			),
+		field.Other("credit_balance_after", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(20,9)",
+			}).
+			Annotations(
+				entsql.Default("0"),
+			),
 		field.String("reference_type").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",

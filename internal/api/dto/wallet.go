@@ -25,7 +25,7 @@ type CreateWalletRequest struct {
 	AutoTopupAmount     decimal.Decimal        `json:"auto_topup_amount,omitempty"`
 	WalletType          types.WalletType       `json:"wallet_type" default:"PRE_PAID"`
 	Config              *types.WalletConfig    `json:"config,omitempty"`
-	ConversionRate      int                    `json:"conversion_rate" default:"1"`
+	ConversionRate      decimal.Decimal        `json:"conversion_rate" default:"1"`
 }
 
 // UpdateWalletRequest represents the request to update a wallet
@@ -82,8 +82,8 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 		r.WalletType = types.WalletTypePrePaid
 	}
 
-	if r.ConversionRate < 1 {
-		r.ConversionRate = 1
+	if r.ConversionRate.LessThan(decimal.NewFromInt(1)) {
+		r.ConversionRate = decimal.NewFromInt(1)
 	}
 
 	return &wallet.Wallet{
@@ -97,6 +97,7 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 		AutoTopupMinBalance: r.AutoTopupMinBalance,
 		AutoTopupAmount:     r.AutoTopupAmount,
 		Balance:             decimal.Zero,
+		CreditBalance:       decimal.Zero,
 		WalletStatus:        types.WalletStatusActive,
 		BaseModel:           types.GetDefaultBaseModel(ctx),
 		WalletType:          r.WalletType,
@@ -115,7 +116,7 @@ func (r *CreateWalletRequest) Validate() error {
 	if err := r.WalletType.Validate(); err != nil {
 		return err
 	}
-	if r.ConversionRate < 0 {
+	if r.ConversionRate.LessThan(decimal.Zero) {
 		return errors.New(errors.ErrCodeValidation, "conversion_rate must be greater than 0")
 	}
 	return validator.New().Struct(r)
@@ -129,6 +130,7 @@ type WalletResponse struct {
 	Currency            string                 `json:"currency"`
 	Description         string                 `json:"description,omitempty"`
 	Balance             decimal.Decimal        `json:"balance"`
+	CreditBalance       decimal.Decimal        `json:"credit_balance"`
 	WalletStatus        types.WalletStatus     `json:"wallet_status"`
 	Metadata            types.Metadata         `json:"metadata,omitempty"`
 	AutoTopupTrigger    types.AutoTopupTrigger `json:"auto_topup_trigger"`
@@ -136,7 +138,7 @@ type WalletResponse struct {
 	AutoTopupAmount     decimal.Decimal        `json:"auto_topup_amount"`
 	WalletType          types.WalletType       `json:"wallet_type"`
 	Config              types.WalletConfig     `json:"config,omitempty"`
-	ConversionRate      int                    `json:"conversion_rate"`
+	ConversionRate      decimal.Decimal        `json:"conversion_rate"`
 	CreatedAt           time.Time              `json:"created_at"`
 	UpdatedAt           time.Time              `json:"updated_at"`
 }
@@ -151,6 +153,7 @@ func FromWallet(w *wallet.Wallet) *WalletResponse {
 		CustomerID:          w.CustomerID,
 		Currency:            w.Currency,
 		Balance:             w.Balance,
+		CreditBalance:       w.CreditBalance,
 		Name:                w.Name,
 		Description:         w.Description,
 		WalletStatus:        w.WalletStatus,
@@ -168,41 +171,47 @@ func FromWallet(w *wallet.Wallet) *WalletResponse {
 
 // WalletTransactionResponse represents a wallet transaction in API responses
 type WalletTransactionResponse struct {
-	ID                string                  `json:"id"`
-	WalletID          string                  `json:"wallet_id"`
-	Type              string                  `json:"type"`
-	Amount            decimal.Decimal         `json:"amount"`
-	BalanceBefore     decimal.Decimal         `json:"balance_before"`
-	BalanceAfter      decimal.Decimal         `json:"balance_after"`
-	TransactionStatus types.TransactionStatus `json:"transaction_status"`
-	ExpiryDate        *time.Time              `json:"expiry_date,omitempty"`
-	AmountUsed        decimal.Decimal         `json:"amount_used,omitempty"`
-	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty"`
-	ReferenceType     string                  `json:"reference_type,omitempty"`
-	ReferenceID       string                  `json:"reference_id,omitempty"`
-	Description       string                  `json:"description,omitempty"`
-	Metadata          types.Metadata          `json:"metadata,omitempty"`
-	CreatedAt         time.Time               `json:"created_at"`
+	ID                  string                  `json:"id"`
+	WalletID            string                  `json:"wallet_id"`
+	Type                string                  `json:"type"`
+	Amount              decimal.Decimal         `json:"amount"`
+	CreditAmount        decimal.Decimal         `json:"credit_amount"`
+	BalanceBefore       decimal.Decimal         `json:"balance_before"`
+	CreditBalanceBefore decimal.Decimal         `json:"credit_balance_before"`
+	CreditBalanceAfter  decimal.Decimal         `json:"credit_balance_after"`
+	BalanceAfter        decimal.Decimal         `json:"balance_after"`
+	TransactionStatus   types.TransactionStatus `json:"transaction_status"`
+	ExpiryDate          *time.Time              `json:"expiry_date,omitempty"`
+	AmountUsed          decimal.Decimal         `json:"amount_used,omitempty"`
+	TransactionReason   types.TransactionReason `json:"transaction_reason,omitempty"`
+	ReferenceType       string                  `json:"reference_type,omitempty"`
+	ReferenceID         string                  `json:"reference_id,omitempty"`
+	Description         string                  `json:"description,omitempty"`
+	Metadata            types.Metadata          `json:"metadata,omitempty"`
+	CreatedAt           time.Time               `json:"created_at"`
 }
 
 // FromWalletTransaction converts a wallet transaction to a WalletTransactionResponse
 func FromWalletTransaction(t *wallet.Transaction) *WalletTransactionResponse {
 	return &WalletTransactionResponse{
-		ID:                t.ID,
-		WalletID:          t.WalletID,
-		Type:              string(t.Type),
-		Amount:            t.Amount,
-		BalanceBefore:     t.BalanceBefore,
-		BalanceAfter:      t.BalanceAfter,
-		TransactionStatus: t.TxStatus,
-		ExpiryDate:        t.ExpiryDate,
-		AmountUsed:        t.AmountUsed,
-		TransactionReason: t.TransactionReason,
-		ReferenceType:     t.ReferenceType,
-		ReferenceID:       t.ReferenceID,
-		Description:       t.Description,
-		Metadata:          t.Metadata,
-		CreatedAt:         t.CreatedAt,
+		ID:                  t.ID,
+		WalletID:            t.WalletID,
+		Type:                string(t.Type),
+		Amount:              t.Amount,
+		CreditAmount:        t.CreditAmount,
+		BalanceBefore:       t.BalanceBefore,
+		CreditBalanceBefore: t.CreditBalanceBefore,
+		CreditBalanceAfter:  t.CreditBalanceAfter,
+		BalanceAfter:        t.BalanceAfter,
+		TransactionStatus:   t.TxStatus,
+		ExpiryDate:          t.ExpiryDate,
+		AmountUsed:          t.AmountUsed,
+		TransactionReason:   t.TransactionReason,
+		ReferenceType:       t.ReferenceType,
+		ReferenceID:         t.ReferenceID,
+		Description:         t.Description,
+		Metadata:            t.Metadata,
+		CreatedAt:           t.CreatedAt,
 	}
 }
 
@@ -211,11 +220,16 @@ type ListWalletTransactionsResponse = types.ListResponse[*WalletTransactionRespo
 
 // TopUpWalletRequest represents a request to add credits to a wallet
 type TopUpWalletRequest struct {
-	Amount            decimal.Decimal         `json:"amount" binding:"required"`
-	Description       string                  `json:"description,omitempty"`
-	GenerateInvoice   bool                    `json:"generate_invoice" binding:"required" default:"false"`
+	// Amount is the number of credits to add to the wallet
+	Amount decimal.Decimal `json:"amount" binding:"required"`
+	// Description to add any specific details about the transaction
+	Description string `json:"description,omitempty"`
+	// GenerateInvoice when true, an invoice will be generated for the transaction
+	GenerateInvoice bool `json:"generate_invoice" binding:"required" default:"false"`
+	// TransactionReason defines the flow from which the credits are added to the wallet
 	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty"`
-	Metadata          types.Metadata          `json:"metadata,omitempty"`
+	// Metadata to add any additional information about the transaction
+	Metadata types.Metadata `json:"metadata,omitempty"`
 }
 
 func (r *TopUpWalletRequest) Validate() error {

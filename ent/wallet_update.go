@@ -150,6 +150,20 @@ func (wu *WalletUpdate) SetNillableBalance(d *decimal.Decimal) *WalletUpdate {
 	return wu
 }
 
+// SetCreditBalance sets the "credit_balance" field.
+func (wu *WalletUpdate) SetCreditBalance(d decimal.Decimal) *WalletUpdate {
+	wu.mutation.SetCreditBalance(d)
+	return wu
+}
+
+// SetNillableCreditBalance sets the "credit_balance" field if the given value is not nil.
+func (wu *WalletUpdate) SetNillableCreditBalance(d *decimal.Decimal) *WalletUpdate {
+	if d != nil {
+		wu.SetCreditBalance(*d)
+	}
+	return wu
+}
+
 // SetWalletStatus sets the "wallet_status" field.
 func (wu *WalletUpdate) SetWalletStatus(s string) *WalletUpdate {
 	wu.mutation.SetWalletStatus(s)
@@ -351,6 +365,9 @@ func (wu *WalletUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := wu.mutation.Balance(); ok {
 		_spec.SetField(wallet.FieldBalance, field.TypeOther, value)
 	}
+	if value, ok := wu.mutation.CreditBalance(); ok {
+		_spec.SetField(wallet.FieldCreditBalance, field.TypeOther, value)
+	}
 	if value, ok := wu.mutation.WalletStatus(); ok {
 		_spec.SetField(wallet.FieldWalletStatus, field.TypeString, value)
 	}
@@ -514,6 +531,20 @@ func (wuo *WalletUpdateOne) SetBalance(d decimal.Decimal) *WalletUpdateOne {
 func (wuo *WalletUpdateOne) SetNillableBalance(d *decimal.Decimal) *WalletUpdateOne {
 	if d != nil {
 		wuo.SetBalance(*d)
+	}
+	return wuo
+}
+
+// SetCreditBalance sets the "credit_balance" field.
+func (wuo *WalletUpdateOne) SetCreditBalance(d decimal.Decimal) *WalletUpdateOne {
+	wuo.mutation.SetCreditBalance(d)
+	return wuo
+}
+
+// SetNillableCreditBalance sets the "credit_balance" field if the given value is not nil.
+func (wuo *WalletUpdateOne) SetNillableCreditBalance(d *decimal.Decimal) *WalletUpdateOne {
+	if d != nil {
+		wuo.SetCreditBalance(*d)
 	}
 	return wuo
 }
@@ -748,6 +779,9 @@ func (wuo *WalletUpdateOne) sqlSave(ctx context.Context) (_node *Wallet, err err
 	}
 	if value, ok := wuo.mutation.Balance(); ok {
 		_spec.SetField(wallet.FieldBalance, field.TypeOther, value)
+	}
+	if value, ok := wuo.mutation.CreditBalance(); ok {
+		_spec.SetField(wallet.FieldCreditBalance, field.TypeOther, value)
 	}
 	if value, ok := wuo.mutation.WalletStatus(); ok {
 		_spec.SetField(wallet.FieldWalletStatus, field.TypeString, value)

@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 )
 
 type InMemoryWalletStore struct {
@@ -173,63 +174,83 @@ func (s *InMemoryWalletStore) UpdateWalletStatus(ctx context.Context, id string,
 	return s.wallets.Update(ctx, id, w)
 }
 
-func (s *InMemoryWalletStore) DebitWallet(ctx context.Context, op *wallet.WalletOperation) error {
-	w, err := s.GetWalletByID(ctx, op.WalletID)
-	if err != nil {
-		return err
+func (s *InMemoryWalletStore) CreditWallet(ctx context.Context, req *wallet.WalletOperation) error {
+	if req.Type != types.TransactionTypeCredit {
+		return fmt.Errorf("invalid transaction type")
 	}
 
-	if w.Balance.LessThan(op.Amount) {
-		return fmt.Errorf("insufficient balance")
+	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
+		return fmt.Errorf("amount must be greater than 0")
 	}
 
-	// Create a transaction
-	txn := &wallet.Transaction{
-		ID:            fmt.Sprintf("txn-%s-%d", op.WalletID, time.Now().UnixNano()),
-		WalletID:      op.WalletID,
-		Type:          op.Type,
-		Amount:        op.Amount,
-		BalanceBefore: w.Balance,
-		BalanceAfter:  w.Balance.Sub(op.Amount),
-		TxStatus:      types.TransactionStatusCompleted,
-		Description:   op.Description,
-		Metadata:      op.Metadata,
-		BaseModel:     types.GetDefaultBaseModel(ctx),
-	}
-
-	if err := s.transactions.Create(ctx, txn.ID, txn); err != nil {
-		return fmt.Errorf("failed to create transaction: %w", err)
-	}
-
-	w.Balance = w.Balance.Sub(op.Amount)
-	return s.wallets.Update(ctx, w.ID, w)
+	return s.performWalletOperation(ctx, req)
 }
 
-func (s *InMemoryWalletStore) CreditWallet(ctx context.Context, op *wallet.WalletOperation) error {
-	w, err := s.GetWalletByID(ctx, op.WalletID)
+func (s *InMemoryWalletStore) DebitWallet(ctx context.Context, req *wallet.WalletOperation) error {
+	if req.Type != types.TransactionTypeDebit {
+		return fmt.Errorf("invalid transaction type")
+	}
+
+	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
+		return fmt.Errorf("amount must be greater than 0")
+	}
+	return s.performWalletOperation(ctx, req)
+}
+
+func (s *InMemoryWalletStore) performWalletOperation(ctx context.Context, req *wallet.WalletOperation) error {
+	w, err := s.GetWalletByID(ctx, req.WalletID)
 	if err != nil {
 		return err
 	}
 
+	// Convert amount to credit amount if provided and perform credit operation
+	if req.Amount.GreaterThan(decimal.Zero) {
+		req.CreditAmount = req.Amount.Div(w.ConversionRate)
+	} else if req.CreditAmount.GreaterThan(decimal.Zero) {
+		req.Amount = req.CreditAmount.Mul(w.ConversionRate)
+	} else {
+		return errors.New(errors.ErrCodeInvalidOperation, "amount or credit amount is required")
+	}
+
+	// Calculate new balance
+	var newCreditBalance decimal.Decimal
+	if req.Type == types.TransactionTypeCredit {
+		newCreditBalance = w.CreditBalance.Add(req.CreditAmount)
+	} else if req.Type == types.TransactionTypeDebit {
+		newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
+		if newCreditBalance.LessThan(decimal.Zero) {
+			return fmt.Errorf("insufficient balance: current=%s, requested=%s", w.CreditBalance, req.CreditAmount)
+		}
+	} else {
+		return fmt.Errorf("invalid transaction type")
+	}
+
+	// final balance
+	finalBalance := newCreditBalance.Mul(w.ConversionRate)
+
 	// Create a transaction
 	txn := &wallet.Transaction{
-		ID:            fmt.Sprintf("txn-%s-%d", op.WalletID, time.Now().UnixNano()),
-		WalletID:      op.WalletID,
-		Type:          op.Type,
-		Amount:        op.Amount,
-		BalanceBefore: w.Balance,
-		BalanceAfter:  w.Balance.Add(op.Amount),
-		TxStatus:      types.TransactionStatusCompleted,
-		Description:   op.Description,
-		Metadata:      op.Metadata,
-		BaseModel:     types.GetDefaultBaseModel(ctx),
+		ID:                  fmt.Sprintf("txn-%s-%d", req.WalletID, time.Now().UnixNano()),
+		WalletID:            req.WalletID,
+		Type:                req.Type,
+		Amount:              req.Amount,
+		CreditAmount:        req.CreditAmount,
+		BalanceBefore:       w.Balance,
+		BalanceAfter:        finalBalance,
+		CreditBalanceBefore: w.CreditBalance,
+		CreditBalanceAfter:  newCreditBalance,
+		TxStatus:            types.TransactionStatusCompleted,
+		Description:         req.Description,
+		Metadata:            req.Metadata,
+		BaseModel:           types.GetDefaultBaseModel(ctx),
 	}
 
 	if err := s.transactions.Create(ctx, txn.ID, txn); err != nil {
 		return fmt.Errorf("failed to create transaction: %w", err)
 	}
 
-	w.Balance = w.Balance.Add(op.Amount)
+	w.Balance = finalBalance
+	w.CreditBalance = newCreditBalance
 	return s.wallets.Update(ctx, w.ID, w)
 }
 
