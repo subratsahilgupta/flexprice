@@ -51,16 +51,6 @@ func (WalletTransaction) Fields() []ent.Field {
 			Annotations(
 				entsql.Default("0"),
 			),
-		field.Other("balance_before", decimal.Decimal{}).
-			SchemaType(map[string]string{
-				"postgres": "numeric(20,9)",
-			}).
-			Default(decimal.Zero),
-		field.Other("balance_after", decimal.Decimal{}).
-			SchemaType(map[string]string{
-				"postgres": "numeric(20,9)",
-			}).
-			Default(decimal.Zero),
 		field.Other("credit_balance_before", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,9)",

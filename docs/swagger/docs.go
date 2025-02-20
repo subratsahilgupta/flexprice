@@ -7586,12 +7586,6 @@ const docTemplate = `{
                 "amount_used": {
                     "type": "number"
                 },
-                "balance_after": {
-                    "type": "number"
-                },
-                "balance_before": {
-                    "type": "number"
-                },
                 "created_at": {
                     "type": "string"
                 },

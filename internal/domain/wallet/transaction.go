@@ -15,8 +15,6 @@ type Transaction struct {
 	Type                types.TransactionType   `db:"type" json:"type"`
 	Amount              decimal.Decimal         `db:"amount" json:"amount"`
 	CreditAmount        decimal.Decimal         `db:"credit_amount" json:"credit_amount"`
-	BalanceBefore       decimal.Decimal         `db:"balance_before" json:"balance_before"`
-	BalanceAfter        decimal.Decimal         `db:"balance_after" json:"balance_after"`
 	CreditBalanceBefore decimal.Decimal         `db:"credit_balance_before" json:"credit_balance_before"`
 	CreditBalanceAfter  decimal.Decimal         `db:"credit_balance_after" json:"credit_balance_after"`
 	TxStatus            types.TransactionStatus `db:"transaction_status" json:"transaction_status"`
@@ -43,8 +41,6 @@ func (t *Transaction) Validate() error {
 // and similarly for conversion rate of 0.5 means 1 dollar = 0.5 credits
 func (t Transaction) ApplyConversionRate(rate decimal.Decimal) Transaction {
 	t.Amount = t.CreditAmount.Mul(rate)
-	t.BalanceBefore = t.BalanceBefore.Mul(rate)
-	t.BalanceAfter = t.BalanceAfter.Mul(rate)
 	return t
 }
 
@@ -56,8 +52,6 @@ func (t *Transaction) ToEnt() *ent.WalletTransaction {
 		Type:                string(t.Type),
 		Amount:              t.Amount,
 		CreditAmount:        t.CreditAmount,
-		BalanceBefore:       t.BalanceBefore,
-		BalanceAfter:        t.BalanceAfter,
 		CreditBalanceBefore: t.CreditBalanceBefore,
 		CreditBalanceAfter:  t.CreditBalanceAfter,
 		TransactionStatus:   string(t.TxStatus),
@@ -84,20 +78,21 @@ func TransactionFromEnt(e *ent.WalletTransaction) *Transaction {
 	}
 
 	return &Transaction{
-		ID:                e.ID,
-		WalletID:          e.WalletID,
-		Type:              types.TransactionType(e.Type),
-		Amount:            e.Amount,
-		BalanceBefore:     e.BalanceBefore,
-		BalanceAfter:      e.BalanceAfter,
-		TxStatus:          types.TransactionStatus(e.TransactionStatus),
-		ReferenceType:     e.ReferenceType,
-		ReferenceID:       e.ReferenceID,
-		Description:       e.Description,
-		Metadata:          types.Metadata(e.Metadata),
-		ExpiryDate:        e.ExpiryDate,
-		AmountUsed:        e.AmountUsed,
-		TransactionReason: types.TransactionReason(e.TransactionReason),
+		ID:                  e.ID,
+		WalletID:            e.WalletID,
+		Type:                types.TransactionType(e.Type),
+		Amount:              e.Amount,
+		CreditAmount:        e.CreditAmount,
+		TxStatus:            types.TransactionStatus(e.TransactionStatus),
+		ReferenceType:       e.ReferenceType,
+		ReferenceID:         e.ReferenceID,
+		Description:         e.Description,
+		Metadata:            types.Metadata(e.Metadata),
+		ExpiryDate:          e.ExpiryDate,
+		AmountUsed:          e.AmountUsed,
+		CreditBalanceBefore: e.CreditBalanceBefore,
+		CreditBalanceAfter:  e.CreditBalanceAfter,
+		TransactionReason:   types.TransactionReason(e.TransactionReason),
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),
@@ -109,7 +104,7 @@ func TransactionFromEnt(e *ent.WalletTransaction) *Transaction {
 	}
 }
 
-// TransactionListFromMap converts a list of maps to domain transactions
+// TransactionListFromEnt converts a slice of ent.WalletTransaction pointers to domain transactions
 func TransactionListFromEnt(dataList []*ent.WalletTransaction) []*Transaction {
 	if dataList == nil {
 		return nil

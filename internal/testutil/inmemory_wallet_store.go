@@ -235,8 +235,6 @@ func (s *InMemoryWalletStore) performWalletOperation(ctx context.Context, req *w
 		Type:                req.Type,
 		Amount:              req.Amount,
 		CreditAmount:        req.CreditAmount,
-		BalanceBefore:       w.Balance,
-		BalanceAfter:        finalBalance,
 		CreditBalanceBefore: w.CreditBalance,
 		CreditBalanceAfter:  newCreditBalance,
 		TxStatus:            types.TransactionStatusCompleted,

@@ -1864,10 +1864,6 @@ definitions:
         type: number
       amount_used:
         type: number
-      balance_after:
-        type: number
-      balance_before:
-        type: number
       created_at:
         type: string
       credit_amount:

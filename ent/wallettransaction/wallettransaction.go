@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
-	"github.com/shopspring/decimal"
 )
 
 const (
@@ -34,10 +33,6 @@ const (
 	FieldAmount = "amount"
 	// FieldCreditAmount holds the string denoting the credit_amount field in the database.
 	FieldCreditAmount = "credit_amount"
-	// FieldBalanceBefore holds the string denoting the balance_before field in the database.
-	FieldBalanceBefore = "balance_before"
-	// FieldBalanceAfter holds the string denoting the balance_after field in the database.
-	FieldBalanceAfter = "balance_after"
 	// FieldCreditBalanceBefore holds the string denoting the credit_balance_before field in the database.
 	FieldCreditBalanceBefore = "credit_balance_before"
 	// FieldCreditBalanceAfter holds the string denoting the credit_balance_after field in the database.
@@ -75,8 +70,6 @@ var Columns = []string{
 	FieldType,
 	FieldAmount,
 	FieldCreditAmount,
-	FieldBalanceBefore,
-	FieldBalanceAfter,
 	FieldCreditBalanceBefore,
 	FieldCreditBalanceAfter,
 	FieldReferenceType,
@@ -116,10 +109,6 @@ var (
 	DefaultType string
 	// TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	TypeValidator func(string) error
-	// DefaultBalanceBefore holds the default value on creation for the "balance_before" field.
-	DefaultBalanceBefore decimal.Decimal
-	// DefaultBalanceAfter holds the default value on creation for the "balance_after" field.
-	DefaultBalanceAfter decimal.Decimal
 	// DefaultTransactionStatus holds the default value on creation for the "transaction_status" field.
 	DefaultTransactionStatus string
 	// DefaultTransactionReason holds the default value on creation for the "transaction_reason" field.
@@ -182,16 +171,6 @@ func ByAmount(opts ...sql.OrderTermOption) OrderOption {
 // ByCreditAmount orders the results by the credit_amount field.
 func ByCreditAmount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCreditAmount, opts...).ToFunc()
-}
-
-// ByBalanceBefore orders the results by the balance_before field.
-func ByBalanceBefore(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldBalanceBefore, opts...).ToFunc()
-}
-
-// ByBalanceAfter orders the results by the balance_after field.
-func ByBalanceAfter(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldBalanceAfter, opts...).ToFunc()
 }
 
 // ByCreditBalanceBefore orders the results by the credit_balance_before field.

@@ -775,20 +775,12 @@ func init() {
 	wallettransaction.DefaultType = wallettransactionDescType.Default.(string)
 	// wallettransaction.TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	wallettransaction.TypeValidator = wallettransactionDescType.Validators[0].(func(string) error)
-	// wallettransactionDescBalanceBefore is the schema descriptor for balance_before field.
-	wallettransactionDescBalanceBefore := wallettransactionFields[5].Descriptor()
-	// wallettransaction.DefaultBalanceBefore holds the default value on creation for the balance_before field.
-	wallettransaction.DefaultBalanceBefore = wallettransactionDescBalanceBefore.Default.(decimal.Decimal)
-	// wallettransactionDescBalanceAfter is the schema descriptor for balance_after field.
-	wallettransactionDescBalanceAfter := wallettransactionFields[6].Descriptor()
-	// wallettransaction.DefaultBalanceAfter holds the default value on creation for the balance_after field.
-	wallettransaction.DefaultBalanceAfter = wallettransactionDescBalanceAfter.Default.(decimal.Decimal)
 	// wallettransactionDescTransactionStatus is the schema descriptor for transaction_status field.
-	wallettransactionDescTransactionStatus := wallettransactionFields[13].Descriptor()
+	wallettransactionDescTransactionStatus := wallettransactionFields[11].Descriptor()
 	// wallettransaction.DefaultTransactionStatus holds the default value on creation for the transaction_status field.
 	wallettransaction.DefaultTransactionStatus = wallettransactionDescTransactionStatus.Default.(string)
 	// wallettransactionDescTransactionReason is the schema descriptor for transaction_reason field.
-	wallettransactionDescTransactionReason := wallettransactionFields[16].Descriptor()
+	wallettransactionDescTransactionReason := wallettransactionFields[14].Descriptor()
 	// wallettransaction.DefaultTransactionReason holds the default value on creation for the transaction_reason field.
 	wallettransaction.DefaultTransactionReason = wallettransactionDescTransactionReason.Default.(string)
 }

@@ -217,9 +217,8 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 			SetMetadata(req.Metadata).
 			SetStatus(string(types.StatusPublished)).
 			SetTransactionStatus(string(types.TransactionStatusCompleted)).
+			SetAmountUsed(decimal.Zero).
 			SetCreatedBy(types.GetUserID(ctx)).
-			SetBalanceBefore(w.Balance).
-			SetBalanceAfter(finalBalance).
 			SetCreditBalanceBefore(w.CreditBalance).
 			SetCreditBalanceAfter(newCreditBalance).
 			Save(ctx)

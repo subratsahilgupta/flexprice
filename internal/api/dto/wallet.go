@@ -86,6 +86,10 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 		r.ConversionRate = decimal.NewFromInt(1)
 	}
 
+	if r.AutoTopupTrigger == "" {
+		r.AutoTopupTrigger = types.AutoTopupTriggerDisabled
+	}
+
 	return &wallet.Wallet{
 		ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET),
 		CustomerID:          r.CustomerID,
@@ -176,10 +180,8 @@ type WalletTransactionResponse struct {
 	Type                string                  `json:"type"`
 	Amount              decimal.Decimal         `json:"amount"`
 	CreditAmount        decimal.Decimal         `json:"credit_amount"`
-	BalanceBefore       decimal.Decimal         `json:"balance_before"`
 	CreditBalanceBefore decimal.Decimal         `json:"credit_balance_before"`
 	CreditBalanceAfter  decimal.Decimal         `json:"credit_balance_after"`
-	BalanceAfter        decimal.Decimal         `json:"balance_after"`
 	TransactionStatus   types.TransactionStatus `json:"transaction_status"`
 	ExpiryDate          *time.Time              `json:"expiry_date,omitempty"`
 	AmountUsed          decimal.Decimal         `json:"amount_used,omitempty"`
@@ -199,10 +201,8 @@ func FromWalletTransaction(t *wallet.Transaction) *WalletTransactionResponse {
 		Type:                string(t.Type),
 		Amount:              t.Amount,
 		CreditAmount:        t.CreditAmount,
-		BalanceBefore:       t.BalanceBefore,
 		CreditBalanceBefore: t.CreditBalanceBefore,
 		CreditBalanceAfter:  t.CreditBalanceAfter,
-		BalanceAfter:        t.BalanceAfter,
 		TransactionStatus:   t.TxStatus,
 		ExpiryDate:          t.ExpiryDate,
 		AmountUsed:          t.AmountUsed,
@@ -220,15 +220,15 @@ type ListWalletTransactionsResponse = types.ListResponse[*WalletTransactionRespo
 
 // TopUpWalletRequest represents a request to add credits to a wallet
 type TopUpWalletRequest struct {
-	// Amount is the number of credits to add to the wallet
+	// amount is the number of credits to add to the wallet
 	Amount decimal.Decimal `json:"amount" binding:"required"`
-	// Description to add any specific details about the transaction
+	// description to add any specific details about the transaction
 	Description string `json:"description,omitempty"`
-	// GenerateInvoice when true, an invoice will be generated for the transaction
-	GenerateInvoice bool `json:"generate_invoice" binding:"required" default:"false"`
-	// TransactionReason defines the flow from which the credits are added to the wallet
+	// generate_invoice when true, an invoice will be generated for the transaction
+	GenerateInvoice bool `json:"generate_invoice"`
+	// transaction_reason defines the flow from which the credits are added to the wallet
 	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty"`
-	// Metadata to add any additional information about the transaction
+	// metadata to add any additional information about the transaction
 	Metadata types.Metadata `json:"metadata,omitempty"`
 }
 

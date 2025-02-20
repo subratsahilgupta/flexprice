@@ -4,6 +4,7 @@ import (
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -75,7 +76,7 @@ func FromEnt(e *ent.Wallet) *Wallet {
 		Name:                e.Name,
 		Description:         e.Description,
 		Metadata:            e.Metadata,
-		AutoTopupTrigger:    types.AutoTopupTrigger(*e.AutoTopupTrigger),
+		AutoTopupTrigger:    types.AutoTopupTrigger(lo.FromPtr(e.AutoTopupTrigger)),
 		AutoTopupMinBalance: autoTopupMinBalance,
 		AutoTopupAmount:     autoTopupAmount,
 		WalletType:          types.WalletType(e.WalletType),

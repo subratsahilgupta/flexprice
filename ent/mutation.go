@@ -22778,8 +22778,6 @@ type WalletTransactionMutation struct {
 	_type                 *string
 	amount                *decimal.Decimal
 	credit_amount         *decimal.Decimal
-	balance_before        *decimal.Decimal
-	balance_after         *decimal.Decimal
 	credit_balance_before *decimal.Decimal
 	credit_balance_after  *decimal.Decimal
 	reference_type        *string
@@ -23286,78 +23284,6 @@ func (m *WalletTransactionMutation) ResetCreditAmount() {
 	m.credit_amount = nil
 }
 
-// SetBalanceBefore sets the "balance_before" field.
-func (m *WalletTransactionMutation) SetBalanceBefore(d decimal.Decimal) {
-	m.balance_before = &d
-}
-
-// BalanceBefore returns the value of the "balance_before" field in the mutation.
-func (m *WalletTransactionMutation) BalanceBefore() (r decimal.Decimal, exists bool) {
-	v := m.balance_before
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldBalanceBefore returns the old "balance_before" field's value of the WalletTransaction entity.
-// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletTransactionMutation) OldBalanceBefore(ctx context.Context) (v decimal.Decimal, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldBalanceBefore is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldBalanceBefore requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldBalanceBefore: %w", err)
-	}
-	return oldValue.BalanceBefore, nil
-}
-
-// ResetBalanceBefore resets all changes to the "balance_before" field.
-func (m *WalletTransactionMutation) ResetBalanceBefore() {
-	m.balance_before = nil
-}
-
-// SetBalanceAfter sets the "balance_after" field.
-func (m *WalletTransactionMutation) SetBalanceAfter(d decimal.Decimal) {
-	m.balance_after = &d
-}
-
-// BalanceAfter returns the value of the "balance_after" field in the mutation.
-func (m *WalletTransactionMutation) BalanceAfter() (r decimal.Decimal, exists bool) {
-	v := m.balance_after
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldBalanceAfter returns the old "balance_after" field's value of the WalletTransaction entity.
-// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletTransactionMutation) OldBalanceAfter(ctx context.Context) (v decimal.Decimal, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldBalanceAfter is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldBalanceAfter requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldBalanceAfter: %w", err)
-	}
-	return oldValue.BalanceAfter, nil
-}
-
-// ResetBalanceAfter resets all changes to the "balance_after" field.
-func (m *WalletTransactionMutation) ResetBalanceAfter() {
-	m.balance_after = nil
-}
-
 // SetCreditBalanceBefore sets the "credit_balance_before" field.
 func (m *WalletTransactionMutation) SetCreditBalanceBefore(d decimal.Decimal) {
 	m.credit_balance_before = &d
@@ -23817,7 +23743,7 @@ func (m *WalletTransactionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletTransactionMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 20)
 	if m.tenant_id != nil {
 		fields = append(fields, wallettransaction.FieldTenantID)
 	}
@@ -23847,12 +23773,6 @@ func (m *WalletTransactionMutation) Fields() []string {
 	}
 	if m.credit_amount != nil {
 		fields = append(fields, wallettransaction.FieldCreditAmount)
-	}
-	if m.balance_before != nil {
-		fields = append(fields, wallettransaction.FieldBalanceBefore)
-	}
-	if m.balance_after != nil {
-		fields = append(fields, wallettransaction.FieldBalanceAfter)
 	}
 	if m.credit_balance_before != nil {
 		fields = append(fields, wallettransaction.FieldCreditBalanceBefore)
@@ -23912,10 +23832,6 @@ func (m *WalletTransactionMutation) Field(name string) (ent.Value, bool) {
 		return m.Amount()
 	case wallettransaction.FieldCreditAmount:
 		return m.CreditAmount()
-	case wallettransaction.FieldBalanceBefore:
-		return m.BalanceBefore()
-	case wallettransaction.FieldBalanceAfter:
-		return m.BalanceAfter()
 	case wallettransaction.FieldCreditBalanceBefore:
 		return m.CreditBalanceBefore()
 	case wallettransaction.FieldCreditBalanceAfter:
@@ -23965,10 +23881,6 @@ func (m *WalletTransactionMutation) OldField(ctx context.Context, name string) (
 		return m.OldAmount(ctx)
 	case wallettransaction.FieldCreditAmount:
 		return m.OldCreditAmount(ctx)
-	case wallettransaction.FieldBalanceBefore:
-		return m.OldBalanceBefore(ctx)
-	case wallettransaction.FieldBalanceAfter:
-		return m.OldBalanceAfter(ctx)
 	case wallettransaction.FieldCreditBalanceBefore:
 		return m.OldCreditBalanceBefore(ctx)
 	case wallettransaction.FieldCreditBalanceAfter:
@@ -24067,20 +23979,6 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCreditAmount(v)
-		return nil
-	case wallettransaction.FieldBalanceBefore:
-		v, ok := value.(decimal.Decimal)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetBalanceBefore(v)
-		return nil
-	case wallettransaction.FieldBalanceAfter:
-		v, ok := value.(decimal.Decimal)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetBalanceAfter(v)
 		return nil
 	case wallettransaction.FieldCreditBalanceBefore:
 		v, ok := value.(decimal.Decimal)
@@ -24275,12 +24173,6 @@ func (m *WalletTransactionMutation) ResetField(name string) error {
 		return nil
 	case wallettransaction.FieldCreditAmount:
 		m.ResetCreditAmount()
-		return nil
-	case wallettransaction.FieldBalanceBefore:
-		m.ResetBalanceBefore()
-		return nil
-	case wallettransaction.FieldBalanceAfter:
-		m.ResetBalanceAfter()
 		return nil
 	case wallettransaction.FieldCreditBalanceBefore:
 		m.ResetCreditBalanceBefore()
