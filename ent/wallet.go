@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/wallet"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -43,6 +44,8 @@ type Wallet struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 	// Balance holds the value of the "balance" field.
 	Balance decimal.Decimal `json:"balance,omitempty"`
+	// CreditBalance holds the value of the "credit_balance" field.
+	CreditBalance decimal.Decimal `json:"credit_balance,omitempty"`
 	// WalletStatus holds the value of the "wallet_status" field.
 	WalletStatus string `json:"wallet_status,omitempty"`
 	// AutoTopupTrigger holds the value of the "auto_topup_trigger" field.
@@ -51,7 +54,13 @@ type Wallet struct {
 	AutoTopupMinBalance *decimal.Decimal `json:"auto_topup_min_balance,omitempty"`
 	// AutoTopupAmount holds the value of the "auto_topup_amount" field.
 	AutoTopupAmount *decimal.Decimal `json:"auto_topup_amount,omitempty"`
-	selectValues    sql.SelectValues
+	// WalletType holds the value of the "wallet_type" field.
+	WalletType string `json:"wallet_type,omitempty"`
+	// ConversionRate holds the value of the "conversion_rate" field.
+	ConversionRate decimal.Decimal `json:"conversion_rate,omitempty"`
+	// Config holds the value of the "config" field.
+	Config       types.WalletConfig `json:"config,omitempty"`
+	selectValues sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -61,11 +70,11 @@ func (*Wallet) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case wallet.FieldAutoTopupMinBalance, wallet.FieldAutoTopupAmount:
 			values[i] = &sql.NullScanner{S: new(decimal.Decimal)}
-		case wallet.FieldMetadata:
+		case wallet.FieldMetadata, wallet.FieldConfig:
 			values[i] = new([]byte)
-		case wallet.FieldBalance:
+		case wallet.FieldBalance, wallet.FieldCreditBalance, wallet.FieldConversionRate:
 			values[i] = new(decimal.Decimal)
-		case wallet.FieldID, wallet.FieldTenantID, wallet.FieldStatus, wallet.FieldCreatedBy, wallet.FieldUpdatedBy, wallet.FieldName, wallet.FieldCustomerID, wallet.FieldCurrency, wallet.FieldDescription, wallet.FieldWalletStatus, wallet.FieldAutoTopupTrigger:
+		case wallet.FieldID, wallet.FieldTenantID, wallet.FieldStatus, wallet.FieldCreatedBy, wallet.FieldUpdatedBy, wallet.FieldName, wallet.FieldCustomerID, wallet.FieldCurrency, wallet.FieldDescription, wallet.FieldWalletStatus, wallet.FieldAutoTopupTrigger, wallet.FieldWalletType:
 			values[i] = new(sql.NullString)
 		case wallet.FieldCreatedAt, wallet.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -164,6 +173,12 @@ func (w *Wallet) assignValues(columns []string, values []any) error {
 			} else if value != nil {
 				w.Balance = *value
 			}
+		case wallet.FieldCreditBalance:
+			if value, ok := values[i].(*decimal.Decimal); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_balance", values[i])
+			} else if value != nil {
+				w.CreditBalance = *value
+			}
 		case wallet.FieldWalletStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field wallet_status", values[i])
@@ -190,6 +205,26 @@ func (w *Wallet) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				w.AutoTopupAmount = new(decimal.Decimal)
 				*w.AutoTopupAmount = *value.S.(*decimal.Decimal)
+			}
+		case wallet.FieldWalletType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field wallet_type", values[i])
+			} else if value.Valid {
+				w.WalletType = value.String
+			}
+		case wallet.FieldConversionRate:
+			if value, ok := values[i].(*decimal.Decimal); !ok {
+				return fmt.Errorf("unexpected type %T for field conversion_rate", values[i])
+			} else if value != nil {
+				w.ConversionRate = *value
+			}
+		case wallet.FieldConfig:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field config", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &w.Config); err != nil {
+					return fmt.Errorf("unmarshal field config: %w", err)
+				}
 			}
 		default:
 			w.selectValues.Set(columns[i], values[i])
@@ -263,6 +298,9 @@ func (w *Wallet) String() string {
 	builder.WriteString("balance=")
 	builder.WriteString(fmt.Sprintf("%v", w.Balance))
 	builder.WriteString(", ")
+	builder.WriteString("credit_balance=")
+	builder.WriteString(fmt.Sprintf("%v", w.CreditBalance))
+	builder.WriteString(", ")
 	builder.WriteString("wallet_status=")
 	builder.WriteString(w.WalletStatus)
 	builder.WriteString(", ")
@@ -280,6 +318,15 @@ func (w *Wallet) String() string {
 		builder.WriteString("auto_topup_amount=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("wallet_type=")
+	builder.WriteString(w.WalletType)
+	builder.WriteString(", ")
+	builder.WriteString("conversion_rate=")
+	builder.WriteString(fmt.Sprintf("%v", w.ConversionRate))
+	builder.WriteString(", ")
+	builder.WriteString("config=")
+	builder.WriteString(fmt.Sprintf("%v", w.Config))
 	builder.WriteByte(')')
 	return builder.String()
 }

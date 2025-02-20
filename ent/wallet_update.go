@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/wallet"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -149,6 +150,20 @@ func (wu *WalletUpdate) SetNillableBalance(d *decimal.Decimal) *WalletUpdate {
 	return wu
 }
 
+// SetCreditBalance sets the "credit_balance" field.
+func (wu *WalletUpdate) SetCreditBalance(d decimal.Decimal) *WalletUpdate {
+	wu.mutation.SetCreditBalance(d)
+	return wu
+}
+
+// SetNillableCreditBalance sets the "credit_balance" field if the given value is not nil.
+func (wu *WalletUpdate) SetNillableCreditBalance(d *decimal.Decimal) *WalletUpdate {
+	if d != nil {
+		wu.SetCreditBalance(*d)
+	}
+	return wu
+}
+
 // SetWalletStatus sets the "wallet_status" field.
 func (wu *WalletUpdate) SetWalletStatus(s string) *WalletUpdate {
 	wu.mutation.SetWalletStatus(s)
@@ -223,6 +238,26 @@ func (wu *WalletUpdate) ClearAutoTopupAmount() *WalletUpdate {
 	return wu
 }
 
+// SetConfig sets the "config" field.
+func (wu *WalletUpdate) SetConfig(tc types.WalletConfig) *WalletUpdate {
+	wu.mutation.SetConfig(tc)
+	return wu
+}
+
+// SetNillableConfig sets the "config" field if the given value is not nil.
+func (wu *WalletUpdate) SetNillableConfig(tc *types.WalletConfig) *WalletUpdate {
+	if tc != nil {
+		wu.SetConfig(*tc)
+	}
+	return wu
+}
+
+// ClearConfig clears the value of the "config" field.
+func (wu *WalletUpdate) ClearConfig() *WalletUpdate {
+	wu.mutation.ClearConfig()
+	return wu
+}
+
 // Mutation returns the WalletMutation object of the builder.
 func (wu *WalletUpdate) Mutation() *WalletMutation {
 	return wu.mutation
@@ -269,6 +304,11 @@ func (wu *WalletUpdate) check() error {
 	if v, ok := wu.mutation.Currency(); ok {
 		if err := wallet.CurrencyValidator(v); err != nil {
 			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "Wallet.currency": %w`, err)}
+		}
+	}
+	if v, ok := wu.mutation.Config(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "config", err: fmt.Errorf(`ent: validator failed for field "Wallet.config": %w`, err)}
 		}
 	}
 	return nil
@@ -325,6 +365,9 @@ func (wu *WalletUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := wu.mutation.Balance(); ok {
 		_spec.SetField(wallet.FieldBalance, field.TypeOther, value)
 	}
+	if value, ok := wu.mutation.CreditBalance(); ok {
+		_spec.SetField(wallet.FieldCreditBalance, field.TypeOther, value)
+	}
 	if value, ok := wu.mutation.WalletStatus(); ok {
 		_spec.SetField(wallet.FieldWalletStatus, field.TypeString, value)
 	}
@@ -345,6 +388,12 @@ func (wu *WalletUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if wu.mutation.AutoTopupAmountCleared() {
 		_spec.ClearField(wallet.FieldAutoTopupAmount, field.TypeOther)
+	}
+	if value, ok := wu.mutation.Config(); ok {
+		_spec.SetField(wallet.FieldConfig, field.TypeJSON, value)
+	}
+	if wu.mutation.ConfigCleared() {
+		_spec.ClearField(wallet.FieldConfig, field.TypeJSON)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, wu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -486,6 +535,20 @@ func (wuo *WalletUpdateOne) SetNillableBalance(d *decimal.Decimal) *WalletUpdate
 	return wuo
 }
 
+// SetCreditBalance sets the "credit_balance" field.
+func (wuo *WalletUpdateOne) SetCreditBalance(d decimal.Decimal) *WalletUpdateOne {
+	wuo.mutation.SetCreditBalance(d)
+	return wuo
+}
+
+// SetNillableCreditBalance sets the "credit_balance" field if the given value is not nil.
+func (wuo *WalletUpdateOne) SetNillableCreditBalance(d *decimal.Decimal) *WalletUpdateOne {
+	if d != nil {
+		wuo.SetCreditBalance(*d)
+	}
+	return wuo
+}
+
 // SetWalletStatus sets the "wallet_status" field.
 func (wuo *WalletUpdateOne) SetWalletStatus(s string) *WalletUpdateOne {
 	wuo.mutation.SetWalletStatus(s)
@@ -560,6 +623,26 @@ func (wuo *WalletUpdateOne) ClearAutoTopupAmount() *WalletUpdateOne {
 	return wuo
 }
 
+// SetConfig sets the "config" field.
+func (wuo *WalletUpdateOne) SetConfig(tc types.WalletConfig) *WalletUpdateOne {
+	wuo.mutation.SetConfig(tc)
+	return wuo
+}
+
+// SetNillableConfig sets the "config" field if the given value is not nil.
+func (wuo *WalletUpdateOne) SetNillableConfig(tc *types.WalletConfig) *WalletUpdateOne {
+	if tc != nil {
+		wuo.SetConfig(*tc)
+	}
+	return wuo
+}
+
+// ClearConfig clears the value of the "config" field.
+func (wuo *WalletUpdateOne) ClearConfig() *WalletUpdateOne {
+	wuo.mutation.ClearConfig()
+	return wuo
+}
+
 // Mutation returns the WalletMutation object of the builder.
 func (wuo *WalletUpdateOne) Mutation() *WalletMutation {
 	return wuo.mutation
@@ -619,6 +702,11 @@ func (wuo *WalletUpdateOne) check() error {
 	if v, ok := wuo.mutation.Currency(); ok {
 		if err := wallet.CurrencyValidator(v); err != nil {
 			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "Wallet.currency": %w`, err)}
+		}
+	}
+	if v, ok := wuo.mutation.Config(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "config", err: fmt.Errorf(`ent: validator failed for field "Wallet.config": %w`, err)}
 		}
 	}
 	return nil
@@ -692,6 +780,9 @@ func (wuo *WalletUpdateOne) sqlSave(ctx context.Context) (_node *Wallet, err err
 	if value, ok := wuo.mutation.Balance(); ok {
 		_spec.SetField(wallet.FieldBalance, field.TypeOther, value)
 	}
+	if value, ok := wuo.mutation.CreditBalance(); ok {
+		_spec.SetField(wallet.FieldCreditBalance, field.TypeOther, value)
+	}
 	if value, ok := wuo.mutation.WalletStatus(); ok {
 		_spec.SetField(wallet.FieldWalletStatus, field.TypeString, value)
 	}
@@ -712,6 +803,12 @@ func (wuo *WalletUpdateOne) sqlSave(ctx context.Context) (_node *Wallet, err err
 	}
 	if wuo.mutation.AutoTopupAmountCleared() {
 		_spec.ClearField(wallet.FieldAutoTopupAmount, field.TypeOther)
+	}
+	if value, ok := wuo.mutation.Config(); ok {
+		_spec.SetField(wallet.FieldConfig, field.TypeJSON, value)
+	}
+	if wuo.mutation.ConfigCleared() {
+		_spec.ClearField(wallet.FieldConfig, field.TypeJSON)
 	}
 	_node = &Wallet{config: wuo.config}
 	_spec.Assign = _node.assignValues

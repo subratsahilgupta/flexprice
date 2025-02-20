@@ -37,6 +37,7 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 		"tenant_id", p.TenantID,
 		"destination_type", p.DestinationType,
 		"destination_id", p.DestinationID,
+		"amount", p.Amount,
 	)
 
 	payment, err := client.Payment.Create().

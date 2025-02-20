@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
-	"github.com/shopspring/decimal"
 )
 
 const (
@@ -32,10 +31,12 @@ const (
 	FieldType = "type"
 	// FieldAmount holds the string denoting the amount field in the database.
 	FieldAmount = "amount"
-	// FieldBalanceBefore holds the string denoting the balance_before field in the database.
-	FieldBalanceBefore = "balance_before"
-	// FieldBalanceAfter holds the string denoting the balance_after field in the database.
-	FieldBalanceAfter = "balance_after"
+	// FieldCreditAmount holds the string denoting the credit_amount field in the database.
+	FieldCreditAmount = "credit_amount"
+	// FieldCreditBalanceBefore holds the string denoting the credit_balance_before field in the database.
+	FieldCreditBalanceBefore = "credit_balance_before"
+	// FieldCreditBalanceAfter holds the string denoting the credit_balance_after field in the database.
+	FieldCreditBalanceAfter = "credit_balance_after"
 	// FieldReferenceType holds the string denoting the reference_type field in the database.
 	FieldReferenceType = "reference_type"
 	// FieldReferenceID holds the string denoting the reference_id field in the database.
@@ -46,6 +47,12 @@ const (
 	FieldMetadata = "metadata"
 	// FieldTransactionStatus holds the string denoting the transaction_status field in the database.
 	FieldTransactionStatus = "transaction_status"
+	// FieldExpiryDate holds the string denoting the expiry_date field in the database.
+	FieldExpiryDate = "expiry_date"
+	// FieldAmountUsed holds the string denoting the amount_used field in the database.
+	FieldAmountUsed = "amount_used"
+	// FieldTransactionReason holds the string denoting the transaction_reason field in the database.
+	FieldTransactionReason = "transaction_reason"
 	// Table holds the table name of the wallettransaction in the database.
 	Table = "wallet_transactions"
 )
@@ -62,13 +69,17 @@ var Columns = []string{
 	FieldWalletID,
 	FieldType,
 	FieldAmount,
-	FieldBalanceBefore,
-	FieldBalanceAfter,
+	FieldCreditAmount,
+	FieldCreditBalanceBefore,
+	FieldCreditBalanceAfter,
 	FieldReferenceType,
 	FieldReferenceID,
 	FieldDescription,
 	FieldMetadata,
 	FieldTransactionStatus,
+	FieldExpiryDate,
+	FieldAmountUsed,
+	FieldTransactionReason,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -98,12 +109,10 @@ var (
 	DefaultType string
 	// TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	TypeValidator func(string) error
-	// DefaultBalanceBefore holds the default value on creation for the "balance_before" field.
-	DefaultBalanceBefore decimal.Decimal
-	// DefaultBalanceAfter holds the default value on creation for the "balance_after" field.
-	DefaultBalanceAfter decimal.Decimal
 	// DefaultTransactionStatus holds the default value on creation for the "transaction_status" field.
 	DefaultTransactionStatus string
+	// DefaultTransactionReason holds the default value on creation for the "transaction_reason" field.
+	DefaultTransactionReason string
 )
 
 // OrderOption defines the ordering options for the WalletTransaction queries.
@@ -159,14 +168,19 @@ func ByAmount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAmount, opts...).ToFunc()
 }
 
-// ByBalanceBefore orders the results by the balance_before field.
-func ByBalanceBefore(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldBalanceBefore, opts...).ToFunc()
+// ByCreditAmount orders the results by the credit_amount field.
+func ByCreditAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditAmount, opts...).ToFunc()
 }
 
-// ByBalanceAfter orders the results by the balance_after field.
-func ByBalanceAfter(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldBalanceAfter, opts...).ToFunc()
+// ByCreditBalanceBefore orders the results by the credit_balance_before field.
+func ByCreditBalanceBefore(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditBalanceBefore, opts...).ToFunc()
+}
+
+// ByCreditBalanceAfter orders the results by the credit_balance_after field.
+func ByCreditBalanceAfter(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCreditBalanceAfter, opts...).ToFunc()
 }
 
 // ByReferenceType orders the results by the reference_type field.
@@ -187,4 +201,19 @@ func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 // ByTransactionStatus orders the results by the transaction_status field.
 func ByTransactionStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTransactionStatus, opts...).ToFunc()
+}
+
+// ByExpiryDate orders the results by the expiry_date field.
+func ByExpiryDate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExpiryDate, opts...).ToFunc()
+}
+
+// ByAmountUsed orders the results by the amount_used field.
+func ByAmountUsed(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAmountUsed, opts...).ToFunc()
+}
+
+// ByTransactionReason orders the results by the transaction_reason field.
+func ByTransactionReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTransactionReason, opts...).ToFunc()
 }

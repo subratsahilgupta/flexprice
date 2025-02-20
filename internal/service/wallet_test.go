@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -383,12 +384,14 @@ func (s *WalletServiceSuite) setupTestData() {
 	}
 
 	s.testData.wallet = &wallet.Wallet{
-		ID:           "wallet-1",
-		CustomerID:   s.testData.customer.ID,
-		Currency:     "usd",
-		Balance:      decimal.NewFromInt(1000),
-		WalletStatus: types.WalletStatusActive,
-		BaseModel:    types.GetDefaultBaseModel(s.GetContext()),
+		ID:             "wallet-1",
+		CustomerID:     s.testData.customer.ID,
+		Currency:       "usd",
+		Balance:        decimal.NewFromInt(1000),
+		CreditBalance:  decimal.NewFromInt(1000),
+		ConversionRate: decimal.NewFromFloat(1.0),
+		WalletStatus:   types.WalletStatusActive,
+		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), s.testData.wallet))
 }
@@ -420,12 +423,14 @@ func (s *WalletServiceSuite) TestGetWalletByID() {
 func (s *WalletServiceSuite) TestGetWalletsByCustomerID() {
 	// Create another wallet for same customer
 	wallet2 := &wallet.Wallet{
-		ID:           "wallet-2",
-		CustomerID:   s.testData.wallet.CustomerID,
-		Currency:     "EUR",
-		Balance:      decimal.NewFromInt(500),
-		WalletStatus: types.WalletStatusActive,
-		BaseModel:    types.GetDefaultBaseModel(s.GetContext()),
+		ID:             "wallet-2",
+		CustomerID:     s.testData.wallet.CustomerID,
+		Currency:       "EUR",
+		Balance:        decimal.NewFromInt(500),
+		CreditBalance:  decimal.NewFromInt(500),
+		ConversionRate: decimal.NewFromFloat(1.0),
+		WalletStatus:   types.WalletStatusActive,
+		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), wallet2))
 
@@ -441,7 +446,9 @@ func (s *WalletServiceSuite) TestTopUpWallet() {
 	resp, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, topUpReq)
 	s.NoError(err)
 	s.NotNil(resp)
-	s.Equal(decimal.NewFromInt(1500), resp.Balance)
+	s.True(decimal.NewFromInt(1500).Equal(resp.Balance),
+		"Balance mismatch: expected %s, got %s",
+		decimal.NewFromInt(1500), resp.Balance)
 }
 
 func (s *WalletServiceSuite) TestTerminateWallet() {
@@ -489,20 +496,25 @@ func (s *WalletServiceSuite) TestGetWalletBalance() {
 			expectedError: true,
 		},
 		{
-			name:          "Error - Inactive wallet",
-			walletID:      "wallet_inactive",
-			expectedError: true,
+			name:                    "Inactive wallet",
+			walletID:                "wallet_inactive",
+			expectedRealTimeBalance: decimal.NewFromInt(0),
+			expectedUnpaidAmount:    decimal.NewFromInt(0),
+			expectedCurrentUsage:    decimal.NewFromInt(0),
+			expectedError:           false,
 		},
 	}
 
 	// Create inactive wallet for testing
 	inactiveWallet := &wallet.Wallet{
-		ID:           "wallet_inactive",
-		CustomerID:   s.testData.customer.ID,
-		Currency:     "usd",
-		Balance:      decimal.NewFromInt(1000),
-		WalletStatus: types.WalletStatusClosed,
-		BaseModel:    types.GetDefaultBaseModel(s.GetContext()),
+		ID:             "wallet_inactive",
+		CustomerID:     s.testData.customer.ID,
+		Currency:       "usd",
+		Balance:        decimal.NewFromInt(1000),
+		CreditBalance:  decimal.NewFromInt(1000),
+		ConversionRate: decimal.NewFromFloat(1.0),
+		WalletStatus:   types.WalletStatusClosed,
+		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
 	}
 
 	err := s.GetStores().WalletRepo.CreateWallet(s.GetContext(), inactiveWallet)
@@ -529,6 +541,267 @@ func (s *WalletServiceSuite) TestGetWalletBalance() {
 				tc.expectedCurrentUsage, resp.CurrentPeriodUsage)
 			s.NotZero(resp.BalanceUpdatedAt)
 			s.NotNil(resp.Wallet)
+		})
+	}
+}
+
+func (s *WalletServiceSuite) TestWalletConversionRateHandling() {
+	testCases := []struct {
+		name           string
+		conversionRate decimal.Decimal
+		creditAmount   decimal.Decimal
+		expectedAmount decimal.Decimal
+	}{
+		{
+			name:           "Conversion rate 1:1",
+			conversionRate: decimal.NewFromInt(1),
+			creditAmount:   decimal.NewFromInt(100),
+			expectedAmount: decimal.NewFromInt(100),
+		},
+		{
+			name:           "Conversion rate 1:2 (1 credit = 2 currency units)",
+			conversionRate: decimal.NewFromInt(2),
+			creditAmount:   decimal.NewFromInt(100),
+			expectedAmount: decimal.NewFromInt(200),
+		},
+		{
+			name:           "Conversion rate 2:1 (2 credits = 1 currency unit)",
+			conversionRate: decimal.NewFromFloat(0.5),
+			creditAmount:   decimal.NewFromInt(100),
+			expectedAmount: decimal.NewFromInt(50),
+		},
+		{
+			name:           "High precision conversion rate",
+			conversionRate: decimal.NewFromFloat(1.123456),
+			creditAmount:   decimal.NewFromInt(100),
+			expectedAmount: decimal.NewFromFloat(112.3456),
+		},
+		{
+			name:           "Very small conversion rate",
+			conversionRate: decimal.NewFromFloat(0.0001),
+			creditAmount:   decimal.NewFromInt(10000),
+			expectedAmount: decimal.NewFromInt(1),
+		},
+		{
+			name:           "Very large conversion rate",
+			conversionRate: decimal.NewFromInt(10000),
+			creditAmount:   decimal.NewFromFloat(0.0001),
+			expectedAmount: decimal.NewFromInt(1),
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Create wallet with test conversion rate
+			wallet := &wallet.Wallet{
+				ID:             fmt.Sprintf("wallet-conv-%s", s.GetUUID()),
+				CustomerID:     s.testData.customer.ID,
+				Currency:       "usd",
+				Balance:        decimal.Zero,
+				CreditBalance:  decimal.Zero,
+				ConversionRate: tc.conversionRate,
+				WalletStatus:   types.WalletStatusActive,
+				BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+			}
+			s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), wallet))
+
+			// Top up wallet
+			topUpReq := &dto.TopUpWalletRequest{
+				Amount: tc.creditAmount,
+			}
+			resp, err := s.service.TopUpWallet(s.GetContext(), wallet.ID, topUpReq)
+			s.NoError(err)
+			s.NotNil(resp)
+
+			// Verify balances
+			s.True(tc.expectedAmount.Equal(resp.Balance),
+				"Balance mismatch for %s: expected %s, got %s",
+				tc.name, tc.expectedAmount, resp.Balance)
+			s.True(tc.creditAmount.Equal(resp.CreditBalance),
+				"Credit balance mismatch for %s: expected %s, got %s",
+				tc.name, tc.creditAmount, resp.CreditBalance)
+
+			// Verify conversion rate maintained
+			s.True(tc.conversionRate.Equal(resp.ConversionRate),
+				"Conversion rate changed: expected %s, got %s",
+				tc.conversionRate, resp.ConversionRate)
+		})
+	}
+}
+
+func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
+	testCases := []struct {
+		name                 string
+		initialCreditBalance decimal.Decimal
+		conversionRate       decimal.Decimal
+		operation            struct {
+			creditAmount decimal.Decimal
+			txType       types.TransactionType
+		}
+		expectedBalances struct {
+			credit  decimal.Decimal
+			actual  decimal.Decimal
+			usedAmt decimal.Decimal
+		}
+		shouldError bool
+	}{
+		{
+			name:                 "Credit transaction with exact amounts",
+			initialCreditBalance: decimal.NewFromInt(100),
+			conversionRate:       decimal.NewFromInt(2),
+			operation: struct {
+				creditAmount decimal.Decimal
+				txType       types.TransactionType
+			}{
+				creditAmount: decimal.NewFromInt(50),
+				txType:       types.TransactionTypeCredit,
+			},
+			expectedBalances: struct {
+				credit  decimal.Decimal
+				actual  decimal.Decimal
+				usedAmt decimal.Decimal
+			}{
+				credit:  decimal.NewFromInt(150),
+				actual:  decimal.NewFromInt(300),
+				usedAmt: decimal.Zero,
+			},
+		},
+		{
+			name:                 "Debit transaction with exact amounts",
+			initialCreditBalance: decimal.NewFromInt(100),
+			conversionRate:       decimal.NewFromInt(2),
+			operation: struct {
+				creditAmount decimal.Decimal
+				txType       types.TransactionType
+			}{
+				creditAmount: decimal.NewFromInt(50),
+				txType:       types.TransactionTypeDebit,
+			},
+			expectedBalances: struct {
+				credit  decimal.Decimal
+				actual  decimal.Decimal
+				usedAmt decimal.Decimal
+			}{
+				credit:  decimal.NewFromInt(50),
+				actual:  decimal.NewFromInt(100),
+				usedAmt: decimal.NewFromInt(50),
+			},
+		},
+		{
+			name:                 "Debit more than available balance",
+			initialCreditBalance: decimal.NewFromInt(100),
+			conversionRate:       decimal.NewFromInt(2),
+			operation: struct {
+				creditAmount decimal.Decimal
+				txType       types.TransactionType
+			}{
+				creditAmount: decimal.NewFromInt(150),
+				txType:       types.TransactionTypeDebit,
+			},
+			shouldError: true,
+		},
+		{
+			name:                 "Zero amount transaction",
+			initialCreditBalance: decimal.NewFromInt(100),
+			conversionRate:       decimal.NewFromInt(2),
+			operation: struct {
+				creditAmount decimal.Decimal
+				txType       types.TransactionType
+			}{
+				creditAmount: decimal.Zero,
+				txType:       types.TransactionTypeCredit,
+			},
+			shouldError: true,
+		},
+		{
+			name:                 "High precision conversion with small amounts",
+			initialCreditBalance: decimal.NewFromInt(100),
+			conversionRate:       decimal.NewFromFloat(1.123456789),
+			operation: struct {
+				creditAmount decimal.Decimal
+				txType       types.TransactionType
+			}{
+				creditAmount: decimal.NewFromFloat(0.000001),
+				txType:       types.TransactionTypeCredit,
+			},
+			expectedBalances: struct {
+				credit  decimal.Decimal
+				actual  decimal.Decimal
+				usedAmt decimal.Decimal
+			}{
+				credit:  decimal.NewFromInt(100).Add(decimal.NewFromFloat(0.000001)),
+				actual:  decimal.NewFromInt(100).Add(decimal.NewFromFloat(0.000001)).Mul(decimal.NewFromFloat(1.123456789)),
+				usedAmt: decimal.Zero,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Create wallet with test parameters
+			walletObj := &wallet.Wallet{
+				ID:             fmt.Sprintf("wallet-tx-%s", s.GetUUID()),
+				CustomerID:     s.testData.customer.ID,
+				Currency:       "usd",
+				Balance:        tc.initialCreditBalance.Mul(tc.conversionRate),
+				CreditBalance:  tc.initialCreditBalance,
+				ConversionRate: tc.conversionRate,
+				WalletStatus:   types.WalletStatusActive,
+				BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+			}
+			s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), walletObj))
+
+			// Perform operation
+			var err error
+			if tc.operation.txType == types.TransactionTypeCredit {
+				_, err = s.service.TopUpWallet(s.GetContext(), walletObj.ID, &dto.TopUpWalletRequest{
+					Amount: tc.operation.creditAmount,
+				})
+			} else {
+				op := &wallet.WalletOperation{
+					WalletID:     walletObj.ID,
+					Type:         tc.operation.txType,
+					CreditAmount: tc.operation.creditAmount,
+				}
+				err = s.GetStores().WalletRepo.DebitWallet(s.GetContext(), op)
+			}
+
+			if tc.shouldError {
+				s.Error(err)
+				return
+			}
+			s.NoError(err)
+
+			// Verify final wallet state
+			updatedWallet, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), walletObj.ID)
+			s.NoError(err)
+			s.True(tc.expectedBalances.credit.Equal(updatedWallet.CreditBalance),
+				"Credit balance mismatch: expected %s, got %s",
+				tc.expectedBalances.credit, updatedWallet.CreditBalance)
+			s.True(tc.expectedBalances.actual.Equal(updatedWallet.Balance),
+				"Actual balance mismatch: expected %s, got %s",
+				tc.expectedBalances.actual, updatedWallet.Balance)
+
+			// Verify transaction record
+			filter := types.NewWalletTransactionFilter()
+			filter.WalletID = &walletObj.ID
+			transactions, err := s.GetStores().WalletRepo.ListWalletTransactions(s.GetContext(), filter)
+			s.NoError(err)
+			s.NotEmpty(transactions)
+			lastTx := transactions[len(transactions)-1]
+
+			// Verify transaction amounts
+			// if tc.operation.txType == types.TransactionTypeDebit {
+			// 	s.True(tc.expectedBalances.usedAmt.Equal(lastTx.AmountUsed),
+			// 		"Amount used mismatch: expected %s, got %s",
+			// 		tc.expectedBalances.usedAmt, lastTx.AmountUsed)
+			// }
+			s.True(tc.operation.creditAmount.Equal(lastTx.CreditAmount),
+				"Transaction credit amount mismatch: expected %s, got %s",
+				tc.operation.creditAmount, lastTx.CreditAmount)
+			s.True(tc.operation.creditAmount.Mul(tc.conversionRate).Equal(lastTx.Amount),
+				"Transaction amount mismatch: expected %s, got %s",
+				tc.operation.creditAmount.Mul(tc.conversionRate), lastTx.Amount)
 		})
 	}
 }

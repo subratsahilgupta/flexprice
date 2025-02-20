@@ -13,7 +13,6 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -41,12 +40,19 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetDescription(w.Description).
 		SetMetadata(w.Metadata).
 		SetBalance(w.Balance).
+		SetCreditBalance(w.CreditBalance).
 		SetWalletStatus(string(w.WalletStatus)).
 		SetAutoTopupTrigger(string(w.AutoTopupTrigger)).
 		SetAutoTopupMinBalance(w.AutoTopupMinBalance).
 		SetAutoTopupAmount(w.AutoTopupAmount).
+		SetWalletType(string(w.WalletType)).
+		SetConfig(w.Config).
+		SetConversionRate(w.ConversionRate).
 		SetStatus(string(w.Status)).
 		SetCreatedBy(w.CreatedBy).
+		SetCreatedAt(w.CreatedAt).
+		SetUpdatedBy(w.UpdatedBy).
+		SetUpdatedAt(w.UpdatedAt).
 		Save(ctx)
 
 	if err != nil {
@@ -54,7 +60,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 	}
 
 	// Update the input wallet with created data
-	*w = *toDomainWallet(wallet)
+	*w = *walletdomain.FromEnt(wallet)
 	return nil
 }
 
@@ -75,7 +81,7 @@ func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walle
 		return nil, fmt.Errorf("failed to query wallet: %w", err)
 	}
 
-	return toDomainWallet(w), nil
+	return walletdomain.FromEnt(w), nil
 }
 
 func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*walletdomain.Wallet, error) {
@@ -95,7 +101,7 @@ func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerI
 
 	result := make([]*walletdomain.Wallet, len(wallets))
 	for i, w := range wallets {
-		result[i] = toDomainWallet(w)
+		result[i] = walletdomain.FromEnt(w)
 	}
 	return result, nil
 }
@@ -128,21 +134,12 @@ func (r *walletRepository) CreditWallet(ctx context.Context, req *walletdomain.W
 	if req.Type != types.TransactionTypeCredit {
 		return fmt.Errorf("invalid transaction type")
 	}
-
-	if req.Amount.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("amount must be greater than 0")
-	}
-
 	return r.processWalletOperation(ctx, req)
 }
 
 func (r *walletRepository) DebitWallet(ctx context.Context, req *walletdomain.WalletOperation) error {
 	if req.Type != types.TransactionTypeDebit {
 		return fmt.Errorf("invalid transaction type")
-	}
-
-	if req.Amount.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("amount must be greater than 0")
 	}
 	return r.processWalletOperation(ctx, req)
 }
@@ -151,6 +148,8 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 	if req.Type == "" {
 		return fmt.Errorf("transaction type is required")
 	}
+
+	r.logger.Debugw("Processing wallet operation", "req", req)
 
 	return r.client.WithTx(ctx, func(ctx context.Context) error {
 		// Get wallet
@@ -169,35 +168,57 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 			return fmt.Errorf("querying wallet: %w", err)
 		}
 
+		// Convert amount to credit amount if provided and perform credit operation
+		if req.Amount.GreaterThan(decimal.Zero) {
+			req.CreditAmount = req.Amount.Div(w.ConversionRate)
+		} else if req.CreditAmount.GreaterThan(decimal.Zero) {
+			req.Amount = req.CreditAmount.Mul(w.ConversionRate)
+		} else {
+			return errors.New(errors.ErrCodeInvalidOperation, "amount or credit amount is required")
+		}
+
+		if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
+			return errors.New(errors.ErrCodeInvalidOperation, "wallet transaction amount must be greater than 0")
+		}
+
 		// Calculate new balance
-		var newBalance decimal.Decimal
+		var newCreditBalance decimal.Decimal
 		if req.Type == types.TransactionTypeCredit {
-			newBalance = w.Balance.Add(req.Amount)
+			newCreditBalance = w.CreditBalance.Add(req.CreditAmount)
 		} else if req.Type == types.TransactionTypeDebit {
-			newBalance = w.Balance.Sub(req.Amount)
-			if newBalance.LessThan(decimal.Zero) {
-				return fmt.Errorf("insufficient balance: current=%s, requested=%s", w.Balance, req.Amount)
+			newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
+			if newCreditBalance.LessThan(decimal.Zero) {
+				return fmt.Errorf("insufficient balance: current=%s, requested=%s", w.CreditBalance, req.CreditAmount)
 			}
 		} else {
 			return fmt.Errorf("invalid transaction type")
 		}
 
+		// final balance
+		finalBalance := newCreditBalance.Mul(w.ConversionRate)
+
 		// Create transaction record
 		txn, err := r.client.Querier(ctx).WalletTransaction.Create().
-			SetID(uuid.NewString()).
+			SetID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION)).
 			SetTenantID(types.GetTenantID(ctx)).
 			SetWalletID(req.WalletID).
 			SetType(string(req.Type)).
 			SetAmount(req.Amount).
+			SetCreditAmount(req.CreditAmount).
 			SetReferenceType(req.ReferenceType).
 			SetReferenceID(req.ReferenceID).
 			SetDescription(req.Description).
 			SetMetadata(req.Metadata).
 			SetStatus(string(types.StatusPublished)).
-			SetTransactionStatus(string(types.TransactionStatusPending)).
+			SetTransactionStatus(string(types.TransactionStatusCompleted)).
+			SetTransactionReason(string(req.TransactionReason)).
+			SetAmountUsed(decimal.Zero).
+			SetCreatedAt(time.Now().UTC()).
 			SetCreatedBy(types.GetUserID(ctx)).
-			SetBalanceBefore(w.Balance).
-			SetBalanceAfter(newBalance).
+			SetUpdatedAt(time.Now().UTC()).
+			SetUpdatedBy(types.GetUserID(ctx)).
+			SetCreditBalanceBefore(w.CreditBalance).
+			SetCreditBalanceAfter(newCreditBalance).
 			Save(ctx)
 
 		if err != nil {
@@ -207,23 +228,15 @@ func (r *walletRepository) processWalletOperation(ctx context.Context, req *wall
 		// Update wallet balance
 		if err := r.client.Querier(ctx).Wallet.Update().
 			Where(wallet.ID(req.WalletID)).
-			SetBalance(newBalance).
+			SetBalance(finalBalance).
+			SetCreditBalance(newCreditBalance).
 			SetUpdatedBy(types.GetUserID(ctx)).
 			SetUpdatedAt(time.Now().UTC()).
 			Exec(ctx); err != nil {
 			return fmt.Errorf("updating wallet balance: %w", err)
 		}
 
-		// Update transaction status to completed
-		if err := r.client.Querier(ctx).WalletTransaction.Update().
-			Where(wallettransaction.ID(txn.ID)).
-			SetTransactionStatus(string(types.TransactionStatusCompleted)).
-			SetUpdatedBy(types.GetUserID(ctx)).
-			SetUpdatedAt(time.Now().UTC()).
-			Exec(ctx); err != nil {
-			return fmt.Errorf("updating transaction status: %w", err)
-		}
-
+		r.logger.Debugw("Wallet operation completed", "txn", txn)
 		return nil
 	})
 }
@@ -245,7 +258,7 @@ func (r *walletRepository) GetTransactionByID(ctx context.Context, id string) (*
 		return nil, fmt.Errorf("failed to query transaction: %w", err)
 	}
 
-	return toDomainTransaction(t), nil
+	return walletdomain.TransactionFromEnt(t), nil
 }
 
 func (r *walletRepository) ListWalletTransactions(ctx context.Context, f *types.WalletTransactionFilter) ([]*walletdomain.Transaction, error) {
@@ -261,12 +274,7 @@ func (r *walletRepository) ListWalletTransactions(ctx context.Context, f *types.
 		return nil, fmt.Errorf("failed to query transactions: %w", err)
 	}
 
-	transactions := make([]*walletdomain.Transaction, len(result))
-	for i, t := range result {
-		transactions[i] = toDomainTransaction(t)
-	}
-
-	return transactions, nil
+	return walletdomain.TransactionListFromEnt(result), nil
 }
 
 func (r *walletRepository) ListAllWalletTransactions(ctx context.Context, f *types.WalletTransactionFilter) ([]*walletdomain.Transaction, error) {
@@ -286,12 +294,7 @@ func (r *walletRepository) ListAllWalletTransactions(ctx context.Context, f *typ
 		return nil, fmt.Errorf("failed to query transactions: %w", err)
 	}
 
-	transactions := make([]*walletdomain.Transaction, len(result))
-	for i, t := range result {
-		transactions[i] = toDomainTransaction(t)
-	}
-
-	return transactions, nil
+	return walletdomain.TransactionListFromEnt(result), nil
 }
 
 func (r *walletRepository) CountWalletTransactions(ctx context.Context, f *types.WalletTransactionFilter) (int, error) {
@@ -337,72 +340,6 @@ func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id strin
 	}
 
 	return nil
-}
-
-// Helper function to convert Ent wallet to domain wallet
-func toDomainWallet(w *ent.Wallet) *walletdomain.Wallet {
-	// Set default values for nullable fields
-	autoTopupTrigger := types.AutoTopupTriggerDisabled
-	if w.AutoTopupTrigger != nil {
-		autoTopupTrigger = types.AutoTopupTrigger(*w.AutoTopupTrigger)
-	}
-
-	autoTopupMinBalance := decimal.Zero
-	if w.AutoTopupMinBalance != nil {
-		autoTopupMinBalance = *w.AutoTopupMinBalance
-	}
-
-	autoTopupAmount := decimal.Zero
-	if w.AutoTopupAmount != nil && !w.AutoTopupAmount.IsZero() {
-		autoTopupAmount = *w.AutoTopupAmount
-	}
-
-	return &walletdomain.Wallet{
-		ID:                  w.ID,
-		Name:                w.Name,
-		CustomerID:          w.CustomerID,
-		Currency:            w.Currency,
-		Description:         w.Description,
-		Metadata:            w.Metadata,
-		Balance:             w.Balance,
-		WalletStatus:        types.WalletStatus(w.WalletStatus),
-		AutoTopupTrigger:    autoTopupTrigger,
-		AutoTopupMinBalance: autoTopupMinBalance,
-		AutoTopupAmount:     autoTopupAmount,
-		BaseModel: types.BaseModel{
-			TenantID:  w.TenantID,
-			Status:    types.Status(w.Status),
-			CreatedAt: w.CreatedAt,
-			CreatedBy: w.CreatedBy,
-			UpdatedAt: w.UpdatedAt,
-			UpdatedBy: w.UpdatedBy,
-		},
-	}
-}
-
-// Helper function to convert Ent transaction to domain transaction
-func toDomainTransaction(t *ent.WalletTransaction) *walletdomain.Transaction {
-	return &walletdomain.Transaction{
-		ID:            t.ID,
-		WalletID:      t.WalletID,
-		Type:          types.TransactionType(t.Type),
-		Amount:        t.Amount,
-		ReferenceType: t.ReferenceType,
-		ReferenceID:   t.ReferenceID,
-		Description:   t.Description,
-		Metadata:      t.Metadata,
-		TxStatus:      types.TransactionStatus(t.TransactionStatus),
-		BalanceBefore: t.BalanceBefore,
-		BalanceAfter:  t.BalanceAfter,
-		BaseModel: types.BaseModel{
-			TenantID:  t.TenantID,
-			Status:    types.Status(t.Status),
-			CreatedAt: t.CreatedAt,
-			CreatedBy: t.CreatedBy,
-			UpdatedAt: t.UpdatedAt,
-			UpdatedBy: t.UpdatedBy,
-		},
-	}
 }
 
 // WalletTransactionQuery type alias for better readability
@@ -485,6 +422,22 @@ func (o WalletTransactionQueryOptions) applyEntityQueryOptions(ctx context.Conte
 		}
 	}
 
+	if f.AmountUsedLessThan != nil {
+		query = query.Where(wallettransaction.AmountUsedLT(*f.AmountUsedLessThan))
+	}
+
+	if f.ExpiryDateBefore != nil {
+		query = query.Where(wallettransaction.ExpiryDateLTE(*f.ExpiryDateBefore))
+	}
+
+	if f.ExpiryDateAfter != nil {
+		query = query.Where(wallettransaction.ExpiryDateGTE(*f.ExpiryDateAfter))
+	}
+
+	if f.TransactionReason != nil {
+		query = query.Where(wallettransaction.TransactionReason(string(*f.TransactionReason)))
+	}
+
 	return query
 }
 
@@ -495,17 +448,14 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 			wallet.ID(id),
 			wallet.TenantID(types.GetTenantID(ctx)),
 			wallet.StatusEQ(string(types.StatusPublished)),
-		)
+		).
+		SetName(w.Name).
+		SetDescription(w.Description).
+		SetMetadata(w.Metadata).
+		SetConfig(w.Config).
+		SetUpdatedBy(types.GetUserID(ctx)).
+		SetUpdatedAt(time.Now().UTC())
 
-	if w.Name != "" {
-		update.SetName(w.Name)
-	}
-	if w.Description != "" {
-		update.SetDescription(w.Description)
-	}
-	if w.Metadata != nil {
-		update.SetMetadata(w.Metadata)
-	}
 	if w.AutoTopupTrigger != "" {
 		if w.AutoTopupTrigger == types.AutoTopupTriggerDisabled {
 			// When disabling auto top-up, set all related fields to NULL
@@ -519,9 +469,6 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 			update.SetAutoTopupAmount(w.AutoTopupAmount)
 		}
 	}
-
-	update.SetUpdatedBy(types.GetUserID(ctx))
-	update.SetUpdatedAt(time.Now().UTC())
 
 	count, err := update.Save(ctx)
 	if err != nil {

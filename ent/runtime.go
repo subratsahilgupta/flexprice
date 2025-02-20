@@ -731,13 +731,17 @@ func init() {
 	// wallet.DefaultBalance holds the default value on creation for the balance field.
 	wallet.DefaultBalance = walletDescBalance.Default.(decimal.Decimal)
 	// walletDescWalletStatus is the schema descriptor for wallet_status field.
-	walletDescWalletStatus := walletFields[7].Descriptor()
+	walletDescWalletStatus := walletFields[8].Descriptor()
 	// wallet.DefaultWalletStatus holds the default value on creation for the wallet_status field.
 	wallet.DefaultWalletStatus = walletDescWalletStatus.Default.(string)
 	// walletDescAutoTopupTrigger is the schema descriptor for auto_topup_trigger field.
-	walletDescAutoTopupTrigger := walletFields[8].Descriptor()
+	walletDescAutoTopupTrigger := walletFields[9].Descriptor()
 	// wallet.DefaultAutoTopupTrigger holds the default value on creation for the auto_topup_trigger field.
 	wallet.DefaultAutoTopupTrigger = walletDescAutoTopupTrigger.Default.(string)
+	// walletDescWalletType is the schema descriptor for wallet_type field.
+	walletDescWalletType := walletFields[12].Descriptor()
+	// wallet.DefaultWalletType holds the default value on creation for the wallet_type field.
+	wallet.DefaultWalletType = walletDescWalletType.Default.(string)
 	wallettransactionMixin := schema.WalletTransaction{}.Mixin()
 	wallettransactionMixinFields0 := wallettransactionMixin[0].Fields()
 	_ = wallettransactionMixinFields0
@@ -771,16 +775,12 @@ func init() {
 	wallettransaction.DefaultType = wallettransactionDescType.Default.(string)
 	// wallettransaction.TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	wallettransaction.TypeValidator = wallettransactionDescType.Validators[0].(func(string) error)
-	// wallettransactionDescBalanceBefore is the schema descriptor for balance_before field.
-	wallettransactionDescBalanceBefore := wallettransactionFields[4].Descriptor()
-	// wallettransaction.DefaultBalanceBefore holds the default value on creation for the balance_before field.
-	wallettransaction.DefaultBalanceBefore = wallettransactionDescBalanceBefore.Default.(decimal.Decimal)
-	// wallettransactionDescBalanceAfter is the schema descriptor for balance_after field.
-	wallettransactionDescBalanceAfter := wallettransactionFields[5].Descriptor()
-	// wallettransaction.DefaultBalanceAfter holds the default value on creation for the balance_after field.
-	wallettransaction.DefaultBalanceAfter = wallettransactionDescBalanceAfter.Default.(decimal.Decimal)
 	// wallettransactionDescTransactionStatus is the schema descriptor for transaction_status field.
-	wallettransactionDescTransactionStatus := wallettransactionFields[10].Descriptor()
+	wallettransactionDescTransactionStatus := wallettransactionFields[11].Descriptor()
 	// wallettransaction.DefaultTransactionStatus holds the default value on creation for the transaction_status field.
 	wallettransaction.DefaultTransactionStatus = wallettransactionDescTransactionStatus.Default.(string)
+	// wallettransactionDescTransactionReason is the schema descriptor for transaction_reason field.
+	wallettransactionDescTransactionReason := wallettransactionFields[14].Descriptor()
+	// wallettransaction.DefaultTransactionReason holds the default value on creation for the transaction_reason field.
+	wallettransaction.DefaultTransactionReason = wallettransactionDescTransactionReason.Default.(string)
 }

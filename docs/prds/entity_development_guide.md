@@ -74,6 +74,8 @@ Create the following files in `internal/domain/{entity}/`:
 - Include `types.BaseModel`
 - Implement `FromEnt` and `FromEntList` conversion methods
 - Add domain-specific validations
+- Note use lo.FromPtr() and lo.ToPtr() to convert between pointers to values for nillable schema fields
+- Note that we will use types.Metadata for metadata fields which will always be map[string]string
 
 Example:
 ```go

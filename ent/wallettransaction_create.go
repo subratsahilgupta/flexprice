@@ -123,31 +123,21 @@ func (wtc *WalletTransactionCreate) SetAmount(d decimal.Decimal) *WalletTransact
 	return wtc
 }
 
-// SetBalanceBefore sets the "balance_before" field.
-func (wtc *WalletTransactionCreate) SetBalanceBefore(d decimal.Decimal) *WalletTransactionCreate {
-	wtc.mutation.SetBalanceBefore(d)
+// SetCreditAmount sets the "credit_amount" field.
+func (wtc *WalletTransactionCreate) SetCreditAmount(d decimal.Decimal) *WalletTransactionCreate {
+	wtc.mutation.SetCreditAmount(d)
 	return wtc
 }
 
-// SetNillableBalanceBefore sets the "balance_before" field if the given value is not nil.
-func (wtc *WalletTransactionCreate) SetNillableBalanceBefore(d *decimal.Decimal) *WalletTransactionCreate {
-	if d != nil {
-		wtc.SetBalanceBefore(*d)
-	}
+// SetCreditBalanceBefore sets the "credit_balance_before" field.
+func (wtc *WalletTransactionCreate) SetCreditBalanceBefore(d decimal.Decimal) *WalletTransactionCreate {
+	wtc.mutation.SetCreditBalanceBefore(d)
 	return wtc
 }
 
-// SetBalanceAfter sets the "balance_after" field.
-func (wtc *WalletTransactionCreate) SetBalanceAfter(d decimal.Decimal) *WalletTransactionCreate {
-	wtc.mutation.SetBalanceAfter(d)
-	return wtc
-}
-
-// SetNillableBalanceAfter sets the "balance_after" field if the given value is not nil.
-func (wtc *WalletTransactionCreate) SetNillableBalanceAfter(d *decimal.Decimal) *WalletTransactionCreate {
-	if d != nil {
-		wtc.SetBalanceAfter(*d)
-	}
+// SetCreditBalanceAfter sets the "credit_balance_after" field.
+func (wtc *WalletTransactionCreate) SetCreditBalanceAfter(d decimal.Decimal) *WalletTransactionCreate {
+	wtc.mutation.SetCreditBalanceAfter(d)
 	return wtc
 }
 
@@ -213,6 +203,40 @@ func (wtc *WalletTransactionCreate) SetNillableTransactionStatus(s *string) *Wal
 	return wtc
 }
 
+// SetExpiryDate sets the "expiry_date" field.
+func (wtc *WalletTransactionCreate) SetExpiryDate(t time.Time) *WalletTransactionCreate {
+	wtc.mutation.SetExpiryDate(t)
+	return wtc
+}
+
+// SetNillableExpiryDate sets the "expiry_date" field if the given value is not nil.
+func (wtc *WalletTransactionCreate) SetNillableExpiryDate(t *time.Time) *WalletTransactionCreate {
+	if t != nil {
+		wtc.SetExpiryDate(*t)
+	}
+	return wtc
+}
+
+// SetAmountUsed sets the "amount_used" field.
+func (wtc *WalletTransactionCreate) SetAmountUsed(d decimal.Decimal) *WalletTransactionCreate {
+	wtc.mutation.SetAmountUsed(d)
+	return wtc
+}
+
+// SetTransactionReason sets the "transaction_reason" field.
+func (wtc *WalletTransactionCreate) SetTransactionReason(s string) *WalletTransactionCreate {
+	wtc.mutation.SetTransactionReason(s)
+	return wtc
+}
+
+// SetNillableTransactionReason sets the "transaction_reason" field if the given value is not nil.
+func (wtc *WalletTransactionCreate) SetNillableTransactionReason(s *string) *WalletTransactionCreate {
+	if s != nil {
+		wtc.SetTransactionReason(*s)
+	}
+	return wtc
+}
+
 // SetID sets the "id" field.
 func (wtc *WalletTransactionCreate) SetID(s string) *WalletTransactionCreate {
 	wtc.mutation.SetID(s)
@@ -270,17 +294,13 @@ func (wtc *WalletTransactionCreate) defaults() {
 		v := wallettransaction.DefaultType
 		wtc.mutation.SetType(v)
 	}
-	if _, ok := wtc.mutation.BalanceBefore(); !ok {
-		v := wallettransaction.DefaultBalanceBefore
-		wtc.mutation.SetBalanceBefore(v)
-	}
-	if _, ok := wtc.mutation.BalanceAfter(); !ok {
-		v := wallettransaction.DefaultBalanceAfter
-		wtc.mutation.SetBalanceAfter(v)
-	}
 	if _, ok := wtc.mutation.TransactionStatus(); !ok {
 		v := wallettransaction.DefaultTransactionStatus
 		wtc.mutation.SetTransactionStatus(v)
+	}
+	if _, ok := wtc.mutation.TransactionReason(); !ok {
+		v := wallettransaction.DefaultTransactionReason
+		wtc.mutation.SetTransactionReason(v)
 	}
 }
 
@@ -322,14 +342,23 @@ func (wtc *WalletTransactionCreate) check() error {
 	if _, ok := wtc.mutation.Amount(); !ok {
 		return &ValidationError{Name: "amount", err: errors.New(`ent: missing required field "WalletTransaction.amount"`)}
 	}
-	if _, ok := wtc.mutation.BalanceBefore(); !ok {
-		return &ValidationError{Name: "balance_before", err: errors.New(`ent: missing required field "WalletTransaction.balance_before"`)}
+	if _, ok := wtc.mutation.CreditAmount(); !ok {
+		return &ValidationError{Name: "credit_amount", err: errors.New(`ent: missing required field "WalletTransaction.credit_amount"`)}
 	}
-	if _, ok := wtc.mutation.BalanceAfter(); !ok {
-		return &ValidationError{Name: "balance_after", err: errors.New(`ent: missing required field "WalletTransaction.balance_after"`)}
+	if _, ok := wtc.mutation.CreditBalanceBefore(); !ok {
+		return &ValidationError{Name: "credit_balance_before", err: errors.New(`ent: missing required field "WalletTransaction.credit_balance_before"`)}
+	}
+	if _, ok := wtc.mutation.CreditBalanceAfter(); !ok {
+		return &ValidationError{Name: "credit_balance_after", err: errors.New(`ent: missing required field "WalletTransaction.credit_balance_after"`)}
 	}
 	if _, ok := wtc.mutation.TransactionStatus(); !ok {
 		return &ValidationError{Name: "transaction_status", err: errors.New(`ent: missing required field "WalletTransaction.transaction_status"`)}
+	}
+	if _, ok := wtc.mutation.AmountUsed(); !ok {
+		return &ValidationError{Name: "amount_used", err: errors.New(`ent: missing required field "WalletTransaction.amount_used"`)}
+	}
+	if _, ok := wtc.mutation.TransactionReason(); !ok {
+		return &ValidationError{Name: "transaction_reason", err: errors.New(`ent: missing required field "WalletTransaction.transaction_reason"`)}
 	}
 	return nil
 }
@@ -402,13 +431,17 @@ func (wtc *WalletTransactionCreate) createSpec() (*WalletTransaction, *sqlgraph.
 		_spec.SetField(wallettransaction.FieldAmount, field.TypeOther, value)
 		_node.Amount = value
 	}
-	if value, ok := wtc.mutation.BalanceBefore(); ok {
-		_spec.SetField(wallettransaction.FieldBalanceBefore, field.TypeOther, value)
-		_node.BalanceBefore = value
+	if value, ok := wtc.mutation.CreditAmount(); ok {
+		_spec.SetField(wallettransaction.FieldCreditAmount, field.TypeOther, value)
+		_node.CreditAmount = value
 	}
-	if value, ok := wtc.mutation.BalanceAfter(); ok {
-		_spec.SetField(wallettransaction.FieldBalanceAfter, field.TypeOther, value)
-		_node.BalanceAfter = value
+	if value, ok := wtc.mutation.CreditBalanceBefore(); ok {
+		_spec.SetField(wallettransaction.FieldCreditBalanceBefore, field.TypeOther, value)
+		_node.CreditBalanceBefore = value
+	}
+	if value, ok := wtc.mutation.CreditBalanceAfter(); ok {
+		_spec.SetField(wallettransaction.FieldCreditBalanceAfter, field.TypeOther, value)
+		_node.CreditBalanceAfter = value
 	}
 	if value, ok := wtc.mutation.ReferenceType(); ok {
 		_spec.SetField(wallettransaction.FieldReferenceType, field.TypeString, value)
@@ -429,6 +462,18 @@ func (wtc *WalletTransactionCreate) createSpec() (*WalletTransaction, *sqlgraph.
 	if value, ok := wtc.mutation.TransactionStatus(); ok {
 		_spec.SetField(wallettransaction.FieldTransactionStatus, field.TypeString, value)
 		_node.TransactionStatus = value
+	}
+	if value, ok := wtc.mutation.ExpiryDate(); ok {
+		_spec.SetField(wallettransaction.FieldExpiryDate, field.TypeTime, value)
+		_node.ExpiryDate = &value
+	}
+	if value, ok := wtc.mutation.AmountUsed(); ok {
+		_spec.SetField(wallettransaction.FieldAmountUsed, field.TypeOther, value)
+		_node.AmountUsed = value
+	}
+	if value, ok := wtc.mutation.TransactionReason(); ok {
+		_spec.SetField(wallettransaction.FieldTransactionReason, field.TypeString, value)
+		_node.TransactionReason = value
 	}
 	return _node, _spec
 }
