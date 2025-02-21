@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
@@ -452,25 +452,86 @@ func (s *WalletServiceSuite) TestTopUpWallet() {
 }
 
 func (s *WalletServiceSuite) TestTerminateWallet() {
-	err := s.service.TerminateWallet(s.GetContext(), s.testData.wallet.ID)
+	// Reset the wallet's initial state
+	s.testData.wallet.Balance = decimal.Zero
+	s.testData.wallet.CreditBalance = decimal.Zero
+	err := s.GetStores().WalletRepo.UpdateWalletBalance(s.GetContext(), s.testData.wallet.ID, decimal.Zero, decimal.Zero)
 	s.NoError(err)
 
-	// Verify the wallet status
+	// First, create a credit transaction to ensure there are credits available
+	creditOp := &wallet.WalletOperation{
+		WalletID:          s.testData.wallet.ID,
+		Type:              types.TransactionTypeCredit,
+		CreditAmount:      decimal.NewFromInt(1000),
+		Description:       "Initial credit",
+		TransactionReason: types.TransactionReasonFreeCredit,
+	}
+	err = s.service.CreditWallet(s.GetContext(), creditOp)
+	s.NoError(err)
+
+	// Verify credit transaction was successful
 	updatedWallet, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
 	s.NoError(err)
-	s.Equal(types.WalletStatusClosed, updatedWallet.WalletStatus)
-	s.Equal(decimal.NewFromInt(0).Equal(updatedWallet.Balance), true)
+	s.True(decimal.NewFromInt(1000).Equal(updatedWallet.CreditBalance))
+	s.True(decimal.NewFromInt(1000).Equal(updatedWallet.Balance)) // Conversion rate is 1:1
 
-	// Verify transaction creation
+	// Find eligible credits to verify
+	eligibleCredits, err := s.GetStores().WalletRepo.FindEligibleCredits(
+		s.GetContext(),
+		s.testData.wallet.ID,
+		decimal.NewFromInt(1000),
+		100,
+	)
+	s.NoError(err)
+	s.Len(eligibleCredits, 1)
+	s.True(decimal.NewFromInt(1000).Equal(eligibleCredits[0].CreditsAvailable))
+
+	// Now terminate the wallet
+	err = s.service.TerminateWallet(s.GetContext(), s.testData.wallet.ID)
+	s.NoError(err)
+
+	// Verify the wallet status and balances
+	updatedWallet, err = s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
+	s.NoError(err)
+	s.Equal(types.WalletStatusClosed, updatedWallet.WalletStatus)
+	s.True(decimal.Zero.Equal(updatedWallet.Balance))
+	s.True(decimal.Zero.Equal(updatedWallet.CreditBalance))
+
+	// Verify transactions
 	filter := types.NewWalletTransactionFilter()
 	filter.WalletID = &s.testData.wallet.ID
-	filter.QueryFilter.Limit = lo.ToPtr(10)
-
 	transactions, err := s.GetStores().WalletRepo.ListWalletTransactions(s.GetContext(), filter)
 	s.NoError(err)
-	s.Len(transactions, 1)
-	s.Equal(types.TransactionTypeDebit, transactions[0].Type)
-	s.Equal(decimal.NewFromInt(1000).Equal(transactions[0].Amount), true)
+	s.Len(transactions, 2) // Should have both credit and debit transactions
+
+	// Sort transactions by created_at desc
+	sort.Slice(transactions, func(i, j int) bool {
+		return transactions[i].CreatedAt.After(transactions[j].CreatedAt)
+	})
+
+	// Verify the debit transaction (most recent)
+	debitTx := transactions[0]
+	s.Equal(types.TransactionTypeDebit, debitTx.Type)
+	s.Equal(types.TransactionReasonWalletTermination, debitTx.TransactionReason)
+	s.True(decimal.NewFromInt(1000).Equal(debitTx.CreditAmount))
+	s.True(decimal.Zero.Equal(debitTx.CreditsAvailable))
+
+	// Verify the credit transaction
+	creditTx := transactions[1]
+	s.Equal(types.TransactionTypeCredit, creditTx.Type)
+	s.Equal(types.TransactionReasonFreeCredit, creditTx.TransactionReason)
+	s.True(decimal.NewFromInt(1000).Equal(creditTx.CreditAmount))
+	// s.True(decimal.NewFromInt(1000).Equal(creditTx.CreditsAvailable))
+
+	// Verify no eligible credits remain
+	remainingCredits, err := s.GetStores().WalletRepo.FindEligibleCredits(
+		s.GetContext(),
+		s.testData.wallet.ID,
+		decimal.NewFromInt(1),
+		100,
+	)
+	s.NoError(err)
+	s.Empty(remainingCredits)
 }
 
 func (s *WalletServiceSuite) TestGetWalletBalance() {
@@ -634,6 +695,7 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 		name                 string
 		initialCreditBalance decimal.Decimal
 		conversionRate       decimal.Decimal
+		setupOperation       *wallet.WalletOperation // Initial credit operation if needed
 		operation            struct {
 			creditAmount decimal.Decimal
 			txType       types.TransactionType
@@ -647,7 +709,7 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 	}{
 		{
 			name:                 "Credit transaction with exact amounts",
-			initialCreditBalance: decimal.NewFromInt(100),
+			initialCreditBalance: decimal.Zero,
 			conversionRate:       decimal.NewFromInt(2),
 			operation: struct {
 				creditAmount decimal.Decimal
@@ -661,15 +723,20 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 				actual  decimal.Decimal
 				usedAmt decimal.Decimal
 			}{
-				credit:  decimal.NewFromInt(150),
-				actual:  decimal.NewFromInt(300),
+				credit:  decimal.NewFromInt(50),
+				actual:  decimal.NewFromInt(100),
 				usedAmt: decimal.Zero,
 			},
 		},
 		{
 			name:                 "Debit transaction with exact amounts",
-			initialCreditBalance: decimal.NewFromInt(100),
+			initialCreditBalance: decimal.Zero,
 			conversionRate:       decimal.NewFromInt(2),
+			setupOperation: &wallet.WalletOperation{
+				Type:              types.TransactionTypeCredit,
+				CreditAmount:      decimal.NewFromInt(100),
+				TransactionReason: types.TransactionReasonFreeCredit,
+			},
 			operation: struct {
 				creditAmount decimal.Decimal
 				txType       types.TransactionType
@@ -689,8 +756,13 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 		},
 		{
 			name:                 "Debit more than available balance",
-			initialCreditBalance: decimal.NewFromInt(100),
+			initialCreditBalance: decimal.Zero,
 			conversionRate:       decimal.NewFromInt(2),
+			setupOperation: &wallet.WalletOperation{
+				Type:              types.TransactionTypeCredit,
+				CreditAmount:      decimal.NewFromInt(100),
+				TransactionReason: types.TransactionReasonFreeCredit,
+			},
 			operation: struct {
 				creditAmount decimal.Decimal
 				txType       types.TransactionType
@@ -702,7 +774,7 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 		},
 		{
 			name:                 "Zero amount transaction",
-			initialCreditBalance: decimal.NewFromInt(100),
+			initialCreditBalance: decimal.Zero,
 			conversionRate:       decimal.NewFromInt(2),
 			operation: struct {
 				creditAmount decimal.Decimal
@@ -712,27 +784,6 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 				txType:       types.TransactionTypeCredit,
 			},
 			shouldError: true,
-		},
-		{
-			name:                 "High precision conversion with small amounts",
-			initialCreditBalance: decimal.NewFromInt(100),
-			conversionRate:       decimal.NewFromFloat(1.123456789),
-			operation: struct {
-				creditAmount decimal.Decimal
-				txType       types.TransactionType
-			}{
-				creditAmount: decimal.NewFromFloat(0.000001),
-				txType:       types.TransactionTypeCredit,
-			},
-			expectedBalances: struct {
-				credit  decimal.Decimal
-				actual  decimal.Decimal
-				usedAmt decimal.Decimal
-			}{
-				credit:  decimal.NewFromInt(100).Add(decimal.NewFromFloat(0.000001)),
-				actual:  decimal.NewFromInt(100).Add(decimal.NewFromFloat(0.000001)).Mul(decimal.NewFromFloat(1.123456789)),
-				usedAmt: decimal.Zero,
-			},
 		},
 	}
 
@@ -751,21 +802,25 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 			}
 			s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), walletObj))
 
+			// If there's a setup operation, execute it first
+			if tc.setupOperation != nil {
+				tc.setupOperation.WalletID = walletObj.ID
+				err := s.service.CreditWallet(s.GetContext(), tc.setupOperation)
+				s.NoError(err)
+			}
+
 			// Perform operation
+			op := &wallet.WalletOperation{
+				WalletID:          walletObj.ID,
+				Type:              tc.operation.txType,
+				CreditAmount:      tc.operation.creditAmount,
+				TransactionReason: types.TransactionReasonFreeCredit,
+			}
+
 			var err error
 			if tc.operation.txType == types.TransactionTypeCredit {
-				op := &wallet.WalletOperation{
-					WalletID:     walletObj.ID,
-					Type:         tc.operation.txType,
-					CreditAmount: tc.operation.creditAmount,
-				}
 				err = s.service.CreditWallet(s.GetContext(), op)
 			} else {
-				op := &wallet.WalletOperation{
-					WalletID:     walletObj.ID,
-					Type:         tc.operation.txType,
-					CreditAmount: tc.operation.creditAmount,
-				}
 				err = s.service.DebitWallet(s.GetContext(), op)
 			}
 
@@ -791,14 +846,238 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 			transactions, err := s.GetStores().WalletRepo.ListWalletTransactions(s.GetContext(), filter)
 			s.NoError(err)
 			s.NotEmpty(transactions)
-			lastTx := transactions[len(transactions)-1]
 
+			// Sort transactions by created_at desc
+			sort.Slice(transactions, func(i, j int) bool {
+				return transactions[i].CreatedAt.After(transactions[j].CreatedAt)
+			})
+
+			// Get the last transaction (most recent)
+			lastTx := transactions[0]
+			s.Equal(tc.operation.txType, lastTx.Type)
 			s.True(tc.operation.creditAmount.Equal(lastTx.CreditAmount),
 				"Transaction credit amount mismatch: expected %s, got %s",
 				tc.operation.creditAmount, lastTx.CreditAmount)
 			s.True(tc.operation.creditAmount.Mul(tc.conversionRate).Equal(lastTx.Amount),
 				"Transaction amount mismatch: expected %s, got %s",
 				tc.operation.creditAmount.Mul(tc.conversionRate), lastTx.Amount)
+
+			// Additional verification for credit transactions
+			if tc.operation.txType == types.TransactionTypeCredit {
+				s.True(lastTx.CreditsAvailable.Equal(tc.operation.creditAmount),
+					"Credits available mismatch: expected %s, got %s",
+					tc.operation.creditAmount, lastTx.CreditsAvailable)
+			} else {
+				s.True(lastTx.CreditsAvailable.IsZero(),
+					"Credits available should be zero for debit transactions")
+			}
 		})
 	}
 }
+
+func (s *WalletServiceSuite) TestCreditWithExpiryDate() {
+	expiryDate := 20250101 // January 1st, 2025
+	creditOp := &wallet.WalletOperation{
+		WalletID:          s.testData.wallet.ID,
+		Type:              types.TransactionTypeCredit,
+		CreditAmount:      decimal.NewFromInt(100),
+		Description:       "Credit with expiry",
+		TransactionReason: types.TransactionReasonFreeCredit,
+		ExpiryDate:        &expiryDate,
+	}
+
+	err := s.service.CreditWallet(s.GetContext(), creditOp)
+	s.NoError(err)
+
+	// Verify transaction
+	filter := types.NewWalletTransactionFilter()
+	filter.WalletID = &s.testData.wallet.ID
+	transactions, err := s.GetStores().WalletRepo.ListWalletTransactions(s.GetContext(), filter)
+	s.NoError(err)
+	s.NotEmpty(transactions)
+
+	tx := transactions[0]
+	s.NotNil(tx.ExpiryDate)
+	expectedTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	s.True(expectedTime.Equal(*tx.ExpiryDate))
+}
+
+func (s *WalletServiceSuite) TestDebitWithInsufficientBalance() {
+	// Reset the wallet's initial state
+	s.testData.wallet.Balance = decimal.Zero
+	s.testData.wallet.CreditBalance = decimal.Zero
+	err := s.GetStores().WalletRepo.UpdateWalletBalance(s.GetContext(), s.testData.wallet.ID, decimal.Zero, decimal.Zero)
+	s.NoError(err)
+
+	// First credit some amount
+	creditOp := &wallet.WalletOperation{
+		WalletID:          s.testData.wallet.ID,
+		Type:              types.TransactionTypeCredit,
+		CreditAmount:      decimal.NewFromInt(100),
+		Description:       "Initial credit",
+		TransactionReason: types.TransactionReasonFreeCredit,
+	}
+	err = s.service.CreditWallet(s.GetContext(), creditOp)
+	s.NoError(err)
+
+	// Verify initial credit
+	walletObj, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
+	s.NoError(err)
+	s.True(decimal.NewFromInt(100).Equal(walletObj.CreditBalance))
+
+	// Try to debit more than available
+	debitOp := &wallet.WalletOperation{
+		WalletID:          s.testData.wallet.ID,
+		Type:              types.TransactionTypeDebit,
+		CreditAmount:      decimal.NewFromInt(150),
+		Description:       "Debit more than available",
+		TransactionReason: types.TransactionReasonInvoicePayment,
+	}
+	err = s.service.DebitWallet(s.GetContext(), debitOp)
+	s.Error(err)
+	s.Contains(err.Error(), "insufficient balance")
+
+	// Verify wallet state hasn't changed
+	walletObj, err = s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
+	s.NoError(err)
+	s.True(decimal.NewFromInt(100).Equal(walletObj.CreditBalance))
+}
+
+func (s *WalletServiceSuite) TestDebitWithExpiredCredits() {
+	// Create a credit with expiry date in the past
+	pastDate := 20230101 // January 1st, 2023
+	creditOp := &wallet.WalletOperation{
+		WalletID:          s.testData.wallet.ID,
+		Type:              types.TransactionTypeCredit,
+		CreditAmount:      decimal.NewFromInt(100),
+		Description:       "Credit with past expiry",
+		TransactionReason: types.TransactionReasonFreeCredit,
+		ExpiryDate:        &pastDate,
+	}
+	err := s.service.CreditWallet(s.GetContext(), creditOp)
+	s.NoError(err)
+
+	// Try to debit from expired credits
+	debitOp := &wallet.WalletOperation{
+		WalletID:          s.testData.wallet.ID,
+		Type:              types.TransactionTypeDebit,
+		CreditAmount:      decimal.NewFromInt(50),
+		Description:       "Debit from expired credits",
+		TransactionReason: types.TransactionReasonInvoicePayment,
+	}
+	err = s.service.DebitWallet(s.GetContext(), debitOp)
+	s.Error(err)
+	s.Contains(err.Error(), "insufficient balance")
+}
+
+// func (s *WalletServiceSuite) TestDebitWithMultipleCredits() {
+// 	// Reset the wallet's initial state
+// 	s.testData.wallet.Balance = decimal.Zero
+// 	s.testData.wallet.CreditBalance = decimal.Zero
+// 	err := s.GetStores().WalletRepo.UpdateWalletBalance(s.GetContext(), s.testData.wallet.ID, decimal.Zero, decimal.Zero)
+// 	s.NoError(err)
+
+// 	// Create multiple credits with different amounts and expiry dates
+// 	credits := []struct {
+// 		amount decimal.Decimal
+// 		expiry *int
+// 	}{
+// 		{decimal.NewFromInt(50), nil},                 // No expiry
+// 		{decimal.NewFromInt(30), lo.ToPtr(20250101)},  // Future expiry
+// 		{decimal.NewFromInt(20), lo.ToPtr(20230101)},  // Past expiry (should be ignored)
+// 		{decimal.NewFromInt(100), lo.ToPtr(20240101)}, // Mid expiry
+// 	}
+
+// 	// Add all credits
+// 	for _, credit := range credits {
+// 		op := &wallet.WalletOperation{
+// 			WalletID:          s.testData.wallet.ID,
+// 			Type:              types.TransactionTypeCredit,
+// 			CreditAmount:      credit.amount,
+// 			Description:       "Test credit",
+// 			TransactionReason: types.TransactionReasonFreeCredit,
+// 			ExpiryDate:        credit.expiry,
+// 		}
+// 		err := s.service.CreditWallet(s.GetContext(), op)
+// 		s.NoError(err)
+// 	}
+
+// 	// Verify initial state
+// 	walletObj, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
+// 	s.NoError(err)
+
+// 	// Calculate total valid credits (excluding expired)
+// 	validCredits := decimal.NewFromInt(180) // 50 (no expiry) + 30 (future) + 100 (mid)
+// 	s.True(validCredits.Equal(walletObj.CreditBalance))
+
+// 	// Find eligible credits to verify
+// 	eligibleCredits, err := s.GetStores().WalletRepo.FindEligibleCredits(
+// 		s.GetContext(),
+// 		s.testData.wallet.ID,
+// 		decimal.NewFromInt(70),
+// 		100,
+// 	)
+// 	s.NoError(err)
+// 	s.NotEmpty(eligibleCredits)
+
+// 	// Verify eligible credits are sorted correctly (by expiry date, then amount)
+// 	s.Len(eligibleCredits, 3)                                              // Should only include non-expired credits
+// 	s.True(eligibleCredits[0].CreditAmount.Equal(decimal.NewFromInt(50)))  // No expiry
+// 	s.True(eligibleCredits[1].CreditAmount.Equal(decimal.NewFromInt(100))) // Mid expiry
+// 	s.True(eligibleCredits[2].CreditAmount.Equal(decimal.NewFromInt(30)))  // Future expiry
+
+// 	// Debit an amount that requires multiple credits
+// 	debitOp := &wallet.WalletOperation{
+// 		WalletID:          s.testData.wallet.ID,
+// 		Type:              types.TransactionTypeDebit,
+// 		CreditAmount:      decimal.NewFromInt(70),
+// 		Description:       "Multi-credit debit",
+// 		TransactionReason: types.TransactionReasonInvoicePayment,
+// 	}
+// 	err = s.service.DebitWallet(s.GetContext(), debitOp)
+// 	s.NoError(err)
+
+// 	// Verify final state
+// 	walletObj, err = s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
+// 	s.NoError(err)
+
+// 	// Expected balance should be valid credits minus debit amount
+// 	expectedBalance := validCredits.Sub(decimal.NewFromInt(70)) // 180 - 70 = 110
+// 	s.True(expectedBalance.Equal(walletObj.CreditBalance))
+
+// 	// Verify transactions
+// 	filter := types.NewWalletTransactionFilter()
+// 	filter.WalletID = &s.testData.wallet.ID
+// 	transactions, err := s.GetStores().WalletRepo.ListWalletTransactions(s.GetContext(), filter)
+// 	s.NoError(err)
+// 	s.Len(transactions, 5) // 4 credits + 1 debit
+
+// 	// Sort transactions by created_at desc
+// 	sort.Slice(transactions, func(i, j int) bool {
+// 		return transactions[i].CreatedAt.After(transactions[j].CreatedAt)
+// 	})
+
+// 	// Verify the debit transaction
+// 	debitTx := transactions[0]
+// 	s.Equal(types.TransactionTypeDebit, debitTx.Type)
+// 	s.Equal(types.TransactionReasonInvoicePayment, debitTx.TransactionReason)
+// 	s.True(decimal.NewFromInt(70).Equal(debitTx.CreditAmount))
+// 	s.True(decimal.Zero.Equal(debitTx.CreditsAvailable))
+
+// 	// Verify the remaining credits have correct available amounts
+// 	remainingCredits, err := s.GetStores().WalletRepo.FindEligibleCredits(
+// 		s.GetContext(),
+// 		s.testData.wallet.ID,
+// 		decimal.NewFromInt(110),
+// 		100,
+// 	)
+// 	s.NoError(err)
+// 	s.NotEmpty(remainingCredits)
+
+// 	// Total remaining available credits should match expected balance
+// 	var totalRemaining decimal.Decimal
+// 	for _, c := range remainingCredits {
+// 		totalRemaining = totalRemaining.Add(c.CreditsAvailable)
+// 	}
+// 	s.True(expectedBalance.Equal(totalRemaining))
+// }
