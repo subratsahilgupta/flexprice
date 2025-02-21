@@ -130,115 +130,139 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 	return nil
 }
 
-func (r *walletRepository) CreditWallet(ctx context.Context, req *walletdomain.WalletOperation) error {
-	if req.Type != types.TransactionTypeCredit {
-		return fmt.Errorf("invalid transaction type")
-	}
-	return r.processWalletOperation(ctx, req)
-}
+// FindEligibleCredits retrieves valid credits for debit operation with pagination
+// the credits are sorted by expiry date and then by credit amount
+// this is to ensure that the oldest credits are used first and if there are
+// multiple credits with the same expiry date, the credits with the highest credit amount are used first
+func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int) ([]*walletdomain.Transaction, error) {
+	var allCredits []*ent.WalletTransaction
+	offset := 0
 
-func (r *walletRepository) DebitWallet(ctx context.Context, req *walletdomain.WalletOperation) error {
-	if req.Type != types.TransactionTypeDebit {
-		return fmt.Errorf("invalid transaction type")
-	}
-	return r.processWalletOperation(ctx, req)
-}
-
-func (r *walletRepository) processWalletOperation(ctx context.Context, req *walletdomain.WalletOperation) error {
-	if req.Type == "" {
-		return fmt.Errorf("transaction type is required")
-	}
-
-	r.logger.Debugw("Processing wallet operation", "req", req)
-
-	return r.client.WithTx(ctx, func(ctx context.Context) error {
-		// Get wallet
-		w, err := r.client.Querier(ctx).Wallet.Query().
+	for {
+		credits, err := r.client.Querier(ctx).WalletTransaction.Query().
 			Where(
-				wallet.ID(req.WalletID),
-				wallet.TenantID(types.GetTenantID(ctx)),
-				wallet.StatusEQ(string(types.StatusPublished)),
+				wallettransaction.WalletID(walletID),
+				wallettransaction.Type(string(types.TransactionTypeCredit)),
+				wallettransaction.CreditsAvailableGT(decimal.Zero),
+				wallettransaction.Or(
+					wallettransaction.ExpiryDateIsNil(),
+					wallettransaction.ExpiryDateGTE(time.Now().UTC()),
+				),
+				wallettransaction.StatusEQ(string(types.StatusPublished)),
 			).
-			Only(ctx)
+			Order(ent.Asc(wallettransaction.FieldExpiryDate)).
+			Order(ent.Desc(wallettransaction.FieldCreditAmount)).
+			Offset(offset).
+			Limit(pageSize).
+			All(ctx)
 
 		if err != nil {
-			if ent.IsNotFound(err) {
-				return fmt.Errorf("wallet not found: %w", err)
+			return nil, fmt.Errorf("query valid credits: %w", err)
+		}
+
+		if len(credits) == 0 {
+			break
+		}
+
+		allCredits = append(allCredits, credits...)
+
+		// Calculate total available so far
+		var totalAvailable decimal.Decimal
+		for _, c := range allCredits {
+			totalAvailable = totalAvailable.Add(c.CreditsAvailable)
+			if totalAvailable.GreaterThanOrEqual(requiredAmount) {
+				return walletdomain.TransactionListFromEnt(allCredits), nil
 			}
-			return fmt.Errorf("querying wallet: %w", err)
 		}
 
-		// Convert amount to credit amount if provided and perform credit operation
-		if req.Amount.GreaterThan(decimal.Zero) {
-			req.CreditAmount = req.Amount.Div(w.ConversionRate)
-		} else if req.CreditAmount.GreaterThan(decimal.Zero) {
-			req.Amount = req.CreditAmount.Mul(w.ConversionRate)
-		} else {
-			return errors.New(errors.ErrCodeInvalidOperation, "amount or credit amount is required")
+		if len(credits) < pageSize {
+			break
 		}
 
-		if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
-			return errors.New(errors.ErrCodeInvalidOperation, "wallet transaction amount must be greater than 0")
+		offset += pageSize
+	}
+
+	return walletdomain.TransactionListFromEnt(allCredits), nil
+}
+
+// ConsumeCredits processes debit operation across multiple credits
+func (r *walletRepository) ConsumeCredits(ctx context.Context, credits []*walletdomain.Transaction, amount decimal.Decimal) error {
+	remainingAmount := amount
+
+	for _, credit := range credits {
+		if remainingAmount.IsZero() {
+			break
 		}
 
-		// Calculate new balance
-		var newCreditBalance decimal.Decimal
-		if req.Type == types.TransactionTypeCredit {
-			newCreditBalance = w.CreditBalance.Add(req.CreditAmount)
-		} else if req.Type == types.TransactionTypeDebit {
-			newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
-			if newCreditBalance.LessThan(decimal.Zero) {
-				return fmt.Errorf("insufficient balance: current=%s, requested=%s", w.CreditBalance, req.CreditAmount)
-			}
-		} else {
-			return fmt.Errorf("invalid transaction type")
-		}
+		toConsume := decimal.Min(remainingAmount, credit.CreditsAvailable)
+		newAvailable := credit.CreditsAvailable.Sub(toConsume)
 
-		// final balance
-		finalBalance := newCreditBalance.Mul(w.ConversionRate)
-
-		// Create transaction record
-		txn, err := r.client.Querier(ctx).WalletTransaction.Create().
-			SetID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION)).
-			SetTenantID(types.GetTenantID(ctx)).
-			SetWalletID(req.WalletID).
-			SetType(string(req.Type)).
-			SetAmount(req.Amount).
-			SetCreditAmount(req.CreditAmount).
-			SetReferenceType(req.ReferenceType).
-			SetReferenceID(req.ReferenceID).
-			SetDescription(req.Description).
-			SetMetadata(req.Metadata).
-			SetStatus(string(types.StatusPublished)).
-			SetTransactionStatus(string(types.TransactionStatusCompleted)).
-			SetTransactionReason(string(req.TransactionReason)).
-			SetAmountUsed(decimal.Zero).
-			SetCreatedAt(time.Now().UTC()).
-			SetCreatedBy(types.GetUserID(ctx)).
+		// Update credit's available amount
+		_, err := r.client.Querier(ctx).WalletTransaction.UpdateOne(&ent.WalletTransaction{
+			ID: credit.ID,
+		}).
+			SetCreditsAvailable(newAvailable).
 			SetUpdatedAt(time.Now().UTC()).
 			SetUpdatedBy(types.GetUserID(ctx)).
-			SetCreditBalanceBefore(w.CreditBalance).
-			SetCreditBalanceAfter(newCreditBalance).
 			Save(ctx)
 
 		if err != nil {
-			return fmt.Errorf("creating transaction: %w", err)
+			return fmt.Errorf("update credit available amount: %w", err)
 		}
 
-		// Update wallet balance
-		if err := r.client.Querier(ctx).Wallet.Update().
-			Where(wallet.ID(req.WalletID)).
-			SetBalance(finalBalance).
-			SetCreditBalance(newCreditBalance).
-			SetUpdatedBy(types.GetUserID(ctx)).
-			SetUpdatedAt(time.Now().UTC()).
-			Exec(ctx); err != nil {
-			return fmt.Errorf("updating wallet balance: %w", err)
-		}
+		remainingAmount = remainingAmount.Sub(toConsume)
+	}
 
-		r.logger.Debugw("Wallet operation completed", "txn", txn)
-		return nil
-	})
+	return nil
+}
+
+// CreateTransaction creates a new wallet transaction record
+func (r *walletRepository) CreateTransaction(ctx context.Context, tx *walletdomain.Transaction) error {
+	create := r.client.Querier(ctx).WalletTransaction.Create().
+		SetID(tx.ID).
+		SetTenantID(tx.TenantID).
+		SetWalletID(tx.WalletID).
+		SetType(string(tx.Type)).
+		SetAmount(tx.Amount).
+		SetCreditAmount(tx.CreditAmount).
+		SetReferenceType(tx.ReferenceType).
+		SetReferenceID(tx.ReferenceID).
+		SetDescription(tx.Description).
+		SetMetadata(tx.Metadata).
+		SetStatus(string(tx.Status)).
+		SetTransactionStatus(string(tx.TxStatus)).
+		SetTransactionReason(string(tx.TransactionReason)).
+		SetCreditsAvailable(tx.CreditsAvailable).
+		SetCreatedAt(tx.CreatedAt).
+		SetCreatedBy(tx.CreatedBy).
+		SetUpdatedAt(tx.UpdatedAt).
+		SetUpdatedBy(tx.UpdatedBy).
+		SetCreditBalanceBefore(tx.CreditBalanceBefore).
+		SetCreditBalanceAfter(tx.CreditBalanceAfter).
+		SetNillableExpiryDate(tx.ExpiryDate)
+	_, err := create.Save(ctx)
+	if err != nil {
+		return fmt.Errorf("creating transaction: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateWalletBalance updates the wallet's balance and credit balance
+func (r *walletRepository) UpdateWalletBalance(ctx context.Context, walletID string, finalBalance, newCreditBalance decimal.Decimal) error {
+	err := r.client.Querier(ctx).Wallet.Update().
+		Where(wallet.ID(walletID)).
+		SetBalance(finalBalance).
+		SetCreditBalance(newCreditBalance).
+		SetUpdatedBy(types.GetUserID(ctx)).
+		SetUpdatedAt(time.Now().UTC()).
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("updating wallet balance: %w", err)
+	}
+
+	return nil
 }
 
 func (r *walletRepository) GetTransactionByID(ctx context.Context, id string) (*walletdomain.Transaction, error) {
@@ -422,8 +446,8 @@ func (o WalletTransactionQueryOptions) applyEntityQueryOptions(ctx context.Conte
 		}
 	}
 
-	if f.AmountUsedLessThan != nil {
-		query = query.Where(wallettransaction.AmountUsedLT(*f.AmountUsedLessThan))
+	if f.CreditsAvailableLessThan != nil {
+		query = query.Where(wallettransaction.CreditsAvailableLT(*f.CreditsAvailableLessThan))
 	}
 
 	if f.ExpiryDateBefore != nil {

@@ -23,7 +23,7 @@ type Transaction struct {
 	Description         string                  `db:"description" json:"description"`
 	Metadata            types.Metadata          `db:"metadata" json:"metadata"`
 	ExpiryDate          *time.Time              `db:"expiry_date" json:"expiry_date"`
-	AmountUsed          decimal.Decimal         `db:"amount_used" json:"amount_used"`
+	CreditsAvailable    decimal.Decimal         `db:"credits_available" json:"credits_available"`
 	TransactionReason   types.TransactionReason `db:"transaction_reason" json:"transaction_reason"`
 	types.BaseModel
 }
@@ -60,7 +60,7 @@ func (t *Transaction) ToEnt() *ent.WalletTransaction {
 		Description:         t.Description,
 		Metadata:            t.Metadata,
 		ExpiryDate:          t.ExpiryDate,
-		AmountUsed:          t.AmountUsed,
+		CreditsAvailable:    t.CreditsAvailable,
 		TransactionReason:   string(t.TransactionReason),
 		TenantID:            t.TenantID,
 		Status:              string(t.Status),
@@ -89,7 +89,7 @@ func TransactionFromEnt(e *ent.WalletTransaction) *Transaction {
 		Description:         e.Description,
 		Metadata:            types.Metadata(e.Metadata),
 		ExpiryDate:          e.ExpiryDate,
-		AmountUsed:          e.AmountUsed,
+		CreditsAvailable:    e.CreditsAvailable,
 		CreditBalanceBefore: e.CreditBalanceBefore,
 		CreditBalanceAfter:  e.CreditBalanceAfter,
 		TransactionReason:   types.TransactionReason(e.TransactionReason),

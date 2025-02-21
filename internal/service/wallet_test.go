@@ -754,16 +754,19 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 			// Perform operation
 			var err error
 			if tc.operation.txType == types.TransactionTypeCredit {
-				_, err = s.service.TopUpWallet(s.GetContext(), walletObj.ID, &dto.TopUpWalletRequest{
-					Amount: tc.operation.creditAmount,
-				})
+				op := &wallet.WalletOperation{
+					WalletID:     walletObj.ID,
+					Type:         tc.operation.txType,
+					CreditAmount: tc.operation.creditAmount,
+				}
+				err = s.service.CreditWallet(s.GetContext(), op)
 			} else {
 				op := &wallet.WalletOperation{
 					WalletID:     walletObj.ID,
 					Type:         tc.operation.txType,
 					CreditAmount: tc.operation.creditAmount,
 				}
-				err = s.GetStores().WalletRepo.DebitWallet(s.GetContext(), op)
+				err = s.service.DebitWallet(s.GetContext(), op)
 			}
 
 			if tc.shouldError {
@@ -790,12 +793,6 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 			s.NotEmpty(transactions)
 			lastTx := transactions[len(transactions)-1]
 
-			// Verify transaction amounts
-			// if tc.operation.txType == types.TransactionTypeDebit {
-			// 	s.True(tc.expectedBalances.usedAmt.Equal(lastTx.AmountUsed),
-			// 		"Amount used mismatch: expected %s, got %s",
-			// 		tc.expectedBalances.usedAmt, lastTx.AmountUsed)
-			// }
 			s.True(tc.operation.creditAmount.Equal(lastTx.CreditAmount),
 				"Transaction credit amount mismatch: expected %s, got %s",
 				tc.operation.creditAmount, lastTx.CreditAmount)

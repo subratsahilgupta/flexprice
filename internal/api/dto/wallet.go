@@ -193,7 +193,7 @@ type WalletTransactionResponse struct {
 	CreditBalanceAfter  decimal.Decimal         `json:"credit_balance_after"`
 	TransactionStatus   types.TransactionStatus `json:"transaction_status"`
 	ExpiryDate          *time.Time              `json:"expiry_date,omitempty"`
-	AmountUsed          decimal.Decimal         `json:"amount_used,omitempty"`
+	CreditsAvailable    decimal.Decimal         `json:"amount_used,omitempty"`
 	TransactionReason   types.TransactionReason `json:"transaction_reason,omitempty"`
 	ReferenceType       string                  `json:"reference_type,omitempty"`
 	ReferenceID         string                  `json:"reference_id,omitempty"`
@@ -214,7 +214,7 @@ func FromWalletTransaction(t *wallet.Transaction) *WalletTransactionResponse {
 		CreditBalanceAfter:  t.CreditBalanceAfter,
 		TransactionStatus:   t.TxStatus,
 		ExpiryDate:          t.ExpiryDate,
-		AmountUsed:          t.AmountUsed,
+		CreditsAvailable:    t.CreditsAvailable,
 		TransactionReason:   t.TransactionReason,
 		ReferenceType:       t.ReferenceType,
 		ReferenceID:         t.ReferenceID,
@@ -237,6 +237,10 @@ type TopUpWalletRequest struct {
 	PurchasedCredits bool `json:"purchased_credits"`
 	// generate_invoice when true, an invoice will be generated for the transaction
 	GenerateInvoice bool `json:"generate_invoice"`
+	// expiry_date YYYYMMDD format in UTC timezone (optional to set nil means no expiry)
+	// for ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC
+	// hence they will be available for use until 2024-12-31 23:59:59 UTC
+	ExpiryDate *int `json:"expiry_date,omitempty"`
 	// metadata to add any additional information about the transaction
 	Metadata types.Metadata `json:"metadata,omitempty"`
 }

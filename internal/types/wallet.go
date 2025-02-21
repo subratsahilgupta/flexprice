@@ -124,15 +124,15 @@ func (t AutoTopupTrigger) String() string {
 type WalletTransactionFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
-	WalletID           *string            `json:"wallet_id,omitempty"`
-	Type               *TransactionType   `json:"type,omitempty"`
-	TransactionStatus  *TransactionStatus `json:"transaction_status,omitempty"`
-	ReferenceType      *string            `json:"reference_type,omitempty"`
-	ReferenceID        *string            `json:"reference_id,omitempty"`
-	ExpiryDateBefore   *time.Time         `json:"expiry_date_before,omitempty"`
-	ExpiryDateAfter    *time.Time         `json:"expiry_date_after,omitempty"`
-	AmountUsedLessThan *decimal.Decimal   `json:"amount_used_less_than,omitempty"`
-	TransactionReason  *TransactionReason `json:"transaction_reason,omitempty"`
+	WalletID                 *string            `json:"wallet_id,omitempty"`
+	Type                     *TransactionType   `json:"type,omitempty"`
+	TransactionStatus        *TransactionStatus `json:"transaction_status,omitempty"`
+	ReferenceType            *string            `json:"reference_type,omitempty"`
+	ReferenceID              *string            `json:"reference_id,omitempty"`
+	ExpiryDateBefore         *time.Time         `json:"expiry_date_before,omitempty"`
+	ExpiryDateAfter          *time.Time         `json:"expiry_date_after,omitempty"`
+	CreditsAvailableLessThan *decimal.Decimal   `json:"credits_available_less_than,omitempty"`
+	TransactionReason        *TransactionReason `json:"transaction_reason,omitempty"`
 }
 
 func NewWalletTransactionFilter() *WalletTransactionFilter {

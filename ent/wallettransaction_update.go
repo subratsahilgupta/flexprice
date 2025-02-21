@@ -225,16 +225,16 @@ func (wtu *WalletTransactionUpdate) SetNillableTransactionStatus(s *string) *Wal
 	return wtu
 }
 
-// SetAmountUsed sets the "amount_used" field.
-func (wtu *WalletTransactionUpdate) SetAmountUsed(d decimal.Decimal) *WalletTransactionUpdate {
-	wtu.mutation.SetAmountUsed(d)
+// SetCreditsAvailable sets the "credits_available" field.
+func (wtu *WalletTransactionUpdate) SetCreditsAvailable(d decimal.Decimal) *WalletTransactionUpdate {
+	wtu.mutation.SetCreditsAvailable(d)
 	return wtu
 }
 
-// SetNillableAmountUsed sets the "amount_used" field if the given value is not nil.
-func (wtu *WalletTransactionUpdate) SetNillableAmountUsed(d *decimal.Decimal) *WalletTransactionUpdate {
+// SetNillableCreditsAvailable sets the "credits_available" field if the given value is not nil.
+func (wtu *WalletTransactionUpdate) SetNillableCreditsAvailable(d *decimal.Decimal) *WalletTransactionUpdate {
 	if d != nil {
-		wtu.SetAmountUsed(*d)
+		wtu.SetCreditsAvailable(*d)
 	}
 	return wtu
 }
@@ -362,8 +362,8 @@ func (wtu *WalletTransactionUpdate) sqlSave(ctx context.Context) (n int, err err
 	if wtu.mutation.ExpiryDateCleared() {
 		_spec.ClearField(wallettransaction.FieldExpiryDate, field.TypeTime)
 	}
-	if value, ok := wtu.mutation.AmountUsed(); ok {
-		_spec.SetField(wallettransaction.FieldAmountUsed, field.TypeOther, value)
+	if value, ok := wtu.mutation.CreditsAvailable(); ok {
+		_spec.SetField(wallettransaction.FieldCreditsAvailable, field.TypeOther, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, wtu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -581,16 +581,16 @@ func (wtuo *WalletTransactionUpdateOne) SetNillableTransactionStatus(s *string) 
 	return wtuo
 }
 
-// SetAmountUsed sets the "amount_used" field.
-func (wtuo *WalletTransactionUpdateOne) SetAmountUsed(d decimal.Decimal) *WalletTransactionUpdateOne {
-	wtuo.mutation.SetAmountUsed(d)
+// SetCreditsAvailable sets the "credits_available" field.
+func (wtuo *WalletTransactionUpdateOne) SetCreditsAvailable(d decimal.Decimal) *WalletTransactionUpdateOne {
+	wtuo.mutation.SetCreditsAvailable(d)
 	return wtuo
 }
 
-// SetNillableAmountUsed sets the "amount_used" field if the given value is not nil.
-func (wtuo *WalletTransactionUpdateOne) SetNillableAmountUsed(d *decimal.Decimal) *WalletTransactionUpdateOne {
+// SetNillableCreditsAvailable sets the "credits_available" field if the given value is not nil.
+func (wtuo *WalletTransactionUpdateOne) SetNillableCreditsAvailable(d *decimal.Decimal) *WalletTransactionUpdateOne {
 	if d != nil {
-		wtuo.SetAmountUsed(*d)
+		wtuo.SetCreditsAvailable(*d)
 	}
 	return wtuo
 }
@@ -748,8 +748,8 @@ func (wtuo *WalletTransactionUpdateOne) sqlSave(ctx context.Context) (_node *Wal
 	if wtuo.mutation.ExpiryDateCleared() {
 		_spec.ClearField(wallettransaction.FieldExpiryDate, field.TypeTime)
 	}
-	if value, ok := wtuo.mutation.AmountUsed(); ok {
-		_spec.SetField(wallettransaction.FieldAmountUsed, field.TypeOther, value)
+	if value, ok := wtuo.mutation.CreditsAvailable(); ok {
+		_spec.SetField(wallettransaction.FieldCreditsAvailable, field.TypeOther, value)
 	}
 	_node = &WalletTransaction{config: wtuo.config}
 	_spec.Assign = _node.assignValues

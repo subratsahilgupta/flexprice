@@ -51,6 +51,12 @@ type WalletService interface {
 
 	// UpdateWallet updates a wallet
 	UpdateWallet(ctx context.Context, id string, req *dto.UpdateWalletRequest) (*wallet.Wallet, error)
+
+	// DebitWallet processes a debit operation on a wallet
+	DebitWallet(ctx context.Context, req *wallet.WalletOperation) error
+
+	// CreditWallet processes a credit operation on a wallet
+	CreditWallet(ctx context.Context, req *wallet.WalletOperation) error
 }
 
 type walletService struct {
@@ -206,6 +212,7 @@ func (s *walletService) GetWalletTransactions(ctx context.Context, walletID stri
 	return response, nil
 }
 
+// Update the TopUpWallet method to use the new processWalletOperation
 func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *dto.TopUpWalletRequest) (*dto.WalletResponse, error) {
 	// Create a credit operation
 	creditReq := &wallet.WalletOperation{
@@ -215,6 +222,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		Description:       req.Description,
 		Metadata:          req.Metadata,
 		TransactionReason: types.TransactionReasonFreeCredit,
+		ExpiryDate:        req.ExpiryDate,
 	}
 
 	if req.PurchasedCredits {
@@ -225,7 +233,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		}
 	}
 
-	if err := s.walletRepo.CreditWallet(ctx, creditReq); err != nil {
+	if err := s.CreditWallet(ctx, creditReq); err != nil {
 		return nil, fmt.Errorf("failed to credit wallet: %w", err)
 	}
 
@@ -358,6 +366,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	}, nil
 }
 
+// Update the TerminateWallet method to use the new processWalletOperation
 func (s *walletService) TerminateWallet(ctx context.Context, walletID string) error {
 	w, err := s.walletRepo.GetWalletByID(ctx, walletID)
 	if err != nil {
@@ -380,7 +389,7 @@ func (s *walletService) TerminateWallet(ctx context.Context, walletID string) er
 				TransactionReason: types.TransactionReasonWalletTermination,
 			}
 
-			if err := s.walletRepo.DebitWallet(ctx, debitReq); err != nil {
+			if err := s.processWalletOperation(ctx, debitReq); err != nil {
 				return fmt.Errorf("failed to debit wallet: %w", err)
 			}
 		}
@@ -434,4 +443,168 @@ func (s *walletService) UpdateWallet(ctx context.Context, id string, req *dto.Up
 	}
 
 	return existing, nil
+}
+
+// DebitWallet processes a debit operation on a wallet
+func (s *walletService) DebitWallet(ctx context.Context, req *wallet.WalletOperation) error {
+	if req.Type != types.TransactionTypeDebit {
+		return fmt.Errorf("invalid transaction type")
+	}
+
+	return s.processWalletOperation(ctx, req)
+}
+
+// CreditWallet processes a credit operation on a wallet
+func (s *walletService) CreditWallet(ctx context.Context, req *wallet.WalletOperation) error {
+	if req.Type != types.TransactionTypeCredit {
+		return fmt.Errorf("invalid transaction type")
+	}
+
+	return s.processWalletOperation(ctx, req)
+}
+
+// Wallet operations
+
+// validateWalletOperation validates the wallet operation request
+func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.WalletOperation) error {
+	if req.Type == "" {
+		return fmt.Errorf("transaction type is required")
+	}
+
+	// Convert amount to credit amount if provided and perform credit operation
+	if req.Amount.GreaterThan(decimal.Zero) {
+		req.CreditAmount = req.Amount.Div(w.ConversionRate)
+	} else if req.CreditAmount.GreaterThan(decimal.Zero) {
+		req.Amount = req.CreditAmount.Mul(w.ConversionRate)
+	} else {
+		return errors.New(errors.ErrCodeInvalidOperation, "amount or credit amount is required")
+	}
+
+	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
+		return errors.New(errors.ErrCodeInvalidOperation, "wallet transaction amount must be greater than 0")
+	}
+
+	return nil
+}
+
+// processDebitOperation handles the debit operation with credit selection and consumption
+func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.WalletOperation) error {
+	// Find eligible credits with pagination
+	credits, err := s.walletRepo.FindEligibleCredits(ctx, req.WalletID, req.CreditAmount, 100)
+	if err != nil {
+		return err
+	}
+
+	// Calculate total available balance
+	var totalAvailable decimal.Decimal
+	for _, c := range credits {
+		totalAvailable = totalAvailable.Add(c.CreditsAvailable)
+		if totalAvailable.GreaterThanOrEqual(req.CreditAmount) {
+			break
+		}
+	}
+
+	if totalAvailable.LessThan(req.CreditAmount) {
+		return errors.New(errors.ErrCodeInvalidOperation, "insufficient balance")
+	}
+
+	// Process debit across credits
+	if err := s.walletRepo.ConsumeCredits(ctx, credits, req.CreditAmount); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// processWalletOperation handles both credit and debit operations
+func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.WalletOperation) error {
+	s.logger.Debugw("Processing wallet operation", "req", req)
+
+	return s.db.WithTx(ctx, func(ctx context.Context) error {
+		// Get wallet
+		w, err := s.walletRepo.GetWalletByID(ctx, req.WalletID)
+		if err != nil {
+			return fmt.Errorf("failed to get wallet: %w", err)
+		}
+
+		// Validate operation
+		if err := s.validateWalletOperation(w, req); err != nil {
+			return err
+		}
+
+		var newCreditBalance decimal.Decimal
+		// For debit operations, find and consume available credits
+		if req.Type == types.TransactionTypeDebit {
+			newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
+			// Process debit operation first
+			err = s.processDebitOperation(ctx, req)
+			if err != nil {
+				return err
+			}
+		} else {
+			// Process credit operation
+			newCreditBalance = w.CreditBalance.Add(req.CreditAmount)
+		}
+
+		finalBalance := newCreditBalance.Mul(w.ConversionRate)
+
+		// Create transaction record
+		tx := &wallet.Transaction{
+			ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
+			WalletID:            req.WalletID,
+			Type:                req.Type,
+			Amount:              req.Amount,
+			CreditAmount:        req.CreditAmount,
+			ReferenceType:       req.ReferenceType,
+			ReferenceID:         req.ReferenceID,
+			Description:         req.Description,
+			Metadata:            req.Metadata,
+			TxStatus:            types.TransactionStatusCompleted,
+			TransactionReason:   req.TransactionReason,
+			CreditBalanceBefore: w.CreditBalance,
+			CreditBalanceAfter:  newCreditBalance,
+			BaseModel:           types.GetDefaultBaseModel(ctx),
+		}
+
+		// Set credits available based on transaction type
+		if req.Type == types.TransactionTypeCredit {
+			tx.CreditsAvailable = req.CreditAmount
+		} else {
+			tx.CreditsAvailable = decimal.Zero
+		}
+
+		if req.Type == types.TransactionTypeCredit && req.ExpiryDate != nil {
+			tx.ExpiryDate = parseExpiryDate(req.ExpiryDate)
+		}
+
+		if err := s.walletRepo.CreateTransaction(ctx, tx); err != nil {
+			return err
+		}
+
+		// Update wallet balance
+		if err := s.walletRepo.UpdateWalletBalance(ctx, req.WalletID, finalBalance, newCreditBalance); err != nil {
+			return err
+		}
+
+		s.logger.Debugw("Wallet operation completed")
+		return nil
+	})
+}
+
+// parseExpiryDate converts YYYYMMDD integer to time.Time with end of day time
+// for ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC
+// hence they will be available for use until 2024-12-31 23:59:59 UTC
+func parseExpiryDate(expiryDateInt *int) *time.Time {
+	if expiryDateInt == nil {
+		return nil
+	}
+
+	expiryTime := time.Date(
+		*expiryDateInt/10000,                   // year
+		time.Month((*expiryDateInt%10000)/100), // month
+		*expiryDateInt%100,                     // day
+		0, 0, 0, 0,                             // Set to end of day
+		time.UTC,
+	)
+	return &expiryTime
 }

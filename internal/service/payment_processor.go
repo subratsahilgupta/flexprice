@@ -174,10 +174,29 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 		},
 	}
 
+	// Create wallet service
+	walletService := NewWalletService(
+		p.walletRepo,
+		p.logger,
+		nil, // subscription repo not needed
+		nil, // plan repo not needed
+		nil, // price repo not needed
+		nil, // event repo not needed
+		nil, // meter repo not needed
+		nil, // customer repo not needed
+		nil, // invoice repo not needed
+		nil, // entitlement repo not needed
+		nil, // feature repo not needed
+		nil, // event publisher not needed
+		nil, // webhook publisher not needed
+		p.db,
+		nil, // config not needed
+	)
+
 	// Transactional workflow begins here
 	err = p.db.WithTx(ctx, func(ctx context.Context) error {
 		// Debit wallet
-		if err := p.walletRepo.DebitWallet(ctx, operation); err != nil {
+		if err := walletService.DebitWallet(ctx, operation); err != nil {
 			return errors.Wrap(err, errors.ErrCodeSystemError, "failed to debit wallet")
 		}
 

@@ -4654,7 +4654,7 @@
                 "parameters": [
                     {
                         "type": "number",
-                        "name": "amount_used_less_than",
+                        "name": "credits_available_less_than",
                         "in": "query"
                     },
                     {
@@ -4742,7 +4742,8 @@
                             "PURCHASED_CREDIT_INVOICED",
                             "PURCHASED_CREDIT_DIRECT",
                             "INVOICE_REFUND",
-                            "CREDIT_EXPIRED"
+                            "CREDIT_EXPIRED",
+                            "WALLET_TERMINATION"
                         ],
                         "type": "string",
                         "x-enum-varnames": [
@@ -4752,7 +4753,8 @@
                             "TransactionReasonPurchasedCreditInvoiced",
                             "TransactionReasonPurchasedCreditDirect",
                             "TransactionReasonInvoiceRefund",
-                            "TransactionReasonCreditExpired"
+                            "TransactionReasonCreditExpired",
+                            "TransactionReasonWalletTermination"
                         ],
                         "name": "transaction_reason",
                         "in": "query"
@@ -7039,38 +7041,36 @@
         "dto.TopUpWalletRequest": {
             "type": "object",
             "required": [
-                "amount",
-                "generate_invoice"
+                "amount"
             ],
             "properties": {
                 "amount": {
-                    "description": "Amount is the number of credits to add to the wallet",
+                    "description": "amount is the number of credits to add to the wallet",
                     "type": "number"
                 },
                 "description": {
-                    "description": "Description to add any specific details about the transaction",
+                    "description": "description to add any specific details about the transaction",
                     "type": "string"
                 },
+                "expiry_date": {
+                    "description": "expiry_date YYYYMMDD format in UTC timezone (optional to set nil means no expiry)\nfor ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC\nhence they will be available for use until 2024-12-31 23:59:59 UTC",
+                    "type": "integer"
+                },
                 "generate_invoice": {
-                    "description": "GenerateInvoice when true, an invoice will be generated for the transaction",
-                    "type": "boolean",
-                    "default": false
+                    "description": "generate_invoice when true, an invoice will be generated for the transaction",
+                    "type": "boolean"
                 },
                 "metadata": {
-                    "description": "Metadata to add any additional information about the transaction",
+                    "description": "metadata to add any additional information about the transaction",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.Metadata"
                         }
                     ]
                 },
-                "transaction_reason": {
-                    "description": "TransactionReason defines the flow from which the credits are added to the wallet",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TransactionReason"
-                        }
-                    ]
+                "purchased_credits": {
+                    "description": "purchased_credits when true, the credits are added as purchased credits",
+                    "type": "boolean"
                 }
             }
         },
@@ -7493,6 +7493,9 @@
                     "type": "string"
                 },
                 "real_time_balance": {
+                    "type": "number"
+                },
+                "real_time_credit_balance": {
                     "type": "number"
                 },
                 "status": {
@@ -8245,7 +8248,8 @@
                 "PURCHASED_CREDIT_INVOICED",
                 "PURCHASED_CREDIT_DIRECT",
                 "INVOICE_REFUND",
-                "CREDIT_EXPIRED"
+                "CREDIT_EXPIRED",
+                "WALLET_TERMINATION"
             ],
             "x-enum-varnames": [
                 "TransactionReasonInvoicePayment",
@@ -8254,7 +8258,8 @@
                 "TransactionReasonPurchasedCreditInvoiced",
                 "TransactionReasonPurchasedCreditDirect",
                 "TransactionReasonInvoiceRefund",
-                "TransactionReasonCreditExpired"
+                "TransactionReasonCreditExpired",
+                "TransactionReasonWalletTermination"
             ]
         },
         "types.TransactionStatus": {

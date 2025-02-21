@@ -55,8 +55,8 @@ type WalletTransaction struct {
 	TransactionStatus string `json:"transaction_status,omitempty"`
 	// ExpiryDate holds the value of the "expiry_date" field.
 	ExpiryDate *time.Time `json:"expiry_date,omitempty"`
-	// AmountUsed holds the value of the "amount_used" field.
-	AmountUsed decimal.Decimal `json:"amount_used,omitempty"`
+	// CreditsAvailable holds the value of the "credits_available" field.
+	CreditsAvailable decimal.Decimal `json:"credits_available,omitempty"`
 	// TransactionReason holds the value of the "transaction_reason" field.
 	TransactionReason string `json:"transaction_reason,omitempty"`
 	selectValues      sql.SelectValues
@@ -69,7 +69,7 @@ func (*WalletTransaction) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case wallettransaction.FieldMetadata:
 			values[i] = new([]byte)
-		case wallettransaction.FieldAmount, wallettransaction.FieldCreditAmount, wallettransaction.FieldCreditBalanceBefore, wallettransaction.FieldCreditBalanceAfter, wallettransaction.FieldAmountUsed:
+		case wallettransaction.FieldAmount, wallettransaction.FieldCreditAmount, wallettransaction.FieldCreditBalanceBefore, wallettransaction.FieldCreditBalanceAfter, wallettransaction.FieldCreditsAvailable:
 			values[i] = new(decimal.Decimal)
 		case wallettransaction.FieldID, wallettransaction.FieldTenantID, wallettransaction.FieldStatus, wallettransaction.FieldCreatedBy, wallettransaction.FieldUpdatedBy, wallettransaction.FieldWalletID, wallettransaction.FieldType, wallettransaction.FieldReferenceType, wallettransaction.FieldReferenceID, wallettransaction.FieldDescription, wallettransaction.FieldTransactionStatus, wallettransaction.FieldTransactionReason:
 			values[i] = new(sql.NullString)
@@ -207,11 +207,11 @@ func (wt *WalletTransaction) assignValues(columns []string, values []any) error 
 				wt.ExpiryDate = new(time.Time)
 				*wt.ExpiryDate = value.Time
 			}
-		case wallettransaction.FieldAmountUsed:
+		case wallettransaction.FieldCreditsAvailable:
 			if value, ok := values[i].(*decimal.Decimal); !ok {
-				return fmt.Errorf("unexpected type %T for field amount_used", values[i])
+				return fmt.Errorf("unexpected type %T for field credits_available", values[i])
 			} else if value != nil {
-				wt.AmountUsed = *value
+				wt.CreditsAvailable = *value
 			}
 		case wallettransaction.FieldTransactionReason:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -311,8 +311,8 @@ func (wt *WalletTransaction) String() string {
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
-	builder.WriteString("amount_used=")
-	builder.WriteString(fmt.Sprintf("%v", wt.AmountUsed))
+	builder.WriteString("credits_available=")
+	builder.WriteString(fmt.Sprintf("%v", wt.CreditsAvailable))
 	builder.WriteString(", ")
 	builder.WriteString("transaction_reason=")
 	builder.WriteString(wt.TransactionReason)
