@@ -47,7 +47,7 @@ func ErrorHandler() gin.HandlerFunc {
 				},
 			}
 
-			status := ierr.HttpStatusFromErr(err)
+			status := ierr.HTTPStatusFromErr(err)
 			c.JSON(status, response)
 		}
 	}

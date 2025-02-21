@@ -314,10 +314,16 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 			return ierr.WithError(err).WithHint("invoice existence check failed").Mark(ierr.ErrDatabase)
 		}
 		if !exists {
-			return domainInvoice.ErrInvoiceNotFound
+			return ierr.NewError("invoice not found").WithHint("invoice not found").Mark(ierr.ErrNotFound)
 		}
 		// Record exists but version mismatch
-		return domainInvoice.NewVersionConflictError(inv.ID, inv.Version, inv.Version+1)
+		return ierr.NewError("invoice version mismatch").
+			WithHintf("invoice version mismatch for id: %s", inv.ID).
+			WithReportableDetails(map[string]any{
+				"id":               inv.ID,
+				"current_version":  inv.Version,
+				"expected_version": inv.Version + 1,
+			}).Mark(ierr.ErrVersionConflict)
 	}
 
 	return nil

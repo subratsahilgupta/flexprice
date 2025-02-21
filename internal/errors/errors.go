@@ -156,7 +156,7 @@ func IsHTTPClient(err error) bool {
 	return errors.Is(err, ErrHTTPClient)
 }
 
-func HttpStatusFromErr(err error) int {
+func HTTPStatusFromErr(err error) int {
 	for e, status := range statusCodeMap {
 		if errors.Is(err, e) {
 			return status

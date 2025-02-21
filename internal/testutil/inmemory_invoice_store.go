@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 )
@@ -123,14 +124,14 @@ func (s *InMemoryInvoiceStore) RemoveLineItems(ctx context.Context, invoiceID st
 func (s *InMemoryInvoiceStore) Get(ctx context.Context, id string) (*invoice.Invoice, error) {
 	inv, err := s.InMemoryStore.Get(ctx, id)
 	if err != nil {
-		return nil, invoice.ErrInvoiceNotFound
+		return nil, ierr.WithError(err).WithHint("invoice get failed").Mark(ierr.ErrDatabase)
 	}
 	return copyInvoice(inv), nil
 }
 
 func (s *InMemoryInvoiceStore) Update(ctx context.Context, inv *invoice.Invoice) error {
 	if inv == nil {
-		return fmt.Errorf("invoice cannot be nil")
+		return ierr.NewError("invoice cannot be nil").WithHint("invoice cannot be nil").Mark(ierr.ErrValidation)
 	}
 	return s.InMemoryStore.Update(ctx, inv.ID, copyInvoice(inv))
 }
@@ -160,7 +161,7 @@ func (s *InMemoryInvoiceStore) GetByIdempotencyKey(ctx context.Context, key stri
 		}
 	}
 
-	return nil, invoice.ErrInvoiceNotFound
+	return nil, ierr.NewError("invoice not found").WithHint("invoice not found").Mark(ierr.ErrNotFound)
 }
 
 func (s *InMemoryInvoiceStore) ExistsForPeriod(ctx context.Context, subscriptionID string, periodStart, periodEnd time.Time) (bool, error) {
