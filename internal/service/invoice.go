@@ -8,22 +8,10 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/customer"
-	"github.com/flexprice/flexprice/internal/domain/entitlement"
-	"github.com/flexprice/flexprice/internal/domain/events"
-	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
-	"github.com/flexprice/flexprice/internal/domain/meter"
-	"github.com/flexprice/flexprice/internal/domain/plan"
-	"github.com/flexprice/flexprice/internal/domain/price"
-	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/idempotency"
-	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/postgres"
-	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
-	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -43,55 +31,14 @@ type InvoiceService interface {
 }
 
 type invoiceService struct {
-	subscriptionRepo subscription.Repository
-	planRepo         plan.Repository
-	priceRepo        price.Repository
-	eventRepo        events.Repository
-	meterRepo        meter.Repository
-	customerRepo     customer.Repository
-	invoiceRepo      invoice.Repository
-	entitlementRepo  entitlement.Repository
-	featureRepo      feature.Repository
-	eventPublisher   publisher.EventPublisher
-	webhookPublisher webhookPublisher.WebhookPublisher
-	logger           *logger.Logger
-	db               postgres.IClient
-	config           *config.Configuration
-	idempGen         *idempotency.Generator
+	ServiceParams
+	idempGen *idempotency.Generator
 }
 
-func NewInvoiceService(
-	subscriptionRepo subscription.Repository,
-	planRepo plan.Repository,
-	priceRepo price.Repository,
-	eventRepo events.Repository,
-	meterRepo meter.Repository,
-	customerRepo customer.Repository,
-	invoiceRepo invoice.Repository,
-	entitlementRepo entitlement.Repository,
-	featureRepo feature.Repository,
-	eventPublisher publisher.EventPublisher,
-	webhookPublisher webhookPublisher.WebhookPublisher,
-	db postgres.IClient,
-	logger *logger.Logger,
-	config *config.Configuration,
-) InvoiceService {
+func NewInvoiceService(params ServiceParams) InvoiceService {
 	return &invoiceService{
-		subscriptionRepo: subscriptionRepo,
-		planRepo:         planRepo,
-		priceRepo:        priceRepo,
-		eventRepo:        eventRepo,
-		meterRepo:        meterRepo,
-		customerRepo:     customerRepo,
-		invoiceRepo:      invoiceRepo,
-		entitlementRepo:  entitlementRepo,
-		featureRepo:      featureRepo,
-		eventPublisher:   eventPublisher,
-		webhookPublisher: webhookPublisher,
-		config:           config,
-		db:               db,
-		logger:           logger,
-		idempGen:         idempotency.NewGenerator(),
+		ServiceParams: params,
+		idempGen:      idempotency.NewGenerator(),
 	}
 }
 
@@ -103,7 +50,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 	var resp *dto.InvoiceResponse
 
 	// Start transaction
-	err := s.db.WithTx(ctx, func(tx context.Context) error {
+	err := s.DB.WithTx(ctx, func(tx context.Context) error {
 		// 1. Generate idempotency key if not provided
 		var idempKey string
 		if req.IdempotencyKey == nil {
@@ -124,12 +71,12 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		}
 
 		// 2. Check for existing invoice with same idempotency key
-		existing, err := s.invoiceRepo.GetByIdempotencyKey(tx, idempKey)
+		existing, err := s.InvoiceRepo.GetByIdempotencyKey(tx, idempKey)
 		if err != nil && !errors.Is(err, invoice.ErrInvoiceNotFound) {
 			return fmt.Errorf("failed to check idempotency: %w", err)
 		}
 		if existing != nil {
-			s.logger.Infow("returning existing invoice for idempotency key",
+			s.Logger.Infow("returning existing invoice for idempotency key",
 				"idempotency_key", idempKey,
 				"invoice_id", existing.ID)
 			return nil
@@ -139,7 +86,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		var billingSeq *int
 		if req.SubscriptionID != nil {
 			// Check period uniqueness
-			exists, err := s.invoiceRepo.ExistsForPeriod(ctx, *req.SubscriptionID, *req.PeriodStart, *req.PeriodEnd)
+			exists, err := s.InvoiceRepo.ExistsForPeriod(ctx, *req.SubscriptionID, *req.PeriodStart, *req.PeriodEnd)
 			if err != nil {
 				return fmt.Errorf("failed to check period uniqueness: %w", err)
 			}
@@ -148,7 +95,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 			}
 
 			// Get billing sequence
-			seq, err := s.invoiceRepo.GetNextBillingSequence(ctx, *req.SubscriptionID)
+			seq, err := s.InvoiceRepo.GetNextBillingSequence(ctx, *req.SubscriptionID)
 			if err != nil {
 				return fmt.Errorf("failed to get billing sequence: %w", err)
 			}
@@ -156,7 +103,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		}
 
 		// 4. Generate invoice number
-		invoiceNumber, err := s.invoiceRepo.GetNextInvoiceNumber(ctx)
+		invoiceNumber, err := s.InvoiceRepo.GetNextInvoiceNumber(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to generate invoice number: %w", err)
 		}
@@ -204,7 +151,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		}
 
 		// Create invoice with line items in a single transaction
-		if err := s.invoiceRepo.CreateWithLineItems(ctx, inv); err != nil {
+		if err := s.InvoiceRepo.CreateWithLineItems(ctx, inv); err != nil {
 			return fmt.Errorf("failed to create invoice: %w", err)
 		}
 
@@ -214,7 +161,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 	})
 
 	if err != nil {
-		s.logger.Errorw("failed to create invoice",
+		s.Logger.Errorw("failed to create invoice",
 			"error", err,
 			"customer_id", req.CustomerID,
 			"subscription_id", req.SubscriptionID)
@@ -231,32 +178,17 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 }
 
 func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.InvoiceResponse, error) {
-	inv, err := s.invoiceRepo.Get(ctx, id)
+	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get invoice: %w", err)
 	}
 
 	for _, lineItem := range inv.LineItems {
-		s.logger.Debugw("got invoice line item", "id", lineItem.ID, "display_name", lineItem.DisplayName)
+		s.Logger.Debugw("got invoice line item", "id", lineItem.ID, "display_name", lineItem.DisplayName)
 	}
 
 	// expand subscription
-	subscriptionService := NewSubscriptionService(
-		s.subscriptionRepo,
-		s.planRepo,
-		s.priceRepo,
-		s.eventRepo,
-		s.meterRepo,
-		s.customerRepo,
-		s.invoiceRepo,
-		s.entitlementRepo,
-		s.featureRepo,
-		s.eventPublisher,
-		s.webhookPublisher,
-		s.db,
-		s.logger,
-		s.config,
-	)
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
 
 	response := dto.NewInvoiceResponse(inv)
 
@@ -273,7 +205,7 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 
 	// Get customer information if not already set
 	if response.Customer == nil {
-		customer, err := s.customerRepo.Get(ctx, inv.CustomerID)
+		customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get customer: %w", err)
 		}
@@ -284,12 +216,12 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 }
 
 func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error) {
-	invoices, err := s.invoiceRepo.List(ctx, filter)
+	invoices, err := s.InvoiceRepo.List(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list invoices: %w", err)
 	}
 
-	count, err := s.invoiceRepo.Count(ctx, filter)
+	count, err := s.InvoiceRepo.Count(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count invoices: %w", err)
 	}
@@ -303,7 +235,7 @@ func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.Invoice
 
 	customerFilter := types.NewNoLimitCustomerFilter()
 	customerFilter.CustomerIDs = lo.Keys(customerMap)
-	customers, err := s.customerRepo.List(ctx, customerFilter)
+	customers, err := s.CustomerRepo.List(ctx, customerFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list customers: %w", err)
 	}
@@ -332,7 +264,7 @@ func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.Invoice
 }
 
 func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
-	inv, err := s.invoiceRepo.Get(ctx, id)
+	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to get invoice: %w", err)
 	}
@@ -345,7 +277,7 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
 	inv.InvoiceStatus = types.InvoiceStatusFinalized
 	inv.FinalizedAt = &now
 
-	if err := s.invoiceRepo.Update(ctx, inv); err != nil {
+	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
 		return fmt.Errorf("failed to update invoice: %w", err)
 	}
 
@@ -354,7 +286,7 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
 }
 
 func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
-	inv, err := s.invoiceRepo.Get(ctx, id)
+	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to get invoice: %w", err)
 	}
@@ -379,7 +311,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 	inv.InvoiceStatus = types.InvoiceStatusVoided
 	inv.VoidedAt = &now
 
-	if err := s.invoiceRepo.Update(ctx, inv); err != nil {
+	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
 		return fmt.Errorf("failed to update invoice: %w", err)
 	}
 
@@ -388,7 +320,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 }
 
 func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error {
-	inv, err := s.invoiceRepo.Get(ctx, id)
+	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to get invoice: %w", err)
 	}
@@ -436,7 +368,7 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 		return fmt.Errorf("invalid invoice state: %w", err)
 	}
 
-	if err := s.invoiceRepo.Update(ctx, inv); err != nil {
+	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
 		return fmt.Errorf("failed to update invoice: %w", err)
 	}
 
@@ -445,30 +377,15 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 }
 
 func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest) (*dto.InvoiceResponse, error) {
-	s.logger.Infow("creating subscription invoice",
+	s.Logger.Infow("creating subscription invoice",
 		"subscription_id", req.SubscriptionID,
 		"period_start", req.PeriodStart,
 		"period_end", req.PeriodEnd)
 
-	billingService := NewBillingService(
-		s.subscriptionRepo,
-		s.planRepo,
-		s.priceRepo,
-		s.eventRepo,
-		s.meterRepo,
-		s.customerRepo,
-		s.invoiceRepo,
-		s.entitlementRepo,
-		s.featureRepo,
-		s.eventPublisher,
-		s.webhookPublisher,
-		s.db,
-		s.logger,
-		s.config,
-	)
+	billingService := NewBillingService(s.ServiceParams)
 
 	// Get subscription with line items
-	subscription, _, err := s.subscriptionRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subscription with line items: %w", err)
 	}
@@ -484,24 +401,9 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 }
 
 func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error) {
-	billingService := NewBillingService(
-		s.subscriptionRepo,
-		s.planRepo,
-		s.priceRepo,
-		s.eventRepo,
-		s.meterRepo,
-		s.customerRepo,
-		s.invoiceRepo,
-		s.entitlementRepo,
-		s.featureRepo,
-		s.eventPublisher,
-		s.webhookPublisher,
-		s.db,
-		s.logger,
-		s.config,
-	)
+	billingService := NewBillingService(s.ServiceParams)
 
-	sub, _, err := s.subscriptionRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	sub, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subscription: %w", err)
 	}
@@ -531,7 +433,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 	response := dto.NewInvoiceResponse(inv)
 
 	// Get customer information
-	customer, err := s.customerRepo.Get(ctx, inv.CustomerID)
+	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get customer: %w", err)
 	}
@@ -541,7 +443,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 }
 
 func (s *invoiceService) GetCustomerInvoiceSummary(ctx context.Context, customerID, currency string) (*dto.CustomerInvoiceSummary, error) {
-	s.logger.Debugw("getting customer invoice summary",
+	s.Logger.Debugw("getting customer invoice summary",
 		"customer_id", customerID,
 		"currency", currency,
 	)
@@ -606,7 +508,7 @@ func (s *invoiceService) GetCustomerInvoiceSummary(ctx context.Context, customer
 		}
 	}
 
-	s.logger.Debugw("customer invoice summary calculated",
+	s.Logger.Debugw("customer invoice summary calculated",
 		"customer_id", customerID,
 		"currency", currency,
 		"total_revenue", summary.TotalRevenueAmount,
@@ -628,7 +530,7 @@ func (s *invoiceService) GetCustomerMultiCurrencyInvoiceSummary(ctx context.Cont
 	subscriptionFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
 	subscriptionFilter.IncludeCanceled = true
 
-	subs, err := s.subscriptionRepo.List(ctx, subscriptionFilter)
+	subs, err := s.SubRepo.List(ctx, subscriptionFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
 	}
@@ -653,7 +555,7 @@ func (s *invoiceService) GetCustomerMultiCurrencyInvoiceSummary(ctx context.Cont
 	for _, currency := range currencies {
 		summary, err := s.GetCustomerInvoiceSummary(ctx, customerID, currency)
 		if err != nil {
-			s.logger.Errorw("failed to get customer invoice summary",
+			s.Logger.Errorw("failed to get customer invoice summary",
 				"error", err,
 				"customer_id", customerID,
 				"currency", currency)
@@ -708,7 +610,7 @@ func (s *invoiceService) publishWebhookEvent(ctx context.Context, eventName stri
 		TenantID:  types.GetTenantID(ctx),
 	})
 	if err != nil {
-		s.logger.Errorw("failed to marshal webhook payload", "error", err)
+		s.Logger.Errorw("failed to marshal webhook payload", "error", err)
 		return
 	}
 
@@ -719,7 +621,7 @@ func (s *invoiceService) publishWebhookEvent(ctx context.Context, eventName stri
 		Timestamp: time.Now().UTC(),
 		Payload:   json.RawMessage(webhookPayload),
 	}
-	if err := s.webhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
-		s.logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
+	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
+		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
 	}
 }

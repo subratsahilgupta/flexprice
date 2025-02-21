@@ -117,6 +117,8 @@ func main() {
 	// Service layer
 	opts = append(opts,
 		fx.Provide(
+			service.NewServiceParams,
+
 			// Core services
 			service.NewTenantService,
 			service.NewAuthService,

@@ -5,14 +5,9 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/domain/invoice"
-	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
-	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -27,32 +22,15 @@ type PaymentService interface {
 }
 
 type paymentService struct {
-	paymentRepo payment.Repository
-	invoiceRepo invoice.Repository
-	walletRepo  wallet.Repository
-	logger      *logger.Logger
-	db          postgres.IClient
-	config      *config.Configuration
-	idempGen    *idempotency.Generator
+	ServiceParams
+	idempGen *idempotency.Generator
 }
 
 // NewPaymentService creates a new payment service
-func NewPaymentService(
-	paymentRepo payment.Repository,
-	invoiceRepo invoice.Repository,
-	walletRepo wallet.Repository,
-	db postgres.IClient,
-	logger *logger.Logger,
-	config *config.Configuration,
-) PaymentService {
+func NewPaymentService(params ServiceParams) PaymentService {
 	return &paymentService{
-		paymentRepo: paymentRepo,
-		invoiceRepo: invoiceRepo,
-		walletRepo:  walletRepo,
-		logger:      logger,
-		db:          db,
-		config:      config,
-		idempGen:    idempotency.NewGenerator(),
+		ServiceParams: params,
+		idempGen:      idempotency.NewGenerator(),
 	}
 }
 
@@ -68,8 +46,7 @@ func (s *paymentService) CreatePayment(ctx context.Context, req dto.CreatePaymen
 	}
 
 	// validate the destination
-
-	invoice, err := s.invoiceRepo.Get(ctx, p.DestinationID)
+	invoice, err := s.InvoiceRepo.Get(ctx, p.DestinationID)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +67,7 @@ func (s *paymentService) CreatePayment(ctx context.Context, req dto.CreatePaymen
 	// check if the payment method is credits
 	if p.PaymentMethodType == types.PaymentMethodTypeCredits {
 		// Find wallets for the customer
-		wallets, err := s.walletRepo.GetWalletsByCustomerID(ctx, invoice.CustomerID)
+		wallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, invoice.CustomerID)
 		if err != nil {
 			return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to find wallets")
 		}
@@ -133,12 +110,12 @@ func (s *paymentService) CreatePayment(ctx context.Context, req dto.CreatePaymen
 		return nil, err
 	}
 
-	if err := s.paymentRepo.Create(ctx, p); err != nil {
+	if err := s.PaymentRepo.Create(ctx, p); err != nil {
 		return nil, err
 	}
 
 	if req.ProcessPayment {
-		paymentProcessor := NewPaymentProcessorService(s.paymentRepo, s.invoiceRepo, s.walletRepo, s.db, s.logger)
+		paymentProcessor := NewPaymentProcessorService(s.ServiceParams)
 		p, err = paymentProcessor.ProcessPayment(ctx, p.ID)
 		if err != nil {
 			return nil, err
@@ -150,7 +127,7 @@ func (s *paymentService) CreatePayment(ctx context.Context, req dto.CreatePaymen
 
 // GetPayment gets a payment by ID
 func (s *paymentService) GetPayment(ctx context.Context, id string) (*dto.PaymentResponse, error) {
-	p, err := s.paymentRepo.Get(ctx, id)
+	p, err := s.PaymentRepo.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +137,7 @@ func (s *paymentService) GetPayment(ctx context.Context, id string) (*dto.Paymen
 
 // UpdatePayment updates a payment
 func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.UpdatePaymentRequest) (*dto.PaymentResponse, error) {
-	p, err := s.paymentRepo.Get(ctx, id)
+	p, err := s.PaymentRepo.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +149,7 @@ func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.U
 		p.Metadata = *req.Metadata
 	}
 
-	if err := s.paymentRepo.Update(ctx, p); err != nil {
+	if err := s.PaymentRepo.Update(ctx, p); err != nil {
 		return nil, err
 	}
 
@@ -181,12 +158,12 @@ func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.U
 
 // ListPayments lists payments based on filter
 func (s *paymentService) ListPayments(ctx context.Context, filter *types.PaymentFilter) (*dto.ListPaymentsResponse, error) {
-	payments, err := s.paymentRepo.List(ctx, filter)
+	payments, err := s.PaymentRepo.List(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	count, err := s.paymentRepo.Count(ctx, filter)
+	count, err := s.PaymentRepo.Count(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -208,5 +185,5 @@ func (s *paymentService) ListPayments(ctx context.Context, filter *types.Payment
 
 // DeletePayment deletes a payment
 func (s *paymentService) DeletePayment(ctx context.Context, id string) error {
-	return s.paymentRepo.Delete(ctx, id)
+	return s.PaymentRepo.Delete(ctx, id)
 }

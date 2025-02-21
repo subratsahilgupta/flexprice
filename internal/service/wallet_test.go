@@ -60,39 +60,39 @@ func (s *WalletServiceSuite) TearDownTest() {
 
 func (s *WalletServiceSuite) setupService() {
 	stores := s.GetStores()
-	s.service = NewWalletService(
-		stores.WalletRepo,
-		s.GetLogger(),
-		stores.SubscriptionRepo,
-		stores.PlanRepo,
-		stores.PriceRepo,
-		stores.EventRepo,
-		stores.MeterRepo,
-		stores.CustomerRepo,
-		stores.InvoiceRepo,
-		stores.EntitlementRepo,
-		stores.FeatureRepo,
-		s.GetPublisher(),
-		s.GetWebhookPublisher(),
-		s.GetDB(),
-		s.GetConfig(),
-	)
-	s.subsService = NewSubscriptionService(
-		stores.SubscriptionRepo,
-		stores.PlanRepo,
-		stores.PriceRepo,
-		stores.EventRepo,
-		stores.MeterRepo,
-		stores.CustomerRepo,
-		stores.InvoiceRepo,
-		stores.EntitlementRepo,
-		stores.FeatureRepo,
-		s.GetPublisher(),
-		s.GetWebhookPublisher(),
-		s.GetDB(),
-		s.GetLogger(),
-		s.GetConfig(),
-	)
+	s.service = NewWalletService(ServiceParams{
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
+		WalletRepo:       stores.WalletRepo,
+		SubRepo:          stores.SubscriptionRepo,
+		PlanRepo:         stores.PlanRepo,
+		PriceRepo:        stores.PriceRepo,
+		EventRepo:        stores.EventRepo,
+		MeterRepo:        stores.MeterRepo,
+		CustomerRepo:     stores.CustomerRepo,
+		InvoiceRepo:      stores.InvoiceRepo,
+		EntitlementRepo:  stores.EntitlementRepo,
+		FeatureRepo:      stores.FeatureRepo,
+		EventPublisher:   s.GetPublisher(),
+		WebhookPublisher: s.GetWebhookPublisher(),
+	})
+	s.subsService = NewSubscriptionService(ServiceParams{
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
+		SubRepo:          stores.SubscriptionRepo,
+		PlanRepo:         stores.PlanRepo,
+		PriceRepo:        stores.PriceRepo,
+		EventRepo:        stores.EventRepo,
+		MeterRepo:        stores.MeterRepo,
+		CustomerRepo:     stores.CustomerRepo,
+		InvoiceRepo:      stores.InvoiceRepo,
+		EntitlementRepo:  stores.EntitlementRepo,
+		FeatureRepo:      stores.FeatureRepo,
+		EventPublisher:   s.GetPublisher(),
+		WebhookPublisher: s.GetWebhookPublisher(),
+	})
 }
 
 func (s *WalletServiceSuite) setupTestData() {

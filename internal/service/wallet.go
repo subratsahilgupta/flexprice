@@ -6,23 +6,9 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/domain/customer"
-	"github.com/flexprice/flexprice/internal/domain/entitlement"
-	"github.com/flexprice/flexprice/internal/domain/events"
-	"github.com/flexprice/flexprice/internal/domain/feature"
-	"github.com/flexprice/flexprice/internal/domain/invoice"
-	"github.com/flexprice/flexprice/internal/domain/meter"
-	"github.com/flexprice/flexprice/internal/domain/plan"
-	"github.com/flexprice/flexprice/internal/domain/price"
-	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/postgres"
-	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
-	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/shopspring/decimal"
 )
 
@@ -60,57 +46,13 @@ type WalletService interface {
 }
 
 type walletService struct {
-	walletRepo       wallet.Repository
-	logger           *logger.Logger
-	subscriptionRepo subscription.Repository
-	planRepo         plan.Repository
-	priceRepo        price.Repository
-	eventRepo        events.Repository
-	meterRepo        meter.Repository
-	customerRepo     customer.Repository
-	invoiceRepo      invoice.Repository
-	entitlementRepo  entitlement.Repository
-	featureRepo      feature.Repository
-	eventPublisher   publisher.EventPublisher
-	webhookPublisher webhookPublisher.WebhookPublisher
-	db               postgres.IClient
-	config           *config.Configuration
+	ServiceParams
 }
 
 // NewWalletService creates a new instance of WalletService
-func NewWalletService(
-	walletRepo wallet.Repository,
-	logger *logger.Logger,
-	subscriptionRepo subscription.Repository,
-	planRepo plan.Repository,
-	priceRepo price.Repository,
-	eventRepo events.Repository,
-	meterRepo meter.Repository,
-	customerRepo customer.Repository,
-	invoiceRepo invoice.Repository,
-	entitlementRepo entitlement.Repository,
-	featureRepo feature.Repository,
-	eventPublisher publisher.EventPublisher,
-	webhookPublisher webhookPublisher.WebhookPublisher,
-	db postgres.IClient,
-	config *config.Configuration,
-) WalletService {
+func NewWalletService(params ServiceParams) WalletService {
 	return &walletService{
-		walletRepo:       walletRepo,
-		logger:           logger,
-		subscriptionRepo: subscriptionRepo,
-		planRepo:         planRepo,
-		priceRepo:        priceRepo,
-		eventRepo:        eventRepo,
-		meterRepo:        meterRepo,
-		customerRepo:     customerRepo,
-		invoiceRepo:      invoiceRepo,
-		entitlementRepo:  entitlementRepo,
-		featureRepo:      featureRepo,
-		eventPublisher:   eventPublisher,
-		webhookPublisher: webhookPublisher,
-		db:               db,
-		config:           config,
+		ServiceParams: params,
 	}
 }
 
@@ -120,14 +62,14 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	}
 
 	// Check if customer already has an active wallet
-	existingWallets, err := s.walletRepo.GetWalletsByCustomerID(ctx, req.CustomerID)
+	existingWallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, req.CustomerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check existing wallets: %w", err)
 	}
 
 	for _, w := range existingWallets {
 		if w.WalletStatus == types.WalletStatusActive && w.Currency == req.Currency {
-			s.logger.Warnw("customer already has an active wallet in the same currency",
+			s.Logger.Warnw("customer already has an active wallet in the same currency",
 				"customer_id", req.CustomerID,
 				"existing_wallet_id", w.ID,
 			)
@@ -138,11 +80,11 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	w := req.ToWallet(ctx)
 
 	// Create wallet in DB and update the wallet object
-	if err := s.walletRepo.CreateWallet(ctx, w); err != nil {
+	if err := s.WalletRepo.CreateWallet(ctx, w); err != nil {
 		return nil, fmt.Errorf("failed to create wallet: %w", err)
 	}
 
-	s.logger.Debugw("created wallet",
+	s.Logger.Debugw("created wallet",
 		"wallet_id", w.ID,
 		"customer_id", w.CustomerID,
 		"currency", w.Currency,
@@ -153,7 +95,7 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 }
 
 func (s *walletService) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*dto.WalletResponse, error) {
-	wallets, err := s.walletRepo.GetWalletsByCustomerID(ctx, customerID)
+	wallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, customerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wallets: %w", err)
 	}
@@ -167,7 +109,7 @@ func (s *walletService) GetWalletsByCustomerID(ctx context.Context, customerID s
 }
 
 func (s *walletService) GetWalletByID(ctx context.Context, id string) (*dto.WalletResponse, error) {
-	w, err := s.walletRepo.GetWalletByID(ctx, id)
+	w, err := s.WalletRepo.GetWalletByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wallet: %w", err)
 	}
@@ -186,12 +128,12 @@ func (s *walletService) GetWalletTransactions(ctx context.Context, walletID stri
 		return nil, fmt.Errorf("invalid filter: %w", err)
 	}
 
-	transactions, err := s.walletRepo.ListWalletTransactions(ctx, filter)
+	transactions, err := s.WalletRepo.ListWalletTransactions(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transactions: %w", err)
 	}
 
-	count, err := s.walletRepo.CountWalletTransactions(ctx, filter)
+	count, err := s.WalletRepo.CountWalletTransactions(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count transactions: %w", err)
 	}
@@ -246,7 +188,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 		RealTimeBalance: decimal.Zero,
 	}
 
-	w, err := s.walletRepo.GetWalletByID(ctx, walletID)
+	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wallet: %w", err)
 	}
@@ -260,22 +202,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	}
 
 	// Get invoice summary for unpaid amounts
-	invoiceService := NewInvoiceService(
-		s.subscriptionRepo,
-		s.planRepo,
-		s.priceRepo,
-		s.eventRepo,
-		s.meterRepo,
-		s.customerRepo,
-		s.invoiceRepo,
-		s.entitlementRepo,
-		s.featureRepo,
-		s.eventPublisher,
-		s.webhookPublisher,
-		s.db,
-		s.logger,
-		s.config,
-	)
+	invoiceService := NewInvoiceService(s.ServiceParams)
 
 	invoiceSummary, err := invoiceService.GetCustomerInvoiceSummary(ctx, w.CustomerID, w.Currency)
 	if err != nil {
@@ -283,22 +210,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	}
 
 	// Get current period usage for active subscriptions
-	subscriptionService := NewSubscriptionService(
-		s.subscriptionRepo,
-		s.planRepo,
-		s.priceRepo,
-		s.eventRepo,
-		s.meterRepo,
-		s.customerRepo,
-		s.invoiceRepo,
-		s.entitlementRepo,
-		s.featureRepo,
-		s.eventPublisher,
-		s.webhookPublisher,
-		s.db,
-		s.logger,
-		s.config,
-	)
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
 
 	filter := types.NewSubscriptionFilter()
 	filter.CustomerID = w.CustomerID
@@ -326,7 +238,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 			LifetimeUsage:  false, // Only get current period usage
 		})
 		if err != nil {
-			s.logger.Errorw("failed to get current period usage",
+			s.Logger.Errorw("failed to get current period usage",
 				"wallet_id", walletID,
 				"subscription_id", sub.ID,
 				"error", err,
@@ -347,7 +259,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 		Sub(invoiceSummary.TotalUnpaidAmount).
 		Sub(currentPeriodUsage)
 
-	s.logger.Debugw("calculated real-time balance",
+	s.Logger.Debugw("calculated real-time balance",
 		"wallet_id", walletID,
 		"current_balance", w.Balance,
 		"unpaid_invoices", invoiceSummary.TotalUnpaidAmount,
@@ -368,7 +280,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 
 // Update the TerminateWallet method to use the new processWalletOperation
 func (s *walletService) TerminateWallet(ctx context.Context, walletID string) error {
-	w, err := s.walletRepo.GetWalletByID(ctx, walletID)
+	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
 	if err != nil {
 		return fmt.Errorf("failed to get wallet: %w", err)
 	}
@@ -378,7 +290,7 @@ func (s *walletService) TerminateWallet(ctx context.Context, walletID string) er
 	}
 
 	// Use client's WithTx for atomic operations
-	return s.db.WithTx(ctx, func(ctx context.Context) error {
+	return s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Debit remaining balance if any
 		if w.CreditBalance.GreaterThan(decimal.Zero) {
 			debitReq := &wallet.WalletOperation{
@@ -395,7 +307,7 @@ func (s *walletService) TerminateWallet(ctx context.Context, walletID string) er
 		}
 
 		// Update wallet status to closed
-		if err := s.walletRepo.UpdateWalletStatus(ctx, walletID, types.WalletStatusClosed); err != nil {
+		if err := s.WalletRepo.UpdateWalletStatus(ctx, walletID, types.WalletStatusClosed); err != nil {
 			return fmt.Errorf("failed to close wallet: %w", err)
 		}
 
@@ -409,7 +321,7 @@ func (s *walletService) UpdateWallet(ctx context.Context, id string, req *dto.Up
 	}
 
 	// Get existing wallet
-	existing, err := s.walletRepo.GetWalletByID(ctx, id)
+	existing, err := s.WalletRepo.GetWalletByID(ctx, id)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "update wallet")
 	}
@@ -438,7 +350,7 @@ func (s *walletService) UpdateWallet(ctx context.Context, id string, req *dto.Up
 	}
 
 	// Update wallet
-	if err := s.walletRepo.UpdateWallet(ctx, id, existing); err != nil {
+	if err := s.WalletRepo.UpdateWallet(ctx, id, existing); err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeSystemError, "update wallet")
 	}
 
@@ -490,7 +402,7 @@ func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.Wa
 // processDebitOperation handles the debit operation with credit selection and consumption
 func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.WalletOperation) error {
 	// Find eligible credits with pagination
-	credits, err := s.walletRepo.FindEligibleCredits(ctx, req.WalletID, req.CreditAmount, 100)
+	credits, err := s.WalletRepo.FindEligibleCredits(ctx, req.WalletID, req.CreditAmount, 100)
 	if err != nil {
 		return err
 	}
@@ -509,7 +421,7 @@ func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.W
 	}
 
 	// Process debit across credits
-	if err := s.walletRepo.ConsumeCredits(ctx, credits, req.CreditAmount); err != nil {
+	if err := s.WalletRepo.ConsumeCredits(ctx, credits, req.CreditAmount); err != nil {
 		return err
 	}
 
@@ -518,11 +430,11 @@ func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.W
 
 // processWalletOperation handles both credit and debit operations
 func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.WalletOperation) error {
-	s.logger.Debugw("Processing wallet operation", "req", req)
+	s.Logger.Debugw("Processing wallet operation", "req", req)
 
-	return s.db.WithTx(ctx, func(ctx context.Context) error {
+	return s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Get wallet
-		w, err := s.walletRepo.GetWalletByID(ctx, req.WalletID)
+		w, err := s.WalletRepo.GetWalletByID(ctx, req.WalletID)
 		if err != nil {
 			return fmt.Errorf("failed to get wallet: %w", err)
 		}
@@ -577,16 +489,16 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			tx.ExpiryDate = parseExpiryDate(req.ExpiryDate)
 		}
 
-		if err := s.walletRepo.CreateTransaction(ctx, tx); err != nil {
+		if err := s.WalletRepo.CreateTransaction(ctx, tx); err != nil {
 			return err
 		}
 
 		// Update wallet balance
-		if err := s.walletRepo.UpdateWalletBalance(ctx, req.WalletID, finalBalance, newCreditBalance); err != nil {
+		if err := s.WalletRepo.UpdateWalletBalance(ctx, req.WalletID, finalBalance, newCreditBalance); err != nil {
 			return err
 		}
 
-		s.logger.Debugw("Wallet operation completed")
+		s.Logger.Debugw("Wallet operation completed")
 		return nil
 	})
 }

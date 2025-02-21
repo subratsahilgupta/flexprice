@@ -20,14 +20,11 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
-	"go.uber.org/fx"
 )
 
 // ServiceParams holds common dependencies for services
 // TODO: start using this for all services init
 type ServiceParams struct {
-	fx.In
-
 	Logger *logger.Logger
 	Config *config.Configuration
 	DB     postgres.IClient
@@ -51,4 +48,49 @@ type ServiceParams struct {
 	// Publishers
 	EventPublisher   publisher.EventPublisher
 	WebhookPublisher webhookPublisher.WebhookPublisher
+}
+
+// Common service params
+func NewServiceParams(
+	logger *logger.Logger,
+	config *config.Configuration,
+	db postgres.IClient,
+	authRepo auth.Repository,
+	userRepo user.Repository,
+	eventRepo events.Repository,
+	meterRepo meter.Repository,
+	priceRepo price.Repository,
+	customerRepo customer.Repository,
+	planRepo plan.Repository,
+	subRepo subscription.Repository,
+	walletRepo wallet.Repository,
+	tenantRepo tenant.Repository,
+	invoiceRepo invoice.Repository,
+	featureRepo feature.Repository,
+	entitlementRepo entitlement.Repository,
+	paymentRepo payment.Repository,
+	eventPublisher publisher.EventPublisher,
+	webhookPublisher webhookPublisher.WebhookPublisher,
+) ServiceParams {
+	return ServiceParams{
+		Logger:           logger,
+		Config:           config,
+		DB:               db,
+		AuthRepo:         authRepo,
+		UserRepo:         userRepo,
+		EventRepo:        eventRepo,
+		MeterRepo:        meterRepo,
+		PriceRepo:        priceRepo,
+		CustomerRepo:     customerRepo,
+		PlanRepo:         planRepo,
+		SubRepo:          subRepo,
+		WalletRepo:       walletRepo,
+		TenantRepo:       tenantRepo,
+		InvoiceRepo:      invoiceRepo,
+		FeatureRepo:      featureRepo,
+		EntitlementRepo:  entitlementRepo,
+		PaymentRepo:      paymentRepo,
+		EventPublisher:   eventPublisher,
+		WebhookPublisher: webhookPublisher,
+	}
 }

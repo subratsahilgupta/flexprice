@@ -56,22 +56,22 @@ func (s *SubscriptionServiceSuite) TearDownTest() {
 
 func (s *SubscriptionServiceSuite) setupService() {
 	stores := s.GetStores()
-	s.service = NewSubscriptionService(
-		stores.SubscriptionRepo,
-		stores.PlanRepo,
-		stores.PriceRepo,
-		stores.EventRepo,
-		stores.MeterRepo,
-		stores.CustomerRepo,
-		stores.InvoiceRepo,
-		stores.EntitlementRepo,
-		stores.FeatureRepo,
-		s.GetPublisher(),
-		s.GetWebhookPublisher(),
-		s.GetDB(),
-		s.GetLogger(),
-		s.GetConfig(),
-	)
+	s.service = NewSubscriptionService(ServiceParams{
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
+		SubRepo:          stores.SubscriptionRepo,
+		PlanRepo:         stores.PlanRepo,
+		PriceRepo:        stores.PriceRepo,
+		EventRepo:        stores.EventRepo,
+		MeterRepo:        stores.MeterRepo,
+		CustomerRepo:     stores.CustomerRepo,
+		InvoiceRepo:      stores.InvoiceRepo,
+		EntitlementRepo:  stores.EntitlementRepo,
+		FeatureRepo:      stores.FeatureRepo,
+		EventPublisher:   s.GetPublisher(),
+		WebhookPublisher: s.GetWebhookPublisher(),
+	})
 }
 
 func (s *SubscriptionServiceSuite) setupTestData() {
