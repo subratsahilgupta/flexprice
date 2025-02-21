@@ -121,7 +121,7 @@ func (s *planService) GetPlan(ctx context.Context, id string) (*dto.PlanResponse
 	}
 
 	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
-	entitlementService := NewEntitlementService(s.entitlementRepo, s.planRepo, s.featureRepo, s.logger)
+	entitlementService := NewEntitlementService(s.entitlementRepo, s.planRepo, s.featureRepo, s.meterRepo, s.logger)
 
 	pricesResponse, err := priceService.GetPricesByPlanID(ctx, plan.ID)
 	if err != nil {
@@ -192,7 +192,7 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 	entitlementsByPlanID := make(map[string][]*dto.EntitlementResponse)
 
 	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
-	entitlementService := NewEntitlementService(s.entitlementRepo, s.planRepo, s.featureRepo, s.logger)
+	entitlementService := NewEntitlementService(s.entitlementRepo, s.planRepo, s.featureRepo, s.meterRepo, s.logger)
 
 	// If prices or entitlements expansion is requested, fetch them in bulk
 	// Fetch prices if requested

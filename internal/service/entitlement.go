@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
@@ -28,6 +29,7 @@ type entitlementService struct {
 	repo        entitlement.Repository
 	planRepo    plan.Repository
 	featureRepo feature.Repository
+	meterRepo   meter.Repository
 	log         *logger.Logger
 }
 
@@ -35,12 +37,14 @@ func NewEntitlementService(
 	repo entitlement.Repository,
 	planRepo plan.Repository,
 	featureRepo feature.Repository,
+	meterRepo meter.Repository,
 	log *logger.Logger,
 ) EntitlementService {
 	return &entitlementService{
 		repo:        repo,
 		planRepo:    planRepo,
 		featureRepo: featureRepo,
+		meterRepo:   meterRepo,
 		log:         log,
 	}
 }
@@ -144,6 +148,7 @@ func (s *entitlementService) ListEntitlements(ctx context.Context, filter *types
 	// Create maps to store expanded data
 	var featuresByID map[string]*feature.Feature
 	var plansByID map[string]*plan.Plan
+	var metersByID map[string]*meter.Meter
 
 	if !filter.GetExpand().IsEmpty() {
 		if filter.GetExpand().Has(types.ExpandFeatures) {
@@ -166,6 +171,30 @@ func (s *entitlementService) ListEntitlements(ctx context.Context, filter *types
 				}
 
 				s.log.Debugw("fetched features for entitlements", "count", len(features))
+			}
+		}
+
+		if filter.GetExpand().Has(types.ExpandMeters) {
+			// Collect meter IDs
+			meterIDs := []string{}
+			for _, f := range featuresByID {
+				meterIDs = append(meterIDs, f.MeterID)
+			}
+
+			if len(meterIDs) > 0 {
+				meterFilter := types.NewNoLimitMeterFilter()
+				meterFilter.MeterIDs = meterIDs
+				meters, err := s.meterRepo.List(ctx, meterFilter)
+				if err != nil {
+					return nil, fmt.Errorf("failed to fetch meters: %w", err)
+				}
+
+				metersByID = make(map[string]*meter.Meter, len(meters))
+				for _, m := range meters {
+					metersByID[m.ID] = m
+				}
+
+				s.log.Debugw("fetched meters for entitlements", "count", len(meters))
 			}
 		}
 
@@ -200,6 +229,12 @@ func (s *entitlementService) ListEntitlements(ctx context.Context, filter *types
 		if !filter.GetExpand().IsEmpty() && filter.GetExpand().Has(types.ExpandFeatures) {
 			if f, ok := featuresByID[e.FeatureID]; ok {
 				response.Items[i].Feature = &dto.FeatureResponse{Feature: f}
+				// Add expanded meter if requested and available
+				if filter.GetExpand().Has(types.ExpandMeters) {
+					if m, ok := metersByID[f.MeterID]; ok {
+						response.Items[i].Feature.Meter = dto.ToMeterResponse(m)
+					}
+				}
 			}
 		}
 
@@ -275,7 +310,7 @@ func (s *entitlementService) GetPlanEntitlements(ctx context.Context, planID str
 	filter := types.NewNoLimitEntitlementFilter()
 	filter.WithPlanIDs([]string{planID})
 	filter.WithStatus(types.StatusPublished)
-	filter.WithExpand(string(types.ExpandFeatures))
+	filter.WithExpand(fmt.Sprintf("%s,%s", types.ExpandFeatures, types.ExpandMeters))
 
 	// Use the standard list function to get the entitlements with expansion
 	return s.ListEntitlements(ctx, filter)
@@ -287,6 +322,7 @@ func (s *entitlementService) GetPlanFeatureEntitlements(ctx context.Context, pla
 	filter.WithPlanIDs([]string{planID})
 	filter.WithFeatureID(featureID)
 	filter.WithStatus(types.StatusPublished)
+	filter.WithExpand(string(types.ExpandMeters))
 
 	// Use the standard list function to get the entitlements with expansion
 	return s.ListEntitlements(ctx, filter)
