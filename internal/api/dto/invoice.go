@@ -58,23 +58,33 @@ func (r *CreateInvoiceRequest) Validate() error {
 
 	if r.InvoiceType == types.InvoiceTypeSubscription {
 		if r.SubscriptionID == nil {
-			return ierr.NewError("subscription_id is required for subscription invoice").Mark(ierr.ErrValidation)
+			return ierr.NewError("subscription_id is required for subscription invoice").
+				WithHint("subscription_id is required for subscription invoice").
+				Mark(ierr.ErrValidation)
 		}
 
 		if r.BillingPeriod == nil {
-			return ierr.NewError("billing_period is required for subscription invoice").Mark(ierr.ErrValidation)
+			return ierr.NewError("billing_period is required for subscription invoice").
+				WithHint("billing_period is required for subscription invoice").
+				Mark(ierr.ErrValidation)
 		}
 
 		if r.PeriodStart == nil {
-			return ierr.NewError("period_start is required for subscription invoice").Mark(ierr.ErrValidation)
+			return ierr.NewError("period_start is required for subscription invoice").
+				WithHint("period_start is required for subscription invoice").
+				Mark(ierr.ErrValidation)
 		}
 
 		if r.PeriodEnd == nil {
-			return ierr.NewError("period_end is required for subscription invoice").Mark(ierr.ErrValidation)
+			return ierr.NewError("period_end is required for subscription invoice").
+				WithHint("period_end is required for subscription invoice").
+				Mark(ierr.ErrValidation)
 		}
 
 		if r.PeriodEnd.Before(*r.PeriodStart) {
-			return ierr.NewError("period_end must be after period_start").Mark(ierr.ErrValidation)
+			return ierr.NewError("period_end must be after period_start").
+				WithHint("period_end must be after period_start").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
