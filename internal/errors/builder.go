@@ -45,6 +45,9 @@ func (b *ErrorBuilder) WithHintf(format string, args ...any) *ErrorBuilder {
 
 // WithReportableDetails adds structured details
 func (b *ErrorBuilder) WithReportableDetails(details map[string]any) *ErrorBuilder {
+	if len(details) == 0 {
+		return b
+	}
 	marshaled, err := json.Marshal(details)
 	if err != nil {
 		return b
