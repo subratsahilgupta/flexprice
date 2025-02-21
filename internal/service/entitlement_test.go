@@ -33,6 +33,7 @@ func (s *EntitlementServiceSuite) setupService() {
 		stores.EntitlementRepo,
 		stores.PlanRepo,
 		stores.FeatureRepo,
+		testutil.NewInMemoryMeterStore(),
 		s.GetLogger(),
 	)
 }

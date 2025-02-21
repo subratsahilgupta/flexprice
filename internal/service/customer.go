@@ -76,7 +76,7 @@ func (s *customerService) GetCustomers(ctx context.Context, filter *types.Custom
 		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to count customers")
 	}
 
-	var response []*dto.CustomerResponse
+	response := make([]*dto.CustomerResponse, 0, len(customers))
 	for _, c := range customers {
 		response = append(response, &dto.CustomerResponse{Customer: c})
 	}
