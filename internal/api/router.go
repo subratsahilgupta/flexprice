@@ -171,6 +171,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		}
 
 		invoices := v1Private.Group("/invoices")
+		invoices.Use(middleware.ErrorHandler())
 		{
 			invoices.POST("", handlers.Invoice.CreateInvoice)
 			invoices.GET("", handlers.Invoice.ListInvoices)

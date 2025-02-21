@@ -47,3 +47,7 @@ scripts/hacks/*
 .flaskenv*
 !.env.project
 !.env.vault
+
+# continue / cursor rules
+.continue/*
+.cursorrules

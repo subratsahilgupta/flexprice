@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -68,16 +69,16 @@ func (i *InvoiceLineItem) FromEnt(e *ent.InvoiceLineItem) *InvoiceLineItem {
 // Validate validates the invoice line item
 func (i *InvoiceLineItem) Validate() error {
 	if i.Amount.IsNegative() {
-		return NewValidationError("amount", "must be non negative")
+		return ierr.NewError("invoice line item validation failed").WithHint("amount must be non negative").Mark(ierr.ErrValidation)
 	}
 
 	if i.Quantity.IsNegative() {
-		return NewValidationError("quantity", "must be non negative")
+		return ierr.NewError("invoice line item validation failed").WithHint("quantity must be non negative").Mark(ierr.ErrValidation)
 	}
 
 	if i.PeriodStart != nil && i.PeriodEnd != nil {
 		if i.PeriodEnd.Before(*i.PeriodStart) {
-			return NewValidationError("period_end", "must be after period_start")
+			return ierr.NewError("invoice line item validation failed").WithHint("period_end must be after period_start").Mark(ierr.ErrValidation)
 		}
 	}
 

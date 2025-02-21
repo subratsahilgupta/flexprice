@@ -3,13 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
-	"github.com/flexprice/flexprice/internal/domain/invoice"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/google/uuid"
@@ -44,7 +43,7 @@ func NewInvoiceService(params ServiceParams) InvoiceService {
 
 func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error) {
 	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
+		return nil, err
 	}
 
 	var resp *dto.InvoiceResponse
@@ -72,13 +71,15 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 
 		// 2. Check for existing invoice with same idempotency key
 		existing, err := s.InvoiceRepo.GetByIdempotencyKey(tx, idempKey)
-		if err != nil && !errors.Is(err, invoice.ErrInvoiceNotFound) {
-			return fmt.Errorf("failed to check idempotency: %w", err)
+
+		if err != nil && !ierr.IsNotFound(err) {
+			return err
 		}
 		if existing != nil {
 			s.Logger.Infow("returning existing invoice for idempotency key",
 				"idempotency_key", idempKey,
 				"invoice_id", existing.ID)
+			resp = dto.NewInvoiceResponse(existing)
 			return nil
 		}
 
@@ -88,16 +89,16 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 			// Check period uniqueness
 			exists, err := s.InvoiceRepo.ExistsForPeriod(ctx, *req.SubscriptionID, *req.PeriodStart, *req.PeriodEnd)
 			if err != nil {
-				return fmt.Errorf("failed to check period uniqueness: %w", err)
+				return err
 			}
 			if exists {
-				return invoice.ErrInvoiceAlreadyExists
+				return ierr.NewError("invoice already exists").WithHint("invoice already exists for the given period").Mark(ierr.ErrAlreadyExists)
 			}
 
 			// Get billing sequence
 			seq, err := s.InvoiceRepo.GetNextBillingSequence(ctx, *req.SubscriptionID)
 			if err != nil {
-				return fmt.Errorf("failed to get billing sequence: %w", err)
+				return err
 			}
 			billingSeq = &seq
 		}
@@ -105,14 +106,14 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		// 4. Generate invoice number
 		invoiceNumber, err := s.InvoiceRepo.GetNextInvoiceNumber(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to generate invoice number: %w", err)
+			return err
 		}
 
 		// 5. Create invoice
 		// Convert request to domain model
 		inv, err := req.ToInvoice(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to convert request to invoice: %w", err)
+			return err
 		}
 
 		inv.InvoiceNumber = &invoiceNumber
@@ -152,7 +153,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 
 		// Create invoice with line items in a single transaction
 		if err := s.InvoiceRepo.CreateWithLineItems(ctx, inv); err != nil {
-			return fmt.Errorf("failed to create invoice: %w", err)
+			return err
 		}
 
 		// Convert to response
@@ -180,7 +181,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.InvoiceResponse, error) {
 	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get invoice: %w", err)
+		return nil, err
 	}
 
 	for _, lineItem := range inv.LineItems {
@@ -218,12 +219,12 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error) {
 	invoices, err := s.InvoiceRepo.List(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list invoices: %w", err)
+		return nil, err
 	}
 
 	count, err := s.InvoiceRepo.Count(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count invoices: %w", err)
+		return nil, err
 	}
 
 	customerMap := make(map[string]*customer.Customer)
@@ -266,11 +267,11 @@ func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.Invoice
 func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
 	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to get invoice: %w", err)
+		return err
 	}
 
 	if inv.InvoiceStatus != types.InvoiceStatusDraft {
-		return fmt.Errorf("invoice is not in draft status")
+		return ierr.NewError("invoice is not in draft status").WithHint("invoice must be in draft status to be finalized").Mark(ierr.ErrValidation)
 	}
 
 	now := time.Now().UTC()
@@ -278,7 +279,7 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
 	inv.FinalizedAt = &now
 
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-		return fmt.Errorf("failed to update invoice: %w", err)
+		return err
 	}
 
 	s.publishWebhookEvent(ctx, types.WebhookEventInvoiceUpdateFinalized, inv.ID)
@@ -288,7 +289,7 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
 func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to get invoice: %w", err)
+		return err
 	}
 
 	allowedInvoiceStatuses := []types.InvoiceStatus{
@@ -296,7 +297,12 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 		types.InvoiceStatusFinalized,
 	}
 	if !lo.Contains(allowedInvoiceStatuses, inv.InvoiceStatus) {
-		return fmt.Errorf("invoice status - %s is not allowed", inv.InvoiceStatus)
+		return ierr.NewError("invoice status is not allowed").
+			WithHintf("invoice status - %s is not allowed", inv.InvoiceStatus).
+			WithReportableDetails(map[string]any{
+				"allowed_statuses": allowedInvoiceStatuses,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	allowedPaymentStatuses := []types.PaymentStatus{
@@ -304,7 +310,12 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 		types.PaymentStatusFailed,
 	}
 	if !lo.Contains(allowedPaymentStatuses, inv.PaymentStatus) {
-		return fmt.Errorf("invoice payment status - %s is not allowed", inv.PaymentStatus)
+		return ierr.NewError("invoice payment status is not allowed").
+			WithHintf("invoice payment status - %s is not allowed", inv.PaymentStatus).
+			WithReportableDetails(map[string]any{
+				"allowed_statuses": allowedPaymentStatuses,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	now := time.Now().UTC()
@@ -312,7 +323,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 	inv.VoidedAt = &now
 
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-		return fmt.Errorf("failed to update invoice: %w", err)
+		return err
 	}
 
 	s.publishWebhookEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
@@ -322,7 +333,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error {
 	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to get invoice: %w", err)
+		return err
 	}
 
 	// Validate the invoice status
@@ -331,17 +342,24 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 		types.InvoiceStatusFinalized,
 	}
 	if !lo.Contains(allowedInvoiceStatuses, inv.InvoiceStatus) {
-		return fmt.Errorf("invoice status - %s is not allowed", inv.InvoiceStatus)
+		return ierr.NewError("invoice status is not allowed").
+			WithHintf("invoice status - %s is not allowed", inv.InvoiceStatus).
+			WithReportableDetails(map[string]any{
+				"allowed_statuses": allowedInvoiceStatuses,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate the payment status transition
 	if err := s.validatePaymentStatusTransition(inv.PaymentStatus, status); err != nil {
-		return fmt.Errorf("invalid payment status transition: %w", err)
+		return err
 	}
 
 	// Validate the request amount
 	if amount != nil && amount.IsNegative() {
-		return fmt.Errorf("amount must be non-negative")
+		return ierr.NewError("amount must be non-negative").
+			WithHint("amount must be non-negative").
+			Mark(ierr.ErrValidation)
 	}
 
 	now := time.Now().UTC()
@@ -365,11 +383,11 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 
 	// Validate the final state
 	if err := inv.Validate(); err != nil {
-		return fmt.Errorf("invalid invoice state: %w", err)
+		return err
 	}
 
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-		return fmt.Errorf("failed to update invoice: %w", err)
+		return err
 	}
 
 	s.publishWebhookEvent(ctx, types.WebhookEventInvoiceUpdatePayment, inv.ID)
@@ -426,7 +444,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 	// Create a draft invoice object for preview
 	inv, err := invReq.ToInvoice(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert request to invoice: %w", err)
+		return nil, err
 	}
 
 	// Create preview response
@@ -456,7 +474,7 @@ func (s *invoiceService) GetCustomerInvoiceSummary(ctx context.Context, customer
 
 	invoicesResp, err := s.ListInvoices(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list invoices: %w", err)
+		return nil, err
 	}
 
 	summary := &dto.CustomerInvoiceSummary{
@@ -589,7 +607,12 @@ func (s *invoiceService) validatePaymentStatusTransition(from, to types.PaymentS
 
 	allowed, ok := allowedTransitions[from]
 	if !ok {
-		return fmt.Errorf("invalid current payment status: %s", from)
+		return ierr.NewError("invalid current payment status").
+			WithHintf("invalid current payment status: %s", from).
+			WithReportableDetails(map[string]any{
+				"allowed_statuses": allowedTransitions[from],
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	for _, status := range allowed {
@@ -598,7 +621,12 @@ func (s *invoiceService) validatePaymentStatusTransition(from, to types.PaymentS
 		}
 	}
 
-	return fmt.Errorf("invalid payment status transition from %s to %s", from, to)
+	return ierr.NewError("invalid payment status transition").
+		WithHintf("invalid payment status transition from %s to %s", from, to).
+		WithReportableDetails(map[string]any{
+			"allowed_statuses": allowedTransitions[from],
+		}).
+		Mark(ierr.ErrValidation)
 }
 
 func (s *invoiceService) publishWebhookEvent(ctx context.Context, eventName string, invoiceID string) {

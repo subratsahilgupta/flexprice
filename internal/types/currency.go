@@ -3,7 +3,7 @@ package types
 import (
 	"strings"
 
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
 // CurrencyConfig holds configuration for different currencies and their symbols
@@ -89,7 +89,7 @@ func IsMatchingCurrency(a, b string) bool {
 // TODO : use some library to validate iso 3166-1 alpha-3 currency codes
 func ValidateCurrencyCode(currency string) error {
 	if len(currency) != 3 {
-		return errors.New(errors.ErrCodeValidation, "invalid currency code")
+		return ierr.NewError("invalid currency code").WithHint("currency code must be 3 characters long").Mark(ierr.ErrValidation)
 	}
 	return nil
 }

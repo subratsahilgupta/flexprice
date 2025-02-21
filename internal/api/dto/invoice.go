@@ -2,11 +2,13 @@ package dto
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
 	"github.com/shopspring/decimal"
@@ -17,8 +19,8 @@ type CreateInvoiceRequest struct {
 	CustomerID     string                         `json:"customer_id" validate:"required"`
 	SubscriptionID *string                        `json:"subscription_id,omitempty"`
 	IdempotencyKey *string                        `json:"idempotency_key"`
-	InvoiceType    types.InvoiceType              `json:"invoice_type" validate:"required"`
-	Currency       string                         `json:"currency" validate:"required"`
+	InvoiceType    types.InvoiceType              `json:"invoice_type" validate:"oneof=SUBSCRIPTION ONE_OFF CREDIT"`
+	Currency       string                         `json:"currency" validate:"required,iso4217"`
 	AmountDue      decimal.Decimal                `json:"amount_due" validate:"required"`
 	Description    string                         `json:"description,omitempty"`
 	DueDate        *time.Time                     `json:"due_date,omitempty"`
@@ -36,32 +38,43 @@ type CreateInvoiceRequest struct {
 func (r *CreateInvoiceRequest) Validate() error {
 	validate := validator.New()
 	if err := validate.Struct(r); err != nil {
-		return err
+		details := make(map[string]any)
+		var validateErrs validator.ValidationErrors
+		if errors.As(err, &validateErrs) {
+			for _, err := range validateErrs {
+				details[err.Field()] = err.Error()
+			}
+		}
+		return ierr.WithError(err).WithHint("request validation failed").WithReportableDetails(details).Mark(ierr.ErrValidation)
 	}
 
 	if r.AmountDue.IsNegative() {
-		return fmt.Errorf("amount_due must be non-negative")
+		return ierr.NewError("amount_due must be non-negative").
+			WithHint("amount due is negative").
+			WithReportableDetails(map[string]any{
+				"amount_due": r.AmountDue.String(),
+			}).Mark(ierr.ErrValidation)
 	}
 
 	if r.InvoiceType == types.InvoiceTypeSubscription {
 		if r.SubscriptionID == nil {
-			return fmt.Errorf("subscription_id is required for subscription invoice")
+			return ierr.NewError("subscription_id is required for subscription invoice").Mark(ierr.ErrValidation)
 		}
 
 		if r.BillingPeriod == nil {
-			return fmt.Errorf("billing_period is required for subscription invoice")
+			return ierr.NewError("billing_period is required for subscription invoice").Mark(ierr.ErrValidation)
 		}
 
 		if r.PeriodStart == nil {
-			return fmt.Errorf("period_start is required for subscription invoice")
+			return ierr.NewError("period_start is required for subscription invoice").Mark(ierr.ErrValidation)
 		}
 
 		if r.PeriodEnd == nil {
-			return fmt.Errorf("period_end is required for subscription invoice")
+			return ierr.NewError("period_end is required for subscription invoice").Mark(ierr.ErrValidation)
 		}
 
 		if r.PeriodEnd.Before(*r.PeriodStart) {
-			return fmt.Errorf("period_end must be after period_start")
+			return ierr.NewError("period_end must be after period_start").Mark(ierr.ErrValidation)
 		}
 	}
 
@@ -70,14 +83,14 @@ func (r *CreateInvoiceRequest) Validate() error {
 		var totalAmount decimal.Decimal
 		for _, item := range r.LineItems {
 			if err := item.Validate(); err != nil {
-				return fmt.Errorf("invalid line item: %w", err)
+				return ierr.WithError(err).WithHint("invalid line item").Mark(ierr.ErrValidation)
 			}
 			totalAmount = totalAmount.Add(item.Amount)
 		}
 
 		// Verify total amount matches invoice amount
 		if !totalAmount.Equal(r.AmountDue) {
-			return fmt.Errorf("sum of line item amounts (%s) must equal invoice amount_due (%s)", totalAmount.String(), r.AmountDue.String())
+			return ierr.NewError("sum of line item amounts must equal invoice amount_due").WithHintf("sum of line item amounts %s must equal invoice amount_due %s", totalAmount.String(), r.AmountDue.String()).Mark(ierr.ErrValidation)
 		}
 	}
 

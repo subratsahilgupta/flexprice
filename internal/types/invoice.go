@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
 )
 
@@ -147,12 +148,12 @@ func NewNoLimitInvoiceFilter() *InvoiceFilter {
 func (f *InvoiceFilter) Validate() error {
 	if f.QueryFilter != nil {
 		if err := f.QueryFilter.Validate(); err != nil {
-			return fmt.Errorf("invalid query filter: %w", err)
+			return ierr.WithError(err).WithHint("invalid query filter").Mark(ierr.ErrValidation)
 		}
 	}
 	if f.TimeRangeFilter != nil {
 		if err := f.TimeRangeFilter.Validate(); err != nil {
-			return fmt.Errorf("invalid time range: %w", err)
+			return ierr.WithError(err).WithHint("invalid time range").Mark(ierr.ErrValidation)
 		}
 	}
 	return nil
