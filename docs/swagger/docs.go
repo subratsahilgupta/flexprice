@@ -4657,7 +4657,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "number",
-                        "name": "credits_available_less_than",
+                        "name": "credits_available_gt",
                         "in": "query"
                     },
                     {

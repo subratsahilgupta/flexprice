@@ -43,6 +43,9 @@ type WalletService interface {
 
 	// CreditWallet processes a credit operation on a wallet
 	CreditWallet(ctx context.Context, req *wallet.WalletOperation) error
+
+	// ExpireCredits expires credits for a given transaction
+	ExpireCredits(ctx context.Context, transactionID string) error
 }
 
 type walletService struct {
@@ -519,6 +522,56 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 		}
 
 		s.Logger.Debugw("Wallet operation completed")
+		return nil
+	})
+}
+
+// ExpireCredits expires credits for a given transaction
+func (s *walletService) ExpireCredits(ctx context.Context, transactionID string) error {
+	// Get the transaction
+	tx, err := s.WalletRepo.GetTransactionByID(ctx, transactionID)
+	if err != nil {
+		return fmt.Errorf("failed to get transaction: %w", err)
+	}
+
+	// Validate transaction
+	if tx.Type != types.TransactionTypeCredit {
+		return errors.New(errors.ErrCodeInvalidOperation, "can only expire credit transactions")
+	}
+
+	if tx.ExpiryDate == nil {
+		return errors.New(errors.ErrCodeInvalidOperation, "transaction has no expiry date")
+	}
+
+	if tx.ExpiryDate.After(time.Now().UTC()) {
+		return errors.New(errors.ErrCodeInvalidOperation, "transaction has not expired yet")
+	}
+
+	if tx.CreditsAvailable.IsZero() {
+		return errors.New(errors.ErrCodeInvalidOperation, "no credits available to expire")
+	}
+
+	// Create a debit operation for the expired credits
+	debitReq := &wallet.WalletOperation{
+		WalletID:          tx.WalletID,
+		Type:              types.TransactionTypeDebit,
+		CreditAmount:      tx.CreditsAvailable,
+		Description:       fmt.Sprintf("Credit expiry for transaction %s", tx.ID),
+		TransactionReason: types.TransactionReasonCreditExpired,
+		ReferenceType:     types.WalletTxReferenceTypeRequest,
+		ReferenceID:       tx.ID,
+		Metadata: types.Metadata{
+			"expired_transaction_id": tx.ID,
+			"expiry_date":            tx.ExpiryDate.Format(time.RFC3339),
+		},
+	}
+
+	// Process the debit operation within a transaction
+	return s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// Process debit operation
+		if err := s.DebitWallet(ctx, debitReq); err != nil {
+			return fmt.Errorf("failed to debit expired credits: %w", err)
+		}
 		return nil
 	})
 }

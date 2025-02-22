@@ -266,3 +266,15 @@ type WalletBalanceResponse struct {
 	UnpaidInvoiceAmount   decimal.Decimal `json:"unpaid_invoice_amount"`
 	CurrentPeriodUsage    decimal.Decimal `json:"current_period_usage"`
 }
+
+type ExpiredCreditsResponseItem struct {
+	TenantID string `json:"tenant_id"`
+	Count    int    `json:"count"`
+}
+
+type ExpiredCreditsResponse struct {
+	Items   []*ExpiredCreditsResponseItem `json:"items"`
+	Total   int                           `json:"total"`
+	Success int                           `json:"success"`
+	Failed  int                           `json:"failed"`
+}

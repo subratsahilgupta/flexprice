@@ -105,7 +105,7 @@ func transactionFilterFn(ctx context.Context, t *wallet.Transaction, filter inte
 		}
 	}
 
-	if f.CreditsAvailableLessThan != nil && t.CreditsAvailable.GreaterThan(*f.CreditsAvailableLessThan) {
+	if f.CreditsAvailableGT != nil && t.CreditsAvailable.LessThanOrEqual(*f.CreditsAvailableGT) {
 		return false
 	}
 

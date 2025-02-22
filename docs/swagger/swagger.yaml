@@ -5449,7 +5449,7 @@ paths:
       description: Get transactions for a wallet with pagination
       parameters:
       - in: query
-        name: credits_available_less_than
+        name: credits_available_gt
         type: number
       - in: query
         name: end_time

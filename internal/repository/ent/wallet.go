@@ -447,8 +447,8 @@ func (o WalletTransactionQueryOptions) applyEntityQueryOptions(ctx context.Conte
 		}
 	}
 
-	if f.CreditsAvailableLessThan != nil {
-		query = query.Where(wallettransaction.CreditsAvailableLT(*f.CreditsAvailableLessThan))
+	if f.CreditsAvailableGT != nil {
+		query = query.Where(wallettransaction.CreditsAvailableGT(*f.CreditsAvailableGT))
 	}
 
 	if f.ExpiryDateBefore != nil {
