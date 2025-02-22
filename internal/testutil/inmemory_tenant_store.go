@@ -54,3 +54,14 @@ func (s *InMemoryTenantStore) Clear() {
 
 	s.tenants = make(map[string]*tenant.Tenant)
 }
+
+func (s *InMemoryTenantStore) List(ctx context.Context) ([]*tenant.Tenant, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tenants := make([]*tenant.Tenant, 0, len(s.tenants))
+	for _, t := range s.tenants {
+		tenants = append(tenants, t)
+	}
+	return tenants, nil
+}

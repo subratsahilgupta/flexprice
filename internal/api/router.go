@@ -24,12 +24,14 @@ type Handlers struct {
 	Subscription *v1.SubscriptionHandler
 	Wallet       *v1.WalletHandler
 	Tenant       *v1.TenantHandler
-	Cron         *cron.SubscriptionHandler
 	Invoice      *v1.InvoiceHandler
 	Feature      *v1.FeatureHandler
 	Entitlement  *v1.EntitlementHandler
 	Payment      *v1.PaymentHandler
 	Task         *v1.TaskHandler
+	// Cron jobs : TODO: move crons out of API based architecture
+	CronSubscription *cron.SubscriptionHandler
+	CronWallet       *cron.WalletCronHandler
 }
 
 func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
@@ -219,8 +221,14 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	// Subscription related cron jobs
 	subscriptionGroup := cron.Group("/subscriptions")
 	{
-		subscriptionGroup.POST("/update-periods", handlers.Cron.UpdateBillingPeriods)
-		subscriptionGroup.POST("/generate-invoice", handlers.Cron.GenerateInvoice)
+		subscriptionGroup.POST("/update-periods", handlers.CronSubscription.UpdateBillingPeriods)
+		subscriptionGroup.POST("/generate-invoice", handlers.CronSubscription.GenerateInvoice)
+	}
+
+	// Wallet related cron jobs
+	walletGroup := cron.Group("/wallets")
+	{
+		walletGroup.POST("/expire-credits", handlers.CronWallet.ExpireCredits)
 	}
 	return router
 }

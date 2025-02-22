@@ -217,9 +217,9 @@ func (wtc *WalletTransactionCreate) SetNillableExpiryDate(t *time.Time) *WalletT
 	return wtc
 }
 
-// SetAmountUsed sets the "amount_used" field.
-func (wtc *WalletTransactionCreate) SetAmountUsed(d decimal.Decimal) *WalletTransactionCreate {
-	wtc.mutation.SetAmountUsed(d)
+// SetCreditsAvailable sets the "credits_available" field.
+func (wtc *WalletTransactionCreate) SetCreditsAvailable(d decimal.Decimal) *WalletTransactionCreate {
+	wtc.mutation.SetCreditsAvailable(d)
 	return wtc
 }
 
@@ -354,8 +354,8 @@ func (wtc *WalletTransactionCreate) check() error {
 	if _, ok := wtc.mutation.TransactionStatus(); !ok {
 		return &ValidationError{Name: "transaction_status", err: errors.New(`ent: missing required field "WalletTransaction.transaction_status"`)}
 	}
-	if _, ok := wtc.mutation.AmountUsed(); !ok {
-		return &ValidationError{Name: "amount_used", err: errors.New(`ent: missing required field "WalletTransaction.amount_used"`)}
+	if _, ok := wtc.mutation.CreditsAvailable(); !ok {
+		return &ValidationError{Name: "credits_available", err: errors.New(`ent: missing required field "WalletTransaction.credits_available"`)}
 	}
 	if _, ok := wtc.mutation.TransactionReason(); !ok {
 		return &ValidationError{Name: "transaction_reason", err: errors.New(`ent: missing required field "WalletTransaction.transaction_reason"`)}
@@ -467,9 +467,9 @@ func (wtc *WalletTransactionCreate) createSpec() (*WalletTransaction, *sqlgraph.
 		_spec.SetField(wallettransaction.FieldExpiryDate, field.TypeTime, value)
 		_node.ExpiryDate = &value
 	}
-	if value, ok := wtc.mutation.AmountUsed(); ok {
-		_spec.SetField(wallettransaction.FieldAmountUsed, field.TypeOther, value)
-		_node.AmountUsed = value
+	if value, ok := wtc.mutation.CreditsAvailable(); ok {
+		_spec.SetField(wallettransaction.FieldCreditsAvailable, field.TypeOther, value)
+		_node.CreditsAvailable = value
 	}
 	if value, ok := wtc.mutation.TransactionReason(); ok {
 		_spec.SetField(wallettransaction.FieldTransactionReason, field.TypeString, value)

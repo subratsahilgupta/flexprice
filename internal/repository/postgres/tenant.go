@@ -40,3 +40,10 @@ func (r *tenantRepository) GetByID(ctx context.Context, id string) (*tenant.Tena
 	err := r.db.GetContext(ctx, &tenant, query, id)
 	return &tenant, err
 }
+
+func (r *tenantRepository) List(ctx context.Context) ([]*tenant.Tenant, error) {
+	query := `SELECT * FROM tenants`
+	var tenants []*tenant.Tenant
+	err := r.db.SelectContext(ctx, &tenants, query)
+	return tenants, err
+}

@@ -818,7 +818,7 @@ var (
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "transaction_status", Type: field.TypeString, Default: "pending", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "expiry_date", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamp"}},
-		{Name: "amount_used", Type: field.TypeOther, Default: "0", SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "credits_available", Type: field.TypeOther, Default: "0", SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "transaction_reason", Type: field.TypeString, Default: "FREE_CREDIT_GRANT", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// WalletTransactionsTable holds the schema information for the "wallet_transactions" table.
@@ -828,9 +828,9 @@ var (
 		PrimaryKey: []*schema.Column{WalletTransactionsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "wallettransaction_tenant_id_wallet_id_status",
+				Name:    "wallettransaction_tenant_id_wallet_id",
 				Unique:  false,
-				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[7], WalletTransactionsColumns[2]},
+				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[7]},
 			},
 			{
 				Name:    "wallettransaction_tenant_id_reference_type_reference_id_status",
@@ -838,9 +838,17 @@ var (
 				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[13], WalletTransactionsColumns[14], WalletTransactionsColumns[2]},
 			},
 			{
-				Name:    "wallettransaction_created_at",
+				Name:    "wallettransaction_tenant_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{WalletTransactionsColumns[3]},
+				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[3]},
+			},
+			{
+				Name:    "idx_tenant_wallet_type_credits_available_expiry_date",
+				Unique:  false,
+				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[7], WalletTransactionsColumns[8], WalletTransactionsColumns[19], WalletTransactionsColumns[18]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "credits_available > 0 AND type = 'credit'",
+				},
 			},
 		},
 	}

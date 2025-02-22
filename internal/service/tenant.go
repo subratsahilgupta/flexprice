@@ -14,6 +14,7 @@ type TenantService interface {
 	CreateTenant(ctx context.Context, req dto.CreateTenantRequest) (*dto.TenantResponse, error)
 	GetTenantByID(ctx context.Context, id string) (*dto.TenantResponse, error)
 	AssignTenantToUser(ctx context.Context, req dto.AssignTenantRequest) error
+	GetAllTenants(ctx context.Context) ([]*dto.TenantResponse, error)
 }
 
 type tenantService struct {
@@ -70,4 +71,18 @@ func (s *tenantService) AssignTenantToUser(ctx context.Context, req dto.AssignTe
 	}
 
 	return nil
+}
+
+func (s *tenantService) GetAllTenants(ctx context.Context) ([]*dto.TenantResponse, error) {
+	tenants, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve tenants: %w", err)
+	}
+
+	tenantResponses := make([]*dto.TenantResponse, 0, len(tenants))
+	for _, t := range tenants {
+		tenantResponses = append(tenantResponses, dto.NewTenantResponse(t))
+	}
+
+	return tenantResponses, nil
 }

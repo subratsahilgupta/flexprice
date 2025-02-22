@@ -1502,28 +1502,39 @@ definitions:
   dto.TopUpWalletRequest:
     properties:
       amount:
-        description: Amount is the number of credits to add to the wallet
+        description: amount is the number of credits to add to the wallet
         type: number
       description:
-        description: Description to add any specific details about the transaction
+        description: description to add any specific details about the transaction
         type: string
+      expiry_date:
+        description: |-
+          expiry_date YYYYMMDD format in UTC timezone (optional to set nil means no expiry)
+          for ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC
+          hence they will be available for use until 2024-12-31 23:59:59 UTC
+        type: integer
       generate_invoice:
-        default: false
-        description: GenerateInvoice when true, an invoice will be generated for the
-          transaction
+        description: generate_invoice when true, an invoice will be generated for
+          the transaction
         type: boolean
       metadata:
         allOf:
         - $ref: '#/definitions/types.Metadata'
-        description: Metadata to add any additional information about the transaction
-      transaction_reason:
-        allOf:
-        - $ref: '#/definitions/types.TransactionReason'
-        description: TransactionReason defines the flow from which the credits are
-          added to the wallet
+        description: metadata to add any additional information about the transaction
+      purchased_credits:
+        description: purchased_credits when true, the credits are added as purchased
+          credits
+        type: boolean
+      reference_id:
+        description: reference_id is the ID of the reference ex payment ID, invoice
+          ID, request ID
+        type: string
+      reference_type:
+        description: reference_type is the type of the reference ex payment, invoice,
+          request
+        type: string
     required:
     - amount
-    - generate_invoice
     type: object
   dto.UpdateCustomerRequest:
     properties:
@@ -1806,6 +1817,8 @@ definitions:
         type: string
       real_time_balance:
         type: number
+      real_time_credit_balance:
+        type: number
       status:
         $ref: '#/definitions/types.Status'
       tenant_id:
@@ -1862,8 +1875,6 @@ definitions:
     properties:
       amount:
         type: number
-      amount_used:
-        type: number
       created_at:
         type: string
       credit_amount:
@@ -1871,6 +1882,8 @@ definitions:
       credit_balance_after:
         type: number
       credit_balance_before:
+        type: number
+      credits_available:
         type: number
       description:
         type: string
@@ -1883,7 +1896,7 @@ definitions:
       reference_id:
         type: string
       reference_type:
-        type: string
+        $ref: '#/definitions/types.WalletTxReferenceType'
       transaction_reason:
         $ref: '#/definitions/types.TransactionReason'
       transaction_status:
@@ -2352,6 +2365,7 @@ definitions:
     - PURCHASED_CREDIT_DIRECT
     - INVOICE_REFUND
     - CREDIT_EXPIRED
+    - WALLET_TERMINATION
     type: string
     x-enum-varnames:
     - TransactionReasonInvoicePayment
@@ -2361,6 +2375,7 @@ definitions:
     - TransactionReasonPurchasedCreditDirect
     - TransactionReasonInvoiceRefund
     - TransactionReasonCreditExpired
+    - TransactionReasonWalletTermination
   types.TransactionStatus:
     enum:
     - pending
@@ -2409,6 +2424,18 @@ definitions:
     - WalletStatusActive
     - WalletStatusFrozen
     - WalletStatusClosed
+  types.WalletTxReferenceType:
+    enum:
+    - INVOICE
+    - PAYMENT
+    - EXTERNAL
+    - REQUEST
+    type: string
+    x-enum-varnames:
+    - WalletTxReferenceTypeInvoice
+    - WalletTxReferenceTypePayment
+    - WalletTxReferenceTypeExternal
+    - WalletTxReferenceTypeRequest
   types.WalletType:
     enum:
     - PROMOTIONAL
@@ -5422,7 +5449,7 @@ paths:
       description: Get transactions for a wallet with pagination
       parameters:
       - in: query
-        name: amount_used_less_than
+        name: credits_available_gt
         type: number
       - in: query
         name: end_time
@@ -5482,6 +5509,7 @@ paths:
         - PURCHASED_CREDIT_DIRECT
         - INVOICE_REFUND
         - CREDIT_EXPIRED
+        - WALLET_TERMINATION
         in: query
         name: transaction_reason
         type: string
@@ -5493,6 +5521,7 @@ paths:
         - TransactionReasonPurchasedCreditDirect
         - TransactionReasonInvoiceRefund
         - TransactionReasonCreditExpired
+        - TransactionReasonWalletTermination
       - enum:
         - pending
         - completed

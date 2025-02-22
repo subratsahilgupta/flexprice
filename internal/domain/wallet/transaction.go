@@ -10,21 +10,21 @@ import (
 
 // Transaction represents a wallet transaction
 type Transaction struct {
-	ID                  string                  `db:"id" json:"id"`
-	WalletID            string                  `db:"wallet_id" json:"wallet_id"`
-	Type                types.TransactionType   `db:"type" json:"type"`
-	Amount              decimal.Decimal         `db:"amount" json:"amount"`
-	CreditAmount        decimal.Decimal         `db:"credit_amount" json:"credit_amount"`
-	CreditBalanceBefore decimal.Decimal         `db:"credit_balance_before" json:"credit_balance_before"`
-	CreditBalanceAfter  decimal.Decimal         `db:"credit_balance_after" json:"credit_balance_after"`
-	TxStatus            types.TransactionStatus `db:"transaction_status" json:"transaction_status"`
-	ReferenceType       string                  `db:"reference_type" json:"reference_type"`
-	ReferenceID         string                  `db:"reference_id" json:"reference_id"`
-	Description         string                  `db:"description" json:"description"`
-	Metadata            types.Metadata          `db:"metadata" json:"metadata"`
-	ExpiryDate          *time.Time              `db:"expiry_date" json:"expiry_date"`
-	AmountUsed          decimal.Decimal         `db:"amount_used" json:"amount_used"`
-	TransactionReason   types.TransactionReason `db:"transaction_reason" json:"transaction_reason"`
+	ID                  string                      `db:"id" json:"id"`
+	WalletID            string                      `db:"wallet_id" json:"wallet_id"`
+	Type                types.TransactionType       `db:"type" json:"type"`
+	Amount              decimal.Decimal             `db:"amount" json:"amount"`
+	CreditAmount        decimal.Decimal             `db:"credit_amount" json:"credit_amount"`
+	CreditBalanceBefore decimal.Decimal             `db:"credit_balance_before" json:"credit_balance_before"`
+	CreditBalanceAfter  decimal.Decimal             `db:"credit_balance_after" json:"credit_balance_after"`
+	TxStatus            types.TransactionStatus     `db:"transaction_status" json:"transaction_status"`
+	ReferenceType       types.WalletTxReferenceType `db:"reference_type" json:"reference_type"`
+	ReferenceID         string                      `db:"reference_id" json:"reference_id"`
+	Description         string                      `db:"description" json:"description"`
+	Metadata            types.Metadata              `db:"metadata" json:"metadata"`
+	ExpiryDate          *time.Time                  `db:"expiry_date" json:"expiry_date"`
+	CreditsAvailable    decimal.Decimal             `db:"credits_available" json:"credits_available"`
+	TransactionReason   types.TransactionReason     `db:"transaction_reason" json:"transaction_reason"`
 	types.BaseModel
 }
 
@@ -55,12 +55,12 @@ func (t *Transaction) ToEnt() *ent.WalletTransaction {
 		CreditBalanceBefore: t.CreditBalanceBefore,
 		CreditBalanceAfter:  t.CreditBalanceAfter,
 		TransactionStatus:   string(t.TxStatus),
-		ReferenceType:       t.ReferenceType,
+		ReferenceType:       string(t.ReferenceType),
 		ReferenceID:         t.ReferenceID,
 		Description:         t.Description,
 		Metadata:            t.Metadata,
 		ExpiryDate:          t.ExpiryDate,
-		AmountUsed:          t.AmountUsed,
+		CreditsAvailable:    t.CreditsAvailable,
 		TransactionReason:   string(t.TransactionReason),
 		TenantID:            t.TenantID,
 		Status:              string(t.Status),
@@ -84,12 +84,12 @@ func TransactionFromEnt(e *ent.WalletTransaction) *Transaction {
 		Amount:              e.Amount,
 		CreditAmount:        e.CreditAmount,
 		TxStatus:            types.TransactionStatus(e.TransactionStatus),
-		ReferenceType:       e.ReferenceType,
+		ReferenceType:       types.WalletTxReferenceType(e.ReferenceType),
 		ReferenceID:         e.ReferenceID,
 		Description:         e.Description,
 		Metadata:            types.Metadata(e.Metadata),
 		ExpiryDate:          e.ExpiryDate,
-		AmountUsed:          e.AmountUsed,
+		CreditsAvailable:    e.CreditsAvailable,
 		CreditBalanceBefore: e.CreditBalanceBefore,
 		CreditBalanceAfter:  e.CreditBalanceAfter,
 		TransactionReason:   types.TransactionReason(e.TransactionReason),

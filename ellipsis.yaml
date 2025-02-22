@@ -51,3 +51,12 @@ about:
   - You can refer events table migration here
 ignore:
   - "ent/"  # ignore everything in the `ent/` directory as most code is auto generated
+  - "*.json"
+  - "*.yaml"
+  - "*.yml"
+  - "*.toml"
+  - "*.ini"
+  - "*.env"
+  - "*.lock"
+  - "*.log"
+  - "*.txt"

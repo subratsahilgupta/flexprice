@@ -91,7 +91,7 @@ func (WalletTransaction) Fields() []ent.Field {
 			Immutable().
 			Optional().
 			Nillable(),
-		field.Other("amount_used", decimal.Decimal{}).
+		field.Other("credits_available", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,8)",
 			}).
@@ -115,8 +115,12 @@ func (WalletTransaction) Edges() []ent.Edge {
 // Indexes of the WalletTransaction.
 func (WalletTransaction) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "wallet_id", "status"),
+		index.Fields("tenant_id", "wallet_id"),
 		index.Fields("tenant_id", "reference_type", "reference_id", "status"),
-		index.Fields("created_at"),
+		index.Fields("tenant_id", "created_at"),
+		index.Fields("tenant_id", "wallet_id", "type", "credits_available", "expiry_date").
+			StorageKey("idx_tenant_wallet_type_credits_available_expiry_date").
+			Annotations(entsql.IndexWhere("credits_available > 0 AND type = 'credit'")),
+		// TODO: Add unique index for reference type and ID
 	}
 }

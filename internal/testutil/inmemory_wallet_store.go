@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/wallet"
@@ -89,7 +90,7 @@ func transactionFilterFn(ctx context.Context, t *wallet.Transaction, filter inte
 
 	// Filter by reference type and ID
 	if f.ReferenceType != nil && f.ReferenceID != nil {
-		if t.ReferenceType != *f.ReferenceType || t.ReferenceID != *f.ReferenceID {
+		if string(t.ReferenceType) != string(*f.ReferenceType) || t.ReferenceID != *f.ReferenceID {
 			return false
 		}
 	}
@@ -104,7 +105,7 @@ func transactionFilterFn(ctx context.Context, t *wallet.Transaction, filter inte
 		}
 	}
 
-	if f.AmountUsedLessThan != nil && t.AmountUsed.GreaterThan(*f.AmountUsedLessThan) {
+	if f.CreditsAvailableGT != nil && t.CreditsAvailable.LessThanOrEqual(*f.CreditsAvailableGT) {
 		return false
 	}
 
@@ -174,78 +175,112 @@ func (s *InMemoryWalletStore) UpdateWalletStatus(ctx context.Context, id string,
 	return s.wallets.Update(ctx, id, w)
 }
 
-func (s *InMemoryWalletStore) CreditWallet(ctx context.Context, req *wallet.WalletOperation) error {
-	if req.Type != types.TransactionTypeCredit {
-		return fmt.Errorf("invalid transaction type")
+// FindEligibleCredits retrieves valid credits for debit operation with pagination
+func (s *InMemoryWalletStore) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int) ([]*wallet.Transaction, error) {
+	var allCredits []*wallet.Transaction
+
+	// Get all eligible credits first
+	credits, err := s.transactions.List(ctx, nil, func(ctx context.Context, t *wallet.Transaction, filter interface{}) bool {
+		if t == nil {
+			return false
+		}
+
+		// Check basic conditions
+		if t.WalletID != walletID ||
+			t.Type != types.TransactionTypeCredit ||
+			t.CreditsAvailable.LessThanOrEqual(decimal.Zero) ||
+			t.Status != types.StatusPublished {
+			return false
+		}
+
+		// Check expiry date
+		if t.ExpiryDate != nil && t.ExpiryDate.Before(time.Now().UTC()) {
+			return false
+		}
+
+		return true
+	}, nil)
+
+	if err != nil {
+		return nil, fmt.Errorf("query valid credits: %w", err)
 	}
 
-	return s.performWalletOperation(ctx, req)
-}
+	// Sort credits by expiry date (ascending) and credit amount (descending)
+	sort.Slice(credits, func(i, j int) bool {
+		// Sort by expiry date (nil dates come last)
+		if credits[i].ExpiryDate == nil && credits[j].ExpiryDate != nil {
+			return false
+		}
+		if credits[i].ExpiryDate != nil && credits[j].ExpiryDate == nil {
+			return true
+		}
+		if credits[i].ExpiryDate != nil && credits[j].ExpiryDate != nil && !credits[i].ExpiryDate.Equal(*credits[j].ExpiryDate) {
+			return credits[i].ExpiryDate.Before(*credits[j].ExpiryDate)
+		}
 
-func (s *InMemoryWalletStore) DebitWallet(ctx context.Context, req *wallet.WalletOperation) error {
-	if req.Type != types.TransactionTypeDebit {
-		return fmt.Errorf("invalid transaction type")
+		// If expiry dates are equal or both nil, sort by credit amount (descending)
+		return credits[i].CreditsAvailable.GreaterThan(credits[j].CreditsAvailable)
+	})
+
+	// Collect only enough credits to satisfy the required amount, respecting pageSize
+	var totalAvailable decimal.Decimal
+	for _, credit := range credits {
+		allCredits = append(allCredits, credit)
+		totalAvailable = totalAvailable.Add(credit.CreditsAvailable)
+
+		if totalAvailable.GreaterThanOrEqual(requiredAmount) || len(allCredits) == pageSize {
+			break
+		}
 	}
-	return s.performWalletOperation(ctx, req)
+
+	return allCredits, nil
 }
 
-func (s *InMemoryWalletStore) performWalletOperation(ctx context.Context, req *wallet.WalletOperation) error {
-	w, err := s.GetWalletByID(ctx, req.WalletID)
+// ConsumeCredits processes debit operation across multiple credits
+func (s *InMemoryWalletStore) ConsumeCredits(ctx context.Context, credits []*wallet.Transaction, amount decimal.Decimal) error {
+	remainingAmount := amount
+
+	for _, credit := range credits {
+		if remainingAmount.IsZero() {
+			break
+		}
+
+		toConsume := decimal.Min(remainingAmount, credit.CreditsAvailable)
+		newAvailable := credit.CreditsAvailable.Sub(toConsume)
+
+		// Update credit's available amount
+		credit.CreditsAvailable = newAvailable
+		credit.UpdatedAt = time.Now().UTC()
+		credit.UpdatedBy = types.GetUserID(ctx)
+
+		if err := s.transactions.Update(ctx, credit.ID, credit); err != nil {
+			return fmt.Errorf("update credit available amount: %w", err)
+		}
+
+		remainingAmount = remainingAmount.Sub(toConsume)
+	}
+
+	return nil
+}
+
+// CreateTransaction creates a new wallet transaction record
+func (s *InMemoryWalletStore) CreateTransaction(ctx context.Context, tx *wallet.Transaction) error {
+	return s.transactions.Create(ctx, tx.ID, tx)
+}
+
+// UpdateWalletBalance updates the wallet's balance and credit balance
+func (s *InMemoryWalletStore) UpdateWalletBalance(ctx context.Context, walletID string, finalBalance, newCreditBalance decimal.Decimal) error {
+	w, err := s.GetWalletByID(ctx, walletID)
 	if err != nil {
 		return err
 	}
 
-	// Convert amount to credit amount if provided and perform credit operation
-	if req.Amount.GreaterThan(decimal.Zero) {
-		req.CreditAmount = req.Amount.Div(w.ConversionRate)
-	} else if req.CreditAmount.GreaterThan(decimal.Zero) {
-		req.Amount = req.CreditAmount.Mul(w.ConversionRate)
-	} else {
-		return errors.New(errors.ErrCodeInvalidOperation, "amount or credit amount is required")
-	}
-
-	// Calculate new balance
-	var newCreditBalance decimal.Decimal
-	if req.Type == types.TransactionTypeCredit {
-		newCreditBalance = w.CreditBalance.Add(req.CreditAmount)
-	} else if req.Type == types.TransactionTypeDebit {
-		newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
-		if newCreditBalance.LessThan(decimal.Zero) {
-			return fmt.Errorf("insufficient balance: current=%s, requested=%s", w.CreditBalance, req.CreditAmount)
-		}
-	} else {
-		return fmt.Errorf("invalid transaction type")
-	}
-
-	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("wallet transaction amount must be greater than 0")
-	}
-
-	// final balance
-	finalBalance := newCreditBalance.Mul(w.ConversionRate)
-
-	// Create a transaction
-	txn := &wallet.Transaction{
-		ID:                  fmt.Sprintf("txn-%s-%d", req.WalletID, time.Now().UnixNano()),
-		WalletID:            req.WalletID,
-		Type:                req.Type,
-		Amount:              req.Amount,
-		CreditAmount:        req.CreditAmount,
-		CreditBalanceBefore: w.CreditBalance,
-		CreditBalanceAfter:  newCreditBalance,
-		TxStatus:            types.TransactionStatusCompleted,
-		Description:         req.Description,
-		Metadata:            req.Metadata,
-		BaseModel:           types.GetDefaultBaseModel(ctx),
-	}
-
-	if err := s.transactions.Create(ctx, txn.ID, txn); err != nil {
-		return fmt.Errorf("failed to create transaction: %w", err)
-	}
-
 	w.Balance = finalBalance
 	w.CreditBalance = newCreditBalance
-	return s.wallets.Update(ctx, w.ID, w)
+	w.UpdatedAt = time.Now().UTC()
+	w.UpdatedBy = types.GetUserID(ctx)
+
+	return s.wallets.Update(ctx, walletID, w)
 }
 
 func (s *InMemoryWalletStore) GetTransactionByID(ctx context.Context, id string) (*wallet.Transaction, error) {
@@ -309,6 +344,8 @@ func (s *InMemoryWalletStore) UpdateWallet(ctx context.Context, id string, w *wa
 	if !w.AutoTopupAmount.IsZero() {
 		existing.AutoTopupAmount = w.AutoTopupAmount
 	}
+	// Update config if provided (WalletConfig is a struct type, so we always update it)
+	existing.Config = w.Config
 
 	// Update metadata
 	existing.UpdatedBy = types.GetUserID(ctx)

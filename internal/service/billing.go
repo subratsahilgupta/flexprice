@@ -6,22 +6,9 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/domain/customer"
-	"github.com/flexprice/flexprice/internal/domain/entitlement"
-	"github.com/flexprice/flexprice/internal/domain/events"
-	"github.com/flexprice/flexprice/internal/domain/feature"
-	"github.com/flexprice/flexprice/internal/domain/invoice"
-	"github.com/flexprice/flexprice/internal/domain/meter"
-	"github.com/flexprice/flexprice/internal/domain/plan"
-	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/postgres"
-	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
-	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -50,53 +37,12 @@ type BillingService interface {
 }
 
 type billingService struct {
-	subscriptionRepo subscription.Repository
-	planRepo         plan.Repository
-	priceRepo        price.Repository
-	eventRepo        events.Repository
-	meterRepo        meter.Repository
-	customerRepo     customer.Repository
-	invoiceRepo      invoice.Repository
-	entitlementRepo  entitlement.Repository
-	featureRepo      feature.Repository
-	eventPublisher   publisher.EventPublisher
-	webhookPublisher webhookPublisher.WebhookPublisher
-	logger           *logger.Logger
-	db               postgres.IClient
-	config           *config.Configuration
+	ServiceParams
 }
 
-func NewBillingService(
-	subscriptionRepo subscription.Repository,
-	planRepo plan.Repository,
-	priceRepo price.Repository,
-	eventRepo events.Repository,
-	meterRepo meter.Repository,
-	customerRepo customer.Repository,
-	invoiceRepo invoice.Repository,
-	entitlementRepo entitlement.Repository,
-	featureRepo feature.Repository,
-	eventPublisher publisher.EventPublisher,
-	webhookPublisher webhookPublisher.WebhookPublisher,
-	db postgres.IClient,
-	logger *logger.Logger,
-	config *config.Configuration,
-) BillingService {
+func NewBillingService(params ServiceParams) BillingService {
 	return &billingService{
-		subscriptionRepo: subscriptionRepo,
-		planRepo:         planRepo,
-		priceRepo:        priceRepo,
-		eventRepo:        eventRepo,
-		meterRepo:        meterRepo,
-		customerRepo:     customerRepo,
-		invoiceRepo:      invoiceRepo,
-		entitlementRepo:  entitlementRepo,
-		featureRepo:      featureRepo,
-		eventPublisher:   eventPublisher,
-		webhookPublisher: webhookPublisher,
-		db:               db,
-		logger:           logger,
-		config:           config,
+		ServiceParams: params,
 	}
 }
 
@@ -109,7 +55,7 @@ func (s *billingService) CalculateFixedCharges(
 	fixedCost := decimal.Zero
 	fixedCostLineItems := make([]dto.CreateInvoiceLineItemRequest, 0)
 
-	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
+	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
 
 	// Process fixed charges from line items
 	for _, item := range sub.LineItems {
@@ -175,7 +121,7 @@ func (s *billingService) CalculateUsageCharges(
 		}
 
 		if matchingCharge == nil {
-			s.logger.Debugw("no matching charge found for usage line item",
+			s.Logger.Debugw("no matching charge found for usage line item",
 				"subscription_id", sub.ID,
 				"line_item_id", item.ID,
 				"price_id", item.PriceID)
@@ -244,29 +190,14 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 	periodEnd time.Time,
 	isPreview bool,
 ) (*dto.CreateInvoiceRequest, error) {
-	s.logger.Infow("preparing subscription invoice request",
+	s.Logger.Infow("preparing subscription invoice request",
 		"subscription_id", sub.ID,
 		"period_start", periodStart,
 		"period_end", periodEnd,
 		"is_preview", isPreview)
 
 	// Get usage for the period
-	subscriptionService := NewSubscriptionService(
-		s.subscriptionRepo,
-		s.planRepo,
-		s.priceRepo,
-		s.eventRepo,
-		s.meterRepo,
-		s.customerRepo,
-		s.invoiceRepo,
-		s.entitlementRepo,
-		s.featureRepo,
-		s.eventPublisher,
-		s.webhookPublisher,
-		s.db,
-		s.logger,
-		s.config,
-	)
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
 
 	usage, err := subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
 		SubscriptionID: sub.ID,
@@ -311,7 +242,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		LineItems:      append(result.FixedCharges, result.UsageCharges...),
 	}
 
-	s.logger.Infow("prepared invoice request",
+	s.Logger.Infow("prepared invoice request",
 		"subscription_id", sub.ID,
 		"total_amount", result.TotalAmount,
 		"fixed_line_items", len(result.FixedCharges),

@@ -4657,7 +4657,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "number",
-                        "name": "amount_used_less_than",
+                        "name": "credits_available_gt",
                         "in": "query"
                     },
                     {
@@ -4745,7 +4745,8 @@ const docTemplate = `{
                             "PURCHASED_CREDIT_INVOICED",
                             "PURCHASED_CREDIT_DIRECT",
                             "INVOICE_REFUND",
-                            "CREDIT_EXPIRED"
+                            "CREDIT_EXPIRED",
+                            "WALLET_TERMINATION"
                         ],
                         "type": "string",
                         "x-enum-varnames": [
@@ -4755,7 +4756,8 @@ const docTemplate = `{
                             "TransactionReasonPurchasedCreditInvoiced",
                             "TransactionReasonPurchasedCreditDirect",
                             "TransactionReasonInvoiceRefund",
-                            "TransactionReasonCreditExpired"
+                            "TransactionReasonCreditExpired",
+                            "TransactionReasonWalletTermination"
                         ],
                         "name": "transaction_reason",
                         "in": "query"
@@ -7042,38 +7044,44 @@ const docTemplate = `{
         "dto.TopUpWalletRequest": {
             "type": "object",
             "required": [
-                "amount",
-                "generate_invoice"
+                "amount"
             ],
             "properties": {
                 "amount": {
-                    "description": "Amount is the number of credits to add to the wallet",
+                    "description": "amount is the number of credits to add to the wallet",
                     "type": "number"
                 },
                 "description": {
-                    "description": "Description to add any specific details about the transaction",
+                    "description": "description to add any specific details about the transaction",
                     "type": "string"
                 },
+                "expiry_date": {
+                    "description": "expiry_date YYYYMMDD format in UTC timezone (optional to set nil means no expiry)\nfor ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC\nhence they will be available for use until 2024-12-31 23:59:59 UTC",
+                    "type": "integer"
+                },
                 "generate_invoice": {
-                    "description": "GenerateInvoice when true, an invoice will be generated for the transaction",
-                    "type": "boolean",
-                    "default": false
+                    "description": "generate_invoice when true, an invoice will be generated for the transaction",
+                    "type": "boolean"
                 },
                 "metadata": {
-                    "description": "Metadata to add any additional information about the transaction",
+                    "description": "metadata to add any additional information about the transaction",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.Metadata"
                         }
                     ]
                 },
-                "transaction_reason": {
-                    "description": "TransactionReason defines the flow from which the credits are added to the wallet",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TransactionReason"
-                        }
-                    ]
+                "purchased_credits": {
+                    "description": "purchased_credits when true, the credits are added as purchased credits",
+                    "type": "boolean"
+                },
+                "reference_id": {
+                    "description": "reference_id is the ID of the reference ex payment ID, invoice ID, request ID",
+                    "type": "string"
+                },
+                "reference_type": {
+                    "description": "reference_type is the type of the reference ex payment, invoice, request",
+                    "type": "string"
                 }
             }
         },
@@ -7498,6 +7506,9 @@ const docTemplate = `{
                 "real_time_balance": {
                     "type": "number"
                 },
+                "real_time_credit_balance": {
+                    "type": "number"
+                },
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
@@ -7583,9 +7594,6 @@ const docTemplate = `{
                 "amount": {
                     "type": "number"
                 },
-                "amount_used": {
-                    "type": "number"
-                },
                 "created_at": {
                     "type": "string"
                 },
@@ -7596,6 +7604,9 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "credit_balance_before": {
+                    "type": "number"
+                },
+                "credits_available": {
                     "type": "number"
                 },
                 "description": {
@@ -7614,7 +7625,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "reference_type": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.WalletTxReferenceType"
                 },
                 "transaction_reason": {
                     "$ref": "#/definitions/types.TransactionReason"
@@ -8248,7 +8259,8 @@ const docTemplate = `{
                 "PURCHASED_CREDIT_INVOICED",
                 "PURCHASED_CREDIT_DIRECT",
                 "INVOICE_REFUND",
-                "CREDIT_EXPIRED"
+                "CREDIT_EXPIRED",
+                "WALLET_TERMINATION"
             ],
             "x-enum-varnames": [
                 "TransactionReasonInvoicePayment",
@@ -8257,7 +8269,8 @@ const docTemplate = `{
                 "TransactionReasonPurchasedCreditInvoiced",
                 "TransactionReasonPurchasedCreditDirect",
                 "TransactionReasonInvoiceRefund",
-                "TransactionReasonCreditExpired"
+                "TransactionReasonCreditExpired",
+                "TransactionReasonWalletTermination"
             ]
         },
         "types.TransactionStatus": {
@@ -8320,6 +8333,21 @@ const docTemplate = `{
                 "WalletStatusActive",
                 "WalletStatusFrozen",
                 "WalletStatusClosed"
+            ]
+        },
+        "types.WalletTxReferenceType": {
+            "type": "string",
+            "enum": [
+                "INVOICE",
+                "PAYMENT",
+                "EXTERNAL",
+                "REQUEST"
+            ],
+            "x-enum-varnames": [
+                "WalletTxReferenceTypeInvoice",
+                "WalletTxReferenceTypePayment",
+                "WalletTxReferenceTypeExternal",
+                "WalletTxReferenceTypeRequest"
             ]
         },
         "types.WalletType": {

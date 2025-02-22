@@ -68,23 +68,22 @@ func (s *InvoiceServiceSuite) setupService() {
 	s.eventRepo = testutil.NewInMemoryEventStore()
 	s.invoiceRepo = testutil.NewInMemoryInvoiceStore()
 
-	s.service = NewInvoiceService(
-		s.GetStores().SubscriptionRepo,
-		s.GetStores().PlanRepo,
-		s.GetStores().PriceRepo,
-		s.eventRepo,
-		s.GetStores().MeterRepo,
-		s.GetStores().CustomerRepo,
-		s.invoiceRepo,
-		s.GetStores().EntitlementRepo,
-		s.GetStores().FeatureRepo,
-		s.GetPublisher(),
-		s.GetWebhookPublisher(),
-		s.GetDB(),
-		s.GetLogger(),
-		s.GetConfig(),
-	)
-
+	s.service = NewInvoiceService(ServiceParams{
+		SubRepo:          s.GetStores().SubscriptionRepo,
+		PlanRepo:         s.GetStores().PlanRepo,
+		PriceRepo:        s.GetStores().PriceRepo,
+		EventRepo:        s.eventRepo,
+		MeterRepo:        s.GetStores().MeterRepo,
+		CustomerRepo:     s.GetStores().CustomerRepo,
+		InvoiceRepo:      s.invoiceRepo,
+		EntitlementRepo:  s.GetStores().EntitlementRepo,
+		FeatureRepo:      s.GetStores().FeatureRepo,
+		EventPublisher:   s.GetPublisher(),
+		WebhookPublisher: s.GetWebhookPublisher(),
+		DB:               s.GetDB(),
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+	})
 }
 
 func (s *InvoiceServiceSuite) setupTestData() {
