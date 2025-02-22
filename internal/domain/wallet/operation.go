@@ -1,6 +1,9 @@
 package wallet
 
 import (
+	"time"
+
+	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -20,4 +23,31 @@ type WalletOperation struct {
 	Metadata          types.Metadata          `json:"metadata,omitempty"`
 	ExpiryDate        *int                    `json:"expiry_date,omitempty"` // YYYYMMDD format
 	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty"`
+}
+
+func (w *WalletOperation) Validate() error {
+	if err := w.Type.Validate(); err != nil {
+		return errors.New(errors.ErrCodeValidation, "invalid transaction type")
+	}
+
+	if w.Amount.IsZero() && w.CreditAmount.IsZero() {
+		return errors.New(errors.ErrCodeValidation, "amount or credit_amount must be provided")
+	}
+
+	if err := w.TransactionReason.Validate(); err != nil {
+		return err
+	}
+
+	if w.ExpiryDate != nil {
+		expiryTime := types.ParseYYYYMMDDToDate(w.ExpiryDate)
+		if expiryTime == nil {
+			return errors.New(errors.ErrCodeValidation, "invalid expiry date")
+		}
+
+		if expiryTime.Before(time.Now().UTC()) {
+			return errors.New(errors.ErrCodeValidation, "expiry date cannot be in the past")
+		}
+	}
+
+	return nil
 }

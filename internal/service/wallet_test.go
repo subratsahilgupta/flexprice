@@ -17,6 +17,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
@@ -876,7 +877,7 @@ func (s *WalletServiceSuite) TestWalletTransactionAmountHandling() {
 }
 
 func (s *WalletServiceSuite) TestCreditWithExpiryDate() {
-	expiryDate := 20250101 // January 1st, 2025
+	expiryDate := 20360101 // January 1st, 2036
 	creditOp := &wallet.WalletOperation{
 		WalletID:          s.testData.wallet.ID,
 		Type:              types.TransactionTypeCredit,
@@ -898,7 +899,7 @@ func (s *WalletServiceSuite) TestCreditWithExpiryDate() {
 
 	tx := transactions[0]
 	s.NotNil(tx.ExpiryDate)
-	expectedTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	expectedTime := time.Date(2036, 1, 1, 0, 0, 0, 0, time.UTC)
 	s.True(expectedTime.Equal(*tx.ExpiryDate))
 }
 
@@ -955,7 +956,8 @@ func (s *WalletServiceSuite) TestDebitWithExpiredCredits() {
 		ExpiryDate:        &pastDate,
 	}
 	err := s.service.CreditWallet(s.GetContext(), creditOp)
-	s.NoError(err)
+	s.Error(err)
+	s.Contains(err.Error(), "expiry date cannot be in the past")
 
 	// Try to debit from expired credits
 	debitOp := &wallet.WalletOperation{
@@ -970,114 +972,112 @@ func (s *WalletServiceSuite) TestDebitWithExpiredCredits() {
 	s.Contains(err.Error(), "insufficient balance")
 }
 
-// func (s *WalletServiceSuite) TestDebitWithMultipleCredits() {
-// 	// Reset the wallet's initial state
-// 	s.testData.wallet.Balance = decimal.Zero
-// 	s.testData.wallet.CreditBalance = decimal.Zero
-// 	err := s.GetStores().WalletRepo.UpdateWalletBalance(s.GetContext(), s.testData.wallet.ID, decimal.Zero, decimal.Zero)
-// 	s.NoError(err)
+func (s *WalletServiceSuite) TestDebitWithMultipleCredits() {
+	// Reset the wallet's initial state
+	s.testData.wallet.Balance = decimal.Zero
+	s.testData.wallet.CreditBalance = decimal.Zero
+	err := s.GetStores().WalletRepo.UpdateWalletBalance(s.GetContext(), s.testData.wallet.ID, decimal.Zero, decimal.Zero)
+	s.NoError(err)
 
-// 	// Create multiple credits with different amounts and expiry dates
-// 	credits := []struct {
-// 		amount decimal.Decimal
-// 		expiry *int
-// 	}{
-// 		{decimal.NewFromInt(50), nil},                 // No expiry
-// 		{decimal.NewFromInt(30), lo.ToPtr(20250101)},  // Future expiry
-// 		{decimal.NewFromInt(20), lo.ToPtr(20230101)},  // Past expiry (should be ignored)
-// 		{decimal.NewFromInt(100), lo.ToPtr(20240101)}, // Mid expiry
-// 	}
+	// Create multiple credits with different amounts and expiry dates
+	credits := []struct {
+		amount decimal.Decimal
+		expiry *int
+	}{
+		{decimal.NewFromInt(50), nil},
+		{decimal.NewFromInt(30), lo.ToPtr(20360101)},
+		{decimal.NewFromInt(20), lo.ToPtr(20360201)},
+		{decimal.NewFromInt(100), lo.ToPtr(20360301)},
+	}
 
-// 	// Add all credits
-// 	for _, credit := range credits {
-// 		op := &wallet.WalletOperation{
-// 			WalletID:          s.testData.wallet.ID,
-// 			Type:              types.TransactionTypeCredit,
-// 			CreditAmount:      credit.amount,
-// 			Description:       "Test credit",
-// 			TransactionReason: types.TransactionReasonFreeCredit,
-// 			ExpiryDate:        credit.expiry,
-// 		}
-// 		err := s.service.CreditWallet(s.GetContext(), op)
-// 		s.NoError(err)
-// 	}
+	// Add all credits
+	for _, credit := range credits {
+		op := &dto.TopUpWalletRequest{
+			Amount:      credit.amount,
+			Description: "Test credit",
+			ExpiryDate:  credit.expiry,
+		}
+		_, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, op)
+		s.NoError(err)
+	}
 
-// 	// Verify initial state
-// 	walletObj, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
-// 	s.NoError(err)
+	// Verify initial state
+	walletObj, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
+	s.NoError(err)
 
-// 	// Calculate total valid credits (excluding expired)
-// 	validCredits := decimal.NewFromInt(180) // 50 (no expiry) + 30 (future) + 100 (mid)
-// 	s.True(validCredits.Equal(walletObj.CreditBalance))
+	// Calculate total valid credits (excluding expired)
+	validCredits := decimal.NewFromInt(200)
+	s.True(validCredits.Equal(walletObj.CreditBalance), "Expected %s, got %s", validCredits, walletObj.CreditBalance)
 
-// 	// Find eligible credits to verify
-// 	eligibleCredits, err := s.GetStores().WalletRepo.FindEligibleCredits(
-// 		s.GetContext(),
-// 		s.testData.wallet.ID,
-// 		decimal.NewFromInt(70),
-// 		100,
-// 	)
-// 	s.NoError(err)
-// 	s.NotEmpty(eligibleCredits)
+	// Find eligible credits to verify
+	eligibleCredits, err := s.GetStores().WalletRepo.FindEligibleCredits(
+		s.GetContext(),
+		s.testData.wallet.ID,
+		decimal.NewFromInt(100),
+		100,
+	)
+	s.NoError(err)
+	s.NotEmpty(eligibleCredits)
 
-// 	// Verify eligible credits are sorted correctly (by expiry date, then amount)
-// 	s.Len(eligibleCredits, 3)                                              // Should only include non-expired credits
-// 	s.True(eligibleCredits[0].CreditAmount.Equal(decimal.NewFromInt(50)))  // No expiry
-// 	s.True(eligibleCredits[1].CreditAmount.Equal(decimal.NewFromInt(100))) // Mid expiry
-// 	s.True(eligibleCredits[2].CreditAmount.Equal(decimal.NewFromInt(30)))  // Future expiry
+	// Verify eligible credits are sorted correctly (by expiry date, then amount)
+	s.Len(eligibleCredits, 3)
+	s.True(eligibleCredits[0].CreditAmount.Equal(decimal.NewFromInt(30)))
+	s.True(eligibleCredits[1].CreditAmount.Equal(decimal.NewFromInt(20)))
+	s.True(eligibleCredits[2].CreditAmount.Equal(decimal.NewFromInt(100)))
 
-// 	// Debit an amount that requires multiple credits
-// 	debitOp := &wallet.WalletOperation{
-// 		WalletID:          s.testData.wallet.ID,
-// 		Type:              types.TransactionTypeDebit,
-// 		CreditAmount:      decimal.NewFromInt(70),
-// 		Description:       "Multi-credit debit",
-// 		TransactionReason: types.TransactionReasonInvoicePayment,
-// 	}
-// 	err = s.service.DebitWallet(s.GetContext(), debitOp)
-// 	s.NoError(err)
+	// Debit an amount that requires multiple credits
+	debitOp := &wallet.WalletOperation{
+		WalletID:          s.testData.wallet.ID,
+		Type:              types.TransactionTypeDebit,
+		CreditAmount:      decimal.NewFromInt(70),
+		Description:       "Multi-credit debit",
+		TransactionReason: types.TransactionReasonInvoicePayment,
+	}
+	err = s.service.DebitWallet(s.GetContext(), debitOp)
+	s.NoError(err)
 
-// 	// Verify final state
-// 	walletObj, err = s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
-// 	s.NoError(err)
+	// Verify final state
+	walletObj, err = s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallet.ID)
+	s.NoError(err)
 
-// 	// Expected balance should be valid credits minus debit amount
-// 	expectedBalance := validCredits.Sub(decimal.NewFromInt(70)) // 180 - 70 = 110
-// 	s.True(expectedBalance.Equal(walletObj.CreditBalance))
+	// Expected balance should be valid credits minus debit amount
+	expectedBalance := validCredits.Sub(decimal.NewFromInt(70)) // 200 - 70 = 130
+	s.True(expectedBalance.Equal(walletObj.CreditBalance),
+		"Expected %s, got %s", expectedBalance, walletObj.CreditBalance)
 
-// 	// Verify transactions
-// 	filter := types.NewWalletTransactionFilter()
-// 	filter.WalletID = &s.testData.wallet.ID
-// 	transactions, err := s.GetStores().WalletRepo.ListWalletTransactions(s.GetContext(), filter)
-// 	s.NoError(err)
-// 	s.Len(transactions, 5) // 4 credits + 1 debit
+	// Verify transactions
+	filter := types.NewWalletTransactionFilter()
+	filter.WalletID = &s.testData.wallet.ID
+	transactions, err := s.GetStores().WalletRepo.ListWalletTransactions(s.GetContext(), filter)
+	s.NoError(err)
+	s.Len(transactions, 5) // 4 credits + 1 debit
 
-// 	// Sort transactions by created_at desc
-// 	sort.Slice(transactions, func(i, j int) bool {
-// 		return transactions[i].CreatedAt.After(transactions[j].CreatedAt)
-// 	})
+	// Sort transactions by created_at desc
+	sort.Slice(transactions, func(i, j int) bool {
+		return transactions[i].CreatedAt.After(transactions[j].CreatedAt)
+	})
 
-// 	// Verify the debit transaction
-// 	debitTx := transactions[0]
-// 	s.Equal(types.TransactionTypeDebit, debitTx.Type)
-// 	s.Equal(types.TransactionReasonInvoicePayment, debitTx.TransactionReason)
-// 	s.True(decimal.NewFromInt(70).Equal(debitTx.CreditAmount))
-// 	s.True(decimal.Zero.Equal(debitTx.CreditsAvailable))
+	// Verify the debit transaction
+	debitTx := transactions[0]
+	s.Equal(types.TransactionTypeDebit, debitTx.Type)
+	s.Equal(types.TransactionReasonInvoicePayment, debitTx.TransactionReason)
+	s.True(decimal.NewFromInt(70).Equal(debitTx.CreditAmount))
+	s.True(decimal.Zero.Equal(debitTx.CreditsAvailable))
 
-// 	// Verify the remaining credits have correct available amounts
-// 	remainingCredits, err := s.GetStores().WalletRepo.FindEligibleCredits(
-// 		s.GetContext(),
-// 		s.testData.wallet.ID,
-// 		decimal.NewFromInt(110),
-// 		100,
-// 	)
-// 	s.NoError(err)
-// 	s.NotEmpty(remainingCredits)
+	// Verify the remaining credits have correct available amounts
+	remainingCredits, err := s.GetStores().WalletRepo.FindEligibleCredits(
+		s.GetContext(),
+		s.testData.wallet.ID,
+		decimal.NewFromInt(110),
+		100,
+	)
+	s.NoError(err)
+	s.NotEmpty(remainingCredits)
 
-// 	// Total remaining available credits should match expected balance
-// 	var totalRemaining decimal.Decimal
-// 	for _, c := range remainingCredits {
-// 		totalRemaining = totalRemaining.Add(c.CreditsAvailable)
-// 	}
-// 	s.True(expectedBalance.Equal(totalRemaining))
-// }
+	// Total remaining available credits should match expected balance
+	var totalRemaining decimal.Decimal
+	for _, c := range remainingCredits {
+		totalRemaining = totalRemaining.Add(c.CreditsAvailable)
+	}
+	s.True(expectedBalance.Equal(totalRemaining))
+}

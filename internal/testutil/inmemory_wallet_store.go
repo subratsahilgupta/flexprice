@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/wallet"
@@ -176,8 +177,10 @@ func (s *InMemoryWalletStore) UpdateWalletStatus(ctx context.Context, id string,
 
 // FindEligibleCredits retrieves valid credits for debit operation with pagination
 func (s *InMemoryWalletStore) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int) ([]*wallet.Transaction, error) {
-	// Create a filter function for eligible credits
-	filterFn := func(ctx context.Context, t *wallet.Transaction, filter interface{}) bool {
+	var allCredits []*wallet.Transaction
+
+	// Get all eligible credits first
+	credits, err := s.transactions.List(ctx, nil, func(ctx context.Context, t *wallet.Transaction, filter interface{}) bool {
 		if t == nil {
 			return false
 		}
@@ -196,43 +199,41 @@ func (s *InMemoryWalletStore) FindEligibleCredits(ctx context.Context, walletID 
 		}
 
 		return true
+	}, nil)
+
+	if err != nil {
+		return nil, fmt.Errorf("query valid credits: %w", err)
 	}
 
-	// Sort by expiry date and credit amount
-	sortFn := func(i, j *wallet.Transaction) bool {
+	// Sort credits by expiry date (ascending) and credit amount (descending)
+	sort.Slice(credits, func(i, j int) bool {
 		// Sort by expiry date (nil dates come last)
-		if i.ExpiryDate == nil && j.ExpiryDate != nil {
+		if credits[i].ExpiryDate == nil && credits[j].ExpiryDate != nil {
 			return false
 		}
-		if i.ExpiryDate != nil && j.ExpiryDate == nil {
+		if credits[i].ExpiryDate != nil && credits[j].ExpiryDate == nil {
 			return true
 		}
-		if i.ExpiryDate != nil && j.ExpiryDate != nil && !i.ExpiryDate.Equal(*j.ExpiryDate) {
-			return i.ExpiryDate.Before(*j.ExpiryDate)
+		if credits[i].ExpiryDate != nil && credits[j].ExpiryDate != nil && !credits[i].ExpiryDate.Equal(*credits[j].ExpiryDate) {
+			return credits[i].ExpiryDate.Before(*credits[j].ExpiryDate)
 		}
 
 		// If expiry dates are equal or both nil, sort by credit amount (descending)
-		return i.CreditAmount.GreaterThan(j.CreditAmount)
-	}
+		return credits[i].CreditsAvailable.GreaterThan(credits[j].CreditsAvailable)
+	})
 
-	// Get all eligible credits
-	credits, err := s.transactions.List(ctx, nil, filterFn, sortFn)
-	if err != nil {
-		return nil, err
-	}
+	// Collect only enough credits to satisfy the required amount, respecting pageSize
+	var totalAvailable decimal.Decimal
+	for _, credit := range credits {
+		allCredits = append(allCredits, credit)
+		totalAvailable = totalAvailable.Add(credit.CreditsAvailable)
 
-	// Apply pagination
-	start := 0
-	end := len(credits)
-	if pageSize > 0 && start < end {
-		end = start + pageSize
-		if end > len(credits) {
-			end = len(credits)
+		if totalAvailable.GreaterThanOrEqual(requiredAmount) || len(allCredits) == pageSize {
+			break
 		}
-		credits = credits[start:end]
 	}
 
-	return credits, nil
+	return allCredits, nil
 }
 
 // ConsumeCredits processes debit operation across multiple credits

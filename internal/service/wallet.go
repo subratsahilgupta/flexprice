@@ -379,8 +379,8 @@ func (s *walletService) CreditWallet(ctx context.Context, req *wallet.WalletOper
 
 // validateWalletOperation validates the wallet operation request
 func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.WalletOperation) error {
-	if req.Type == "" {
-		return fmt.Errorf("transaction type is required")
+	if err := req.Validate(); err != nil {
+		return err
 	}
 
 	// Convert amount to credit amount if provided and perform credit operation
@@ -486,7 +486,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 		}
 
 		if req.Type == types.TransactionTypeCredit && req.ExpiryDate != nil {
-			tx.ExpiryDate = parseExpiryDate(req.ExpiryDate)
+			tx.ExpiryDate = types.ParseYYYYMMDDToDate(req.ExpiryDate)
 		}
 
 		if err := s.WalletRepo.CreateTransaction(ctx, tx); err != nil {
@@ -501,22 +501,4 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 		s.Logger.Debugw("Wallet operation completed")
 		return nil
 	})
-}
-
-// parseExpiryDate converts YYYYMMDD integer to time.Time with end of day time
-// for ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC
-// hence they will be available for use until 2024-12-31 23:59:59 UTC
-func parseExpiryDate(expiryDateInt *int) *time.Time {
-	if expiryDateInt == nil {
-		return nil
-	}
-
-	expiryTime := time.Date(
-		*expiryDateInt/10000,                   // year
-		time.Month((*expiryDateInt%10000)/100), // month
-		*expiryDateInt%100,                     // day
-		0, 0, 0, 0,                             // Set to end of day
-		time.UTC,
-	)
-	return &expiryTime
 }
