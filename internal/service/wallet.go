@@ -164,6 +164,8 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		Description:       req.Description,
 		Metadata:          req.Metadata,
 		TransactionReason: types.TransactionReasonFreeCredit,
+		ReferenceType:     types.WalletTxReferenceTypeRequest,
+		ReferenceID:       types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
 		ExpiryDate:        req.ExpiryDate,
 	}
 
@@ -173,6 +175,11 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		} else {
 			creditReq.TransactionReason = types.TransactionReasonPurchasedCreditDirect
 		}
+	}
+
+	if creditReq.ReferenceID == "" || creditReq.ReferenceType == "" {
+		creditReq.ReferenceID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION)
+		creditReq.ReferenceType = types.WalletTxReferenceTypeRequest
 	}
 
 	if err := s.CreditWallet(ctx, creditReq); err != nil {
@@ -299,9 +306,11 @@ func (s *walletService) TerminateWallet(ctx context.Context, walletID string) er
 				Type:              types.TransactionTypeDebit,
 				Description:       "Wallet termination - remaining balance debit",
 				TransactionReason: types.TransactionReasonWalletTermination,
+				ReferenceType:     types.WalletTxReferenceTypeRequest,
+				ReferenceID:       types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
 			}
 
-			if err := s.processWalletOperation(ctx, debitReq); err != nil {
+			if err := s.DebitWallet(ctx, debitReq); err != nil {
 				return fmt.Errorf("failed to debit wallet: %w", err)
 			}
 		}
@@ -363,6 +372,11 @@ func (s *walletService) DebitWallet(ctx context.Context, req *wallet.WalletOpera
 		return fmt.Errorf("invalid transaction type")
 	}
 
+	if req.ReferenceType == "" || req.ReferenceID == "" {
+		req.ReferenceType = types.WalletTxReferenceTypeRequest
+		req.ReferenceID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION)
+	}
+
 	return s.processWalletOperation(ctx, req)
 }
 
@@ -370,6 +384,11 @@ func (s *walletService) DebitWallet(ctx context.Context, req *wallet.WalletOpera
 func (s *walletService) CreditWallet(ctx context.Context, req *wallet.WalletOperation) error {
 	if req.Type != types.TransactionTypeCredit {
 		return fmt.Errorf("invalid transaction type")
+	}
+
+	if req.ReferenceType == "" || req.ReferenceID == "" {
+		req.ReferenceType = types.WalletTxReferenceTypeRequest
+		req.ReferenceID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION)
 	}
 
 	return s.processWalletOperation(ctx, req)
@@ -473,6 +492,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			Metadata:            req.Metadata,
 			TxStatus:            types.TransactionStatusCompleted,
 			TransactionReason:   req.TransactionReason,
+			ExpiryDate:          types.ParseYYYYMMDDToDate(req.ExpiryDate),
 			CreditBalanceBefore: w.CreditBalance,
 			CreditBalanceAfter:  newCreditBalance,
 			BaseModel:           types.GetDefaultBaseModel(ctx),

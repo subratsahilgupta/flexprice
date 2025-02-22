@@ -7074,6 +7074,14 @@ const docTemplate = `{
                 "purchased_credits": {
                     "description": "purchased_credits when true, the credits are added as purchased credits",
                     "type": "boolean"
+                },
+                "reference_id": {
+                    "description": "reference_id is the ID of the reference ex payment ID, invoice ID, request ID",
+                    "type": "string"
+                },
+                "reference_type": {
+                    "description": "reference_type is the type of the reference ex payment, invoice, request",
+                    "type": "string"
                 }
             }
         },
@@ -7586,9 +7594,6 @@ const docTemplate = `{
                 "amount": {
                     "type": "number"
                 },
-                "amount_used": {
-                    "type": "number"
-                },
                 "created_at": {
                     "type": "string"
                 },
@@ -7599,6 +7604,9 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "credit_balance_before": {
+                    "type": "number"
+                },
+                "credits_available": {
                     "type": "number"
                 },
                 "description": {
@@ -7617,7 +7625,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "reference_type": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.WalletTxReferenceType"
                 },
                 "transaction_reason": {
                     "$ref": "#/definitions/types.TransactionReason"
@@ -8325,6 +8333,21 @@ const docTemplate = `{
                 "WalletStatusActive",
                 "WalletStatusFrozen",
                 "WalletStatusClosed"
+            ]
+        },
+        "types.WalletTxReferenceType": {
+            "type": "string",
+            "enum": [
+                "INVOICE",
+                "PAYMENT",
+                "EXTERNAL",
+                "REQUEST"
+            ],
+            "x-enum-varnames": [
+                "WalletTxReferenceTypeInvoice",
+                "WalletTxReferenceTypePayment",
+                "WalletTxReferenceTypeExternal",
+                "WalletTxReferenceTypeRequest"
             ]
         },
         "types.WalletType": {

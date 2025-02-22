@@ -90,7 +90,7 @@ func transactionFilterFn(ctx context.Context, t *wallet.Transaction, filter inte
 
 	// Filter by reference type and ID
 	if f.ReferenceType != nil && f.ReferenceID != nil {
-		if t.ReferenceType != *f.ReferenceType || t.ReferenceID != *f.ReferenceID {
+		if string(t.ReferenceType) != string(*f.ReferenceType) || t.ReferenceID != *f.ReferenceID {
 			return false
 		}
 	}

@@ -184,22 +184,22 @@ func FromWallet(w *wallet.Wallet) *WalletResponse {
 
 // WalletTransactionResponse represents a wallet transaction in API responses
 type WalletTransactionResponse struct {
-	ID                  string                  `json:"id"`
-	WalletID            string                  `json:"wallet_id"`
-	Type                string                  `json:"type"`
-	Amount              decimal.Decimal         `json:"amount"`
-	CreditAmount        decimal.Decimal         `json:"credit_amount"`
-	CreditBalanceBefore decimal.Decimal         `json:"credit_balance_before"`
-	CreditBalanceAfter  decimal.Decimal         `json:"credit_balance_after"`
-	TransactionStatus   types.TransactionStatus `json:"transaction_status"`
-	ExpiryDate          *time.Time              `json:"expiry_date,omitempty"`
-	CreditsAvailable    decimal.Decimal         `json:"amount_used,omitempty"`
-	TransactionReason   types.TransactionReason `json:"transaction_reason,omitempty"`
-	ReferenceType       string                  `json:"reference_type,omitempty"`
-	ReferenceID         string                  `json:"reference_id,omitempty"`
-	Description         string                  `json:"description,omitempty"`
-	Metadata            types.Metadata          `json:"metadata,omitempty"`
-	CreatedAt           time.Time               `json:"created_at"`
+	ID                  string                      `json:"id"`
+	WalletID            string                      `json:"wallet_id"`
+	Type                string                      `json:"type"`
+	Amount              decimal.Decimal             `json:"amount"`
+	CreditAmount        decimal.Decimal             `json:"credit_amount"`
+	CreditBalanceBefore decimal.Decimal             `json:"credit_balance_before"`
+	CreditBalanceAfter  decimal.Decimal             `json:"credit_balance_after"`
+	TransactionStatus   types.TransactionStatus     `json:"transaction_status"`
+	ExpiryDate          *time.Time                  `json:"expiry_date,omitempty"`
+	CreditsAvailable    decimal.Decimal             `json:"credits_available,omitempty"`
+	TransactionReason   types.TransactionReason     `json:"transaction_reason,omitempty"`
+	ReferenceType       types.WalletTxReferenceType `json:"reference_type,omitempty"`
+	ReferenceID         string                      `json:"reference_id,omitempty"`
+	Description         string                      `json:"description,omitempty"`
+	Metadata            types.Metadata              `json:"metadata,omitempty"`
+	CreatedAt           time.Time                   `json:"created_at"`
 }
 
 // FromWalletTransaction converts a wallet transaction to a WalletTransactionResponse
@@ -241,6 +241,10 @@ type TopUpWalletRequest struct {
 	// for ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC
 	// hence they will be available for use until 2024-12-31 23:59:59 UTC
 	ExpiryDate *int `json:"expiry_date,omitempty"`
+	// reference_type is the type of the reference ex payment, invoice, request
+	ReferenceType string `json:"reference_type,omitempty"`
+	// reference_id is the ID of the reference ex payment ID, invoice ID, request ID
+	ReferenceID string `json:"reference_id,omitempty"`
 	// metadata to add any additional information about the transaction
 	Metadata types.Metadata `json:"metadata,omitempty"`
 }

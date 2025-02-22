@@ -16,13 +16,13 @@ type WalletOperation struct {
 	Amount decimal.Decimal `json:"amount"`
 	// CreditAmount is the amount of the transaction in the wallet's credit currency
 	// If both are provided, Amount is used
-	CreditAmount      decimal.Decimal         `json:"credit_amount"`
-	ReferenceType     string                  `json:"reference_type,omitempty"`
-	ReferenceID       string                  `json:"reference_id,omitempty"`
-	Description       string                  `json:"description,omitempty"`
-	Metadata          types.Metadata          `json:"metadata,omitempty"`
-	ExpiryDate        *int                    `json:"expiry_date,omitempty"` // YYYYMMDD format
-	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty"`
+	CreditAmount      decimal.Decimal             `json:"credit_amount"`
+	ReferenceType     types.WalletTxReferenceType `json:"reference_type,omitempty"`
+	ReferenceID       string                      `json:"reference_id,omitempty"`
+	Description       string                      `json:"description,omitempty"`
+	Metadata          types.Metadata              `json:"metadata,omitempty"`
+	ExpiryDate        *int                        `json:"expiry_date,omitempty"` // YYYYMMDD format
+	TransactionReason types.TransactionReason     `json:"transaction_reason,omitempty"`
 }
 
 func (w *WalletOperation) Validate() error {
@@ -35,6 +35,10 @@ func (w *WalletOperation) Validate() error {
 	}
 
 	if err := w.TransactionReason.Validate(); err != nil {
+		return err
+	}
+
+	if err := w.ReferenceType.Validate(); err != nil {
 		return err
 	}
 

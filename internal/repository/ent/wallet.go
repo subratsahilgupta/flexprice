@@ -225,7 +225,7 @@ func (r *walletRepository) CreateTransaction(ctx context.Context, tx *walletdoma
 		SetType(string(tx.Type)).
 		SetAmount(tx.Amount).
 		SetCreditAmount(tx.CreditAmount).
-		SetReferenceType(tx.ReferenceType).
+		SetReferenceType(string(tx.ReferenceType)).
 		SetReferenceID(tx.ReferenceID).
 		SetDescription(tx.Description).
 		SetMetadata(tx.Metadata).
@@ -233,6 +233,7 @@ func (r *walletRepository) CreateTransaction(ctx context.Context, tx *walletdoma
 		SetTransactionStatus(string(tx.TxStatus)).
 		SetTransactionReason(string(tx.TransactionReason)).
 		SetCreditsAvailable(tx.CreditsAvailable).
+		SetNillableExpiryDate(tx.ExpiryDate).
 		SetCreatedAt(tx.CreatedAt).
 		SetCreatedBy(tx.CreatedBy).
 		SetUpdatedAt(tx.UpdatedAt).

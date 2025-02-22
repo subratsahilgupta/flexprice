@@ -121,5 +121,6 @@ func (WalletTransaction) Indexes() []ent.Index {
 		index.Fields("tenant_id", "wallet_id", "type", "credits_available", "expiry_date").
 			StorageKey("idx_tenant_wallet_type_credits_available_expiry_date").
 			Annotations(entsql.IndexWhere("credits_available > 0 AND type = 'credit'")),
+		// TODO: Add unique index for reference type and ID
 	}
 }

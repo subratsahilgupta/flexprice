@@ -79,9 +79,15 @@ func (t TransactionReason) Validate() error {
 type WalletTxReferenceType string
 
 const (
-	WalletTxReferenceTypeInvoice  WalletTxReferenceType = "INVOICE"
-	WalletTxReferenceTypePayment  WalletTxReferenceType = "PAYMENT"
+	// WalletTxReferenceTypeInvoice is used for flexprice system invoice IDs
+	WalletTxReferenceTypeInvoice WalletTxReferenceType = "INVOICE"
+	// WalletTxReferenceTypePayment is used for flexprice system payment IDs
+	WalletTxReferenceTypePayment WalletTxReferenceType = "PAYMENT"
+	// WalletTxReferenceTypeExternal is used for external reference IDs in case
+	// the user wants to map a wallet transaction to their own reference ID
 	WalletTxReferenceTypeExternal WalletTxReferenceType = "EXTERNAL"
+	// WalletTxReferenceTypeRequest is used for auto generated reference IDs
+	WalletTxReferenceTypeRequest WalletTxReferenceType = "REQUEST"
 )
 
 func (t WalletTxReferenceType) Validate() error {
@@ -89,6 +95,7 @@ func (t WalletTxReferenceType) Validate() error {
 		string(WalletTxReferenceTypeInvoice),
 		string(WalletTxReferenceTypePayment),
 		string(WalletTxReferenceTypeExternal),
+		string(WalletTxReferenceTypeRequest),
 	}
 	if !lo.Contains(allowedValues, string(t)) {
 		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("invalid wallet transaction reference type: %s", t))

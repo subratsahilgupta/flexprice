@@ -146,7 +146,7 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 		WalletID:          selectedWallet.ID,
 		Type:              types.TransactionTypeDebit,
 		Amount:            paymentObj.Amount,
-		ReferenceType:     "PAYMENT",
+		ReferenceType:     types.WalletTxReferenceTypePayment,
 		ReferenceID:       paymentObj.ID,
 		Description:       fmt.Sprintf("Payment for invoice %s", paymentObj.DestinationID),
 		TransactionReason: types.TransactionReasonInvoicePayment,
