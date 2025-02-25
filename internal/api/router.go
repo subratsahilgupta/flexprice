@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rest/middleware"
+	"github.com/flexprice/flexprice/internal/service"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -35,7 +36,7 @@ type Handlers struct {
 	CronWallet       *cron.WalletCronHandler
 }
 
-func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
+func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService) *gin.Engine {
 	// gin.SetMode(gin.ReleaseMode)
 
 	router := gin.Default()
@@ -71,7 +72,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		v1Public.POST("/events/ingest", handlers.Events.IngestEvent)
 	}
 
-	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, logger))
+	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, logger))
 
 	v1Private := private.Group("/v1")
 	{
@@ -230,7 +231,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		// Admin routes (API Key only)
 		adminRoutes := v1Private.Group("/admin")
-		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, logger))
+		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, secretService, logger))
 		{
 			// All admin routes to go here
 		}

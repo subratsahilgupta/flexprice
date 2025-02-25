@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/secret"
+	"github.com/flexprice/flexprice/internal/cache"
 	domainSecret "github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -97,32 +98,50 @@ func (r *secretRepository) Get(ctx context.Context, id string) (*domainSecret.Se
 	return domainSecret.FromEnt(s), nil
 }
 
-func (r *secretRepository) VerifySecret(ctx context.Context, value string) (*domainSecret.Secret, error) {
+func (r *secretRepository) GetAPIKeyByValue(ctx context.Context, value string) (*domainSecret.Secret, error) {
+	// Generate cache key
+	cacheKey := cache.GenerateKey(cache.PrefixSecret, value)
+	memCache := cache.GetInMemoryCache()
+
+	// Try to get from cache first
+	if cachedValue, found := memCache.Get(ctx, cacheKey); found {
+		r.log.Debugw("cache hit", "key", cacheKey)
+		return cachedValue.(*domainSecret.Secret), nil
+	}
+
+	// Not found in cache, fetch from database
 	client := r.client.Querier(ctx)
 
-	r.log.Debugw("verifying secret")
+	// Get tenant ID from context, but don't require it for API key verification
+	tenantID := types.GetTenantID(ctx)
 
-	s, err := client.Secret.Query().
+	// Build query
+	query := client.Secret.Query().
 		Where(
 			secret.Value(value),
-			secret.TenantID(types.GetTenantID(ctx)),
 			secret.Status(string(types.StatusPublished)),
-		).
-		Only(ctx)
+			secret.Type(string(types.SecretTypePrivateKey)),
+		)
 
+	// Only filter by tenant ID if it's available
+	if tenantID != "" {
+		query = query.Where(secret.TenantID(tenantID))
+	}
+
+	s, err := query.Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, errors.Wrap(err, errors.ErrCodeNotFound, "invalid secret")
+			return nil, errors.Wrap(err, errors.ErrCodeNotFound, "invalid API key")
 		}
-		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to verify secret")
+		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to verify API key")
 	}
 
-	// Check if the secret has expired
-	if s.ExpiresAt != nil && s.ExpiresAt.Before(time.Now()) {
-		return nil, errors.New(errors.ErrCodeInvalidOperation, "secret has expired")
-	}
+	// Convert to domain model
+	result := domainSecret.FromEnt(s)
+	// Store in cache for future use (default expiry)
+	memCache.Set(ctx, cacheKey, result, cache.ExpiryDefaultInMemory)
 
-	return domainSecret.FromEnt(s), nil
+	return result, nil
 }
 
 func (r *secretRepository) UpdateLastUsed(ctx context.Context, id string) error {
@@ -130,6 +149,8 @@ func (r *secretRepository) UpdateLastUsed(ctx context.Context, id string) error 
 
 	r.log.Debugw("updating last used timestamp", "secret_id", id)
 
+	// Update without tenant ID check since this is called during API key verification
+	// where we might not have the tenant ID in the context yet
 	_, err := client.Secret.UpdateOneID(id).
 		SetLastUsedAt(time.Now().UTC()).
 		Save(ctx)
@@ -200,11 +221,16 @@ func (r *secretRepository) ListAll(ctx context.Context, filter *types.SecretFilt
 }
 
 func (r *secretRepository) Delete(ctx context.Context, id string) error {
-	client := r.client.Querier(ctx)
+	// Get the secret first to invalidate cache
+	secret, err := r.Get(ctx, id)
+	if err != nil {
+		return err
+	}
 
+	client := r.client.Querier(ctx)
 	r.log.Debugw("deleting secret", "secret_id", id)
 
-	err := client.Secret.UpdateOneID(id).
+	err = client.Secret.UpdateOneID(id).
 		SetStatus(string(types.StatusDeleted)).
 		Exec(ctx)
 
@@ -212,6 +238,9 @@ func (r *secretRepository) Delete(ctx context.Context, id string) error {
 		return errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to delete secret")
 	}
 
+	cacheKey := cache.GenerateKey(cache.PrefixSecret, secret.Value)
+	cache.GetInMemoryCache().Delete(ctx, cacheKey)
+	r.log.Debugw("deleted from cache", "key", cacheKey)
 	return nil
 }
 
@@ -289,7 +318,7 @@ func (o SecretQueryOptions) applyEntityQueryOptions(ctx context.Context, f *type
 		return query
 	}
 
-	// Apply feature IDs filter if specified
+	// Apply type filter if specified
 	if f.Type != nil {
 		query = query.Where(secret.Type(string(*f.Type)))
 	}

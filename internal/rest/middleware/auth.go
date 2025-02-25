@@ -8,16 +8,34 @@ import (
 	"github.com/flexprice/flexprice/internal/auth"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
 // validateAPIKey validates the API key and returns tenant ID and user ID if valid
-func validateAPIKey(cfg *config.Configuration, apiKey string) (tenantID, userID string, valid bool) {
+// First checks the config, then the database
+func validateAPIKey(ctx context.Context, cfg *config.Configuration, secretService service.SecretService, apiKey string) (tenantID, userID string, valid bool) {
 	if apiKey == "" {
 		return "", "", false
 	}
-	return auth.ValidateAPIKey(cfg, apiKey)
+
+	// First check in config
+	tenantID, userID, valid = auth.ValidateAPIKey(cfg, apiKey)
+	if valid {
+		return tenantID, userID, true
+	}
+
+	// If not found in config, check in database
+	if secretService != nil {
+		secretEntity, err := secretService.VerifyAPIKey(ctx, apiKey)
+		if err == nil && secretEntity != nil {
+			// Use the tenant ID from the secret and the creator as the user ID
+			return secretEntity.TenantID, secretEntity.CreatedBy, true
+		}
+	}
+
+	return "", "", false
 }
 
 // setContextValues sets the tenant ID and user ID in the context
@@ -42,10 +60,10 @@ func GuestAuthenticateMiddleware(c *gin.Context) {
 }
 
 // APIKeyAuthMiddleware is a middleware that only allows requests with valid API keys
-func APIKeyAuthMiddleware(cfg *config.Configuration, logger *logger.Logger) gin.HandlerFunc {
+func APIKeyAuthMiddleware(cfg *config.Configuration, secretService service.SecretService, logger *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		apiKey := c.GetHeader(cfg.Auth.APIKey.Header)
-		tenantID, userID, valid := validateAPIKey(cfg, apiKey)
+		tenantID, userID, valid := validateAPIKey(c.Request.Context(), cfg, secretService, apiKey)
 		if !valid {
 			logger.Debugw("invalid api key")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid API key"})
@@ -61,13 +79,13 @@ func APIKeyAuthMiddleware(cfg *config.Configuration, logger *logger.Logger) gin.
 // AuthenticateMiddleware is a middleware that authenticates requests based on either:
 // 1. JWT token in the Authorization header as a Bearer token
 // 2. API key in the x-api-key header (or configured header name)
-func AuthenticateMiddleware(cfg *config.Configuration, logger *logger.Logger) gin.HandlerFunc {
+func AuthenticateMiddleware(cfg *config.Configuration, secretService service.SecretService, logger *logger.Logger) gin.HandlerFunc {
 	authProvider := auth.NewProvider(cfg)
 
 	return func(c *gin.Context) {
 		// First check for API key
 		apiKey := c.GetHeader(cfg.Auth.APIKey.Header)
-		tenantID, userID, valid := validateAPIKey(cfg, apiKey)
+		tenantID, userID, valid := validateAPIKey(c.Request.Context(), cfg, secretService, apiKey)
 		if valid {
 			setContextValues(c, tenantID, userID)
 			c.Next()

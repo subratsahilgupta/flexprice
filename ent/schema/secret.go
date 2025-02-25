@@ -71,8 +71,8 @@ func (Secret) Edges() []ent.Edge {
 func (Secret) Indexes() []ent.Index {
 	return []ent.Index{
 		// Primary query patterns
+		index.Fields("type", "value", "status"), // API keys are queried by type and status
 		index.Fields("tenant_id", "type", "provider", "status"),
-		index.Fields("tenant_id", "value"),
 
 		// Unique constraints
 		index.Fields("tenant_id", "provider", "type").

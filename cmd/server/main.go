@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api"
 	"github.com/flexprice/flexprice/internal/api/cron"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/dynamodb"
@@ -65,6 +66,9 @@ func main() {
 			// Monitoring
 			sentry.NewSentryService,
 
+			// Cache
+			cache.Initialize,
+
 			// DB
 			postgres.NewDB,
 			postgres.NewEntClient,
@@ -101,6 +105,7 @@ func main() {
 			repository.NewEntitlementRepository,
 			repository.NewPaymentRepository,
 			repository.NewTaskRepository,
+			repository.NewSecretRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -204,8 +209,8 @@ func provideHandlers(
 	}
 }
 
-func provideRouter(handlers api.Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
-	return api.NewRouter(handlers, cfg, logger)
+func provideRouter(handlers api.Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService) *gin.Engine {
+	return api.NewRouter(handlers, cfg, logger, secretService)
 }
 
 func provideTemporalConfig(cfg *config.Configuration) *config.TemporalConfig {

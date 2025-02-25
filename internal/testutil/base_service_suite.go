@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/customer"
@@ -76,6 +77,9 @@ func (s *BaseServiceTestSuite) SetupSuite() {
 	if err != nil {
 		s.T().Fatalf("failed to create logger: %v", err)
 	}
+
+	// Initialize cache
+	cache.Initialize(s.logger)
 }
 
 // SetupTest is called before each test

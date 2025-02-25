@@ -111,7 +111,7 @@ func (s *InMemorySecretStore) Delete(ctx context.Context, id string) error {
 	return s.InMemoryStore.Delete(ctx, id)
 }
 
-func (s *InMemorySecretStore) VerifySecret(ctx context.Context, value string) (*secret.Secret, error) {
+func (s *InMemorySecretStore) GetAPIKeyByValue(ctx context.Context, value string) (*secret.Secret, error) {
 	secrets, err := s.ListAll(ctx, &types.SecretFilter{
 		QueryFilter: types.NewDefaultQueryFilter(),
 	})
@@ -120,7 +120,7 @@ func (s *InMemorySecretStore) VerifySecret(ctx context.Context, value string) (*
 	}
 
 	for _, secret := range secrets {
-		if secret.Value == value && secret.Status == types.StatusPublished {
+		if secret.Value == value && secret.Status == types.StatusPublished && secret.Type == types.SecretTypePrivateKey {
 			return secret, nil
 		}
 	}

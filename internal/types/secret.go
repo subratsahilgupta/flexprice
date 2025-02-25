@@ -67,11 +67,9 @@ func (f *SecretFilter) Validate() error {
 	}
 
 	if f.QueryFilter == nil {
-		f.QueryFilter = NewDefaultQueryFilter()
-	}
-
-	if err := f.QueryFilter.Validate(); err != nil {
-		return err
+		if err := f.QueryFilter.Validate(); err != nil {
+			return err
+		}
 	}
 
 	if f.TimeRangeFilter != nil {
@@ -81,20 +79,20 @@ func (f *SecretFilter) Validate() error {
 	}
 
 	if !f.GetExpand().IsEmpty() {
-		if err := f.GetExpand().Validate(FeatureExpandConfig); err != nil {
+		if err := f.GetExpand().Validate(SecretExpandConfig); err != nil {
 			return err
 		}
 	}
 
 	if f.Type != nil {
-		if *f.Type != "api_key" && *f.Type != "integration" {
-			return errors.Wrap(errors.ErrValidation, errors.ErrCodeInvalidOperation, "invalid type")
+		if err := f.Type.Validate(); err != nil {
+			return err
 		}
 	}
 
 	if f.Provider != nil {
-		if *f.Provider != "flexprice" && *f.Provider != "stripe" {
-			return errors.Wrap(errors.ErrValidation, errors.ErrCodeInvalidOperation, "invalid provider")
+		if err := f.Provider.Validate(); err != nil {
+			return err
 		}
 	}
 

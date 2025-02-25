@@ -603,14 +603,14 @@ var (
 		PrimaryKey: []*schema.Column{SecretsColumns[0]},
 		Indexes: []*schema.Index{
 			{
+				Name:    "secret_type_value_status",
+				Unique:  false,
+				Columns: []*schema.Column{SecretsColumns[8], SecretsColumns[10], SecretsColumns[2]},
+			},
+			{
 				Name:    "secret_tenant_id_type_provider_status",
 				Unique:  false,
 				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[8], SecretsColumns[9], SecretsColumns[2]},
-			},
-			{
-				Name:    "secret_tenant_id_value",
-				Unique:  false,
-				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[10]},
 			},
 			{
 				Name:    "unique_tenant_provider_type",

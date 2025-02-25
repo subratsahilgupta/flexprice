@@ -26,8 +26,8 @@ type Repository interface {
 	// Delete deletes a secret by ID
 	Delete(ctx context.Context, id string) error
 
-	// VerifySecret verifies if a secret value is valid
-	VerifySecret(ctx context.Context, value string) (*Secret, error)
+	// GetAPIKeyByValue retrieves an API key by value
+	GetAPIKeyByValue(ctx context.Context, value string) (*Secret, error)
 
 	// UpdateLastUsed updates the last used timestamp of a secret
 	UpdateLastUsed(ctx context.Context, id string) error

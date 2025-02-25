@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -32,18 +34,25 @@ type SecretService interface {
 type secretService struct {
 	repo              secret.Repository
 	encryptionService security.EncryptionService
+	config            *config.Configuration
 	logger            *logger.Logger
 }
 
 // NewSecretService creates a new secret service
 func NewSecretService(
 	repo secret.Repository,
-	encryptionService security.EncryptionService,
+	config *config.Configuration,
 	logger *logger.Logger,
 ) SecretService {
+	encryptionService, err := security.NewEncryptionService(config, logger)
+	if err != nil {
+		logger.Fatalw("failed to create encryption service", "error", err)
+	}
+
 	return &secretService{
 		repo:              repo,
 		encryptionService: encryptionService,
+		config:            config,
 		logger:            logger,
 	}
 }
@@ -228,7 +237,7 @@ func (s *secretService) VerifyAPIKey(ctx context.Context, apiKey string) (*secre
 	hashedKey := s.encryptionService.Hash(apiKey)
 
 	// Get secret by value
-	secretEntity, err := s.repo.VerifySecret(ctx, hashedKey)
+	secretEntity, err := s.repo.GetAPIKeyByValue(ctx, hashedKey)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "invalid API key")
 	}
@@ -236,6 +245,21 @@ func (s *secretService) VerifyAPIKey(ctx context.Context, apiKey string) (*secre
 	// Check if expired
 	if secretEntity.IsExpired() {
 		return nil, errors.New(errors.ErrCodeValidation, "API key has expired")
+	}
+
+	// Check if secret is active
+	if !secretEntity.IsActive() {
+		return nil, errors.New(errors.ErrCodeValidation, "API key is not active")
+	}
+
+	// Check if secret is an API key
+	if !secretEntity.IsAPIKey() {
+		return nil, errors.New(errors.ErrCodeValidation, "invalid API key type")
+	}
+
+	// Check if the secret has expired
+	if secretEntity.ExpiresAt != nil && secretEntity.ExpiresAt.Before(time.Now()) {
+		return nil, errors.New(errors.ErrCodeInvalidOperation, "secret has expired")
 	}
 
 	// Update last used timestamp
