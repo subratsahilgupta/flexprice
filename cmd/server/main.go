@@ -127,6 +127,7 @@ func main() {
 			// Business services
 			service.NewMeterService,
 			service.NewEventService,
+			service.NewEnvironmentService,
 			service.NewPriceService,
 			service.NewCustomerService,
 			service.NewPlanService,
@@ -163,6 +164,7 @@ func provideHandlers(
 	logger *logger.Logger,
 	meterService service.MeterService,
 	eventService service.EventService,
+	environmentService service.EnvironmentService,
 	authService service.AuthService,
 	userService service.UserService,
 	priceService service.PriceService,
@@ -184,6 +186,7 @@ func provideHandlers(
 		Meter:            v1.NewMeterHandler(meterService, logger),
 		Auth:             v1.NewAuthHandler(cfg, authService, logger),
 		User:             v1.NewUserHandler(userService, logger),
+		Environment:      v1.NewEnvironmentHandler(environmentService, logger),
 		Health:           v1.NewHealthHandler(logger),
 		Price:            v1.NewPriceHandler(priceService, logger),
 		Customer:         v1.NewCustomerHandler(customerService, logger),
