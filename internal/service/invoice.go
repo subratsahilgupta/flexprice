@@ -73,7 +73,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		existing, err := s.InvoiceRepo.GetByIdempotencyKey(tx, idempKey)
 
 		if err != nil && !ierr.IsNotFound(err) {
-			return err
+			return ierr.WithError(err).WithHint("failed to check idempotency").Mark(ierr.ErrDatabase)
 		}
 		if existing != nil {
 			s.Logger.Infow("returning existing invoice for idempotency key",
