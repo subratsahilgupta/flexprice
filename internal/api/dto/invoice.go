@@ -2,7 +2,6 @@ package dto
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +11,8 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/go-playground/validator/v10"
 	"github.com/shopspring/decimal"
+
+	"github.com/cockroachdb/errors"
 )
 
 // CreateInvoiceRequest represents the request to create a new invoice

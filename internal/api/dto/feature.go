@@ -2,10 +2,13 @@ package dto
 
 import (
 	"context"
-	"errors"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/flexprice/flexprice/internal/domain/feature"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/go-playground/validator/v10"
 )
 
 type CreateFeatureRequest struct {
@@ -21,25 +24,33 @@ type CreateFeatureRequest struct {
 
 func (r *CreateFeatureRequest) Validate() error {
 	if r.Name == "" {
-		return errors.New("name is required")
+		return ierr.NewError("name is required").WithHintf("name is required").Mark(ierr.ErrValidation)
 	}
 
 	if r.LookupKey == "" {
-		return errors.New("lookup_key is required")
+		return ierr.NewError("lookup_key is required").WithHintf("lookup_key is required").Mark(ierr.ErrValidation)
 	}
 
 	if err := r.Type.Validate(); err != nil {
-		return err
+		details := map[string]any{}
+		var validateErrs validator.ValidationErrors
+		if errors.As(err, &validateErrs) {
+			for _, err := range validateErrs {
+				details[err.Field()] = err.Error()
+			}
+		}
+
+		return ierr.WithError(err).WithHint("struct validation failed").WithReportableDetails(details).Mark(ierr.ErrValidation)
 	}
 
 	if r.Type == types.FeatureTypeMetered {
 		if r.MeterID == "" {
-			return errors.New("meter_id is required for meter features")
+			return ierr.NewError("meter_id is required for meter features").WithHint("meter_id is required for meter features").Mark(ierr.ErrValidation)
 		}
 	}
 
 	if (r.UnitSingular == "" && r.UnitPlural != "") || (r.UnitPlural == "" && r.UnitSingular != "") {
-		return errors.New("unit_singular and unit_plural must be set together")
+		return ierr.NewError("unit_singular and unit_plural must be set together").WithHint("unit_singular and unit_plural must be set together").Mark(ierr.ErrValidation)
 	}
 
 	return nil
