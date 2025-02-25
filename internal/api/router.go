@@ -17,6 +17,7 @@ type Handlers struct {
 	Meter        *v1.MeterHandler
 	Auth         *v1.AuthHandler
 	User         *v1.UserHandler
+	Environment  *v1.EnvironmentHandler
 	Health       *v1.HealthHandler
 	Price        *v1.PriceHandler
 	Customer     *v1.CustomerHandler
@@ -77,6 +78,14 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		user := v1Private.Group("/users")
 		{
 			user.GET("/me", handlers.User.GetUserInfo)
+		}
+
+		environment := v1Private.Group("/environments")
+		{
+			environment.POST("", handlers.Environment.CreateEnvironment)
+			environment.GET("", handlers.Environment.GetEnvironments)
+			environment.GET("/:id", handlers.Environment.GetEnvironment)
+			environment.PUT("/:id", handlers.Environment.UpdateEnvironment)
 		}
 
 		// Events routes
