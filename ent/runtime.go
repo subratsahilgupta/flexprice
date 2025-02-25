@@ -18,6 +18,7 @@ import (
 	"github.com/flexprice/flexprice/ent/plan"
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/schema"
+	"github.com/flexprice/flexprice/ent/secret"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/task"
@@ -514,6 +515,45 @@ func init() {
 	priceDescBillingCadence := priceFields[9].Descriptor()
 	// price.BillingCadenceValidator is a validator for the "billing_cadence" field. It is called by the builders before save.
 	price.BillingCadenceValidator = priceDescBillingCadence.Validators[0].(func(string) error)
+	secretMixin := schema.Secret{}.Mixin()
+	secretMixinFields0 := secretMixin[0].Fields()
+	_ = secretMixinFields0
+	secretFields := schema.Secret{}.Fields()
+	_ = secretFields
+	// secretDescTenantID is the schema descriptor for tenant_id field.
+	secretDescTenantID := secretMixinFields0[0].Descriptor()
+	// secret.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	secret.TenantIDValidator = secretDescTenantID.Validators[0].(func(string) error)
+	// secretDescStatus is the schema descriptor for status field.
+	secretDescStatus := secretMixinFields0[1].Descriptor()
+	// secret.DefaultStatus holds the default value on creation for the status field.
+	secret.DefaultStatus = secretDescStatus.Default.(string)
+	// secretDescCreatedAt is the schema descriptor for created_at field.
+	secretDescCreatedAt := secretMixinFields0[2].Descriptor()
+	// secret.DefaultCreatedAt holds the default value on creation for the created_at field.
+	secret.DefaultCreatedAt = secretDescCreatedAt.Default.(func() time.Time)
+	// secretDescUpdatedAt is the schema descriptor for updated_at field.
+	secretDescUpdatedAt := secretMixinFields0[3].Descriptor()
+	// secret.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	secret.DefaultUpdatedAt = secretDescUpdatedAt.Default.(func() time.Time)
+	// secret.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	secret.UpdateDefaultUpdatedAt = secretDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// secretDescName is the schema descriptor for name field.
+	secretDescName := secretFields[1].Descriptor()
+	// secret.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	secret.NameValidator = secretDescName.Validators[0].(func(string) error)
+	// secretDescType is the schema descriptor for type field.
+	secretDescType := secretFields[2].Descriptor()
+	// secret.TypeValidator is a validator for the "type" field. It is called by the builders before save.
+	secret.TypeValidator = secretDescType.Validators[0].(func(string) error)
+	// secretDescProvider is the schema descriptor for provider field.
+	secretDescProvider := secretFields[3].Descriptor()
+	// secret.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	secret.ProviderValidator = secretDescProvider.Validators[0].(func(string) error)
+	// secretDescPermissions is the schema descriptor for permissions field.
+	secretDescPermissions := secretFields[6].Descriptor()
+	// secret.DefaultPermissions holds the default value on creation for the permissions field.
+	secret.DefaultPermissions = secretDescPermissions.Default.([]string)
 	subscriptionMixin := schema.Subscription{}.Mixin()
 	subscriptionMixinFields0 := subscriptionMixin[0].Fields()
 	_ = subscriptionMixinFields0

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/customer"
@@ -15,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/task"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
@@ -45,6 +47,7 @@ type Stores struct {
 	EntitlementRepo  entitlement.Repository
 	FeatureRepo      feature.Repository
 	TaskRepo         task.Repository
+	SecretRepo       secret.Repository
 }
 
 // BaseServiceTestSuite provides common functionality for all service test suites
@@ -74,6 +77,9 @@ func (s *BaseServiceTestSuite) SetupSuite() {
 	if err != nil {
 		s.T().Fatalf("failed to create logger: %v", err)
 	}
+
+	// Initialize cache
+	cache.Initialize(s.logger)
 }
 
 // SetupTest is called before each test
@@ -112,6 +118,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 		EntitlementRepo:  NewInMemoryEntitlementStore(),
 		FeatureRepo:      NewInMemoryFeatureStore(),
 		TaskRepo:         NewInMemoryTaskStore(),
+		SecretRepo:       NewInMemorySecretStore(),
 	}
 
 	s.db = NewMockPostgresClient(s.logger)
@@ -141,6 +148,7 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.EntitlementRepo.(*InMemoryEntitlementStore).Clear()
 	s.stores.FeatureRepo.(*InMemoryFeatureStore).Clear()
 	s.stores.TaskRepo.(*InMemoryTaskStore).Clear()
+	s.stores.SecretRepo.(*InMemorySecretStore).Clear()
 }
 
 func (s *BaseServiceTestSuite) ClearStores() {

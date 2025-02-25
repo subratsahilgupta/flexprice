@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rest/middleware"
+	"github.com/flexprice/flexprice/internal/service"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -30,12 +31,13 @@ type Handlers struct {
 	Entitlement  *v1.EntitlementHandler
 	Payment      *v1.PaymentHandler
 	Task         *v1.TaskHandler
+	Secret       *v1.SecretHandler
 	// Cron jobs : TODO: move crons out of API based architecture
 	CronSubscription *cron.SubscriptionHandler
 	CronWallet       *cron.WalletCronHandler
 }
 
-func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
+func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService) *gin.Engine {
 	// gin.SetMode(gin.ReleaseMode)
 
 	router := gin.Default()
@@ -71,7 +73,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		v1Public.POST("/events/ingest", handlers.Events.IngestEvent)
 	}
 
-	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, logger))
+	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, logger))
 
 	v1Private := private.Group("/v1")
 	{
@@ -216,9 +218,29 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			tasks.POST("/:id/process", handlers.Task.ProcessTask)
 		}
 
+		// Secret routes
+		secrets := v1Private.Group("/secrets")
+		{
+			// API Key routes
+			apiKeys := secrets.Group("/api/keys")
+			{
+				apiKeys.GET("", handlers.Secret.ListAPIKeys)
+				apiKeys.POST("", handlers.Secret.CreateAPIKey)
+				apiKeys.DELETE("/:id", handlers.Secret.DeleteAPIKey)
+			}
+
+			// Integration routes
+			integrations := secrets.Group("/integrations")
+			{
+				integrations.POST("/:provider", handlers.Secret.CreateIntegration)
+				integrations.GET("/:provider", handlers.Secret.GetIntegration)
+				integrations.DELETE("/:provider", handlers.Secret.DeleteIntegration)
+			}
+		}
+
 		// Admin routes (API Key only)
 		adminRoutes := v1Private.Group("/admin")
-		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, logger))
+		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, secretService, logger))
 		{
 			// All admin routes to go here
 		}

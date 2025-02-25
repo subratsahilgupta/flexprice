@@ -27,6 +27,7 @@ import (
 	"github.com/flexprice/flexprice/ent/paymentattempt"
 	"github.com/flexprice/flexprice/ent/plan"
 	"github.com/flexprice/flexprice/ent/price"
+	"github.com/flexprice/flexprice/ent/secret"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/task"
@@ -65,6 +66,8 @@ type Client struct {
 	Plan *PlanClient
 	// Price is the client for interacting with the Price builders.
 	Price *PriceClient
+	// Secret is the client for interacting with the Secret builders.
+	Secret *SecretClient
 	// Subscription is the client for interacting with the Subscription builders.
 	Subscription *SubscriptionClient
 	// SubscriptionLineItem is the client for interacting with the SubscriptionLineItem builders.
@@ -98,6 +101,7 @@ func (c *Client) init() {
 	c.PaymentAttempt = NewPaymentAttemptClient(c.config)
 	c.Plan = NewPlanClient(c.config)
 	c.Price = NewPriceClient(c.config)
+	c.Secret = NewSecretClient(c.config)
 	c.Subscription = NewSubscriptionClient(c.config)
 	c.SubscriptionLineItem = NewSubscriptionLineItemClient(c.config)
 	c.Task = NewTaskClient(c.config)
@@ -207,6 +211,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		PaymentAttempt:       NewPaymentAttemptClient(cfg),
 		Plan:                 NewPlanClient(cfg),
 		Price:                NewPriceClient(cfg),
+		Secret:               NewSecretClient(cfg),
 		Subscription:         NewSubscriptionClient(cfg),
 		SubscriptionLineItem: NewSubscriptionLineItemClient(cfg),
 		Task:                 NewTaskClient(cfg),
@@ -243,6 +248,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		PaymentAttempt:       NewPaymentAttemptClient(cfg),
 		Plan:                 NewPlanClient(cfg),
 		Price:                NewPriceClient(cfg),
+		Secret:               NewSecretClient(cfg),
 		Subscription:         NewSubscriptionClient(cfg),
 		SubscriptionLineItem: NewSubscriptionLineItemClient(cfg),
 		Task:                 NewTaskClient(cfg),
@@ -279,8 +285,8 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.BillingSequence, c.Customer, c.Entitlement, c.Feature, c.Invoice,
 		c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt,
-		c.Plan, c.Price, c.Subscription, c.SubscriptionLineItem, c.Task, c.Wallet,
-		c.WalletTransaction,
+		c.Plan, c.Price, c.Secret, c.Subscription, c.SubscriptionLineItem, c.Task,
+		c.Wallet, c.WalletTransaction,
 	} {
 		n.Use(hooks...)
 	}
@@ -292,8 +298,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.BillingSequence, c.Customer, c.Entitlement, c.Feature, c.Invoice,
 		c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt,
-		c.Plan, c.Price, c.Subscription, c.SubscriptionLineItem, c.Task, c.Wallet,
-		c.WalletTransaction,
+		c.Plan, c.Price, c.Secret, c.Subscription, c.SubscriptionLineItem, c.Task,
+		c.Wallet, c.WalletTransaction,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -326,6 +332,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Plan.mutate(ctx, m)
 	case *PriceMutation:
 		return c.Price.mutate(ctx, m)
+	case *SecretMutation:
+		return c.Secret.mutate(ctx, m)
 	case *SubscriptionMutation:
 		return c.Subscription.mutate(ctx, m)
 	case *SubscriptionLineItemMutation:
@@ -2033,6 +2041,139 @@ func (c *PriceClient) mutate(ctx context.Context, m *PriceMutation) (Value, erro
 	}
 }
 
+// SecretClient is a client for the Secret schema.
+type SecretClient struct {
+	config
+}
+
+// NewSecretClient returns a client for the Secret from the given config.
+func NewSecretClient(c config) *SecretClient {
+	return &SecretClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `secret.Hooks(f(g(h())))`.
+func (c *SecretClient) Use(hooks ...Hook) {
+	c.hooks.Secret = append(c.hooks.Secret, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `secret.Intercept(f(g(h())))`.
+func (c *SecretClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Secret = append(c.inters.Secret, interceptors...)
+}
+
+// Create returns a builder for creating a Secret entity.
+func (c *SecretClient) Create() *SecretCreate {
+	mutation := newSecretMutation(c.config, OpCreate)
+	return &SecretCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Secret entities.
+func (c *SecretClient) CreateBulk(builders ...*SecretCreate) *SecretCreateBulk {
+	return &SecretCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SecretClient) MapCreateBulk(slice any, setFunc func(*SecretCreate, int)) *SecretCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SecretCreateBulk{err: fmt.Errorf("calling to SecretClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SecretCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SecretCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Secret.
+func (c *SecretClient) Update() *SecretUpdate {
+	mutation := newSecretMutation(c.config, OpUpdate)
+	return &SecretUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SecretClient) UpdateOne(s *Secret) *SecretUpdateOne {
+	mutation := newSecretMutation(c.config, OpUpdateOne, withSecret(s))
+	return &SecretUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SecretClient) UpdateOneID(id string) *SecretUpdateOne {
+	mutation := newSecretMutation(c.config, OpUpdateOne, withSecretID(id))
+	return &SecretUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Secret.
+func (c *SecretClient) Delete() *SecretDelete {
+	mutation := newSecretMutation(c.config, OpDelete)
+	return &SecretDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SecretClient) DeleteOne(s *Secret) *SecretDeleteOne {
+	return c.DeleteOneID(s.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SecretClient) DeleteOneID(id string) *SecretDeleteOne {
+	builder := c.Delete().Where(secret.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SecretDeleteOne{builder}
+}
+
+// Query returns a query builder for Secret.
+func (c *SecretClient) Query() *SecretQuery {
+	return &SecretQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSecret},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Secret entity by its id.
+func (c *SecretClient) Get(ctx context.Context, id string) (*Secret, error) {
+	return c.Query().Where(secret.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SecretClient) GetX(ctx context.Context, id string) *Secret {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SecretClient) Hooks() []Hook {
+	return c.hooks.Secret
+}
+
+// Interceptors returns the client interceptors.
+func (c *SecretClient) Interceptors() []Interceptor {
+	return c.inters.Secret
+}
+
+func (c *SecretClient) mutate(ctx context.Context, m *SecretMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SecretCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SecretUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SecretUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SecretDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Secret mutation op: %q", m.Op())
+	}
+}
+
 // SubscriptionClient is a client for the Subscription schema.
 type SubscriptionClient struct {
 	config
@@ -2734,13 +2875,14 @@ func (c *WalletTransactionClient) mutate(ctx context.Context, m *WalletTransacti
 type (
 	hooks struct {
 		BillingSequence, Customer, Entitlement, Feature, Invoice, InvoiceLineItem,
-		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, Subscription,
-		SubscriptionLineItem, Task, Wallet, WalletTransaction []ent.Hook
+		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, Secret,
+		Subscription, SubscriptionLineItem, Task, Wallet, WalletTransaction []ent.Hook
 	}
 	inters struct {
 		BillingSequence, Customer, Entitlement, Feature, Invoice, InvoiceLineItem,
-		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, Subscription,
-		SubscriptionLineItem, Task, Wallet, WalletTransaction []ent.Interceptor
+		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, Secret,
+		Subscription, SubscriptionLineItem, Task, Wallet,
+		WalletTransaction []ent.Interceptor
 	}
 )
 

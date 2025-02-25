@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api"
 	"github.com/flexprice/flexprice/internal/api/cron"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/dynamodb"
@@ -65,6 +66,9 @@ func main() {
 			// Monitoring
 			sentry.NewSentryService,
 
+			// Cache
+			cache.Initialize,
+
 			// DB
 			postgres.NewDB,
 			postgres.NewEntClient,
@@ -101,6 +105,7 @@ func main() {
 			repository.NewEntitlementRepository,
 			repository.NewPaymentRepository,
 			repository.NewTaskRepository,
+			repository.NewSecretRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -139,6 +144,7 @@ func main() {
 			service.NewPaymentService,
 			service.NewPaymentProcessorService,
 			service.NewTaskService,
+			service.NewSecretService,
 		),
 	)
 
@@ -180,6 +186,7 @@ func provideHandlers(
 	paymentService service.PaymentService,
 	paymentProcessorService service.PaymentProcessorService,
 	taskService service.TaskService,
+	secretService service.SecretService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:           v1.NewEventsHandler(eventService, logger),
@@ -199,13 +206,14 @@ func provideHandlers(
 		Entitlement:      v1.NewEntitlementHandler(entitlementService, logger),
 		Payment:          v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
 		Task:             v1.NewTaskHandler(taskService, logger),
+		Secret:           v1.NewSecretHandler(secretService, logger),
 		CronSubscription: cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
 		CronWallet:       cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService),
 	}
 }
 
-func provideRouter(handlers api.Handlers, cfg *config.Configuration, logger *logger.Logger) *gin.Engine {
-	return api.NewRouter(handlers, cfg, logger)
+func provideRouter(handlers api.Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService) *gin.Engine {
+	return api.NewRouter(handlers, cfg, logger, secretService)
 }
 
 func provideTemporalConfig(cfg *config.Configuration) *config.TemporalConfig {

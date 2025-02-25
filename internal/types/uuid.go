@@ -42,4 +42,5 @@ const (
 	UUID_PREFIX_PAYMENT                = "pay"
 	UUID_PREFIX_PAYMENT_ATTEMPT        = "attempt"
 	UUID_PREFIX_TASK                   = "task"
+	UUID_PREFIX_SECRET                 = "secret"
 )

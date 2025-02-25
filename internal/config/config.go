@@ -28,6 +28,7 @@ type Configuration struct {
 	DynamoDB   DynamoDBConfig   `validate:"required"`
 	Temporal   TemporalConfig   `validate:"required"`
 	Webhook    Webhook
+	Secrets    SecretsConfig `validate:"required"`
 }
 
 type DeploymentConfig struct {
@@ -111,6 +112,10 @@ type TemporalConfig struct {
 	Namespace  string `mapstructure:"namespace" validate:"required"`
 	APIKey     string `mapstructure:"api_key"`
 	APIKeyName string `mapstructure:"api_key_name"`
+}
+
+type SecretsConfig struct {
+	EncryptionKey string `mapstructure:"encryption_key" validate:"required"`
 }
 
 func NewConfig() (*Configuration, error) {

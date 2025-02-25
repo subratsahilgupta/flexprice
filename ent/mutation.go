@@ -25,6 +25,7 @@ import (
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/schema"
+	"github.com/flexprice/flexprice/ent/secret"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/task"
@@ -55,6 +56,7 @@ const (
 	TypePaymentAttempt       = "PaymentAttempt"
 	TypePlan                 = "Plan"
 	TypePrice                = "Price"
+	TypeSecret               = "Secret"
 	TypeSubscription         = "Subscription"
 	TypeSubscriptionLineItem = "SubscriptionLineItem"
 	TypeTask                 = "Task"
@@ -15756,6 +15758,1266 @@ func (m *PriceMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *PriceMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Price edge %s", name)
+}
+
+// SecretMutation represents an operation that mutates the Secret nodes in the graph.
+type SecretMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *string
+	tenant_id         *string
+	status            *string
+	created_at        *time.Time
+	updated_at        *time.Time
+	created_by        *string
+	updated_by        *string
+	name              *string
+	_type             *string
+	provider          *string
+	value             *string
+	display_id        *string
+	permissions       *[]string
+	appendpermissions []string
+	expires_at        *time.Time
+	last_used_at      *time.Time
+	provider_data     *map[string]string
+	clearedFields     map[string]struct{}
+	done              bool
+	oldValue          func(context.Context) (*Secret, error)
+	predicates        []predicate.Secret
+}
+
+var _ ent.Mutation = (*SecretMutation)(nil)
+
+// secretOption allows management of the mutation configuration using functional options.
+type secretOption func(*SecretMutation)
+
+// newSecretMutation creates new mutation for the Secret entity.
+func newSecretMutation(c config, op Op, opts ...secretOption) *SecretMutation {
+	m := &SecretMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeSecret,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withSecretID sets the ID field of the mutation.
+func withSecretID(id string) secretOption {
+	return func(m *SecretMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *Secret
+		)
+		m.oldValue = func(ctx context.Context) (*Secret, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().Secret.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withSecret sets the old Secret of the mutation.
+func withSecret(node *Secret) secretOption {
+	return func(m *SecretMutation) {
+		m.oldValue = func(context.Context) (*Secret, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m SecretMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m SecretMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of Secret entities.
+func (m *SecretMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *SecretMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *SecretMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().Secret.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetTenantID sets the "tenant_id" field.
+func (m *SecretMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *SecretMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *SecretMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *SecretMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *SecretMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *SecretMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *SecretMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *SecretMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *SecretMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *SecretMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *SecretMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *SecretMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *SecretMutation) SetCreatedBy(s string) {
+	m.created_by = &s
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *SecretMutation) CreatedBy() (r string, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldCreatedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// ClearCreatedBy clears the value of the "created_by" field.
+func (m *SecretMutation) ClearCreatedBy() {
+	m.created_by = nil
+	m.clearedFields[secret.FieldCreatedBy] = struct{}{}
+}
+
+// CreatedByCleared returns if the "created_by" field was cleared in this mutation.
+func (m *SecretMutation) CreatedByCleared() bool {
+	_, ok := m.clearedFields[secret.FieldCreatedBy]
+	return ok
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *SecretMutation) ResetCreatedBy() {
+	m.created_by = nil
+	delete(m.clearedFields, secret.FieldCreatedBy)
+}
+
+// SetUpdatedBy sets the "updated_by" field.
+func (m *SecretMutation) SetUpdatedBy(s string) {
+	m.updated_by = &s
+}
+
+// UpdatedBy returns the value of the "updated_by" field in the mutation.
+func (m *SecretMutation) UpdatedBy() (r string, exists bool) {
+	v := m.updated_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedBy returns the old "updated_by" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldUpdatedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedBy: %w", err)
+	}
+	return oldValue.UpdatedBy, nil
+}
+
+// ClearUpdatedBy clears the value of the "updated_by" field.
+func (m *SecretMutation) ClearUpdatedBy() {
+	m.updated_by = nil
+	m.clearedFields[secret.FieldUpdatedBy] = struct{}{}
+}
+
+// UpdatedByCleared returns if the "updated_by" field was cleared in this mutation.
+func (m *SecretMutation) UpdatedByCleared() bool {
+	_, ok := m.clearedFields[secret.FieldUpdatedBy]
+	return ok
+}
+
+// ResetUpdatedBy resets all changes to the "updated_by" field.
+func (m *SecretMutation) ResetUpdatedBy() {
+	m.updated_by = nil
+	delete(m.clearedFields, secret.FieldUpdatedBy)
+}
+
+// SetName sets the "name" field.
+func (m *SecretMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *SecretMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *SecretMutation) ResetName() {
+	m.name = nil
+}
+
+// SetType sets the "type" field.
+func (m *SecretMutation) SetType(s string) {
+	m._type = &s
+}
+
+// GetType returns the value of the "type" field in the mutation.
+func (m *SecretMutation) GetType() (r string, exists bool) {
+	v := m._type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldType returns the old "type" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldType: %w", err)
+	}
+	return oldValue.Type, nil
+}
+
+// ResetType resets all changes to the "type" field.
+func (m *SecretMutation) ResetType() {
+	m._type = nil
+}
+
+// SetProvider sets the "provider" field.
+func (m *SecretMutation) SetProvider(s string) {
+	m.provider = &s
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *SecretMutation) Provider() (r string, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldProvider(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *SecretMutation) ResetProvider() {
+	m.provider = nil
+}
+
+// SetValue sets the "value" field.
+func (m *SecretMutation) SetValue(s string) {
+	m.value = &s
+}
+
+// Value returns the value of the "value" field in the mutation.
+func (m *SecretMutation) Value() (r string, exists bool) {
+	v := m.value
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldValue returns the old "value" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldValue(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldValue is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldValue requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldValue: %w", err)
+	}
+	return oldValue.Value, nil
+}
+
+// ClearValue clears the value of the "value" field.
+func (m *SecretMutation) ClearValue() {
+	m.value = nil
+	m.clearedFields[secret.FieldValue] = struct{}{}
+}
+
+// ValueCleared returns if the "value" field was cleared in this mutation.
+func (m *SecretMutation) ValueCleared() bool {
+	_, ok := m.clearedFields[secret.FieldValue]
+	return ok
+}
+
+// ResetValue resets all changes to the "value" field.
+func (m *SecretMutation) ResetValue() {
+	m.value = nil
+	delete(m.clearedFields, secret.FieldValue)
+}
+
+// SetDisplayID sets the "display_id" field.
+func (m *SecretMutation) SetDisplayID(s string) {
+	m.display_id = &s
+}
+
+// DisplayID returns the value of the "display_id" field in the mutation.
+func (m *SecretMutation) DisplayID() (r string, exists bool) {
+	v := m.display_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayID returns the old "display_id" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldDisplayID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayID: %w", err)
+	}
+	return oldValue.DisplayID, nil
+}
+
+// ClearDisplayID clears the value of the "display_id" field.
+func (m *SecretMutation) ClearDisplayID() {
+	m.display_id = nil
+	m.clearedFields[secret.FieldDisplayID] = struct{}{}
+}
+
+// DisplayIDCleared returns if the "display_id" field was cleared in this mutation.
+func (m *SecretMutation) DisplayIDCleared() bool {
+	_, ok := m.clearedFields[secret.FieldDisplayID]
+	return ok
+}
+
+// ResetDisplayID resets all changes to the "display_id" field.
+func (m *SecretMutation) ResetDisplayID() {
+	m.display_id = nil
+	delete(m.clearedFields, secret.FieldDisplayID)
+}
+
+// SetPermissions sets the "permissions" field.
+func (m *SecretMutation) SetPermissions(s []string) {
+	m.permissions = &s
+	m.appendpermissions = nil
+}
+
+// Permissions returns the value of the "permissions" field in the mutation.
+func (m *SecretMutation) Permissions() (r []string, exists bool) {
+	v := m.permissions
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPermissions returns the old "permissions" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldPermissions(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPermissions is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPermissions requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPermissions: %w", err)
+	}
+	return oldValue.Permissions, nil
+}
+
+// AppendPermissions adds s to the "permissions" field.
+func (m *SecretMutation) AppendPermissions(s []string) {
+	m.appendpermissions = append(m.appendpermissions, s...)
+}
+
+// AppendedPermissions returns the list of values that were appended to the "permissions" field in this mutation.
+func (m *SecretMutation) AppendedPermissions() ([]string, bool) {
+	if len(m.appendpermissions) == 0 {
+		return nil, false
+	}
+	return m.appendpermissions, true
+}
+
+// ClearPermissions clears the value of the "permissions" field.
+func (m *SecretMutation) ClearPermissions() {
+	m.permissions = nil
+	m.appendpermissions = nil
+	m.clearedFields[secret.FieldPermissions] = struct{}{}
+}
+
+// PermissionsCleared returns if the "permissions" field was cleared in this mutation.
+func (m *SecretMutation) PermissionsCleared() bool {
+	_, ok := m.clearedFields[secret.FieldPermissions]
+	return ok
+}
+
+// ResetPermissions resets all changes to the "permissions" field.
+func (m *SecretMutation) ResetPermissions() {
+	m.permissions = nil
+	m.appendpermissions = nil
+	delete(m.clearedFields, secret.FieldPermissions)
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *SecretMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *SecretMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ClearExpiresAt clears the value of the "expires_at" field.
+func (m *SecretMutation) ClearExpiresAt() {
+	m.expires_at = nil
+	m.clearedFields[secret.FieldExpiresAt] = struct{}{}
+}
+
+// ExpiresAtCleared returns if the "expires_at" field was cleared in this mutation.
+func (m *SecretMutation) ExpiresAtCleared() bool {
+	_, ok := m.clearedFields[secret.FieldExpiresAt]
+	return ok
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *SecretMutation) ResetExpiresAt() {
+	m.expires_at = nil
+	delete(m.clearedFields, secret.FieldExpiresAt)
+}
+
+// SetLastUsedAt sets the "last_used_at" field.
+func (m *SecretMutation) SetLastUsedAt(t time.Time) {
+	m.last_used_at = &t
+}
+
+// LastUsedAt returns the value of the "last_used_at" field in the mutation.
+func (m *SecretMutation) LastUsedAt() (r time.Time, exists bool) {
+	v := m.last_used_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastUsedAt returns the old "last_used_at" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldLastUsedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastUsedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastUsedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastUsedAt: %w", err)
+	}
+	return oldValue.LastUsedAt, nil
+}
+
+// ClearLastUsedAt clears the value of the "last_used_at" field.
+func (m *SecretMutation) ClearLastUsedAt() {
+	m.last_used_at = nil
+	m.clearedFields[secret.FieldLastUsedAt] = struct{}{}
+}
+
+// LastUsedAtCleared returns if the "last_used_at" field was cleared in this mutation.
+func (m *SecretMutation) LastUsedAtCleared() bool {
+	_, ok := m.clearedFields[secret.FieldLastUsedAt]
+	return ok
+}
+
+// ResetLastUsedAt resets all changes to the "last_used_at" field.
+func (m *SecretMutation) ResetLastUsedAt() {
+	m.last_used_at = nil
+	delete(m.clearedFields, secret.FieldLastUsedAt)
+}
+
+// SetProviderData sets the "provider_data" field.
+func (m *SecretMutation) SetProviderData(value map[string]string) {
+	m.provider_data = &value
+}
+
+// ProviderData returns the value of the "provider_data" field in the mutation.
+func (m *SecretMutation) ProviderData() (r map[string]string, exists bool) {
+	v := m.provider_data
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderData returns the old "provider_data" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldProviderData(ctx context.Context) (v map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderData is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderData requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderData: %w", err)
+	}
+	return oldValue.ProviderData, nil
+}
+
+// ClearProviderData clears the value of the "provider_data" field.
+func (m *SecretMutation) ClearProviderData() {
+	m.provider_data = nil
+	m.clearedFields[secret.FieldProviderData] = struct{}{}
+}
+
+// ProviderDataCleared returns if the "provider_data" field was cleared in this mutation.
+func (m *SecretMutation) ProviderDataCleared() bool {
+	_, ok := m.clearedFields[secret.FieldProviderData]
+	return ok
+}
+
+// ResetProviderData resets all changes to the "provider_data" field.
+func (m *SecretMutation) ResetProviderData() {
+	m.provider_data = nil
+	delete(m.clearedFields, secret.FieldProviderData)
+}
+
+// Where appends a list predicates to the SecretMutation builder.
+func (m *SecretMutation) Where(ps ...predicate.Secret) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the SecretMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *SecretMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.Secret, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *SecretMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *SecretMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (Secret).
+func (m *SecretMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *SecretMutation) Fields() []string {
+	fields := make([]string, 0, 15)
+	if m.tenant_id != nil {
+		fields = append(fields, secret.FieldTenantID)
+	}
+	if m.status != nil {
+		fields = append(fields, secret.FieldStatus)
+	}
+	if m.created_at != nil {
+		fields = append(fields, secret.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, secret.FieldUpdatedAt)
+	}
+	if m.created_by != nil {
+		fields = append(fields, secret.FieldCreatedBy)
+	}
+	if m.updated_by != nil {
+		fields = append(fields, secret.FieldUpdatedBy)
+	}
+	if m.name != nil {
+		fields = append(fields, secret.FieldName)
+	}
+	if m._type != nil {
+		fields = append(fields, secret.FieldType)
+	}
+	if m.provider != nil {
+		fields = append(fields, secret.FieldProvider)
+	}
+	if m.value != nil {
+		fields = append(fields, secret.FieldValue)
+	}
+	if m.display_id != nil {
+		fields = append(fields, secret.FieldDisplayID)
+	}
+	if m.permissions != nil {
+		fields = append(fields, secret.FieldPermissions)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, secret.FieldExpiresAt)
+	}
+	if m.last_used_at != nil {
+		fields = append(fields, secret.FieldLastUsedAt)
+	}
+	if m.provider_data != nil {
+		fields = append(fields, secret.FieldProviderData)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *SecretMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case secret.FieldTenantID:
+		return m.TenantID()
+	case secret.FieldStatus:
+		return m.Status()
+	case secret.FieldCreatedAt:
+		return m.CreatedAt()
+	case secret.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case secret.FieldCreatedBy:
+		return m.CreatedBy()
+	case secret.FieldUpdatedBy:
+		return m.UpdatedBy()
+	case secret.FieldName:
+		return m.Name()
+	case secret.FieldType:
+		return m.GetType()
+	case secret.FieldProvider:
+		return m.Provider()
+	case secret.FieldValue:
+		return m.Value()
+	case secret.FieldDisplayID:
+		return m.DisplayID()
+	case secret.FieldPermissions:
+		return m.Permissions()
+	case secret.FieldExpiresAt:
+		return m.ExpiresAt()
+	case secret.FieldLastUsedAt:
+		return m.LastUsedAt()
+	case secret.FieldProviderData:
+		return m.ProviderData()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *SecretMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case secret.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case secret.FieldStatus:
+		return m.OldStatus(ctx)
+	case secret.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case secret.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case secret.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	case secret.FieldUpdatedBy:
+		return m.OldUpdatedBy(ctx)
+	case secret.FieldName:
+		return m.OldName(ctx)
+	case secret.FieldType:
+		return m.OldType(ctx)
+	case secret.FieldProvider:
+		return m.OldProvider(ctx)
+	case secret.FieldValue:
+		return m.OldValue(ctx)
+	case secret.FieldDisplayID:
+		return m.OldDisplayID(ctx)
+	case secret.FieldPermissions:
+		return m.OldPermissions(ctx)
+	case secret.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	case secret.FieldLastUsedAt:
+		return m.OldLastUsedAt(ctx)
+	case secret.FieldProviderData:
+		return m.OldProviderData(ctx)
+	}
+	return nil, fmt.Errorf("unknown Secret field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SecretMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case secret.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case secret.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case secret.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case secret.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case secret.FieldCreatedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	case secret.FieldUpdatedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedBy(v)
+		return nil
+	case secret.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case secret.FieldType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetType(v)
+		return nil
+	case secret.FieldProvider:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
+		return nil
+	case secret.FieldValue:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetValue(v)
+		return nil
+	case secret.FieldDisplayID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayID(v)
+		return nil
+	case secret.FieldPermissions:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPermissions(v)
+		return nil
+	case secret.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	case secret.FieldLastUsedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastUsedAt(v)
+		return nil
+	case secret.FieldProviderData:
+		v, ok := value.(map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderData(v)
+		return nil
+	}
+	return fmt.Errorf("unknown Secret field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *SecretMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *SecretMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SecretMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown Secret numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *SecretMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(secret.FieldCreatedBy) {
+		fields = append(fields, secret.FieldCreatedBy)
+	}
+	if m.FieldCleared(secret.FieldUpdatedBy) {
+		fields = append(fields, secret.FieldUpdatedBy)
+	}
+	if m.FieldCleared(secret.FieldValue) {
+		fields = append(fields, secret.FieldValue)
+	}
+	if m.FieldCleared(secret.FieldDisplayID) {
+		fields = append(fields, secret.FieldDisplayID)
+	}
+	if m.FieldCleared(secret.FieldPermissions) {
+		fields = append(fields, secret.FieldPermissions)
+	}
+	if m.FieldCleared(secret.FieldExpiresAt) {
+		fields = append(fields, secret.FieldExpiresAt)
+	}
+	if m.FieldCleared(secret.FieldLastUsedAt) {
+		fields = append(fields, secret.FieldLastUsedAt)
+	}
+	if m.FieldCleared(secret.FieldProviderData) {
+		fields = append(fields, secret.FieldProviderData)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *SecretMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *SecretMutation) ClearField(name string) error {
+	switch name {
+	case secret.FieldCreatedBy:
+		m.ClearCreatedBy()
+		return nil
+	case secret.FieldUpdatedBy:
+		m.ClearUpdatedBy()
+		return nil
+	case secret.FieldValue:
+		m.ClearValue()
+		return nil
+	case secret.FieldDisplayID:
+		m.ClearDisplayID()
+		return nil
+	case secret.FieldPermissions:
+		m.ClearPermissions()
+		return nil
+	case secret.FieldExpiresAt:
+		m.ClearExpiresAt()
+		return nil
+	case secret.FieldLastUsedAt:
+		m.ClearLastUsedAt()
+		return nil
+	case secret.FieldProviderData:
+		m.ClearProviderData()
+		return nil
+	}
+	return fmt.Errorf("unknown Secret nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *SecretMutation) ResetField(name string) error {
+	switch name {
+	case secret.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case secret.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case secret.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case secret.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case secret.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	case secret.FieldUpdatedBy:
+		m.ResetUpdatedBy()
+		return nil
+	case secret.FieldName:
+		m.ResetName()
+		return nil
+	case secret.FieldType:
+		m.ResetType()
+		return nil
+	case secret.FieldProvider:
+		m.ResetProvider()
+		return nil
+	case secret.FieldValue:
+		m.ResetValue()
+		return nil
+	case secret.FieldDisplayID:
+		m.ResetDisplayID()
+		return nil
+	case secret.FieldPermissions:
+		m.ResetPermissions()
+		return nil
+	case secret.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	case secret.FieldLastUsedAt:
+		m.ResetLastUsedAt()
+		return nil
+	case secret.FieldProviderData:
+		m.ResetProviderData()
+		return nil
+	}
+	return fmt.Errorf("unknown Secret field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *SecretMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *SecretMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *SecretMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *SecretMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *SecretMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *SecretMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *SecretMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown Secret unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *SecretMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown Secret edge %s", name)
 }
 
 // SubscriptionMutation represents an operation that mutates the Subscription nodes in the graph.
