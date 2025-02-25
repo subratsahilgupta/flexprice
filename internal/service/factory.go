@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
@@ -44,6 +45,7 @@ type ServiceParams struct {
 	FeatureRepo     feature.Repository
 	EntitlementRepo entitlement.Repository
 	PaymentRepo     payment.Repository
+	SecretRepo      secret.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -69,6 +71,7 @@ func NewServiceParams(
 	featureRepo feature.Repository,
 	entitlementRepo entitlement.Repository,
 	paymentRepo payment.Repository,
+	secretRepo secret.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
 ) ServiceParams {
@@ -90,6 +93,7 @@ func NewServiceParams(
 		FeatureRepo:      featureRepo,
 		EntitlementRepo:  entitlementRepo,
 		PaymentRepo:      paymentRepo,
+		SecretRepo:       secretRepo,
 		EventPublisher:   eventPublisher,
 		WebhookPublisher: webhookPublisher,
 	}

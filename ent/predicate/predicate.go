@@ -42,6 +42,9 @@ type Plan func(*sql.Selector)
 // Price is the predicate function for price builders.
 type Price func(*sql.Selector)
 
+// Secret is the predicate function for secret builders.
+type Secret func(*sql.Selector)
+
 // Subscription is the predicate function for subscription builders.
 type Subscription func(*sql.Selector)
 

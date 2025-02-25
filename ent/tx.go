@@ -38,6 +38,8 @@ type Tx struct {
 	Plan *PlanClient
 	// Price is the client for interacting with the Price builders.
 	Price *PriceClient
+	// Secret is the client for interacting with the Secret builders.
+	Secret *SecretClient
 	// Subscription is the client for interacting with the Subscription builders.
 	Subscription *SubscriptionClient
 	// SubscriptionLineItem is the client for interacting with the SubscriptionLineItem builders.
@@ -191,6 +193,7 @@ func (tx *Tx) init() {
 	tx.PaymentAttempt = NewPaymentAttemptClient(tx.config)
 	tx.Plan = NewPlanClient(tx.config)
 	tx.Price = NewPriceClient(tx.config)
+	tx.Secret = NewSecretClient(tx.config)
 	tx.Subscription = NewSubscriptionClient(tx.config)
 	tx.SubscriptionLineItem = NewSubscriptionLineItemClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)

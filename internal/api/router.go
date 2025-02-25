@@ -29,6 +29,7 @@ type Handlers struct {
 	Entitlement  *v1.EntitlementHandler
 	Payment      *v1.PaymentHandler
 	Task         *v1.TaskHandler
+	Secret       *v1.SecretHandler
 	// Cron jobs : TODO: move crons out of API based architecture
 	CronSubscription *cron.SubscriptionHandler
 	CronWallet       *cron.WalletCronHandler
@@ -205,6 +206,26 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			tasks.GET("/:id", handlers.Task.GetTask)
 			tasks.PUT("/:id/status", handlers.Task.UpdateTaskStatus)
 			tasks.POST("/:id/process", handlers.Task.ProcessTask)
+		}
+
+		// Secret routes
+		secrets := v1Private.Group("/secrets")
+		{
+			// API Key routes
+			apiKeys := secrets.Group("/api/keys")
+			{
+				apiKeys.GET("", handlers.Secret.ListAPIKeys)
+				apiKeys.POST("", handlers.Secret.CreateAPIKey)
+				apiKeys.DELETE("/:id", handlers.Secret.DeleteAPIKey)
+			}
+
+			// Integration routes
+			integrations := secrets.Group("/integrations")
+			{
+				integrations.POST("/:provider", handlers.Secret.CreateIntegration)
+				integrations.GET("/:provider", handlers.Secret.GetIntegration)
+				integrations.DELETE("/:provider", handlers.Secret.DeleteIntegration)
+			}
 		}
 
 		// Admin routes (API Key only)

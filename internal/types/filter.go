@@ -78,6 +78,15 @@ func NewDefaultQueryFilter() *QueryFilter {
 	}
 }
 
+// NewNoLimitPublishedQueryFilter defines a filter with published status and no pagination limits
+func NewNoLimitPublishedQueryFilter() *QueryFilter {
+	return &QueryFilter{
+		Status: lo.ToPtr(StatusPublished),
+		Sort:   lo.ToPtr("created_at"),
+		Order:  lo.ToPtr("desc"),
+	}
+}
+
 // NoLimitQueryFilter returns a filter with no pagination limits
 func NewNoLimitQueryFilter() *QueryFilter {
 	return &QueryFilter{

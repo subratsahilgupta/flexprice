@@ -3564,6 +3564,280 @@ const docTemplate = `{
                 }
             }
         },
+        "/secrets/api/keys": {
+            "get": {
+                "description": "Get a paginated list of API keys",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "List API keys",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Status (published/archived)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListSecretsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new API key with the specified type and permissions",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "Create a new API key",
+                "parameters": [
+                    {
+                        "description": "API key creation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateAPIKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateAPIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/secrets/api/keys/{id}": {
+            "delete": {
+                "description": "Delete an API key by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "Delete an API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/secrets/integrations/{provider}": {
+            "get": {
+                "description": "Get details of a specific integration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "Get integration details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Integration provider",
+                        "name": "provider",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SecretResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create or update integration credentials",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "Create or update an integration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Integration provider",
+                        "name": "provider",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Integration creation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateIntegrationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SecretResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete integration credentials",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "Delete an integration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Integration provider",
+                        "name": "provider",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/subscriptions": {
             "get": {
                 "security": [
@@ -4834,6 +5108,49 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreateAPIKeyRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "type"
+            ],
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "type": {
+                    "enum": [
+                        "private_key",
+                        "publishable_key"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.SecretType"
+                        }
+                    ]
+                }
+            }
+        },
+        "dto.CreateAPIKeyResponse": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "secret": {
+                    "$ref": "#/definitions/dto.SecretResponse"
+                }
+            }
+        },
         "dto.CreateCustomerRequest": {
             "type": "object",
             "required": [
@@ -4963,6 +5280,28 @@ const docTemplate = `{
                 },
                 "unit_singular": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.CreateIntegrationRequest": {
+            "type": "object",
+            "required": [
+                "credentials",
+                "name",
+                "provider"
+            ],
+            "properties": {
+                "credentials": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "provider": {
+                    "$ref": "#/definitions/types.SecretProvider"
                 }
             }
         },
@@ -6372,6 +6711,20 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ListSecretsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SecretResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
         "dto.ListSubscriptionsResponse": {
             "type": "object",
             "properties": {
@@ -6763,6 +7116,47 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.SecretResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "display_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "provider": {
+                    "$ref": "#/definitions/types.SecretProvider"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.SecretType"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -8186,6 +8580,32 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "ResetUsageBillingPeriod",
                 "ResetUsageNever"
+            ]
+        },
+        "types.SecretProvider": {
+            "type": "string",
+            "enum": [
+                "flexprice",
+                "stripe",
+                "razorpay"
+            ],
+            "x-enum-varnames": [
+                "SecretProviderFlexPrice",
+                "SecretProviderStripe",
+                "SecretProviderRazorpay"
+            ]
+        },
+        "types.SecretType": {
+            "type": "string",
+            "enum": [
+                "private_key",
+                "publishable_key",
+                "integration"
+            ],
+            "x-enum-varnames": [
+                "SecretTypePrivateKey",
+                "SecretTypePublishableKey",
+                "SecretTypeIntegration"
             ]
         },
         "types.Status": {

@@ -5,6 +5,33 @@ definitions:
       token:
         type: string
     type: object
+  dto.CreateAPIKeyRequest:
+    properties:
+      expires_at:
+        type: string
+      name:
+        type: string
+      permissions:
+        items:
+          type: string
+        type: array
+      type:
+        allOf:
+        - $ref: '#/definitions/types.SecretType'
+        enum:
+        - private_key
+        - publishable_key
+    required:
+    - name
+    - type
+    type: object
+  dto.CreateAPIKeyResponse:
+    properties:
+      api_key:
+        type: string
+      secret:
+        $ref: '#/definitions/dto.SecretResponse'
+    type: object
   dto.CreateCustomerRequest:
     properties:
       address_city:
@@ -94,6 +121,21 @@ definitions:
     - lookup_key
     - name
     - type
+    type: object
+  dto.CreateIntegrationRequest:
+    properties:
+      credentials:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      provider:
+        $ref: '#/definitions/types.SecretProvider'
+    required:
+    - credentials
+    - name
+    - provider
     type: object
   dto.CreateInvoiceLineItemRequest:
     properties:
@@ -1041,6 +1083,15 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
+  dto.ListSecretsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.SecretResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
   dto.ListSubscriptionsResponse:
     properties:
       items:
@@ -1305,6 +1356,33 @@ definitions:
       updated_at:
         type: string
       updated_by:
+        type: string
+    type: object
+  dto.SecretResponse:
+    properties:
+      created_at:
+        type: string
+      display_id:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+      permissions:
+        items:
+          type: string
+        type: array
+      provider:
+        $ref: '#/definitions/types.SecretProvider'
+      status:
+        $ref: '#/definitions/types.Status'
+      type:
+        $ref: '#/definitions/types.SecretType'
+      updated_at:
         type: string
     type: object
   dto.SignUpRequest:
@@ -2306,6 +2384,26 @@ definitions:
     x-enum-varnames:
     - ResetUsageBillingPeriod
     - ResetUsageNever
+  types.SecretProvider:
+    enum:
+    - flexprice
+    - stripe
+    - razorpay
+    type: string
+    x-enum-varnames:
+    - SecretProviderFlexPrice
+    - SecretProviderStripe
+    - SecretProviderRazorpay
+  types.SecretType:
+    enum:
+    - private_key
+    - publishable_key
+    - integration
+    type: string
+    x-enum-varnames:
+    - SecretTypePrivateKey
+    - SecretTypePublishableKey
+    - SecretTypeIntegration
   types.Status:
     enum:
     - published
@@ -4749,6 +4847,187 @@ paths:
       summary: Update a price
       tags:
       - Prices
+  /secrets/api/keys:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of API keys
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      - description: Status (published/archived)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListSecretsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: List API keys
+      tags:
+      - secrets
+    post:
+      consumes:
+      - application/json
+      description: Create a new API key with the specified type and permissions
+      parameters:
+      - description: API key creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateAPIKeyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CreateAPIKeyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Create a new API key
+      tags:
+      - secrets
+  /secrets/api/keys/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an API key by ID
+      parameters:
+      - description: API key ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Delete an API key
+      tags:
+      - secrets
+  /secrets/integrations/{provider}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete integration credentials
+      parameters:
+      - description: Integration provider
+        in: path
+        name: provider
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Delete an integration
+      tags:
+      - secrets
+    get:
+      consumes:
+      - application/json
+      description: Get details of a specific integration
+      parameters:
+      - description: Integration provider
+        in: path
+        name: provider
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.SecretResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Get integration details
+      tags:
+      - secrets
+    post:
+      consumes:
+      - application/json
+      description: Create or update integration credentials
+      parameters:
+      - description: Integration provider
+        in: path
+        name: provider
+        required: true
+        type: string
+      - description: Integration creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateIntegrationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.SecretResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Create or update an integration
+      tags:
+      - secrets
   /subscriptions:
     get:
       description: Get subscriptions with optional filtering

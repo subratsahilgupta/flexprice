@@ -577,6 +577,51 @@ var (
 			},
 		},
 	}
+	// SecretsColumns holds the columns for the "secrets" table.
+	SecretsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "name", Type: field.TypeString},
+		{Name: "type", Type: field.TypeString},
+		{Name: "provider", Type: field.TypeString},
+		{Name: "value", Type: field.TypeString, Nullable: true},
+		{Name: "display_id", Type: field.TypeString, Nullable: true},
+		{Name: "permissions", Type: field.TypeJSON, Nullable: true},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
+		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
+		{Name: "provider_data", Type: field.TypeJSON, Nullable: true},
+	}
+	// SecretsTable holds the schema information for the "secrets" table.
+	SecretsTable = &schema.Table{
+		Name:       "secrets",
+		Columns:    SecretsColumns,
+		PrimaryKey: []*schema.Column{SecretsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "secret_tenant_id_type_provider_status",
+				Unique:  false,
+				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[8], SecretsColumns[9], SecretsColumns[2]},
+			},
+			{
+				Name:    "secret_tenant_id_value",
+				Unique:  false,
+				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[10]},
+			},
+			{
+				Name:    "unique_tenant_provider_type",
+				Unique:  true,
+				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[9], SecretsColumns[8]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published'",
+				},
+			},
+		},
+	}
 	// SubscriptionsColumns holds the columns for the "subscriptions" table.
 	SubscriptionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -866,6 +911,7 @@ var (
 		PaymentAttemptsTable,
 		PlansTable,
 		PricesTable,
+		SecretsTable,
 		SubscriptionsTable,
 		SubscriptionLineItemsTable,
 		TasksTable,

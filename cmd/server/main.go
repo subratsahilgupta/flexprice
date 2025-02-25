@@ -138,6 +138,7 @@ func main() {
 			service.NewPaymentService,
 			service.NewPaymentProcessorService,
 			service.NewTaskService,
+			service.NewSecretService,
 		),
 	)
 
@@ -178,6 +179,7 @@ func provideHandlers(
 	paymentService service.PaymentService,
 	paymentProcessorService service.PaymentProcessorService,
 	taskService service.TaskService,
+	secretService service.SecretService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:           v1.NewEventsHandler(eventService, logger),
@@ -196,6 +198,7 @@ func provideHandlers(
 		Entitlement:      v1.NewEntitlementHandler(entitlementService, logger),
 		Payment:          v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
 		Task:             v1.NewTaskHandler(taskService, logger),
+		Secret:           v1.NewSecretHandler(secretService, logger),
 		CronSubscription: cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
 		CronWallet:       cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService),
 	}
