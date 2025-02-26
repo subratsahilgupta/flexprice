@@ -9,6 +9,47 @@ import (
 )
 
 var (
+	// AuthsColumns holds the columns for the "auths" table.
+	AuthsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "user_id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "provider", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "token", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AuthsTable holds the schema information for the "auths" table.
+	AuthsTable = &schema.Table{
+		Name:       "auths",
+		Columns:    AuthsColumns,
+		PrimaryKey: []*schema.Column{AuthsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_user_id_unique",
+				Unique:  true,
+				Columns: []*schema.Column{AuthsColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published'",
+				},
+			},
+			{
+				Name:    "idx_provider",
+				Unique:  false,
+				Columns: []*schema.Column{AuthsColumns[2]},
+			},
+			{
+				Name:    "idx_status",
+				Unique:  false,
+				Columns: []*schema.Column{AuthsColumns[4]},
+			},
+			{
+				Name:    "idx_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{AuthsColumns[5]},
+			},
+		},
+	}
 	// BillingSequencesColumns holds the columns for the "billing_sequences" table.
 	BillingSequencesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -121,6 +162,50 @@ var (
 				Name:    "entitlement_tenant_id_feature_id",
 				Unique:  false,
 				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7]},
+			},
+		},
+	}
+	// EnvironmentsColumns holds the columns for the "environments" table.
+	EnvironmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "slug", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+	}
+	// EnvironmentsTable holds the schema information for the "environments" table.
+	EnvironmentsTable = &schema.Table{
+		Name:       "environments",
+		Columns:    EnvironmentsColumns,
+		PrimaryKey: []*schema.Column{EnvironmentsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_tenant_slug_unique",
+				Unique:  true,
+				Columns: []*schema.Column{EnvironmentsColumns[1], EnvironmentsColumns[9]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published'",
+				},
+			},
+			{
+				Name:    "idx_tenant_type",
+				Unique:  false,
+				Columns: []*schema.Column{EnvironmentsColumns[1], EnvironmentsColumns[8]},
+			},
+			{
+				Name:    "idx_tenant_status",
+				Unique:  false,
+				Columns: []*schema.Column{EnvironmentsColumns[1], EnvironmentsColumns[2]},
+			},
+			{
+				Name:    "idx_tenant_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{EnvironmentsColumns[1], EnvironmentsColumns[3]},
 			},
 		},
 	}
@@ -800,6 +885,74 @@ var (
 			},
 		},
 	}
+	// TenantsColumns holds the columns for the "tenants" table.
+	TenantsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(100)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// TenantsTable holds the schema information for the "tenants" table.
+	TenantsTable = &schema.Table{
+		Name:       "tenants",
+		Columns:    TenantsColumns,
+		PrimaryKey: []*schema.Column{TenantsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_tenant_name",
+				Unique:  false,
+				Columns: []*schema.Column{TenantsColumns[1]},
+			},
+			{
+				Name:    "idx_tenant_status",
+				Unique:  false,
+				Columns: []*schema.Column{TenantsColumns[2]},
+			},
+			{
+				Name:    "idx_tenant_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TenantsColumns[3]},
+			},
+		},
+	}
+	// UsersColumns holds the columns for the "users" table.
+	UsersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "email", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+	}
+	// UsersTable holds the schema information for the "users" table.
+	UsersTable = &schema.Table{
+		Name:       "users",
+		Columns:    UsersColumns,
+		PrimaryKey: []*schema.Column{UsersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_tenant_email_unique",
+				Unique:  true,
+				Columns: []*schema.Column{UsersColumns[1], UsersColumns[7]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published'",
+				},
+			},
+			{
+				Name:    "idx_tenant_status",
+				Unique:  false,
+				Columns: []*schema.Column{UsersColumns[1], UsersColumns[2]},
+			},
+			{
+				Name:    "idx_tenant_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsersColumns[1], UsersColumns[3]},
+			},
+		},
+	}
 	// WalletsColumns holds the columns for the "wallets" table.
 	WalletsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -899,9 +1052,11 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		AuthsTable,
 		BillingSequencesTable,
 		CustomersTable,
 		EntitlementsTable,
+		EnvironmentsTable,
 		FeaturesTable,
 		InvoicesTable,
 		InvoiceLineItemsTable,
@@ -915,6 +1070,8 @@ var (
 		SubscriptionsTable,
 		SubscriptionLineItemsTable,
 		TasksTable,
+		TenantsTable,
+		UsersTable,
 		WalletsTable,
 		WalletTransactionsTable,
 	}
