@@ -88,8 +88,6 @@ migrate-postgres:
 	@sleep 5  # Wait for postgres to be ready
 	@PGPASSWORD=flexprice123 psql -h localhost -U flexprice -d flexprice -c "CREATE SCHEMA IF NOT EXISTS extensions;"
 	@PGPASSWORD=flexprice123 psql -h localhost -U flexprice -d flexprice -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" SCHEMA extensions;"
-	@echo "Running V0 migration..."
-	@PGPASSWORD=flexprice123 psql -h localhost -U flexprice -d flexprice -f migrations/postgres/V0__init.sql
 	@echo "Postgres migrations complete"
 
 # Run clickhouse migrations

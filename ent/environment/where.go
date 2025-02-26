@@ -104,11 +104,6 @@ func Type(v string) predicate.Environment {
 	return predicate.Environment(sql.FieldEQ(FieldType, v))
 }
 
-// Slug applies equality check predicate on the "slug" field. It's identical to SlugEQ.
-func Slug(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldEQ(FieldSlug, v))
-}
-
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.Environment {
 	return predicate.Environment(sql.FieldEQ(FieldTenantID, v))
@@ -597,71 +592,6 @@ func TypeEqualFold(v string) predicate.Environment {
 // TypeContainsFold applies the ContainsFold predicate on the "type" field.
 func TypeContainsFold(v string) predicate.Environment {
 	return predicate.Environment(sql.FieldContainsFold(FieldType, v))
-}
-
-// SlugEQ applies the EQ predicate on the "slug" field.
-func SlugEQ(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldEQ(FieldSlug, v))
-}
-
-// SlugNEQ applies the NEQ predicate on the "slug" field.
-func SlugNEQ(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldNEQ(FieldSlug, v))
-}
-
-// SlugIn applies the In predicate on the "slug" field.
-func SlugIn(vs ...string) predicate.Environment {
-	return predicate.Environment(sql.FieldIn(FieldSlug, vs...))
-}
-
-// SlugNotIn applies the NotIn predicate on the "slug" field.
-func SlugNotIn(vs ...string) predicate.Environment {
-	return predicate.Environment(sql.FieldNotIn(FieldSlug, vs...))
-}
-
-// SlugGT applies the GT predicate on the "slug" field.
-func SlugGT(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldGT(FieldSlug, v))
-}
-
-// SlugGTE applies the GTE predicate on the "slug" field.
-func SlugGTE(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldGTE(FieldSlug, v))
-}
-
-// SlugLT applies the LT predicate on the "slug" field.
-func SlugLT(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldLT(FieldSlug, v))
-}
-
-// SlugLTE applies the LTE predicate on the "slug" field.
-func SlugLTE(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldLTE(FieldSlug, v))
-}
-
-// SlugContains applies the Contains predicate on the "slug" field.
-func SlugContains(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldContains(FieldSlug, v))
-}
-
-// SlugHasPrefix applies the HasPrefix predicate on the "slug" field.
-func SlugHasPrefix(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldHasPrefix(FieldSlug, v))
-}
-
-// SlugHasSuffix applies the HasSuffix predicate on the "slug" field.
-func SlugHasSuffix(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldHasSuffix(FieldSlug, v))
-}
-
-// SlugEqualFold applies the EqualFold predicate on the "slug" field.
-func SlugEqualFold(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldEqualFold(FieldSlug, v))
-}
-
-// SlugContainsFold applies the ContainsFold predicate on the "slug" field.
-func SlugContainsFold(v string) predicate.Environment {
-	return predicate.Environment(sql.FieldContainsFold(FieldSlug, v))
 }
 
 // And groups predicates with the AND operator between them.

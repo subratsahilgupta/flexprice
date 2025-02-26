@@ -39,16 +39,17 @@ func newOnboardingScript() (*onboardingScript, error) {
 		return nil, fmt.Errorf("failed to create logger: %w", err)
 	}
 
-	// Initialize postgres connection
-	db, err := postgres.NewDB(cfg, log)
+	// Initialize the other DB
+	entClient, err := postgres.NewEntClient(cfg, log)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
+		log.Fatalf("Failed to connect to postgres: %v", err)
 	}
+	client := postgres.NewClient(entClient, log)
 
 	// Initialize repositories
 	repoParams := repository.RepositoryParams{
-		DB:     db,
-		Logger: log,
+		EntClient: client,
+		Logger:    log,
 	}
 
 	// Create auth provider
@@ -119,7 +120,6 @@ func (s *onboardingScript) createEnvironment(ctx context.Context, name string, e
 		ID:   types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENVIRONMENT),
 		Name: name,
 		Type: envType,
-		Slug: fmt.Sprintf("%s-%s", name, envType),
 		BaseModel: types.BaseModel{
 			TenantID:  tenantID,
 			CreatedBy: types.DefaultUserID,

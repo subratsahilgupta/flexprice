@@ -43,10 +43,6 @@ func (Tenant) Fields() []ent.Field {
 // Indexes of the Tenant.
 func (Tenant) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("name").
-			StorageKey("idx_tenant_name"),
-		index.Fields("status").
-			StorageKey("idx_tenant_status"),
 		index.Fields("created_at").
 			StorageKey("idx_tenant_created_at"),
 	}

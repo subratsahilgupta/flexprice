@@ -23,7 +23,6 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	clickhouseRepo "github.com/flexprice/flexprice/internal/repository/clickhouse"
 	entRepo "github.com/flexprice/flexprice/internal/repository/ent"
-	postgresRepo "github.com/flexprice/flexprice/internal/repository/postgres"
 	"go.uber.org/fx"
 )
 
@@ -32,7 +31,6 @@ type RepositoryParams struct {
 	fx.In
 
 	Logger       *logger.Logger
-	DB           *postgres.DB
 	EntClient    postgres.IClient
 	ClickHouseDB *clickhouse.ClickHouseStore
 }
@@ -46,11 +44,11 @@ func NewMeterRepository(p RepositoryParams) meter.Repository {
 }
 
 func NewUserRepository(p RepositoryParams) user.Repository {
-	return postgresRepo.NewUserRepository(p.DB, p.Logger)
+	return entRepo.NewUserRepository(p.EntClient, p.Logger)
 }
 
 func NewAuthRepository(p RepositoryParams) auth.Repository {
-	return postgresRepo.NewAuthRepository(p.DB, p.Logger)
+	return entRepo.NewAuthRepository(p.EntClient, p.Logger)
 }
 
 func NewPriceRepository(p RepositoryParams) price.Repository {
@@ -74,11 +72,11 @@ func NewWalletRepository(p RepositoryParams) wallet.Repository {
 }
 
 func NewTenantRepository(p RepositoryParams) tenant.Repository {
-	return postgresRepo.NewTenantRepository(p.DB, p.Logger)
+	return entRepo.NewTenantRepository(p.EntClient, p.Logger)
 }
 
 func NewEnvironmentRepository(p RepositoryParams) environment.Repository {
-	return postgresRepo.NewEnvironmentRepository(p.DB, p.Logger)
+	return entRepo.NewEnvironmentRepository(p.EntClient, p.Logger)
 }
 
 func NewInvoiceRepository(p RepositoryParams) invoice.Repository {

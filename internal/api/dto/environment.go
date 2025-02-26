@@ -12,20 +12,17 @@ import (
 type CreateEnvironmentRequest struct {
 	Name string `json:"name" validate:"required"`
 	Type string `json:"type" validate:"required"`
-	Slug string `json:"slug" validate:"required"`
 }
 
 type UpdateEnvironmentRequest struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
-	Slug string `json:"slug"`
 }
 
 type EnvironmentResponse struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Type      string `json:"type"`
-	Slug      string `json:"slug"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -46,7 +43,6 @@ func (r *CreateEnvironmentRequest) ToEnvironment(ctx context.Context) *environme
 		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENVIRONMENT),
 		Name:      r.Name,
 		Type:      types.EnvironmentType(r.Type),
-		Slug:      r.Slug,
 		BaseModel: types.GetDefaultBaseModel(ctx),
 	}
 }
@@ -60,7 +56,6 @@ func NewEnvironmentResponse(e *environment.Environment) *EnvironmentResponse {
 		ID:        e.ID,
 		Name:      e.Name,
 		Type:      string(e.Type),
-		Slug:      e.Slug,
 		CreatedAt: e.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}

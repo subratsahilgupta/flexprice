@@ -29,8 +29,6 @@ const (
 	FieldName = "name"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
-	// FieldSlug holds the string denoting the slug field in the database.
-	FieldSlug = "slug"
 	// Table holds the table name of the environment in the database.
 	Table = "environments"
 )
@@ -46,7 +44,6 @@ var Columns = []string{
 	FieldUpdatedBy,
 	FieldName,
 	FieldType,
-	FieldSlug,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -74,8 +71,6 @@ var (
 	NameValidator func(string) error
 	// TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	TypeValidator func(string) error
-	// SlugValidator is a validator for the "slug" field. It is called by the builders before save.
-	SlugValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the Environment queries.
@@ -124,9 +119,4 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByType orders the results by the type field.
 func ByType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldType, opts...).ToFunc()
-}
-
-// BySlug orders the results by the slug field.
-func BySlug(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSlug, opts...).ToFunc()
 }

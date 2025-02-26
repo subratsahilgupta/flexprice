@@ -26,7 +26,7 @@ var (
 		PrimaryKey: []*schema.Column{AuthsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idx_user_id_unique",
+				Name:    "idx_auth_user_id_unique",
 				Unique:  true,
 				Columns: []*schema.Column{AuthsColumns[1]},
 				Annotation: &entsql.IndexAnnotation{
@@ -34,17 +34,17 @@ var (
 				},
 			},
 			{
-				Name:    "idx_provider",
+				Name:    "idx_auth_provider",
 				Unique:  false,
 				Columns: []*schema.Column{AuthsColumns[2]},
 			},
 			{
-				Name:    "idx_status",
+				Name:    "idx_auth_status",
 				Unique:  false,
 				Columns: []*schema.Column{AuthsColumns[4]},
 			},
 			{
-				Name:    "idx_created_at",
+				Name:    "idx_auth_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{AuthsColumns[5]},
 			},
@@ -176,7 +176,6 @@ var (
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
-		{Name: "slug", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// EnvironmentsTable holds the schema information for the "environments" table.
 	EnvironmentsTable = &schema.Table{
@@ -185,25 +184,17 @@ var (
 		PrimaryKey: []*schema.Column{EnvironmentsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idx_tenant_slug_unique",
-				Unique:  true,
-				Columns: []*schema.Column{EnvironmentsColumns[1], EnvironmentsColumns[9]},
-				Annotation: &entsql.IndexAnnotation{
-					Where: "status = 'published'",
-				},
-			},
-			{
-				Name:    "idx_tenant_type",
+				Name:    "idx_environment_tenant_id_type",
 				Unique:  false,
 				Columns: []*schema.Column{EnvironmentsColumns[1], EnvironmentsColumns[8]},
 			},
 			{
-				Name:    "idx_tenant_status",
+				Name:    "idx_environment_tenant_status",
 				Unique:  false,
 				Columns: []*schema.Column{EnvironmentsColumns[1], EnvironmentsColumns[2]},
 			},
 			{
-				Name:    "idx_tenant_created_at",
+				Name:    "idx_environment_tenant_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{EnvironmentsColumns[1], EnvironmentsColumns[3]},
 			},
@@ -234,7 +225,7 @@ var (
 		PrimaryKey: []*schema.Column{FeaturesColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idx_tenant_lookup_key_unique",
+				Name:    "idx_feature_tenant_id_lookup_key_unique",
 				Unique:  true,
 				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[7]},
 				Annotation: &entsql.IndexAnnotation{
@@ -242,7 +233,7 @@ var (
 				},
 			},
 			{
-				Name:    "idx_tenant_meter_id",
+				Name:    "idx_feature_tenant_id_meter_id",
 				Unique:  false,
 				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[11]},
 				Annotation: &entsql.IndexAnnotation{
@@ -250,17 +241,17 @@ var (
 				},
 			},
 			{
-				Name:    "idx_tenant_type",
+				Name:    "idx_feature_tenant_id_type",
 				Unique:  false,
 				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[10]},
 			},
 			{
-				Name:    "idx_tenant_status",
+				Name:    "idx_feature_tenant_status",
 				Unique:  false,
 				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[2]},
 			},
 			{
-				Name:    "idx_tenant_created_at",
+				Name:    "idx_feature_tenant_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[3]},
 			},
@@ -900,16 +891,6 @@ var (
 		PrimaryKey: []*schema.Column{TenantsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idx_tenant_name",
-				Unique:  false,
-				Columns: []*schema.Column{TenantsColumns[1]},
-			},
-			{
-				Name:    "idx_tenant_status",
-				Unique:  false,
-				Columns: []*schema.Column{TenantsColumns[2]},
-			},
-			{
 				Name:    "idx_tenant_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{TenantsColumns[3]},
@@ -934,7 +915,7 @@ var (
 		PrimaryKey: []*schema.Column{UsersColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idx_tenant_email_unique",
+				Name:    "idx_user_tenant_id_email_unique",
 				Unique:  true,
 				Columns: []*schema.Column{UsersColumns[1], UsersColumns[7]},
 				Annotation: &entsql.IndexAnnotation{
@@ -942,12 +923,12 @@ var (
 				},
 			},
 			{
-				Name:    "idx_tenant_status",
+				Name:    "idx_user_tenant_status",
 				Unique:  false,
 				Columns: []*schema.Column{UsersColumns[1], UsersColumns[2]},
 			},
 			{
-				Name:    "idx_tenant_created_at",
+				Name:    "idx_user_tenant_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{UsersColumns[1], UsersColumns[3]},
 			},

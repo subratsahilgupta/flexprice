@@ -41,11 +41,11 @@ func (User) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "email").
 			Unique().
-			StorageKey("idx_tenant_email_unique").
+			StorageKey("idx_user_tenant_id_email_unique").
 			Annotations(entsql.IndexWhere("status = 'published'")),
 		index.Fields("tenant_id", "status").
-			StorageKey("idx_tenant_status"),
+			StorageKey("idx_user_tenant_status"),
 		index.Fields("tenant_id", "created_at").
-			StorageKey("idx_tenant_created_at"),
+			StorageKey("idx_user_tenant_created_at"),
 	}
 }

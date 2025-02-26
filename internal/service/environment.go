@@ -84,9 +84,6 @@ func (s *environmentService) UpdateEnvironment(ctx context.Context, id string, r
 	if req.Type != "" {
 		env.Type = types.EnvironmentType(req.Type)
 	}
-	if req.Slug != "" {
-		env.Slug = req.Slug
-	}
 	env.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(ctx, env); err != nil {

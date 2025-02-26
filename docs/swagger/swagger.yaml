@@ -90,13 +90,10 @@ definitions:
     properties:
       name:
         type: string
-      slug:
-        type: string
       type:
         type: string
     required:
     - name
-    - slug
     - type
     type: object
   dto.CreateFeatureRequest:
@@ -650,8 +647,6 @@ definitions:
       id:
         type: string
       name:
-        type: string
-      slug:
         type: string
       type:
         type: string
@@ -1660,8 +1655,6 @@ definitions:
   dto.UpdateEnvironmentRequest:
     properties:
       name:
-        type: string
-      slug:
         type: string
       type:
         type: string
