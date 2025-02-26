@@ -13,11 +13,8 @@ type UserResponse struct {
 
 func NewUserResponse(user *user.User, tenant *tenant.Tenant) *UserResponse {
 	return &UserResponse{
-		ID:    user.ID,
-		Email: user.Email,
-		Tenant: &TenantResponse{
-			ID:   tenant.ID,
-			Name: tenant.Name,
-		},
+		ID:     user.ID,
+		Email:  user.Email,
+		Tenant: NewTenantResponse(tenant),
 	}
 }

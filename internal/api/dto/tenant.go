@@ -16,6 +16,7 @@ type CreateTenantRequest struct {
 type TenantResponse struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
+	Status    string `json:"status"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -33,6 +34,7 @@ func (r *CreateTenantRequest) ToTenant(ctx context.Context) *tenant.Tenant {
 	return &tenant.Tenant{
 		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TENANT),
 		Name:      r.Name,
+		Status:    types.StatusPublished,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -50,6 +52,7 @@ func NewTenantResponse(t *tenant.Tenant) *TenantResponse {
 	return &TenantResponse{
 		ID:        t.ID,
 		Name:      t.Name,
+		Status:    string(t.Status),
 		CreatedAt: t.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: t.UpdatedAt.Format(time.RFC3339),
 	}
