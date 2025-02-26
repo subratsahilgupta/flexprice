@@ -245,7 +245,7 @@ func (h *WalletHandler) TerminateWallet(c *gin.Context) {
 // UpdateWallet godoc
 // @Summary Update a wallet
 // @Description Update a wallet's details including auto top-up configuration
-// @Tags wallets
+// @Tags Wallets
 // @Accept json
 // @Produce json
 // @Param id path string true "Wallet ID"

@@ -1,24 +1,18 @@
 package service
 
 import (
-	"context"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	authProvider "github.com/flexprice/flexprice/internal/auth"
-	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/testutil"
-	"github.com/flexprice/flexprice/internal/types"
 	"github.com/stretchr/testify/suite"
 )
 
 type AuthServiceSuite struct {
-	suite.Suite
-	ctx         context.Context
-	authService *authService
+	testutil.BaseServiceTestSuite
+	authService AuthService
 	userRepo    *testutil.InMemoryUserStore
-	authRepo    *testutil.InMemoryAuthRepository
 }
 
 func TestAuthService(t *testing.T) {
@@ -26,25 +20,28 @@ func TestAuthService(t *testing.T) {
 }
 
 func (s *AuthServiceSuite) SetupTest() {
-	s.ctx = testutil.SetupContext()
-	s.userRepo = testutil.NewInMemoryUserStore()
-	s.authRepo = testutil.NewInMemoryAuthRepository()
+	s.BaseServiceTestSuite.SetupTest()
+	s.setupService()
+	s.setupTestData()
+}
 
-	// Create a real provider (e.g., flexpriceAuth) with test config
-	cfg := &config.Configuration{
-		Auth: config.AuthConfig{
-			Provider: types.AuthProviderFlexprice,
-			Secret:   "test-secret", // Use a test secret
-		},
-	}
+func (s *AuthServiceSuite) setupService() {
+	s.userRepo = s.GetStores().UserRepo.(*testutil.InMemoryUserStore)
 
-	realProvider := authProvider.NewFlexpriceAuth(cfg)
+	s.authService = NewAuthService(
+		s.GetConfig(),
+		s.userRepo,
+		s.GetStores().AuthRepo,
+		s.GetStores().TenantRepo,
+		s.GetStores().EnvironmentRepo,
+		s.GetLogger(),
+		s.GetDB(),
+	)
+}
 
-	s.authService = &authService{
-		userRepo:     s.userRepo,
-		authProvider: realProvider,
-		authRepo:     s.authRepo,
-	}
+func (s *AuthServiceSuite) setupTestData() {
+	// Clear any existing data
+	s.BaseServiceTestSuite.ClearStores()
 }
 
 func (s *AuthServiceSuite) TestSignUp() {
@@ -71,7 +68,7 @@ func (s *AuthServiceSuite) TestSignUp() {
 			},
 			setupFunc: func() {
 				// Create an existing user to trigger a duplicate scenario
-				_ = s.userRepo.Create(s.ctx, &user.User{
+				_ = s.userRepo.Create(s.GetContext(), &user.User{
 					ID:    "user-1",
 					Email: "existing@example.com",
 				})
@@ -86,7 +83,7 @@ func (s *AuthServiceSuite) TestSignUp() {
 				tc.setupFunc()
 			}
 
-			resp, err := s.authService.SignUp(s.ctx, tc.req)
+			resp, err := s.authService.SignUp(s.GetContext(), tc.req)
 
 			if tc.expectedError {
 				s.Error(err)

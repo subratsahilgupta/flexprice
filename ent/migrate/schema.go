@@ -915,9 +915,9 @@ var (
 		PrimaryKey: []*schema.Column{UsersColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idx_user_tenant_id_email_unique",
+				Name:    "idx_user_email_unique",
 				Unique:  true,
-				Columns: []*schema.Column{UsersColumns[1], UsersColumns[7]},
+				Columns: []*schema.Column{UsersColumns[7]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status = 'published'",
 				},

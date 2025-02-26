@@ -19,6 +19,7 @@ type Auth struct {
 type Claims struct {
 	UserID   string
 	TenantID string
+	Email    string
 }
 
 func NewAuth(userID string, provider types.AuthProvider, token string) *Auth {

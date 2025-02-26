@@ -4569,6 +4569,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/dto.UserResponse"
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -4692,7 +4698,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Update a wallet",
                 "parameters": [
@@ -5103,7 +5109,13 @@ const docTemplate = `{
         "dto.AuthResponse": {
             "type": "object",
             "properties": {
+                "tenant_id": {
+                    "type": "string"
+                },
                 "token": {
+                    "type": "string"
+                },
+                "user_id": {
                     "type": "string"
                 }
             }
@@ -6773,6 +6785,9 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "minLength": 8
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },
@@ -7157,8 +7172,7 @@ const docTemplate = `{
         "dto.SignUpRequest": {
             "type": "object",
             "required": [
-                "email",
-                "password"
+                "email"
             ],
             "properties": {
                 "email": {
@@ -7167,6 +7181,12 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "minLength": 8
+                },
+                "tenant_name": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },
