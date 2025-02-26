@@ -6,6 +6,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// Auth is the predicate function for auth builders.
+type Auth func(*sql.Selector)
+
 // BillingSequence is the predicate function for billingsequence builders.
 type BillingSequence func(*sql.Selector)
 
@@ -14,6 +17,9 @@ type Customer func(*sql.Selector)
 
 // Entitlement is the predicate function for entitlement builders.
 type Entitlement func(*sql.Selector)
+
+// Environment is the predicate function for environment builders.
+type Environment func(*sql.Selector)
 
 // Feature is the predicate function for feature builders.
 type Feature func(*sql.Selector)
@@ -53,6 +59,12 @@ type SubscriptionLineItem func(*sql.Selector)
 
 // Task is the predicate function for task builders.
 type Task func(*sql.Selector)
+
+// Tenant is the predicate function for tenant builders.
+type Tenant func(*sql.Selector)
+
+// User is the predicate function for user builders.
+type User func(*sql.Selector)
 
 // Wallet is the predicate function for wallet builders.
 type Wallet func(*sql.Selector)

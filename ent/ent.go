@@ -12,9 +12,11 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/entitlement"
+	"github.com/flexprice/flexprice/ent/environment"
 	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
@@ -28,6 +30,8 @@ import (
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/task"
+	"github.com/flexprice/flexprice/ent/tenant"
+	"github.com/flexprice/flexprice/ent/user"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
 )
@@ -90,9 +94,11 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
+			auth.Table:                 auth.ValidColumn,
 			billingsequence.Table:      billingsequence.ValidColumn,
 			customer.Table:             customer.ValidColumn,
 			entitlement.Table:          entitlement.ValidColumn,
+			environment.Table:          environment.ValidColumn,
 			feature.Table:              feature.ValidColumn,
 			invoice.Table:              invoice.ValidColumn,
 			invoicelineitem.Table:      invoicelineitem.ValidColumn,
@@ -106,6 +112,8 @@ func checkColumn(table, column string) error {
 			subscription.Table:         subscription.ValidColumn,
 			subscriptionlineitem.Table: subscriptionlineitem.ValidColumn,
 			task.Table:                 task.ValidColumn,
+			tenant.Table:               tenant.ValidColumn,
+			user.Table:                 user.ValidColumn,
 			wallet.Table:               wallet.ValidColumn,
 			wallettransaction.Table:    wallettransaction.ValidColumn,
 		})
