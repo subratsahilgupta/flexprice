@@ -32,9 +32,7 @@ type Environment struct {
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// Type holds the value of the "type" field.
-	Type string `json:"type,omitempty"`
-	// Slug holds the value of the "slug" field.
-	Slug         string `json:"slug,omitempty"`
+	Type         string `json:"type,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -43,7 +41,7 @@ func (*Environment) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case environment.FieldID, environment.FieldTenantID, environment.FieldStatus, environment.FieldCreatedBy, environment.FieldUpdatedBy, environment.FieldName, environment.FieldType, environment.FieldSlug:
+		case environment.FieldID, environment.FieldTenantID, environment.FieldStatus, environment.FieldCreatedBy, environment.FieldUpdatedBy, environment.FieldName, environment.FieldType:
 			values[i] = new(sql.NullString)
 		case environment.FieldCreatedAt, environment.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -116,12 +114,6 @@ func (e *Environment) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				e.Type = value.String
 			}
-		case environment.FieldSlug:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field slug", values[i])
-			} else if value.Valid {
-				e.Slug = value.String
-			}
 		default:
 			e.selectValues.Set(columns[i], values[i])
 		}
@@ -181,9 +173,6 @@ func (e *Environment) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("type=")
 	builder.WriteString(e.Type)
-	builder.WriteString(", ")
-	builder.WriteString("slug=")
-	builder.WriteString(e.Slug)
 	builder.WriteByte(')')
 	return builder.String()
 }

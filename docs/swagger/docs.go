@@ -5234,14 +5234,10 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "name",
-                "slug",
                 "type"
             ],
             "properties": {
                 "name": {
-                    "type": "string"
-                },
-                "slug": {
                     "type": "string"
                 },
                 "type": {
@@ -6059,9 +6055,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
-                },
-                "slug": {
                     "type": "string"
                 },
                 "type": {
@@ -7546,9 +7539,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "name": {
-                    "type": "string"
-                },
-                "slug": {
                     "type": "string"
                 },
                 "type": {

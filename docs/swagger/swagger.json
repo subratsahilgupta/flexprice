@@ -5231,14 +5231,10 @@
             "type": "object",
             "required": [
                 "name",
-                "slug",
                 "type"
             ],
             "properties": {
                 "name": {
-                    "type": "string"
-                },
-                "slug": {
                     "type": "string"
                 },
                 "type": {
@@ -6056,9 +6052,6 @@
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
-                },
-                "slug": {
                     "type": "string"
                 },
                 "type": {
@@ -7543,9 +7536,6 @@
             "type": "object",
             "properties": {
                 "name": {
-                    "type": "string"
-                },
-                "slug": {
                     "type": "string"
                 },
                 "type": {

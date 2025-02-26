@@ -192,10 +192,6 @@ func init() {
 	environmentDescType := environmentFields[2].Descriptor()
 	// environment.TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	environment.TypeValidator = environmentDescType.Validators[0].(func(string) error)
-	// environmentDescSlug is the schema descriptor for slug field.
-	environmentDescSlug := environmentFields[3].Descriptor()
-	// environment.SlugValidator is a validator for the "slug" field. It is called by the builders before save.
-	environment.SlugValidator = environmentDescSlug.Validators[0].(func(string) error)
 	featureMixin := schema.Feature{}.Mixin()
 	featureMixinFields0 := featureMixin[0].Fields()
 	_ = featureMixinFields0

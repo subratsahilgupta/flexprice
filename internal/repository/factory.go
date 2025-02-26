@@ -31,7 +31,6 @@ type RepositoryParams struct {
 	fx.In
 
 	Logger       *logger.Logger
-	DB           *postgres.DB
 	EntClient    postgres.IClient
 	ClickHouseDB *clickhouse.ClickHouseStore
 }

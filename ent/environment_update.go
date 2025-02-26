@@ -96,20 +96,6 @@ func (eu *EnvironmentUpdate) SetNillableType(s *string) *EnvironmentUpdate {
 	return eu
 }
 
-// SetSlug sets the "slug" field.
-func (eu *EnvironmentUpdate) SetSlug(s string) *EnvironmentUpdate {
-	eu.mutation.SetSlug(s)
-	return eu
-}
-
-// SetNillableSlug sets the "slug" field if the given value is not nil.
-func (eu *EnvironmentUpdate) SetNillableSlug(s *string) *EnvironmentUpdate {
-	if s != nil {
-		eu.SetSlug(*s)
-	}
-	return eu
-}
-
 // Mutation returns the EnvironmentMutation object of the builder.
 func (eu *EnvironmentUpdate) Mutation() *EnvironmentMutation {
 	return eu.mutation
@@ -163,11 +149,6 @@ func (eu *EnvironmentUpdate) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Environment.type": %w`, err)}
 		}
 	}
-	if v, ok := eu.mutation.Slug(); ok {
-		if err := environment.SlugValidator(v); err != nil {
-			return &ValidationError{Name: "slug", err: fmt.Errorf(`ent: validator failed for field "Environment.slug": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -203,9 +184,6 @@ func (eu *EnvironmentUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := eu.mutation.GetType(); ok {
 		_spec.SetField(environment.FieldType, field.TypeString, value)
-	}
-	if value, ok := eu.mutation.Slug(); ok {
-		_spec.SetField(environment.FieldSlug, field.TypeString, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, eu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -295,20 +273,6 @@ func (euo *EnvironmentUpdateOne) SetNillableType(s *string) *EnvironmentUpdateOn
 	return euo
 }
 
-// SetSlug sets the "slug" field.
-func (euo *EnvironmentUpdateOne) SetSlug(s string) *EnvironmentUpdateOne {
-	euo.mutation.SetSlug(s)
-	return euo
-}
-
-// SetNillableSlug sets the "slug" field if the given value is not nil.
-func (euo *EnvironmentUpdateOne) SetNillableSlug(s *string) *EnvironmentUpdateOne {
-	if s != nil {
-		euo.SetSlug(*s)
-	}
-	return euo
-}
-
 // Mutation returns the EnvironmentMutation object of the builder.
 func (euo *EnvironmentUpdateOne) Mutation() *EnvironmentMutation {
 	return euo.mutation
@@ -375,11 +339,6 @@ func (euo *EnvironmentUpdateOne) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Environment.type": %w`, err)}
 		}
 	}
-	if v, ok := euo.mutation.Slug(); ok {
-		if err := environment.SlugValidator(v); err != nil {
-			return &ValidationError{Name: "slug", err: fmt.Errorf(`ent: validator failed for field "Environment.slug": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -432,9 +391,6 @@ func (euo *EnvironmentUpdateOne) sqlSave(ctx context.Context) (_node *Environmen
 	}
 	if value, ok := euo.mutation.GetType(); ok {
 		_spec.SetField(environment.FieldType, field.TypeString, value)
-	}
-	if value, ok := euo.mutation.Slug(); ok {
-		_spec.SetField(environment.FieldSlug, field.TypeString, value)
 	}
 	_node = &Environment{config: euo.config}
 	_spec.Assign = _node.assignValues

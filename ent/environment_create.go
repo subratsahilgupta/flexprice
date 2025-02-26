@@ -108,12 +108,6 @@ func (ec *EnvironmentCreate) SetType(s string) *EnvironmentCreate {
 	return ec
 }
 
-// SetSlug sets the "slug" field.
-func (ec *EnvironmentCreate) SetSlug(s string) *EnvironmentCreate {
-	ec.mutation.SetSlug(s)
-	return ec
-}
-
 // SetID sets the "id" field.
 func (ec *EnvironmentCreate) SetID(s string) *EnvironmentCreate {
 	ec.mutation.SetID(s)
@@ -204,14 +198,6 @@ func (ec *EnvironmentCreate) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Environment.type": %w`, err)}
 		}
 	}
-	if _, ok := ec.mutation.Slug(); !ok {
-		return &ValidationError{Name: "slug", err: errors.New(`ent: missing required field "Environment.slug"`)}
-	}
-	if v, ok := ec.mutation.Slug(); ok {
-		if err := environment.SlugValidator(v); err != nil {
-			return &ValidationError{Name: "slug", err: fmt.Errorf(`ent: validator failed for field "Environment.slug": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -278,10 +264,6 @@ func (ec *EnvironmentCreate) createSpec() (*Environment, *sqlgraph.CreateSpec) {
 	if value, ok := ec.mutation.GetType(); ok {
 		_spec.SetField(environment.FieldType, field.TypeString, value)
 		_node.Type = value
-	}
-	if value, ok := ec.mutation.Slug(); ok {
-		_spec.SetField(environment.FieldSlug, field.TypeString, value)
-		_node.Slug = value
 	}
 	return _node, _spec
 }

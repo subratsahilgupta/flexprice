@@ -2,7 +2,6 @@ package schema
 
 import (
 	"entgo.io/ent"
-	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
@@ -38,27 +37,17 @@ func (Environment) Fields() []ent.Field {
 				"postgres": "varchar(20)",
 			}).
 			NotEmpty(),
-		field.String("slug").
-			SchemaType(map[string]string{
-				"postgres": "varchar(50)",
-			}).
-			NotEmpty().
-			Unique(),
 	}
 }
 
 // Indexes of the Environment.
 func (Environment) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "slug").
-			Unique().
-			StorageKey("idx_tenant_slug_unique").
-			Annotations(entsql.IndexWhere("status = 'published'")),
 		index.Fields("tenant_id", "type").
-			StorageKey("idx_tenant_type"),
+			StorageKey("idx_environment_tenant_id_type"),
 		index.Fields("tenant_id", "status").
-			StorageKey("idx_tenant_status"),
+			StorageKey("idx_environment_tenant_status"),
 		index.Fields("tenant_id", "created_at").
-			StorageKey("idx_tenant_created_at"),
+			StorageKey("idx_environment_tenant_created_at"),
 	}
 }

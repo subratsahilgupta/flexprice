@@ -69,10 +69,11 @@ func main() {
 			// Cache
 			cache.Initialize,
 
-			// DB
-			postgres.NewDB,
+			// Postgres
 			postgres.NewEntClient,
 			postgres.NewClient,
+
+			// Clickhouse
 			clickhouse.NewClickHouseStore,
 
 			// Optional DBs

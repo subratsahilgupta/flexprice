@@ -9,7 +9,6 @@ type Environment struct {
 	ID   string                `db:"id" json:"id"`
 	Name string                `db:"name" json:"name"`
 	Type types.EnvironmentType `db:"type" json:"type"`
-	Slug string                `db:"slug" json:"slug"`
 
 	types.BaseModel
 }
@@ -24,7 +23,6 @@ func FromEnt(e *ent.Environment) *Environment {
 		ID:   e.ID,
 		Name: e.Name,
 		Type: types.EnvironmentType(e.Type),
-		Slug: e.Slug,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

@@ -36,7 +36,6 @@ func (r *environmentRepository) Create(ctx context.Context, env *domainEnvironme
 		SetTenantID(env.TenantID).
 		SetName(env.Name).
 		SetType(string(env.Type)).
-		SetSlug(env.Slug).
 		SetStatus(string(env.Status)).
 		SetCreatedBy(env.CreatedBy).
 		SetUpdatedBy(env.UpdatedBy).
@@ -111,7 +110,6 @@ func (r *environmentRepository) Update(ctx context.Context, env *domainEnvironme
 		UpdateOneID(env.ID).
 		SetName(env.Name).
 		SetType(string(env.Type)).
-		SetSlug(env.Slug).
 		SetUpdatedBy(env.UpdatedBy).
 		Save(ctx)
 

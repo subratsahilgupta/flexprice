@@ -87,7 +87,6 @@ func (s *InMemoryEnvironmentStore) Update(ctx context.Context, env *environment.
 
 	existing.Name = env.Name
 	existing.Type = env.Type
-	existing.Slug = env.Slug
 	existing.UpdatedAt = time.Now()
 	existing.UpdatedBy = env.UpdatedBy
 	return nil
