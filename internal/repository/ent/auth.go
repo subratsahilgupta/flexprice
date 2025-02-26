@@ -28,7 +28,7 @@ func NewAuthRepository(client postgres.IClient, logger *logger.Logger) domainAut
 // CreateAuth creates a new auth record
 func (r *authRepository) CreateAuth(ctx context.Context, auth *domainAuth.Auth) error {
 	if !r.ValidateProvider(auth.Provider) {
-		return fmt.Errorf("invalid provider")
+		return fmt.Errorf("invalid provider: %s", auth.Provider)
 	}
 
 	r.logger.Debugw("creating auth", "user_id", auth.UserID, "provider", auth.Provider)

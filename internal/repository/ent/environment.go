@@ -104,7 +104,7 @@ func (r *environmentRepository) List(ctx context.Context, filter types.Filter) (
 
 // Update updates an environment
 func (r *environmentRepository) Update(ctx context.Context, env *domainEnvironment.Environment) error {
-	r.logger.Debug("updating environment", "environment_id", env.ID, "tenant_id", env.TenantID)
+	r.logger.Debugw("updating environment", "environment_id", env.ID, "tenant_id", env.TenantID)
 
 	client := r.client.Querier(ctx)
 	_, err := client.Environment.
