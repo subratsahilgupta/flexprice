@@ -31,6 +31,12 @@ func NewWalletRepository(client postgres.IClient, logger *logger.Logger) walletd
 
 func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wallet) error {
 	client := r.client.Querier(ctx)
+
+	// Set environment ID from context if not already set
+	if w.EnvironmentID == "" {
+		w.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	wallet, err := client.Wallet.Create().
 		SetID(w.ID).
 		SetTenantID(w.TenantID).
@@ -53,6 +59,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetCreatedAt(w.CreatedAt).
 		SetUpdatedBy(w.UpdatedBy).
 		SetUpdatedAt(w.UpdatedAt).
+		SetEnvironmentID(w.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -218,7 +225,14 @@ func (r *walletRepository) ConsumeCredits(ctx context.Context, credits []*wallet
 
 // CreateTransaction creates a new wallet transaction record
 func (r *walletRepository) CreateTransaction(ctx context.Context, tx *walletdomain.Transaction) error {
-	create := r.client.Querier(ctx).WalletTransaction.Create().
+	client := r.client.Querier(ctx)
+
+	// Set environment ID from context if not already set
+	if tx.EnvironmentID == "" {
+		tx.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
+	transaction, err := client.WalletTransaction.Create().
 		SetID(tx.ID).
 		SetTenantID(tx.TenantID).
 		SetWalletID(tx.WalletID).
@@ -234,18 +248,20 @@ func (r *walletRepository) CreateTransaction(ctx context.Context, tx *walletdoma
 		SetTransactionReason(string(tx.TransactionReason)).
 		SetCreditsAvailable(tx.CreditsAvailable).
 		SetNillableExpiryDate(tx.ExpiryDate).
+		SetCreditBalanceBefore(tx.CreditBalanceBefore).
+		SetCreditBalanceAfter(tx.CreditBalanceAfter).
 		SetCreatedAt(tx.CreatedAt).
 		SetCreatedBy(tx.CreatedBy).
 		SetUpdatedAt(tx.UpdatedAt).
 		SetUpdatedBy(tx.UpdatedBy).
-		SetCreditBalanceBefore(tx.CreditBalanceBefore).
-		SetCreditBalanceAfter(tx.CreditBalanceAfter).
-		SetNillableExpiryDate(tx.ExpiryDate)
-	_, err := create.Save(ctx)
+		SetEnvironmentID(tx.EnvironmentID).
+		Save(ctx)
+
 	if err != nil {
-		return fmt.Errorf("creating transaction: %w", err)
+		return fmt.Errorf("failed to create transaction: %w", err)
 	}
 
+	*tx = *walletdomain.TransactionFromEnt(transaction)
 	return nil
 }
 
@@ -377,6 +393,14 @@ func (o WalletTransactionQueryOptions) ApplyTenantFilter(ctx context.Context, qu
 	return query.Where(wallettransaction.TenantID(types.GetTenantID(ctx)))
 }
 
+func (o WalletTransactionQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query WalletTransactionQuery) WalletTransactionQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(wallettransaction.EnvironmentID(environmentID))
+	}
+	return query
+}
+
 func (o WalletTransactionQueryOptions) ApplyStatusFilter(query WalletTransactionQuery, status string) WalletTransactionQuery {
 	if status == "" {
 		return query.Where(wallettransaction.StatusNotIn(string(types.StatusDeleted)))
@@ -413,7 +437,7 @@ func (o WalletTransactionQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o WalletTransactionQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.WalletTransactionFilter, query WalletTransactionQuery) WalletTransactionQuery {
+func (o WalletTransactionQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.WalletTransactionFilter, query WalletTransactionQuery) WalletTransactionQuery {
 	if f == nil {
 		return query
 	}

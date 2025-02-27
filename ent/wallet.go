@@ -32,6 +32,8 @@ type Wallet struct {
 	CreatedBy string `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
 	UpdatedBy string `json:"updated_by,omitempty"`
+	// EnvironmentID holds the value of the "environment_id" field.
+	EnvironmentID string `json:"environment_id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// CustomerID holds the value of the "customer_id" field.
@@ -74,7 +76,7 @@ func (*Wallet) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case wallet.FieldBalance, wallet.FieldCreditBalance, wallet.FieldConversionRate:
 			values[i] = new(decimal.Decimal)
-		case wallet.FieldID, wallet.FieldTenantID, wallet.FieldStatus, wallet.FieldCreatedBy, wallet.FieldUpdatedBy, wallet.FieldName, wallet.FieldCustomerID, wallet.FieldCurrency, wallet.FieldDescription, wallet.FieldWalletStatus, wallet.FieldAutoTopupTrigger, wallet.FieldWalletType:
+		case wallet.FieldID, wallet.FieldTenantID, wallet.FieldStatus, wallet.FieldCreatedBy, wallet.FieldUpdatedBy, wallet.FieldEnvironmentID, wallet.FieldName, wallet.FieldCustomerID, wallet.FieldCurrency, wallet.FieldDescription, wallet.FieldWalletStatus, wallet.FieldAutoTopupTrigger, wallet.FieldWalletType:
 			values[i] = new(sql.NullString)
 		case wallet.FieldCreatedAt, wallet.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -134,6 +136,12 @@ func (w *Wallet) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field updated_by", values[i])
 			} else if value.Valid {
 				w.UpdatedBy = value.String
+			}
+		case wallet.FieldEnvironmentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field environment_id", values[i])
+			} else if value.Valid {
+				w.EnvironmentID = value.String
 			}
 		case wallet.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -279,6 +287,9 @@ func (w *Wallet) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_by=")
 	builder.WriteString(w.UpdatedBy)
+	builder.WriteString(", ")
+	builder.WriteString("environment_id=")
+	builder.WriteString(w.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(w.Name)

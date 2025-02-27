@@ -68,6 +68,26 @@ func (cu *CustomerUpdate) ClearUpdatedBy() *CustomerUpdate {
 	return cu
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (cu *CustomerUpdate) SetEnvironmentID(s string) *CustomerUpdate {
+	cu.mutation.SetEnvironmentID(s)
+	return cu
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (cu *CustomerUpdate) SetNillableEnvironmentID(s *string) *CustomerUpdate {
+	if s != nil {
+		cu.SetEnvironmentID(*s)
+	}
+	return cu
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (cu *CustomerUpdate) ClearEnvironmentID() *CustomerUpdate {
+	cu.mutation.ClearEnvironmentID()
+	return cu
+}
+
 // SetExternalID sets the "external_id" field.
 func (cu *CustomerUpdate) SetExternalID(s string) *CustomerUpdate {
 	cu.mutation.SetExternalID(s)
@@ -331,6 +351,12 @@ func (cu *CustomerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if cu.mutation.UpdatedByCleared() {
 		_spec.ClearField(customer.FieldUpdatedBy, field.TypeString)
 	}
+	if value, ok := cu.mutation.EnvironmentID(); ok {
+		_spec.SetField(customer.FieldEnvironmentID, field.TypeString, value)
+	}
+	if cu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(customer.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := cu.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)
 	}
@@ -442,6 +468,26 @@ func (cuo *CustomerUpdateOne) SetNillableUpdatedBy(s *string) *CustomerUpdateOne
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (cuo *CustomerUpdateOne) ClearUpdatedBy() *CustomerUpdateOne {
 	cuo.mutation.ClearUpdatedBy()
+	return cuo
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (cuo *CustomerUpdateOne) SetEnvironmentID(s string) *CustomerUpdateOne {
+	cuo.mutation.SetEnvironmentID(s)
+	return cuo
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (cuo *CustomerUpdateOne) SetNillableEnvironmentID(s *string) *CustomerUpdateOne {
+	if s != nil {
+		cuo.SetEnvironmentID(*s)
+	}
+	return cuo
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (cuo *CustomerUpdateOne) ClearEnvironmentID() *CustomerUpdateOne {
+	cuo.mutation.ClearEnvironmentID()
 	return cuo
 }
 
@@ -737,6 +783,12 @@ func (cuo *CustomerUpdateOne) sqlSave(ctx context.Context) (_node *Customer, err
 	}
 	if cuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(customer.FieldUpdatedBy, field.TypeString)
+	}
+	if value, ok := cuo.mutation.EnvironmentID(); ok {
+		_spec.SetField(customer.FieldEnvironmentID, field.TypeString, value)
+	}
+	if cuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(customer.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := cuo.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)

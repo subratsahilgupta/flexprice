@@ -97,6 +97,20 @@ func (pac *PaymentAttemptCreate) SetNillableUpdatedBy(s *string) *PaymentAttempt
 	return pac
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (pac *PaymentAttemptCreate) SetEnvironmentID(s string) *PaymentAttemptCreate {
+	pac.mutation.SetEnvironmentID(s)
+	return pac
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (pac *PaymentAttemptCreate) SetNillableEnvironmentID(s *string) *PaymentAttemptCreate {
+	if s != nil {
+		pac.SetEnvironmentID(*s)
+	}
+	return pac
+}
+
 // SetPaymentID sets the "payment_id" field.
 func (pac *PaymentAttemptCreate) SetPaymentID(s string) *PaymentAttemptCreate {
 	pac.mutation.SetPaymentID(s)
@@ -215,6 +229,10 @@ func (pac *PaymentAttemptCreate) defaults() {
 		v := paymentattempt.DefaultUpdatedAt()
 		pac.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := pac.mutation.EnvironmentID(); !ok {
+		v := paymentattempt.DefaultEnvironmentID
+		pac.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := pac.mutation.AttemptNumber(); !ok {
 		v := paymentattempt.DefaultAttemptNumber
 		pac.mutation.SetAttemptNumber(v)
@@ -325,6 +343,10 @@ func (pac *PaymentAttemptCreate) createSpec() (*PaymentAttempt, *sqlgraph.Create
 	if value, ok := pac.mutation.UpdatedBy(); ok {
 		_spec.SetField(paymentattempt.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := pac.mutation.EnvironmentID(); ok {
+		_spec.SetField(paymentattempt.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := pac.mutation.PaymentStatus(); ok {
 		_spec.SetField(paymentattempt.FieldPaymentStatus, field.TypeString, value)

@@ -41,6 +41,9 @@ type Customer struct {
 	// Metadata
 	Metadata map[string]string `db:"metadata" json:"metadata"`
 
+	// EnvironmentID is the environment identifier for the customer
+	EnvironmentID string `db:"environment_id" json:"environment_id"`
+
 	types.BaseModel
 }
 
@@ -49,7 +52,6 @@ func FromEnt(c *ent.Customer) *Customer {
 	if c == nil {
 		return nil
 	}
-
 	return &Customer{
 		ID:                c.ID,
 		ExternalID:        c.ExternalID,
@@ -62,6 +64,7 @@ func FromEnt(c *ent.Customer) *Customer {
 		AddressPostalCode: c.AddressPostalCode,
 		AddressCountry:    c.AddressCountry,
 		Metadata:          c.Metadata,
+		EnvironmentID:     c.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  c.TenantID,
 			Status:    types.Status(c.Status),

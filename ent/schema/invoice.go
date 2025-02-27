@@ -20,6 +20,7 @@ type Invoice struct {
 func (Invoice) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -153,15 +154,15 @@ func (Invoice) Edges() []ent.Edge {
 // Indexes of the Invoice.
 func (Invoice) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "customer_id", "invoice_status", "payment_status", "status").
+		index.Fields("tenant_id", "environment_id", "customer_id", "invoice_status", "payment_status", "status").
 			StorageKey("idx_tenant_customer_status"),
-		index.Fields("tenant_id", "subscription_id", "invoice_status", "payment_status", "status").
+		index.Fields("tenant_id", "environment_id", "subscription_id", "invoice_status", "payment_status", "status").
 			StorageKey("idx_tenant_subscription_status"),
-		index.Fields("tenant_id", "invoice_type", "invoice_status", "payment_status", "status").
+		index.Fields("tenant_id", "environment_id", "invoice_type", "invoice_status", "payment_status", "status").
 			StorageKey("idx_tenant_type_status"),
-		index.Fields("tenant_id", "due_date", "invoice_status", "payment_status", "status").
+		index.Fields("tenant_id", "environment_id", "due_date", "invoice_status", "payment_status", "status").
 			StorageKey("idx_tenant_due_date_status"),
-		index.Fields("tenant_id", "invoice_number").
+		index.Fields("tenant_id", "environment_id", "invoice_number").
 			Unique().
 			StorageKey("idx_tenant_invoice_number_unique"),
 		index.Fields("idempotency_key").

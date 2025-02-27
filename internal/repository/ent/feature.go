@@ -37,6 +37,11 @@ func (r *featureRepository) Create(ctx context.Context, f *domainFeature.Feature
 		"lookup_key", f.LookupKey,
 	)
 
+	// Set environment ID from context if not already set
+	if f.EnvironmentID == "" {
+		f.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	feature, err := client.Feature.Create().
 		SetID(f.ID).
 		SetName(f.Name).
@@ -53,6 +58,7 @@ func (r *featureRepository) Create(ctx context.Context, f *domainFeature.Feature
 		SetUpdatedAt(f.UpdatedAt).
 		SetCreatedBy(f.CreatedBy).
 		SetUpdatedBy(f.UpdatedBy).
+		SetEnvironmentID(f.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -219,6 +225,14 @@ func (o FeatureQueryOptions) ApplyTenantFilter(ctx context.Context, query Featur
 	return query.Where(feature.TenantID(types.GetTenantID(ctx)))
 }
 
+func (o FeatureQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query FeatureQuery) FeatureQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(feature.EnvironmentIDEQ(environmentID))
+	}
+	return query
+}
+
 func (o FeatureQueryOptions) ApplyStatusFilter(query FeatureQuery, status string) FeatureQuery {
 	if status == "" {
 		return query.Where(feature.StatusNotIn(string(types.StatusDeleted)))
@@ -257,7 +271,7 @@ func (o FeatureQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.FeatureFilter, query FeatureQuery) FeatureQuery {
+func (o FeatureQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.FeatureFilter, query FeatureQuery) FeatureQuery {
 	if f == nil {
 		return query
 	}

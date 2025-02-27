@@ -259,6 +259,13 @@ func (o SecretQueryOptions) ApplyStatusFilter(query SecretQuery, status string) 
 	return query
 }
 
+func (o SecretQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query SecretQuery) SecretQuery {
+	if types.GetEnvironmentID(ctx) != "" {
+		return query.Where(secret.EnvironmentID(types.GetEnvironmentID(ctx)))
+	}
+	return query
+}
+
 func (o SecretQueryOptions) ApplyTypeFilter(query SecretQuery, secretType string) SecretQuery {
 	if secretType != "" {
 		return query.Where(secret.Type(secretType))
@@ -313,7 +320,7 @@ func (o SecretQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o SecretQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.SecretFilter, query SecretQuery) SecretQuery {
+func (o SecretQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.SecretFilter, query SecretQuery) SecretQuery {
 	if f == nil {
 		return query
 	}

@@ -86,6 +86,8 @@ func init() {
 	customerMixin := schema.Customer{}.Mixin()
 	customerMixinFields0 := customerMixin[0].Fields()
 	_ = customerMixinFields0
+	customerMixinFields1 := customerMixin[1].Fields()
+	_ = customerMixinFields1
 	customerFields := schema.Customer{}.Fields()
 	_ = customerFields
 	// customerDescTenantID is the schema descriptor for tenant_id field.
@@ -106,6 +108,10 @@ func init() {
 	customer.DefaultUpdatedAt = customerDescUpdatedAt.Default.(func() time.Time)
 	// customer.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	customer.UpdateDefaultUpdatedAt = customerDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// customerDescEnvironmentID is the schema descriptor for environment_id field.
+	customerDescEnvironmentID := customerMixinFields1[0].Descriptor()
+	// customer.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	customer.DefaultEnvironmentID = customerDescEnvironmentID.Default.(string)
 	// customerDescExternalID is the schema descriptor for external_id field.
 	customerDescExternalID := customerFields[1].Descriptor()
 	// customer.ExternalIDValidator is a validator for the "external_id" field. It is called by the builders before save.
@@ -117,6 +123,8 @@ func init() {
 	entitlementMixin := schema.Entitlement{}.Mixin()
 	entitlementMixinFields0 := entitlementMixin[0].Fields()
 	_ = entitlementMixinFields0
+	entitlementMixinFields1 := entitlementMixin[1].Fields()
+	_ = entitlementMixinFields1
 	entitlementFields := schema.Entitlement{}.Fields()
 	_ = entitlementFields
 	// entitlementDescTenantID is the schema descriptor for tenant_id field.
@@ -137,6 +145,10 @@ func init() {
 	entitlement.DefaultUpdatedAt = entitlementDescUpdatedAt.Default.(func() time.Time)
 	// entitlement.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	entitlement.UpdateDefaultUpdatedAt = entitlementDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// entitlementDescEnvironmentID is the schema descriptor for environment_id field.
+	entitlementDescEnvironmentID := entitlementMixinFields1[0].Descriptor()
+	// entitlement.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	entitlement.DefaultEnvironmentID = entitlementDescEnvironmentID.Default.(string)
 	// entitlementDescPlanID is the schema descriptor for plan_id field.
 	entitlementDescPlanID := entitlementFields[1].Descriptor()
 	// entitlement.PlanIDValidator is a validator for the "plan_id" field. It is called by the builders before save.
@@ -195,6 +207,8 @@ func init() {
 	featureMixin := schema.Feature{}.Mixin()
 	featureMixinFields0 := featureMixin[0].Fields()
 	_ = featureMixinFields0
+	featureMixinFields1 := featureMixin[1].Fields()
+	_ = featureMixinFields1
 	featureFields := schema.Feature{}.Fields()
 	_ = featureFields
 	// featureDescTenantID is the schema descriptor for tenant_id field.
@@ -215,6 +229,10 @@ func init() {
 	feature.DefaultUpdatedAt = featureDescUpdatedAt.Default.(func() time.Time)
 	// feature.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	feature.UpdateDefaultUpdatedAt = featureDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// featureDescEnvironmentID is the schema descriptor for environment_id field.
+	featureDescEnvironmentID := featureMixinFields1[0].Descriptor()
+	// feature.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	feature.DefaultEnvironmentID = featureDescEnvironmentID.Default.(string)
 	// featureDescName is the schema descriptor for name field.
 	featureDescName := featureFields[2].Descriptor()
 	// feature.NameValidator is a validator for the "name" field. It is called by the builders before save.
@@ -226,6 +244,8 @@ func init() {
 	invoiceMixin := schema.Invoice{}.Mixin()
 	invoiceMixinFields0 := invoiceMixin[0].Fields()
 	_ = invoiceMixinFields0
+	invoiceMixinFields1 := invoiceMixin[1].Fields()
+	_ = invoiceMixinFields1
 	invoiceFields := schema.Invoice{}.Fields()
 	_ = invoiceFields
 	// invoiceDescTenantID is the schema descriptor for tenant_id field.
@@ -246,6 +266,10 @@ func init() {
 	invoice.DefaultUpdatedAt = invoiceDescUpdatedAt.Default.(func() time.Time)
 	// invoice.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	invoice.UpdateDefaultUpdatedAt = invoiceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// invoiceDescEnvironmentID is the schema descriptor for environment_id field.
+	invoiceDescEnvironmentID := invoiceMixinFields1[0].Descriptor()
+	// invoice.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	invoice.DefaultEnvironmentID = invoiceDescEnvironmentID.Default.(string)
 	// invoiceDescCustomerID is the schema descriptor for customer_id field.
 	invoiceDescCustomerID := invoiceFields[1].Descriptor()
 	// invoice.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
@@ -285,6 +309,8 @@ func init() {
 	invoicelineitemMixin := schema.InvoiceLineItem{}.Mixin()
 	invoicelineitemMixinFields0 := invoicelineitemMixin[0].Fields()
 	_ = invoicelineitemMixinFields0
+	invoicelineitemMixinFields1 := invoicelineitemMixin[1].Fields()
+	_ = invoicelineitemMixinFields1
 	invoicelineitemFields := schema.InvoiceLineItem{}.Fields()
 	_ = invoicelineitemFields
 	// invoicelineitemDescTenantID is the schema descriptor for tenant_id field.
@@ -305,6 +331,10 @@ func init() {
 	invoicelineitem.DefaultUpdatedAt = invoicelineitemDescUpdatedAt.Default.(func() time.Time)
 	// invoicelineitem.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	invoicelineitem.UpdateDefaultUpdatedAt = invoicelineitemDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// invoicelineitemDescEnvironmentID is the schema descriptor for environment_id field.
+	invoicelineitemDescEnvironmentID := invoicelineitemMixinFields1[0].Descriptor()
+	// invoicelineitem.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	invoicelineitem.DefaultEnvironmentID = invoicelineitemDescEnvironmentID.Default.(string)
 	// invoicelineitemDescInvoiceID is the schema descriptor for invoice_id field.
 	invoicelineitemDescInvoiceID := invoicelineitemFields[1].Descriptor()
 	// invoicelineitem.InvoiceIDValidator is a validator for the "invoice_id" field. It is called by the builders before save.
@@ -356,6 +386,8 @@ func init() {
 	meterMixin := schema.Meter{}.Mixin()
 	meterMixinFields0 := meterMixin[0].Fields()
 	_ = meterMixinFields0
+	meterMixinFields1 := meterMixin[1].Fields()
+	_ = meterMixinFields1
 	meterFields := schema.Meter{}.Fields()
 	_ = meterFields
 	// meterDescTenantID is the schema descriptor for tenant_id field.
@@ -376,6 +408,10 @@ func init() {
 	meter.DefaultUpdatedAt = meterDescUpdatedAt.Default.(func() time.Time)
 	// meter.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	meter.UpdateDefaultUpdatedAt = meterDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// meterDescEnvironmentID is the schema descriptor for environment_id field.
+	meterDescEnvironmentID := meterMixinFields1[0].Descriptor()
+	// meter.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	meter.DefaultEnvironmentID = meterDescEnvironmentID.Default.(string)
 	// meterDescEventName is the schema descriptor for event_name field.
 	meterDescEventName := meterFields[1].Descriptor()
 	// meter.EventNameValidator is a validator for the "event_name" field. It is called by the builders before save.
@@ -399,6 +435,8 @@ func init() {
 	paymentMixin := schema.Payment{}.Mixin()
 	paymentMixinFields0 := paymentMixin[0].Fields()
 	_ = paymentMixinFields0
+	paymentMixinFields1 := paymentMixin[1].Fields()
+	_ = paymentMixinFields1
 	paymentFields := schema.Payment{}.Fields()
 	_ = paymentFields
 	// paymentDescTenantID is the schema descriptor for tenant_id field.
@@ -419,6 +457,10 @@ func init() {
 	payment.DefaultUpdatedAt = paymentDescUpdatedAt.Default.(func() time.Time)
 	// payment.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	payment.UpdateDefaultUpdatedAt = paymentDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// paymentDescEnvironmentID is the schema descriptor for environment_id field.
+	paymentDescEnvironmentID := paymentMixinFields1[0].Descriptor()
+	// payment.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	payment.DefaultEnvironmentID = paymentDescEnvironmentID.Default.(string)
 	// paymentDescDestinationType is the schema descriptor for destination_type field.
 	paymentDescDestinationType := paymentFields[2].Descriptor()
 	// payment.DestinationTypeValidator is a validator for the "destination_type" field. It is called by the builders before save.
@@ -450,6 +492,8 @@ func init() {
 	paymentattemptMixin := schema.PaymentAttempt{}.Mixin()
 	paymentattemptMixinFields0 := paymentattemptMixin[0].Fields()
 	_ = paymentattemptMixinFields0
+	paymentattemptMixinFields1 := paymentattemptMixin[1].Fields()
+	_ = paymentattemptMixinFields1
 	paymentattemptFields := schema.PaymentAttempt{}.Fields()
 	_ = paymentattemptFields
 	// paymentattemptDescTenantID is the schema descriptor for tenant_id field.
@@ -470,6 +514,10 @@ func init() {
 	paymentattempt.DefaultUpdatedAt = paymentattemptDescUpdatedAt.Default.(func() time.Time)
 	// paymentattempt.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	paymentattempt.UpdateDefaultUpdatedAt = paymentattemptDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// paymentattemptDescEnvironmentID is the schema descriptor for environment_id field.
+	paymentattemptDescEnvironmentID := paymentattemptMixinFields1[0].Descriptor()
+	// paymentattempt.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	paymentattempt.DefaultEnvironmentID = paymentattemptDescEnvironmentID.Default.(string)
 	// paymentattemptDescPaymentID is the schema descriptor for payment_id field.
 	paymentattemptDescPaymentID := paymentattemptFields[1].Descriptor()
 	// paymentattempt.PaymentIDValidator is a validator for the "payment_id" field. It is called by the builders before save.
@@ -487,6 +535,8 @@ func init() {
 	planMixin := schema.Plan{}.Mixin()
 	planMixinFields0 := planMixin[0].Fields()
 	_ = planMixinFields0
+	planMixinFields1 := planMixin[1].Fields()
+	_ = planMixinFields1
 	planFields := schema.Plan{}.Fields()
 	_ = planFields
 	// planDescTenantID is the schema descriptor for tenant_id field.
@@ -507,6 +557,10 @@ func init() {
 	plan.DefaultUpdatedAt = planDescUpdatedAt.Default.(func() time.Time)
 	// plan.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	plan.UpdateDefaultUpdatedAt = planDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// planDescEnvironmentID is the schema descriptor for environment_id field.
+	planDescEnvironmentID := planMixinFields1[0].Descriptor()
+	// plan.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	plan.DefaultEnvironmentID = planDescEnvironmentID.Default.(string)
 	// planDescName is the schema descriptor for name field.
 	planDescName := planFields[2].Descriptor()
 	// plan.NameValidator is a validator for the "name" field. It is called by the builders before save.
@@ -522,6 +576,8 @@ func init() {
 	priceMixin := schema.Price{}.Mixin()
 	priceMixinFields0 := priceMixin[0].Fields()
 	_ = priceMixinFields0
+	priceMixinFields1 := priceMixin[1].Fields()
+	_ = priceMixinFields1
 	priceFields := schema.Price{}.Fields()
 	_ = priceFields
 	// priceDescTenantID is the schema descriptor for tenant_id field.
@@ -542,6 +598,10 @@ func init() {
 	price.DefaultUpdatedAt = priceDescUpdatedAt.Default.(func() time.Time)
 	// price.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	price.UpdateDefaultUpdatedAt = priceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// priceDescEnvironmentID is the schema descriptor for environment_id field.
+	priceDescEnvironmentID := priceMixinFields1[0].Descriptor()
+	// price.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	price.DefaultEnvironmentID = priceDescEnvironmentID.Default.(string)
 	// priceDescCurrency is the schema descriptor for currency field.
 	priceDescCurrency := priceFields[2].Descriptor()
 	// price.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
@@ -577,6 +637,8 @@ func init() {
 	secretMixin := schema.Secret{}.Mixin()
 	secretMixinFields0 := secretMixin[0].Fields()
 	_ = secretMixinFields0
+	secretMixinFields1 := secretMixin[1].Fields()
+	_ = secretMixinFields1
 	secretFields := schema.Secret{}.Fields()
 	_ = secretFields
 	// secretDescTenantID is the schema descriptor for tenant_id field.
@@ -597,6 +659,10 @@ func init() {
 	secret.DefaultUpdatedAt = secretDescUpdatedAt.Default.(func() time.Time)
 	// secret.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	secret.UpdateDefaultUpdatedAt = secretDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// secretDescEnvironmentID is the schema descriptor for environment_id field.
+	secretDescEnvironmentID := secretMixinFields1[0].Descriptor()
+	// secret.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	secret.DefaultEnvironmentID = secretDescEnvironmentID.Default.(string)
 	// secretDescName is the schema descriptor for name field.
 	secretDescName := secretFields[1].Descriptor()
 	// secret.NameValidator is a validator for the "name" field. It is called by the builders before save.
@@ -616,6 +682,8 @@ func init() {
 	subscriptionMixin := schema.Subscription{}.Mixin()
 	subscriptionMixinFields0 := subscriptionMixin[0].Fields()
 	_ = subscriptionMixinFields0
+	subscriptionMixinFields1 := subscriptionMixin[1].Fields()
+	_ = subscriptionMixinFields1
 	subscriptionFields := schema.Subscription{}.Fields()
 	_ = subscriptionFields
 	// subscriptionDescTenantID is the schema descriptor for tenant_id field.
@@ -636,6 +704,10 @@ func init() {
 	subscription.DefaultUpdatedAt = subscriptionDescUpdatedAt.Default.(func() time.Time)
 	// subscription.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	subscription.UpdateDefaultUpdatedAt = subscriptionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// subscriptionDescEnvironmentID is the schema descriptor for environment_id field.
+	subscriptionDescEnvironmentID := subscriptionMixinFields1[0].Descriptor()
+	// subscription.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	subscription.DefaultEnvironmentID = subscriptionDescEnvironmentID.Default.(string)
 	// subscriptionDescCustomerID is the schema descriptor for customer_id field.
 	subscriptionDescCustomerID := subscriptionFields[2].Descriptor()
 	// subscription.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
@@ -695,6 +767,8 @@ func init() {
 	subscriptionlineitemMixin := schema.SubscriptionLineItem{}.Mixin()
 	subscriptionlineitemMixinFields0 := subscriptionlineitemMixin[0].Fields()
 	_ = subscriptionlineitemMixinFields0
+	subscriptionlineitemMixinFields1 := subscriptionlineitemMixin[1].Fields()
+	_ = subscriptionlineitemMixinFields1
 	subscriptionlineitemFields := schema.SubscriptionLineItem{}.Fields()
 	_ = subscriptionlineitemFields
 	// subscriptionlineitemDescTenantID is the schema descriptor for tenant_id field.
@@ -715,6 +789,10 @@ func init() {
 	subscriptionlineitem.DefaultUpdatedAt = subscriptionlineitemDescUpdatedAt.Default.(func() time.Time)
 	// subscriptionlineitem.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	subscriptionlineitem.UpdateDefaultUpdatedAt = subscriptionlineitemDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// subscriptionlineitemDescEnvironmentID is the schema descriptor for environment_id field.
+	subscriptionlineitemDescEnvironmentID := subscriptionlineitemMixinFields1[0].Descriptor()
+	// subscriptionlineitem.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	subscriptionlineitem.DefaultEnvironmentID = subscriptionlineitemDescEnvironmentID.Default.(string)
 	// subscriptionlineitemDescSubscriptionID is the schema descriptor for subscription_id field.
 	subscriptionlineitemDescSubscriptionID := subscriptionlineitemFields[1].Descriptor()
 	// subscriptionlineitem.SubscriptionIDValidator is a validator for the "subscription_id" field. It is called by the builders before save.
@@ -742,6 +820,8 @@ func init() {
 	taskMixin := schema.Task{}.Mixin()
 	taskMixinFields0 := taskMixin[0].Fields()
 	_ = taskMixinFields0
+	taskMixinFields1 := taskMixin[1].Fields()
+	_ = taskMixinFields1
 	taskFields := schema.Task{}.Fields()
 	_ = taskFields
 	// taskDescTenantID is the schema descriptor for tenant_id field.
@@ -762,6 +842,10 @@ func init() {
 	task.DefaultUpdatedAt = taskDescUpdatedAt.Default.(func() time.Time)
 	// task.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	task.UpdateDefaultUpdatedAt = taskDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// taskDescEnvironmentID is the schema descriptor for environment_id field.
+	taskDescEnvironmentID := taskMixinFields1[0].Descriptor()
+	// task.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	task.DefaultEnvironmentID = taskDescEnvironmentID.Default.(string)
 	// taskDescTaskType is the schema descriptor for task_type field.
 	taskDescTaskType := taskFields[1].Descriptor()
 	// task.TaskTypeValidator is a validator for the "task_type" field. It is called by the builders before save.
@@ -844,6 +928,8 @@ func init() {
 	walletMixin := schema.Wallet{}.Mixin()
 	walletMixinFields0 := walletMixin[0].Fields()
 	_ = walletMixinFields0
+	walletMixinFields1 := walletMixin[1].Fields()
+	_ = walletMixinFields1
 	walletFields := schema.Wallet{}.Fields()
 	_ = walletFields
 	// walletDescTenantID is the schema descriptor for tenant_id field.
@@ -864,6 +950,10 @@ func init() {
 	wallet.DefaultUpdatedAt = walletDescUpdatedAt.Default.(func() time.Time)
 	// wallet.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	wallet.UpdateDefaultUpdatedAt = walletDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// walletDescEnvironmentID is the schema descriptor for environment_id field.
+	walletDescEnvironmentID := walletMixinFields1[0].Descriptor()
+	// wallet.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	wallet.DefaultEnvironmentID = walletDescEnvironmentID.Default.(string)
 	// walletDescCustomerID is the schema descriptor for customer_id field.
 	walletDescCustomerID := walletFields[2].Descriptor()
 	// wallet.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
@@ -891,6 +981,8 @@ func init() {
 	wallettransactionMixin := schema.WalletTransaction{}.Mixin()
 	wallettransactionMixinFields0 := wallettransactionMixin[0].Fields()
 	_ = wallettransactionMixinFields0
+	wallettransactionMixinFields1 := wallettransactionMixin[1].Fields()
+	_ = wallettransactionMixinFields1
 	wallettransactionFields := schema.WalletTransaction{}.Fields()
 	_ = wallettransactionFields
 	// wallettransactionDescTenantID is the schema descriptor for tenant_id field.
@@ -911,6 +1003,10 @@ func init() {
 	wallettransaction.DefaultUpdatedAt = wallettransactionDescUpdatedAt.Default.(func() time.Time)
 	// wallettransaction.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	wallettransaction.UpdateDefaultUpdatedAt = wallettransactionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// wallettransactionDescEnvironmentID is the schema descriptor for environment_id field.
+	wallettransactionDescEnvironmentID := wallettransactionMixinFields1[0].Descriptor()
+	// wallettransaction.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	wallettransaction.DefaultEnvironmentID = wallettransactionDescEnvironmentID.Default.(string)
 	// wallettransactionDescWalletID is the schema descriptor for wallet_id field.
 	wallettransactionDescWalletID := wallettransactionFields[1].Descriptor()
 	// wallettransaction.WalletIDValidator is a validator for the "wallet_id" field. It is called by the builders before save.

@@ -69,6 +69,26 @@ func (pu *PlanUpdate) ClearUpdatedBy() *PlanUpdate {
 	return pu
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (pu *PlanUpdate) SetEnvironmentID(s string) *PlanUpdate {
+	pu.mutation.SetEnvironmentID(s)
+	return pu
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (pu *PlanUpdate) SetNillableEnvironmentID(s *string) *PlanUpdate {
+	if s != nil {
+		pu.SetEnvironmentID(*s)
+	}
+	return pu
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (pu *PlanUpdate) ClearEnvironmentID() *PlanUpdate {
+	pu.mutation.ClearEnvironmentID()
+	return pu
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (pu *PlanUpdate) SetLookupKey(s string) *PlanUpdate {
 	pu.mutation.SetLookupKey(s)
@@ -277,6 +297,12 @@ func (pu *PlanUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if pu.mutation.UpdatedByCleared() {
 		_spec.ClearField(plan.FieldUpdatedBy, field.TypeString)
 	}
+	if value, ok := pu.mutation.EnvironmentID(); ok {
+		_spec.SetField(plan.FieldEnvironmentID, field.TypeString, value)
+	}
+	if pu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(plan.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := pu.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)
 	}
@@ -403,6 +429,26 @@ func (puo *PlanUpdateOne) SetNillableUpdatedBy(s *string) *PlanUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (puo *PlanUpdateOne) ClearUpdatedBy() *PlanUpdateOne {
 	puo.mutation.ClearUpdatedBy()
+	return puo
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (puo *PlanUpdateOne) SetEnvironmentID(s string) *PlanUpdateOne {
+	puo.mutation.SetEnvironmentID(s)
+	return puo
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (puo *PlanUpdateOne) SetNillableEnvironmentID(s *string) *PlanUpdateOne {
+	if s != nil {
+		puo.SetEnvironmentID(*s)
+	}
+	return puo
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (puo *PlanUpdateOne) ClearEnvironmentID() *PlanUpdateOne {
+	puo.mutation.ClearEnvironmentID()
 	return puo
 }
 
@@ -643,6 +689,12 @@ func (puo *PlanUpdateOne) sqlSave(ctx context.Context) (_node *Plan, err error) 
 	}
 	if puo.mutation.UpdatedByCleared() {
 		_spec.ClearField(plan.FieldUpdatedBy, field.TypeString)
+	}
+	if value, ok := puo.mutation.EnvironmentID(); ok {
+		_spec.SetField(plan.FieldEnvironmentID, field.TypeString, value)
+	}
+	if puo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(plan.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := puo.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)

@@ -69,6 +69,26 @@ func (wtu *WalletTransactionUpdate) ClearUpdatedBy() *WalletTransactionUpdate {
 	return wtu
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (wtu *WalletTransactionUpdate) SetEnvironmentID(s string) *WalletTransactionUpdate {
+	wtu.mutation.SetEnvironmentID(s)
+	return wtu
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (wtu *WalletTransactionUpdate) SetNillableEnvironmentID(s *string) *WalletTransactionUpdate {
+	if s != nil {
+		wtu.SetEnvironmentID(*s)
+	}
+	return wtu
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (wtu *WalletTransactionUpdate) ClearEnvironmentID() *WalletTransactionUpdate {
+	wtu.mutation.ClearEnvironmentID()
+	return wtu
+}
+
 // SetType sets the "type" field.
 func (wtu *WalletTransactionUpdate) SetType(s string) *WalletTransactionUpdate {
 	wtu.mutation.SetType(s)
@@ -317,6 +337,12 @@ func (wtu *WalletTransactionUpdate) sqlSave(ctx context.Context) (n int, err err
 	if wtu.mutation.UpdatedByCleared() {
 		_spec.ClearField(wallettransaction.FieldUpdatedBy, field.TypeString)
 	}
+	if value, ok := wtu.mutation.EnvironmentID(); ok {
+		_spec.SetField(wallettransaction.FieldEnvironmentID, field.TypeString, value)
+	}
+	if wtu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(wallettransaction.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := wtu.mutation.GetType(); ok {
 		_spec.SetField(wallettransaction.FieldType, field.TypeString, value)
 	}
@@ -422,6 +448,26 @@ func (wtuo *WalletTransactionUpdateOne) SetNillableUpdatedBy(s *string) *WalletT
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (wtuo *WalletTransactionUpdateOne) ClearUpdatedBy() *WalletTransactionUpdateOne {
 	wtuo.mutation.ClearUpdatedBy()
+	return wtuo
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (wtuo *WalletTransactionUpdateOne) SetEnvironmentID(s string) *WalletTransactionUpdateOne {
+	wtuo.mutation.SetEnvironmentID(s)
+	return wtuo
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (wtuo *WalletTransactionUpdateOne) SetNillableEnvironmentID(s *string) *WalletTransactionUpdateOne {
+	if s != nil {
+		wtuo.SetEnvironmentID(*s)
+	}
+	return wtuo
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (wtuo *WalletTransactionUpdateOne) ClearEnvironmentID() *WalletTransactionUpdateOne {
+	wtuo.mutation.ClearEnvironmentID()
 	return wtuo
 }
 
@@ -702,6 +748,12 @@ func (wtuo *WalletTransactionUpdateOne) sqlSave(ctx context.Context) (_node *Wal
 	}
 	if wtuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(wallettransaction.FieldUpdatedBy, field.TypeString)
+	}
+	if value, ok := wtuo.mutation.EnvironmentID(); ok {
+		_spec.SetField(wallettransaction.FieldEnvironmentID, field.TypeString, value)
+	}
+	if wtuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(wallettransaction.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := wtuo.mutation.GetType(); ok {
 		_spec.SetField(wallettransaction.FieldType, field.TypeString, value)

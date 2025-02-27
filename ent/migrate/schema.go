@@ -12,7 +12,7 @@ var (
 	// AuthsColumns holds the columns for the "auths" table.
 	AuthsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "user_id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "user_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "provider", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "token", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
@@ -81,6 +81,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "external_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "email", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
@@ -99,17 +100,17 @@ var (
 		PrimaryKey: []*schema.Column{CustomersColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "customer_tenant_id_external_id",
+				Name:    "customer_tenant_id_environment_id_external_id",
 				Unique:  true,
-				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7]},
+				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7], CustomersColumns[8]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status != 'deleted' AND external_id != ''",
 				},
 			},
 			{
-				Name:    "customer_tenant_id",
+				Name:    "customer_tenant_id_environment_id",
 				Unique:  false,
-				Columns: []*schema.Column{CustomersColumns[1]},
+				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7]},
 			},
 		},
 	}
@@ -122,6 +123,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "feature_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "feature_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "is_enabled", Type: field.TypeBool, Default: false},
@@ -139,29 +141,29 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "entitlements_plans_entitlements",
-				Columns:    []*schema.Column{EntitlementsColumns[14]},
+				Columns:    []*schema.Column{EntitlementsColumns[15]},
 				RefColumns: []*schema.Column{PlansColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "entitlement_tenant_id_plan_id_feature_id",
+				Name:    "entitlement_tenant_id_environment_id_plan_id_feature_id",
 				Unique:  true,
-				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[14], EntitlementsColumns[7]},
+				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7], EntitlementsColumns[15], EntitlementsColumns[8]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status = 'published'",
 				},
 			},
 			{
-				Name:    "entitlement_tenant_id_plan_id",
+				Name:    "entitlement_tenant_id_environment_id_plan_id",
 				Unique:  false,
-				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[14]},
+				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7], EntitlementsColumns[15]},
 			},
 			{
-				Name:    "entitlement_tenant_id_feature_id",
+				Name:    "entitlement_tenant_id_environment_id_feature_id",
 				Unique:  false,
-				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7]},
+				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7], EntitlementsColumns[8]},
 			},
 		},
 	}
@@ -209,6 +211,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "lookup_key", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -225,35 +228,35 @@ var (
 		PrimaryKey: []*schema.Column{FeaturesColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idx_feature_tenant_id_lookup_key_unique",
+				Name:    "idx_feature_tenant_env_lookup_key_unique",
 				Unique:  true,
-				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[7]},
+				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[7], FeaturesColumns[8]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "lookup_key IS NOT NULL AND status = 'published'",
 				},
 			},
 			{
-				Name:    "idx_feature_tenant_id_meter_id",
+				Name:    "idx_feature_tenant_env_meter_id",
 				Unique:  false,
-				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[11]},
+				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[7], FeaturesColumns[12]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "meter_id IS NOT NULL",
 				},
 			},
 			{
-				Name:    "idx_feature_tenant_id_type",
+				Name:    "idx_feature_tenant_env_type",
 				Unique:  false,
-				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[10]},
+				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[7], FeaturesColumns[11]},
 			},
 			{
-				Name:    "idx_feature_tenant_status",
+				Name:    "idx_feature_tenant_env_status",
 				Unique:  false,
-				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[2]},
+				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[7], FeaturesColumns[2]},
 			},
 			{
-				Name:    "idx_feature_tenant_created_at",
+				Name:    "idx_feature_tenant_env_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[3]},
+				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[7], FeaturesColumns[3]},
 			},
 		},
 	}
@@ -266,6 +269,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "customer_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "subscription_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "invoice_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -300,32 +304,32 @@ var (
 			{
 				Name:    "idx_tenant_customer_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[10], InvoicesColumns[11], InvoicesColumns[2]},
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[8], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_subscription_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[8], InvoicesColumns[10], InvoicesColumns[11], InvoicesColumns[2]},
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[9], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_type_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[9], InvoicesColumns[10], InvoicesColumns[11], InvoicesColumns[2]},
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[10], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_due_date_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[17], InvoicesColumns[10], InvoicesColumns[11], InvoicesColumns[2]},
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[18], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_invoice_number_unique",
 				Unique:  true,
-				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[28]},
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[29]},
 			},
 			{
 				Name:    "idx_idempotency_key_unique",
 				Unique:  true,
-				Columns: []*schema.Column{InvoicesColumns[30]},
+				Columns: []*schema.Column{InvoicesColumns[31]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "idempotency_key IS NOT NULL",
 				},
@@ -333,7 +337,7 @@ var (
 			{
 				Name:    "idx_subscription_period_unique",
 				Unique:  false,
-				Columns: []*schema.Column{InvoicesColumns[8], InvoicesColumns[22], InvoicesColumns[23]},
+				Columns: []*schema.Column{InvoicesColumns[9], InvoicesColumns[23], InvoicesColumns[24]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "invoice_status != 'VOIDED' AND subscription_id IS NOT NULL",
 				},
@@ -349,6 +353,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "customer_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "subscription_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "plan_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -374,41 +379,41 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "invoice_line_items_invoices_line_items",
-				Columns:    []*schema.Column{InvoiceLineItemsColumns[22]},
+				Columns:    []*schema.Column{InvoiceLineItemsColumns[23]},
 				RefColumns: []*schema.Column{InvoicesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "invoicelineitem_tenant_id_invoice_id_status",
+				Name:    "invoicelineitem_tenant_id_environment_id_invoice_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[22], InvoiceLineItemsColumns[2]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[23], InvoiceLineItemsColumns[2]},
 			},
 			{
-				Name:    "invoicelineitem_tenant_id_customer_id_status",
+				Name:    "invoicelineitem_tenant_id_environment_id_customer_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[2]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[8], InvoiceLineItemsColumns[2]},
 			},
 			{
-				Name:    "invoicelineitem_tenant_id_subscription_id_status",
+				Name:    "invoicelineitem_tenant_id_environment_id_subscription_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[8], InvoiceLineItemsColumns[2]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[9], InvoiceLineItemsColumns[2]},
 			},
 			{
-				Name:    "invoicelineitem_tenant_id_price_id_status",
+				Name:    "invoicelineitem_tenant_id_environment_id_price_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[11], InvoiceLineItemsColumns[2]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[12], InvoiceLineItemsColumns[2]},
 			},
 			{
-				Name:    "invoicelineitem_tenant_id_meter_id_status",
+				Name:    "invoicelineitem_tenant_id_environment_id_meter_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[13], InvoiceLineItemsColumns[2]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[14], InvoiceLineItemsColumns[2]},
 			},
 			{
 				Name:    "invoicelineitem_period_start_period_end",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[19], InvoiceLineItemsColumns[20]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[20], InvoiceLineItemsColumns[21]},
 			},
 		},
 	}
@@ -443,6 +448,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "event_name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "aggregation", Type: field.TypeJSON},
@@ -456,9 +462,9 @@ var (
 		PrimaryKey: []*schema.Column{MetersColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "meter_tenant_id",
+				Name:    "meter_tenant_id_environment_id",
 				Unique:  false,
-				Columns: []*schema.Column{MetersColumns[1]},
+				Columns: []*schema.Column{MetersColumns[1], MetersColumns[7]},
 			},
 		},
 	}
@@ -471,6 +477,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "idempotency_key", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "destination_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "destination_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -497,17 +504,17 @@ var (
 			{
 				Name:    "idx_tenant_destination_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[8], PaymentsColumns[9], PaymentsColumns[16], PaymentsColumns[2]},
+				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[9], PaymentsColumns[10], PaymentsColumns[17], PaymentsColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_payment_method_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[10], PaymentsColumns[11], PaymentsColumns[16], PaymentsColumns[2]},
+				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[11], PaymentsColumns[12], PaymentsColumns[17], PaymentsColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_gateway_payment",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[12], PaymentsColumns[13]},
+				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[13], PaymentsColumns[14]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "payment_gateway IS NOT NULL AND gateway_payment_id IS NOT NULL",
 				},
@@ -523,6 +530,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "payment_status", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "attempt_number", Type: field.TypeInt, Default: 1, SchemaType: map[string]string{"postgres": "integer"}},
 		{Name: "gateway_attempt_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
@@ -538,7 +546,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "payment_attempts_payments_attempts",
-				Columns:    []*schema.Column{PaymentAttemptsColumns[12]},
+				Columns:    []*schema.Column{PaymentAttemptsColumns[13]},
 				RefColumns: []*schema.Column{PaymentsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -547,17 +555,17 @@ var (
 			{
 				Name:    "idx_payment_attempt_number_unique",
 				Unique:  true,
-				Columns: []*schema.Column{PaymentAttemptsColumns[12], PaymentAttemptsColumns[8]},
+				Columns: []*schema.Column{PaymentAttemptsColumns[13], PaymentAttemptsColumns[9]},
 			},
 			{
 				Name:    "idx_payment_attempt_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentAttemptsColumns[12], PaymentAttemptsColumns[2]},
+				Columns: []*schema.Column{PaymentAttemptsColumns[13], PaymentAttemptsColumns[2]},
 			},
 			{
 				Name:    "idx_gateway_attempt",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentAttemptsColumns[9]},
+				Columns: []*schema.Column{PaymentAttemptsColumns[10]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "gateway_attempt_id IS NOT NULL",
 				},
@@ -573,6 +581,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "lookup_key", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
@@ -586,17 +595,17 @@ var (
 		PrimaryKey: []*schema.Column{PlansColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "plan_tenant_id_lookup_key",
+				Name:    "plan_tenant_id_environment_id_lookup_key",
 				Unique:  true,
-				Columns: []*schema.Column{PlansColumns[1], PlansColumns[7]},
+				Columns: []*schema.Column{PlansColumns[1], PlansColumns[7], PlansColumns[8]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status != 'deleted' AND lookup_key IS NOT NULL AND lookup_key != ''",
 				},
 			},
 			{
-				Name:    "plan_tenant_id",
+				Name:    "plan_tenant_id_environment_id",
 				Unique:  false,
-				Columns: []*schema.Column{PlansColumns[1]},
+				Columns: []*schema.Column{PlansColumns[1], PlansColumns[7]},
 			},
 		},
 	}
@@ -609,6 +618,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "amount", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "numeric(25,15)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(3)"}},
 		{Name: "display_amount", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
@@ -634,22 +644,22 @@ var (
 		PrimaryKey: []*schema.Column{PricesColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "price_tenant_id_lookup_key",
+				Name:    "price_tenant_id_environment_id_lookup_key",
 				Unique:  true,
-				Columns: []*schema.Column{PricesColumns[1], PricesColumns[21]},
+				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7], PricesColumns[22]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status != 'deleted' AND lookup_key IS NOT NULL AND lookup_key != ''",
 				},
 			},
 			{
-				Name:    "price_tenant_id_plan_id",
+				Name:    "price_tenant_id_environment_id_plan_id",
 				Unique:  false,
-				Columns: []*schema.Column{PricesColumns[1], PricesColumns[10]},
+				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7], PricesColumns[11]},
 			},
 			{
-				Name:    "price_tenant_id",
+				Name:    "price_tenant_id_environment_id",
 				Unique:  false,
-				Columns: []*schema.Column{PricesColumns[1]},
+				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7]},
 			},
 		},
 	}
@@ -662,6 +672,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "name", Type: field.TypeString},
 		{Name: "type", Type: field.TypeString},
 		{Name: "provider", Type: field.TypeString},
@@ -681,17 +692,17 @@ var (
 			{
 				Name:    "secret_type_value_status",
 				Unique:  false,
-				Columns: []*schema.Column{SecretsColumns[8], SecretsColumns[10], SecretsColumns[2]},
+				Columns: []*schema.Column{SecretsColumns[9], SecretsColumns[11], SecretsColumns[2]},
 			},
 			{
-				Name:    "secret_tenant_id_type_provider_status",
+				Name:    "secret_tenant_id_environment_id_type_provider_status",
 				Unique:  false,
-				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[8], SecretsColumns[9], SecretsColumns[2]},
+				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[7], SecretsColumns[9], SecretsColumns[10], SecretsColumns[2]},
 			},
 			{
 				Name:    "unique_tenant_provider_type",
 				Unique:  true,
-				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[9], SecretsColumns[8]},
+				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[7], SecretsColumns[10], SecretsColumns[9]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status = 'published'",
 				},
@@ -707,6 +718,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "lookup_key", Type: field.TypeString, Nullable: true},
 		{Name: "customer_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "plan_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -736,24 +748,24 @@ var (
 		PrimaryKey: []*schema.Column{SubscriptionsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "subscription_tenant_id_customer_id_status",
+				Name:    "subscription_tenant_id_environment_id_customer_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[8], SubscriptionsColumns[2]},
+				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[9], SubscriptionsColumns[2]},
 			},
 			{
-				Name:    "subscription_tenant_id_plan_id_status",
+				Name:    "subscription_tenant_id_environment_id_plan_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[9], SubscriptionsColumns[2]},
+				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[10], SubscriptionsColumns[2]},
 			},
 			{
-				Name:    "subscription_tenant_id_subscription_status_status",
+				Name:    "subscription_tenant_id_environment_id_subscription_status_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[10], SubscriptionsColumns[2]},
+				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[11], SubscriptionsColumns[2]},
 			},
 			{
-				Name:    "subscription_tenant_id_current_period_end_subscription_status_status",
+				Name:    "subscription_tenant_id_environment_id_current_period_end_subscription_status_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[16], SubscriptionsColumns[10], SubscriptionsColumns[2]},
+				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[17], SubscriptionsColumns[11], SubscriptionsColumns[2]},
 			},
 		},
 	}
@@ -766,6 +778,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "customer_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "plan_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "plan_display_name", Type: field.TypeString, Nullable: true},
@@ -790,41 +803,41 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "subscription_line_items_subscriptions_line_items",
-				Columns:    []*schema.Column{SubscriptionLineItemsColumns[21]},
+				Columns:    []*schema.Column{SubscriptionLineItemsColumns[22]},
 				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 		},
 		Indexes: []*schema.Index{
 			{
-				Name:    "subscriptionlineitem_tenant_id_subscription_id_status",
+				Name:    "subscriptionlineitem_tenant_id_environment_id_subscription_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[21], SubscriptionLineItemsColumns[2]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[22], SubscriptionLineItemsColumns[2]},
 			},
 			{
-				Name:    "subscriptionlineitem_tenant_id_customer_id_status",
+				Name:    "subscriptionlineitem_tenant_id_environment_id_customer_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[2]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[8], SubscriptionLineItemsColumns[2]},
 			},
 			{
-				Name:    "subscriptionlineitem_tenant_id_plan_id_status",
+				Name:    "subscriptionlineitem_tenant_id_environment_id_plan_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[8], SubscriptionLineItemsColumns[2]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[9], SubscriptionLineItemsColumns[2]},
 			},
 			{
-				Name:    "subscriptionlineitem_tenant_id_price_id_status",
+				Name:    "subscriptionlineitem_tenant_id_environment_id_price_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[10], SubscriptionLineItemsColumns[2]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[11], SubscriptionLineItemsColumns[2]},
 			},
 			{
-				Name:    "subscriptionlineitem_tenant_id_meter_id_status",
+				Name:    "subscriptionlineitem_tenant_id_environment_id_meter_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[12], SubscriptionLineItemsColumns[2]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[13], SubscriptionLineItemsColumns[2]},
 			},
 			{
 				Name:    "subscriptionlineitem_start_date_end_date",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[18], SubscriptionLineItemsColumns[19]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[19], SubscriptionLineItemsColumns[20]},
 			},
 		},
 	}
@@ -837,6 +850,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "task_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "entity_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "file_url", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
@@ -860,19 +874,19 @@ var (
 		PrimaryKey: []*schema.Column{TasksColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "idx_tasks_tenant_type_status",
+				Name:    "idx_tasks_tenant_env_type_status",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[7], TasksColumns[8], TasksColumns[2]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[7], TasksColumns[8], TasksColumns[9], TasksColumns[2]},
 			},
 			{
-				Name:    "idx_tasks_tenant_user",
+				Name:    "idx_tasks_tenant_env_user",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[5], TasksColumns[2]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[7], TasksColumns[5], TasksColumns[2]},
 			},
 			{
-				Name:    "idx_tasks_tenant_task_status",
+				Name:    "idx_tasks_tenant_env_task_status",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[1], TasksColumns[12], TasksColumns[2]},
+				Columns: []*schema.Column{TasksColumns[1], TasksColumns[7], TasksColumns[13], TasksColumns[2]},
 			},
 		},
 	}
@@ -943,6 +957,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "name", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "customer_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
@@ -965,14 +980,14 @@ var (
 		PrimaryKey: []*schema.Column{WalletsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "wallet_tenant_id_customer_id_status",
+				Name:    "wallet_tenant_id_environment_id_customer_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[8], WalletsColumns[2]},
+				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[7], WalletsColumns[9], WalletsColumns[2]},
 			},
 			{
-				Name:    "wallet_tenant_id_status_wallet_status",
+				Name:    "wallet_tenant_id_environment_id_status_wallet_status",
 				Unique:  false,
-				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[2], WalletsColumns[14]},
+				Columns: []*schema.Column{WalletsColumns[1], WalletsColumns[7], WalletsColumns[2], WalletsColumns[15]},
 			},
 		},
 	}
@@ -985,6 +1000,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "wallet_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "type", Type: field.TypeString, Default: "credit"},
 		{Name: "amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
@@ -1007,24 +1023,24 @@ var (
 		PrimaryKey: []*schema.Column{WalletTransactionsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "wallettransaction_tenant_id_wallet_id",
+				Name:    "wallettransaction_tenant_id_environment_id_wallet_id",
 				Unique:  false,
-				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[7]},
+				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[7], WalletTransactionsColumns[8]},
 			},
 			{
-				Name:    "wallettransaction_tenant_id_reference_type_reference_id_status",
+				Name:    "wallettransaction_tenant_id_environment_id_reference_type_reference_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[13], WalletTransactionsColumns[14], WalletTransactionsColumns[2]},
+				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[7], WalletTransactionsColumns[14], WalletTransactionsColumns[15], WalletTransactionsColumns[2]},
 			},
 			{
-				Name:    "wallettransaction_tenant_id_created_at",
+				Name:    "wallettransaction_tenant_id_environment_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[3]},
+				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[7], WalletTransactionsColumns[3]},
 			},
 			{
 				Name:    "idx_tenant_wallet_type_credits_available_expiry_date",
 				Unique:  false,
-				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[7], WalletTransactionsColumns[8], WalletTransactionsColumns[19], WalletTransactionsColumns[18]},
+				Columns: []*schema.Column{WalletTransactionsColumns[1], WalletTransactionsColumns[7], WalletTransactionsColumns[8], WalletTransactionsColumns[9], WalletTransactionsColumns[20], WalletTransactionsColumns[19]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "credits_available > 0 AND type = 'credit'",
 				},

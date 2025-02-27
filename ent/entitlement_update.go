@@ -69,6 +69,26 @@ func (eu *EntitlementUpdate) ClearUpdatedBy() *EntitlementUpdate {
 	return eu
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (eu *EntitlementUpdate) SetEnvironmentID(s string) *EntitlementUpdate {
+	eu.mutation.SetEnvironmentID(s)
+	return eu
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (eu *EntitlementUpdate) SetNillableEnvironmentID(s *string) *EntitlementUpdate {
+	if s != nil {
+		eu.SetEnvironmentID(*s)
+	}
+	return eu
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (eu *EntitlementUpdate) ClearEnvironmentID() *EntitlementUpdate {
+	eu.mutation.ClearEnvironmentID()
+	return eu
+}
+
 // SetPlanID sets the "plan_id" field.
 func (eu *EntitlementUpdate) SetPlanID(s string) *EntitlementUpdate {
 	eu.mutation.SetPlanID(s)
@@ -308,6 +328,12 @@ func (eu *EntitlementUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if eu.mutation.UpdatedByCleared() {
 		_spec.ClearField(entitlement.FieldUpdatedBy, field.TypeString)
 	}
+	if value, ok := eu.mutation.EnvironmentID(); ok {
+		_spec.SetField(entitlement.FieldEnvironmentID, field.TypeString, value)
+	}
+	if eu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(entitlement.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := eu.mutation.FeatureID(); ok {
 		_spec.SetField(entitlement.FieldFeatureID, field.TypeString, value)
 	}
@@ -427,6 +453,26 @@ func (euo *EntitlementUpdateOne) SetNillableUpdatedBy(s *string) *EntitlementUpd
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (euo *EntitlementUpdateOne) ClearUpdatedBy() *EntitlementUpdateOne {
 	euo.mutation.ClearUpdatedBy()
+	return euo
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (euo *EntitlementUpdateOne) SetEnvironmentID(s string) *EntitlementUpdateOne {
+	euo.mutation.SetEnvironmentID(s)
+	return euo
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (euo *EntitlementUpdateOne) SetNillableEnvironmentID(s *string) *EntitlementUpdateOne {
+	if s != nil {
+		euo.SetEnvironmentID(*s)
+	}
+	return euo
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (euo *EntitlementUpdateOne) ClearEnvironmentID() *EntitlementUpdateOne {
+	euo.mutation.ClearEnvironmentID()
 	return euo
 }
 
@@ -698,6 +744,12 @@ func (euo *EntitlementUpdateOne) sqlSave(ctx context.Context) (_node *Entitlemen
 	}
 	if euo.mutation.UpdatedByCleared() {
 		_spec.ClearField(entitlement.FieldUpdatedBy, field.TypeString)
+	}
+	if value, ok := euo.mutation.EnvironmentID(); ok {
+		_spec.SetField(entitlement.FieldEnvironmentID, field.TypeString, value)
+	}
+	if euo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(entitlement.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := euo.mutation.FeatureID(); ok {
 		_spec.SetField(entitlement.FieldFeatureID, field.TypeString, value)

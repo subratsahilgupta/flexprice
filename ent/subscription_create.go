@@ -97,6 +97,20 @@ func (sc *SubscriptionCreate) SetNillableUpdatedBy(s *string) *SubscriptionCreat
 	return sc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (sc *SubscriptionCreate) SetEnvironmentID(s string) *SubscriptionCreate {
+	sc.mutation.SetEnvironmentID(s)
+	return sc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (sc *SubscriptionCreate) SetNillableEnvironmentID(s *string) *SubscriptionCreate {
+	if s != nil {
+		sc.SetEnvironmentID(*s)
+	}
+	return sc
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (sc *SubscriptionCreate) SetLookupKey(s string) *SubscriptionCreate {
 	sc.mutation.SetLookupKey(s)
@@ -403,6 +417,10 @@ func (sc *SubscriptionCreate) defaults() {
 		v := subscription.DefaultUpdatedAt()
 		sc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := sc.mutation.EnvironmentID(); !ok {
+		v := subscription.DefaultEnvironmentID
+		sc.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := sc.mutation.SubscriptionStatus(); !ok {
 		v := subscription.DefaultSubscriptionStatus
 		sc.mutation.SetSubscriptionStatus(v)
@@ -586,6 +604,10 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 	if value, ok := sc.mutation.UpdatedBy(); ok {
 		_spec.SetField(subscription.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := sc.mutation.EnvironmentID(); ok {
+		_spec.SetField(subscription.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := sc.mutation.LookupKey(); ok {
 		_spec.SetField(subscription.FieldLookupKey, field.TypeString, value)

@@ -12,6 +12,7 @@ type Plan struct {
 	Description    string               `db:"description" json:"description"`
 	InvoiceCadence types.InvoiceCadence `db:"invoice_cadence" json:"invoice_cadence"`
 	TrialPeriod    int                  `db:"trial_period" json:"trial_period"`
+	EnvironmentID  string               `db:"environment_id" json:"environment_id"`
 	types.BaseModel
 }
 
@@ -27,6 +28,7 @@ func FromEnt(e *ent.Plan) *Plan {
 		Description:    e.Description,
 		InvoiceCadence: types.InvoiceCadence(e.InvoiceCadence),
 		TrialPeriod:    e.TrialPeriod,
+		EnvironmentID:  e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

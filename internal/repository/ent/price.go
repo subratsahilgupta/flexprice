@@ -39,6 +39,11 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		"lookup_key", p.LookupKey,
 	)
 
+	// Set environment ID from context if not already set
+	if p.EnvironmentID == "" {
+		p.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	price, err := client.Price.Create().
 		SetID(p.ID).
 		SetTenantID(p.TenantID).
@@ -64,6 +69,7 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetUpdatedAt(p.UpdatedAt).
 		SetCreatedBy(p.CreatedBy).
 		SetUpdatedBy(p.UpdatedBy).
+		SetEnvironmentID(p.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -302,6 +308,14 @@ func (o PriceQueryOptions) ApplyTenantFilter(ctx context.Context, query PriceQue
 	return query.Where(price.TenantID(types.GetTenantID(ctx)))
 }
 
+func (o PriceQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query PriceQuery) PriceQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(price.EnvironmentID(environmentID))
+	}
+	return query
+}
+
 func (o PriceQueryOptions) ApplyStatusFilter(query PriceQuery, status string) PriceQuery {
 	if status == "" {
 		return query.Where(price.StatusNotIn(string(types.StatusDeleted)))
@@ -340,7 +354,7 @@ func (o PriceQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o PriceQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.PriceFilter, query PriceQuery) PriceQuery {
+func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.PriceFilter, query PriceQuery) PriceQuery {
 	if f == nil {
 		return query
 	}

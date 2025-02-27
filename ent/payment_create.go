@@ -98,6 +98,20 @@ func (pc *PaymentCreate) SetNillableUpdatedBy(s *string) *PaymentCreate {
 	return pc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (pc *PaymentCreate) SetEnvironmentID(s string) *PaymentCreate {
+	pc.mutation.SetEnvironmentID(s)
+	return pc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (pc *PaymentCreate) SetNillableEnvironmentID(s *string) *PaymentCreate {
+	if s != nil {
+		pc.SetEnvironmentID(*s)
+	}
+	return pc
+}
+
 // SetIdempotencyKey sets the "idempotency_key" field.
 func (pc *PaymentCreate) SetIdempotencyKey(s string) *PaymentCreate {
 	pc.mutation.SetIdempotencyKey(s)
@@ -334,6 +348,10 @@ func (pc *PaymentCreate) defaults() {
 		v := payment.DefaultUpdatedAt()
 		pc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := pc.mutation.EnvironmentID(); !ok {
+		v := payment.DefaultEnvironmentID
+		pc.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := pc.mutation.Amount(); !ok {
 		v := payment.DefaultAmount
 		pc.mutation.SetAmount(v)
@@ -470,6 +488,10 @@ func (pc *PaymentCreate) createSpec() (*Payment, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.UpdatedBy(); ok {
 		_spec.SetField(payment.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := pc.mutation.EnvironmentID(); ok {
+		_spec.SetField(payment.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := pc.mutation.IdempotencyKey(); ok {
 		_spec.SetField(payment.FieldIdempotencyKey, field.TypeString, value)

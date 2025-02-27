@@ -18,6 +18,7 @@ type PaymentAttempt struct {
 func (PaymentAttempt) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 

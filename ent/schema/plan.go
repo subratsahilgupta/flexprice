@@ -18,6 +18,7 @@ type Plan struct {
 func (Plan) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -62,9 +63,9 @@ func (Plan) Edges() []ent.Edge {
 // Indexes of the Plan.
 func (Plan) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "lookup_key").
+		index.Fields("tenant_id", "environment_id", "lookup_key").
 			Unique().
 			Annotations(entsql.IndexWhere("status != 'deleted'" + " AND lookup_key IS NOT NULL AND lookup_key != ''")),
-		index.Fields("tenant_id"),
+		index.Fields("tenant_id", "environment_id"),
 	}
 }

@@ -1258,6 +1258,7 @@ type CustomerMutation struct {
 	updated_at          *time.Time
 	created_by          *string
 	updated_by          *string
+	environment_id      *string
 	external_id         *string
 	name                *string
 	email               *string
@@ -1618,6 +1619,55 @@ func (m *CustomerMutation) UpdatedByCleared() bool {
 func (m *CustomerMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, customer.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *CustomerMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *CustomerMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Customer entity.
+// If the Customer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CustomerMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *CustomerMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[customer.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *CustomerMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[customer.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *CustomerMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, customer.FieldEnvironmentID)
 }
 
 // SetExternalID sets the "external_id" field.
@@ -2118,7 +2168,7 @@ func (m *CustomerMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CustomerMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 17)
 	if m.tenant_id != nil {
 		fields = append(fields, customer.FieldTenantID)
 	}
@@ -2136,6 +2186,9 @@ func (m *CustomerMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, customer.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, customer.FieldEnvironmentID)
 	}
 	if m.external_id != nil {
 		fields = append(fields, customer.FieldExternalID)
@@ -2187,6 +2240,8 @@ func (m *CustomerMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case customer.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case customer.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case customer.FieldExternalID:
 		return m.ExternalID()
 	case customer.FieldName:
@@ -2228,6 +2283,8 @@ func (m *CustomerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldCreatedBy(ctx)
 	case customer.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case customer.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case customer.FieldExternalID:
 		return m.OldExternalID(ctx)
 	case customer.FieldName:
@@ -2298,6 +2355,13 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case customer.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case customer.FieldExternalID:
 		v, ok := value.(string)
@@ -2405,6 +2469,9 @@ func (m *CustomerMutation) ClearedFields() []string {
 	if m.FieldCleared(customer.FieldUpdatedBy) {
 		fields = append(fields, customer.FieldUpdatedBy)
 	}
+	if m.FieldCleared(customer.FieldEnvironmentID) {
+		fields = append(fields, customer.FieldEnvironmentID)
+	}
 	if m.FieldCleared(customer.FieldEmail) {
 		fields = append(fields, customer.FieldEmail)
 	}
@@ -2448,6 +2515,9 @@ func (m *CustomerMutation) ClearField(name string) error {
 		return nil
 	case customer.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case customer.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case customer.FieldEmail:
 		m.ClearEmail()
@@ -2498,6 +2568,9 @@ func (m *CustomerMutation) ResetField(name string) error {
 		return nil
 	case customer.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case customer.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case customer.FieldExternalID:
 		m.ResetExternalID()
@@ -2593,6 +2666,7 @@ type EntitlementMutation struct {
 	updated_at         *time.Time
 	created_by         *string
 	updated_by         *string
+	environment_id     *string
 	feature_id         *string
 	feature_type       *string
 	is_enabled         *bool
@@ -2953,6 +3027,55 @@ func (m *EntitlementMutation) UpdatedByCleared() bool {
 func (m *EntitlementMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, entitlement.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *EntitlementMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *EntitlementMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Entitlement entity.
+// If the Entitlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *EntitlementMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *EntitlementMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[entitlement.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *EntitlementMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[entitlement.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *EntitlementMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, entitlement.FieldEnvironmentID)
 }
 
 // SetPlanID sets the "plan_id" field.
@@ -3364,7 +3487,7 @@ func (m *EntitlementMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *EntitlementMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.tenant_id != nil {
 		fields = append(fields, entitlement.FieldTenantID)
 	}
@@ -3382,6 +3505,9 @@ func (m *EntitlementMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, entitlement.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, entitlement.FieldEnvironmentID)
 	}
 	if m.plan != nil {
 		fields = append(fields, entitlement.FieldPlanID)
@@ -3427,6 +3553,8 @@ func (m *EntitlementMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case entitlement.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case entitlement.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case entitlement.FieldPlanID:
 		return m.PlanID()
 	case entitlement.FieldFeatureID:
@@ -3464,6 +3592,8 @@ func (m *EntitlementMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldCreatedBy(ctx)
 	case entitlement.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case entitlement.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case entitlement.FieldPlanID:
 		return m.OldPlanID(ctx)
 	case entitlement.FieldFeatureID:
@@ -3530,6 +3660,13 @@ func (m *EntitlementMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case entitlement.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case entitlement.FieldPlanID:
 		v, ok := value.(string)
@@ -3638,6 +3775,9 @@ func (m *EntitlementMutation) ClearedFields() []string {
 	if m.FieldCleared(entitlement.FieldUpdatedBy) {
 		fields = append(fields, entitlement.FieldUpdatedBy)
 	}
+	if m.FieldCleared(entitlement.FieldEnvironmentID) {
+		fields = append(fields, entitlement.FieldEnvironmentID)
+	}
 	if m.FieldCleared(entitlement.FieldUsageLimit) {
 		fields = append(fields, entitlement.FieldUsageLimit)
 	}
@@ -3666,6 +3806,9 @@ func (m *EntitlementMutation) ClearField(name string) error {
 		return nil
 	case entitlement.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case entitlement.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case entitlement.FieldUsageLimit:
 		m.ClearUsageLimit()
@@ -3701,6 +3844,9 @@ func (m *EntitlementMutation) ResetField(name string) error {
 		return nil
 	case entitlement.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case entitlement.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case entitlement.FieldPlanID:
 		m.ResetPlanID()
@@ -4558,27 +4704,28 @@ func (m *EnvironmentMutation) ResetEdge(name string) error {
 // FeatureMutation represents an operation that mutates the Feature nodes in the graph.
 type FeatureMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *string
-	tenant_id     *string
-	status        *string
-	created_at    *time.Time
-	updated_at    *time.Time
-	created_by    *string
-	updated_by    *string
-	lookup_key    *string
-	name          *string
-	description   *string
-	_type         *string
-	meter_id      *string
-	metadata      *map[string]string
-	unit_singular *string
-	unit_plural   *string
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*Feature, error)
-	predicates    []predicate.Feature
+	op             Op
+	typ            string
+	id             *string
+	tenant_id      *string
+	status         *string
+	created_at     *time.Time
+	updated_at     *time.Time
+	created_by     *string
+	updated_by     *string
+	environment_id *string
+	lookup_key     *string
+	name           *string
+	description    *string
+	_type          *string
+	meter_id       *string
+	metadata       *map[string]string
+	unit_singular  *string
+	unit_plural    *string
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*Feature, error)
+	predicates     []predicate.Feature
 }
 
 var _ ent.Mutation = (*FeatureMutation)(nil)
@@ -4925,6 +5072,55 @@ func (m *FeatureMutation) UpdatedByCleared() bool {
 func (m *FeatureMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, feature.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *FeatureMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *FeatureMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Feature entity.
+// If the Feature object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FeatureMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *FeatureMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[feature.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *FeatureMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[feature.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *FeatureMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, feature.FieldEnvironmentID)
 }
 
 // SetLookupKey sets the "lookup_key" field.
@@ -5314,7 +5510,7 @@ func (m *FeatureMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *FeatureMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.tenant_id != nil {
 		fields = append(fields, feature.FieldTenantID)
 	}
@@ -5332,6 +5528,9 @@ func (m *FeatureMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, feature.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, feature.FieldEnvironmentID)
 	}
 	if m.lookup_key != nil {
 		fields = append(fields, feature.FieldLookupKey)
@@ -5377,6 +5576,8 @@ func (m *FeatureMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case feature.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case feature.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case feature.FieldLookupKey:
 		return m.LookupKey()
 	case feature.FieldName:
@@ -5414,6 +5615,8 @@ func (m *FeatureMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldCreatedBy(ctx)
 	case feature.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case feature.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case feature.FieldLookupKey:
 		return m.OldLookupKey(ctx)
 	case feature.FieldName:
@@ -5480,6 +5683,13 @@ func (m *FeatureMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case feature.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case feature.FieldLookupKey:
 		v, ok := value.(string)
@@ -5573,6 +5783,9 @@ func (m *FeatureMutation) ClearedFields() []string {
 	if m.FieldCleared(feature.FieldUpdatedBy) {
 		fields = append(fields, feature.FieldUpdatedBy)
 	}
+	if m.FieldCleared(feature.FieldEnvironmentID) {
+		fields = append(fields, feature.FieldEnvironmentID)
+	}
 	if m.FieldCleared(feature.FieldDescription) {
 		fields = append(fields, feature.FieldDescription)
 	}
@@ -5607,6 +5820,9 @@ func (m *FeatureMutation) ClearField(name string) error {
 		return nil
 	case feature.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case feature.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case feature.FieldDescription:
 		m.ClearDescription()
@@ -5648,6 +5864,9 @@ func (m *FeatureMutation) ResetField(name string) error {
 		return nil
 	case feature.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case feature.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case feature.FieldLookupKey:
 		m.ResetLookupKey()
@@ -5737,6 +5956,7 @@ type InvoiceMutation struct {
 	updated_at          *time.Time
 	created_by          *string
 	updated_by          *string
+	environment_id      *string
 	customer_id         *string
 	subscription_id     *string
 	invoice_type        *string
@@ -6116,6 +6336,55 @@ func (m *InvoiceMutation) UpdatedByCleared() bool {
 func (m *InvoiceMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, invoice.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *InvoiceMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *InvoiceMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Invoice entity.
+// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *InvoiceMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[invoice.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *InvoiceMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[invoice.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *InvoiceMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, invoice.FieldEnvironmentID)
 }
 
 // SetCustomerID sets the "customer_id" field.
@@ -7306,7 +7575,7 @@ func (m *InvoiceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceMutation) Fields() []string {
-	fields := make([]string, 0, 30)
+	fields := make([]string, 0, 31)
 	if m.tenant_id != nil {
 		fields = append(fields, invoice.FieldTenantID)
 	}
@@ -7324,6 +7593,9 @@ func (m *InvoiceMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, invoice.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, invoice.FieldEnvironmentID)
 	}
 	if m.customer_id != nil {
 		fields = append(fields, invoice.FieldCustomerID)
@@ -7417,6 +7689,8 @@ func (m *InvoiceMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case invoice.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case invoice.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case invoice.FieldCustomerID:
 		return m.CustomerID()
 	case invoice.FieldSubscriptionID:
@@ -7486,6 +7760,8 @@ func (m *InvoiceMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldCreatedBy(ctx)
 	case invoice.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case invoice.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case invoice.FieldCustomerID:
 		return m.OldCustomerID(ctx)
 	case invoice.FieldSubscriptionID:
@@ -7584,6 +7860,13 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case invoice.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case invoice.FieldCustomerID:
 		v, ok := value.(string)
@@ -7816,6 +8099,9 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	if m.FieldCleared(invoice.FieldUpdatedBy) {
 		fields = append(fields, invoice.FieldUpdatedBy)
 	}
+	if m.FieldCleared(invoice.FieldEnvironmentID) {
+		fields = append(fields, invoice.FieldEnvironmentID)
+	}
 	if m.FieldCleared(invoice.FieldSubscriptionID) {
 		fields = append(fields, invoice.FieldSubscriptionID)
 	}
@@ -7880,6 +8166,9 @@ func (m *InvoiceMutation) ClearField(name string) error {
 		return nil
 	case invoice.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case invoice.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case invoice.FieldSubscriptionID:
 		m.ClearSubscriptionID()
@@ -7951,6 +8240,9 @@ func (m *InvoiceMutation) ResetField(name string) error {
 		return nil
 	case invoice.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case invoice.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case invoice.FieldCustomerID:
 		m.ResetCustomerID()
@@ -8124,6 +8416,7 @@ type InvoiceLineItemMutation struct {
 	updated_at         *time.Time
 	created_by         *string
 	updated_by         *string
+	environment_id     *string
 	customer_id        *string
 	subscription_id    *string
 	plan_id            *string
@@ -8491,6 +8784,55 @@ func (m *InvoiceLineItemMutation) UpdatedByCleared() bool {
 func (m *InvoiceLineItemMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, invoicelineitem.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *InvoiceLineItemMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *InvoiceLineItemMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the InvoiceLineItem entity.
+// If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceLineItemMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *InvoiceLineItemMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[invoicelineitem.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *InvoiceLineItemMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, invoicelineitem.FieldEnvironmentID)
 }
 
 // SetInvoiceID sets the "invoice_id" field.
@@ -9260,7 +9602,7 @@ func (m *InvoiceLineItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceLineItemMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 23)
 	if m.tenant_id != nil {
 		fields = append(fields, invoicelineitem.FieldTenantID)
 	}
@@ -9278,6 +9620,9 @@ func (m *InvoiceLineItemMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, invoicelineitem.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, invoicelineitem.FieldEnvironmentID)
 	}
 	if m.invoice != nil {
 		fields = append(fields, invoicelineitem.FieldInvoiceID)
@@ -9347,6 +9692,8 @@ func (m *InvoiceLineItemMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case invoicelineitem.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case invoicelineitem.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case invoicelineitem.FieldInvoiceID:
 		return m.InvoiceID()
 	case invoicelineitem.FieldCustomerID:
@@ -9400,6 +9747,8 @@ func (m *InvoiceLineItemMutation) OldField(ctx context.Context, name string) (en
 		return m.OldCreatedBy(ctx)
 	case invoicelineitem.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case invoicelineitem.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case invoicelineitem.FieldInvoiceID:
 		return m.OldInvoiceID(ctx)
 	case invoicelineitem.FieldCustomerID:
@@ -9482,6 +9831,13 @@ func (m *InvoiceLineItemMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case invoicelineitem.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case invoicelineitem.FieldInvoiceID:
 		v, ok := value.(string)
@@ -9631,6 +9987,9 @@ func (m *InvoiceLineItemMutation) ClearedFields() []string {
 	if m.FieldCleared(invoicelineitem.FieldUpdatedBy) {
 		fields = append(fields, invoicelineitem.FieldUpdatedBy)
 	}
+	if m.FieldCleared(invoicelineitem.FieldEnvironmentID) {
+		fields = append(fields, invoicelineitem.FieldEnvironmentID)
+	}
 	if m.FieldCleared(invoicelineitem.FieldSubscriptionID) {
 		fields = append(fields, invoicelineitem.FieldSubscriptionID)
 	}
@@ -9680,6 +10039,9 @@ func (m *InvoiceLineItemMutation) ClearField(name string) error {
 		return nil
 	case invoicelineitem.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case invoicelineitem.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case invoicelineitem.FieldSubscriptionID:
 		m.ClearSubscriptionID()
@@ -9736,6 +10098,9 @@ func (m *InvoiceLineItemMutation) ResetField(name string) error {
 		return nil
 	case invoicelineitem.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case invoicelineitem.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case invoicelineitem.FieldInvoiceID:
 		m.ResetInvoiceID()
@@ -10444,25 +10809,26 @@ func (m *InvoiceSequenceMutation) ResetEdge(name string) error {
 // MeterMutation represents an operation that mutates the Meter nodes in the graph.
 type MeterMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *string
-	tenant_id     *string
-	status        *string
-	created_at    *time.Time
-	updated_at    *time.Time
-	created_by    *string
-	updated_by    *string
-	event_name    *string
-	name          *string
-	aggregation   *schema.MeterAggregation
-	filters       *[]schema.MeterFilter
-	appendfilters []schema.MeterFilter
-	reset_usage   *string
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*Meter, error)
-	predicates    []predicate.Meter
+	op             Op
+	typ            string
+	id             *string
+	tenant_id      *string
+	status         *string
+	created_at     *time.Time
+	updated_at     *time.Time
+	created_by     *string
+	updated_by     *string
+	environment_id *string
+	event_name     *string
+	name           *string
+	aggregation    *schema.MeterAggregation
+	filters        *[]schema.MeterFilter
+	appendfilters  []schema.MeterFilter
+	reset_usage    *string
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*Meter, error)
+	predicates     []predicate.Meter
 }
 
 var _ ent.Mutation = (*MeterMutation)(nil)
@@ -10811,6 +11177,55 @@ func (m *MeterMutation) ResetUpdatedBy() {
 	delete(m.clearedFields, meter.FieldUpdatedBy)
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (m *MeterMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *MeterMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Meter entity.
+// If the Meter object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MeterMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *MeterMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[meter.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *MeterMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[meter.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *MeterMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, meter.FieldEnvironmentID)
+}
+
 // SetEventName sets the "event_name" field.
 func (m *MeterMutation) SetEventName(s string) {
 	m.event_name = &s
@@ -11040,7 +11455,7 @@ func (m *MeterMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *MeterMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.tenant_id != nil {
 		fields = append(fields, meter.FieldTenantID)
 	}
@@ -11058,6 +11473,9 @@ func (m *MeterMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, meter.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, meter.FieldEnvironmentID)
 	}
 	if m.event_name != nil {
 		fields = append(fields, meter.FieldEventName)
@@ -11094,6 +11512,8 @@ func (m *MeterMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case meter.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case meter.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case meter.FieldEventName:
 		return m.EventName()
 	case meter.FieldName:
@@ -11125,6 +11545,8 @@ func (m *MeterMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldCreatedBy(ctx)
 	case meter.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case meter.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case meter.FieldEventName:
 		return m.OldEventName(ctx)
 	case meter.FieldName:
@@ -11185,6 +11607,13 @@ func (m *MeterMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case meter.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case meter.FieldEventName:
 		v, ok := value.(string)
@@ -11257,6 +11686,9 @@ func (m *MeterMutation) ClearedFields() []string {
 	if m.FieldCleared(meter.FieldUpdatedBy) {
 		fields = append(fields, meter.FieldUpdatedBy)
 	}
+	if m.FieldCleared(meter.FieldEnvironmentID) {
+		fields = append(fields, meter.FieldEnvironmentID)
+	}
 	return fields
 }
 
@@ -11276,6 +11708,9 @@ func (m *MeterMutation) ClearField(name string) error {
 		return nil
 	case meter.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case meter.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	}
 	return fmt.Errorf("unknown Meter nullable field %s", name)
@@ -11302,6 +11737,9 @@ func (m *MeterMutation) ResetField(name string) error {
 		return nil
 	case meter.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case meter.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case meter.FieldEventName:
 		m.ResetEventName()
@@ -11382,6 +11820,7 @@ type PaymentMutation struct {
 	updated_at          *time.Time
 	created_by          *string
 	updated_by          *string
+	environment_id      *string
 	idempotency_key     *string
 	destination_type    *string
 	destination_id      *string
@@ -11751,6 +12190,55 @@ func (m *PaymentMutation) UpdatedByCleared() bool {
 func (m *PaymentMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, payment.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *PaymentMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *PaymentMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Payment entity.
+// If the Payment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *PaymentMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[payment.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *PaymentMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[payment.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *PaymentMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, payment.FieldEnvironmentID)
 }
 
 // SetIdempotencyKey sets the "idempotency_key" field.
@@ -12521,7 +13009,7 @@ func (m *PaymentMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 23)
 	if m.tenant_id != nil {
 		fields = append(fields, payment.FieldTenantID)
 	}
@@ -12539,6 +13027,9 @@ func (m *PaymentMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, payment.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, payment.FieldEnvironmentID)
 	}
 	if m.idempotency_key != nil {
 		fields = append(fields, payment.FieldIdempotencyKey)
@@ -12608,6 +13099,8 @@ func (m *PaymentMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case payment.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case payment.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case payment.FieldIdempotencyKey:
 		return m.IdempotencyKey()
 	case payment.FieldDestinationType:
@@ -12661,6 +13154,8 @@ func (m *PaymentMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldCreatedBy(ctx)
 	case payment.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case payment.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case payment.FieldIdempotencyKey:
 		return m.OldIdempotencyKey(ctx)
 	case payment.FieldDestinationType:
@@ -12743,6 +13238,13 @@ func (m *PaymentMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case payment.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case payment.FieldIdempotencyKey:
 		v, ok := value.(string)
@@ -12892,6 +13394,9 @@ func (m *PaymentMutation) ClearedFields() []string {
 	if m.FieldCleared(payment.FieldUpdatedBy) {
 		fields = append(fields, payment.FieldUpdatedBy)
 	}
+	if m.FieldCleared(payment.FieldEnvironmentID) {
+		fields = append(fields, payment.FieldEnvironmentID)
+	}
 	if m.FieldCleared(payment.FieldPaymentMethodID) {
 		fields = append(fields, payment.FieldPaymentMethodID)
 	}
@@ -12935,6 +13440,9 @@ func (m *PaymentMutation) ClearField(name string) error {
 		return nil
 	case payment.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case payment.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case payment.FieldPaymentMethodID:
 		m.ClearPaymentMethodID()
@@ -12985,6 +13493,9 @@ func (m *PaymentMutation) ResetField(name string) error {
 		return nil
 	case payment.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case payment.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case payment.FieldIdempotencyKey:
 		m.ResetIdempotencyKey()
@@ -13134,6 +13645,7 @@ type PaymentAttemptMutation struct {
 	updated_at         *time.Time
 	created_by         *string
 	updated_by         *string
+	environment_id     *string
 	payment_status     *string
 	attempt_number     *int
 	addattempt_number  *int
@@ -13494,6 +14006,55 @@ func (m *PaymentAttemptMutation) ResetUpdatedBy() {
 	delete(m.clearedFields, paymentattempt.FieldUpdatedBy)
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (m *PaymentAttemptMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *PaymentAttemptMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the PaymentAttempt entity.
+// If the PaymentAttempt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentAttemptMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *PaymentAttemptMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[paymentattempt.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *PaymentAttemptMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[paymentattempt.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *PaymentAttemptMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, paymentattempt.FieldEnvironmentID)
+}
+
 // SetPaymentID sets the "payment_id" field.
 func (m *PaymentAttemptMutation) SetPaymentID(s string) {
 	m.payment = &s
@@ -13830,7 +14391,7 @@ func (m *PaymentAttemptMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentAttemptMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.tenant_id != nil {
 		fields = append(fields, paymentattempt.FieldTenantID)
 	}
@@ -13848,6 +14409,9 @@ func (m *PaymentAttemptMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, paymentattempt.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, paymentattempt.FieldEnvironmentID)
 	}
 	if m.payment != nil {
 		fields = append(fields, paymentattempt.FieldPaymentID)
@@ -13887,6 +14451,8 @@ func (m *PaymentAttemptMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case paymentattempt.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case paymentattempt.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case paymentattempt.FieldPaymentID:
 		return m.PaymentID()
 	case paymentattempt.FieldPaymentStatus:
@@ -13920,6 +14486,8 @@ func (m *PaymentAttemptMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldCreatedBy(ctx)
 	case paymentattempt.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case paymentattempt.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case paymentattempt.FieldPaymentID:
 		return m.OldPaymentID(ctx)
 	case paymentattempt.FieldPaymentStatus:
@@ -13982,6 +14550,13 @@ func (m *PaymentAttemptMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case paymentattempt.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case paymentattempt.FieldPaymentID:
 		v, ok := value.(string)
@@ -14076,6 +14651,9 @@ func (m *PaymentAttemptMutation) ClearedFields() []string {
 	if m.FieldCleared(paymentattempt.FieldUpdatedBy) {
 		fields = append(fields, paymentattempt.FieldUpdatedBy)
 	}
+	if m.FieldCleared(paymentattempt.FieldEnvironmentID) {
+		fields = append(fields, paymentattempt.FieldEnvironmentID)
+	}
 	if m.FieldCleared(paymentattempt.FieldGatewayAttemptID) {
 		fields = append(fields, paymentattempt.FieldGatewayAttemptID)
 	}
@@ -14104,6 +14682,9 @@ func (m *PaymentAttemptMutation) ClearField(name string) error {
 		return nil
 	case paymentattempt.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case paymentattempt.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case paymentattempt.FieldGatewayAttemptID:
 		m.ClearGatewayAttemptID()
@@ -14139,6 +14720,9 @@ func (m *PaymentAttemptMutation) ResetField(name string) error {
 		return nil
 	case paymentattempt.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case paymentattempt.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case paymentattempt.FieldPaymentID:
 		m.ResetPaymentID()
@@ -14248,6 +14832,7 @@ type PlanMutation struct {
 	updated_at          *time.Time
 	created_by          *string
 	updated_by          *string
+	environment_id      *string
 	lookup_key          *string
 	name                *string
 	description         *string
@@ -14609,6 +15194,55 @@ func (m *PlanMutation) ResetUpdatedBy() {
 	delete(m.clearedFields, plan.FieldUpdatedBy)
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (m *PlanMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *PlanMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Plan entity.
+// If the Plan object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PlanMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *PlanMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[plan.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *PlanMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[plan.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *PlanMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, plan.FieldEnvironmentID)
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (m *PlanMutation) SetLookupKey(s string) {
 	m.lookup_key = &s
@@ -14923,7 +15557,7 @@ func (m *PlanMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PlanMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.tenant_id != nil {
 		fields = append(fields, plan.FieldTenantID)
 	}
@@ -14941,6 +15575,9 @@ func (m *PlanMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, plan.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, plan.FieldEnvironmentID)
 	}
 	if m.lookup_key != nil {
 		fields = append(fields, plan.FieldLookupKey)
@@ -14977,6 +15614,8 @@ func (m *PlanMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case plan.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case plan.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case plan.FieldLookupKey:
 		return m.LookupKey()
 	case plan.FieldName:
@@ -15008,6 +15647,8 @@ func (m *PlanMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldCreatedBy(ctx)
 	case plan.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case plan.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case plan.FieldLookupKey:
 		return m.OldLookupKey(ctx)
 	case plan.FieldName:
@@ -15068,6 +15709,13 @@ func (m *PlanMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case plan.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case plan.FieldLookupKey:
 		v, ok := value.(string)
@@ -15155,6 +15803,9 @@ func (m *PlanMutation) ClearedFields() []string {
 	if m.FieldCleared(plan.FieldUpdatedBy) {
 		fields = append(fields, plan.FieldUpdatedBy)
 	}
+	if m.FieldCleared(plan.FieldEnvironmentID) {
+		fields = append(fields, plan.FieldEnvironmentID)
+	}
 	if m.FieldCleared(plan.FieldLookupKey) {
 		fields = append(fields, plan.FieldLookupKey)
 	}
@@ -15180,6 +15831,9 @@ func (m *PlanMutation) ClearField(name string) error {
 		return nil
 	case plan.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case plan.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case plan.FieldLookupKey:
 		m.ClearLookupKey()
@@ -15212,6 +15866,9 @@ func (m *PlanMutation) ResetField(name string) error {
 		return nil
 	case plan.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case plan.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case plan.FieldLookupKey:
 		m.ResetLookupKey()
@@ -15328,6 +15985,7 @@ type PriceMutation struct {
 	updated_at              *time.Time
 	created_by              *string
 	updated_by              *string
+	environment_id          *string
 	amount                  *float64
 	addamount               *float64
 	currency                *string
@@ -15698,6 +16356,55 @@ func (m *PriceMutation) UpdatedByCleared() bool {
 func (m *PriceMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, price.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *PriceMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *PriceMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Price entity.
+// If the Price object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PriceMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *PriceMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[price.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *PriceMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[price.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *PriceMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, price.FieldEnvironmentID)
 }
 
 // SetAmount sets the "amount" field.
@@ -16506,7 +17213,7 @@ func (m *PriceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PriceMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.tenant_id != nil {
 		fields = append(fields, price.FieldTenantID)
 	}
@@ -16524,6 +17231,9 @@ func (m *PriceMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, price.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, price.FieldEnvironmentID)
 	}
 	if m.amount != nil {
 		fields = append(fields, price.FieldAmount)
@@ -16596,6 +17306,8 @@ func (m *PriceMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case price.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case price.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case price.FieldAmount:
 		return m.Amount()
 	case price.FieldCurrency:
@@ -16651,6 +17363,8 @@ func (m *PriceMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldCreatedBy(ctx)
 	case price.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case price.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case price.FieldAmount:
 		return m.OldAmount(ctx)
 	case price.FieldCurrency:
@@ -16735,6 +17449,13 @@ func (m *PriceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case price.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case price.FieldAmount:
 		v, ok := value.(float64)
@@ -16918,6 +17639,9 @@ func (m *PriceMutation) ClearedFields() []string {
 	if m.FieldCleared(price.FieldUpdatedBy) {
 		fields = append(fields, price.FieldUpdatedBy)
 	}
+	if m.FieldCleared(price.FieldEnvironmentID) {
+		fields = append(fields, price.FieldEnvironmentID)
+	}
 	if m.FieldCleared(price.FieldMeterID) {
 		fields = append(fields, price.FieldMeterID)
 	}
@@ -16961,6 +17685,9 @@ func (m *PriceMutation) ClearField(name string) error {
 		return nil
 	case price.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case price.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case price.FieldMeterID:
 		m.ClearMeterID()
@@ -17011,6 +17738,9 @@ func (m *PriceMutation) ResetField(name string) error {
 		return nil
 	case price.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case price.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case price.FieldAmount:
 		m.ResetAmount()
@@ -17127,6 +17857,7 @@ type SecretMutation struct {
 	updated_at        *time.Time
 	created_by        *string
 	updated_by        *string
+	environment_id    *string
 	name              *string
 	_type             *string
 	provider          *string
@@ -17487,6 +18218,55 @@ func (m *SecretMutation) UpdatedByCleared() bool {
 func (m *SecretMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, secret.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *SecretMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *SecretMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Secret entity.
+// If the Secret object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SecretMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *SecretMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[secret.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *SecretMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[secret.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *SecretMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, secret.FieldEnvironmentID)
 }
 
 // SetName sets the "name" field.
@@ -17941,7 +18721,7 @@ func (m *SecretMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SecretMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 16)
 	if m.tenant_id != nil {
 		fields = append(fields, secret.FieldTenantID)
 	}
@@ -17959,6 +18739,9 @@ func (m *SecretMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, secret.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, secret.FieldEnvironmentID)
 	}
 	if m.name != nil {
 		fields = append(fields, secret.FieldName)
@@ -18007,6 +18790,8 @@ func (m *SecretMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case secret.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case secret.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case secret.FieldName:
 		return m.Name()
 	case secret.FieldType:
@@ -18046,6 +18831,8 @@ func (m *SecretMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldCreatedBy(ctx)
 	case secret.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case secret.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case secret.FieldName:
 		return m.OldName(ctx)
 	case secret.FieldType:
@@ -18114,6 +18901,13 @@ func (m *SecretMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case secret.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case secret.FieldName:
 		v, ok := value.(string)
@@ -18214,6 +19008,9 @@ func (m *SecretMutation) ClearedFields() []string {
 	if m.FieldCleared(secret.FieldUpdatedBy) {
 		fields = append(fields, secret.FieldUpdatedBy)
 	}
+	if m.FieldCleared(secret.FieldEnvironmentID) {
+		fields = append(fields, secret.FieldEnvironmentID)
+	}
 	if m.FieldCleared(secret.FieldValue) {
 		fields = append(fields, secret.FieldValue)
 	}
@@ -18251,6 +19048,9 @@ func (m *SecretMutation) ClearField(name string) error {
 		return nil
 	case secret.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case secret.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case secret.FieldValue:
 		m.ClearValue()
@@ -18295,6 +19095,9 @@ func (m *SecretMutation) ResetField(name string) error {
 		return nil
 	case secret.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case secret.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case secret.FieldName:
 		m.ResetName()
@@ -18387,6 +19190,7 @@ type SubscriptionMutation struct {
 	updated_at              *time.Time
 	created_by              *string
 	updated_by              *string
+	environment_id          *string
 	lookup_key              *string
 	customer_id             *string
 	plan_id                 *string
@@ -18763,6 +19567,55 @@ func (m *SubscriptionMutation) UpdatedByCleared() bool {
 func (m *SubscriptionMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, subscription.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *SubscriptionMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *SubscriptionMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *SubscriptionMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[subscription.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *SubscriptionMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[subscription.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *SubscriptionMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, subscription.FieldEnvironmentID)
 }
 
 // SetLookupKey sets the "lookup_key" field.
@@ -19740,7 +20593,7 @@ func (m *SubscriptionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionMutation) Fields() []string {
-	fields := make([]string, 0, 27)
+	fields := make([]string, 0, 28)
 	if m.tenant_id != nil {
 		fields = append(fields, subscription.FieldTenantID)
 	}
@@ -19758,6 +20611,9 @@ func (m *SubscriptionMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, subscription.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, subscription.FieldEnvironmentID)
 	}
 	if m.lookup_key != nil {
 		fields = append(fields, subscription.FieldLookupKey)
@@ -19842,6 +20698,8 @@ func (m *SubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case subscription.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case subscription.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case subscription.FieldLookupKey:
 		return m.LookupKey()
 	case subscription.FieldCustomerID:
@@ -19905,6 +20763,8 @@ func (m *SubscriptionMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldCreatedBy(ctx)
 	case subscription.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case subscription.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case subscription.FieldLookupKey:
 		return m.OldLookupKey(ctx)
 	case subscription.FieldCustomerID:
@@ -19997,6 +20857,13 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case subscription.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case subscription.FieldLookupKey:
 		v, ok := value.(string)
@@ -20208,6 +21075,9 @@ func (m *SubscriptionMutation) ClearedFields() []string {
 	if m.FieldCleared(subscription.FieldUpdatedBy) {
 		fields = append(fields, subscription.FieldUpdatedBy)
 	}
+	if m.FieldCleared(subscription.FieldEnvironmentID) {
+		fields = append(fields, subscription.FieldEnvironmentID)
+	}
 	if m.FieldCleared(subscription.FieldLookupKey) {
 		fields = append(fields, subscription.FieldLookupKey)
 	}
@@ -20248,6 +21118,9 @@ func (m *SubscriptionMutation) ClearField(name string) error {
 		return nil
 	case subscription.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case subscription.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case subscription.FieldLookupKey:
 		m.ClearLookupKey()
@@ -20295,6 +21168,9 @@ func (m *SubscriptionMutation) ResetField(name string) error {
 		return nil
 	case subscription.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case subscription.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case subscription.FieldLookupKey:
 		m.ResetLookupKey()
@@ -20459,6 +21335,7 @@ type SubscriptionLineItemMutation struct {
 	updated_at          *time.Time
 	created_by          *string
 	updated_by          *string
+	environment_id      *string
 	customer_id         *string
 	plan_id             *string
 	plan_display_name   *string
@@ -20825,6 +21702,55 @@ func (m *SubscriptionLineItemMutation) UpdatedByCleared() bool {
 func (m *SubscriptionLineItemMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, subscriptionlineitem.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *SubscriptionLineItemMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *SubscriptionLineItemMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the SubscriptionLineItem entity.
+// If the SubscriptionLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionLineItemMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *SubscriptionLineItemMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[subscriptionlineitem.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *SubscriptionLineItemMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[subscriptionlineitem.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *SubscriptionLineItemMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, subscriptionlineitem.FieldEnvironmentID)
 }
 
 // SetSubscriptionID sets the "subscription_id" field.
@@ -21545,7 +22471,7 @@ func (m *SubscriptionLineItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionLineItemMutation) Fields() []string {
-	fields := make([]string, 0, 21)
+	fields := make([]string, 0, 22)
 	if m.tenant_id != nil {
 		fields = append(fields, subscriptionlineitem.FieldTenantID)
 	}
@@ -21563,6 +22489,9 @@ func (m *SubscriptionLineItemMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, subscriptionlineitem.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, subscriptionlineitem.FieldEnvironmentID)
 	}
 	if m.subscription != nil {
 		fields = append(fields, subscriptionlineitem.FieldSubscriptionID)
@@ -21629,6 +22558,8 @@ func (m *SubscriptionLineItemMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case subscriptionlineitem.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case subscriptionlineitem.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case subscriptionlineitem.FieldSubscriptionID:
 		return m.SubscriptionID()
 	case subscriptionlineitem.FieldCustomerID:
@@ -21680,6 +22611,8 @@ func (m *SubscriptionLineItemMutation) OldField(ctx context.Context, name string
 		return m.OldCreatedBy(ctx)
 	case subscriptionlineitem.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case subscriptionlineitem.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case subscriptionlineitem.FieldSubscriptionID:
 		return m.OldSubscriptionID(ctx)
 	case subscriptionlineitem.FieldCustomerID:
@@ -21760,6 +22693,13 @@ func (m *SubscriptionLineItemMutation) SetField(name string, value ent.Value) er
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case subscriptionlineitem.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case subscriptionlineitem.FieldSubscriptionID:
 		v, ok := value.(string)
@@ -21902,6 +22842,9 @@ func (m *SubscriptionLineItemMutation) ClearedFields() []string {
 	if m.FieldCleared(subscriptionlineitem.FieldUpdatedBy) {
 		fields = append(fields, subscriptionlineitem.FieldUpdatedBy)
 	}
+	if m.FieldCleared(subscriptionlineitem.FieldEnvironmentID) {
+		fields = append(fields, subscriptionlineitem.FieldEnvironmentID)
+	}
 	if m.FieldCleared(subscriptionlineitem.FieldPlanID) {
 		fields = append(fields, subscriptionlineitem.FieldPlanID)
 	}
@@ -21948,6 +22891,9 @@ func (m *SubscriptionLineItemMutation) ClearField(name string) error {
 		return nil
 	case subscriptionlineitem.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case subscriptionlineitem.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case subscriptionlineitem.FieldPlanID:
 		m.ClearPlanID()
@@ -22001,6 +22947,9 @@ func (m *SubscriptionLineItemMutation) ResetField(name string) error {
 		return nil
 	case subscriptionlineitem.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case subscriptionlineitem.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case subscriptionlineitem.FieldSubscriptionID:
 		m.ResetSubscriptionID()
@@ -22137,6 +23086,7 @@ type TaskMutation struct {
 	updated_at            *time.Time
 	created_by            *string
 	updated_by            *string
+	environment_id        *string
 	task_type             *string
 	entity_type           *string
 	file_url              *string
@@ -22506,6 +23456,55 @@ func (m *TaskMutation) UpdatedByCleared() bool {
 func (m *TaskMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, task.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *TaskMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *TaskMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Task entity.
+// If the Task object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaskMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *TaskMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[task.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *TaskMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[task.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *TaskMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, task.FieldEnvironmentID)
 }
 
 // SetTaskType sets the "task_type" field.
@@ -23254,7 +24253,7 @@ func (m *TaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TaskMutation) Fields() []string {
-	fields := make([]string, 0, 21)
+	fields := make([]string, 0, 22)
 	if m.tenant_id != nil {
 		fields = append(fields, task.FieldTenantID)
 	}
@@ -23272,6 +24271,9 @@ func (m *TaskMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, task.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, task.FieldEnvironmentID)
 	}
 	if m.task_type != nil {
 		fields = append(fields, task.FieldTaskType)
@@ -23338,6 +24340,8 @@ func (m *TaskMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case task.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case task.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case task.FieldTaskType:
 		return m.TaskType()
 	case task.FieldEntityType:
@@ -23389,6 +24393,8 @@ func (m *TaskMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldCreatedBy(ctx)
 	case task.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case task.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case task.FieldTaskType:
 		return m.OldTaskType(ctx)
 	case task.FieldEntityType:
@@ -23469,6 +24475,13 @@ func (m *TaskMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case task.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case task.FieldTaskType:
 		v, ok := value.(string)
@@ -23662,6 +24675,9 @@ func (m *TaskMutation) ClearedFields() []string {
 	if m.FieldCleared(task.FieldUpdatedBy) {
 		fields = append(fields, task.FieldUpdatedBy)
 	}
+	if m.FieldCleared(task.FieldEnvironmentID) {
+		fields = append(fields, task.FieldEnvironmentID)
+	}
 	if m.FieldCleared(task.FieldFileName) {
 		fields = append(fields, task.FieldFileName)
 	}
@@ -23702,6 +24718,9 @@ func (m *TaskMutation) ClearField(name string) error {
 		return nil
 	case task.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case task.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case task.FieldFileName:
 		m.ClearFileName()
@@ -23749,6 +24768,9 @@ func (m *TaskMutation) ResetField(name string) error {
 		return nil
 	case task.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case task.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case task.FieldTaskType:
 		m.ResetTaskType()
@@ -25050,6 +26072,7 @@ type WalletMutation struct {
 	updated_at             *time.Time
 	created_by             *string
 	updated_by             *string
+	environment_id         *string
 	name                   *string
 	customer_id            *string
 	currency               *string
@@ -25414,6 +26437,55 @@ func (m *WalletMutation) UpdatedByCleared() bool {
 func (m *WalletMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, wallet.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *WalletMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *WalletMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the Wallet entity.
+// If the Wallet object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *WalletMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[wallet.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *WalletMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[wallet.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *WalletMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, wallet.FieldEnvironmentID)
 }
 
 // SetName sets the "name" field.
@@ -26045,7 +27117,7 @@ func (m *WalletMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 21)
 	if m.tenant_id != nil {
 		fields = append(fields, wallet.FieldTenantID)
 	}
@@ -26063,6 +27135,9 @@ func (m *WalletMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, wallet.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, wallet.FieldEnvironmentID)
 	}
 	if m.name != nil {
 		fields = append(fields, wallet.FieldName)
@@ -26126,6 +27201,8 @@ func (m *WalletMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case wallet.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case wallet.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case wallet.FieldName:
 		return m.Name()
 	case wallet.FieldCustomerID:
@@ -26175,6 +27252,8 @@ func (m *WalletMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldCreatedBy(ctx)
 	case wallet.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case wallet.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case wallet.FieldName:
 		return m.OldName(ctx)
 	case wallet.FieldCustomerID:
@@ -26253,6 +27332,13 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case wallet.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case wallet.FieldName:
 		v, ok := value.(string)
@@ -26388,6 +27474,9 @@ func (m *WalletMutation) ClearedFields() []string {
 	if m.FieldCleared(wallet.FieldUpdatedBy) {
 		fields = append(fields, wallet.FieldUpdatedBy)
 	}
+	if m.FieldCleared(wallet.FieldEnvironmentID) {
+		fields = append(fields, wallet.FieldEnvironmentID)
+	}
 	if m.FieldCleared(wallet.FieldName) {
 		fields = append(fields, wallet.FieldName)
 	}
@@ -26428,6 +27517,9 @@ func (m *WalletMutation) ClearField(name string) error {
 		return nil
 	case wallet.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case wallet.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case wallet.FieldName:
 		m.ClearName()
@@ -26475,6 +27567,9 @@ func (m *WalletMutation) ResetField(name string) error {
 		return nil
 	case wallet.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case wallet.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case wallet.FieldName:
 		m.ResetName()
@@ -26582,6 +27677,7 @@ type WalletTransactionMutation struct {
 	updated_at            *time.Time
 	created_by            *string
 	updated_by            *string
+	environment_id        *string
 	wallet_id             *string
 	_type                 *string
 	amount                *decimal.Decimal
@@ -26946,6 +28042,55 @@ func (m *WalletTransactionMutation) UpdatedByCleared() bool {
 func (m *WalletTransactionMutation) ResetUpdatedBy() {
 	m.updated_by = nil
 	delete(m.clearedFields, wallettransaction.FieldUpdatedBy)
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *WalletTransactionMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *WalletTransactionMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *WalletTransactionMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[wallettransaction.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *WalletTransactionMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[wallettransaction.FieldEnvironmentID]
+	return ok
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *WalletTransactionMutation) ResetEnvironmentID() {
+	m.environment_id = nil
+	delete(m.clearedFields, wallettransaction.FieldEnvironmentID)
 }
 
 // SetWalletID sets the "wallet_id" field.
@@ -27551,7 +28696,7 @@ func (m *WalletTransactionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletTransactionMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 21)
 	if m.tenant_id != nil {
 		fields = append(fields, wallettransaction.FieldTenantID)
 	}
@@ -27569,6 +28714,9 @@ func (m *WalletTransactionMutation) Fields() []string {
 	}
 	if m.updated_by != nil {
 		fields = append(fields, wallettransaction.FieldUpdatedBy)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, wallettransaction.FieldEnvironmentID)
 	}
 	if m.wallet_id != nil {
 		fields = append(fields, wallettransaction.FieldWalletID)
@@ -27632,6 +28780,8 @@ func (m *WalletTransactionMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case wallettransaction.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case wallettransaction.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case wallettransaction.FieldWalletID:
 		return m.WalletID()
 	case wallettransaction.FieldType:
@@ -27681,6 +28831,8 @@ func (m *WalletTransactionMutation) OldField(ctx context.Context, name string) (
 		return m.OldCreatedBy(ctx)
 	case wallettransaction.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case wallettransaction.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case wallettransaction.FieldWalletID:
 		return m.OldWalletID(ctx)
 	case wallettransaction.FieldType:
@@ -27759,6 +28911,13 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
+		return nil
+	case wallettransaction.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case wallettransaction.FieldWalletID:
 		v, ok := value.(string)
@@ -27894,6 +29053,9 @@ func (m *WalletTransactionMutation) ClearedFields() []string {
 	if m.FieldCleared(wallettransaction.FieldUpdatedBy) {
 		fields = append(fields, wallettransaction.FieldUpdatedBy)
 	}
+	if m.FieldCleared(wallettransaction.FieldEnvironmentID) {
+		fields = append(fields, wallettransaction.FieldEnvironmentID)
+	}
 	if m.FieldCleared(wallettransaction.FieldReferenceType) {
 		fields = append(fields, wallettransaction.FieldReferenceType)
 	}
@@ -27928,6 +29090,9 @@ func (m *WalletTransactionMutation) ClearField(name string) error {
 		return nil
 	case wallettransaction.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case wallettransaction.FieldEnvironmentID:
+		m.ClearEnvironmentID()
 		return nil
 	case wallettransaction.FieldReferenceType:
 		m.ClearReferenceType()
@@ -27969,6 +29134,9 @@ func (m *WalletTransactionMutation) ResetField(name string) error {
 		return nil
 	case wallettransaction.FieldUpdatedBy:
 		m.ResetUpdatedBy()
+		return nil
+	case wallettransaction.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case wallettransaction.FieldWalletID:
 		m.ResetWalletID()

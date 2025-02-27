@@ -30,6 +30,8 @@ type Secret struct {
 	CreatedBy string `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
 	UpdatedBy string `json:"updated_by,omitempty"`
+	// EnvironmentID holds the value of the "environment_id" field.
+	EnvironmentID string `json:"environment_id,omitempty"`
 	// Display name for the secret
 	Name string `json:"name,omitempty"`
 	// Type of secret: private_key, publishable_key, integration
@@ -58,7 +60,7 @@ func (*Secret) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case secret.FieldPermissions, secret.FieldProviderData:
 			values[i] = new([]byte)
-		case secret.FieldID, secret.FieldTenantID, secret.FieldStatus, secret.FieldCreatedBy, secret.FieldUpdatedBy, secret.FieldName, secret.FieldType, secret.FieldProvider, secret.FieldValue, secret.FieldDisplayID:
+		case secret.FieldID, secret.FieldTenantID, secret.FieldStatus, secret.FieldCreatedBy, secret.FieldUpdatedBy, secret.FieldEnvironmentID, secret.FieldName, secret.FieldType, secret.FieldProvider, secret.FieldValue, secret.FieldDisplayID:
 			values[i] = new(sql.NullString)
 		case secret.FieldCreatedAt, secret.FieldUpdatedAt, secret.FieldExpiresAt, secret.FieldLastUsedAt:
 			values[i] = new(sql.NullTime)
@@ -118,6 +120,12 @@ func (s *Secret) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field updated_by", values[i])
 			} else if value.Valid {
 				s.UpdatedBy = value.String
+			}
+		case secret.FieldEnvironmentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field environment_id", values[i])
+			} else if value.Valid {
+				s.EnvironmentID = value.String
 			}
 		case secret.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -232,6 +240,9 @@ func (s *Secret) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_by=")
 	builder.WriteString(s.UpdatedBy)
+	builder.WriteString(", ")
+	builder.WriteString("environment_id=")
+	builder.WriteString(s.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(s.Name)

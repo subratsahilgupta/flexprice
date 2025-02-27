@@ -19,6 +19,7 @@ type WalletTransaction struct {
 func (WalletTransaction) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -115,10 +116,10 @@ func (WalletTransaction) Edges() []ent.Edge {
 // Indexes of the WalletTransaction.
 func (WalletTransaction) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "wallet_id"),
-		index.Fields("tenant_id", "reference_type", "reference_id", "status"),
-		index.Fields("tenant_id", "created_at"),
-		index.Fields("tenant_id", "wallet_id", "type", "credits_available", "expiry_date").
+		index.Fields("tenant_id", "environment_id", "wallet_id"),
+		index.Fields("tenant_id", "environment_id", "reference_type", "reference_id", "status"),
+		index.Fields("tenant_id", "environment_id", "created_at"),
+		index.Fields("tenant_id", "environment_id", "wallet_id", "type", "credits_available", "expiry_date").
 			StorageKey("idx_tenant_wallet_type_credits_available_expiry_date").
 			Annotations(entsql.IndexWhere("credits_available > 0 AND type = 'credit'")),
 		// TODO: Add unique index for reference type and ID

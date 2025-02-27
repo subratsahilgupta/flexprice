@@ -18,6 +18,7 @@ type InvoiceLineItem struct {
 func (InvoiceLineItem) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -135,11 +136,11 @@ func (InvoiceLineItem) Edges() []ent.Edge {
 // Indexes of the InvoiceLineItem.
 func (InvoiceLineItem) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "invoice_id", "status"),
-		index.Fields("tenant_id", "customer_id", "status"),
-		index.Fields("tenant_id", "subscription_id", "status"),
-		index.Fields("tenant_id", "price_id", "status"),
-		index.Fields("tenant_id", "meter_id", "status"),
+		index.Fields("tenant_id", "environment_id", "invoice_id", "status"),
+		index.Fields("tenant_id", "environment_id", "customer_id", "status"),
+		index.Fields("tenant_id", "environment_id", "subscription_id", "status"),
+		index.Fields("tenant_id", "environment_id", "price_id", "status"),
+		index.Fields("tenant_id", "environment_id", "meter_id", "status"),
 		index.Fields("period_start", "period_end"),
 	}
 }

@@ -78,6 +78,9 @@ type Subscription struct {
 	// Metadata is a map of key-value pairs that can be attached to the subscription
 	Metadata types.Metadata `db:"metadata" json:"metadata,omitempty"`
 
+	// EnvironmentID is the environment identifier for the subscription
+	EnvironmentID string `db:"environment_id" json:"environment_id"`
+
 	LineItems []*SubscriptionLineItem `json:"line_items,omitempty"`
 
 	types.BaseModel
@@ -115,6 +118,7 @@ func GetSubscriptionFromEnt(sub *ent.Subscription) *Subscription {
 		BillingPeriodCount: sub.BillingPeriodCount,
 		Version:            sub.Version,
 		Metadata:           sub.Metadata,
+		EnvironmentID:      sub.EnvironmentID,
 		LineItems:          lineItems,
 		BaseModel: types.BaseModel{
 			TenantID:  sub.TenantID,

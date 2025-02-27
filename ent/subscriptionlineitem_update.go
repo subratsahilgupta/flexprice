@@ -69,6 +69,26 @@ func (sliu *SubscriptionLineItemUpdate) ClearUpdatedBy() *SubscriptionLineItemUp
 	return sliu
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (sliu *SubscriptionLineItemUpdate) SetEnvironmentID(s string) *SubscriptionLineItemUpdate {
+	sliu.mutation.SetEnvironmentID(s)
+	return sliu
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (sliu *SubscriptionLineItemUpdate) SetNillableEnvironmentID(s *string) *SubscriptionLineItemUpdate {
+	if s != nil {
+		sliu.SetEnvironmentID(*s)
+	}
+	return sliu
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (sliu *SubscriptionLineItemUpdate) ClearEnvironmentID() *SubscriptionLineItemUpdate {
+	sliu.mutation.ClearEnvironmentID()
+	return sliu
+}
+
 // SetPlanID sets the "plan_id" field.
 func (sliu *SubscriptionLineItemUpdate) SetPlanID(s string) *SubscriptionLineItemUpdate {
 	sliu.mutation.SetPlanID(s)
@@ -388,6 +408,12 @@ func (sliu *SubscriptionLineItemUpdate) sqlSave(ctx context.Context) (n int, err
 	if sliu.mutation.UpdatedByCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldUpdatedBy, field.TypeString)
 	}
+	if value, ok := sliu.mutation.EnvironmentID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldEnvironmentID, field.TypeString, value)
+	}
+	if sliu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := sliu.mutation.PlanID(); ok {
 		_spec.SetField(subscriptionlineitem.FieldPlanID, field.TypeString, value)
 	}
@@ -511,6 +537,26 @@ func (sliuo *SubscriptionLineItemUpdateOne) SetNillableUpdatedBy(s *string) *Sub
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (sliuo *SubscriptionLineItemUpdateOne) ClearUpdatedBy() *SubscriptionLineItemUpdateOne {
 	sliuo.mutation.ClearUpdatedBy()
+	return sliuo
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (sliuo *SubscriptionLineItemUpdateOne) SetEnvironmentID(s string) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.SetEnvironmentID(s)
+	return sliuo
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (sliuo *SubscriptionLineItemUpdateOne) SetNillableEnvironmentID(s *string) *SubscriptionLineItemUpdateOne {
+	if s != nil {
+		sliuo.SetEnvironmentID(*s)
+	}
+	return sliuo
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (sliuo *SubscriptionLineItemUpdateOne) ClearEnvironmentID() *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.ClearEnvironmentID()
 	return sliuo
 }
 
@@ -862,6 +908,12 @@ func (sliuo *SubscriptionLineItemUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if sliuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldUpdatedBy, field.TypeString)
+	}
+	if value, ok := sliuo.mutation.EnvironmentID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldEnvironmentID, field.TypeString, value)
+	}
+	if sliuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := sliuo.mutation.PlanID(); ok {
 		_spec.SetField(subscriptionlineitem.FieldPlanID, field.TypeString, value)

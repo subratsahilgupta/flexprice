@@ -96,6 +96,20 @@ func (sc *SecretCreate) SetNillableUpdatedBy(s *string) *SecretCreate {
 	return sc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (sc *SecretCreate) SetEnvironmentID(s string) *SecretCreate {
+	sc.mutation.SetEnvironmentID(s)
+	return sc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (sc *SecretCreate) SetNillableEnvironmentID(s *string) *SecretCreate {
+	if s != nil {
+		sc.SetEnvironmentID(*s)
+	}
+	return sc
+}
+
 // SetName sets the "name" field.
 func (sc *SecretCreate) SetName(s string) *SecretCreate {
 	sc.mutation.SetName(s)
@@ -235,6 +249,10 @@ func (sc *SecretCreate) defaults() {
 		v := secret.DefaultUpdatedAt()
 		sc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := sc.mutation.EnvironmentID(); !ok {
+		v := secret.DefaultEnvironmentID
+		sc.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := sc.mutation.Permissions(); !ok {
 		v := secret.DefaultPermissions
 		sc.mutation.SetPermissions(v)
@@ -342,6 +360,10 @@ func (sc *SecretCreate) createSpec() (*Secret, *sqlgraph.CreateSpec) {
 	if value, ok := sc.mutation.UpdatedBy(); ok {
 		_spec.SetField(secret.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := sc.mutation.EnvironmentID(); ok {
+		_spec.SetField(secret.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := sc.mutation.Name(); ok {
 		_spec.SetField(secret.FieldName, field.TypeString, value)

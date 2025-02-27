@@ -17,6 +17,7 @@ type Meter struct {
 func (Meter) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -62,7 +63,7 @@ func (Meter) Edges() []ent.Edge {
 // Indexes of the Meter.
 func (Meter) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id"),
+		index.Fields("tenant_id", "environment_id"),
 	}
 }
 

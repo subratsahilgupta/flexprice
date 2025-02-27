@@ -17,6 +17,7 @@ type Secret struct {
 func (Secret) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		mixin.BaseMixin{},
+		mixin.EnvironmentMixin{},
 	}
 }
 
@@ -72,10 +73,10 @@ func (Secret) Indexes() []ent.Index {
 	return []ent.Index{
 		// Primary query patterns
 		index.Fields("type", "value", "status"), // API keys are queried by type and status
-		index.Fields("tenant_id", "type", "provider", "status"),
+		index.Fields("tenant_id", "environment_id", "type", "provider", "status"),
 
 		// Unique constraints
-		index.Fields("tenant_id", "provider", "type").
+		index.Fields("tenant_id", "environment_id", "provider", "type").
 			Unique().
 			StorageKey("unique_tenant_provider_type").
 			Annotations(

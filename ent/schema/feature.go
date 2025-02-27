@@ -17,6 +17,7 @@ type Feature struct {
 func (Feature) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -80,18 +81,18 @@ func (Feature) Fields() []ent.Field {
 // Indexes of the Feature.
 func (Feature) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "lookup_key").
+		index.Fields("tenant_id", "environment_id", "lookup_key").
 			Unique().
-			StorageKey("idx_feature_tenant_id_lookup_key_unique").
+			StorageKey("idx_feature_tenant_env_lookup_key_unique").
 			Annotations(entsql.IndexWhere("lookup_key IS NOT NULL AND status = 'published'")),
-		index.Fields("tenant_id", "meter_id").
-			StorageKey("idx_feature_tenant_id_meter_id").
+		index.Fields("tenant_id", "environment_id", "meter_id").
+			StorageKey("idx_feature_tenant_env_meter_id").
 			Annotations(entsql.IndexWhere("meter_id IS NOT NULL")),
-		index.Fields("tenant_id", "type").
-			StorageKey("idx_feature_tenant_id_type"),
-		index.Fields("tenant_id", "status").
-			StorageKey("idx_feature_tenant_status"),
-		index.Fields("tenant_id", "created_at").
-			StorageKey("idx_feature_tenant_created_at"),
+		index.Fields("tenant_id", "environment_id", "type").
+			StorageKey("idx_feature_tenant_env_type"),
+		index.Fields("tenant_id", "environment_id", "status").
+			StorageKey("idx_feature_tenant_env_status"),
+		index.Fields("tenant_id", "environment_id", "created_at").
+			StorageKey("idx_feature_tenant_env_created_at"),
 	}
 }

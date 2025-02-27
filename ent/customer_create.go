@@ -96,6 +96,20 @@ func (cc *CustomerCreate) SetNillableUpdatedBy(s *string) *CustomerCreate {
 	return cc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (cc *CustomerCreate) SetEnvironmentID(s string) *CustomerCreate {
+	cc.mutation.SetEnvironmentID(s)
+	return cc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (cc *CustomerCreate) SetNillableEnvironmentID(s *string) *CustomerCreate {
+	if s != nil {
+		cc.SetEnvironmentID(*s)
+	}
+	return cc
+}
+
 // SetExternalID sets the "external_id" field.
 func (cc *CustomerCreate) SetExternalID(s string) *CustomerCreate {
 	cc.mutation.SetExternalID(s)
@@ -265,6 +279,10 @@ func (cc *CustomerCreate) defaults() {
 		v := customer.DefaultUpdatedAt()
 		cc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := cc.mutation.EnvironmentID(); !ok {
+		v := customer.DefaultEnvironmentID
+		cc.mutation.SetEnvironmentID(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -360,6 +378,10 @@ func (cc *CustomerCreate) createSpec() (*Customer, *sqlgraph.CreateSpec) {
 	if value, ok := cc.mutation.UpdatedBy(); ok {
 		_spec.SetField(customer.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := cc.mutation.EnvironmentID(); ok {
+		_spec.SetField(customer.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := cc.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)

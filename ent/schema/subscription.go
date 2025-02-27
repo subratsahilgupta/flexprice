@@ -20,6 +20,7 @@ type Subscription struct {
 func (Subscription) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -117,10 +118,10 @@ func (Subscription) Edges() []ent.Edge {
 func (Subscription) Indexes() []ent.Index {
 	return []ent.Index{
 		// Common query patterns from repository layer
-		index.Fields("tenant_id", "customer_id", "status"),
-		index.Fields("tenant_id", "plan_id", "status"),
-		index.Fields("tenant_id", "subscription_status", "status"),
+		index.Fields("tenant_id", "environment_id", "customer_id", "status"),
+		index.Fields("tenant_id", "environment_id", "plan_id", "status"),
+		index.Fields("tenant_id", "environment_id", "subscription_status", "status"),
 		// For billing period updates
-		index.Fields("tenant_id", "current_period_end", "subscription_status", "status"),
+		index.Fields("tenant_id", "environment_id", "current_period_end", "subscription_status", "status"),
 	}
 }

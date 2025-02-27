@@ -97,6 +97,20 @@ func (mc *MeterCreate) SetNillableUpdatedBy(s *string) *MeterCreate {
 	return mc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (mc *MeterCreate) SetEnvironmentID(s string) *MeterCreate {
+	mc.mutation.SetEnvironmentID(s)
+	return mc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (mc *MeterCreate) SetNillableEnvironmentID(s *string) *MeterCreate {
+	if s != nil {
+		mc.SetEnvironmentID(*s)
+	}
+	return mc
+}
+
 // SetEventName sets the "event_name" field.
 func (mc *MeterCreate) SetEventName(s string) *MeterCreate {
 	mc.mutation.SetEventName(s)
@@ -195,6 +209,10 @@ func (mc *MeterCreate) defaults() {
 	if _, ok := mc.mutation.UpdatedAt(); !ok {
 		v := meter.DefaultUpdatedAt()
 		mc.mutation.SetUpdatedAt(v)
+	}
+	if _, ok := mc.mutation.EnvironmentID(); !ok {
+		v := meter.DefaultEnvironmentID
+		mc.mutation.SetEnvironmentID(v)
 	}
 	if _, ok := mc.mutation.Aggregation(); !ok {
 		v := meter.DefaultAggregation
@@ -312,6 +330,10 @@ func (mc *MeterCreate) createSpec() (*Meter, *sqlgraph.CreateSpec) {
 	if value, ok := mc.mutation.UpdatedBy(); ok {
 		_spec.SetField(meter.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := mc.mutation.EnvironmentID(); ok {
+		_spec.SetField(meter.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := mc.mutation.EventName(); ok {
 		_spec.SetField(meter.FieldEventName, field.TypeString, value)

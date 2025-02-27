@@ -98,6 +98,20 @@ func (slic *SubscriptionLineItemCreate) SetNillableUpdatedBy(s *string) *Subscri
 	return slic
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (slic *SubscriptionLineItemCreate) SetEnvironmentID(s string) *SubscriptionLineItemCreate {
+	slic.mutation.SetEnvironmentID(s)
+	return slic
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (slic *SubscriptionLineItemCreate) SetNillableEnvironmentID(s *string) *SubscriptionLineItemCreate {
+	if s != nil {
+		slic.SetEnvironmentID(*s)
+	}
+	return slic
+}
+
 // SetSubscriptionID sets the "subscription_id" field.
 func (slic *SubscriptionLineItemCreate) SetSubscriptionID(s string) *SubscriptionLineItemCreate {
 	slic.mutation.SetSubscriptionID(s)
@@ -318,6 +332,10 @@ func (slic *SubscriptionLineItemCreate) defaults() {
 		v := subscriptionlineitem.DefaultUpdatedAt()
 		slic.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := slic.mutation.EnvironmentID(); !ok {
+		v := subscriptionlineitem.DefaultEnvironmentID
+		slic.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := slic.mutation.Quantity(); !ok {
 		v := subscriptionlineitem.DefaultQuantity
 		slic.mutation.SetQuantity(v)
@@ -447,6 +465,10 @@ func (slic *SubscriptionLineItemCreate) createSpec() (*SubscriptionLineItem, *sq
 	if value, ok := slic.mutation.UpdatedBy(); ok {
 		_spec.SetField(subscriptionlineitem.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := slic.mutation.EnvironmentID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := slic.mutation.CustomerID(); ok {
 		_spec.SetField(subscriptionlineitem.FieldCustomerID, field.TypeString, value)

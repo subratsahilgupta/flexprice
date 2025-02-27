@@ -97,6 +97,20 @@ func (ec *EntitlementCreate) SetNillableUpdatedBy(s *string) *EntitlementCreate 
 	return ec
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (ec *EntitlementCreate) SetEnvironmentID(s string) *EntitlementCreate {
+	ec.mutation.SetEnvironmentID(s)
+	return ec
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (ec *EntitlementCreate) SetNillableEnvironmentID(s *string) *EntitlementCreate {
+	if s != nil {
+		ec.SetEnvironmentID(*s)
+	}
+	return ec
+}
+
 // SetPlanID sets the "plan_id" field.
 func (ec *EntitlementCreate) SetPlanID(s string) *EntitlementCreate {
 	ec.mutation.SetPlanID(s)
@@ -243,6 +257,10 @@ func (ec *EntitlementCreate) defaults() {
 		v := entitlement.DefaultUpdatedAt()
 		ec.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := ec.mutation.EnvironmentID(); !ok {
+		v := entitlement.DefaultEnvironmentID
+		ec.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := ec.mutation.IsEnabled(); !ok {
 		v := entitlement.DefaultIsEnabled
 		ec.mutation.SetIsEnabled(v)
@@ -368,6 +386,10 @@ func (ec *EntitlementCreate) createSpec() (*Entitlement, *sqlgraph.CreateSpec) {
 	if value, ok := ec.mutation.UpdatedBy(); ok {
 		_spec.SetField(entitlement.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := ec.mutation.EnvironmentID(); ok {
+		_spec.SetField(entitlement.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := ec.mutation.FeatureID(); ok {
 		_spec.SetField(entitlement.FieldFeatureID, field.TypeString, value)

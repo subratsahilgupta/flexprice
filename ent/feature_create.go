@@ -96,6 +96,20 @@ func (fc *FeatureCreate) SetNillableUpdatedBy(s *string) *FeatureCreate {
 	return fc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (fc *FeatureCreate) SetEnvironmentID(s string) *FeatureCreate {
+	fc.mutation.SetEnvironmentID(s)
+	return fc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (fc *FeatureCreate) SetNillableEnvironmentID(s *string) *FeatureCreate {
+	if s != nil {
+		fc.SetEnvironmentID(*s)
+	}
+	return fc
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (fc *FeatureCreate) SetLookupKey(s string) *FeatureCreate {
 	fc.mutation.SetLookupKey(s)
@@ -229,6 +243,10 @@ func (fc *FeatureCreate) defaults() {
 		v := feature.DefaultUpdatedAt()
 		fc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := fc.mutation.EnvironmentID(); !ok {
+		v := feature.DefaultEnvironmentID
+		fc.mutation.SetEnvironmentID(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -327,6 +345,10 @@ func (fc *FeatureCreate) createSpec() (*Feature, *sqlgraph.CreateSpec) {
 	if value, ok := fc.mutation.UpdatedBy(); ok {
 		_spec.SetField(feature.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := fc.mutation.EnvironmentID(); ok {
+		_spec.SetField(feature.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := fc.mutation.LookupKey(); ok {
 		_spec.SetField(feature.FieldLookupKey, field.TypeString, value)

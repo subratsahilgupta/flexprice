@@ -17,6 +17,7 @@ type Customer struct {
 func (Customer) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -89,9 +90,9 @@ func (Customer) Edges() []ent.Edge {
 // Indexes of the Customer.
 func (Customer) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "external_id").
+		index.Fields("tenant_id", "environment_id", "external_id").
 			Unique().
 			Annotations(entsql.IndexWhere("status != 'deleted'" + " AND external_id != ''")),
-		index.Fields("tenant_id"),
+		index.Fields("tenant_id", "environment_id"),
 	}
 }

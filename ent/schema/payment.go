@@ -19,6 +19,7 @@ type Payment struct {
 func (Payment) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -120,11 +121,11 @@ func (Payment) Edges() []ent.Edge {
 // Indexes of the Payment.
 func (Payment) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "destination_type", "destination_id", "payment_status", "status").
+		index.Fields("tenant_id", "environment_id", "destination_type", "destination_id", "payment_status", "status").
 			StorageKey("idx_tenant_destination_status"),
-		index.Fields("tenant_id", "payment_method_type", "payment_method_id", "payment_status", "status").
+		index.Fields("tenant_id", "environment_id", "payment_method_type", "payment_method_id", "payment_status", "status").
 			StorageKey("idx_tenant_payment_method_status"),
-		index.Fields("tenant_id", "payment_gateway", "gateway_payment_id").
+		index.Fields("tenant_id", "environment_id", "payment_gateway", "gateway_payment_id").
 			StorageKey("idx_tenant_gateway_payment").
 			Annotations(entsql.IndexWhere("payment_gateway IS NOT NULL AND gateway_payment_id IS NOT NULL")),
 	}

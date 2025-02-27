@@ -34,6 +34,9 @@ type Meter struct {
 	// total API requests do.
 	ResetUsage types.ResetUsage `db:"reset_usage" json:"reset_usage"`
 
+	// EnvironmentID is the environment identifier for the meter
+	EnvironmentID string `db:"environment_id" json:"environment_id"`
+
 	// BaseModel is the base model for the meter
 	types.BaseModel
 }
@@ -81,8 +84,9 @@ func FromEnt(e *ent.Meter) *Meter {
 			Type:  e.Aggregation.Type,
 			Field: e.Aggregation.Field,
 		},
-		Filters:    filters,
-		ResetUsage: types.ResetUsage(e.ResetUsage),
+		Filters:       filters,
+		ResetUsage:    types.ResetUsage(e.ResetUsage),
+		EnvironmentID: e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

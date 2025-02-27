@@ -70,6 +70,26 @@ func (pu *PriceUpdate) ClearUpdatedBy() *PriceUpdate {
 	return pu
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (pu *PriceUpdate) SetEnvironmentID(s string) *PriceUpdate {
+	pu.mutation.SetEnvironmentID(s)
+	return pu
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (pu *PriceUpdate) SetNillableEnvironmentID(s *string) *PriceUpdate {
+	if s != nil {
+		pu.SetEnvironmentID(*s)
+	}
+	return pu
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (pu *PriceUpdate) ClearEnvironmentID() *PriceUpdate {
+	pu.mutation.ClearEnvironmentID()
+	return pu
+}
+
 // SetAmount sets the "amount" field.
 func (pu *PriceUpdate) SetAmount(f float64) *PriceUpdate {
 	pu.mutation.ResetAmount()
@@ -465,6 +485,12 @@ func (pu *PriceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if pu.mutation.UpdatedByCleared() {
 		_spec.ClearField(price.FieldUpdatedBy, field.TypeString)
 	}
+	if value, ok := pu.mutation.EnvironmentID(); ok {
+		_spec.SetField(price.FieldEnvironmentID, field.TypeString, value)
+	}
+	if pu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(price.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := pu.mutation.Amount(); ok {
 		_spec.SetField(price.FieldAmount, field.TypeFloat64, value)
 	}
@@ -608,6 +634,26 @@ func (puo *PriceUpdateOne) SetNillableUpdatedBy(s *string) *PriceUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (puo *PriceUpdateOne) ClearUpdatedBy() *PriceUpdateOne {
 	puo.mutation.ClearUpdatedBy()
+	return puo
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (puo *PriceUpdateOne) SetEnvironmentID(s string) *PriceUpdateOne {
+	puo.mutation.SetEnvironmentID(s)
+	return puo
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillableEnvironmentID(s *string) *PriceUpdateOne {
+	if s != nil {
+		puo.SetEnvironmentID(*s)
+	}
+	return puo
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (puo *PriceUpdateOne) ClearEnvironmentID() *PriceUpdateOne {
+	puo.mutation.ClearEnvironmentID()
 	return puo
 }
 
@@ -1035,6 +1081,12 @@ func (puo *PriceUpdateOne) sqlSave(ctx context.Context) (_node *Price, err error
 	}
 	if puo.mutation.UpdatedByCleared() {
 		_spec.ClearField(price.FieldUpdatedBy, field.TypeString)
+	}
+	if value, ok := puo.mutation.EnvironmentID(); ok {
+		_spec.SetField(price.FieldEnvironmentID, field.TypeString, value)
+	}
+	if puo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(price.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := puo.mutation.Amount(); ok {
 		_spec.SetField(price.FieldAmount, field.TypeFloat64, value)

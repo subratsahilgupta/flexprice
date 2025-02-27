@@ -30,6 +30,12 @@ func NewTaskRepository(client postgres.IClient, logger *logger.Logger) domainTas
 
 func (r *taskRepository) Create(ctx context.Context, t *domainTask.Task) error {
 	client := r.client.Querier(ctx)
+
+	// Set environment ID from context if not already set
+	if t.EnvironmentID == "" {
+		t.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	task, err := client.Task.Create().
 		SetID(t.ID).
 		SetTenantID(t.TenantID).
@@ -53,6 +59,7 @@ func (r *taskRepository) Create(ctx context.Context, t *domainTask.Task) error {
 		SetUpdatedAt(t.UpdatedAt).
 		SetCreatedBy(t.CreatedBy).
 		SetUpdatedBy(t.UpdatedBy).
+		SetEnvironmentID(t.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -183,6 +190,14 @@ func (o TaskQueryOptions) ApplyTenantFilter(ctx context.Context, query TaskQuery
 	return query.Where(task.TenantID(types.GetTenantID(ctx)))
 }
 
+func (o TaskQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query TaskQuery) TaskQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(task.EnvironmentID(environmentID))
+	}
+	return query
+}
+
 func (o TaskQueryOptions) ApplyStatusFilter(query TaskQuery, status string) TaskQuery {
 	if status == "" {
 		return query.Where(task.StatusNotIn(string(types.StatusDeleted)))
@@ -217,7 +232,7 @@ func (o TaskQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o TaskQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.TaskFilter, query *ent.TaskQuery) *ent.TaskQuery {
+func (o TaskQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.TaskFilter, query *ent.TaskQuery) *ent.TaskQuery {
 	if f == nil {
 		return query
 	}

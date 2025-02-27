@@ -30,6 +30,8 @@ type Task struct {
 	CreatedBy string `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
 	UpdatedBy string `json:"updated_by,omitempty"`
+	// EnvironmentID holds the value of the "environment_id" field.
+	EnvironmentID string `json:"environment_id,omitempty"`
 	// TaskType holds the value of the "task_type" field.
 	TaskType string `json:"task_type,omitempty"`
 	// EntityType holds the value of the "entity_type" field.
@@ -72,7 +74,7 @@ func (*Task) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case task.FieldTotalRecords, task.FieldProcessedRecords, task.FieldSuccessfulRecords, task.FieldFailedRecords:
 			values[i] = new(sql.NullInt64)
-		case task.FieldID, task.FieldTenantID, task.FieldStatus, task.FieldCreatedBy, task.FieldUpdatedBy, task.FieldTaskType, task.FieldEntityType, task.FieldFileURL, task.FieldFileName, task.FieldFileType, task.FieldTaskStatus, task.FieldErrorSummary:
+		case task.FieldID, task.FieldTenantID, task.FieldStatus, task.FieldCreatedBy, task.FieldUpdatedBy, task.FieldEnvironmentID, task.FieldTaskType, task.FieldEntityType, task.FieldFileURL, task.FieldFileName, task.FieldFileType, task.FieldTaskStatus, task.FieldErrorSummary:
 			values[i] = new(sql.NullString)
 		case task.FieldCreatedAt, task.FieldUpdatedAt, task.FieldStartedAt, task.FieldCompletedAt, task.FieldFailedAt:
 			values[i] = new(sql.NullTime)
@@ -132,6 +134,12 @@ func (t *Task) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field updated_by", values[i])
 			} else if value.Valid {
 				t.UpdatedBy = value.String
+			}
+		case task.FieldEnvironmentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field environment_id", values[i])
+			} else if value.Valid {
+				t.EnvironmentID = value.String
 			}
 		case task.FieldTaskType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -284,6 +292,9 @@ func (t *Task) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_by=")
 	builder.WriteString(t.UpdatedBy)
+	builder.WriteString(", ")
+	builder.WriteString("environment_id=")
+	builder.WriteString(t.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("task_type=")
 	builder.WriteString(t.TaskType)

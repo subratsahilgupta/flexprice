@@ -97,6 +97,20 @@ func (pc *PriceCreate) SetNillableUpdatedBy(s *string) *PriceCreate {
 	return pc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (pc *PriceCreate) SetEnvironmentID(s string) *PriceCreate {
+	pc.mutation.SetEnvironmentID(s)
+	return pc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (pc *PriceCreate) SetNillableEnvironmentID(s *string) *PriceCreate {
+	if s != nil {
+		pc.SetEnvironmentID(*s)
+	}
+	return pc
+}
+
 // SetAmount sets the "amount" field.
 func (pc *PriceCreate) SetAmount(f float64) *PriceCreate {
 	pc.mutation.SetAmount(f)
@@ -292,6 +306,10 @@ func (pc *PriceCreate) defaults() {
 		v := price.DefaultUpdatedAt()
 		pc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := pc.mutation.EnvironmentID(); !ok {
+		v := price.DefaultEnvironmentID
+		pc.mutation.SetEnvironmentID(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -438,6 +456,10 @@ func (pc *PriceCreate) createSpec() (*Price, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.UpdatedBy(); ok {
 		_spec.SetField(price.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := pc.mutation.EnvironmentID(); ok {
+		_spec.SetField(price.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := pc.mutation.Amount(); ok {
 		_spec.SetField(price.FieldAmount, field.TypeFloat64, value)
