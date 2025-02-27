@@ -28,10 +28,6 @@ func ErrorHandler() gin.HandlerFunc {
 
 		if len(c.Errors) > 0 {
 			err := c.Errors.Last().Err
-			// message := err.Error()
-
-			// Get the root cause message
-			// rootCause := errors.UnwrapAll(err).Error()
 
 			// Get display message from hints
 			display := getDisplayMessage(err)

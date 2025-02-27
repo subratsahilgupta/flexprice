@@ -21,7 +21,7 @@ type CreateInvoiceRequest struct {
 	SubscriptionID *string                        `json:"subscription_id,omitempty"`
 	IdempotencyKey *string                        `json:"idempotency_key"`
 	InvoiceType    types.InvoiceType              `json:"invoice_type" validate:"oneof=SUBSCRIPTION ONE_OFF CREDIT"`
-	Currency       string                         `json:"currency" validate:"required,iso4217"`
+	Currency       string                         `json:"currency" validate:"required"`
 	AmountDue      decimal.Decimal                `json:"amount_due" validate:"required"`
 	Description    string                         `json:"description,omitempty"`
 	DueDate        *time.Time                     `json:"due_date,omitempty"`

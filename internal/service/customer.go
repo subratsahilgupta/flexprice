@@ -29,7 +29,7 @@ func NewCustomerService(repo customer.Repository) CustomerService {
 
 func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCustomerRequest) (*dto.CustomerResponse, error) {
 	if err := req.Validate(); err != nil {
-		return nil, err
+		return nil, errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, err.Error())
 	}
 
 	cust := req.ToCustomer(ctx)
