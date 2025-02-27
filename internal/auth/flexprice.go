@@ -62,7 +62,7 @@ func (f *flexpriceAuth) Login(ctx context.Context, req AuthRequest, userAuthInfo
 	}
 
 	// Validate the user provided hashed password with the saved hashed password
-	err = bcrypt.CompareHashAndPassword([]byte(userAuthInfo.Token), []byte(hashedPassword))
+	err = bcrypt.CompareHashAndPassword([]byte(userAuthInfo.Token), []byte(req.Password))
 	if err != nil {
 		return nil, fmt.Errorf("invalid password")
 	}
