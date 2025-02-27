@@ -55,14 +55,8 @@ func (f *flexpriceAuth) SignUp(ctx context.Context, req AuthRequest) (*AuthRespo
 }
 
 func (f *flexpriceAuth) Login(ctx context.Context, req AuthRequest, userAuthInfo *auth.Auth) (*AuthResponse, error) {
-	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
-	}
-
 	// Validate the user provided hashed password with the saved hashed password
-	err = bcrypt.CompareHashAndPassword([]byte(userAuthInfo.Token), []byte(req.Password))
+	err := bcrypt.CompareHashAndPassword([]byte(userAuthInfo.Token), []byte(req.Password))
 	if err != nil {
 		return nil, fmt.Errorf("invalid password")
 	}
