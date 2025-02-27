@@ -219,6 +219,7 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*price.Price, error) 
 		TierMode:           r.TierMode,
 		Tiers:              tiers,
 		TransformQuantity:  transformQuantity,
+		EnvironmentID:      types.GetEnvironmentID(ctx),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 	}
 	price.DisplayAmount = price.GetDisplayAmount()

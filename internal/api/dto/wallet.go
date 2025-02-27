@@ -112,6 +112,7 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 		Balance:             decimal.Zero,
 		CreditBalance:       decimal.Zero,
 		WalletStatus:        types.WalletStatusActive,
+		EnvironmentID:       types.GetEnvironmentID(ctx),
 		BaseModel:           types.GetDefaultBaseModel(ctx),
 		WalletType:          r.WalletType,
 		Config:              lo.FromPtr(r.Config),

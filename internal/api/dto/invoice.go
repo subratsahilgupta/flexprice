@@ -129,6 +129,7 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 		PeriodEnd:       r.PeriodEnd,
 		BillingReason:   string(r.BillingReason),
 		Metadata:        r.Metadata,
+		EnvironmentID:   types.GetEnvironmentID(ctx),
 		BaseModel:       types.GetDefaultBaseModel(ctx),
 		AmountRemaining: decimal.Zero,
 	}
@@ -217,6 +218,7 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		PeriodStart:      r.PeriodStart,
 		PeriodEnd:        r.PeriodEnd,
 		Metadata:         r.Metadata,
+		EnvironmentID:    types.GetEnvironmentID(ctx),
 		BaseModel:        types.GetDefaultBaseModel(ctx),
 	}
 }

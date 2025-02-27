@@ -58,6 +58,7 @@ func (r *CreateCustomerRequest) ToCustomer(ctx context.Context) *customer.Custom
 		AddressPostalCode: r.AddressPostalCode,
 		AddressCountry:    r.AddressCountry,
 		Metadata:          r.Metadata,
+		EnvironmentID:     types.GetEnvironmentID(ctx),
 		BaseModel:         types.GetDefaultBaseModel(ctx),
 	}
 }

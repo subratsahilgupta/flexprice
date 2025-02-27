@@ -143,6 +143,7 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 		Amount:            r.Amount,
 		Currency:          strings.ToLower(r.Currency),
 		Metadata:          r.Metadata,
+		EnvironmentID:     types.GetEnvironmentID(ctx),
 		BaseModel:         types.GetDefaultBaseModel(ctx),
 	}
 
