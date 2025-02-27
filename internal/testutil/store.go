@@ -136,3 +136,11 @@ func (s *InMemoryStore[T]) Clear() {
 	defer s.mu.Unlock()
 	s.items = make(map[string]T)
 }
+
+// CheckEnvironmentFilter is a helper function to check if an item matches the environment filter
+func CheckEnvironmentFilter(ctx context.Context, itemEnvID string) bool {
+	environmentID := types.GetEnvironmentID(ctx)
+	// If no environment ID is set in the context, or the item doesn't have an environment ID,
+	// or the environment IDs match, then the item passes the filter
+	return environmentID == "" || itemEnvID == "" || itemEnvID == environmentID
+}

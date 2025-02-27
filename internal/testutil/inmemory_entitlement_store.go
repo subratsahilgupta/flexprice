@@ -38,6 +38,11 @@ func entitlementFilterFn(ctx context.Context, e *entitlement.Entitlement, filter
 		}
 	}
 
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, e.EnvironmentID) {
+		return false
+	}
+
 	// Filter by plan IDs
 	if len(f.PlanIDs) > 0 {
 		found := false
@@ -101,6 +106,12 @@ func (s *InMemoryEntitlementStore) Create(ctx context.Context, e *entitlement.En
 	if e == nil {
 		return nil, fmt.Errorf("entitlement cannot be nil")
 	}
+
+	// Set environment ID from context if not already set
+	if e.EnvironmentID == "" {
+		e.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	err := s.InMemoryStore.Create(ctx, e.ID, e)
 	if err != nil {
 		return nil, err
@@ -136,10 +147,18 @@ func (s *InMemoryEntitlementStore) Delete(ctx context.Context, id string) error 
 }
 
 func (s *InMemoryEntitlementStore) CreateBulk(ctx context.Context, entitlements []*entitlement.Entitlement) ([]*entitlement.Entitlement, error) {
+	environmentID := types.GetEnvironmentID(ctx)
+
 	for _, e := range entitlements {
 		if e == nil {
 			return nil, fmt.Errorf("entitlement cannot be nil")
 		}
+
+		// Set environment ID from context if not already set
+		if e.EnvironmentID == "" {
+			e.EnvironmentID = environmentID
+		}
+
 		if err := s.InMemoryStore.Create(ctx, e.ID, e); err != nil {
 			return nil, err
 		}

@@ -41,6 +41,7 @@ func copyCustomer(c *customer.Customer) *customer.Customer {
 		AddressPostalCode: c.AddressPostalCode,
 		AddressCountry:    c.AddressCountry,
 		Metadata:          lo.Assign(map[string]string{}, c.Metadata),
+		EnvironmentID:     c.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  c.TenantID,
 			Status:    c.Status,
@@ -55,6 +56,10 @@ func copyCustomer(c *customer.Customer) *customer.Customer {
 }
 
 func (s *InMemoryCustomerStore) Create(ctx context.Context, c *customer.Customer) error {
+	// Set environment ID from context if not already set
+	if c.EnvironmentID == "" {
+		c.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
 	return s.InMemoryStore.Create(ctx, c.ID, copyCustomer(c))
 }
 
@@ -67,9 +72,11 @@ func (s *InMemoryCustomerStore) Get(ctx context.Context, id string) (*customer.C
 }
 
 func (s *InMemoryCustomerStore) GetByLookupKey(ctx context.Context, lookupKey string) (*customer.Customer, error) {
-	// Create a filter function that matches by external_id and tenant_id
+	// Create a filter function that matches by external_id, tenant_id, and environment_id
 	filterFn := func(ctx context.Context, c *customer.Customer, _ interface{}) bool {
-		return c.ExternalID == lookupKey && c.TenantID == types.GetTenantID(ctx)
+		return c.ExternalID == lookupKey &&
+			c.TenantID == types.GetTenantID(ctx) &&
+			CheckEnvironmentFilter(ctx, c.EnvironmentID)
 	}
 
 	// List all customers with our filter
@@ -124,6 +131,11 @@ func customerFilterFn(ctx context.Context, c *customer.Customer, filter interfac
 	// Apply tenant filter
 	tenantID := types.GetTenantID(ctx)
 	if tenantID != "" && c.TenantID != tenantID {
+		return false
+	}
+
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, c.EnvironmentID) {
 		return false
 	}
 

@@ -39,6 +39,11 @@ func featureFilterFn(ctx context.Context, f *feature.Feature, filter interface{}
 		}
 	}
 
+	// Check environment ID
+	if !CheckEnvironmentFilter(ctx, f.EnvironmentID) {
+		return false
+	}
+
 	// Filter by feature IDs
 	if len(filter_.FeatureIDs) > 0 {
 		if !lo.Contains(filter_.FeatureIDs, f.ID) {
@@ -87,6 +92,12 @@ func (s *InMemoryFeatureStore) Create(ctx context.Context, f *feature.Feature) e
 	if f == nil {
 		return fmt.Errorf("feature cannot be nil")
 	}
+
+	// Set environment ID from context if not already set
+	if f.EnvironmentID == "" {
+		f.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	return s.InMemoryStore.Create(ctx, f.ID, f)
 }
 
@@ -127,10 +138,18 @@ func (s *InMemoryFeatureStore) ListAll(ctx context.Context, filter *types.Featur
 }
 
 func (s *InMemoryFeatureStore) CreateBulk(ctx context.Context, features []*feature.Feature) ([]*feature.Feature, error) {
+	environmentID := types.GetEnvironmentID(ctx)
+
 	for _, f := range features {
 		if f == nil {
 			return nil, fmt.Errorf("feature cannot be nil")
 		}
+
+		// Set environment ID from context if not already set
+		if f.EnvironmentID == "" {
+			f.EnvironmentID = environmentID
+		}
+
 		if err := s.InMemoryStore.Create(ctx, f.ID, f); err != nil {
 			return nil, err
 		}

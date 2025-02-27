@@ -43,6 +43,7 @@ func copyTask(t *task.Task) *task.Task {
 		StartedAt:         t.StartedAt,
 		CompletedAt:       t.CompletedAt,
 		FailedAt:          t.FailedAt,
+		EnvironmentID:     t.EnvironmentID,
 		BaseModel:         t.BaseModel,
 	}
 }
@@ -51,6 +52,12 @@ func (s *InMemoryTaskStore) Create(ctx context.Context, t *task.Task) error {
 	if t == nil {
 		return fmt.Errorf("task cannot be nil")
 	}
+
+	// Set environment ID from context if not already set
+	if t.EnvironmentID == "" {
+		t.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	return s.InMemoryStore.Create(ctx, t.ID, copyTask(t))
 }
 
@@ -97,6 +104,11 @@ func taskFilterFn(ctx context.Context, t *task.Task, filter interface{}) bool {
 		if t.TenantID != tenantID {
 			return false
 		}
+	}
+
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, t.EnvironmentID) {
+		return false
 	}
 
 	// Filter by task type

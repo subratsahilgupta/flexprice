@@ -40,6 +40,11 @@ func subscriptionFilterFn(ctx context.Context, sub *subscription.Subscription, f
 		}
 	}
 
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, sub.EnvironmentID) {
+		return false
+	}
+
 	// Filter by customer ID
 	if f.CustomerID != "" && sub.CustomerID != f.CustomerID {
 		return false
@@ -108,6 +113,12 @@ func (s *InMemorySubscriptionStore) Create(ctx context.Context, sub *subscriptio
 	if sub == nil {
 		return fmt.Errorf("subscription cannot be nil")
 	}
+
+	// Set environment ID from context if not already set
+	if sub.EnvironmentID == "" {
+		sub.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	return s.InMemoryStore.Create(ctx, sub.ID, sub)
 }
 

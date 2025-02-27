@@ -28,9 +28,10 @@ func copyMeter(m *meter.Meter) *meter.Meter {
 
 	// Deep copy of meter
 	meter := &meter.Meter{
-		ID:        m.ID,
-		Name:      m.Name,
-		EventName: m.EventName,
+		ID:            m.ID,
+		Name:          m.Name,
+		EventName:     m.EventName,
+		EnvironmentID: m.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  m.TenantID,
 			Status:    m.Status,
@@ -51,6 +52,11 @@ func copyMeter(m *meter.Meter) *meter.Meter {
 }
 
 func (s *InMemoryMeterStore) CreateMeter(ctx context.Context, m *meter.Meter) error {
+	// Set environment ID from context if not already set
+	if m.EnvironmentID == "" {
+		m.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	return s.InMemoryStore.Create(ctx, m.ID, copyMeter(m))
 }
 
@@ -135,6 +141,11 @@ func meterFilterFn(ctx context.Context, m *meter.Meter, filter interface{}) bool
 	// Apply tenant filter
 	tenantID := types.GetTenantID(ctx)
 	if tenantID != "" && m.TenantID != tenantID {
+		return false
+	}
+
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, m.EnvironmentID) {
 		return false
 	}
 
