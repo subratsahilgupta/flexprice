@@ -73,7 +73,7 @@ func generatePrefix(keyType types.SecretType) string {
 
 // generateDisplayID generates a unique display ID for the secret
 func generateDisplayID(apiKey string) string {
-	return apiKey[:5]
+	return fmt.Sprintf("%s***%s", apiKey[:5], apiKey[len(apiKey)-2:])
 }
 
 // generateAPIKey generates a new API key
@@ -102,15 +102,16 @@ func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyR
 
 	// Create secret entity
 	secretEntity := &secret.Secret{
-		ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SECRET),
-		Name:        req.Name,
-		Type:        req.Type,
-		Provider:    types.SecretProviderFlexPrice,
-		Value:       hashedKey,
-		DisplayID:   generateDisplayID(apiKey),
-		Permissions: permissions,
-		ExpiresAt:   req.ExpiresAt,
-		BaseModel:   types.GetDefaultBaseModel(ctx),
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SECRET),
+		Name:          req.Name,
+		Type:          req.Type,
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		Provider:      types.SecretProviderFlexPrice,
+		Value:         hashedKey,
+		DisplayID:     generateDisplayID(apiKey),
+		Permissions:   permissions,
+		ExpiresAt:     req.ExpiresAt,
+		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}
 
 	// Save to repository
@@ -263,9 +264,10 @@ func (s *secretService) VerifyAPIKey(ctx context.Context, apiKey string) (*secre
 	}
 
 	// Update last used timestamp
-	if err := s.repo.UpdateLastUsed(ctx, secretEntity.ID); err != nil {
-		s.logger.Warnw("failed to update last used timestamp", "error", err)
-	}
+	// TODO: Uncomment this when we have a way to efficiently update the last used timestamp
+	// if err := s.repo.UpdateLastUsed(ctx, secretEntity.ID); err != nil {
+	// 	s.logger.Warnw("failed to update last used timestamp", "error", err)
+	// }
 
 	return secretEntity, nil
 }
