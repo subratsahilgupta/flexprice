@@ -67,7 +67,7 @@ test-coverage:
 	go tool cover -html=coverage.out -o coverage.html
 
 # Database related targets
-.PHONY: init-db migrate-postgres migrate-clickhouse seed-db
+.PHONY: init-db migrate-postgres migrate-clickhouse seed-db migrate-ent
 
 .PHONY: install-ent
 install-ent:
@@ -78,8 +78,27 @@ generate-ent: install-ent
 	@echo "Generating ent code..."
 	@go run -mod=mod entgo.io/ent/cmd/ent generate --feature sql/execquery ./ent/schema
 
+.PHONY: migrate-ent
+migrate-ent:
+	@echo "Running Ent migrations..."
+	@go run cmd/migrate/main.go
+	@echo "Ent migrations complete"
+
+.PHONY: migrate-ent-dry-run
+migrate-ent-dry-run:
+	@echo "Generating SQL migration statements (dry run)..."
+	@go run cmd/migrate/main.go --dry-run
+	@echo "SQL migration statements generated"
+
+.PHONY: generate-migration
+generate-migration:
+	@echo "Generating SQL migration file..."
+	@mkdir -p migrations/ent
+	@go run cmd/migrate/main.go --dry-run > migrations/ent/migration_$(shell date +%Y%m%d%H%M%S).sql
+	@echo "SQL migration file generated in migrations/ent/"
+
 # Initialize databases and required topics
-init-db: up migrate-postgres migrate-clickhouse generate-ent seed-db
+init-db: up migrate-postgres migrate-clickhouse generate-ent migrate-ent seed-db
 	@echo "Database initialization complete"
 
 # Run postgres migrations
@@ -152,3 +171,17 @@ clean-start:
 	@make down
 	@docker compose down -v
 	@make setup-local
+
+.PHONY: apply-migration
+apply-migration:
+	@if [ -z "$(file)" ]; then \
+		echo "Error: Migration file not specified. Use 'make apply-migration file=<path>'"; \
+		exit 1; \
+	fi
+	@echo "Applying migration file: $(file)"
+	@PGPASSWORD=$(shell grep -A 2 "postgres:" config.yaml | grep password | awk '{print $$2}') \
+		psql -h $(shell grep -A 2 "postgres:" config.yaml | grep host | awk '{print $$2}') \
+		-U $(shell grep -A 2 "postgres:" config.yaml | grep username | awk '{print $$2}') \
+		-d $(shell grep -A 2 "postgres:" config.yaml | grep database | awk '{print $$2}') \
+		-f $(file)
+	@echo "Migration applied successfully"
