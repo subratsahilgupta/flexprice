@@ -70,26 +70,6 @@ func (pu *PaymentUpdate) ClearUpdatedBy() *PaymentUpdate {
 	return pu
 }
 
-// SetEnvironmentID sets the "environment_id" field.
-func (pu *PaymentUpdate) SetEnvironmentID(s string) *PaymentUpdate {
-	pu.mutation.SetEnvironmentID(s)
-	return pu
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (pu *PaymentUpdate) SetNillableEnvironmentID(s *string) *PaymentUpdate {
-	if s != nil {
-		pu.SetEnvironmentID(*s)
-	}
-	return pu
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (pu *PaymentUpdate) ClearEnvironmentID() *PaymentUpdate {
-	pu.mutation.ClearEnvironmentID()
-	return pu
-}
-
 // SetDestinationType sets the "destination_type" field.
 func (pu *PaymentUpdate) SetDestinationType(s string) *PaymentUpdate {
 	pu.mutation.SetDestinationType(s)
@@ -455,9 +435,6 @@ func (pu *PaymentUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if pu.mutation.UpdatedByCleared() {
 		_spec.ClearField(payment.FieldUpdatedBy, field.TypeString)
 	}
-	if value, ok := pu.mutation.EnvironmentID(); ok {
-		_spec.SetField(payment.FieldEnvironmentID, field.TypeString, value)
-	}
 	if pu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(payment.FieldEnvironmentID, field.TypeString)
 	}
@@ -629,26 +606,6 @@ func (puo *PaymentUpdateOne) SetNillableUpdatedBy(s *string) *PaymentUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (puo *PaymentUpdateOne) ClearUpdatedBy() *PaymentUpdateOne {
 	puo.mutation.ClearUpdatedBy()
-	return puo
-}
-
-// SetEnvironmentID sets the "environment_id" field.
-func (puo *PaymentUpdateOne) SetEnvironmentID(s string) *PaymentUpdateOne {
-	puo.mutation.SetEnvironmentID(s)
-	return puo
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (puo *PaymentUpdateOne) SetNillableEnvironmentID(s *string) *PaymentUpdateOne {
-	if s != nil {
-		puo.SetEnvironmentID(*s)
-	}
-	return puo
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (puo *PaymentUpdateOne) ClearEnvironmentID() *PaymentUpdateOne {
-	puo.mutation.ClearEnvironmentID()
 	return puo
 }
 
@@ -1046,9 +1003,6 @@ func (puo *PaymentUpdateOne) sqlSave(ctx context.Context) (_node *Payment, err e
 	}
 	if puo.mutation.UpdatedByCleared() {
 		_spec.ClearField(payment.FieldUpdatedBy, field.TypeString)
-	}
-	if value, ok := puo.mutation.EnvironmentID(); ok {
-		_spec.SetField(payment.FieldEnvironmentID, field.TypeString, value)
 	}
 	if puo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(payment.FieldEnvironmentID, field.TypeString)

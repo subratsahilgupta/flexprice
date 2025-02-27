@@ -70,26 +70,6 @@ func (mu *MeterUpdate) ClearUpdatedBy() *MeterUpdate {
 	return mu
 }
 
-// SetEnvironmentID sets the "environment_id" field.
-func (mu *MeterUpdate) SetEnvironmentID(s string) *MeterUpdate {
-	mu.mutation.SetEnvironmentID(s)
-	return mu
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (mu *MeterUpdate) SetNillableEnvironmentID(s *string) *MeterUpdate {
-	if s != nil {
-		mu.SetEnvironmentID(*s)
-	}
-	return mu
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (mu *MeterUpdate) ClearEnvironmentID() *MeterUpdate {
-	mu.mutation.ClearEnvironmentID()
-	return mu
-}
-
 // SetEventName sets the "event_name" field.
 func (mu *MeterUpdate) SetEventName(s string) *MeterUpdate {
 	mu.mutation.SetEventName(s)
@@ -241,9 +221,6 @@ func (mu *MeterUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if mu.mutation.UpdatedByCleared() {
 		_spec.ClearField(meter.FieldUpdatedBy, field.TypeString)
 	}
-	if value, ok := mu.mutation.EnvironmentID(); ok {
-		_spec.SetField(meter.FieldEnvironmentID, field.TypeString, value)
-	}
 	if mu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(meter.FieldEnvironmentID, field.TypeString)
 	}
@@ -324,26 +301,6 @@ func (muo *MeterUpdateOne) SetNillableUpdatedBy(s *string) *MeterUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (muo *MeterUpdateOne) ClearUpdatedBy() *MeterUpdateOne {
 	muo.mutation.ClearUpdatedBy()
-	return muo
-}
-
-// SetEnvironmentID sets the "environment_id" field.
-func (muo *MeterUpdateOne) SetEnvironmentID(s string) *MeterUpdateOne {
-	muo.mutation.SetEnvironmentID(s)
-	return muo
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (muo *MeterUpdateOne) SetNillableEnvironmentID(s *string) *MeterUpdateOne {
-	if s != nil {
-		muo.SetEnvironmentID(*s)
-	}
-	return muo
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (muo *MeterUpdateOne) ClearEnvironmentID() *MeterUpdateOne {
-	muo.mutation.ClearEnvironmentID()
 	return muo
 }
 
@@ -527,9 +484,6 @@ func (muo *MeterUpdateOne) sqlSave(ctx context.Context) (_node *Meter, err error
 	}
 	if muo.mutation.UpdatedByCleared() {
 		_spec.ClearField(meter.FieldUpdatedBy, field.TypeString)
-	}
-	if value, ok := muo.mutation.EnvironmentID(); ok {
-		_spec.SetField(meter.FieldEnvironmentID, field.TypeString, value)
 	}
 	if muo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(meter.FieldEnvironmentID, field.TypeString)

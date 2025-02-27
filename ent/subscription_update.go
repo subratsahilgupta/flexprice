@@ -69,26 +69,6 @@ func (su *SubscriptionUpdate) ClearUpdatedBy() *SubscriptionUpdate {
 	return su
 }
 
-// SetEnvironmentID sets the "environment_id" field.
-func (su *SubscriptionUpdate) SetEnvironmentID(s string) *SubscriptionUpdate {
-	su.mutation.SetEnvironmentID(s)
-	return su
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (su *SubscriptionUpdate) SetNillableEnvironmentID(s *string) *SubscriptionUpdate {
-	if s != nil {
-		su.SetEnvironmentID(*s)
-	}
-	return su
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (su *SubscriptionUpdate) ClearEnvironmentID() *SubscriptionUpdate {
-	su.mutation.ClearEnvironmentID()
-	return su
-}
-
 // SetLookupKey sets the "lookup_key" field.
 func (su *SubscriptionUpdate) SetLookupKey(s string) *SubscriptionUpdate {
 	su.mutation.SetLookupKey(s)
@@ -399,9 +379,6 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if su.mutation.UpdatedByCleared() {
 		_spec.ClearField(subscription.FieldUpdatedBy, field.TypeString)
 	}
-	if value, ok := su.mutation.EnvironmentID(); ok {
-		_spec.SetField(subscription.FieldEnvironmentID, field.TypeString, value)
-	}
 	if su.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(subscription.FieldEnvironmentID, field.TypeString)
 	}
@@ -567,26 +544,6 @@ func (suo *SubscriptionUpdateOne) SetNillableUpdatedBy(s *string) *SubscriptionU
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (suo *SubscriptionUpdateOne) ClearUpdatedBy() *SubscriptionUpdateOne {
 	suo.mutation.ClearUpdatedBy()
-	return suo
-}
-
-// SetEnvironmentID sets the "environment_id" field.
-func (suo *SubscriptionUpdateOne) SetEnvironmentID(s string) *SubscriptionUpdateOne {
-	suo.mutation.SetEnvironmentID(s)
-	return suo
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (suo *SubscriptionUpdateOne) SetNillableEnvironmentID(s *string) *SubscriptionUpdateOne {
-	if s != nil {
-		suo.SetEnvironmentID(*s)
-	}
-	return suo
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (suo *SubscriptionUpdateOne) ClearEnvironmentID() *SubscriptionUpdateOne {
-	suo.mutation.ClearEnvironmentID()
 	return suo
 }
 
@@ -929,9 +886,6 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 	}
 	if suo.mutation.UpdatedByCleared() {
 		_spec.ClearField(subscription.FieldUpdatedBy, field.TypeString)
-	}
-	if value, ok := suo.mutation.EnvironmentID(); ok {
-		_spec.SetField(subscription.FieldEnvironmentID, field.TypeString, value)
 	}
 	if suo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(subscription.FieldEnvironmentID, field.TypeString)

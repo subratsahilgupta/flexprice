@@ -70,26 +70,6 @@ func (wu *WalletUpdate) ClearUpdatedBy() *WalletUpdate {
 	return wu
 }
 
-// SetEnvironmentID sets the "environment_id" field.
-func (wu *WalletUpdate) SetEnvironmentID(s string) *WalletUpdate {
-	wu.mutation.SetEnvironmentID(s)
-	return wu
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (wu *WalletUpdate) SetNillableEnvironmentID(s *string) *WalletUpdate {
-	if s != nil {
-		wu.SetEnvironmentID(*s)
-	}
-	return wu
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (wu *WalletUpdate) ClearEnvironmentID() *WalletUpdate {
-	wu.mutation.ClearEnvironmentID()
-	return wu
-}
-
 // SetName sets the "name" field.
 func (wu *WalletUpdate) SetName(s string) *WalletUpdate {
 	wu.mutation.SetName(s)
@@ -361,9 +341,6 @@ func (wu *WalletUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if wu.mutation.UpdatedByCleared() {
 		_spec.ClearField(wallet.FieldUpdatedBy, field.TypeString)
 	}
-	if value, ok := wu.mutation.EnvironmentID(); ok {
-		_spec.SetField(wallet.FieldEnvironmentID, field.TypeString, value)
-	}
 	if wu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(wallet.FieldEnvironmentID, field.TypeString)
 	}
@@ -478,26 +455,6 @@ func (wuo *WalletUpdateOne) SetNillableUpdatedBy(s *string) *WalletUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (wuo *WalletUpdateOne) ClearUpdatedBy() *WalletUpdateOne {
 	wuo.mutation.ClearUpdatedBy()
-	return wuo
-}
-
-// SetEnvironmentID sets the "environment_id" field.
-func (wuo *WalletUpdateOne) SetEnvironmentID(s string) *WalletUpdateOne {
-	wuo.mutation.SetEnvironmentID(s)
-	return wuo
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (wuo *WalletUpdateOne) SetNillableEnvironmentID(s *string) *WalletUpdateOne {
-	if s != nil {
-		wuo.SetEnvironmentID(*s)
-	}
-	return wuo
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (wuo *WalletUpdateOne) ClearEnvironmentID() *WalletUpdateOne {
-	wuo.mutation.ClearEnvironmentID()
 	return wuo
 }
 
@@ -801,9 +758,6 @@ func (wuo *WalletUpdateOne) sqlSave(ctx context.Context) (_node *Wallet, err err
 	}
 	if wuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(wallet.FieldUpdatedBy, field.TypeString)
-	}
-	if value, ok := wuo.mutation.EnvironmentID(); ok {
-		_spec.SetField(wallet.FieldEnvironmentID, field.TypeString, value)
 	}
 	if wuo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(wallet.FieldEnvironmentID, field.TypeString)

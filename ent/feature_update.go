@@ -68,26 +68,6 @@ func (fu *FeatureUpdate) ClearUpdatedBy() *FeatureUpdate {
 	return fu
 }
 
-// SetEnvironmentID sets the "environment_id" field.
-func (fu *FeatureUpdate) SetEnvironmentID(s string) *FeatureUpdate {
-	fu.mutation.SetEnvironmentID(s)
-	return fu
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (fu *FeatureUpdate) SetNillableEnvironmentID(s *string) *FeatureUpdate {
-	if s != nil {
-		fu.SetEnvironmentID(*s)
-	}
-	return fu
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (fu *FeatureUpdate) ClearEnvironmentID() *FeatureUpdate {
-	fu.mutation.ClearEnvironmentID()
-	return fu
-}
-
 // SetName sets the "name" field.
 func (fu *FeatureUpdate) SetName(s string) *FeatureUpdate {
 	fu.mutation.SetName(s)
@@ -272,9 +252,6 @@ func (fu *FeatureUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if fu.mutation.UpdatedByCleared() {
 		_spec.ClearField(feature.FieldUpdatedBy, field.TypeString)
 	}
-	if value, ok := fu.mutation.EnvironmentID(); ok {
-		_spec.SetField(feature.FieldEnvironmentID, field.TypeString, value)
-	}
 	if fu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(feature.FieldEnvironmentID, field.TypeString)
 	}
@@ -368,26 +345,6 @@ func (fuo *FeatureUpdateOne) SetNillableUpdatedBy(s *string) *FeatureUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (fuo *FeatureUpdateOne) ClearUpdatedBy() *FeatureUpdateOne {
 	fuo.mutation.ClearUpdatedBy()
-	return fuo
-}
-
-// SetEnvironmentID sets the "environment_id" field.
-func (fuo *FeatureUpdateOne) SetEnvironmentID(s string) *FeatureUpdateOne {
-	fuo.mutation.SetEnvironmentID(s)
-	return fuo
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (fuo *FeatureUpdateOne) SetNillableEnvironmentID(s *string) *FeatureUpdateOne {
-	if s != nil {
-		fuo.SetEnvironmentID(*s)
-	}
-	return fuo
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (fuo *FeatureUpdateOne) ClearEnvironmentID() *FeatureUpdateOne {
-	fuo.mutation.ClearEnvironmentID()
 	return fuo
 }
 
@@ -604,9 +561,6 @@ func (fuo *FeatureUpdateOne) sqlSave(ctx context.Context) (_node *Feature, err e
 	}
 	if fuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(feature.FieldUpdatedBy, field.TypeString)
-	}
-	if value, ok := fuo.mutation.EnvironmentID(); ok {
-		_spec.SetField(feature.FieldEnvironmentID, field.TypeString, value)
 	}
 	if fuo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(feature.FieldEnvironmentID, field.TypeString)

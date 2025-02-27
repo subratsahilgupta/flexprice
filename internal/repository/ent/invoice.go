@@ -158,6 +158,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 					SetNillablePeriodStart(item.PeriodStart).
 					SetNillablePeriodEnd(item.PeriodEnd).
 					SetMetadata(item.Metadata).
+					SetEnvironmentID(item.EnvironmentID).
 					SetStatus(string(item.Status)).
 					SetCreatedBy(item.CreatedBy).
 					SetUpdatedBy(item.UpdatedBy).
@@ -194,6 +195,7 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 			builders[i] = r.client.Querier(ctx).InvoiceLineItem.Create().
 				SetID(item.ID).
 				SetTenantID(item.TenantID).
+				SetEnvironmentID(item.EnvironmentID).
 				SetInvoiceID(invoiceID).
 				SetCustomerID(item.CustomerID).
 				SetNillableSubscriptionID(item.SubscriptionID).

@@ -68,26 +68,6 @@ func (tu *TaskUpdate) ClearUpdatedBy() *TaskUpdate {
 	return tu
 }
 
-// SetEnvironmentID sets the "environment_id" field.
-func (tu *TaskUpdate) SetEnvironmentID(s string) *TaskUpdate {
-	tu.mutation.SetEnvironmentID(s)
-	return tu
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (tu *TaskUpdate) SetNillableEnvironmentID(s *string) *TaskUpdate {
-	if s != nil {
-		tu.SetEnvironmentID(*s)
-	}
-	return tu
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (tu *TaskUpdate) ClearEnvironmentID() *TaskUpdate {
-	tu.mutation.ClearEnvironmentID()
-	return tu
-}
-
 // SetTaskType sets the "task_type" field.
 func (tu *TaskUpdate) SetTaskType(s string) *TaskUpdate {
 	tu.mutation.SetTaskType(s)
@@ -453,9 +433,6 @@ func (tu *TaskUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if tu.mutation.UpdatedByCleared() {
 		_spec.ClearField(task.FieldUpdatedBy, field.TypeString)
 	}
-	if value, ok := tu.mutation.EnvironmentID(); ok {
-		_spec.SetField(task.FieldEnvironmentID, field.TypeString, value)
-	}
 	if tu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(task.FieldEnvironmentID, field.TypeString)
 	}
@@ -594,26 +571,6 @@ func (tuo *TaskUpdateOne) SetNillableUpdatedBy(s *string) *TaskUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (tuo *TaskUpdateOne) ClearUpdatedBy() *TaskUpdateOne {
 	tuo.mutation.ClearUpdatedBy()
-	return tuo
-}
-
-// SetEnvironmentID sets the "environment_id" field.
-func (tuo *TaskUpdateOne) SetEnvironmentID(s string) *TaskUpdateOne {
-	tuo.mutation.SetEnvironmentID(s)
-	return tuo
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (tuo *TaskUpdateOne) SetNillableEnvironmentID(s *string) *TaskUpdateOne {
-	if s != nil {
-		tuo.SetEnvironmentID(*s)
-	}
-	return tuo
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (tuo *TaskUpdateOne) ClearEnvironmentID() *TaskUpdateOne {
-	tuo.mutation.ClearEnvironmentID()
 	return tuo
 }
 
@@ -1011,9 +968,6 @@ func (tuo *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) 
 	}
 	if tuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(task.FieldUpdatedBy, field.TypeString)
-	}
-	if value, ok := tuo.mutation.EnvironmentID(); ok {
-		_spec.SetField(task.FieldEnvironmentID, field.TypeString, value)
 	}
 	if tuo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(task.FieldEnvironmentID, field.TypeString)

@@ -19,6 +19,7 @@ func (EnvironmentMixin) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			Optional().
+			Immutable().
 			Default(""),
 	}
 }

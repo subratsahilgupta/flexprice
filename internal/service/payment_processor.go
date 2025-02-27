@@ -264,6 +264,7 @@ func (p *paymentProcessor) createNewAttempt(ctx context.Context, paymentObj *pay
 		AttemptNumber: attemptNumber,
 		PaymentStatus: types.PaymentStatusProcessing,
 		Metadata:      types.Metadata{},
+		EnvironmentID: types.GetEnvironmentID(ctx),
 		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}
 

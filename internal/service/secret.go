@@ -177,14 +177,15 @@ func (s *secretService) CreateIntegration(ctx context.Context, req *dto.CreateIn
 
 	// Create secret entity
 	secretEntity := &secret.Secret{
-		ID:           types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SECRET),
-		Name:         req.Name,
-		Type:         types.SecretTypeIntegration,
-		Provider:     req.Provider,
-		Value:        "", // Empty for integrations
-		DisplayID:    displayID,
-		ProviderData: encryptedCreds,
-		BaseModel:    types.GetDefaultBaseModel(ctx),
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SECRET),
+		Name:          req.Name,
+		Type:          types.SecretTypeIntegration,
+		Provider:      req.Provider,
+		Value:         "", // Empty for integrations
+		DisplayID:     displayID,
+		ProviderData:  encryptedCreds,
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}
 
 	// Save to repository

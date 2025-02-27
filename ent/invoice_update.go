@@ -70,26 +70,6 @@ func (iu *InvoiceUpdate) ClearUpdatedBy() *InvoiceUpdate {
 	return iu
 }
 
-// SetEnvironmentID sets the "environment_id" field.
-func (iu *InvoiceUpdate) SetEnvironmentID(s string) *InvoiceUpdate {
-	iu.mutation.SetEnvironmentID(s)
-	return iu
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (iu *InvoiceUpdate) SetNillableEnvironmentID(s *string) *InvoiceUpdate {
-	if s != nil {
-		iu.SetEnvironmentID(*s)
-	}
-	return iu
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (iu *InvoiceUpdate) ClearEnvironmentID() *InvoiceUpdate {
-	iu.mutation.ClearEnvironmentID()
-	return iu
-}
-
 // SetSubscriptionID sets the "subscription_id" field.
 func (iu *InvoiceUpdate) SetSubscriptionID(s string) *InvoiceUpdate {
 	iu.mutation.SetSubscriptionID(s)
@@ -521,9 +501,6 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if iu.mutation.UpdatedByCleared() {
 		_spec.ClearField(invoice.FieldUpdatedBy, field.TypeString)
 	}
-	if value, ok := iu.mutation.EnvironmentID(); ok {
-		_spec.SetField(invoice.FieldEnvironmentID, field.TypeString, value)
-	}
 	if iu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(invoice.FieldEnvironmentID, field.TypeString)
 	}
@@ -734,26 +711,6 @@ func (iuo *InvoiceUpdateOne) SetNillableUpdatedBy(s *string) *InvoiceUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (iuo *InvoiceUpdateOne) ClearUpdatedBy() *InvoiceUpdateOne {
 	iuo.mutation.ClearUpdatedBy()
-	return iuo
-}
-
-// SetEnvironmentID sets the "environment_id" field.
-func (iuo *InvoiceUpdateOne) SetEnvironmentID(s string) *InvoiceUpdateOne {
-	iuo.mutation.SetEnvironmentID(s)
-	return iuo
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (iuo *InvoiceUpdateOne) SetNillableEnvironmentID(s *string) *InvoiceUpdateOne {
-	if s != nil {
-		iuo.SetEnvironmentID(*s)
-	}
-	return iuo
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (iuo *InvoiceUpdateOne) ClearEnvironmentID() *InvoiceUpdateOne {
-	iuo.mutation.ClearEnvironmentID()
 	return iuo
 }
 
@@ -1217,9 +1174,6 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	}
 	if iuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(invoice.FieldUpdatedBy, field.TypeString)
-	}
-	if value, ok := iuo.mutation.EnvironmentID(); ok {
-		_spec.SetField(invoice.FieldEnvironmentID, field.TypeString, value)
 	}
 	if iuo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(invoice.FieldEnvironmentID, field.TypeString)

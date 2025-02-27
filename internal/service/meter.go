@@ -36,6 +36,7 @@ func (s *meterService) CreateMeter(ctx context.Context, req *dto.CreateMeterRequ
 	}
 
 	meter := req.ToMeter(types.GetTenantID(ctx), types.GetUserID(ctx))
+	meter.EnvironmentID = types.GetEnvironmentID(ctx)
 
 	if err := meter.Validate(); err != nil {
 		return nil, fmt.Errorf("validate meter: %w", err)

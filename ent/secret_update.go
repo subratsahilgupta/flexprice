@@ -69,26 +69,6 @@ func (su *SecretUpdate) ClearUpdatedBy() *SecretUpdate {
 	return su
 }
 
-// SetEnvironmentID sets the "environment_id" field.
-func (su *SecretUpdate) SetEnvironmentID(s string) *SecretUpdate {
-	su.mutation.SetEnvironmentID(s)
-	return su
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (su *SecretUpdate) SetNillableEnvironmentID(s *string) *SecretUpdate {
-	if s != nil {
-		su.SetEnvironmentID(*s)
-	}
-	return su
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (su *SecretUpdate) ClearEnvironmentID() *SecretUpdate {
-	su.mutation.ClearEnvironmentID()
-	return su
-}
-
 // SetName sets the "name" field.
 func (su *SecretUpdate) SetName(s string) *SecretUpdate {
 	su.mutation.SetName(s)
@@ -329,9 +309,6 @@ func (su *SecretUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if su.mutation.UpdatedByCleared() {
 		_spec.ClearField(secret.FieldUpdatedBy, field.TypeString)
 	}
-	if value, ok := su.mutation.EnvironmentID(); ok {
-		_spec.SetField(secret.FieldEnvironmentID, field.TypeString, value)
-	}
 	if su.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(secret.FieldEnvironmentID, field.TypeString)
 	}
@@ -442,26 +419,6 @@ func (suo *SecretUpdateOne) SetNillableUpdatedBy(s *string) *SecretUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (suo *SecretUpdateOne) ClearUpdatedBy() *SecretUpdateOne {
 	suo.mutation.ClearUpdatedBy()
-	return suo
-}
-
-// SetEnvironmentID sets the "environment_id" field.
-func (suo *SecretUpdateOne) SetEnvironmentID(s string) *SecretUpdateOne {
-	suo.mutation.SetEnvironmentID(s)
-	return suo
-}
-
-// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
-func (suo *SecretUpdateOne) SetNillableEnvironmentID(s *string) *SecretUpdateOne {
-	if s != nil {
-		suo.SetEnvironmentID(*s)
-	}
-	return suo
-}
-
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (suo *SecretUpdateOne) ClearEnvironmentID() *SecretUpdateOne {
-	suo.mutation.ClearEnvironmentID()
 	return suo
 }
 
@@ -734,9 +691,6 @@ func (suo *SecretUpdateOne) sqlSave(ctx context.Context) (_node *Secret, err err
 	}
 	if suo.mutation.UpdatedByCleared() {
 		_spec.ClearField(secret.FieldUpdatedBy, field.TypeString)
-	}
-	if value, ok := suo.mutation.EnvironmentID(); ok {
-		_spec.SetField(secret.FieldEnvironmentID, field.TypeString, value)
 	}
 	if suo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(secret.FieldEnvironmentID, field.TypeString)
