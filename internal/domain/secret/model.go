@@ -10,16 +10,17 @@ import (
 
 // Secret represents a credential in the system
 type Secret struct {
-	ID           string
-	Name         string
-	Type         types.SecretType
-	Provider     types.SecretProvider
-	Value        string
-	DisplayID    string
-	Permissions  []string
-	ExpiresAt    *time.Time
-	LastUsedAt   *time.Time
-	ProviderData map[string]string
+	ID            string
+	Name          string
+	Type          types.SecretType
+	Provider      types.SecretProvider
+	Value         string
+	DisplayID     string
+	EnvironmentID string
+	Permissions   []string
+	ExpiresAt     *time.Time
+	LastUsedAt    *time.Time
+	ProviderData  map[string]string
 	types.BaseModel
 }
 
@@ -30,16 +31,17 @@ func FromEnt(e *ent.Secret) *Secret {
 	}
 
 	return &Secret{
-		ID:           e.ID,
-		Name:         e.Name,
-		Type:         types.SecretType(e.Type),
-		Provider:     types.SecretProvider(e.Provider),
-		Value:        e.Value,
-		DisplayID:    e.DisplayID,
-		Permissions:  e.Permissions,
-		ExpiresAt:    e.ExpiresAt,
-		LastUsedAt:   e.LastUsedAt,
-		ProviderData: e.ProviderData,
+		ID:            e.ID,
+		Name:          e.Name,
+		Type:          types.SecretType(e.Type),
+		Provider:      types.SecretProvider(e.Provider),
+		Value:         e.Value,
+		DisplayID:     e.DisplayID,
+		EnvironmentID: e.EnvironmentID,
+		Permissions:   e.Permissions,
+		ExpiresAt:     e.ExpiresAt,
+		LastUsedAt:    e.LastUsedAt,
+		ProviderData:  e.ProviderData,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

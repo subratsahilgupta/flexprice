@@ -39,6 +39,10 @@ func (r *secretRepository) Create(ctx context.Context, s *domainSecret.Secret) e
 		"provider", s.Provider,
 	)
 
+	if s.EnvironmentID == "" {
+		s.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	create := client.Secret.Create().
 		SetID(s.ID).
 		SetTenantID(s.TenantID).
@@ -47,6 +51,7 @@ func (r *secretRepository) Create(ctx context.Context, s *domainSecret.Secret) e
 		SetProvider(string(s.Provider)).
 		SetValue(s.Value).
 		SetDisplayID(s.DisplayID).
+		SetEnvironmentID(s.EnvironmentID).
 		SetPermissions(s.Permissions).
 		SetStatus(string(s.Status)).
 		SetCreatedAt(s.CreatedAt).
