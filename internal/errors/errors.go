@@ -1,11 +1,14 @@
 package errors
 
 import (
-	"errors"
 	"fmt"
+	"net/http"
+
+	"github.com/cockroachdb/errors"
 )
 
 // Common error types that can be used across the application
+// TODO: move to errors.New from cockroachdb/errors
 var (
 	ErrNotFound         = New(ErrCodeNotFound, "resource not found")
 	ErrAlreadyExists    = New(ErrCodeAlreadyExists, "resource already exists")
@@ -14,6 +17,20 @@ var (
 	ErrInvalidOperation = New(ErrCodeInvalidOperation, "invalid operation")
 	ErrPermissionDenied = New(ErrCodePermissionDenied, "permission denied")
 	ErrHTTPClient       = New(ErrCodeHTTPClient, "http client error")
+	ErrDatabase         = New(ErrCodeDatabase, "database error")
+	ErrSystem           = New(ErrCodeSystemError, "system error")
+	// maps errors to http status codes
+	statusCodeMap = map[error]int{
+		ErrHTTPClient:       http.StatusInternalServerError,
+		ErrDatabase:         http.StatusInternalServerError,
+		ErrNotFound:         http.StatusNotFound,
+		ErrAlreadyExists:    http.StatusConflict,
+		ErrVersionConflict:  http.StatusConflict,
+		ErrValidation:       http.StatusBadRequest,
+		ErrInvalidOperation: http.StatusBadRequest,
+		ErrPermissionDenied: http.StatusForbidden,
+		ErrSystem:           http.StatusInternalServerError,
+	}
 )
 
 const (
@@ -25,6 +42,7 @@ const (
 	ErrCodeValidation       = "validation_error"
 	ErrCodeInvalidOperation = "invalid_operation"
 	ErrCodePermissionDenied = "permission_denied"
+	ErrCodeDatabase         = "database_error"
 )
 
 // InternalError represents a domain error
@@ -136,4 +154,13 @@ func IsPermissionDenied(err error) bool {
 // IsHTTPClient checks if an error is an http client error
 func IsHTTPClient(err error) bool {
 	return errors.Is(err, ErrHTTPClient)
+}
+
+func HTTPStatusFromErr(err error) int {
+	for e, status := range statusCodeMap {
+		if errors.Is(err, e) {
+			return status
+		}
+	}
+	return http.StatusInternalServerError
 }

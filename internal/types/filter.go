@@ -1,9 +1,9 @@
 package types
 
 import (
-	"fmt"
 	"time"
 
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
 )
 
@@ -158,14 +158,25 @@ func (f QueryFilter) GetStatus() string {
 func (f QueryFilter) Validate() error {
 	if !f.IsUnlimited() {
 		if f.Limit != nil && (*f.Limit < 1 || *f.Limit > 1000) {
-			return fmt.Errorf("limit must be between 1 and 1000")
+			return ierr.NewError("limit must be between 1 and 1000").WithReportableDetails(
+				map[string]any{
+					"limit": "must be between 1 and 1000",
+				},
+			).Mark(ierr.ErrValidation)
 		}
 	}
 	if f.Offset != nil && *f.Offset < 0 {
-		return fmt.Errorf("offset must be non-negative")
+		return ierr.NewError("offset must be non-negative").WithReportableDetails(
+			map[string]any{
+				"offset": "must be non-negative",
+			},
+		).Mark(ierr.ErrValidation)
 	}
 	if f.Order != nil && *f.Order != "asc" && *f.Order != "desc" {
-		return fmt.Errorf("order must be either 'asc' or 'desc'")
+		return ierr.NewError("order must be either 'asc' or 'desc'").WithReportableDetails(
+			map[string]any{
+				"order": "must be either 'asc' or 'desc'",
+			}).Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -179,7 +190,11 @@ type TimeRangeFilter struct {
 // Validate validates the time range filter
 func (f TimeRangeFilter) Validate() error {
 	if f.StartTime != nil && f.EndTime != nil && f.EndTime.Before(*f.StartTime) {
-		return fmt.Errorf("end_time must be after start_time")
+		return ierr.NewError("end_time must be after start_time").WithReportableDetails(
+			map[string]any{
+				"end_time": "must be after start_time",
+			},
+		).Mark(ierr.ErrValidation)
 	}
 	return nil
 }

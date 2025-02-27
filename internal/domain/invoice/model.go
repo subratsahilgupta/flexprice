@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -101,44 +102,44 @@ func (i *Invoice) GetRemainingAmount() decimal.Decimal {
 func (i *Invoice) Validate() error {
 	// amount validations
 	if i.AmountDue.IsNegative() {
-		return NewValidationError("amount_due", "must be non negative")
+		return ierr.NewError("invoice validation failed").WithHint("amount_due must be non negative").Mark(ierr.ErrValidation)
 	}
 
 	if i.AmountPaid.IsNegative() {
-		return NewValidationError("amount_paid", "must be non negative")
+		return ierr.NewError("invoice validation failed").WithHint("amount_paid must be non negative").Mark(ierr.ErrValidation)
 	}
 
 	if i.AmountPaid.GreaterThan(i.AmountDue) {
-		return NewValidationError("amount_paid", "must be less than or equal to amount_due")
+		return ierr.NewError("invoice validation failed").WithHint("amount_paid must be less than or equal to amount_due").Mark(ierr.ErrValidation)
 	}
 
 	if i.AmountRemaining.IsNegative() {
-		return NewValidationError("amount_remaining", "must be non negative")
+		return ierr.NewError("invoice validation failed").WithHint("amount_remaining must be non negative").Mark(ierr.ErrValidation)
 	}
 
 	if i.AmountRemaining.GreaterThan(i.AmountDue) {
-		return NewValidationError("amount_remaining", "must be less than or equal to amount_due")
+		return ierr.NewError("invoice validation failed").WithHint("amount_remaining must be less than or equal to amount_due").Mark(ierr.ErrValidation)
 	}
 
 	if !i.AmountPaid.Add(i.AmountRemaining).Equal(i.AmountDue) {
-		return NewValidationError("amount_remaining", "must equal amount_due - amount_paid")
+		return ierr.NewError("invoice validation failed").WithHint("amount_remaining must equal amount_due - amount_paid").Mark(ierr.ErrValidation)
 	}
 
 	if i.PeriodStart != nil && i.PeriodEnd != nil {
 		if i.PeriodEnd.Before(*i.PeriodStart) {
-			return NewValidationError("period_end", "must be after period_start")
+			return ierr.NewError("invoice validation failed").WithHint("period_end must be after period_start").Mark(ierr.ErrValidation)
 		}
 	}
 
 	if i.InvoiceType == types.InvoiceTypeSubscription && i.BillingPeriod == nil {
-		return NewValidationError("billing_period", "must be set for subscription invoices")
+		return ierr.NewError("invoice validation failed").WithHint("billing_period must be set for subscription invoices").Mark(ierr.ErrValidation)
 	}
 
 	// validate line items if present
 	if i.LineItems != nil {
 		for _, item := range i.LineItems {
 			if item.Currency != i.Currency {
-				return NewValidationError("line_items", "currency must match invoice currency")
+				return ierr.NewError("invoice validation failed").WithHint("line_items currency must match invoice currency").Mark(ierr.ErrValidation)
 			}
 			if err := item.Validate(); err != nil {
 				return err

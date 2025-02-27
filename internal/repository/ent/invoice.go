@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	domainInvoice "github.com/flexprice/flexprice/internal/domain/invoice"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
@@ -68,7 +69,7 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 
 	if err != nil {
 		r.logger.Error("failed to create invoice", "error", err)
-		return fmt.Errorf("creating invoice: %w", err)
+		return ierr.WithError(err).WithHint("invoice creation failed").Mark(ierr.ErrDatabase)
 	}
 
 	*inv = *domainInvoice.FromEnt(invoice)
@@ -118,7 +119,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			Save(ctx)
 		if err != nil {
 			r.logger.Error("failed to create invoice", "error", err)
-			return fmt.Errorf("creating invoice: %w", err)
+			return ierr.WithError(err).WithHint("invoice creation failed").Mark(ierr.ErrDatabase)
 		}
 
 		// 2. Create line items in bulk if present
@@ -153,7 +154,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 
 			if err := r.client.Querier(ctx).InvoiceLineItem.CreateBulk(builders...).Exec(ctx); err != nil {
 				r.logger.Error("failed to create line items", "error", err)
-				return fmt.Errorf("creating line items: %w", err)
+				return ierr.WithError(err).WithHint("line item creation failed").Mark(ierr.ErrDatabase)
 			}
 		}
 		*inv = *domainInvoice.FromEnt(invoice)
@@ -169,10 +170,10 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 		// Verify invoice exists
 		exists, err := r.client.Querier(ctx).Invoice.Query().Where(invoice.ID(invoiceID)).Exist(ctx)
 		if err != nil {
-			return fmt.Errorf("checking invoice existence: %w", err)
+			return ierr.WithError(err).WithHint("invoice existence check failed").Mark(ierr.ErrDatabase)
 		}
 		if !exists {
-			return fmt.Errorf("invoice %s not found", invoiceID)
+			return ierr.WithError(err).WithHintf("invoice %s not found", invoiceID).Mark(ierr.ErrNotFound)
 		}
 
 		builders := make([]*ent.InvoiceLineItemCreate, len(items))
@@ -205,7 +206,7 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 
 		if err := r.client.Querier(ctx).InvoiceLineItem.CreateBulk(builders...).Exec(ctx); err != nil {
 			r.logger.Error("failed to add line items", "error", err)
-			return fmt.Errorf("adding line items: %w", err)
+			return ierr.WithError(err).WithHint("line item addition failed").Mark(ierr.ErrDatabase)
 		}
 
 		return nil
@@ -220,10 +221,10 @@ func (r *invoiceRepository) RemoveLineItems(ctx context.Context, invoiceID strin
 		// Verify invoice exists
 		exists, err := r.client.Querier(ctx).Invoice.Query().Where(invoice.ID(invoiceID)).Exist(ctx)
 		if err != nil {
-			return fmt.Errorf("checking invoice existence: %w", err)
+			return ierr.WithError(err).WithHint("invoice existence check failed").Mark(ierr.ErrDatabase)
 		}
 		if !exists {
-			return fmt.Errorf("invoice %s not found", invoiceID)
+			return ierr.WithError(err).WithHintf("invoice %s not found", invoiceID).Mark(ierr.ErrNotFound)
 		}
 
 		_, err = r.client.Querier(ctx).InvoiceLineItem.Update().
@@ -237,7 +238,7 @@ func (r *invoiceRepository) RemoveLineItems(ctx context.Context, invoiceID strin
 			SetUpdatedAt(time.Now()).
 			Save(ctx)
 		if err != nil {
-			return fmt.Errorf("removing line items: %w", err)
+			return ierr.WithError(err).WithHint("line item removal failed").Mark(ierr.ErrDatabase)
 		}
 		return nil
 	})
@@ -252,9 +253,14 @@ func (r *invoiceRepository) Get(ctx context.Context, id string) (*domainInvoice.
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, fmt.Errorf("invoice %s not found", id)
+			return nil, ierr.
+				WithError(err).
+				WithHintf("invoice %s not found", id).
+				WithReportableDetails(map[string]any{
+					"id": id,
+				}).Mark(ierr.ErrNotFound)
 		}
-		return nil, fmt.Errorf("getting invoice: %w", err)
+		return nil, ierr.WithError(err).WithHint("getting invoice failed").Mark(ierr.ErrDatabase)
 	}
 
 	return domainInvoice.FromEnt(invoice), nil
@@ -294,7 +300,7 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 	// Execute update
 	n, err := query.Save(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to update invoice: %w", err)
+		return ierr.WithError(err).WithHint("invoice update failed").Mark(ierr.ErrDatabase)
 	}
 	if n == 0 {
 		// No rows were updated - either record doesn't exist or version mismatch
@@ -305,13 +311,19 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 			).
 			Exist(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to check invoice existence: %w", err)
+			return ierr.WithError(err).WithHint("invoice existence check failed").Mark(ierr.ErrDatabase)
 		}
 		if !exists {
-			return domainInvoice.ErrInvoiceNotFound
+			return ierr.NewError("invoice not found").WithHint("invoice not found").Mark(ierr.ErrNotFound)
 		}
 		// Record exists but version mismatch
-		return domainInvoice.NewVersionConflictError(inv.ID, inv.Version, inv.Version+1)
+		return ierr.NewError("invoice version mismatch").
+			WithHintf("invoice version mismatch for id: %s", inv.ID).
+			WithReportableDetails(map[string]any{
+				"id":               inv.ID,
+				"current_version":  inv.Version,
+				"expected_version": inv.Version + 1,
+			}).Mark(ierr.ErrVersionConflict)
 	}
 
 	return nil
@@ -332,7 +344,7 @@ func (r *invoiceRepository) Delete(ctx context.Context, id string) error {
 			SetUpdatedAt(time.Now()).
 			Save(ctx)
 		if err != nil {
-			return fmt.Errorf("deleting line items: %w", err)
+			return ierr.WithError(err).WithHint("line item deletion failed").Mark(ierr.ErrDatabase)
 		}
 
 		// Then delete invoice
@@ -347,7 +359,7 @@ func (r *invoiceRepository) Delete(ctx context.Context, id string) error {
 			SetUpdatedAt(time.Now()).
 			Save(ctx)
 		if err != nil {
-			return fmt.Errorf("deleting invoice: %w", err)
+			return ierr.WithError(err).WithHint("invoice deletion failed").Mark(ierr.ErrDatabase)
 		}
 
 		return nil
@@ -368,7 +380,11 @@ func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilte
 
 	invoices, err := query.All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list invoices: %w", err)
+		return nil, ierr.WithError(err).WithHint("invoice listing failed").WithReportableDetails(
+			map[string]any{
+				"cause": err.Error(),
+			},
+		).Mark(ierr.ErrDatabase)
 	}
 
 	// Convert to domain model
@@ -390,7 +406,7 @@ func (r *invoiceRepository) Count(ctx context.Context, filter *types.InvoiceFilt
 
 	count, err := query.Count(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count invoices: %w", err)
+		return 0, ierr.WithError(err).WithHint("invoice counting failed").Mark(ierr.ErrDatabase)
 	}
 	return count, nil
 }
@@ -406,9 +422,9 @@ func (r *invoiceRepository) GetByIdempotencyKey(ctx context.Context, key string)
 		First(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, domainInvoice.ErrInvoiceNotFound
+			return nil, ierr.WithError(err).WithHint("invoice not found").Mark(ierr.ErrNotFound)
 		}
-		return nil, fmt.Errorf("failed to get invoice by idempotency key: %w", err)
+		return nil, ierr.WithError(err).WithHint("failed to get invoice by idempotency key").Mark(ierr.ErrDatabase)
 	}
 
 	return domainInvoice.FromEnt(inv), nil
@@ -428,7 +444,11 @@ func (r *invoiceRepository) ExistsForPeriod(ctx context.Context, subscriptionID 
 		).
 		Exist(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to check invoice existence: %w", err)
+		return false, ierr.WithError(err).WithHint("invoice existence check failed").WithReportableDetails(map[string]any{
+			"subscription_id": subscriptionID,
+			"period_start":    periodStart.String(),
+			"period_end":      periodEnd.String(),
+		}).Mark(ierr.ErrDatabase)
 	}
 
 	return exists, nil
@@ -450,16 +470,16 @@ func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context) (string, e
 	var lastValue int64
 	rows, err := r.client.Querier(ctx).QueryContext(ctx, query, tenantID, yearMonth)
 	if err != nil {
-		return "", fmt.Errorf("failed to execute sequence query: %w", err)
+		return "", ierr.WithError(err).WithHint("invoice number generation failed").Mark(ierr.ErrDatabase)
 	}
 	defer rows.Close()
 
 	if !rows.Next() {
-		return "", fmt.Errorf("no sequence value returned")
+		return "", ierr.WithError(err).WithHint("no sequence value returned").Mark(ierr.ErrDatabase)
 	}
 
 	if err := rows.Scan(&lastValue); err != nil {
-		return "", fmt.Errorf("failed to scan sequence value: %w", err)
+		return "", ierr.WithError(err).WithHint("invoice number generation failed").Mark(ierr.ErrDatabase)
 	}
 
 	r.logger.Infow("generated invoice number",
@@ -484,16 +504,16 @@ func (r *invoiceRepository) GetNextBillingSequence(ctx context.Context, subscrip
 	var lastSequence int
 	rows, err := r.client.Querier(ctx).QueryContext(ctx, query, tenantID, subscriptionID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to execute sequence query: %w", err)
+		return 0, ierr.WithError(err).WithHint("billing sequence generation failed").Mark(ierr.ErrDatabase)
 	}
 	defer rows.Close()
 
 	if !rows.Next() {
-		return 0, fmt.Errorf("no sequence value returned")
+		return 0, ierr.WithError(err).WithHint("no sequence value returned").Mark(ierr.ErrDatabase)
 	}
 
 	if err := rows.Scan(&lastSequence); err != nil {
-		return 0, fmt.Errorf("failed to scan sequence value: %w", err)
+		return 0, ierr.WithError(err).WithHint("billing sequence generation failed").Mark(ierr.ErrDatabase)
 	}
 
 	r.logger.Infow("generated billing sequence",

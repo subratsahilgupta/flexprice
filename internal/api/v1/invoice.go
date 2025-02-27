@@ -1,10 +1,11 @@
 package v1
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/invoice"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/temporal"
@@ -43,14 +44,14 @@ func (h *InvoiceHandler) CreateInvoice(c *gin.Context) {
 	var req dto.CreateInvoiceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Errorw("failed to bind request", "error", err)
-		NewErrorResponse(c, http.StatusBadRequest, "invalid request", err)
+		c.Error(ierr.Wrap(err, ierr.ErrCodeValidation, "invalid request"))
 		return
 	}
 
 	invoice, err := h.invoiceService.CreateInvoice(c.Request.Context(), req)
 	if err != nil {
 		h.logger.Errorw("failed to create invoice", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to create invoice", err)
+		c.Error(err)
 		return
 	}
 
@@ -71,14 +72,13 @@ func (h *InvoiceHandler) CreateInvoice(c *gin.Context) {
 func (h *InvoiceHandler) GetInvoice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
-		NewErrorResponse(c, http.StatusBadRequest, "invalid invoice id", nil)
+		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
 		return
 	}
 
 	invoice, err := h.invoiceService.GetInvoice(c.Request.Context(), id)
 	if err != nil {
-		h.logger.Errorw("failed to get invoice", "error", err, "invoice_id", id)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to get invoice", err)
+		c.Error(err)
 		return
 	}
 
@@ -100,7 +100,7 @@ func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
 	var filter types.InvoiceFilter
 	if err := c.ShouldBindQuery(&filter); err != nil {
 		h.logger.Error("Failed to bind query parameters", "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(ierr.WithError(err).WithHint("invalid query parameters").Mark(ierr.ErrValidation))
 		return
 	}
 
@@ -111,14 +111,14 @@ func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
 	// Validate filter
 	if err := filter.Validate(); err != nil {
 		h.logger.Error("Invalid filter parameters", "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(ierr.WithError(err).WithHint("invalid filter parameters").Mark(ierr.ErrValidation))
 		return
 	}
 
 	resp, err := h.invoiceService.ListInvoices(c.Request.Context(), &filter)
 	if err != nil {
 		h.logger.Error("Failed to list invoices", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list invoices"})
+		c.Error(err)
 		return
 	}
 
@@ -139,13 +139,13 @@ func (h *InvoiceHandler) ListInvoices(c *gin.Context) {
 func (h *InvoiceHandler) FinalizeInvoice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
-		NewErrorResponse(c, http.StatusBadRequest, "invalid invoice id", nil)
+		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
 		return
 	}
 
 	if err := h.invoiceService.FinalizeInvoice(c.Request.Context(), id); err != nil {
 		h.logger.Errorw("failed to finalize invoice", "error", err, "invoice_id", id)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to finalize invoice", err)
+		c.Error(err)
 		return
 	}
 
@@ -166,13 +166,13 @@ func (h *InvoiceHandler) FinalizeInvoice(c *gin.Context) {
 func (h *InvoiceHandler) VoidInvoice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
-		NewErrorResponse(c, http.StatusBadRequest, "invalid invoice id", nil)
+		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
 		return
 	}
 
 	if err := h.invoiceService.VoidInvoice(c.Request.Context(), id); err != nil {
 		h.logger.Errorw("failed to void invoice", "error", err, "invoice_id", id)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to void invoice", err)
+		c.Error(err)
 		return
 	}
 
@@ -198,17 +198,17 @@ func (h *InvoiceHandler) UpdatePaymentStatus(c *gin.Context) {
 	var req dto.UpdatePaymentStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Error("Failed to bind request body", "error", err)
-		NewErrorResponse(c, http.StatusBadRequest, "failed to bind request body", err)
+		c.Error(ierr.WithError(err).WithHint("failed to bind request body").Mark(ierr.ErrValidation))
 		return
 	}
 
 	if err := h.invoiceService.UpdatePaymentStatus(c.Request.Context(), id, req.PaymentStatus, req.Amount); err != nil {
-		if invoice.IsNotFoundError(err) {
-			NewErrorResponse(c, http.StatusNotFound, "invoice not found", err)
+		if errors.Is(err, ierr.ErrNotFound) {
+			c.Error(ierr.WithError(err).WithHint("invoice not found").Mark(ierr.ErrNotFound))
 			return
 		}
-		if invoice.IsValidationError(err) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if errors.Is(err, ierr.ErrValidation) {
+			c.Error(ierr.WithError(err).WithHint("invalid request").Mark(ierr.ErrValidation))
 			return
 		}
 		h.logger.Error("Failed to update invoice payment status",
@@ -216,7 +216,7 @@ func (h *InvoiceHandler) UpdatePaymentStatus(c *gin.Context) {
 			"payment_status", req.PaymentStatus,
 			"error", err,
 		)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to update invoice payment status", err)
+		c.Error(err)
 		return
 	}
 
@@ -227,7 +227,7 @@ func (h *InvoiceHandler) UpdatePaymentStatus(c *gin.Context) {
 			"invoice_id", id,
 			"error", err,
 		)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to get updated invoice", err)
+		c.Error(err)
 		return
 	}
 
@@ -249,14 +249,14 @@ func (h *InvoiceHandler) GetPreviewInvoice(c *gin.Context) {
 	var req dto.GetPreviewInvoiceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Error("Failed to bind request body", "error", err)
-		NewErrorResponse(c, http.StatusBadRequest, "failed to bind request body", err)
+		c.Error(ierr.WithError(err).WithHint("failed to bind request body").Mark(ierr.ErrValidation))
 		return
 	}
 
 	resp, err := h.invoiceService.GetPreviewInvoice(c.Request.Context(), req)
 	if err != nil {
 		h.logger.Error("Failed to get preview invoice", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to get preview invoice", err)
+		c.Error(err)
 		return
 	}
 
@@ -281,7 +281,7 @@ func (h *InvoiceHandler) GetCustomerInvoiceSummary(c *gin.Context) {
 	resp, err := h.invoiceService.GetCustomerMultiCurrencyInvoiceSummary(c.Request.Context(), id)
 	if err != nil {
 		h.logger.Errorw("failed to get customer invoice summary", "error", err, "customer_id", id)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to get customer invoice summary", err)
+		c.Error(err)
 		return
 	}
 
@@ -294,7 +294,7 @@ func (h *InvoiceHandler) GenerateInvoice(c *gin.Context) {
 
 	var req models.BillingWorkflowInput
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(ierr.WithError(err).WithHint("failed to bind request body").Mark(ierr.ErrValidation))
 		return
 	}
 
@@ -304,7 +304,7 @@ func (h *InvoiceHandler) GenerateInvoice(c *gin.Context) {
 			"error", err,
 			"customer_id", req.CustomerID,
 			"subscription_id", req.SubscriptionID)
-		c.Status(http.StatusInternalServerError)
+		c.Error(err)
 		return
 	}
 
