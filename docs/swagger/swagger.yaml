@@ -2,7 +2,11 @@ basePath: /v1
 definitions:
   dto.AuthResponse:
     properties:
+      tenant_id:
+        type: string
       token:
+        type: string
+      user_id:
         type: string
     type: object
   dto.CreateAPIKeyRequest:
@@ -1121,6 +1125,8 @@ definitions:
       password:
         minLength: 8
         type: string
+      token:
+        type: string
     required:
     - email
     - password
@@ -1387,9 +1393,12 @@ definitions:
       password:
         minLength: 8
         type: string
+      tenant_name:
+        type: string
+      token:
+        type: string
     required:
     - email
-    - password
     type: object
   dto.SubscriptionResponse:
     properties:
@@ -5493,6 +5502,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.UserResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -5606,7 +5619,7 @@ paths:
             $ref: '#/definitions/v1.ErrorResponse'
       summary: Update a wallet
       tags:
-      - wallets
+      - Wallets
   /wallets/{id}/balance/real-time:
     get:
       consumes:

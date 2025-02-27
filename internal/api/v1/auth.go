@@ -2,6 +2,7 @@ package v1
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
@@ -13,12 +14,14 @@ import (
 type AuthHandler struct {
 	authService service.AuthService
 	logger      *logger.Logger
+	cfg         *config.Configuration
 }
 
 func NewAuthHandler(cfg *config.Configuration, authService service.AuthService, logger *logger.Logger) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 		logger:      logger,
+		cfg:         cfg,
 	}
 }
 
@@ -43,9 +46,18 @@ func (h *AuthHandler) SignUp(c *gin.Context) {
 		return
 	}
 
+	// For Supabase auth, extract token from Authorization header if available
+	if req.Token == "" {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+			req.Token = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
+
 	authResponse, err := h.authService.SignUp(c.Request.Context(), &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.logger.Errorw("failed to sign up", "error", err)
+		NewErrorResponse(c, http.StatusInternalServerError, "failed to sign up", err)
 		return
 	}
 
@@ -75,6 +87,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	authResponse, err := h.authService.Login(c.Request.Context(), &req)
 	if err != nil {
+		h.logger.Errorw("failed to login", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

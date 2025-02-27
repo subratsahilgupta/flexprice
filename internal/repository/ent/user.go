@@ -80,17 +80,21 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domainU
 	client := r.client.Querier(ctx)
 
 	// For login, we don't have tenant ID in context, so we just search by email
-	query := client.User.Query().Where(entUser.Email(email))
+	query := client.User.Query().Where(
+		entUser.Email(email),
+		entUser.Status(string(types.StatusPublished)),
+	)
 
+	tenantID := types.GetTenantID(ctx)
 	// If tenant ID is in context, add it to the query
-	if tenantID, ok := ctx.Value(types.CtxTenantID).(string); ok {
+	if tenantID != "" {
 		query = query.Where(entUser.TenantID(tenantID))
 	}
 
 	user, err := query.Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, fmt.Errorf("user not found: %w", err)
+			return nil, fmt.Errorf("user not found by email: %w", err)
 		}
 		return nil, fmt.Errorf("failed to get user by email: %w", err)
 	}

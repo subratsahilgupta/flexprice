@@ -3,7 +3,9 @@ package internal
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/auth"
@@ -15,6 +17,8 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/nedpals/supabase-go"
+	"github.com/samber/lo"
 )
 
 type onboardingScript struct {
@@ -24,6 +28,7 @@ type onboardingScript struct {
 	userRepo        user.Repository
 	environmentRepo environment.Repository
 	authProvider    auth.Provider
+	supabaseAuth    *supabase.Client
 }
 
 func newOnboardingScript() (*onboardingScript, error) {
@@ -62,7 +67,17 @@ func newOnboardingScript() (*onboardingScript, error) {
 		userRepo:        repository.NewUserRepository(repoParams),
 		environmentRepo: repository.NewEnvironmentRepository(repoParams),
 		authProvider:    authProvider,
+		supabaseAuth:    newSupabaseAuth(cfg),
 	}, nil
+}
+
+func newSupabaseAuth(cfg *config.Configuration) *supabase.Client {
+	client := supabase.CreateClient(cfg.Auth.Supabase.BaseURL, cfg.Auth.Supabase.ServiceKey)
+	if client == nil {
+		log.Fatalf("failed to create Supabase client")
+	}
+
+	return client
 }
 
 func (s *onboardingScript) createTenant(ctx context.Context, name string) (*tenant.Tenant, error) {
@@ -94,18 +109,20 @@ func (s *onboardingScript) createUser(ctx context.Context, email, tenantID strin
 
 	// Register the user with Supabase only if UserID is empty
 	// Skip the confirmation email step and directly set the user as confirmed
-	authResponse, err := s.authProvider.SignUp(ctx, auth.AuthRequest{
-		Email:    u.Email,
-		Password: password,
+	supabaseUser, err := s.supabaseAuth.Admin.CreateUser(ctx, supabase.AdminUserParams{
+		Email:        u.Email,
+		Password:     lo.ToPtr(password),
+		EmailConfirm: true, // This is the key setting that bypasses email confirmation
+		AppMetadata: map[string]interface{}{
+			"tenant_id": tenantID,
+		},
 	})
 	if err != nil {
-		s.log.Errorf("Supabase registration failed: %v", err)
-		return nil, fmt.Errorf("failed to sign up: %w", err)
+		return nil, fmt.Errorf("failed to create user with admin API: %w", err)
 	}
+	s.log.Infof("Supabase registration response : %+v", supabaseUser)
 
-	s.log.Infof("Supabase registration response : %+v", authResponse)
-
-	u.ID = authResponse.ID // Set the UserID from the Supabase response
+	u.ID = supabaseUser.ID // Set the UserID from the Supabase response
 
 	if err := s.userRepo.Create(ctx, u); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
@@ -135,15 +152,6 @@ func (s *onboardingScript) createEnvironment(ctx context.Context, name string, e
 
 	s.log.Infow("created environment", "id", e.ID, "name", e.Name, "type", e.Type, "tenant_id", e.TenantID)
 	return e, nil
-}
-
-func (s *onboardingScript) assignTenantToUser(ctx context.Context, userID, tenantID string) error {
-	if err := s.authProvider.AssignUserToTenant(ctx, userID, tenantID); err != nil {
-		return fmt.Errorf("failed to assign tenant to user: %w", err)
-	}
-
-	s.log.Infow("assigned tenant to user", "user_id", userID, "tenant_id", tenantID)
-	return nil
 }
 
 func OnboardNewTenant() error {
@@ -180,20 +188,16 @@ func OnboardNewTenant() error {
 
 	// Create default environments (development, staging, production)
 	envTypes := []types.EnvironmentType{
+		types.EnvironmentDevelopment,
 		types.EnvironmentProduction,
 	}
 
 	for _, envType := range envTypes {
-		env, err := script.createEnvironment(ctx, string(envType), envType, t.ID)
+		env, err := script.createEnvironment(ctx, strings.ToTitle(string(envType)), envType, t.ID)
 		if err != nil {
 			log.Fatalf("Failed to create environment %s: %v", envType, err)
 		}
 		log.Debugf("Created environment %s", env.ID)
-	}
-
-	// Assign tenant to user in Supabase
-	if err := script.assignTenantToUser(ctx, u.ID, t.ID); err != nil {
-		log.Fatalf("Failed to assign tenant to user: %v", err)
 	}
 
 	fmt.Printf("Successfully onboarded tenant %s with user %s\n", tenantName, email)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/auth"
+	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/golang-jwt/jwt"
 	"golang.org/x/crypto/bcrypt"
@@ -27,13 +28,19 @@ func (f *flexpriceAuth) GetProvider() types.AuthProvider {
 }
 
 func (f *flexpriceAuth) SignUp(ctx context.Context, req AuthRequest) (*AuthResponse, error) {
+	if req.Password == "" {
+		return nil, errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "password is required")
+	}
+
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	authToken, err := f.generateToken(req.UserID, req.TenantID)
+	userID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER)
+
+	authToken, err := f.generateToken(userID, req.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
@@ -41,13 +48,14 @@ func (f *flexpriceAuth) SignUp(ctx context.Context, req AuthRequest) (*AuthRespo
 	response := &AuthResponse{
 		ProviderToken: string(hashedPassword),
 		AuthToken:     authToken,
+		ID:            userID,
 	}
 
 	return response, nil
 }
 
 func (f *flexpriceAuth) Login(ctx context.Context, req AuthRequest, userAuthInfo *auth.Auth) (*AuthResponse, error) {
-	// Validate the user password with the saved hashed password
+	// Validate the user provided hashed password with the saved hashed password
 	err := bcrypt.CompareHashAndPassword([]byte(userAuthInfo.Token), []byte(req.Password))
 	if err != nil {
 		return nil, fmt.Errorf("invalid password")
@@ -114,5 +122,9 @@ func (f *flexpriceAuth) generateToken(userID, tenantID string) (string, error) {
 }
 
 func (f *flexpriceAuth) AssignUserToTenant(ctx context.Context, userID string, tenantID string) error {
-	return fmt.Errorf("not implemented")
+	// No action required for Flexprice as we do not support
+	// reassigning users to a different tenant for now
+	// and in case of flexprice auth it is mandatory to have a tenant ID
+	// when creating a new user hence this case needs no implementation
+	return nil
 }

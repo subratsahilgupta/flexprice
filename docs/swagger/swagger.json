@@ -4566,6 +4566,12 @@
                             "$ref": "#/definitions/dto.UserResponse"
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -4689,7 +4695,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "wallets"
+                    "Wallets"
                 ],
                 "summary": "Update a wallet",
                 "parameters": [
@@ -5100,7 +5106,13 @@
         "dto.AuthResponse": {
             "type": "object",
             "properties": {
+                "tenant_id": {
+                    "type": "string"
+                },
                 "token": {
+                    "type": "string"
+                },
+                "user_id": {
                     "type": "string"
                 }
             }
@@ -6770,6 +6782,9 @@
                 "password": {
                     "type": "string",
                     "minLength": 8
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },
@@ -7154,8 +7169,7 @@
         "dto.SignUpRequest": {
             "type": "object",
             "required": [
-                "email",
-                "password"
+                "email"
             ],
             "properties": {
                 "email": {
@@ -7164,6 +7178,12 @@
                 "password": {
                     "type": "string",
                     "minLength": 8
+                },
+                "tenant_name": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },

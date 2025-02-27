@@ -55,7 +55,6 @@ func setContextValues(c *gin.Context, tenantID, userID string) {
 // GuestAuthenticateMiddleware is a middleware that allows requests without authentication
 // For now it sets a default tenant ID and user ID in the request context
 func GuestAuthenticateMiddleware(c *gin.Context) {
-	setContextValues(c, types.DefaultTenantID, types.DefaultUserID)
 	c.Next()
 }
 

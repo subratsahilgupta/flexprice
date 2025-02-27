@@ -24,6 +24,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/nedpals/supabase-go v0.5.0
 	github.com/oklog/ulid/v2 v2.1.0
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/samber/lo v1.47.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/spf13/viper v1.19.0
@@ -120,7 +121,6 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nexus-rpc/sdk-go v0.1.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
-	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
