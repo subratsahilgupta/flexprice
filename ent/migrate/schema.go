@@ -695,17 +695,14 @@ var (
 				Columns: []*schema.Column{SecretsColumns[9], SecretsColumns[11], SecretsColumns[2]},
 			},
 			{
-				Name:    "secret_tenant_id_environment_id_type_provider_status",
+				Name:    "secret_tenant_id_environment_id_type_status",
 				Unique:  false,
-				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[7], SecretsColumns[9], SecretsColumns[10], SecretsColumns[2]},
+				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[7], SecretsColumns[9], SecretsColumns[2]},
 			},
 			{
-				Name:    "unique_tenant_provider_type",
-				Unique:  true,
-				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[7], SecretsColumns[10], SecretsColumns[9]},
-				Annotation: &entsql.IndexAnnotation{
-					Where: "status = 'published'",
-				},
+				Name:    "secret_tenant_id_environment_id_provider_status",
+				Unique:  false,
+				Columns: []*schema.Column{SecretsColumns[1], SecretsColumns[7], SecretsColumns[10], SecretsColumns[2]},
 			},
 		},
 	}

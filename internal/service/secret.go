@@ -28,7 +28,9 @@ type SecretService interface {
 
 	// Verification operations
 	VerifyAPIKey(ctx context.Context, apiKey string) (*secret.Secret, error)
-	GetIntegrationCredentials(ctx context.Context, provider string) (map[string]string, error)
+	getIntegrationCredentials(ctx context.Context, provider string) ([]map[string]string, error)
+
+	ListLinkedIntegrations(ctx context.Context) ([]string, error)
 }
 
 type secretService struct {
@@ -273,7 +275,8 @@ func (s *secretService) VerifyAPIKey(ctx context.Context, apiKey string) (*secre
 	return secretEntity, nil
 }
 
-func (s *secretService) GetIntegrationCredentials(ctx context.Context, provider string) (map[string]string, error) {
+// getIntegrationCredentials returns all integration credentials for a provider
+func (s *secretService) getIntegrationCredentials(ctx context.Context, provider string) ([]map[string]string, error) {
 	filter := &types.SecretFilter{
 		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
 		Type:        lo.ToPtr(types.SecretTypeIntegration),
@@ -289,22 +292,46 @@ func (s *secretService) GetIntegrationCredentials(ctx context.Context, provider 
 		return nil, errors.Wrap(errors.ErrNotFound, errors.ErrCodeNotFound, fmt.Sprintf("%s integration not configured", provider))
 	}
 
-	if len(secrets) > 1 {
-		return nil, errors.Wrap(errors.ErrInvalidOperation, "multiple integrations found for provider", provider)
-	}
-
-	// Use the first active integration
-	secretEntity := secrets[0]
-
-	// Decrypt each credential
-	decryptedCreds := make(map[string]string)
-	for key, encryptedValue := range secretEntity.ProviderData {
-		decrypted, err := s.encryptionService.Decrypt(encryptedValue)
-		if err != nil {
-			return nil, errors.Wrap(err, errors.ErrCodeSystemError, "failed to decrypt credentials")
+	// Decrypt credentials for all integrations
+	allCredentials := make([]map[string]string, len(secrets))
+	for i, secretEntity := range secrets {
+		decryptedCreds := make(map[string]string)
+		for key, encryptedValue := range secretEntity.ProviderData {
+			decrypted, err := s.encryptionService.Decrypt(encryptedValue)
+			if err != nil {
+				return nil, errors.Wrap(err, errors.ErrCodeSystemError, "failed to decrypt credentials")
+			}
+			decryptedCreds[key] = decrypted
 		}
-		decryptedCreds[key] = decrypted
+		allCredentials[i] = decryptedCreds
 	}
 
-	return decryptedCreds, nil
+	return allCredentials, nil
+}
+
+// ListLinkedIntegrations returns a list of unique providers which have a valid linked integration secret
+func (s *secretService) ListLinkedIntegrations(ctx context.Context) ([]string, error) {
+	filter := &types.SecretFilter{
+		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
+		Type:        lo.ToPtr(types.SecretTypeIntegration),
+	}
+
+	secrets, err := s.repo.List(ctx, filter)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to list linked integrations")
+	}
+
+	// Extract unique providers
+	providerMap := make(map[string]bool)
+	for _, secret := range secrets {
+		providerMap[string(secret.Provider)] = true
+	}
+
+	// Convert map keys to slice
+	providers := make([]string, 0, len(providerMap))
+	for provider := range providerMap {
+		providers = append(providers, provider)
+	}
+
+	return providers, nil
 }

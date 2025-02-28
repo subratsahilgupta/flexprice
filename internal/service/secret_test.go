@@ -320,7 +320,7 @@ func (s *SecretServiceSuite) TestGetIntegrationCredentials() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			creds, err := s.service.GetIntegrationCredentials(s.GetContext(), tt.provider)
+			creds, err := s.service.getIntegrationCredentials(s.GetContext(), tt.provider)
 			if tt.wantErr {
 				s.Error(err)
 				s.Contains(err.Error(), tt.errString)
@@ -329,7 +329,7 @@ func (s *SecretServiceSuite) TestGetIntegrationCredentials() {
 
 			s.NoError(err)
 			s.NotNil(creds)
-			s.Equal(tt.wantCredential, creds["api_key"])
+			s.Equal(tt.wantCredential, creds[0]["api_key"])
 		})
 	}
 }

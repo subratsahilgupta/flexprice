@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
@@ -172,7 +171,7 @@ func (h *SecretHandler) GetIntegration(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, secrets.Items)
+	c.JSON(http.StatusOK, secrets)
 }
 
 // DeleteIntegration godoc
@@ -181,37 +180,41 @@ func (h *SecretHandler) GetIntegration(c *gin.Context) {
 // @Tags secrets
 // @Accept json
 // @Produce json
-// @Param provider path string true "Integration provider"
+// @Param id path string true "Integration ID"
 // @Success 204 "No Content"
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /secrets/integrations/{provider} [delete]
+// @Router /secrets/integrations/{id} [delete]
 func (h *SecretHandler) DeleteIntegration(c *gin.Context) {
-	provider := types.SecretProvider(c.Param("provider"))
-	filter := &types.SecretFilter{
-		QueryFilter: types.NewDefaultQueryFilter(),
-		Type:        lo.ToPtr(types.SecretTypeIntegration),
-		Provider:    lo.ToPtr(provider),
-	}
+	id := c.Param("id")
 
-	secrets, err := h.service.ListIntegrations(c.Request.Context(), filter)
-	if err != nil {
-		h.logger.Errorw("failed to list secrets", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to list secrets", err)
-		return
-	}
-
-	if len(secrets.Items) == 0 {
-		h.logger.Errorw("secret not found", "error", errors.ErrNotFound)
-		NewErrorResponse(c, http.StatusNotFound, "secret not found", errors.ErrNotFound)
-		return
-	}
-
-	if err := h.service.Delete(c.Request.Context(), secrets.Items[0].ID); err != nil {
+	if err := h.service.Delete(c.Request.Context(), id); err != nil {
 		h.logger.Errorw("failed to delete integration", "error", err)
 		NewErrorResponse(c, http.StatusInternalServerError, "failed to delete integration", err)
 		return
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// ListLinkedIntegrations godoc
+// @Summary List linked integrations
+// @Description Get a list of unique providers which have a valid linked integration secret
+// @Tags secrets
+// @Accept json
+// @Produce json
+// @Success 200 {object} dto.LinkedIntegrationsResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /secrets/integrations/linked [get]
+func (h *SecretHandler) ListLinkedIntegrations(c *gin.Context) {
+	providers, err := h.service.ListLinkedIntegrations(c.Request.Context())
+	if err != nil {
+		h.logger.Errorw("failed to list linked integrations", "error", err)
+		NewErrorResponse(c, http.StatusInternalServerError, "failed to list linked integrations", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.LinkedIntegrationsResponse{
+		Providers: providers,
+	})
 }
