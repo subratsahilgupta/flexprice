@@ -1017,6 +1017,13 @@ definitions:
       voided_at:
         type: string
     type: object
+  dto.LinkedIntegrationsResponse:
+    properties:
+      providers:
+        items:
+          type: string
+        type: array
+    type: object
   dto.ListCustomersResponse:
     properties:
       items:
@@ -4969,15 +4976,15 @@ paths:
       summary: Delete an API key
       tags:
       - secrets
-  /secrets/integrations/{provider}:
+  /secrets/integrations/{id}:
     delete:
       consumes:
       - application/json
       description: Delete integration credentials
       parameters:
-      - description: Integration provider
+      - description: Integration ID
         in: path
-        name: provider
+        name: id
         required: true
         type: string
       produces:
@@ -4996,6 +5003,7 @@ paths:
       summary: Delete an integration
       tags:
       - secrets
+  /secrets/integrations/{provider}:
     get:
       consumes:
       - application/json
@@ -5056,6 +5064,26 @@ paths:
           schema:
             $ref: '#/definitions/v1.ErrorResponse'
       summary: Create or update an integration
+      tags:
+      - secrets
+  /secrets/integrations/linked:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of unique providers which have a valid linked integration
+        secret
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.LinkedIntegrationsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: List linked integrations
       tags:
       - secrets
   /subscriptions:

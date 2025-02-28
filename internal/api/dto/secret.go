@@ -109,3 +109,8 @@ func ToSecretResponseList(secrets []*secret.Secret) []*SecretResponse {
 	}
 	return responses
 }
+
+// LinkedIntegrationsResponse represents the response for listing linked integrations
+type LinkedIntegrationsResponse struct {
+	Providers []string `json:"providers"`
+}

@@ -233,9 +233,10 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			// Integration routes
 			integrations := secrets.Group("/integrations")
 			{
+				integrations.GET("/linked", handlers.Secret.ListLinkedIntegrations)
 				integrations.POST("/:provider", handlers.Secret.CreateIntegration)
 				integrations.GET("/:provider", handlers.Secret.GetIntegration)
-				integrations.DELETE("/:provider", handlers.Secret.DeleteIntegration)
+				integrations.DELETE("/:id", handlers.Secret.DeleteIntegration)
 			}
 		}
 
