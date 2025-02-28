@@ -33,6 +33,12 @@ func NewInvoiceRepository(client postgres.IClient, logger *logger.Logger) domain
 // Create creates a new invoice (non-transactional)
 func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoice) error {
 	client := r.client.Querier(ctx)
+
+	// Set environment ID from context if not already set
+	if inv.EnvironmentID == "" {
+		inv.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	invoice, err := client.Invoice.Create().
 		SetID(inv.ID).
 		SetTenantID(inv.TenantID).
@@ -65,6 +71,7 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetUpdatedBy(inv.UpdatedBy).
 		SetNillablePeriodStart(inv.PeriodStart).
 		SetNillablePeriodEnd(inv.PeriodEnd).
+		SetEnvironmentID(inv.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -81,6 +88,11 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 	r.logger.Debugw("creating invoice with line items",
 		"id", inv.ID,
 		"line_items_count", len(inv.LineItems))
+
+	// Set environment ID from context if not already set
+	if inv.EnvironmentID == "" {
+		inv.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
 
 	return r.client.WithTx(ctx, func(ctx context.Context) error {
 		// 1. Create invoice
@@ -116,6 +128,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			SetUpdatedBy(inv.UpdatedBy).
 			SetNillablePeriodStart(inv.PeriodStart).
 			SetNillablePeriodEnd(inv.PeriodEnd).
+			SetEnvironmentID(inv.EnvironmentID).
 			Save(ctx)
 		if err != nil {
 			r.logger.Error("failed to create invoice", "error", err)
@@ -145,6 +158,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 					SetNillablePeriodStart(item.PeriodStart).
 					SetNillablePeriodEnd(item.PeriodEnd).
 					SetMetadata(item.Metadata).
+					SetEnvironmentID(item.EnvironmentID).
 					SetStatus(string(item.Status)).
 					SetCreatedBy(item.CreatedBy).
 					SetUpdatedBy(item.UpdatedBy).
@@ -181,6 +195,7 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 			builders[i] = r.client.Querier(ctx).InvoiceLineItem.Create().
 				SetID(item.ID).
 				SetTenantID(item.TenantID).
+				SetEnvironmentID(item.EnvironmentID).
 				SetInvoiceID(invoiceID).
 				SetCustomerID(item.CustomerID).
 				SetNillableSubscriptionID(item.SubscriptionID).
@@ -524,7 +539,6 @@ func (r *invoiceRepository) GetNextBillingSequence(ctx context.Context, subscrip
 	return lastSequence, nil
 }
 
-// Add a helper function to parse the InvoiceFilter struct to relevant ent base *ent.InvoiceQuery
 // InvoiceQuery type alias for better readability
 type InvoiceQuery = *ent.InvoiceQuery
 
@@ -533,6 +547,14 @@ type InvoiceQueryOptions struct{}
 
 func (o InvoiceQueryOptions) ApplyTenantFilter(ctx context.Context, query InvoiceQuery) InvoiceQuery {
 	return query.Where(invoice.TenantID(types.GetTenantID(ctx)))
+}
+
+func (o InvoiceQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query InvoiceQuery) InvoiceQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(invoice.EnvironmentID(environmentID))
+	}
+	return query
 }
 
 func (o InvoiceQueryOptions) ApplyStatusFilter(query InvoiceQuery, status string) InvoiceQuery {
@@ -571,7 +593,7 @@ func (o InvoiceQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o InvoiceQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.InvoiceFilter, query *ent.InvoiceQuery) *ent.InvoiceQuery {
+func (o InvoiceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.InvoiceFilter, query InvoiceQuery) InvoiceQuery {
 	if f == nil {
 		return query
 	}

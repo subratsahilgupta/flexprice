@@ -57,6 +57,7 @@ func (r *CreateEntitlementRequest) ToEntitlement(ctx context.Context) *entitleme
 		UsageResetPeriod: r.UsageResetPeriod,
 		IsSoftLimit:      r.IsSoftLimit,
 		StaticValue:      r.StaticValue,
+		EnvironmentID:    types.GetEnvironmentID(ctx),
 		BaseModel:        types.GetDefaultBaseModel(ctx),
 	}
 }

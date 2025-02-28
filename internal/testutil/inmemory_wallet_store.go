@@ -37,6 +37,11 @@ func walletFilterFn(ctx context.Context, w *wallet.Wallet, filter interface{}) b
 		}
 	}
 
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, w.EnvironmentID) {
+		return false
+	}
+
 	// Check wallet status
 	if w.Status != types.StatusPublished {
 		return false
@@ -66,6 +71,11 @@ func transactionFilterFn(ctx context.Context, t *wallet.Transaction, filter inte
 		if t.TenantID != tenantID {
 			return false
 		}
+	}
+
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, t.EnvironmentID) {
+		return false
 	}
 
 	// Filter by status
@@ -143,6 +153,11 @@ func (s *InMemoryWalletStore) CreateWallet(ctx context.Context, w *wallet.Wallet
 	}
 	if w.WalletStatus == "" {
 		w.WalletStatus = types.WalletStatusActive
+	}
+
+	// Set environment ID from context if not already set
+	if w.EnvironmentID == "" {
+		w.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
 	return s.wallets.Create(ctx, w.ID, w)
@@ -265,6 +280,11 @@ func (s *InMemoryWalletStore) ConsumeCredits(ctx context.Context, credits []*wal
 
 // CreateTransaction creates a new wallet transaction record
 func (s *InMemoryWalletStore) CreateTransaction(ctx context.Context, tx *wallet.Transaction) error {
+	// Set environment ID from context if not already set
+	if tx.EnvironmentID == "" {
+		tx.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+	
 	return s.transactions.Create(ctx, tx.ID, tx)
 }
 

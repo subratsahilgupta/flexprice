@@ -27,6 +27,8 @@ const (
 	FieldCreatedBy = "created_by"
 	// FieldUpdatedBy holds the string denoting the updated_by field in the database.
 	FieldUpdatedBy = "updated_by"
+	// FieldEnvironmentID holds the string denoting the environment_id field in the database.
+	FieldEnvironmentID = "environment_id"
 	// FieldIdempotencyKey holds the string denoting the idempotency_key field in the database.
 	FieldIdempotencyKey = "idempotency_key"
 	// FieldDestinationType holds the string denoting the destination_type field in the database.
@@ -81,6 +83,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldCreatedBy,
 	FieldUpdatedBy,
+	FieldEnvironmentID,
 	FieldIdempotencyKey,
 	FieldDestinationType,
 	FieldDestinationID,
@@ -120,6 +123,8 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
+	// DefaultEnvironmentID holds the default value on creation for the "environment_id" field.
+	DefaultEnvironmentID string
 	// DestinationTypeValidator is a validator for the "destination_type" field. It is called by the builders before save.
 	DestinationTypeValidator func(string) error
 	// DestinationIDValidator is a validator for the "destination_id" field. It is called by the builders before save.
@@ -172,6 +177,11 @@ func ByCreatedBy(opts ...sql.OrderTermOption) OrderOption {
 // ByUpdatedBy orders the results by the updated_by field.
 func ByUpdatedBy(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedBy, opts...).ToFunc()
+}
+
+// ByEnvironmentID orders the results by the environment_id field.
+func ByEnvironmentID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEnvironmentID, opts...).ToFunc()
 }
 
 // ByIdempotencyKey orders the results by the idempotency_key field.

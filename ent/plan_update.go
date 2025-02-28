@@ -277,6 +277,9 @@ func (pu *PlanUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if pu.mutation.UpdatedByCleared() {
 		_spec.ClearField(plan.FieldUpdatedBy, field.TypeString)
 	}
+	if pu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(plan.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := pu.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)
 	}
@@ -643,6 +646,9 @@ func (puo *PlanUpdateOne) sqlSave(ctx context.Context) (_node *Plan, err error) 
 	}
 	if puo.mutation.UpdatedByCleared() {
 		_spec.ClearField(plan.FieldUpdatedBy, field.TypeString)
+	}
+	if puo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(plan.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := puo.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)

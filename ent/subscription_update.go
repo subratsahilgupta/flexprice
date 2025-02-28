@@ -379,6 +379,9 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if su.mutation.UpdatedByCleared() {
 		_spec.ClearField(subscription.FieldUpdatedBy, field.TypeString)
 	}
+	if su.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(subscription.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := su.mutation.LookupKey(); ok {
 		_spec.SetField(subscription.FieldLookupKey, field.TypeString, value)
 	}
@@ -883,6 +886,9 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 	}
 	if suo.mutation.UpdatedByCleared() {
 		_spec.ClearField(subscription.FieldUpdatedBy, field.TypeString)
+	}
+	if suo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(subscription.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := suo.mutation.LookupKey(); ok {
 		_spec.SetField(subscription.FieldLookupKey, field.TypeString, value)

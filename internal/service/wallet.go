@@ -498,6 +498,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			ExpiryDate:          types.ParseYYYYMMDDToDate(req.ExpiryDate),
 			CreditBalanceBefore: w.CreditBalance,
 			CreditBalanceAfter:  newCreditBalance,
+			EnvironmentID:       types.GetEnvironmentID(ctx),
 			BaseModel:           types.GetDefaultBaseModel(ctx),
 		}
 

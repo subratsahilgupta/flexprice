@@ -308,6 +308,9 @@ func (eu *EntitlementUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if eu.mutation.UpdatedByCleared() {
 		_spec.ClearField(entitlement.FieldUpdatedBy, field.TypeString)
 	}
+	if eu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(entitlement.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := eu.mutation.FeatureID(); ok {
 		_spec.SetField(entitlement.FieldFeatureID, field.TypeString, value)
 	}
@@ -698,6 +701,9 @@ func (euo *EntitlementUpdateOne) sqlSave(ctx context.Context) (_node *Entitlemen
 	}
 	if euo.mutation.UpdatedByCleared() {
 		_spec.ClearField(entitlement.FieldUpdatedBy, field.TypeString)
+	}
+	if euo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(entitlement.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := euo.mutation.FeatureID(); ok {
 		_spec.SetField(entitlement.FieldFeatureID, field.TypeString, value)

@@ -26,6 +26,8 @@ const (
 	FieldCreatedBy = "created_by"
 	// FieldUpdatedBy holds the string denoting the updated_by field in the database.
 	FieldUpdatedBy = "updated_by"
+	// FieldEnvironmentID holds the string denoting the environment_id field in the database.
+	FieldEnvironmentID = "environment_id"
 	// FieldEventName holds the string denoting the event_name field in the database.
 	FieldEventName = "event_name"
 	// FieldName holds the string denoting the name field in the database.
@@ -49,6 +51,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldCreatedBy,
 	FieldUpdatedBy,
+	FieldEnvironmentID,
 	FieldEventName,
 	FieldName,
 	FieldAggregation,
@@ -77,6 +80,8 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
+	// DefaultEnvironmentID holds the default value on creation for the "environment_id" field.
+	DefaultEnvironmentID string
 	// EventNameValidator is a validator for the "event_name" field. It is called by the builders before save.
 	EventNameValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
@@ -125,6 +130,11 @@ func ByCreatedBy(opts ...sql.OrderTermOption) OrderOption {
 // ByUpdatedBy orders the results by the updated_by field.
 func ByUpdatedBy(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedBy, opts...).ToFunc()
+}
+
+// ByEnvironmentID orders the results by the environment_id field.
+func ByEnvironmentID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEnvironmentID, opts...).ToFunc()
 }
 
 // ByEventName orders the results by the event_name field.

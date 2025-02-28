@@ -40,6 +40,11 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 		"amount", p.Amount,
 	)
 
+	// Set environment ID from context if not already set
+	if p.EnvironmentID == "" {
+		p.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	payment, err := client.Payment.Create().
 		SetID(p.ID).
 		SetIdempotencyKey(p.IdempotencyKey).
@@ -63,6 +68,7 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 		SetUpdatedAt(p.UpdatedAt).
 		SetCreatedBy(p.CreatedBy).
 		SetUpdatedBy(p.UpdatedBy).
+		SetEnvironmentID(p.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -237,6 +243,11 @@ func (r *paymentRepository) CreateAttempt(ctx context.Context, a *domainPayment.
 		"payment_status", a.PaymentStatus,
 	)
 
+	// Set environment ID from context if not already set
+	if a.EnvironmentID == "" {
+		a.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	attempt, err := client.PaymentAttempt.Create().
 		SetID(a.ID).
 		SetPaymentID(a.PaymentID).
@@ -251,6 +262,7 @@ func (r *paymentRepository) CreateAttempt(ctx context.Context, a *domainPayment.
 		SetUpdatedAt(a.UpdatedAt).
 		SetCreatedBy(a.CreatedBy).
 		SetUpdatedBy(a.UpdatedBy).
+		SetEnvironmentID(a.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -375,6 +387,14 @@ func (o PaymentQueryOptions) ApplyTenantFilter(ctx context.Context, query Paymen
 	return query.Where(payment.TenantID(types.GetTenantID(ctx)))
 }
 
+func (o PaymentQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query PaymentQuery) PaymentQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(payment.EnvironmentID(environmentID))
+	}
+	return query
+}
+
 func (o PaymentQueryOptions) ApplyStatusFilter(query PaymentQuery, status string) PaymentQuery {
 	if status == "" {
 		return query.Where(payment.StatusNotIn(string(types.StatusDeleted)))
@@ -413,7 +433,7 @@ func (o PaymentQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o PaymentQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.PaymentFilter, query PaymentQuery) PaymentQuery {
+func (o PaymentQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.PaymentFilter, query PaymentQuery) PaymentQuery {
 	if f == nil {
 		return query
 	}

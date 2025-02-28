@@ -31,6 +31,8 @@ type WalletTransaction struct {
 	CreatedBy string `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
 	UpdatedBy string `json:"updated_by,omitempty"`
+	// EnvironmentID holds the value of the "environment_id" field.
+	EnvironmentID string `json:"environment_id,omitempty"`
 	// WalletID holds the value of the "wallet_id" field.
 	WalletID string `json:"wallet_id,omitempty"`
 	// Type holds the value of the "type" field.
@@ -71,7 +73,7 @@ func (*WalletTransaction) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case wallettransaction.FieldAmount, wallettransaction.FieldCreditAmount, wallettransaction.FieldCreditBalanceBefore, wallettransaction.FieldCreditBalanceAfter, wallettransaction.FieldCreditsAvailable:
 			values[i] = new(decimal.Decimal)
-		case wallettransaction.FieldID, wallettransaction.FieldTenantID, wallettransaction.FieldStatus, wallettransaction.FieldCreatedBy, wallettransaction.FieldUpdatedBy, wallettransaction.FieldWalletID, wallettransaction.FieldType, wallettransaction.FieldReferenceType, wallettransaction.FieldReferenceID, wallettransaction.FieldDescription, wallettransaction.FieldTransactionStatus, wallettransaction.FieldTransactionReason:
+		case wallettransaction.FieldID, wallettransaction.FieldTenantID, wallettransaction.FieldStatus, wallettransaction.FieldCreatedBy, wallettransaction.FieldUpdatedBy, wallettransaction.FieldEnvironmentID, wallettransaction.FieldWalletID, wallettransaction.FieldType, wallettransaction.FieldReferenceType, wallettransaction.FieldReferenceID, wallettransaction.FieldDescription, wallettransaction.FieldTransactionStatus, wallettransaction.FieldTransactionReason:
 			values[i] = new(sql.NullString)
 		case wallettransaction.FieldCreatedAt, wallettransaction.FieldUpdatedAt, wallettransaction.FieldExpiryDate:
 			values[i] = new(sql.NullTime)
@@ -131,6 +133,12 @@ func (wt *WalletTransaction) assignValues(columns []string, values []any) error 
 				return fmt.Errorf("unexpected type %T for field updated_by", values[i])
 			} else if value.Valid {
 				wt.UpdatedBy = value.String
+			}
+		case wallettransaction.FieldEnvironmentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field environment_id", values[i])
+			} else if value.Valid {
+				wt.EnvironmentID = value.String
 			}
 		case wallettransaction.FieldWalletID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -272,6 +280,9 @@ func (wt *WalletTransaction) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_by=")
 	builder.WriteString(wt.UpdatedBy)
+	builder.WriteString(", ")
+	builder.WriteString("environment_id=")
+	builder.WriteString(wt.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("wallet_id=")
 	builder.WriteString(wt.WalletID)

@@ -20,7 +20,6 @@ func (Auth) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			Unique().
 			Immutable(),
 		field.String("provider").
 			SchemaType(map[string]string{

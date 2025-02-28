@@ -38,6 +38,11 @@ func priceFilterFn(ctx context.Context, p *price.Price, filter interface{}) bool
 		}
 	}
 
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, p.EnvironmentID) {
+		return false
+	}
+
 	// Filter by plan IDs
 	if len(f.PlanIDs) > 0 {
 		if !lo.Contains(f.PlanIDs, p.PlanID) {
@@ -82,6 +87,12 @@ func (s *InMemoryPriceStore) Create(ctx context.Context, p *price.Price) error {
 	if p == nil {
 		return fmt.Errorf("price cannot be nil")
 	}
+
+	// Set environment ID from context if not already set
+	if p.EnvironmentID == "" {
+		p.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	return s.InMemoryStore.Create(ctx, p.ID, p)
 }
 

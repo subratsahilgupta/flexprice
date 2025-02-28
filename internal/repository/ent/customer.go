@@ -36,6 +36,11 @@ func (r *customerRepository) Create(ctx context.Context, c *domainCustomer.Custo
 		"external_id", c.ExternalID,
 	)
 
+	// Set environment ID from context if not already set
+	if c.EnvironmentID == "" {
+		c.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	customer, err := client.Customer.Create().
 		SetID(c.ID).
 		SetTenantID(c.TenantID).
@@ -54,6 +59,7 @@ func (r *customerRepository) Create(ctx context.Context, c *domainCustomer.Custo
 		SetUpdatedAt(c.UpdatedAt).
 		SetCreatedBy(c.CreatedBy).
 		SetUpdatedBy(c.UpdatedBy).
+		SetEnvironmentID(c.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -227,9 +233,13 @@ type CustomerQuery = *ent.CustomerQuery
 type CustomerQueryOptions struct{}
 
 func (o CustomerQueryOptions) ApplyTenantFilter(ctx context.Context, query CustomerQuery) CustomerQuery {
-	tenantID := types.GetTenantID(ctx)
-	if tenantID != "" {
-		query = query.Where(customer.TenantID(tenantID))
+	return query.Where(customer.TenantIDEQ(types.GetTenantID(ctx)))
+}
+
+func (o CustomerQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query CustomerQuery) CustomerQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(customer.EnvironmentIDEQ(environmentID))
 	}
 	return query
 }
@@ -279,7 +289,7 @@ func (o CustomerQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o CustomerQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.CustomerFilter, query CustomerQuery) CustomerQuery {
+func (o CustomerQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.CustomerFilter, query CustomerQuery) CustomerQuery {
 	if f == nil {
 		return query
 	}

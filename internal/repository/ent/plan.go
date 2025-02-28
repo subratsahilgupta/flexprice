@@ -37,6 +37,11 @@ func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 		"lookup_key", p.LookupKey,
 	)
 
+	// Set environment ID from context if not already set
+	if p.EnvironmentID == "" {
+		p.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	plan, err := client.Plan.Create().
 		SetID(p.ID).
 		SetName(p.Name).
@@ -50,6 +55,7 @@ func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 		SetUpdatedAt(p.UpdatedAt).
 		SetCreatedBy(p.CreatedBy).
 		SetUpdatedBy(p.UpdatedBy).
+		SetEnvironmentID(p.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -226,6 +232,14 @@ func (o PlanQueryOptions) ApplyTenantFilter(ctx context.Context, query PlanQuery
 	return query.Where(plan.TenantID(types.GetTenantID(ctx)))
 }
 
+func (o PlanQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query PlanQuery) PlanQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(plan.EnvironmentID(environmentID))
+	}
+	return query
+}
+
 func (o PlanQueryOptions) ApplyStatusFilter(query PlanQuery, status string) PlanQuery {
 	if status == "" {
 		return query.Where(plan.StatusNotIn(string(types.StatusDeleted)))
@@ -260,7 +274,7 @@ func (o PlanQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o PlanQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.PlanFilter, query PlanQuery) PlanQuery {
+func (o PlanQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.PlanFilter, query PlanQuery) PlanQuery {
 	if f == nil {
 		return query
 	}

@@ -169,7 +169,7 @@ func (s *SecretServiceSuite) TestCreateAPIKey() {
 			s.Equal(tt.req.Type, resp.Type)
 			s.Equal(types.SecretProviderFlexPrice, resp.Provider)
 			s.NotEmpty(resp.DisplayID)
-			s.Len(resp.DisplayID, 5)
+			s.Len(resp.DisplayID, 10)
 
 			// Verify default permissions
 			if len(tt.req.Permissions) == 0 {

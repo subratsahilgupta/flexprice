@@ -45,15 +45,16 @@ func (r *CreateTaskRequest) Validate() error {
 // ToTask converts the request to a domain task
 func (r *CreateTaskRequest) ToTask(ctx context.Context) *task.Task {
 	return &task.Task{
-		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TASK),
-		TaskType:   r.TaskType,
-		EntityType: r.EntityType,
-		FileURL:    r.FileURL,
-		FileName:   r.FileName,
-		FileType:   r.FileType,
-		TaskStatus: types.TaskStatusPending,
-		Metadata:   r.Metadata,
-		BaseModel:  types.GetDefaultBaseModel(ctx),
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TASK),
+		TaskType:      r.TaskType,
+		EntityType:    r.EntityType,
+		FileURL:       r.FileURL,
+		FileName:      r.FileName,
+		FileType:      r.FileType,
+		TaskStatus:    types.TaskStatusPending,
+		Metadata:      r.Metadata,
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}
 }
 

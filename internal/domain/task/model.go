@@ -24,6 +24,7 @@ type Task struct {
 	StartedAt         *time.Time             `json:"started_at"`
 	CompletedAt       *time.Time             `json:"completed_at"`
 	FailedAt          *time.Time             `json:"failed_at"`
+	EnvironmentID     string                 `json:"environment_id"`
 	types.BaseModel
 }
 
@@ -50,6 +51,7 @@ func FromEnt(e *ent.Task) *Task {
 		StartedAt:         e.StartedAt,
 		CompletedAt:       e.CompletedAt,
 		FailedAt:          e.FailedAt,
+		EnvironmentID:     e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

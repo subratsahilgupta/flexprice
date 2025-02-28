@@ -57,6 +57,7 @@ func (r *CreatePlanRequest) ToPlan(ctx context.Context) *plan.Plan {
 		Description:    r.Description,
 		InvoiceCadence: r.InvoiceCadence,
 		TrialPeriod:    r.TrialPeriod,
+		EnvironmentID:  types.GetEnvironmentID(ctx),
 		BaseModel:      types.GetDefaultBaseModel(ctx),
 	}
 	return plan

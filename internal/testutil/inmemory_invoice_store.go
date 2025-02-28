@@ -79,6 +79,7 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 		InvoicePDFURL:   inv.InvoicePDFURL,
 		LineItems:       lineItems,
 		Metadata:        inv.Metadata,
+		EnvironmentID:   inv.EnvironmentID,
 		BaseModel:       inv.BaseModel,
 	}
 }
@@ -87,6 +88,12 @@ func (s *InMemoryInvoiceStore) Create(ctx context.Context, inv *invoice.Invoice)
 	if inv == nil {
 		return fmt.Errorf("invoice cannot be nil")
 	}
+
+	// Set environment ID from context if not already set
+	if inv.EnvironmentID == "" {
+		inv.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	return s.InMemoryStore.Create(ctx, inv.ID, copyInvoice(inv))
 }
 
@@ -239,6 +246,11 @@ func invoiceFilterFn(ctx context.Context, inv *invoice.Invoice, filter interface
 		if inv.TenantID != tenantID {
 			return false
 		}
+	}
+
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, inv.EnvironmentID) {
+		return false
 	}
 
 	// Filter by customer ID

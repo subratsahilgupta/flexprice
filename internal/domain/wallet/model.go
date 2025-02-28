@@ -25,6 +25,7 @@ type Wallet struct {
 	WalletType          types.WalletType       `db:"wallet_type" json:"wallet_type"`
 	Config              types.WalletConfig     `db:"config" json:"config"`
 	ConversionRate      decimal.Decimal        `db:"conversion_rate" json:"conversion_rate"`
+	EnvironmentID       string                 `db:"environment_id" json:"environment_id"`
 	types.BaseModel
 }
 
@@ -82,6 +83,7 @@ func FromEnt(e *ent.Wallet) *Wallet {
 		WalletType:          types.WalletType(e.WalletType),
 		Config:              e.Config,
 		ConversionRate:      e.ConversionRate,
+		EnvironmentID:       e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

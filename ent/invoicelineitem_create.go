@@ -98,6 +98,20 @@ func (ilic *InvoiceLineItemCreate) SetNillableUpdatedBy(s *string) *InvoiceLineI
 	return ilic
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (ilic *InvoiceLineItemCreate) SetEnvironmentID(s string) *InvoiceLineItemCreate {
+	ilic.mutation.SetEnvironmentID(s)
+	return ilic
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (ilic *InvoiceLineItemCreate) SetNillableEnvironmentID(s *string) *InvoiceLineItemCreate {
+	if s != nil {
+		ilic.SetEnvironmentID(*s)
+	}
+	return ilic
+}
+
 // SetInvoiceID sets the "invoice_id" field.
 func (ilic *InvoiceLineItemCreate) SetInvoiceID(s string) *InvoiceLineItemCreate {
 	ilic.mutation.SetInvoiceID(s)
@@ -340,6 +354,10 @@ func (ilic *InvoiceLineItemCreate) defaults() {
 		v := invoicelineitem.DefaultUpdatedAt()
 		ilic.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := ilic.mutation.EnvironmentID(); !ok {
+		v := invoicelineitem.DefaultEnvironmentID
+		ilic.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := ilic.mutation.Amount(); !ok {
 		v := invoicelineitem.DefaultAmount
 		ilic.mutation.SetAmount(v)
@@ -468,6 +486,10 @@ func (ilic *InvoiceLineItemCreate) createSpec() (*InvoiceLineItem, *sqlgraph.Cre
 	if value, ok := ilic.mutation.UpdatedBy(); ok {
 		_spec.SetField(invoicelineitem.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := ilic.mutation.EnvironmentID(); ok {
+		_spec.SetField(invoicelineitem.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := ilic.mutation.CustomerID(); ok {
 		_spec.SetField(invoicelineitem.FieldCustomerID, field.TypeString, value)

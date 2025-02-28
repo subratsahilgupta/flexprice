@@ -30,6 +30,11 @@ func NewMeterRepository(client postgres.IClient, logger *logger.Logger) domainMe
 func (r *meterRepository) CreateMeter(ctx context.Context, m *domainMeter.Meter) error {
 	client := r.client.Querier(ctx)
 
+	// Set environment ID from context if not already set
+	if m.EnvironmentID == "" {
+		m.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	meter, err := client.Meter.Create().
 		SetID(m.ID).
 		SetTenantID(m.TenantID).
@@ -43,6 +48,7 @@ func (r *meterRepository) CreateMeter(ctx context.Context, m *domainMeter.Meter)
 		SetUpdatedAt(m.UpdatedAt).
 		SetCreatedBy(m.CreatedBy).
 		SetUpdatedBy(m.UpdatedBy).
+		SetEnvironmentID(m.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -185,6 +191,14 @@ func (o MeterQueryOptions) ApplyTenantFilter(ctx context.Context, query MeterQue
 	return query.Where(meter.TenantID(types.GetTenantID(ctx)))
 }
 
+func (o MeterQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query MeterQuery) MeterQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(meter.EnvironmentID(environmentID))
+	}
+	return query
+}
+
 func (o MeterQueryOptions) ApplyStatusFilter(query MeterQuery, status string) MeterQuery {
 	if status == "" {
 		return query.Where(meter.StatusNotIn(string(types.StatusDeleted)))
@@ -219,7 +233,7 @@ func (o MeterQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o MeterQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.MeterFilter, query MeterQuery) MeterQuery {
+func (o MeterQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.MeterFilter, query MeterQuery) MeterQuery {
 	if f == nil {
 		return query
 	}

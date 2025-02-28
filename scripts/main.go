@@ -43,6 +43,11 @@ var commands = []Command{
 		Description: "Migrate subscription line items",
 		Run:         local.MigrateSubscriptionLineItems,
 	},
+	{
+		Name:        "migrate-environments",
+		Description: "Migrate entities to use environment_id",
+		Run:         internal.MigrateEnvironments,
+	},
 }
 
 func main() {

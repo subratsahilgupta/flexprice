@@ -25,6 +25,7 @@ type Transaction struct {
 	ExpiryDate          *time.Time                  `db:"expiry_date" json:"expiry_date"`
 	CreditsAvailable    decimal.Decimal             `db:"credits_available" json:"credits_available"`
 	TransactionReason   types.TransactionReason     `db:"transaction_reason" json:"transaction_reason"`
+	EnvironmentID       string                      `db:"environment_id" json:"environment_id"`
 	types.BaseModel
 }
 
@@ -62,6 +63,7 @@ func (t *Transaction) ToEnt() *ent.WalletTransaction {
 		ExpiryDate:          t.ExpiryDate,
 		CreditsAvailable:    t.CreditsAvailable,
 		TransactionReason:   string(t.TransactionReason),
+		EnvironmentID:       t.EnvironmentID,
 		TenantID:            t.TenantID,
 		Status:              string(t.Status),
 		CreatedBy:           t.CreatedBy,
@@ -93,6 +95,7 @@ func TransactionFromEnt(e *ent.WalletTransaction) *Transaction {
 		CreditBalanceBefore: e.CreditBalanceBefore,
 		CreditBalanceAfter:  e.CreditBalanceAfter,
 		TransactionReason:   types.TransactionReason(e.TransactionReason),
+		EnvironmentID:       e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

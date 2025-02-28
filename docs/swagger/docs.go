@@ -4936,6 +4936,13 @@ const docTemplate = `{
                 "summary": "Get wallet transactions",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Wallet ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
                         "type": "number",
                         "name": "credits_available_gt",
                         "in": "query"
@@ -4958,6 +4965,11 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "name": "expiry_date_before",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "id",
                         "in": "query"
                     },
                     {
@@ -5068,11 +5080,6 @@ const docTemplate = `{
                             "TransactionTypeDebit"
                         ],
                         "name": "type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "wallet_id",
                         "in": "query"
                     }
                 ],
@@ -5364,8 +5371,7 @@ const docTemplate = `{
             "required": [
                 "amount_due",
                 "currency",
-                "customer_id",
-                "invoice_type"
+                "customer_id"
             ],
             "properties": {
                 "amount_due": {
@@ -5399,7 +5405,16 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.InvoiceStatus"
                 },
                 "invoice_type": {
-                    "$ref": "#/definitions/types.InvoiceType"
+                    "enum": [
+                        "SUBSCRIPTION",
+                        "ONE_OFF",
+                        "CREDIT"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceType"
+                        }
+                    ]
                 },
                 "line_items": {
                     "type": "array",
@@ -5968,6 +5983,10 @@ const docTemplate = `{
                     "description": "Email is the email of the customer",
                     "type": "string"
                 },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the customer",
+                    "type": "string"
+                },
                 "external_id": {
                     "description": "ExternalID is the external identifier for the customer",
                     "type": "string"
@@ -6008,6 +6027,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
                     "type": "string"
                 },
                 "feature": {
@@ -6114,6 +6136,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "description": {
+                    "type": "string"
+                },
+                "environment_id": {
                     "type": "string"
                 },
                 "id": {
@@ -6960,6 +6985,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.EntitlementResponse"
                     }
                 },
+                "environment_id": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -7046,6 +7074,10 @@ const docTemplate = `{
                 },
                 "display_amount": {
                     "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the price",
                     "type": "string"
                 },
                 "filter_values": {
@@ -7256,6 +7288,10 @@ const docTemplate = `{
                 },
                 "end_date": {
                     "description": "EndDate is the end date of the subscription",
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the subscription",
                     "type": "string"
                 },
                 "id": {
@@ -7901,6 +7937,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "environment_id": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -8166,6 +8205,10 @@ const docTemplate = `{
                     "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
                     "type": "string"
                 },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the price",
+                    "type": "string"
+                },
                 "filter_values": {
                     "description": "FilterValues are the filter values for the price in case of usage based pricing",
                     "allOf": [
@@ -8295,6 +8338,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "end_date": {
+                    "type": "string"
+                },
+                "environment_id": {
                     "type": "string"
                 },
                 "id": {

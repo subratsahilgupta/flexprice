@@ -29,6 +29,8 @@ type Plan struct {
 	CreatedBy string `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
 	UpdatedBy string `json:"updated_by,omitempty"`
+	// EnvironmentID holds the value of the "environment_id" field.
+	EnvironmentID string `json:"environment_id,omitempty"`
 	// LookupKey holds the value of the "lookup_key" field.
 	LookupKey string `json:"lookup_key,omitempty"`
 	// Name holds the value of the "name" field.
@@ -70,7 +72,7 @@ func (*Plan) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case plan.FieldTrialPeriod:
 			values[i] = new(sql.NullInt64)
-		case plan.FieldID, plan.FieldTenantID, plan.FieldStatus, plan.FieldCreatedBy, plan.FieldUpdatedBy, plan.FieldLookupKey, plan.FieldName, plan.FieldDescription, plan.FieldInvoiceCadence:
+		case plan.FieldID, plan.FieldTenantID, plan.FieldStatus, plan.FieldCreatedBy, plan.FieldUpdatedBy, plan.FieldEnvironmentID, plan.FieldLookupKey, plan.FieldName, plan.FieldDescription, plan.FieldInvoiceCadence:
 			values[i] = new(sql.NullString)
 		case plan.FieldCreatedAt, plan.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -130,6 +132,12 @@ func (pl *Plan) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field updated_by", values[i])
 			} else if value.Valid {
 				pl.UpdatedBy = value.String
+			}
+		case plan.FieldEnvironmentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field environment_id", values[i])
+			} else if value.Valid {
+				pl.EnvironmentID = value.String
 			}
 		case plan.FieldLookupKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -219,6 +227,9 @@ func (pl *Plan) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_by=")
 	builder.WriteString(pl.UpdatedBy)
+	builder.WriteString(", ")
+	builder.WriteString("environment_id=")
+	builder.WriteString(pl.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("lookup_key=")
 	builder.WriteString(pl.LookupKey)

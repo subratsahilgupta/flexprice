@@ -117,6 +117,7 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		BillingPeriodCount: r.BillingPeriodCount,
 		BillingAnchor:      r.StartDate,
 		Metadata:           r.Metadata,
+		EnvironmentID:      types.GetEnvironmentID(ctx),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 	}
 }
@@ -137,12 +138,13 @@ type SubscriptionLineItemResponse struct {
 // ToSubscriptionLineItem converts a request to a domain subscription line item
 func (r *SubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.Context) *subscription.SubscriptionLineItem {
 	return &subscription.SubscriptionLineItem{
-		ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
-		PriceID:     r.PriceID,
-		Quantity:    r.Quantity,
-		DisplayName: r.DisplayName,
-		Metadata:    r.Metadata,
-		BaseModel:   types.GetDefaultBaseModel(ctx),
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+		PriceID:       r.PriceID,
+		Quantity:      r.Quantity,
+		DisplayName:   r.DisplayName,
+		Metadata:      r.Metadata,
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}
 }
 

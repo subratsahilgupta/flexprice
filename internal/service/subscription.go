@@ -127,8 +127,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(validPrices))
 	for _, price := range validPrices {
 		lineItems = append(lineItems, &subscription.SubscriptionLineItem{
-			PriceID:   price.ID,
-			BaseModel: types.GetDefaultBaseModel(ctx),
+			PriceID:       price.ID,
+			EnvironmentID: types.GetEnvironmentID(ctx),
+			BaseModel:     types.GetDefaultBaseModel(ctx),
 		})
 	}
 

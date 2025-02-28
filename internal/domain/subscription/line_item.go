@@ -26,6 +26,7 @@ type SubscriptionLineItem struct {
 	StartDate        time.Time           `db:"start_date" json:"start_date,omitempty"`
 	EndDate          time.Time           `db:"end_date" json:"end_date,omitempty"`
 	Metadata         map[string]string   `db:"metadata" json:"metadata,omitempty"`
+	EnvironmentID    string              `db:"environment_id" json:"environment_id"`
 	types.BaseModel
 }
 
@@ -92,6 +93,7 @@ func SubscriptionLineItemFromEnt(e *ent.SubscriptionLineItem) *SubscriptionLineI
 		StartDate:        startDate,
 		EndDate:          endDate,
 		Metadata:         e.Metadata,
+		EnvironmentID:    e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

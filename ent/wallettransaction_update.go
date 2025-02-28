@@ -317,6 +317,9 @@ func (wtu *WalletTransactionUpdate) sqlSave(ctx context.Context) (n int, err err
 	if wtu.mutation.UpdatedByCleared() {
 		_spec.ClearField(wallettransaction.FieldUpdatedBy, field.TypeString)
 	}
+	if wtu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(wallettransaction.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := wtu.mutation.GetType(); ok {
 		_spec.SetField(wallettransaction.FieldType, field.TypeString, value)
 	}
@@ -702,6 +705,9 @@ func (wtuo *WalletTransactionUpdateOne) sqlSave(ctx context.Context) (_node *Wal
 	}
 	if wtuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(wallettransaction.FieldUpdatedBy, field.TypeString)
+	}
+	if wtuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(wallettransaction.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := wtuo.mutation.GetType(); ok {
 		_spec.SetField(wallettransaction.FieldType, field.TypeString, value)

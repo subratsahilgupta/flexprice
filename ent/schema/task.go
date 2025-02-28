@@ -16,6 +16,7 @@ type Task struct {
 func (Task) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -96,11 +97,11 @@ func (Task) Edges() []ent.Edge {
 // Indexes of the Task.
 func (Task) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "task_type", "entity_type", "status").
-			StorageKey("idx_tasks_tenant_type_status"),
-		index.Fields("tenant_id", "created_by", "status").
-			StorageKey("idx_tasks_tenant_user"),
-		index.Fields("tenant_id", "task_status", "status").
-			StorageKey("idx_tasks_tenant_task_status"),
+		index.Fields("tenant_id", "environment_id", "task_type", "entity_type", "status").
+			StorageKey("idx_tasks_tenant_env_type_status"),
+		index.Fields("tenant_id", "environment_id", "created_by", "status").
+			StorageKey("idx_tasks_tenant_env_user"),
+		index.Fields("tenant_id", "environment_id", "task_status", "status").
+			StorageKey("idx_tasks_tenant_env_task_status"),
 	}
 }

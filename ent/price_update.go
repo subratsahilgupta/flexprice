@@ -465,6 +465,9 @@ func (pu *PriceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if pu.mutation.UpdatedByCleared() {
 		_spec.ClearField(price.FieldUpdatedBy, field.TypeString)
 	}
+	if pu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(price.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := pu.mutation.Amount(); ok {
 		_spec.SetField(price.FieldAmount, field.TypeFloat64, value)
 	}
@@ -1035,6 +1038,9 @@ func (puo *PriceUpdateOne) sqlSave(ctx context.Context) (_node *Price, err error
 	}
 	if puo.mutation.UpdatedByCleared() {
 		_spec.ClearField(price.FieldUpdatedBy, field.TypeString)
+	}
+	if puo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(price.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := puo.mutation.Amount(); ok {
 		_spec.SetField(price.FieldAmount, field.TypeFloat64, value)

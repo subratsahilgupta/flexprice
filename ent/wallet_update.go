@@ -341,6 +341,9 @@ func (wu *WalletUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if wu.mutation.UpdatedByCleared() {
 		_spec.ClearField(wallet.FieldUpdatedBy, field.TypeString)
 	}
+	if wu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(wallet.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := wu.mutation.Name(); ok {
 		_spec.SetField(wallet.FieldName, field.TypeString, value)
 	}
@@ -755,6 +758,9 @@ func (wuo *WalletUpdateOne) sqlSave(ctx context.Context) (_node *Wallet, err err
 	}
 	if wuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(wallet.FieldUpdatedBy, field.TypeString)
+	}
+	if wuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(wallet.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := wuo.mutation.Name(); ok {
 		_spec.SetField(wallet.FieldName, field.TypeString, value)

@@ -30,6 +30,12 @@ func NewSubscriptionRepository(client postgres.IClient, logger *logger.Logger) d
 
 func (r *subscriptionRepository) Create(ctx context.Context, sub *domainSub.Subscription) error {
 	client := r.client.Querier(ctx)
+
+	// Set environment ID from context if not already set
+	if sub.EnvironmentID == "" {
+		sub.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	subscription, err := client.Subscription.Create().
 		SetID(sub.ID).
 		SetTenantID(sub.TenantID).
@@ -55,6 +61,7 @@ func (r *subscriptionRepository) Create(ctx context.Context, sub *domainSub.Subs
 		SetStatus(string(sub.Status)).
 		SetCreatedBy(sub.CreatedBy).
 		SetUpdatedBy(sub.UpdatedBy).
+		SetEnvironmentID(sub.EnvironmentID).
 		SetVersion(1).
 		Save(ctx)
 
@@ -280,6 +287,14 @@ func (o SubscriptionQueryOptions) ApplyTenantFilter(ctx context.Context, query S
 	return query.Where(subscription.TenantID(types.GetTenantID(ctx)))
 }
 
+func (o SubscriptionQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query SubscriptionQuery) SubscriptionQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(subscription.EnvironmentIDEQ(environmentID))
+	}
+	return query
+}
+
 func (o SubscriptionQueryOptions) ApplyStatusFilter(query SubscriptionQuery, status string) SubscriptionQuery {
 	if status == "" {
 		return query.Where(subscription.StatusNotIn(string(types.StatusDeleted)))
@@ -323,7 +338,7 @@ func (o SubscriptionQueryOptions) GetFieldName(field string) string {
 }
 
 // applyEntityQueryOptions applies subscription-specific filters to the query
-func (o *SubscriptionQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.SubscriptionFilter, query SubscriptionQuery) SubscriptionQuery {
+func (o *SubscriptionQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.SubscriptionFilter, query SubscriptionQuery) SubscriptionQuery {
 	if f == nil {
 		return query
 	}

@@ -388,6 +388,9 @@ func (sliu *SubscriptionLineItemUpdate) sqlSave(ctx context.Context) (n int, err
 	if sliu.mutation.UpdatedByCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldUpdatedBy, field.TypeString)
 	}
+	if sliu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := sliu.mutation.PlanID(); ok {
 		_spec.SetField(subscriptionlineitem.FieldPlanID, field.TypeString, value)
 	}
@@ -862,6 +865,9 @@ func (sliuo *SubscriptionLineItemUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if sliuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldUpdatedBy, field.TypeString)
+	}
+	if sliuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := sliuo.mutation.PlanID(); ok {
 		_spec.SetField(subscriptionlineitem.FieldPlanID, field.TypeString, value)

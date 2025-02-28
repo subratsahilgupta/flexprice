@@ -31,6 +31,10 @@ func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subsc
 		return fmt.Errorf("failed to get client")
 	}
 
+	if item.EnvironmentID == "" {
+		item.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	_, err := client.SubscriptionLineItem.Create().
 		SetID(item.ID).
 		SetSubscriptionID(item.SubscriptionID).
@@ -49,6 +53,7 @@ func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subsc
 		SetNillableEndDate(types.ToNillableTime(item.EndDate)).
 		SetMetadata(item.Metadata).
 		SetTenantID(item.TenantID).
+		SetEnvironmentID(item.EnvironmentID).
 		SetStatus(string(item.Status)).
 		SetCreatedBy(item.CreatedBy).
 		SetUpdatedBy(item.UpdatedBy).

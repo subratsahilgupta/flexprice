@@ -31,6 +31,8 @@ type Meter struct {
 	CreatedBy string `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
 	UpdatedBy string `json:"updated_by,omitempty"`
+	// EnvironmentID holds the value of the "environment_id" field.
+	EnvironmentID string `json:"environment_id,omitempty"`
 	// EventName holds the value of the "event_name" field.
 	EventName string `json:"event_name,omitempty"`
 	// Name holds the value of the "name" field.
@@ -51,7 +53,7 @@ func (*Meter) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case meter.FieldAggregation, meter.FieldFilters:
 			values[i] = new([]byte)
-		case meter.FieldID, meter.FieldTenantID, meter.FieldStatus, meter.FieldCreatedBy, meter.FieldUpdatedBy, meter.FieldEventName, meter.FieldName, meter.FieldResetUsage:
+		case meter.FieldID, meter.FieldTenantID, meter.FieldStatus, meter.FieldCreatedBy, meter.FieldUpdatedBy, meter.FieldEnvironmentID, meter.FieldEventName, meter.FieldName, meter.FieldResetUsage:
 			values[i] = new(sql.NullString)
 		case meter.FieldCreatedAt, meter.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -111,6 +113,12 @@ func (m *Meter) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field updated_by", values[i])
 			} else if value.Valid {
 				m.UpdatedBy = value.String
+			}
+		case meter.FieldEnvironmentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field environment_id", values[i])
+			} else if value.Valid {
+				m.EnvironmentID = value.String
 			}
 		case meter.FieldEventName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -199,6 +207,9 @@ func (m *Meter) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_by=")
 	builder.WriteString(m.UpdatedBy)
+	builder.WriteString(", ")
+	builder.WriteString("environment_id=")
+	builder.WriteString(m.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("event_name=")
 	builder.WriteString(m.EventName)

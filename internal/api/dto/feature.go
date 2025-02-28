@@ -58,16 +58,17 @@ func (r *CreateFeatureRequest) Validate() error {
 
 func (r *CreateFeatureRequest) ToFeature(ctx context.Context) (*feature.Feature, error) {
 	return &feature.Feature{
-		ID:           types.GenerateUUIDWithPrefix(types.UUID_PREFIX_FEATURE),
-		Name:         r.Name,
-		Description:  r.Description,
-		LookupKey:    r.LookupKey,
-		Metadata:     r.Metadata,
-		Type:         r.Type,
-		MeterID:      r.MeterID,
-		UnitSingular: r.UnitSingular,
-		UnitPlural:   r.UnitPlural,
-		BaseModel:    types.GetDefaultBaseModel(ctx),
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_FEATURE),
+		Name:          r.Name,
+		Description:   r.Description,
+		LookupKey:     r.LookupKey,
+		Metadata:      r.Metadata,
+		Type:          r.Type,
+		MeterID:       r.MeterID,
+		UnitSingular:  r.UnitSingular,
+		UnitPlural:    r.UnitPlural,
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}, nil
 }
 

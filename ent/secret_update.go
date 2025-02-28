@@ -309,6 +309,9 @@ func (su *SecretUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if su.mutation.UpdatedByCleared() {
 		_spec.ClearField(secret.FieldUpdatedBy, field.TypeString)
 	}
+	if su.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(secret.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := su.mutation.Name(); ok {
 		_spec.SetField(secret.FieldName, field.TypeString, value)
 	}
@@ -688,6 +691,9 @@ func (suo *SecretUpdateOne) sqlSave(ctx context.Context) (_node *Secret, err err
 	}
 	if suo.mutation.UpdatedByCleared() {
 		_spec.ClearField(secret.FieldUpdatedBy, field.TypeString)
+	}
+	if suo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(secret.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := suo.mutation.Name(); ok {
 		_spec.SetField(secret.FieldName, field.TypeString, value)

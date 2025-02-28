@@ -38,6 +38,11 @@ func planFilterFn(ctx context.Context, p *plan.Plan, filter interface{}) bool {
 		}
 	}
 
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, p.EnvironmentID) {
+		return false
+	}
+
 	// Filter by status
 	if f.Status != nil && p.Status != *f.Status {
 		return false
@@ -68,6 +73,12 @@ func (s *InMemoryPlanStore) Create(ctx context.Context, p *plan.Plan) error {
 	if p == nil {
 		return fmt.Errorf("plan cannot be nil")
 	}
+
+	// Set environment ID from context if not already set
+	if p.EnvironmentID == "" {
+		p.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	return s.InMemoryStore.Create(ctx, p.ID, p)
 }
 
@@ -115,7 +126,9 @@ func (s *InMemoryPlanStore) GetByLookupKey(ctx context.Context, lookupKey string
 	}
 
 	for _, p := range plans {
-		if p.LookupKey == lookupKey && p.Status == types.StatusPublished {
+		if p.LookupKey == lookupKey &&
+			p.Status == types.StatusPublished &&
+			CheckEnvironmentFilter(ctx, p.EnvironmentID) {
 			return p, nil
 		}
 	}

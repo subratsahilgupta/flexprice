@@ -30,6 +30,7 @@ type Payment struct {
 	RefundedAt        *time.Time                   `json:"refunded_at,omitempty"`
 	ErrorMessage      *string                      `json:"error_message,omitempty"`
 	Attempts          []*PaymentAttempt            `json:"attempts,omitempty"`
+	EnvironmentID     string                       `json:"environment_id"`
 
 	types.BaseModel
 }
@@ -43,6 +44,7 @@ type PaymentAttempt struct {
 	GatewayAttemptID *string             `json:"gateway_attempt_id,omitempty"`
 	ErrorMessage     *string             `json:"error_message,omitempty"`
 	Metadata         types.Metadata      `json:"metadata,omitempty"`
+	EnvironmentID    string              `json:"environment_id"`
 
 	types.BaseModel
 }
@@ -106,6 +108,7 @@ func FromEnt(p *ent.Payment) *Payment {
 
 	payment := &Payment{
 		ID:                p.ID,
+		IdempotencyKey:    p.IdempotencyKey,
 		DestinationType:   types.PaymentDestinationType(p.DestinationType),
 		DestinationID:     p.DestinationID,
 		PaymentMethodType: types.PaymentMethodType(p.PaymentMethodType),
@@ -121,7 +124,7 @@ func FromEnt(p *ent.Payment) *Payment {
 		FailedAt:          p.FailedAt,
 		RefundedAt:        p.RefundedAt,
 		ErrorMessage:      p.ErrorMessage,
-		IdempotencyKey:    p.IdempotencyKey,
+		EnvironmentID:     p.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  p.TenantID,
 			Status:    types.Status(p.Status),
@@ -163,6 +166,7 @@ func FromEntAttempt(a *ent.PaymentAttempt) *PaymentAttempt {
 		GatewayAttemptID: a.GatewayAttemptID,
 		ErrorMessage:     a.ErrorMessage,
 		Metadata:         metadata,
+		EnvironmentID:    a.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  a.TenantID,
 			Status:    types.Status(a.Status),

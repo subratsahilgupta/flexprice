@@ -221,6 +221,9 @@ func (mu *MeterUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if mu.mutation.UpdatedByCleared() {
 		_spec.ClearField(meter.FieldUpdatedBy, field.TypeString)
 	}
+	if mu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(meter.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := mu.mutation.EventName(); ok {
 		_spec.SetField(meter.FieldEventName, field.TypeString, value)
 	}
@@ -481,6 +484,9 @@ func (muo *MeterUpdateOne) sqlSave(ctx context.Context) (_node *Meter, err error
 	}
 	if muo.mutation.UpdatedByCleared() {
 		_spec.ClearField(meter.FieldUpdatedBy, field.TypeString)
+	}
+	if muo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(meter.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := muo.mutation.EventName(); ok {
 		_spec.SetField(meter.FieldEventName, field.TypeString, value)

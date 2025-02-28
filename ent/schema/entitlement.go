@@ -18,6 +18,7 @@ type Entitlement struct {
 func (Entitlement) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -77,10 +78,10 @@ func (Entitlement) Edges() []ent.Edge {
 // Indexes of the Entitlement.
 func (Entitlement) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "plan_id", "feature_id").
+		index.Fields("tenant_id", "environment_id", "plan_id", "feature_id").
 			Unique().
 			Annotations(entsql.IndexWhere("status = 'published'")),
-		index.Fields("tenant_id", "plan_id"),
-		index.Fields("tenant_id", "feature_id"),
+		index.Fields("tenant_id", "environment_id", "plan_id"),
+		index.Fields("tenant_id", "environment_id", "feature_id"),
 	}
 }

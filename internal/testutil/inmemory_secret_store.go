@@ -40,6 +40,11 @@ func secretFilterFn(ctx context.Context, s *secret.Secret, filter interface{}) b
 		}
 	}
 
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, s.EnvironmentID) {
+		return false
+	}
+
 	// Filter by status
 	if filter_.GetStatus() != "" && string(s.Status) != filter_.GetStatus() {
 		return false
@@ -80,6 +85,12 @@ func (s *InMemorySecretStore) Create(ctx context.Context, secret *secret.Secret)
 	if secret == nil {
 		return fmt.Errorf("secret cannot be nil")
 	}
+
+	// Set environment ID from context if not already set
+	if secret.EnvironmentID == "" {
+		secret.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	return s.InMemoryStore.Create(ctx, secret.ID, secret)
 }
 

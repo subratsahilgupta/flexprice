@@ -16,4 +16,6 @@ type BaseQueryOptions[T any] interface {
 	ApplyPaginationFilter(query T, limit int, offset int) T
 	// GetFieldName returns the field name for a given filter field
 	GetFieldName(field string) string
+	// ApplyEnvironmentFilter applies environment isolation if environment ID is present in context
+	ApplyEnvironmentFilter(ctx context.Context, query T) T
 }

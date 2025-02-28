@@ -196,6 +196,9 @@ func (iliu *InvoiceLineItemUpdate) sqlSave(ctx context.Context) (n int, err erro
 	if iliu.mutation.UpdatedByCleared() {
 		_spec.ClearField(invoicelineitem.FieldUpdatedBy, field.TypeString)
 	}
+	if iliu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(invoicelineitem.FieldEnvironmentID, field.TypeString)
+	}
 	if iliu.mutation.SubscriptionIDCleared() {
 		_spec.ClearField(invoicelineitem.FieldSubscriptionID, field.TypeString)
 	}
@@ -452,6 +455,9 @@ func (iliuo *InvoiceLineItemUpdateOne) sqlSave(ctx context.Context) (_node *Invo
 	}
 	if iliuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(invoicelineitem.FieldUpdatedBy, field.TypeString)
+	}
+	if iliuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(invoicelineitem.FieldEnvironmentID, field.TypeString)
 	}
 	if iliuo.mutation.SubscriptionIDCleared() {
 		_spec.ClearField(invoicelineitem.FieldSubscriptionID, field.TypeString)

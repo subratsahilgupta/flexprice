@@ -331,6 +331,9 @@ func (cu *CustomerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if cu.mutation.UpdatedByCleared() {
 		_spec.ClearField(customer.FieldUpdatedBy, field.TypeString)
 	}
+	if cu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(customer.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := cu.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)
 	}
@@ -737,6 +740,9 @@ func (cuo *CustomerUpdateOne) sqlSave(ctx context.Context) (_node *Customer, err
 	}
 	if cuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(customer.FieldUpdatedBy, field.TypeString)
+	}
+	if cuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(customer.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := cuo.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)

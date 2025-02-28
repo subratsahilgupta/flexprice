@@ -137,15 +137,15 @@ func (t AutoTopupTrigger) String() string {
 type WalletTransactionFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
-	WalletID           *string            `json:"wallet_id,omitempty"`
-	Type               *TransactionType   `json:"type,omitempty"`
-	TransactionStatus  *TransactionStatus `json:"transaction_status,omitempty"`
-	ReferenceType      *string            `json:"reference_type,omitempty"`
-	ReferenceID        *string            `json:"reference_id,omitempty"`
-	ExpiryDateBefore   *time.Time         `json:"expiry_date_before,omitempty"`
-	ExpiryDateAfter    *time.Time         `json:"expiry_date_after,omitempty"`
-	CreditsAvailableGT *decimal.Decimal   `json:"credits_available_gt,omitempty"`
-	TransactionReason  *TransactionReason `json:"transaction_reason,omitempty"`
+	WalletID           *string            `json:"id,omitempty" form:"id"`
+	Type               *TransactionType   `json:"type,omitempty" form:"type"`
+	TransactionStatus  *TransactionStatus `json:"transaction_status,omitempty" form:"transaction_status"`
+	ReferenceType      *string            `json:"reference_type,omitempty" form:"reference_type"`
+	ReferenceID        *string            `json:"reference_id,omitempty" form:"reference_id"`
+	ExpiryDateBefore   *time.Time         `json:"expiry_date_before,omitempty" form:"expiry_date_before"`
+	ExpiryDateAfter    *time.Time         `json:"expiry_date_after,omitempty" form:"expiry_date_after"`
+	CreditsAvailableGT *decimal.Decimal   `json:"credits_available_gt,omitempty" form:"credits_available_gt"`
+	TransactionReason  *TransactionReason `json:"transaction_reason,omitempty" form:"transaction_reason"`
 }
 
 func NewWalletTransactionFilter() *WalletTransactionFilter {

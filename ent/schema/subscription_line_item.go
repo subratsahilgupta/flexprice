@@ -18,6 +18,7 @@ type SubscriptionLineItem struct {
 func (SubscriptionLineItem) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -118,11 +119,11 @@ func (SubscriptionLineItem) Edges() []ent.Edge {
 // Indexes of the SubscriptionLineItem.
 func (SubscriptionLineItem) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "subscription_id", "status"),
-		index.Fields("tenant_id", "customer_id", "status"),
-		index.Fields("tenant_id", "plan_id", "status"),
-		index.Fields("tenant_id", "price_id", "status"),
-		index.Fields("tenant_id", "meter_id", "status"),
+		index.Fields("tenant_id", "environment_id", "subscription_id", "status"),
+		index.Fields("tenant_id", "environment_id", "customer_id", "status"),
+		index.Fields("tenant_id", "environment_id", "plan_id", "status"),
+		index.Fields("tenant_id", "environment_id", "price_id", "status"),
+		index.Fields("tenant_id", "environment_id", "meter_id", "status"),
 		index.Fields("start_date", "end_date"),
 	}
 }

@@ -96,6 +96,20 @@ func (tc *TaskCreate) SetNillableUpdatedBy(s *string) *TaskCreate {
 	return tc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (tc *TaskCreate) SetEnvironmentID(s string) *TaskCreate {
+	tc.mutation.SetEnvironmentID(s)
+	return tc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (tc *TaskCreate) SetNillableEnvironmentID(s *string) *TaskCreate {
+	if s != nil {
+		tc.SetEnvironmentID(*s)
+	}
+	return tc
+}
+
 // SetTaskType sets the "task_type" field.
 func (tc *TaskCreate) SetTaskType(s string) *TaskCreate {
 	tc.mutation.SetTaskType(s)
@@ -319,6 +333,10 @@ func (tc *TaskCreate) defaults() {
 		v := task.DefaultUpdatedAt()
 		tc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := tc.mutation.EnvironmentID(); !ok {
+		v := task.DefaultEnvironmentID
+		tc.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := tc.mutation.TaskStatus(); !ok {
 		v := task.DefaultTaskStatus
 		tc.mutation.SetTaskStatus(v)
@@ -458,6 +476,10 @@ func (tc *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 	if value, ok := tc.mutation.UpdatedBy(); ok {
 		_spec.SetField(task.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := tc.mutation.EnvironmentID(); ok {
+		_spec.SetField(task.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := tc.mutation.TaskType(); ok {
 		_spec.SetField(task.FieldTaskType, field.TypeString, value)

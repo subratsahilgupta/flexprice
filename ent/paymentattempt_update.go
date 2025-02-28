@@ -272,6 +272,9 @@ func (pau *PaymentAttemptUpdate) sqlSave(ctx context.Context) (n int, err error)
 	if pau.mutation.UpdatedByCleared() {
 		_spec.ClearField(paymentattempt.FieldUpdatedBy, field.TypeString)
 	}
+	if pau.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(paymentattempt.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := pau.mutation.PaymentStatus(); ok {
 		_spec.SetField(paymentattempt.FieldPaymentStatus, field.TypeString, value)
 	}
@@ -620,6 +623,9 @@ func (pauo *PaymentAttemptUpdateOne) sqlSave(ctx context.Context) (_node *Paymen
 	}
 	if pauo.mutation.UpdatedByCleared() {
 		_spec.ClearField(paymentattempt.FieldUpdatedBy, field.TypeString)
+	}
+	if pauo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(paymentattempt.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := pauo.mutation.PaymentStatus(); ok {
 		_spec.SetField(paymentattempt.FieldPaymentStatus, field.TypeString, value)

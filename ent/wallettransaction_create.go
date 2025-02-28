@@ -97,6 +97,20 @@ func (wtc *WalletTransactionCreate) SetNillableUpdatedBy(s *string) *WalletTrans
 	return wtc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (wtc *WalletTransactionCreate) SetEnvironmentID(s string) *WalletTransactionCreate {
+	wtc.mutation.SetEnvironmentID(s)
+	return wtc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (wtc *WalletTransactionCreate) SetNillableEnvironmentID(s *string) *WalletTransactionCreate {
+	if s != nil {
+		wtc.SetEnvironmentID(*s)
+	}
+	return wtc
+}
+
 // SetWalletID sets the "wallet_id" field.
 func (wtc *WalletTransactionCreate) SetWalletID(s string) *WalletTransactionCreate {
 	wtc.mutation.SetWalletID(s)
@@ -290,6 +304,10 @@ func (wtc *WalletTransactionCreate) defaults() {
 		v := wallettransaction.DefaultUpdatedAt()
 		wtc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := wtc.mutation.EnvironmentID(); !ok {
+		v := wallettransaction.DefaultEnvironmentID
+		wtc.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := wtc.mutation.GetType(); !ok {
 		v := wallettransaction.DefaultType
 		wtc.mutation.SetType(v)
@@ -418,6 +436,10 @@ func (wtc *WalletTransactionCreate) createSpec() (*WalletTransaction, *sqlgraph.
 	if value, ok := wtc.mutation.UpdatedBy(); ok {
 		_spec.SetField(wallettransaction.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := wtc.mutation.EnvironmentID(); ok {
+		_spec.SetField(wallettransaction.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := wtc.mutation.WalletID(); ok {
 		_spec.SetField(wallettransaction.FieldWalletID, field.TypeString, value)

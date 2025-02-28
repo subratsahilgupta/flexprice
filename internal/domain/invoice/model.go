@@ -37,6 +37,7 @@ type Invoice struct {
 	Metadata        types.Metadata      `json:"metadata,omitempty"`
 	LineItems       []*InvoiceLineItem  `json:"line_items,omitempty"`
 	Version         int                 `json:"version"`
+	EnvironmentID   string              `json:"environment_id"`
 	types.BaseModel
 }
 
@@ -82,6 +83,7 @@ func FromEnt(e *ent.Invoice) *Invoice {
 		Metadata:        e.Metadata,
 		LineItems:       lineItems,
 		Version:         e.Version,
+		EnvironmentID:   e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

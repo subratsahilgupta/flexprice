@@ -31,6 +31,8 @@ type PaymentAttempt struct {
 	CreatedBy string `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
 	UpdatedBy string `json:"updated_by,omitempty"`
+	// EnvironmentID holds the value of the "environment_id" field.
+	EnvironmentID string `json:"environment_id,omitempty"`
 	// PaymentID holds the value of the "payment_id" field.
 	PaymentID string `json:"payment_id,omitempty"`
 	// PaymentStatus holds the value of the "payment_status" field.
@@ -78,7 +80,7 @@ func (*PaymentAttempt) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case paymentattempt.FieldAttemptNumber:
 			values[i] = new(sql.NullInt64)
-		case paymentattempt.FieldID, paymentattempt.FieldTenantID, paymentattempt.FieldStatus, paymentattempt.FieldCreatedBy, paymentattempt.FieldUpdatedBy, paymentattempt.FieldPaymentID, paymentattempt.FieldPaymentStatus, paymentattempt.FieldGatewayAttemptID, paymentattempt.FieldErrorMessage:
+		case paymentattempt.FieldID, paymentattempt.FieldTenantID, paymentattempt.FieldStatus, paymentattempt.FieldCreatedBy, paymentattempt.FieldUpdatedBy, paymentattempt.FieldEnvironmentID, paymentattempt.FieldPaymentID, paymentattempt.FieldPaymentStatus, paymentattempt.FieldGatewayAttemptID, paymentattempt.FieldErrorMessage:
 			values[i] = new(sql.NullString)
 		case paymentattempt.FieldCreatedAt, paymentattempt.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -138,6 +140,12 @@ func (pa *PaymentAttempt) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field updated_by", values[i])
 			} else if value.Valid {
 				pa.UpdatedBy = value.String
+			}
+		case paymentattempt.FieldEnvironmentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field environment_id", values[i])
+			} else if value.Valid {
+				pa.EnvironmentID = value.String
 			}
 		case paymentattempt.FieldPaymentID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -237,6 +245,9 @@ func (pa *PaymentAttempt) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_by=")
 	builder.WriteString(pa.UpdatedBy)
+	builder.WriteString(", ")
+	builder.WriteString("environment_id=")
+	builder.WriteString(pa.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("payment_id=")
 	builder.WriteString(pa.PaymentID)

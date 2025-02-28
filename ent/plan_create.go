@@ -97,6 +97,20 @@ func (pc *PlanCreate) SetNillableUpdatedBy(s *string) *PlanCreate {
 	return pc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (pc *PlanCreate) SetEnvironmentID(s string) *PlanCreate {
+	pc.mutation.SetEnvironmentID(s)
+	return pc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (pc *PlanCreate) SetNillableEnvironmentID(s *string) *PlanCreate {
+	if s != nil {
+		pc.SetEnvironmentID(*s)
+	}
+	return pc
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (pc *PlanCreate) SetLookupKey(s string) *PlanCreate {
 	pc.mutation.SetLookupKey(s)
@@ -219,6 +233,10 @@ func (pc *PlanCreate) defaults() {
 		v := plan.DefaultUpdatedAt()
 		pc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := pc.mutation.EnvironmentID(); !ok {
+		v := plan.DefaultEnvironmentID
+		pc.mutation.SetEnvironmentID(v)
+	}
 	if _, ok := pc.mutation.TrialPeriod(); !ok {
 		v := plan.DefaultTrialPeriod
 		pc.mutation.SetTrialPeriod(v)
@@ -321,6 +339,10 @@ func (pc *PlanCreate) createSpec() (*Plan, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.UpdatedBy(); ok {
 		_spec.SetField(plan.FieldUpdatedBy, field.TypeString, value)
 		_node.UpdatedBy = value
+	}
+	if value, ok := pc.mutation.EnvironmentID(); ok {
+		_spec.SetField(plan.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := pc.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)

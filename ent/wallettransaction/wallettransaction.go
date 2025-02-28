@@ -25,6 +25,8 @@ const (
 	FieldCreatedBy = "created_by"
 	// FieldUpdatedBy holds the string denoting the updated_by field in the database.
 	FieldUpdatedBy = "updated_by"
+	// FieldEnvironmentID holds the string denoting the environment_id field in the database.
+	FieldEnvironmentID = "environment_id"
 	// FieldWalletID holds the string denoting the wallet_id field in the database.
 	FieldWalletID = "wallet_id"
 	// FieldType holds the string denoting the type field in the database.
@@ -66,6 +68,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldCreatedBy,
 	FieldUpdatedBy,
+	FieldEnvironmentID,
 	FieldWalletID,
 	FieldType,
 	FieldAmount,
@@ -103,6 +106,8 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
+	// DefaultEnvironmentID holds the default value on creation for the "environment_id" field.
+	DefaultEnvironmentID string
 	// WalletIDValidator is a validator for the "wallet_id" field. It is called by the builders before save.
 	WalletIDValidator func(string) error
 	// DefaultType holds the default value on creation for the "type" field.
@@ -151,6 +156,11 @@ func ByCreatedBy(opts ...sql.OrderTermOption) OrderOption {
 // ByUpdatedBy orders the results by the updated_by field.
 func ByUpdatedBy(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedBy, opts...).ToFunc()
+}
+
+// ByEnvironmentID orders the results by the environment_id field.
+func ByEnvironmentID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEnvironmentID, opts...).ToFunc()
 }
 
 // ByWalletID orders the results by the wallet_id field.

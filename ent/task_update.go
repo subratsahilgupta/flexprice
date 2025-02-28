@@ -433,6 +433,9 @@ func (tu *TaskUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if tu.mutation.UpdatedByCleared() {
 		_spec.ClearField(task.FieldUpdatedBy, field.TypeString)
 	}
+	if tu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(task.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := tu.mutation.TaskType(); ok {
 		_spec.SetField(task.FieldTaskType, field.TypeString, value)
 	}
@@ -965,6 +968,9 @@ func (tuo *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) 
 	}
 	if tuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(task.FieldUpdatedBy, field.TypeString)
+	}
+	if tuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(task.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := tuo.mutation.TaskType(); ok {
 		_spec.SetField(task.FieldTaskType, field.TypeString, value)

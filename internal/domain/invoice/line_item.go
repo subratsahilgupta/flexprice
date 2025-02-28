@@ -28,6 +28,7 @@ type InvoiceLineItem struct {
 	PeriodStart      *time.Time      `json:"period_start,omitempty"`
 	PeriodEnd        *time.Time      `json:"period_end,omitempty"`
 	Metadata         types.Metadata  `json:"metadata,omitempty"`
+	EnvironmentID    string          `json:"environment_id"`
 	types.BaseModel
 }
 
@@ -55,6 +56,7 @@ func (i *InvoiceLineItem) FromEnt(e *ent.InvoiceLineItem) *InvoiceLineItem {
 		PeriodStart:      e.PeriodStart,
 		PeriodEnd:        e.PeriodEnd,
 		Metadata:         e.Metadata,
+		EnvironmentID:    e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

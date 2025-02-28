@@ -10,6 +10,7 @@ import (
 func ApplyBaseFilters[T any](ctx context.Context, query T, filter types.BaseFilter, opts BaseQueryOptions[T]) T {
 	query = opts.ApplyTenantFilter(ctx, query)
 	query = opts.ApplyStatusFilter(query, filter.GetStatus())
+	query = opts.ApplyEnvironmentFilter(ctx, query)
 	return query
 }
 

@@ -252,6 +252,9 @@ func (fu *FeatureUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if fu.mutation.UpdatedByCleared() {
 		_spec.ClearField(feature.FieldUpdatedBy, field.TypeString)
 	}
+	if fu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(feature.FieldEnvironmentID, field.TypeString)
+	}
 	if value, ok := fu.mutation.Name(); ok {
 		_spec.SetField(feature.FieldName, field.TypeString, value)
 	}
@@ -558,6 +561,9 @@ func (fuo *FeatureUpdateOne) sqlSave(ctx context.Context) (_node *Feature, err e
 	}
 	if fuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(feature.FieldUpdatedBy, field.TypeString)
+	}
+	if fuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(feature.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := fuo.mutation.Name(); ok {
 		_spec.SetField(feature.FieldName, field.TypeString, value)

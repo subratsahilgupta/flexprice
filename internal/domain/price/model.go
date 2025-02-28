@@ -77,6 +77,9 @@ type Price struct {
 	// Metadata is a jsonb field for additional information
 	Metadata JSONBMetadata `db:"metadata,jsonb" json:"metadata"` // JSONB field
 
+	// EnvironmentID is the environment identifier for the price
+	EnvironmentID string `db:"environment_id" json:"environment_id"`
+
 	types.BaseModel
 }
 
@@ -304,6 +307,7 @@ func FromEnt(e *ent.Price) *Price {
 		FilterValues:       JSONBFilters(e.FilterValues),
 		TransformQuantity:  JSONBTransformQuantity(e.TransformQuantity),
 		Metadata:           JSONBMetadata(e.Metadata),
+		EnvironmentID:      e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

@@ -39,6 +39,10 @@ func (r *secretRepository) Create(ctx context.Context, s *domainSecret.Secret) e
 		"provider", s.Provider,
 	)
 
+	if s.EnvironmentID == "" {
+		s.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	create := client.Secret.Create().
 		SetID(s.ID).
 		SetTenantID(s.TenantID).
@@ -47,6 +51,7 @@ func (r *secretRepository) Create(ctx context.Context, s *domainSecret.Secret) e
 		SetProvider(string(s.Provider)).
 		SetValue(s.Value).
 		SetDisplayID(s.DisplayID).
+		SetEnvironmentID(s.EnvironmentID).
 		SetPermissions(s.Permissions).
 		SetStatus(string(s.Status)).
 		SetCreatedAt(s.CreatedAt).
@@ -259,6 +264,13 @@ func (o SecretQueryOptions) ApplyStatusFilter(query SecretQuery, status string) 
 	return query
 }
 
+func (o SecretQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query SecretQuery) SecretQuery {
+	if types.GetEnvironmentID(ctx) != "" {
+		return query.Where(secret.EnvironmentID(types.GetEnvironmentID(ctx)))
+	}
+	return query
+}
+
 func (o SecretQueryOptions) ApplyTypeFilter(query SecretQuery, secretType string) SecretQuery {
 	if secretType != "" {
 		return query.Where(secret.Type(secretType))
@@ -313,7 +325,7 @@ func (o SecretQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o SecretQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.SecretFilter, query SecretQuery) SecretQuery {
+func (o SecretQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.SecretFilter, query SecretQuery) SecretQuery {
 	if f == nil {
 		return query
 	}

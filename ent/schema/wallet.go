@@ -19,6 +19,7 @@ type Wallet struct {
 func (Wallet) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
+		baseMixin.EnvironmentMixin{},
 	}
 }
 
@@ -117,7 +118,7 @@ func (Wallet) Edges() []ent.Edge {
 // Indexes of the Wallet.
 func (Wallet) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "customer_id", "status"),
-		index.Fields("tenant_id", "status", "wallet_status"),
+		index.Fields("tenant_id", "environment_id", "customer_id", "status"),
+		index.Fields("tenant_id", "environment_id", "status", "wallet_status"),
 	}
 }

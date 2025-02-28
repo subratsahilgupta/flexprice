@@ -37,6 +37,11 @@ func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement
 		"feature_id", e.FeatureID,
 	)
 
+	// Set environment ID from context if not already set
+	if e.EnvironmentID == "" {
+		e.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	result, err := client.Entitlement.Create().
 		SetID(e.ID).
 		SetPlanID(e.PlanID).
@@ -53,6 +58,7 @@ func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement
 		SetUpdatedAt(e.UpdatedAt).
 		SetCreatedBy(e.CreatedBy).
 		SetUpdatedBy(e.UpdatedBy).
+		SetEnvironmentID(e.EnvironmentID).
 		Save(ctx)
 
 	if err != nil {
@@ -209,14 +215,22 @@ func (r *entitlementRepository) Delete(ctx context.Context, id string) error {
 
 func (r *entitlementRepository) CreateBulk(ctx context.Context, entitlements []*domainEntitlement.Entitlement) ([]*domainEntitlement.Entitlement, error) {
 	if len(entitlements) == 0 {
-		return nil, nil
+		return []*domainEntitlement.Entitlement{}, nil
 	}
 
-	r.log.Debugw("creating entitlements in bulk", "count", len(entitlements))
-
+	client := r.client.Querier(ctx)
 	builders := make([]*ent.EntitlementCreate, len(entitlements))
+
+	// Get environment ID from context
+	environmentID := types.GetEnvironmentID(ctx)
+
 	for i, e := range entitlements {
-		builders[i] = r.client.Querier(ctx).Entitlement.Create().
+		// Set environment ID from context if not already set
+		if e.EnvironmentID == "" {
+			e.EnvironmentID = environmentID
+		}
+
+		builders[i] = client.Entitlement.Create().
 			SetID(e.ID).
 			SetPlanID(e.PlanID).
 			SetFeatureID(e.FeatureID).
@@ -231,10 +245,11 @@ func (r *entitlementRepository) CreateBulk(ctx context.Context, entitlements []*
 			SetCreatedAt(e.CreatedAt).
 			SetUpdatedAt(e.UpdatedAt).
 			SetCreatedBy(e.CreatedBy).
-			SetUpdatedBy(e.UpdatedBy)
+			SetUpdatedBy(e.UpdatedBy).
+			SetEnvironmentID(e.EnvironmentID)
 	}
 
-	results, err := r.client.Querier(ctx).Entitlement.CreateBulk(builders...).Save(ctx)
+	results, err := client.Entitlement.CreateBulk(builders...).Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create entitlements in bulk: %w", err)
 	}
@@ -276,6 +291,14 @@ func (o EntitlementQueryOptions) ApplyTenantFilter(ctx context.Context, query En
 	return query.Where(entitlement.TenantID(types.GetTenantID(ctx)))
 }
 
+func (o EntitlementQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query EntitlementQuery) EntitlementQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(entitlement.EnvironmentID(environmentID))
+	}
+	return query
+}
+
 func (o EntitlementQueryOptions) ApplyStatusFilter(query EntitlementQuery, status string) EntitlementQuery {
 	if status == "" {
 		return query.Where(entitlement.StatusNotIn(string(types.StatusDeleted)))
@@ -310,7 +333,7 @@ func (o EntitlementQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o EntitlementQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.EntitlementFilter, query EntitlementQuery) EntitlementQuery {
+func (o EntitlementQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.EntitlementFilter, query EntitlementQuery) EntitlementQuery {
 	if f == nil {
 		return query
 	}

@@ -15,15 +15,15 @@ import (
 
 // validateAPIKey validates the API key and returns tenant ID and user ID if valid
 // First checks the config, then the database
-func validateAPIKey(ctx context.Context, cfg *config.Configuration, secretService service.SecretService, apiKey string) (tenantID, userID string, valid bool) {
+func validateAPIKey(ctx context.Context, cfg *config.Configuration, secretService service.SecretService, apiKey string) (tenantID, userID, environmentID string, valid bool) {
 	if apiKey == "" {
-		return "", "", false
+		return "", "", "", false
 	}
 
 	// First check in config
 	tenantID, userID, valid = auth.ValidateAPIKey(cfg, apiKey)
 	if valid {
-		return tenantID, userID, true
+		return tenantID, userID, "", true
 	}
 
 	// If not found in config, check in database
@@ -31,21 +31,24 @@ func validateAPIKey(ctx context.Context, cfg *config.Configuration, secretServic
 		secretEntity, err := secretService.VerifyAPIKey(ctx, apiKey)
 		if err == nil && secretEntity != nil {
 			// Use the tenant ID from the secret and the creator as the user ID
-			return secretEntity.TenantID, secretEntity.CreatedBy, true
+			return secretEntity.TenantID, secretEntity.CreatedBy, secretEntity.EnvironmentID, true
 		}
 	}
 
-	return "", "", false
+	return "", "", "", false
 }
 
-// setContextValues sets the tenant ID and user ID in the context
-func setContextValues(c *gin.Context, tenantID, userID string) {
+// setContextValues sets the tenant ID and user ID and environment ID in the context
+func setContextValues(c *gin.Context, tenantID, userID, environmentID string) {
 	ctx := c.Request.Context()
 	ctx = context.WithValue(ctx, types.CtxTenantID, tenantID)
 	ctx = context.WithValue(ctx, types.CtxUserID, userID)
 
 	// Set additional headers for downstream handlers
-	environmentID := c.GetHeader(types.HeaderEnvironment)
+	if environmentID == "" {
+		environmentID = c.GetHeader(types.HeaderEnvironment)
+	}
+
 	if environmentID != "" {
 		ctx = context.WithValue(ctx, types.CtxEnvironmentID, environmentID)
 	}
@@ -62,7 +65,7 @@ func GuestAuthenticateMiddleware(c *gin.Context) {
 func APIKeyAuthMiddleware(cfg *config.Configuration, secretService service.SecretService, logger *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		apiKey := c.GetHeader(cfg.Auth.APIKey.Header)
-		tenantID, userID, valid := validateAPIKey(c.Request.Context(), cfg, secretService, apiKey)
+		tenantID, userID, environmentID, valid := validateAPIKey(c.Request.Context(), cfg, secretService, apiKey)
 		if !valid {
 			logger.Debugw("invalid api key")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid API key"})
@@ -70,7 +73,7 @@ func APIKeyAuthMiddleware(cfg *config.Configuration, secretService service.Secre
 			return
 		}
 
-		setContextValues(c, tenantID, userID)
+		setContextValues(c, tenantID, userID, environmentID)
 		c.Next()
 	}
 }
@@ -84,9 +87,9 @@ func AuthenticateMiddleware(cfg *config.Configuration, secretService service.Sec
 	return func(c *gin.Context) {
 		// First check for API key
 		apiKey := c.GetHeader(cfg.Auth.APIKey.Header)
-		tenantID, userID, valid := validateAPIKey(c.Request.Context(), cfg, secretService, apiKey)
+		tenantID, userID, environmentID, valid := validateAPIKey(c.Request.Context(), cfg, secretService, apiKey)
 		if valid {
-			setContextValues(c, tenantID, userID)
+			setContextValues(c, tenantID, userID, environmentID)
 			c.Next()
 			return
 		}
@@ -121,7 +124,7 @@ func AuthenticateMiddleware(cfg *config.Configuration, secretService service.Sec
 			return
 		}
 
-		setContextValues(c, claims.TenantID, claims.UserID)
+		setContextValues(c, claims.TenantID, claims.UserID, environmentID)
 		c.Next()
 	}
 }
