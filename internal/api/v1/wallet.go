@@ -117,6 +117,7 @@ func (h *WalletHandler) GetWalletByID(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
+// @Param id path string true "Wallet ID"
 // @Param filter query types.WalletTransactionFilter false "Filter"
 // @Success 200 {object} dto.ListWalletTransactionsResponse
 // @Failure 400 {object} ErrorResponse
@@ -124,8 +125,8 @@ func (h *WalletHandler) GetWalletByID(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /wallets/{id}/transactions [get]
 func (h *WalletHandler) GetWalletTransactions(c *gin.Context) {
-	walletID := c.Param("id")
-	if walletID == "" {
+	id := c.Param("id")
+	if id == "" {
 		NewErrorResponse(c, http.StatusBadRequest, "id is required", nil)
 		return
 	}
@@ -140,7 +141,7 @@ func (h *WalletHandler) GetWalletTransactions(c *gin.Context) {
 		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
 	}
 
-	transactions, err := h.walletService.GetWalletTransactions(c.Request.Context(), walletID, &filter)
+	transactions, err := h.walletService.GetWalletTransactions(c.Request.Context(), id, &filter)
 	if err != nil {
 		NewErrorResponse(c, http.StatusInternalServerError, "failed to get transactions", err)
 		return

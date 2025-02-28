@@ -192,7 +192,12 @@ definitions:
       invoice_status:
         $ref: '#/definitions/types.InvoiceStatus'
       invoice_type:
-        $ref: '#/definitions/types.InvoiceType'
+        allOf:
+        - $ref: '#/definitions/types.InvoiceType'
+        enum:
+        - SUBSCRIPTION
+        - ONE_OFF
+        - CREDIT
       line_items:
         items:
           $ref: '#/definitions/dto.CreateInvoiceLineItemRequest'
@@ -211,7 +216,6 @@ definitions:
     - amount_due
     - currency
     - customer_id
-    - invoice_type
     type: object
   dto.CreateMeterRequest:
     properties:
@@ -584,6 +588,9 @@ definitions:
       email:
         description: Email is the email of the customer
         type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier for the customer
+        type: string
       external_id:
         description: ExternalID is the external identifier for the customer
         type: string
@@ -612,6 +619,8 @@ definitions:
       created_at:
         type: string
       created_by:
+        type: string
+      environment_id:
         type: string
       feature:
         $ref: '#/definitions/dto.FeatureResponse'
@@ -682,6 +691,8 @@ definitions:
       created_by:
         type: string
       description:
+        type: string
+      environment_id:
         type: string
       id:
         type: string
@@ -1245,6 +1256,8 @@ definitions:
         items:
           $ref: '#/definitions/dto.EntitlementResponse'
         type: array
+      environment_id:
+        type: string
       id:
         type: string
       invoice_cadence:
@@ -1308,6 +1321,9 @@ definitions:
         description: |-
           DisplayAmount is the formatted amount with currency symbol
           For USD: $12.50
+        type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier for the price
         type: string
       filter_values:
         allOf:
@@ -1454,6 +1470,9 @@ definitions:
         type: string
       end_date:
         description: EndDate is the end date of the subscription
+        type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier for the subscription
         type: string
       id:
         description: ID is the unique identifier for the subscription
@@ -1891,6 +1910,8 @@ definitions:
         type: string
       description:
         type: string
+      environment_id:
+        type: string
       id:
         type: string
       metadata:
@@ -2080,6 +2101,9 @@ definitions:
           DisplayAmount is the formatted amount with currency symbol
           For USD: $12.50
         type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier for the price
+        type: string
       filter_values:
         allOf:
         - $ref: '#/definitions/price.JSONBFilters'
@@ -2167,6 +2191,8 @@ definitions:
       display_name:
         type: string
       end_date:
+        type: string
+      environment_id:
         type: string
       id:
         type: string
@@ -5735,6 +5761,11 @@ paths:
       - application/json
       description: Get transactions for a wallet with pagination
       parameters:
+      - description: Wallet ID
+        in: path
+        name: id
+        required: true
+        type: string
       - in: query
         name: credits_available_gt
         type: number
@@ -5749,6 +5780,9 @@ paths:
         type: string
       - in: query
         name: expiry_date_before
+        type: string
+      - in: query
+        name: id
         type: string
       - in: query
         maximum: 1000
@@ -5829,9 +5863,6 @@ paths:
         x-enum-varnames:
         - TransactionTypeCredit
         - TransactionTypeDebit
-      - in: query
-        name: wallet_id
-        type: string
       produces:
       - application/json
       responses:
