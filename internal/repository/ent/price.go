@@ -239,6 +239,12 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 
 	builders := make([]*ent.PriceCreate, len(prices))
 	for i, p := range prices {
+
+		// Set environment ID from context if not already set
+		if p.EnvironmentID == "" {
+			p.EnvironmentID = types.GetEnvironmentID(ctx)
+		}
+
 		builders[i] = r.client.Querier(ctx).Price.Create().
 			SetID(p.ID).
 			SetTenantID(p.TenantID).
@@ -259,6 +265,7 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 			SetLookupKey(p.LookupKey).
 			SetDescription(p.Description).
 			SetMetadata(map[string]string(p.Metadata)).
+			SetEnvironmentID(p.EnvironmentID).
 			SetStatus(string(p.Status)).
 			SetCreatedAt(p.CreatedAt).
 			SetUpdatedAt(p.UpdatedAt).
