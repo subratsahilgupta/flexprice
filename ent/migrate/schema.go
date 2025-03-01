@@ -232,7 +232,7 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[7], FeaturesColumns[8]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "lookup_key IS NOT NULL AND status = 'published'",
+					Where: "(lookup_key IS NOT NULL OR lookup_key != '') AND status = 'published'",
 				},
 			},
 			{

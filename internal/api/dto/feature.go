@@ -14,7 +14,7 @@ import (
 type CreateFeatureRequest struct {
 	Name         string            `json:"name" binding:"required"`
 	Description  string            `json:"description"`
-	LookupKey    string            `json:"lookup_key" binding:"required"`
+	LookupKey    string            `json:"lookup_key"`
 	Type         types.FeatureType `json:"type" binding:"required"`
 	MeterID      string            `json:"meter_id,omitempty"`
 	Metadata     types.Metadata    `json:"metadata,omitempty"`
@@ -25,10 +25,6 @@ type CreateFeatureRequest struct {
 func (r *CreateFeatureRequest) Validate() error {
 	if r.Name == "" {
 		return ierr.NewError("name is required").WithHintf("name is required").Mark(ierr.ErrValidation)
-	}
-
-	if r.LookupKey == "" {
-		return ierr.NewError("lookup_key is required").WithHintf("lookup_key is required").Mark(ierr.ErrValidation)
 	}
 
 	if err := r.Type.Validate(); err != nil {

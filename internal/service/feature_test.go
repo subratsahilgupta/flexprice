@@ -187,15 +187,6 @@ func (s *FeatureServiceSuite) TestCreateFeature() {
 			wantErr: true,
 		},
 		{
-			name: "error - missing lookup key",
-			req: dto.CreateFeatureRequest{
-				Name:        "Test Feature",
-				Description: "Test Description",
-				Type:        types.FeatureTypeBoolean,
-			},
-			wantErr: true,
-		},
-		{
 			name: "error - non-existent meter",
 			req: dto.CreateFeatureRequest{
 				Name:        "Test Feature",

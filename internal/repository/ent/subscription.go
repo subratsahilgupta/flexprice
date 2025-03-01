@@ -432,6 +432,11 @@ func (r *subscriptionRepository) CreateWithLineItems(ctx context.Context, sub *d
 		client := r.client.Querier(ctx)
 		bulk := make([]*ent.SubscriptionLineItemCreate, len(items))
 		for i, item := range items {
+			// Set environment ID from context if not already set
+			if item.EnvironmentID == "" {
+				item.EnvironmentID = types.GetEnvironmentID(ctx)
+			}
+
 			bulk[i] = client.SubscriptionLineItem.Create().
 				SetID(item.ID).
 				SetSubscriptionID(item.SubscriptionID).
@@ -450,6 +455,7 @@ func (r *subscriptionRepository) CreateWithLineItems(ctx context.Context, sub *d
 				SetNillableEndDate(types.ToNillableTime(item.EndDate)).
 				SetMetadata(item.Metadata).
 				SetTenantID(item.TenantID).
+				SetEnvironmentID(item.EnvironmentID).
 				SetStatus(string(item.Status)).
 				SetCreatedBy(item.CreatedBy).
 				SetUpdatedBy(item.UpdatedBy).

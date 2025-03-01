@@ -84,7 +84,7 @@ func (Feature) Indexes() []ent.Index {
 		index.Fields("tenant_id", "environment_id", "lookup_key").
 			Unique().
 			StorageKey("idx_feature_tenant_env_lookup_key_unique").
-			Annotations(entsql.IndexWhere("lookup_key IS NOT NULL AND status = 'published'")),
+			Annotations(entsql.IndexWhere("(lookup_key IS NOT NULL OR lookup_key != '') AND status = 'published'")),
 		index.Fields("tenant_id", "environment_id", "meter_id").
 			StorageKey("idx_feature_tenant_env_meter_id").
 			Annotations(entsql.IndexWhere("meter_id IS NOT NULL")),
