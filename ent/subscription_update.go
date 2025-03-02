@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/ent/subscriptionpause"
 )
 
 // SubscriptionUpdate is the builder for updating Subscription entities.
@@ -278,6 +279,40 @@ func (su *SubscriptionUpdate) ClearMetadata() *SubscriptionUpdate {
 	return su
 }
 
+// SetPauseStatus sets the "pause_status" field.
+func (su *SubscriptionUpdate) SetPauseStatus(s string) *SubscriptionUpdate {
+	su.mutation.SetPauseStatus(s)
+	return su
+}
+
+// SetNillablePauseStatus sets the "pause_status" field if the given value is not nil.
+func (su *SubscriptionUpdate) SetNillablePauseStatus(s *string) *SubscriptionUpdate {
+	if s != nil {
+		su.SetPauseStatus(*s)
+	}
+	return su
+}
+
+// SetActivePauseID sets the "active_pause_id" field.
+func (su *SubscriptionUpdate) SetActivePauseID(s string) *SubscriptionUpdate {
+	su.mutation.SetActivePauseID(s)
+	return su
+}
+
+// SetNillableActivePauseID sets the "active_pause_id" field if the given value is not nil.
+func (su *SubscriptionUpdate) SetNillableActivePauseID(s *string) *SubscriptionUpdate {
+	if s != nil {
+		su.SetActivePauseID(*s)
+	}
+	return su
+}
+
+// ClearActivePauseID clears the value of the "active_pause_id" field.
+func (su *SubscriptionUpdate) ClearActivePauseID() *SubscriptionUpdate {
+	su.mutation.ClearActivePauseID()
+	return su
+}
+
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by IDs.
 func (su *SubscriptionUpdate) AddLineItemIDs(ids ...string) *SubscriptionUpdate {
 	su.mutation.AddLineItemIDs(ids...)
@@ -291,6 +326,21 @@ func (su *SubscriptionUpdate) AddLineItems(s ...*SubscriptionLineItem) *Subscrip
 		ids[i] = s[i].ID
 	}
 	return su.AddLineItemIDs(ids...)
+}
+
+// AddPauseIDs adds the "pauses" edge to the SubscriptionPause entity by IDs.
+func (su *SubscriptionUpdate) AddPauseIDs(ids ...string) *SubscriptionUpdate {
+	su.mutation.AddPauseIDs(ids...)
+	return su
+}
+
+// AddPauses adds the "pauses" edges to the SubscriptionPause entity.
+func (su *SubscriptionUpdate) AddPauses(s ...*SubscriptionPause) *SubscriptionUpdate {
+	ids := make([]string, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return su.AddPauseIDs(ids...)
 }
 
 // Mutation returns the SubscriptionMutation object of the builder.
@@ -317,6 +367,27 @@ func (su *SubscriptionUpdate) RemoveLineItems(s ...*SubscriptionLineItem) *Subsc
 		ids[i] = s[i].ID
 	}
 	return su.RemoveLineItemIDs(ids...)
+}
+
+// ClearPauses clears all "pauses" edges to the SubscriptionPause entity.
+func (su *SubscriptionUpdate) ClearPauses() *SubscriptionUpdate {
+	su.mutation.ClearPauses()
+	return su
+}
+
+// RemovePauseIDs removes the "pauses" edge to SubscriptionPause entities by IDs.
+func (su *SubscriptionUpdate) RemovePauseIDs(ids ...string) *SubscriptionUpdate {
+	su.mutation.RemovePauseIDs(ids...)
+	return su
+}
+
+// RemovePauses removes "pauses" edges to SubscriptionPause entities.
+func (su *SubscriptionUpdate) RemovePauses(s ...*SubscriptionPause) *SubscriptionUpdate {
+	ids := make([]string, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return su.RemovePauseIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -442,6 +513,15 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if su.mutation.MetadataCleared() {
 		_spec.ClearField(subscription.FieldMetadata, field.TypeJSON)
 	}
+	if value, ok := su.mutation.PauseStatus(); ok {
+		_spec.SetField(subscription.FieldPauseStatus, field.TypeString, value)
+	}
+	if value, ok := su.mutation.ActivePauseID(); ok {
+		_spec.SetField(subscription.FieldActivePauseID, field.TypeString, value)
+	}
+	if su.mutation.ActivePauseIDCleared() {
+		_spec.ClearField(subscription.FieldActivePauseID, field.TypeString)
+	}
 	if su.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -480,6 +560,51 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionlineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.PausesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.PausesTable,
+			Columns: []string{subscription.PausesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedPausesIDs(); len(nodes) > 0 && !su.mutation.PausesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.PausesTable,
+			Columns: []string{subscription.PausesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.PausesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.PausesTable,
+			Columns: []string{subscription.PausesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
@@ -756,6 +881,40 @@ func (suo *SubscriptionUpdateOne) ClearMetadata() *SubscriptionUpdateOne {
 	return suo
 }
 
+// SetPauseStatus sets the "pause_status" field.
+func (suo *SubscriptionUpdateOne) SetPauseStatus(s string) *SubscriptionUpdateOne {
+	suo.mutation.SetPauseStatus(s)
+	return suo
+}
+
+// SetNillablePauseStatus sets the "pause_status" field if the given value is not nil.
+func (suo *SubscriptionUpdateOne) SetNillablePauseStatus(s *string) *SubscriptionUpdateOne {
+	if s != nil {
+		suo.SetPauseStatus(*s)
+	}
+	return suo
+}
+
+// SetActivePauseID sets the "active_pause_id" field.
+func (suo *SubscriptionUpdateOne) SetActivePauseID(s string) *SubscriptionUpdateOne {
+	suo.mutation.SetActivePauseID(s)
+	return suo
+}
+
+// SetNillableActivePauseID sets the "active_pause_id" field if the given value is not nil.
+func (suo *SubscriptionUpdateOne) SetNillableActivePauseID(s *string) *SubscriptionUpdateOne {
+	if s != nil {
+		suo.SetActivePauseID(*s)
+	}
+	return suo
+}
+
+// ClearActivePauseID clears the value of the "active_pause_id" field.
+func (suo *SubscriptionUpdateOne) ClearActivePauseID() *SubscriptionUpdateOne {
+	suo.mutation.ClearActivePauseID()
+	return suo
+}
+
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by IDs.
 func (suo *SubscriptionUpdateOne) AddLineItemIDs(ids ...string) *SubscriptionUpdateOne {
 	suo.mutation.AddLineItemIDs(ids...)
@@ -769,6 +928,21 @@ func (suo *SubscriptionUpdateOne) AddLineItems(s ...*SubscriptionLineItem) *Subs
 		ids[i] = s[i].ID
 	}
 	return suo.AddLineItemIDs(ids...)
+}
+
+// AddPauseIDs adds the "pauses" edge to the SubscriptionPause entity by IDs.
+func (suo *SubscriptionUpdateOne) AddPauseIDs(ids ...string) *SubscriptionUpdateOne {
+	suo.mutation.AddPauseIDs(ids...)
+	return suo
+}
+
+// AddPauses adds the "pauses" edges to the SubscriptionPause entity.
+func (suo *SubscriptionUpdateOne) AddPauses(s ...*SubscriptionPause) *SubscriptionUpdateOne {
+	ids := make([]string, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return suo.AddPauseIDs(ids...)
 }
 
 // Mutation returns the SubscriptionMutation object of the builder.
@@ -795,6 +969,27 @@ func (suo *SubscriptionUpdateOne) RemoveLineItems(s ...*SubscriptionLineItem) *S
 		ids[i] = s[i].ID
 	}
 	return suo.RemoveLineItemIDs(ids...)
+}
+
+// ClearPauses clears all "pauses" edges to the SubscriptionPause entity.
+func (suo *SubscriptionUpdateOne) ClearPauses() *SubscriptionUpdateOne {
+	suo.mutation.ClearPauses()
+	return suo
+}
+
+// RemovePauseIDs removes the "pauses" edge to SubscriptionPause entities by IDs.
+func (suo *SubscriptionUpdateOne) RemovePauseIDs(ids ...string) *SubscriptionUpdateOne {
+	suo.mutation.RemovePauseIDs(ids...)
+	return suo
+}
+
+// RemovePauses removes "pauses" edges to SubscriptionPause entities.
+func (suo *SubscriptionUpdateOne) RemovePauses(s ...*SubscriptionPause) *SubscriptionUpdateOne {
+	ids := make([]string, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return suo.RemovePauseIDs(ids...)
 }
 
 // Where appends a list predicates to the SubscriptionUpdate builder.
@@ -950,6 +1145,15 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 	if suo.mutation.MetadataCleared() {
 		_spec.ClearField(subscription.FieldMetadata, field.TypeJSON)
 	}
+	if value, ok := suo.mutation.PauseStatus(); ok {
+		_spec.SetField(subscription.FieldPauseStatus, field.TypeString, value)
+	}
+	if value, ok := suo.mutation.ActivePauseID(); ok {
+		_spec.SetField(subscription.FieldActivePauseID, field.TypeString, value)
+	}
+	if suo.mutation.ActivePauseIDCleared() {
+		_spec.ClearField(subscription.FieldActivePauseID, field.TypeString)
+	}
 	if suo.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -988,6 +1192,51 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionlineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.PausesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.PausesTable,
+			Columns: []string{subscription.PausesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedPausesIDs(); len(nodes) > 0 && !suo.mutation.PausesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.PausesTable,
+			Columns: []string{subscription.PausesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.PausesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.PausesTable,
+			Columns: []string{subscription.PausesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

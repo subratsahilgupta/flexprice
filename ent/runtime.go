@@ -23,6 +23,7 @@ import (
 	"github.com/flexprice/flexprice/ent/secret"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/ent/subscriptionpause"
 	"github.com/flexprice/flexprice/ent/task"
 	"github.com/flexprice/flexprice/ent/tenant"
 	"github.com/flexprice/flexprice/ent/user"
@@ -764,6 +765,10 @@ func init() {
 	subscriptionDescVersion := subscriptionFields[20].Descriptor()
 	// subscription.DefaultVersion holds the default value on creation for the version field.
 	subscription.DefaultVersion = subscriptionDescVersion.Default.(int)
+	// subscriptionDescPauseStatus is the schema descriptor for pause_status field.
+	subscriptionDescPauseStatus := subscriptionFields[22].Descriptor()
+	// subscription.DefaultPauseStatus holds the default value on creation for the pause_status field.
+	subscription.DefaultPauseStatus = subscriptionDescPauseStatus.Default.(string)
 	subscriptionlineitemMixin := schema.SubscriptionLineItem{}.Mixin()
 	subscriptionlineitemMixinFields0 := subscriptionlineitemMixin[0].Fields()
 	_ = subscriptionlineitemMixinFields0
@@ -817,6 +822,61 @@ func init() {
 	subscriptionlineitemDescBillingPeriod := subscriptionlineitemFields[12].Descriptor()
 	// subscriptionlineitem.BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
 	subscriptionlineitem.BillingPeriodValidator = subscriptionlineitemDescBillingPeriod.Validators[0].(func(string) error)
+	subscriptionpauseMixin := schema.SubscriptionPause{}.Mixin()
+	subscriptionpauseMixinFields0 := subscriptionpauseMixin[0].Fields()
+	_ = subscriptionpauseMixinFields0
+	subscriptionpauseMixinFields1 := subscriptionpauseMixin[1].Fields()
+	_ = subscriptionpauseMixinFields1
+	subscriptionpauseFields := schema.SubscriptionPause{}.Fields()
+	_ = subscriptionpauseFields
+	// subscriptionpauseDescTenantID is the schema descriptor for tenant_id field.
+	subscriptionpauseDescTenantID := subscriptionpauseMixinFields0[0].Descriptor()
+	// subscriptionpause.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	subscriptionpause.TenantIDValidator = subscriptionpauseDescTenantID.Validators[0].(func(string) error)
+	// subscriptionpauseDescStatus is the schema descriptor for status field.
+	subscriptionpauseDescStatus := subscriptionpauseMixinFields0[1].Descriptor()
+	// subscriptionpause.DefaultStatus holds the default value on creation for the status field.
+	subscriptionpause.DefaultStatus = subscriptionpauseDescStatus.Default.(string)
+	// subscriptionpauseDescCreatedAt is the schema descriptor for created_at field.
+	subscriptionpauseDescCreatedAt := subscriptionpauseMixinFields0[2].Descriptor()
+	// subscriptionpause.DefaultCreatedAt holds the default value on creation for the created_at field.
+	subscriptionpause.DefaultCreatedAt = subscriptionpauseDescCreatedAt.Default.(func() time.Time)
+	// subscriptionpauseDescUpdatedAt is the schema descriptor for updated_at field.
+	subscriptionpauseDescUpdatedAt := subscriptionpauseMixinFields0[3].Descriptor()
+	// subscriptionpause.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	subscriptionpause.DefaultUpdatedAt = subscriptionpauseDescUpdatedAt.Default.(func() time.Time)
+	// subscriptionpause.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	subscriptionpause.UpdateDefaultUpdatedAt = subscriptionpauseDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// subscriptionpauseDescEnvironmentID is the schema descriptor for environment_id field.
+	subscriptionpauseDescEnvironmentID := subscriptionpauseMixinFields1[0].Descriptor()
+	// subscriptionpause.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	subscriptionpause.DefaultEnvironmentID = subscriptionpauseDescEnvironmentID.Default.(string)
+	// subscriptionpauseDescSubscriptionID is the schema descriptor for subscription_id field.
+	subscriptionpauseDescSubscriptionID := subscriptionpauseFields[1].Descriptor()
+	// subscriptionpause.SubscriptionIDValidator is a validator for the "subscription_id" field. It is called by the builders before save.
+	subscriptionpause.SubscriptionIDValidator = subscriptionpauseDescSubscriptionID.Validators[0].(func(string) error)
+	// subscriptionpauseDescPauseStatus is the schema descriptor for pause_status field.
+	subscriptionpauseDescPauseStatus := subscriptionpauseFields[2].Descriptor()
+	// subscriptionpause.PauseStatusValidator is a validator for the "pause_status" field. It is called by the builders before save.
+	subscriptionpause.PauseStatusValidator = subscriptionpauseDescPauseStatus.Validators[0].(func(string) error)
+	// subscriptionpauseDescPauseMode is the schema descriptor for pause_mode field.
+	subscriptionpauseDescPauseMode := subscriptionpauseFields[3].Descriptor()
+	// subscriptionpause.DefaultPauseMode holds the default value on creation for the pause_mode field.
+	subscriptionpause.DefaultPauseMode = subscriptionpauseDescPauseMode.Default.(string)
+	// subscriptionpause.PauseModeValidator is a validator for the "pause_mode" field. It is called by the builders before save.
+	subscriptionpause.PauseModeValidator = subscriptionpauseDescPauseMode.Validators[0].(func(string) error)
+	// subscriptionpauseDescPauseStart is the schema descriptor for pause_start field.
+	subscriptionpauseDescPauseStart := subscriptionpauseFields[5].Descriptor()
+	// subscriptionpause.DefaultPauseStart holds the default value on creation for the pause_start field.
+	subscriptionpause.DefaultPauseStart = subscriptionpauseDescPauseStart.Default.(func() time.Time)
+	// subscriptionpauseDescOriginalPeriodStart is the schema descriptor for original_period_start field.
+	subscriptionpauseDescOriginalPeriodStart := subscriptionpauseFields[8].Descriptor()
+	// subscriptionpause.DefaultOriginalPeriodStart holds the default value on creation for the original_period_start field.
+	subscriptionpause.DefaultOriginalPeriodStart = subscriptionpauseDescOriginalPeriodStart.Default.(func() time.Time)
+	// subscriptionpauseDescOriginalPeriodEnd is the schema descriptor for original_period_end field.
+	subscriptionpauseDescOriginalPeriodEnd := subscriptionpauseFields[9].Descriptor()
+	// subscriptionpause.DefaultOriginalPeriodEnd holds the default value on creation for the original_period_end field.
+	subscriptionpause.DefaultOriginalPeriodEnd = subscriptionpauseDescOriginalPeriodEnd.Default.(func() time.Time)
 	taskMixin := schema.Task{}.Mixin()
 	taskMixinFields0 := taskMixin[0].Fields()
 	_ = taskMixinFields0

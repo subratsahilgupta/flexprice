@@ -70,8 +70,14 @@ const (
 	FieldVersion = "version"
 	// FieldMetadata holds the string denoting the metadata field in the database.
 	FieldMetadata = "metadata"
+	// FieldPauseStatus holds the string denoting the pause_status field in the database.
+	FieldPauseStatus = "pause_status"
+	// FieldActivePauseID holds the string denoting the active_pause_id field in the database.
+	FieldActivePauseID = "active_pause_id"
 	// EdgeLineItems holds the string denoting the line_items edge name in mutations.
 	EdgeLineItems = "line_items"
+	// EdgePauses holds the string denoting the pauses edge name in mutations.
+	EdgePauses = "pauses"
 	// Table holds the table name of the subscription in the database.
 	Table = "subscriptions"
 	// LineItemsTable is the table that holds the line_items relation/edge.
@@ -81,6 +87,13 @@ const (
 	LineItemsInverseTable = "subscription_line_items"
 	// LineItemsColumn is the table column denoting the line_items relation/edge.
 	LineItemsColumn = "subscription_id"
+	// PausesTable is the table that holds the pauses relation/edge.
+	PausesTable = "subscription_pauses"
+	// PausesInverseTable is the table name for the SubscriptionPause entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionpause" package.
+	PausesInverseTable = "subscription_pauses"
+	// PausesColumn is the table column denoting the pauses relation/edge.
+	PausesColumn = "subscription_id"
 )
 
 // Columns holds all SQL columns for subscription fields.
@@ -114,6 +127,8 @@ var Columns = []string{
 	FieldBillingPeriodCount,
 	FieldVersion,
 	FieldMetadata,
+	FieldPauseStatus,
+	FieldActivePauseID,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -167,6 +182,8 @@ var (
 	DefaultBillingPeriodCount int
 	// DefaultVersion holds the default value on creation for the "version" field.
 	DefaultVersion int
+	// DefaultPauseStatus holds the default value on creation for the "pause_status" field.
+	DefaultPauseStatus string
 )
 
 // OrderOption defines the ordering options for the Subscription queries.
@@ -312,6 +329,16 @@ func ByVersion(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVersion, opts...).ToFunc()
 }
 
+// ByPauseStatus orders the results by the pause_status field.
+func ByPauseStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPauseStatus, opts...).ToFunc()
+}
+
+// ByActivePauseID orders the results by the active_pause_id field.
+func ByActivePauseID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldActivePauseID, opts...).ToFunc()
+}
+
 // ByLineItemsCount orders the results by line_items count.
 func ByLineItemsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -325,10 +352,31 @@ func ByLineItems(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newLineItemsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByPausesCount orders the results by pauses count.
+func ByPausesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newPausesStep(), opts...)
+	}
+}
+
+// ByPauses orders the results by pauses terms.
+func ByPauses(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newPausesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newLineItemsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(LineItemsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, LineItemsTable, LineItemsColumn),
+	)
+}
+func newPausesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(PausesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, PausesTable, PausesColumn),
 	)
 }

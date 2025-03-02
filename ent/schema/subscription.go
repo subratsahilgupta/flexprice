@@ -104,6 +104,17 @@ func (Subscription) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "jsonb",
 			}),
+		field.String("pause_status").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Default(string(types.PauseStatusNone)),
+		field.String("active_pause_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Optional().
+			Nillable(),
 	}
 }
 
@@ -111,6 +122,7 @@ func (Subscription) Fields() []ent.Field {
 func (Subscription) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("line_items", SubscriptionLineItem.Type),
+		edge.To("pauses", SubscriptionPause.Type),
 	}
 }
 
@@ -123,5 +135,8 @@ func (Subscription) Indexes() []ent.Index {
 		index.Fields("tenant_id", "environment_id", "subscription_status", "status"),
 		// For billing period updates
 		index.Fields("tenant_id", "environment_id", "current_period_end", "subscription_status", "status"),
+		// For pause-related queries
+		index.Fields("tenant_id", "environment_id", "pause_status", "status"),
+		index.Fields("tenant_id", "environment_id", "active_pause_id", "status"),
 	}
 }

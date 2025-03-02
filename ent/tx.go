@@ -48,6 +48,8 @@ type Tx struct {
 	Subscription *SubscriptionClient
 	// SubscriptionLineItem is the client for interacting with the SubscriptionLineItem builders.
 	SubscriptionLineItem *SubscriptionLineItemClient
+	// SubscriptionPause is the client for interacting with the SubscriptionPause builders.
+	SubscriptionPause *SubscriptionPauseClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
 	// Tenant is the client for interacting with the Tenant builders.
@@ -206,6 +208,7 @@ func (tx *Tx) init() {
 	tx.Secret = NewSecretClient(tx.config)
 	tx.Subscription = NewSubscriptionClient(tx.config)
 	tx.SubscriptionLineItem = NewSubscriptionLineItemClient(tx.config)
+	tx.SubscriptionPause = NewSubscriptionPauseClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
 	tx.Tenant = NewTenantClient(tx.config)
 	tx.User = NewUserClient(tx.config)

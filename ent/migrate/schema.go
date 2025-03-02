@@ -737,6 +737,8 @@ var (
 		{Name: "billing_period_count", Type: field.TypeInt, Default: 1},
 		{Name: "version", Type: field.TypeInt, Default: 1},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "pause_status", Type: field.TypeString, Default: "none", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "active_pause_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// SubscriptionsTable holds the schema information for the "subscriptions" table.
 	SubscriptionsTable = &schema.Table{
@@ -763,6 +765,16 @@ var (
 				Name:    "subscription_tenant_id_environment_id_current_period_end_subscription_status_status",
 				Unique:  false,
 				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[17], SubscriptionsColumns[11], SubscriptionsColumns[2]},
+			},
+			{
+				Name:    "subscription_tenant_id_environment_id_pause_status_status",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[29], SubscriptionsColumns[2]},
+			},
+			{
+				Name:    "subscription_tenant_id_environment_id_active_pause_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[30], SubscriptionsColumns[2]},
 			},
 		},
 	}
@@ -835,6 +847,59 @@ var (
 				Name:    "subscriptionlineitem_start_date_end_date",
 				Unique:  false,
 				Columns: []*schema.Column{SubscriptionLineItemsColumns[19], SubscriptionLineItemsColumns[20]},
+			},
+		},
+	}
+	// SubscriptionPausesColumns holds the columns for the "subscription_pauses" table.
+	SubscriptionPausesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "pause_status", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "pause_mode", Type: field.TypeString, Default: "scheduled", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "resume_mode", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "pause_start", Type: field.TypeTime},
+		{Name: "pause_end", Type: field.TypeTime, Nullable: true},
+		{Name: "resumed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "original_period_start", Type: field.TypeTime},
+		{Name: "original_period_end", Type: field.TypeTime},
+		{Name: "reason", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "subscription_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+	}
+	// SubscriptionPausesTable holds the schema information for the "subscription_pauses" table.
+	SubscriptionPausesTable = &schema.Table{
+		Name:       "subscription_pauses",
+		Columns:    SubscriptionPausesColumns,
+		PrimaryKey: []*schema.Column{SubscriptionPausesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "subscription_pauses_subscriptions_pauses",
+				Columns:    []*schema.Column{SubscriptionPausesColumns[18]},
+				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionpause_tenant_id_environment_id_subscription_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPausesColumns[1], SubscriptionPausesColumns[7], SubscriptionPausesColumns[18], SubscriptionPausesColumns[2]},
+			},
+			{
+				Name:    "subscriptionpause_tenant_id_environment_id_pause_start_status",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPausesColumns[1], SubscriptionPausesColumns[7], SubscriptionPausesColumns[11], SubscriptionPausesColumns[2]},
+			},
+			{
+				Name:    "subscriptionpause_tenant_id_environment_id_pause_end_status",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPausesColumns[1], SubscriptionPausesColumns[7], SubscriptionPausesColumns[12], SubscriptionPausesColumns[2]},
 			},
 		},
 	}
@@ -1063,6 +1128,7 @@ var (
 		SecretsTable,
 		SubscriptionsTable,
 		SubscriptionLineItemsTable,
+		SubscriptionPausesTable,
 		TasksTable,
 		TenantsTable,
 		UsersTable,
@@ -1076,4 +1142,5 @@ func init() {
 	InvoiceLineItemsTable.ForeignKeys[0].RefTable = InvoicesTable
 	PaymentAttemptsTable.ForeignKeys[0].RefTable = PaymentsTable
 	SubscriptionLineItemsTable.ForeignKeys[0].RefTable = SubscriptionsTable
+	SubscriptionPausesTable.ForeignKeys[0].RefTable = SubscriptionsTable
 }

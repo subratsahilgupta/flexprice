@@ -200,6 +200,16 @@ func Version(v int) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldVersion, v))
 }
 
+// PauseStatus applies equality check predicate on the "pause_status" field. It's identical to PauseStatusEQ.
+func PauseStatus(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldPauseStatus, v))
+}
+
+// ActivePauseID applies equality check predicate on the "active_pause_id" field. It's identical to ActivePauseIDEQ.
+func ActivePauseID(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldActivePauseID, v))
+}
+
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldTenantID, v))
@@ -1675,6 +1685,146 @@ func MetadataNotNil() predicate.Subscription {
 	return predicate.Subscription(sql.FieldNotNull(FieldMetadata))
 }
 
+// PauseStatusEQ applies the EQ predicate on the "pause_status" field.
+func PauseStatusEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldPauseStatus, v))
+}
+
+// PauseStatusNEQ applies the NEQ predicate on the "pause_status" field.
+func PauseStatusNEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldPauseStatus, v))
+}
+
+// PauseStatusIn applies the In predicate on the "pause_status" field.
+func PauseStatusIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldPauseStatus, vs...))
+}
+
+// PauseStatusNotIn applies the NotIn predicate on the "pause_status" field.
+func PauseStatusNotIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldPauseStatus, vs...))
+}
+
+// PauseStatusGT applies the GT predicate on the "pause_status" field.
+func PauseStatusGT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGT(FieldPauseStatus, v))
+}
+
+// PauseStatusGTE applies the GTE predicate on the "pause_status" field.
+func PauseStatusGTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGTE(FieldPauseStatus, v))
+}
+
+// PauseStatusLT applies the LT predicate on the "pause_status" field.
+func PauseStatusLT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLT(FieldPauseStatus, v))
+}
+
+// PauseStatusLTE applies the LTE predicate on the "pause_status" field.
+func PauseStatusLTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLTE(FieldPauseStatus, v))
+}
+
+// PauseStatusContains applies the Contains predicate on the "pause_status" field.
+func PauseStatusContains(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContains(FieldPauseStatus, v))
+}
+
+// PauseStatusHasPrefix applies the HasPrefix predicate on the "pause_status" field.
+func PauseStatusHasPrefix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasPrefix(FieldPauseStatus, v))
+}
+
+// PauseStatusHasSuffix applies the HasSuffix predicate on the "pause_status" field.
+func PauseStatusHasSuffix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasSuffix(FieldPauseStatus, v))
+}
+
+// PauseStatusEqualFold applies the EqualFold predicate on the "pause_status" field.
+func PauseStatusEqualFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEqualFold(FieldPauseStatus, v))
+}
+
+// PauseStatusContainsFold applies the ContainsFold predicate on the "pause_status" field.
+func PauseStatusContainsFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContainsFold(FieldPauseStatus, v))
+}
+
+// ActivePauseIDEQ applies the EQ predicate on the "active_pause_id" field.
+func ActivePauseIDEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldActivePauseID, v))
+}
+
+// ActivePauseIDNEQ applies the NEQ predicate on the "active_pause_id" field.
+func ActivePauseIDNEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldActivePauseID, v))
+}
+
+// ActivePauseIDIn applies the In predicate on the "active_pause_id" field.
+func ActivePauseIDIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldActivePauseID, vs...))
+}
+
+// ActivePauseIDNotIn applies the NotIn predicate on the "active_pause_id" field.
+func ActivePauseIDNotIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldActivePauseID, vs...))
+}
+
+// ActivePauseIDGT applies the GT predicate on the "active_pause_id" field.
+func ActivePauseIDGT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGT(FieldActivePauseID, v))
+}
+
+// ActivePauseIDGTE applies the GTE predicate on the "active_pause_id" field.
+func ActivePauseIDGTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGTE(FieldActivePauseID, v))
+}
+
+// ActivePauseIDLT applies the LT predicate on the "active_pause_id" field.
+func ActivePauseIDLT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLT(FieldActivePauseID, v))
+}
+
+// ActivePauseIDLTE applies the LTE predicate on the "active_pause_id" field.
+func ActivePauseIDLTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLTE(FieldActivePauseID, v))
+}
+
+// ActivePauseIDContains applies the Contains predicate on the "active_pause_id" field.
+func ActivePauseIDContains(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContains(FieldActivePauseID, v))
+}
+
+// ActivePauseIDHasPrefix applies the HasPrefix predicate on the "active_pause_id" field.
+func ActivePauseIDHasPrefix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasPrefix(FieldActivePauseID, v))
+}
+
+// ActivePauseIDHasSuffix applies the HasSuffix predicate on the "active_pause_id" field.
+func ActivePauseIDHasSuffix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasSuffix(FieldActivePauseID, v))
+}
+
+// ActivePauseIDIsNil applies the IsNil predicate on the "active_pause_id" field.
+func ActivePauseIDIsNil() predicate.Subscription {
+	return predicate.Subscription(sql.FieldIsNull(FieldActivePauseID))
+}
+
+// ActivePauseIDNotNil applies the NotNil predicate on the "active_pause_id" field.
+func ActivePauseIDNotNil() predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotNull(FieldActivePauseID))
+}
+
+// ActivePauseIDEqualFold applies the EqualFold predicate on the "active_pause_id" field.
+func ActivePauseIDEqualFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEqualFold(FieldActivePauseID, v))
+}
+
+// ActivePauseIDContainsFold applies the ContainsFold predicate on the "active_pause_id" field.
+func ActivePauseIDContainsFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContainsFold(FieldActivePauseID, v))
+}
+
 // HasLineItems applies the HasEdge predicate on the "line_items" edge.
 func HasLineItems() predicate.Subscription {
 	return predicate.Subscription(func(s *sql.Selector) {
@@ -1690,6 +1840,29 @@ func HasLineItems() predicate.Subscription {
 func HasLineItemsWith(preds ...predicate.SubscriptionLineItem) predicate.Subscription {
 	return predicate.Subscription(func(s *sql.Selector) {
 		step := newLineItemsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasPauses applies the HasEdge predicate on the "pauses" edge.
+func HasPauses() predicate.Subscription {
+	return predicate.Subscription(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, PausesTable, PausesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasPausesWith applies the HasEdge predicate on the "pauses" edge with a given conditions (other predicates).
+func HasPausesWith(preds ...predicate.SubscriptionPause) predicate.Subscription {
+	return predicate.Subscription(func(s *sql.Selector) {
+		step := newPausesStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

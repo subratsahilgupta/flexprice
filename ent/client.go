@@ -32,6 +32,7 @@ import (
 	"github.com/flexprice/flexprice/ent/secret"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/ent/subscriptionpause"
 	"github.com/flexprice/flexprice/ent/task"
 	"github.com/flexprice/flexprice/ent/tenant"
 	"github.com/flexprice/flexprice/ent/user"
@@ -80,6 +81,8 @@ type Client struct {
 	Subscription *SubscriptionClient
 	// SubscriptionLineItem is the client for interacting with the SubscriptionLineItem builders.
 	SubscriptionLineItem *SubscriptionLineItemClient
+	// SubscriptionPause is the client for interacting with the SubscriptionPause builders.
+	SubscriptionPause *SubscriptionPauseClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
 	// Tenant is the client for interacting with the Tenant builders.
@@ -118,6 +121,7 @@ func (c *Client) init() {
 	c.Secret = NewSecretClient(c.config)
 	c.Subscription = NewSubscriptionClient(c.config)
 	c.SubscriptionLineItem = NewSubscriptionLineItemClient(c.config)
+	c.SubscriptionPause = NewSubscriptionPauseClient(c.config)
 	c.Task = NewTaskClient(c.config)
 	c.Tenant = NewTenantClient(c.config)
 	c.User = NewUserClient(c.config)
@@ -232,6 +236,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Secret:               NewSecretClient(cfg),
 		Subscription:         NewSubscriptionClient(cfg),
 		SubscriptionLineItem: NewSubscriptionLineItemClient(cfg),
+		SubscriptionPause:    NewSubscriptionPauseClient(cfg),
 		Task:                 NewTaskClient(cfg),
 		Tenant:               NewTenantClient(cfg),
 		User:                 NewUserClient(cfg),
@@ -273,6 +278,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Secret:               NewSecretClient(cfg),
 		Subscription:         NewSubscriptionClient(cfg),
 		SubscriptionLineItem: NewSubscriptionLineItemClient(cfg),
+		SubscriptionPause:    NewSubscriptionPauseClient(cfg),
 		Task:                 NewTaskClient(cfg),
 		Tenant:               NewTenantClient(cfg),
 		User:                 NewUserClient(cfg),
@@ -310,8 +316,8 @@ func (c *Client) Use(hooks ...Hook) {
 		c.Auth, c.BillingSequence, c.Customer, c.Entitlement, c.Environment, c.Feature,
 		c.Invoice, c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment,
 		c.PaymentAttempt, c.Plan, c.Price, c.Secret, c.Subscription,
-		c.SubscriptionLineItem, c.Task, c.Tenant, c.User, c.Wallet,
-		c.WalletTransaction,
+		c.SubscriptionLineItem, c.SubscriptionPause, c.Task, c.Tenant, c.User,
+		c.Wallet, c.WalletTransaction,
 	} {
 		n.Use(hooks...)
 	}
@@ -324,8 +330,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.Auth, c.BillingSequence, c.Customer, c.Entitlement, c.Environment, c.Feature,
 		c.Invoice, c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment,
 		c.PaymentAttempt, c.Plan, c.Price, c.Secret, c.Subscription,
-		c.SubscriptionLineItem, c.Task, c.Tenant, c.User, c.Wallet,
-		c.WalletTransaction,
+		c.SubscriptionLineItem, c.SubscriptionPause, c.Task, c.Tenant, c.User,
+		c.Wallet, c.WalletTransaction,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -368,6 +374,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Subscription.mutate(ctx, m)
 	case *SubscriptionLineItemMutation:
 		return c.SubscriptionLineItem.mutate(ctx, m)
+	case *SubscriptionPauseMutation:
+		return c.SubscriptionPause.mutate(ctx, m)
 	case *TaskMutation:
 		return c.Task.mutate(ctx, m)
 	case *TenantMutation:
@@ -2598,6 +2606,22 @@ func (c *SubscriptionClient) QueryLineItems(s *Subscription) *SubscriptionLineIt
 	return query
 }
 
+// QueryPauses queries the pauses edge of a Subscription.
+func (c *SubscriptionClient) QueryPauses(s *Subscription) *SubscriptionPauseQuery {
+	query := (&SubscriptionPauseClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := s.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(subscription.Table, subscription.FieldID, id),
+			sqlgraph.To(subscriptionpause.Table, subscriptionpause.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, subscription.PausesTable, subscription.PausesColumn),
+		)
+		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *SubscriptionClient) Hooks() []Hook {
 	return c.hooks.Subscription
@@ -2769,6 +2793,155 @@ func (c *SubscriptionLineItemClient) mutate(ctx context.Context, m *Subscription
 		return (&SubscriptionLineItemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown SubscriptionLineItem mutation op: %q", m.Op())
+	}
+}
+
+// SubscriptionPauseClient is a client for the SubscriptionPause schema.
+type SubscriptionPauseClient struct {
+	config
+}
+
+// NewSubscriptionPauseClient returns a client for the SubscriptionPause from the given config.
+func NewSubscriptionPauseClient(c config) *SubscriptionPauseClient {
+	return &SubscriptionPauseClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `subscriptionpause.Hooks(f(g(h())))`.
+func (c *SubscriptionPauseClient) Use(hooks ...Hook) {
+	c.hooks.SubscriptionPause = append(c.hooks.SubscriptionPause, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `subscriptionpause.Intercept(f(g(h())))`.
+func (c *SubscriptionPauseClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SubscriptionPause = append(c.inters.SubscriptionPause, interceptors...)
+}
+
+// Create returns a builder for creating a SubscriptionPause entity.
+func (c *SubscriptionPauseClient) Create() *SubscriptionPauseCreate {
+	mutation := newSubscriptionPauseMutation(c.config, OpCreate)
+	return &SubscriptionPauseCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SubscriptionPause entities.
+func (c *SubscriptionPauseClient) CreateBulk(builders ...*SubscriptionPauseCreate) *SubscriptionPauseCreateBulk {
+	return &SubscriptionPauseCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SubscriptionPauseClient) MapCreateBulk(slice any, setFunc func(*SubscriptionPauseCreate, int)) *SubscriptionPauseCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SubscriptionPauseCreateBulk{err: fmt.Errorf("calling to SubscriptionPauseClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SubscriptionPauseCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SubscriptionPauseCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SubscriptionPause.
+func (c *SubscriptionPauseClient) Update() *SubscriptionPauseUpdate {
+	mutation := newSubscriptionPauseMutation(c.config, OpUpdate)
+	return &SubscriptionPauseUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SubscriptionPauseClient) UpdateOne(sp *SubscriptionPause) *SubscriptionPauseUpdateOne {
+	mutation := newSubscriptionPauseMutation(c.config, OpUpdateOne, withSubscriptionPause(sp))
+	return &SubscriptionPauseUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SubscriptionPauseClient) UpdateOneID(id string) *SubscriptionPauseUpdateOne {
+	mutation := newSubscriptionPauseMutation(c.config, OpUpdateOne, withSubscriptionPauseID(id))
+	return &SubscriptionPauseUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SubscriptionPause.
+func (c *SubscriptionPauseClient) Delete() *SubscriptionPauseDelete {
+	mutation := newSubscriptionPauseMutation(c.config, OpDelete)
+	return &SubscriptionPauseDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SubscriptionPauseClient) DeleteOne(sp *SubscriptionPause) *SubscriptionPauseDeleteOne {
+	return c.DeleteOneID(sp.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SubscriptionPauseClient) DeleteOneID(id string) *SubscriptionPauseDeleteOne {
+	builder := c.Delete().Where(subscriptionpause.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SubscriptionPauseDeleteOne{builder}
+}
+
+// Query returns a query builder for SubscriptionPause.
+func (c *SubscriptionPauseClient) Query() *SubscriptionPauseQuery {
+	return &SubscriptionPauseQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSubscriptionPause},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SubscriptionPause entity by its id.
+func (c *SubscriptionPauseClient) Get(ctx context.Context, id string) (*SubscriptionPause, error) {
+	return c.Query().Where(subscriptionpause.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SubscriptionPauseClient) GetX(ctx context.Context, id string) *SubscriptionPause {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySubscription queries the subscription edge of a SubscriptionPause.
+func (c *SubscriptionPauseClient) QuerySubscription(sp *SubscriptionPause) *SubscriptionQuery {
+	query := (&SubscriptionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := sp.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(subscriptionpause.Table, subscriptionpause.FieldID, id),
+			sqlgraph.To(subscription.Table, subscription.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, subscriptionpause.SubscriptionTable, subscriptionpause.SubscriptionColumn),
+		)
+		fromV = sqlgraph.Neighbors(sp.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SubscriptionPauseClient) Hooks() []Hook {
+	return c.hooks.SubscriptionPause
+}
+
+// Interceptors returns the client interceptors.
+func (c *SubscriptionPauseClient) Interceptors() []Interceptor {
+	return c.inters.SubscriptionPause
+}
+
+func (c *SubscriptionPauseClient) mutate(ctx context.Context, m *SubscriptionPauseMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SubscriptionPauseCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SubscriptionPauseUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SubscriptionPauseUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SubscriptionPauseDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SubscriptionPause mutation op: %q", m.Op())
 	}
 }
 
@@ -3442,14 +3615,14 @@ type (
 	hooks struct {
 		Auth, BillingSequence, Customer, Entitlement, Environment, Feature, Invoice,
 		InvoiceLineItem, InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price,
-		Secret, Subscription, SubscriptionLineItem, Task, Tenant, User, Wallet,
-		WalletTransaction []ent.Hook
+		Secret, Subscription, SubscriptionLineItem, SubscriptionPause, Task, Tenant,
+		User, Wallet, WalletTransaction []ent.Hook
 	}
 	inters struct {
 		Auth, BillingSequence, Customer, Entitlement, Environment, Feature, Invoice,
 		InvoiceLineItem, InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price,
-		Secret, Subscription, SubscriptionLineItem, Task, Tenant, User, Wallet,
-		WalletTransaction []ent.Interceptor
+		Secret, Subscription, SubscriptionLineItem, SubscriptionPause, Task, Tenant,
+		User, Wallet, WalletTransaction []ent.Interceptor
 	}
 )
 

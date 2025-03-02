@@ -74,6 +74,10 @@ type Subscription struct {
 	Version int `json:"version,omitempty"`
 	// Metadata holds the value of the "metadata" field.
 	Metadata map[string]string `json:"metadata,omitempty"`
+	// PauseStatus holds the value of the "pause_status" field.
+	PauseStatus string `json:"pause_status,omitempty"`
+	// ActivePauseID holds the value of the "active_pause_id" field.
+	ActivePauseID *string `json:"active_pause_id,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the SubscriptionQuery when eager-loading is set.
 	Edges        SubscriptionEdges `json:"edges"`
@@ -84,9 +88,11 @@ type Subscription struct {
 type SubscriptionEdges struct {
 	// LineItems holds the value of the line_items edge.
 	LineItems []*SubscriptionLineItem `json:"line_items,omitempty"`
+	// Pauses holds the value of the pauses edge.
+	Pauses []*SubscriptionPause `json:"pauses,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // LineItemsOrErr returns the LineItems value or an error if the edge
@@ -96,6 +102,15 @@ func (e SubscriptionEdges) LineItemsOrErr() ([]*SubscriptionLineItem, error) {
 		return e.LineItems, nil
 	}
 	return nil, &NotLoadedError{edge: "line_items"}
+}
+
+// PausesOrErr returns the Pauses value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionEdges) PausesOrErr() ([]*SubscriptionPause, error) {
+	if e.loadedTypes[1] {
+		return e.Pauses, nil
+	}
+	return nil, &NotLoadedError{edge: "pauses"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -109,7 +124,7 @@ func (*Subscription) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case subscription.FieldBillingPeriodCount, subscription.FieldVersion:
 			values[i] = new(sql.NullInt64)
-		case subscription.FieldID, subscription.FieldTenantID, subscription.FieldStatus, subscription.FieldCreatedBy, subscription.FieldUpdatedBy, subscription.FieldEnvironmentID, subscription.FieldLookupKey, subscription.FieldCustomerID, subscription.FieldPlanID, subscription.FieldSubscriptionStatus, subscription.FieldCurrency, subscription.FieldInvoiceCadence, subscription.FieldBillingCadence, subscription.FieldBillingPeriod:
+		case subscription.FieldID, subscription.FieldTenantID, subscription.FieldStatus, subscription.FieldCreatedBy, subscription.FieldUpdatedBy, subscription.FieldEnvironmentID, subscription.FieldLookupKey, subscription.FieldCustomerID, subscription.FieldPlanID, subscription.FieldSubscriptionStatus, subscription.FieldCurrency, subscription.FieldInvoiceCadence, subscription.FieldBillingCadence, subscription.FieldBillingPeriod, subscription.FieldPauseStatus, subscription.FieldActivePauseID:
 			values[i] = new(sql.NullString)
 		case subscription.FieldCreatedAt, subscription.FieldUpdatedAt, subscription.FieldBillingAnchor, subscription.FieldStartDate, subscription.FieldEndDate, subscription.FieldCurrentPeriodStart, subscription.FieldCurrentPeriodEnd, subscription.FieldCancelledAt, subscription.FieldCancelAt, subscription.FieldTrialStart, subscription.FieldTrialEnd:
 			values[i] = new(sql.NullTime)
@@ -309,6 +324,19 @@ func (s *Subscription) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field metadata: %w", err)
 				}
 			}
+		case subscription.FieldPauseStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field pause_status", values[i])
+			} else if value.Valid {
+				s.PauseStatus = value.String
+			}
+		case subscription.FieldActivePauseID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field active_pause_id", values[i])
+			} else if value.Valid {
+				s.ActivePauseID = new(string)
+				*s.ActivePauseID = value.String
+			}
 		default:
 			s.selectValues.Set(columns[i], values[i])
 		}
@@ -325,6 +353,11 @@ func (s *Subscription) Value(name string) (ent.Value, error) {
 // QueryLineItems queries the "line_items" edge of the Subscription entity.
 func (s *Subscription) QueryLineItems() *SubscriptionLineItemQuery {
 	return NewSubscriptionClient(s.config).QueryLineItems(s)
+}
+
+// QueryPauses queries the "pauses" edge of the Subscription entity.
+func (s *Subscription) QueryPauses() *SubscriptionPauseQuery {
+	return NewSubscriptionClient(s.config).QueryPauses(s)
 }
 
 // Update returns a builder for updating this Subscription.
@@ -443,6 +476,14 @@ func (s *Subscription) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("metadata=")
 	builder.WriteString(fmt.Sprintf("%v", s.Metadata))
+	builder.WriteString(", ")
+	builder.WriteString("pause_status=")
+	builder.WriteString(s.PauseStatus)
+	builder.WriteString(", ")
+	if v := s.ActivePauseID; v != nil {
+		builder.WriteString("active_pause_id=")
+		builder.WriteString(*v)
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }
