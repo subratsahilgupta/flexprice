@@ -1,9 +1,9 @@
 package types
 
 import (
-	"fmt"
 	"time"
 
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
 )
 
@@ -39,8 +39,60 @@ func (s SubscriptionStatus) Validate() error {
 		SubscriptionStatusUnpaid,
 	}
 	if !lo.Contains(allowed, s) {
-		return fmt.Errorf("invalid subscription status: %s", s)
+		return ierr.NewError("invalid subscription status").
+			WithHint("Invalid subscription status").
+			WithReportableDetails(map[string]any{
+				"status":         s,
+				"allowed_status": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
+	return nil
+}
+
+// PauseStatus represents the pause state of a subscription
+type PauseStatus string
+
+const (
+	// PauseStatusNone indicates the subscription is not paused
+	PauseStatusNone PauseStatus = "none"
+
+	// PauseStatusActive indicates the subscription is currently paused
+	PauseStatusActive PauseStatus = "active"
+
+	// PauseStatusScheduled indicates the subscription is scheduled to be paused
+	PauseStatusScheduled PauseStatus = "scheduled"
+
+	// PauseStatusCompleted indicates the pause has been completed (subscription resumed)
+	PauseStatusCompleted PauseStatus = "completed"
+
+	// PauseStatusCancelled indicates the pause was cancelled
+	PauseStatusCancelled PauseStatus = "cancelled"
+)
+
+func (s PauseStatus) String() string {
+	return string(s)
+}
+
+func (s PauseStatus) Validate() error {
+	allowed := []PauseStatus{
+		PauseStatusNone,
+		PauseStatusActive,
+		PauseStatusScheduled,
+		PauseStatusCompleted,
+		PauseStatusCancelled,
+	}
+
+	if !lo.Contains(allowed, s) {
+		return ierr.NewError("invalid pause status").
+			WithHint("Invalid pause status").
+			WithReportableDetails(map[string]any{
+				"status":         s,
+				"allowed_status": allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	return nil
 }
 

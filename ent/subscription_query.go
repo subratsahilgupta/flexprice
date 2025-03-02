@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/ent/subscriptionpause"
 )
 
 // SubscriptionQuery is the builder for querying Subscription entities.
@@ -25,6 +26,7 @@ type SubscriptionQuery struct {
 	inters        []Interceptor
 	predicates    []predicate.Subscription
 	withLineItems *SubscriptionLineItemQuery
+	withPauses    *SubscriptionPauseQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -76,6 +78,28 @@ func (sq *SubscriptionQuery) QueryLineItems() *SubscriptionLineItemQuery {
 			sqlgraph.From(subscription.Table, subscription.FieldID, selector),
 			sqlgraph.To(subscriptionlineitem.Table, subscriptionlineitem.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, subscription.LineItemsTable, subscription.LineItemsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryPauses chains the current query on the "pauses" edge.
+func (sq *SubscriptionQuery) QueryPauses() *SubscriptionPauseQuery {
+	query := (&SubscriptionPauseClient{config: sq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := sq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := sq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(subscription.Table, subscription.FieldID, selector),
+			sqlgraph.To(subscriptionpause.Table, subscriptionpause.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, subscription.PausesTable, subscription.PausesColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(sq.driver.Dialect(), step)
 		return fromU, nil
@@ -276,6 +300,7 @@ func (sq *SubscriptionQuery) Clone() *SubscriptionQuery {
 		inters:        append([]Interceptor{}, sq.inters...),
 		predicates:    append([]predicate.Subscription{}, sq.predicates...),
 		withLineItems: sq.withLineItems.Clone(),
+		withPauses:    sq.withPauses.Clone(),
 		// clone intermediate query.
 		sql:  sq.sql.Clone(),
 		path: sq.path,
@@ -290,6 +315,17 @@ func (sq *SubscriptionQuery) WithLineItems(opts ...func(*SubscriptionLineItemQue
 		opt(query)
 	}
 	sq.withLineItems = query
+	return sq
+}
+
+// WithPauses tells the query-builder to eager-load the nodes that are connected to
+// the "pauses" edge. The optional arguments are used to configure the query builder of the edge.
+func (sq *SubscriptionQuery) WithPauses(opts ...func(*SubscriptionPauseQuery)) *SubscriptionQuery {
+	query := (&SubscriptionPauseClient{config: sq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	sq.withPauses = query
 	return sq
 }
 
@@ -371,8 +407,9 @@ func (sq *SubscriptionQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 	var (
 		nodes       = []*Subscription{}
 		_spec       = sq.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [2]bool{
 			sq.withLineItems != nil,
+			sq.withPauses != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -400,6 +437,13 @@ func (sq *SubscriptionQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 			return nil, err
 		}
 	}
+	if query := sq.withPauses; query != nil {
+		if err := sq.loadPauses(ctx, query, nodes,
+			func(n *Subscription) { n.Edges.Pauses = []*SubscriptionPause{} },
+			func(n *Subscription, e *SubscriptionPause) { n.Edges.Pauses = append(n.Edges.Pauses, e) }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
 }
 
@@ -418,6 +462,36 @@ func (sq *SubscriptionQuery) loadLineItems(ctx context.Context, query *Subscript
 	}
 	query.Where(predicate.SubscriptionLineItem(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(subscription.LineItemsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SubscriptionID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "subscription_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (sq *SubscriptionQuery) loadPauses(ctx context.Context, query *SubscriptionPauseQuery, nodes []*Subscription, init func(*Subscription), assign func(*Subscription, *SubscriptionPause)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*Subscription)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(subscriptionpause.FieldSubscriptionID)
+	}
+	query.Where(predicate.SubscriptionPause(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(subscription.PausesColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

@@ -213,6 +213,18 @@ func (f SubscriptionLineItemFunc) Mutate(ctx context.Context, m ent.Mutation) (e
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionLineItemMutation", m)
 }
 
+// The SubscriptionPauseFunc type is an adapter to allow the use of ordinary
+// function as SubscriptionPause mutator.
+type SubscriptionPauseFunc func(context.Context, *ent.SubscriptionPauseMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SubscriptionPauseFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SubscriptionPauseMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionPauseMutation", m)
+}
+
 // The TaskFunc type is an adapter to allow the use of ordinary
 // function as Task mutator.
 type TaskFunc func(context.Context, *ent.TaskMutation) (ent.Value, error)

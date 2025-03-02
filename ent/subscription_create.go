@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/ent/subscriptionpause"
 )
 
 // SubscriptionCreate is the builder for creating a Subscription entity.
@@ -349,6 +350,34 @@ func (sc *SubscriptionCreate) SetMetadata(m map[string]string) *SubscriptionCrea
 	return sc
 }
 
+// SetPauseStatus sets the "pause_status" field.
+func (sc *SubscriptionCreate) SetPauseStatus(s string) *SubscriptionCreate {
+	sc.mutation.SetPauseStatus(s)
+	return sc
+}
+
+// SetNillablePauseStatus sets the "pause_status" field if the given value is not nil.
+func (sc *SubscriptionCreate) SetNillablePauseStatus(s *string) *SubscriptionCreate {
+	if s != nil {
+		sc.SetPauseStatus(*s)
+	}
+	return sc
+}
+
+// SetActivePauseID sets the "active_pause_id" field.
+func (sc *SubscriptionCreate) SetActivePauseID(s string) *SubscriptionCreate {
+	sc.mutation.SetActivePauseID(s)
+	return sc
+}
+
+// SetNillableActivePauseID sets the "active_pause_id" field if the given value is not nil.
+func (sc *SubscriptionCreate) SetNillableActivePauseID(s *string) *SubscriptionCreate {
+	if s != nil {
+		sc.SetActivePauseID(*s)
+	}
+	return sc
+}
+
 // SetID sets the "id" field.
 func (sc *SubscriptionCreate) SetID(s string) *SubscriptionCreate {
 	sc.mutation.SetID(s)
@@ -368,6 +397,21 @@ func (sc *SubscriptionCreate) AddLineItems(s ...*SubscriptionLineItem) *Subscrip
 		ids[i] = s[i].ID
 	}
 	return sc.AddLineItemIDs(ids...)
+}
+
+// AddPauseIDs adds the "pauses" edge to the SubscriptionPause entity by IDs.
+func (sc *SubscriptionCreate) AddPauseIDs(ids ...string) *SubscriptionCreate {
+	sc.mutation.AddPauseIDs(ids...)
+	return sc
+}
+
+// AddPauses adds the "pauses" edges to the SubscriptionPause entity.
+func (sc *SubscriptionCreate) AddPauses(s ...*SubscriptionPause) *SubscriptionCreate {
+	ids := make([]string, len(s))
+	for i := range s {
+		ids[i] = s[i].ID
+	}
+	return sc.AddPauseIDs(ids...)
 }
 
 // Mutation returns the SubscriptionMutation object of the builder.
@@ -452,6 +496,10 @@ func (sc *SubscriptionCreate) defaults() {
 	if _, ok := sc.mutation.Version(); !ok {
 		v := subscription.DefaultVersion
 		sc.mutation.SetVersion(v)
+	}
+	if _, ok := sc.mutation.PauseStatus(); !ok {
+		v := subscription.DefaultPauseStatus
+		sc.mutation.SetPauseStatus(v)
 	}
 }
 
@@ -545,6 +593,9 @@ func (sc *SubscriptionCreate) check() error {
 	}
 	if _, ok := sc.mutation.Version(); !ok {
 		return &ValidationError{Name: "version", err: errors.New(`ent: missing required field "Subscription.version"`)}
+	}
+	if _, ok := sc.mutation.PauseStatus(); !ok {
+		return &ValidationError{Name: "pause_status", err: errors.New(`ent: missing required field "Subscription.pause_status"`)}
 	}
 	return nil
 }
@@ -693,6 +744,14 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 		_spec.SetField(subscription.FieldMetadata, field.TypeJSON, value)
 		_node.Metadata = value
 	}
+	if value, ok := sc.mutation.PauseStatus(); ok {
+		_spec.SetField(subscription.FieldPauseStatus, field.TypeString, value)
+		_node.PauseStatus = value
+	}
+	if value, ok := sc.mutation.ActivePauseID(); ok {
+		_spec.SetField(subscription.FieldActivePauseID, field.TypeString, value)
+		_node.ActivePauseID = &value
+	}
 	if nodes := sc.mutation.LineItemsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -702,6 +761,22 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionlineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := sc.mutation.PausesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.PausesTable,
+			Columns: []string{subscription.PausesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
