@@ -119,7 +119,6 @@ definitions:
       unit_singular:
         type: string
     required:
-    - lookup_key
     - name
     - type
     type: object
@@ -1109,6 +1108,15 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
+  dto.ListSubscriptionPausesResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.SubscriptionPauseResponse'
+        type: array
+      total:
+        type: integer
+    type: object
   dto.ListSubscriptionsResponse:
     properties:
       items:
@@ -1180,6 +1188,28 @@ definitions:
       updated_at:
         example: "2024-03-20T15:04:05Z"
         type: string
+    type: object
+  dto.PauseSubscriptionRequest:
+    properties:
+      dry_run:
+        type: boolean
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      pause_days:
+        type: integer
+      pause_end:
+        type: string
+      pause_mode:
+        $ref: '#/definitions/types.PauseMode'
+      pause_start:
+        type: string
+      reason:
+        maxLength: 255
+        type: string
+    required:
+    - pause_mode
     type: object
   dto.PaymentAttemptResponse:
     properties:
@@ -1382,6 +1412,19 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.ResumeSubscriptionRequest:
+    properties:
+      dry_run:
+        type: boolean
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      resume_mode:
+        $ref: '#/definitions/types.ResumeMode'
+    required:
+    - resume_mode
+    type: object
   dto.SecretResponse:
     properties:
       created_at:
@@ -1423,8 +1466,74 @@ definitions:
     required:
     - email
     type: object
+  dto.SubscriptionPauseResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier for the pause
+        type: string
+      id:
+        description: ID is the unique identifier for the subscription pause
+        type: string
+      metadata:
+        allOf:
+        - $ref: '#/definitions/types.Metadata'
+        description: Metadata is a map of key-value pairs that can be attached to
+          the pause
+      original_period_end:
+        description: OriginalPeriodEnd is the end of the billing period when the pause
+          was created
+        type: string
+      original_period_start:
+        description: OriginalPeriodStart is the start of the billing period when the
+          pause was created
+        type: string
+      pause_end:
+        description: PauseEnd is when the pause will end (null for indefinite)
+        type: string
+      pause_mode:
+        allOf:
+        - $ref: '#/definitions/types.PauseMode'
+        description: PauseMode indicates how the pause was applied
+      pause_start:
+        description: PauseStart is when the pause actually started
+        type: string
+      pause_status:
+        allOf:
+        - $ref: '#/definitions/types.PauseStatus'
+        description: PauseStatus is the status of the pause
+      reason:
+        description: Reason is the reason for pausing
+        type: string
+      resume_mode:
+        allOf:
+        - $ref: '#/definitions/types.ResumeMode'
+        description: ResumeMode indicates how the resume will be applied
+      resumed_at:
+        description: ResumedAt is when the pause was actually ended (if manually resumed)
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        description: SubscriptionID is the identifier for the subscription
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   dto.SubscriptionResponse:
     properties:
+      active_pause_id:
+        description: |-
+          ActivePauseID references the current active pause configuration
+          This will be null if no pause is active or scheduled
+        type: string
       billing_anchor:
         description: |-
           BillingAnchor is the reference point that aligns future billing cycle dates.
@@ -1501,6 +1610,14 @@ definitions:
         - $ref: '#/definitions/types.Metadata'
         description: Metadata is a map of key-value pairs that can be attached to
           the subscription
+      pause_status:
+        allOf:
+        - $ref: '#/definitions/types.PauseStatus'
+        description: PauseStatus tracks the current pause state
+      pauses:
+        items:
+          $ref: '#/definitions/subscription.SubscriptionPause'
+        type: array
       plan:
         $ref: '#/definitions/dto.PlanResponse'
       plan_id:
@@ -2016,6 +2133,21 @@ definitions:
       wallet_id:
         type: string
     type: object
+  errors.ErrorDetail:
+    properties:
+      details:
+        additionalProperties: {}
+        type: object
+      message:
+        type: string
+    type: object
+  errors.ErrorResponse:
+    properties:
+      error:
+        $ref: '#/definitions/errors.ErrorDetail'
+      success:
+        type: boolean
+    type: object
   gin.H:
     additionalProperties: {}
     type: object
@@ -2234,6 +2366,67 @@ definitions:
       updated_by:
         type: string
     type: object
+  subscription.SubscriptionPause:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier for the pause
+        type: string
+      id:
+        description: ID is the unique identifier for the subscription pause
+        type: string
+      metadata:
+        allOf:
+        - $ref: '#/definitions/types.Metadata'
+        description: Metadata is a map of key-value pairs that can be attached to
+          the pause
+      original_period_end:
+        description: OriginalPeriodEnd is the end of the billing period when the pause
+          was created
+        type: string
+      original_period_start:
+        description: OriginalPeriodStart is the start of the billing period when the
+          pause was created
+        type: string
+      pause_end:
+        description: PauseEnd is when the pause will end (null for indefinite)
+        type: string
+      pause_mode:
+        allOf:
+        - $ref: '#/definitions/types.PauseMode'
+        description: PauseMode indicates how the pause was applied
+      pause_start:
+        description: PauseStart is when the pause actually started
+        type: string
+      pause_status:
+        allOf:
+        - $ref: '#/definitions/types.PauseStatus'
+        description: PauseStatus is the status of the pause
+      reason:
+        description: Reason is the reason for pausing
+        type: string
+      resume_mode:
+        allOf:
+        - $ref: '#/definitions/types.ResumeMode'
+        description: ResumeMode indicates how the resume will be applied
+      resumed_at:
+        description: ResumedAt is when the pause was actually ended (if manually resumed)
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        description: SubscriptionID is the identifier for the subscription
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   types.AggregationType:
     enum:
     - COUNT
@@ -2371,6 +2564,30 @@ definitions:
       total:
         type: integer
     type: object
+  types.PauseMode:
+    enum:
+    - immediate
+    - scheduled
+    - period_end
+    type: string
+    x-enum-varnames:
+    - PauseModeImmediate
+    - PauseModeScheduled
+    - PauseModePeriodEnd
+  types.PauseStatus:
+    enum:
+    - none
+    - active
+    - scheduled
+    - completed
+    - cancelled
+    type: string
+    x-enum-varnames:
+    - PauseStatusNone
+    - PauseStatusActive
+    - PauseStatusScheduled
+    - PauseStatusCompleted
+    - PauseStatusCancelled
   types.PaymentDestinationType:
     enum:
     - INVOICE
@@ -2421,6 +2638,16 @@ definitions:
     x-enum-varnames:
     - ResetUsageBillingPeriod
     - ResetUsageNever
+  types.ResumeMode:
+    enum:
+    - immediate
+    - scheduled
+    - auto
+    type: string
+    x-enum-varnames:
+    - ResumeModeImmediate
+    - ResumeModeScheduled
+    - ResumeModeAuto
   types.SecretProvider:
     enum:
     - flexprice
@@ -5090,26 +5317,108 @@ paths:
     get:
       description: Get subscriptions with optional filtering
       parameters:
-      - description: Filter by customer ID
+      - description: ActiveAt filters subscriptions that are active at the given time
+        in: query
+        name: active_at
+        type: string
+      - collectionFormat: csv
+        description: BillingCadence filters by billing cadence
+        in: query
+        items:
+          enum:
+          - RECURRING
+          - ONETIME
+          type: string
+        name: billing_cadence
+        type: array
+      - collectionFormat: csv
+        description: BillingPeriod filters by billing period
+        in: query
+        items:
+          enum:
+          - MONTHLY
+          - ANNUAL
+          - WEEKLY
+          - DAILY
+          type: string
+        name: billing_period
+        type: array
+      - description: CustomerID filters by customer ID
         in: query
         name: customer_id
         type: string
-      - description: Filter by subscription status
-        in: query
-        name: subscription_status
+      - in: query
+        name: end_time
         type: string
-      - description: Filter by plan ID
+      - in: query
+        name: expand
+        type: string
+      - description: IncludeCanceled includes canceled subscriptions if true
+        in: query
+        name: include_canceled
+        type: boolean
+      - collectionFormat: csv
+        description: InvoiceCadence filters by invoice cadence
+        in: query
+        items:
+          enum:
+          - ARREAR
+          - ADVANCE
+          type: string
+        name: invoice_cadence
+        type: array
+      - in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      - in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - description: PlanID filters by plan ID
         in: query
         name: plan_id
         type: string
-      - description: Offset for pagination
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
         in: query
-        name: offset
-        type: integer
-      - description: Limit for pagination
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      - collectionFormat: csv
+        description: SubscriptionStatus filters by subscription status
         in: query
-        name: limit
-        type: integer
+        items:
+          enum:
+          - active
+          - paused
+          - cancelled
+          - incomplete
+          - incomplete_expired
+          - past_due
+          - trialing
+          - unpaid
+          type: string
+        name: subscription_status
+        type: array
       produces:
       - application/json
       responses:
@@ -5223,6 +5532,117 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Cancel subscription
+      tags:
+      - Subscriptions
+  /subscriptions/{id}/pause:
+    post:
+      consumes:
+      - application/json
+      description: Pause a subscription with the specified parameters
+      parameters:
+      - description: Subscription ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Pause subscription request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.PauseSubscriptionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.SubscriptionPauseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Pause a subscription
+      tags:
+      - Subscriptions
+  /subscriptions/{id}/pauses:
+    get:
+      description: List all pauses for a subscription
+      parameters:
+      - description: Subscription ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.ListSubscriptionPausesResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: List all pauses for a subscription
+      tags:
+      - Subscriptions
+  /subscriptions/{id}/resume:
+    post:
+      consumes:
+      - application/json
+      description: Resume a paused subscription with the specified parameters
+      parameters:
+      - description: Subscription ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Resume subscription request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ResumeSubscriptionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.SubscriptionPauseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Resume a paused subscription
       tags:
       - Subscriptions
   /subscriptions/usage:

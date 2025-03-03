@@ -14,24 +14,25 @@ import (
 )
 
 type Handlers struct {
-	Events       *v1.EventsHandler
-	Meter        *v1.MeterHandler
-	Auth         *v1.AuthHandler
-	User         *v1.UserHandler
-	Environment  *v1.EnvironmentHandler
-	Health       *v1.HealthHandler
-	Price        *v1.PriceHandler
-	Customer     *v1.CustomerHandler
-	Plan         *v1.PlanHandler
-	Subscription *v1.SubscriptionHandler
-	Wallet       *v1.WalletHandler
-	Tenant       *v1.TenantHandler
-	Invoice      *v1.InvoiceHandler
-	Feature      *v1.FeatureHandler
-	Entitlement  *v1.EntitlementHandler
-	Payment      *v1.PaymentHandler
-	Task         *v1.TaskHandler
-	Secret       *v1.SecretHandler
+	Events            *v1.EventsHandler
+	Meter             *v1.MeterHandler
+	Auth              *v1.AuthHandler
+	User              *v1.UserHandler
+	Environment       *v1.EnvironmentHandler
+	Health            *v1.HealthHandler
+	Price             *v1.PriceHandler
+	Customer          *v1.CustomerHandler
+	Plan              *v1.PlanHandler
+	Subscription      *v1.SubscriptionHandler
+	SubscriptionPause *v1.SubscriptionPauseHandler
+	Wallet            *v1.WalletHandler
+	Tenant            *v1.TenantHandler
+	Invoice           *v1.InvoiceHandler
+	Feature           *v1.FeatureHandler
+	Entitlement       *v1.EntitlementHandler
+	Payment           *v1.PaymentHandler
+	Task              *v1.TaskHandler
+	Secret            *v1.SecretHandler
 	// Cron jobs : TODO: move crons out of API based architecture
 	CronSubscription *cron.SubscriptionHandler
 	CronWallet       *cron.WalletCronHandler
@@ -151,6 +152,10 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			subscription.GET("/:id", handlers.Subscription.GetSubscription)
 			subscription.POST("/:id/cancel", handlers.Subscription.CancelSubscription)
 			subscription.POST("/usage", handlers.Subscription.GetUsageBySubscription)
+
+			subscription.POST("/:id/pause", handlers.SubscriptionPause.PauseSubscription)
+			subscription.POST("/:id/resume", handlers.SubscriptionPause.ResumeSubscription)
+			subscription.GET("/:id/pauses", handlers.SubscriptionPause.ListPauses)
 		}
 
 		wallet := v1Private.Group("/wallets")

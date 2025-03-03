@@ -13,12 +13,16 @@ import (
 type InMemorySubscriptionStore struct {
 	*InMemoryStore[*subscription.Subscription]
 	lineItems map[string][]*subscription.SubscriptionLineItem // map[subscriptionID][]lineItems
+	pauses    map[string][]*subscription.SubscriptionPause    // map[subscriptionID][]pauses
+	pauseByID map[string]*subscription.SubscriptionPause      // map[pauseID]pause
 }
 
 func NewInMemorySubscriptionStore() *InMemorySubscriptionStore {
 	return &InMemorySubscriptionStore{
 		InMemoryStore: NewInMemoryStore[*subscription.Subscription](),
 		lineItems:     make(map[string][]*subscription.SubscriptionLineItem),
+		pauses:        make(map[string][]*subscription.SubscriptionPause),
+		pauseByID:     make(map[string]*subscription.SubscriptionPause),
 	}
 }
 
@@ -209,4 +213,76 @@ func (s *InMemorySubscriptionStore) GetWithLineItems(ctx context.Context, id str
 	items := s.lineItems[id]
 	sub.LineItems = items
 	return sub, items, nil
+}
+
+// CreatePause creates a new subscription pause
+func (s *InMemorySubscriptionStore) CreatePause(ctx context.Context, pause *subscription.SubscriptionPause) error {
+	if pause == nil {
+		return fmt.Errorf("pause cannot be nil")
+	}
+
+	// Set environment ID from context if not already set
+	if pause.EnvironmentID == "" {
+		pause.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
+	// Store the pause
+	s.pauseByID[pause.ID] = pause
+
+	// Add to subscription's pauses
+	s.pauses[pause.SubscriptionID] = append(s.pauses[pause.SubscriptionID], pause)
+
+	return nil
+}
+
+// GetPause gets a subscription pause by ID
+func (s *InMemorySubscriptionStore) GetPause(ctx context.Context, id string) (*subscription.SubscriptionPause, error) {
+	pause, ok := s.pauseByID[id]
+	if !ok {
+		return nil, fmt.Errorf("pause not found: %s", id)
+	}
+	return pause, nil
+}
+
+// UpdatePause updates a subscription pause
+func (s *InMemorySubscriptionStore) UpdatePause(ctx context.Context, pause *subscription.SubscriptionPause) error {
+	if pause == nil {
+		return fmt.Errorf("pause cannot be nil")
+	}
+
+	// Check if pause exists
+	_, ok := s.pauseByID[pause.ID]
+	if !ok {
+		return fmt.Errorf("pause not found: %s", pause.ID)
+	}
+
+	// Update the pause
+	s.pauseByID[pause.ID] = pause
+
+	// Update in subscription's pauses
+	for i, p := range s.pauses[pause.SubscriptionID] {
+		if p.ID == pause.ID {
+			s.pauses[pause.SubscriptionID][i] = pause
+			break
+		}
+	}
+
+	return nil
+}
+
+// ListPauses lists all pauses for a subscription
+func (s *InMemorySubscriptionStore) ListPauses(ctx context.Context, subscriptionID string) ([]*subscription.SubscriptionPause, error) {
+	pauses := s.pauses[subscriptionID]
+	return pauses, nil
+}
+
+// GetWithPauses gets a subscription with its pauses
+func (s *InMemorySubscriptionStore) GetWithPauses(ctx context.Context, id string) (*subscription.Subscription, []*subscription.SubscriptionPause, error) {
+	sub, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	pauses := s.pauses[id]
+	sub.Pauses = pauses
+	return sub, pauses, nil
 }

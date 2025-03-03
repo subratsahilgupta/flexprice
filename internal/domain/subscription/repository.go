@@ -17,4 +17,11 @@ type Repository interface {
 	ListAllTenant(ctx context.Context, filter *types.SubscriptionFilter) ([]*Subscription, error)
 	CreateWithLineItems(ctx context.Context, subscription *Subscription, items []*SubscriptionLineItem) error
 	GetWithLineItems(ctx context.Context, id string) (*Subscription, []*SubscriptionLineItem, error)
+
+	// Pause-related methods
+	CreatePause(ctx context.Context, pause *SubscriptionPause) error
+	GetPause(ctx context.Context, id string) (*SubscriptionPause, error)
+	UpdatePause(ctx context.Context, pause *SubscriptionPause) error
+	ListPauses(ctx context.Context, subscriptionID string) ([]*SubscriptionPause, error)
+	GetWithPauses(ctx context.Context, id string) (*Subscription, []*SubscriptionPause, error)
 }

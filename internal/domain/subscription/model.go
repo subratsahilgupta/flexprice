@@ -81,7 +81,16 @@ type Subscription struct {
 	// EnvironmentID is the environment identifier for the subscription
 	EnvironmentID string `db:"environment_id" json:"environment_id"`
 
+	// PauseStatus tracks the current pause state
+	PauseStatus types.PauseStatus `db:"pause_status" json:"pause_status"`
+
+	// ActivePauseID references the current active pause configuration
+	// This will be null if no pause is active or scheduled
+	ActivePauseID *string `db:"active_pause_id" json:"active_pause_id,omitempty"`
+
 	LineItems []*SubscriptionLineItem `json:"line_items,omitempty"`
+
+	Pauses []*SubscriptionPause `json:"pauses,omitempty"`
 
 	types.BaseModel
 }
@@ -93,6 +102,11 @@ func GetSubscriptionFromEnt(sub *ent.Subscription) *Subscription {
 		for i, item := range sub.Edges.LineItems {
 			lineItems[i] = SubscriptionLineItemFromEnt(item)
 		}
+	}
+
+	var pauses []*SubscriptionPause
+	if sub.Edges.Pauses != nil {
+		pauses = SubscriptionPauseListFromEnt(sub.Edges.Pauses)
 	}
 
 	return &Subscription{
@@ -119,7 +133,10 @@ func GetSubscriptionFromEnt(sub *ent.Subscription) *Subscription {
 		Version:            sub.Version,
 		Metadata:           sub.Metadata,
 		EnvironmentID:      sub.EnvironmentID,
+		PauseStatus:        types.PauseStatus(sub.PauseStatus),
+		ActivePauseID:      sub.ActivePauseID,
 		LineItems:          lineItems,
+		Pauses:             pauses,
 		BaseModel: types.BaseModel{
 			TenantID:  sub.TenantID,
 			Status:    types.Status(sub.Status),
