@@ -80,7 +80,7 @@ func (h *PriceHandler) GetPrice(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param filter query types.PriceFilter true "Filter"
+// @Param filter query types.PriceFilter false "Filter"
 // @Success 200 {object} dto.ListPricesResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse

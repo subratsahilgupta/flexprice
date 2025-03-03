@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/subscription"
+	"github.com/flexprice/flexprice/ent/subscriptionpause"
 	domainSub "github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -493,4 +494,171 @@ func (r *subscriptionRepository) GetWithLineItems(ctx context.Context, id string
 	s.LineItems = domainSub.GetLineItemFromEntList(sub.Edges.LineItems)
 
 	return s, s.LineItems, nil
+}
+
+// CreatePause creates a new subscription pause
+func (r *subscriptionRepository) CreatePause(ctx context.Context, pause *domainSub.SubscriptionPause) error {
+	client := r.client.Querier(ctx)
+
+	// Set environment ID from context if not already set
+	if pause.EnvironmentID == "" {
+		pause.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
+	p, err := client.SubscriptionPause.Create().
+		SetID(pause.ID).
+		SetTenantID(pause.TenantID).
+		SetSubscriptionID(pause.SubscriptionID).
+		SetPauseStatus(string(pause.PauseStatus)).
+		SetPauseMode(string(pause.PauseMode)).
+		SetResumeMode(string(pause.ResumeMode)).
+		SetPauseStart(pause.PauseStart).
+		SetNillablePauseEnd(pause.PauseEnd).
+		SetNillableResumedAt(pause.ResumedAt).
+		SetOriginalPeriodStart(pause.OriginalPeriodStart).
+		SetOriginalPeriodEnd(pause.OriginalPeriodEnd).
+		SetReason(pause.Reason).
+		SetMetadata(pause.Metadata).
+		SetStatus(string(pause.Status)).
+		SetCreatedBy(pause.CreatedBy).
+		SetUpdatedBy(pause.UpdatedBy).
+		SetEnvironmentID(pause.EnvironmentID).
+		Save(ctx)
+
+	if err != nil {
+		return errors.WithError(err).
+			WithHint("Failed to create subscription pause").
+			Mark(errors.ErrDatabase)
+	}
+
+	// Update the input pause with created data
+	*pause = *domainSub.SubscriptionPauseFromEnt(p)
+	return nil
+}
+
+// GetPause gets a subscription pause by ID
+func (r *subscriptionRepository) GetPause(ctx context.Context, id string) (*domainSub.SubscriptionPause, error) {
+	client := r.client.Querier(ctx)
+	p, err := client.SubscriptionPause.Query().
+		Where(
+			subscriptionpause.ID(id),
+			subscriptionpause.TenantID(types.GetTenantID(ctx)),
+			subscriptionpause.Status(string(types.StatusPublished)),
+		).
+		Only(ctx)
+
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, errors.WithError(err).
+				WithHintf("Subscription pause %s not found", id).
+				Mark(errors.ErrNotFound)
+		}
+		return nil, errors.WithError(err).
+			WithHint("Failed to get subscription pause").
+			Mark(errors.ErrDatabase)
+	}
+
+	return domainSub.SubscriptionPauseFromEnt(p), nil
+}
+
+// UpdatePause updates a subscription pause
+func (r *subscriptionRepository) UpdatePause(ctx context.Context, pause *domainSub.SubscriptionPause) error {
+	client := r.client.Querier(ctx)
+	now := time.Now().UTC()
+
+	p, err := client.SubscriptionPause.Query().
+		Where(
+			subscriptionpause.ID(pause.ID),
+			subscriptionpause.TenantID(types.GetTenantID(ctx)),
+			subscriptionpause.Status(string(types.StatusPublished)),
+		).
+		Only(ctx)
+
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return errors.WithError(err).
+				WithHintf("Subscription pause %s not found", pause.ID).
+				Mark(errors.ErrNotFound)
+		}
+		return errors.WithError(err).
+			WithHint("Failed to get subscription pause for update").
+			Mark(errors.ErrDatabase)
+	}
+
+	_, err = p.Update().
+		SetPauseStatus(string(pause.PauseStatus)).
+		SetResumeMode(string(pause.ResumeMode)).
+		SetNillablePauseEnd(pause.PauseEnd).
+		SetNillableResumedAt(pause.ResumedAt).
+		SetReason(pause.Reason).
+		SetMetadata(pause.Metadata).
+		SetUpdatedBy(pause.UpdatedBy).
+		SetUpdatedAt(now).
+		Save(ctx)
+
+	if err != nil {
+		return errors.WithError(err).
+			WithHint("Failed to update subscription pause").
+			Mark(errors.ErrDatabase)
+	}
+
+	return nil
+}
+
+// ListPauses lists all pauses for a subscription
+func (r *subscriptionRepository) ListPauses(ctx context.Context, subscriptionID string) ([]*domainSub.SubscriptionPause, error) {
+	client := r.client.Querier(ctx)
+	pauses, err := client.SubscriptionPause.Query().
+		Where(
+			subscriptionpause.SubscriptionID(subscriptionID),
+			subscriptionpause.TenantID(types.GetTenantID(ctx)),
+			subscriptionpause.EnvironmentID(types.GetEnvironmentID(ctx)),
+			subscriptionpause.Status(string(types.StatusPublished)),
+		).
+		Order(ent.Desc(subscriptionpause.FieldCreatedAt)).
+		All(ctx)
+
+	if err != nil {
+		return nil, errors.WithError(err).
+			WithHint("Failed to list subscription pauses").
+			Mark(errors.ErrDatabase)
+	}
+
+	return domainSub.SubscriptionPauseListFromEnt(pauses), nil
+}
+
+// GetWithPauses gets a subscription with its pauses
+func (r *subscriptionRepository) GetWithPauses(ctx context.Context, id string) (*domainSub.Subscription, []*domainSub.SubscriptionPause, error) {
+	client := r.client.Querier(ctx)
+	sub, err := client.Subscription.Query().
+		Where(
+			subscription.ID(id),
+			subscription.TenantID(types.GetTenantID(ctx)),
+			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
+			subscription.Status(string(types.StatusPublished)),
+		).
+		WithPauses(func(q *ent.SubscriptionPauseQuery) {
+			q.Where(subscriptionpause.Status(string(types.StatusPublished)))
+			q.Order(ent.Desc(subscriptionpause.FieldCreatedAt))
+		}).
+		Only(ctx)
+
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil, errors.WithError(err).
+				WithHintf("Subscription %s not found", id).
+				Mark(errors.ErrNotFound)
+		}
+		return nil, nil, errors.WithError(err).
+			WithHint("Failed to get subscription with pauses").
+			Mark(errors.ErrDatabase)
+	}
+
+	subscription := domainSub.GetSubscriptionFromEnt(sub)
+	var pauses []*domainSub.SubscriptionPause
+	if sub.Edges.Pauses != nil {
+		pauses = domainSub.SubscriptionPauseListFromEnt(sub.Edges.Pauses)
+	}
+
+	return subscription, pauses, nil
 }

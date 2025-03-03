@@ -19,8 +19,7 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type SubscriptionServiceSuite struct {
-	testutil.BaseServiceTestSuite
+type BaseSubscriptionData struct {
 	service  SubscriptionService
 	testData struct {
 		customer *customer.Customer
@@ -37,6 +36,11 @@ type SubscriptionServiceSuite struct {
 		subscription *subscription.Subscription
 		now          time.Time
 	}
+}
+
+type SubscriptionServiceSuite struct {
+	testutil.BaseServiceTestSuite
+	BaseSubscriptionData
 }
 
 func TestSubscriptionService(t *testing.T) {
@@ -74,6 +78,7 @@ func (s *SubscriptionServiceSuite) setupService() {
 	})
 }
 
+// setupTestData initializes the test data directly in the SubscriptionServiceSuite
 func (s *SubscriptionServiceSuite) setupTestData() {
 	// Create test customer
 	s.testData.customer = &customer.Customer{

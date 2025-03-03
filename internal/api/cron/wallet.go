@@ -65,6 +65,7 @@ func (h *WalletCronHandler) ExpireCredits(c *gin.Context) {
 
 		h.logger.Infow("tenant", "id", tenant.ID, "name", tenant.Name)
 		ctx := context.WithValue(c.Request.Context(), types.CtxTenantID, tenant.ID)
+		ctx = context.WithValue(ctx, types.CtxEnvironmentID, "")
 		// Get transactions with expired credits
 		transactions, err := h.walletService.GetWalletTransactions(ctx, "", filter)
 		if err != nil {

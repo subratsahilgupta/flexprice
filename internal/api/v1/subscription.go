@@ -72,11 +72,7 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 // @Tags Subscriptions
 // @Produce json
 // @Security ApiKeyAuth
-// @Param customer_id query string false "Filter by customer ID"
-// @Param subscription_status query string false "Filter by subscription status"
-// @Param plan_id query string false "Filter by plan ID"
-// @Param offset query int false "Offset for pagination"
-// @Param limit query int false "Limit for pagination"
+// @Param filter query types.SubscriptionFilter false "Filter"
 // @Success 200 {object} dto.ListSubscriptionsResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
