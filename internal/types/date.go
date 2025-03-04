@@ -31,6 +31,10 @@ func NextBillingDate(currentPeriodStart, billingAnchor time.Time, unit int, peri
 		months = unit
 	case BILLING_PERIOD_ANNUAL:
 		years = unit
+	case BILLING_PERIOD_QUARTER:
+		months = unit * 3
+	case BILLING_PERIOD_HALF_YEAR:
+		months = unit * 6
 	default:
 		return currentPeriodStart, fmt.Errorf("invalid billing period type: %s", period)
 	}
@@ -70,9 +74,9 @@ func NextBillingDate(currentPeriodStart, billingAnchor time.Time, unit int, peri
 	}
 
 	// Special case for February 29th in leap years
-	if period == BILLING_PERIOD_ANNUAL && 
-		billingAnchor.Month() == time.February && 
-		billingAnchor.Day() == 29 && 
+	if period == BILLING_PERIOD_ANNUAL &&
+		billingAnchor.Month() == time.February &&
+		billingAnchor.Day() == 29 &&
 		!isLeapYear(targetY) {
 		targetD = 28
 	}

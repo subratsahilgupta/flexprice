@@ -36,10 +36,12 @@ const (
 	BILLING_MODEL_TIERED BillingModel = "TIERED"
 
 	// For BILLING_CADENCE_RECURRING
-	BILLING_PERIOD_MONTHLY BillingPeriod = "MONTHLY"
-	BILLING_PERIOD_ANNUAL  BillingPeriod = "ANNUAL"
-	BILLING_PERIOD_WEEKLY  BillingPeriod = "WEEKLY"
-	BILLING_PERIOD_DAILY   BillingPeriod = "DAILY"
+	BILLING_PERIOD_MONTHLY   BillingPeriod = "MONTHLY"
+	BILLING_PERIOD_ANNUAL    BillingPeriod = "ANNUAL"
+	BILLING_PERIOD_WEEKLY    BillingPeriod = "WEEKLY"
+	BILLING_PERIOD_DAILY     BillingPeriod = "DAILY"
+	BILLING_PERIOD_QUARTER   BillingPeriod = "QUARTERLY"
+	BILLING_PERIOD_HALF_YEAR BillingPeriod = "HALF_YEARLY"
 
 	BILLING_CADENCE_RECURRING BillingCadence = "RECURRING"
 	BILLING_CADENCE_ONETIME   BillingCadence = "ONETIME"
@@ -85,6 +87,8 @@ func (b BillingPeriod) Validate() error {
 		BILLING_PERIOD_ANNUAL,
 		BILLING_PERIOD_WEEKLY,
 		BILLING_PERIOD_DAILY,
+		BILLING_PERIOD_QUARTER,
+		BILLING_PERIOD_HALF_YEAR,
 	}
 	if !lo.Contains(allowed, b) {
 		return fmt.Errorf("invalid billing period: %s", b)
