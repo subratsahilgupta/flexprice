@@ -27,10 +27,8 @@ func NewSubscriptionLineItemRepository(client postgres.IClient) subscription.Lin
 // Create creates a new subscription line item
 func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subscription.SubscriptionLineItem) error {
 	client := r.client.Querier(ctx)
-	if client == nil {
-		return fmt.Errorf("failed to get client")
-	}
 
+	// Set environment ID from context if not already set
 	if item.EnvironmentID == "" {
 		item.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
@@ -51,6 +49,8 @@ func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subsc
 		SetBillingPeriod(string(item.BillingPeriod)).
 		SetNillableStartDate(types.ToNillableTime(item.StartDate)).
 		SetNillableEndDate(types.ToNillableTime(item.EndDate)).
+		SetInvoiceCadence(string(item.InvoiceCadence)).
+		SetTrialPeriod(item.TrialPeriod).
 		SetMetadata(item.Metadata).
 		SetTenantID(item.TenantID).
 		SetEnvironmentID(item.EnvironmentID).
@@ -87,10 +87,6 @@ func (r *subscriptionLineItemRepository) Get(ctx context.Context, id string) (*s
 // Update updates a subscription line item
 func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subscription.SubscriptionLineItem) error {
 	client := r.client.Querier(ctx)
-	if client == nil {
-		return fmt.Errorf("failed to get client")
-	}
-
 	_, err := client.SubscriptionLineItem.UpdateOneID(item.ID).
 		SetNillablePlanID(types.ToNillableString(item.PlanID)).
 		SetNillablePlanDisplayName(types.ToNillableString(item.PlanDisplayName)).
@@ -151,6 +147,8 @@ func (r *subscriptionLineItemRepository) CreateBulk(ctx context.Context, items [
 			SetQuantity(item.Quantity).
 			SetCurrency(item.Currency).
 			SetBillingPeriod(string(item.BillingPeriod)).
+			SetInvoiceCadence(string(item.InvoiceCadence)).
+			SetTrialPeriod(item.TrialPeriod).
 			SetNillableStartDate(types.ToNillableTime(item.StartDate)).
 			SetNillableEndDate(types.ToNillableTime(item.EndDate)).
 			SetMetadata(item.Metadata).

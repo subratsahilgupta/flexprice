@@ -107,8 +107,6 @@ type SubscriptionFilter struct {
 	PlanID string `json:"plan_id,omitempty" form:"plan_id"`
 	// SubscriptionStatus filters by subscription status
 	SubscriptionStatus []SubscriptionStatus `json:"subscription_status,omitempty" form:"subscription_status"`
-	// InvoiceCadence filters by invoice cadence
-	InvoiceCadence []InvoiceCadence `json:"invoice_cadence,omitempty" form:"invoice_cadence"`
 	// BillingCadence filters by billing cadence
 	BillingCadence []BillingCadence `json:"billing_cadence,omitempty" form:"billing_cadence"`
 	// BillingPeriod filters by billing period
@@ -150,13 +148,6 @@ func (f SubscriptionFilter) Validate() error {
 	// Validate subscription status values
 	for _, status := range f.SubscriptionStatus {
 		if err := status.Validate(); err != nil {
-			return err
-		}
-	}
-
-	// Validate invoice cadence values
-	for _, cadence := range f.InvoiceCadence {
-		if err := cadence.Validate(); err != nil {
 			return err
 		}
 	}

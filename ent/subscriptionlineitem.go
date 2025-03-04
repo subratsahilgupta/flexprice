@@ -58,6 +58,10 @@ type SubscriptionLineItem struct {
 	Currency string `json:"currency,omitempty"`
 	// BillingPeriod holds the value of the "billing_period" field.
 	BillingPeriod string `json:"billing_period,omitempty"`
+	// InvoiceCadence holds the value of the "invoice_cadence" field.
+	InvoiceCadence string `json:"invoice_cadence,omitempty"`
+	// TrialPeriod holds the value of the "trial_period" field.
+	TrialPeriod int `json:"trial_period,omitempty"`
 	// StartDate holds the value of the "start_date" field.
 	StartDate *time.Time `json:"start_date,omitempty"`
 	// EndDate holds the value of the "end_date" field.
@@ -99,7 +103,9 @@ func (*SubscriptionLineItem) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case subscriptionlineitem.FieldQuantity:
 			values[i] = new(decimal.Decimal)
-		case subscriptionlineitem.FieldID, subscriptionlineitem.FieldTenantID, subscriptionlineitem.FieldStatus, subscriptionlineitem.FieldCreatedBy, subscriptionlineitem.FieldUpdatedBy, subscriptionlineitem.FieldEnvironmentID, subscriptionlineitem.FieldSubscriptionID, subscriptionlineitem.FieldCustomerID, subscriptionlineitem.FieldPlanID, subscriptionlineitem.FieldPlanDisplayName, subscriptionlineitem.FieldPriceID, subscriptionlineitem.FieldPriceType, subscriptionlineitem.FieldMeterID, subscriptionlineitem.FieldMeterDisplayName, subscriptionlineitem.FieldDisplayName, subscriptionlineitem.FieldCurrency, subscriptionlineitem.FieldBillingPeriod:
+		case subscriptionlineitem.FieldTrialPeriod:
+			values[i] = new(sql.NullInt64)
+		case subscriptionlineitem.FieldID, subscriptionlineitem.FieldTenantID, subscriptionlineitem.FieldStatus, subscriptionlineitem.FieldCreatedBy, subscriptionlineitem.FieldUpdatedBy, subscriptionlineitem.FieldEnvironmentID, subscriptionlineitem.FieldSubscriptionID, subscriptionlineitem.FieldCustomerID, subscriptionlineitem.FieldPlanID, subscriptionlineitem.FieldPlanDisplayName, subscriptionlineitem.FieldPriceID, subscriptionlineitem.FieldPriceType, subscriptionlineitem.FieldMeterID, subscriptionlineitem.FieldMeterDisplayName, subscriptionlineitem.FieldDisplayName, subscriptionlineitem.FieldCurrency, subscriptionlineitem.FieldBillingPeriod, subscriptionlineitem.FieldInvoiceCadence:
 			values[i] = new(sql.NullString)
 		case subscriptionlineitem.FieldCreatedAt, subscriptionlineitem.FieldUpdatedAt, subscriptionlineitem.FieldStartDate, subscriptionlineitem.FieldEndDate:
 			values[i] = new(sql.NullTime)
@@ -244,6 +250,18 @@ func (sli *SubscriptionLineItem) assignValues(columns []string, values []any) er
 			} else if value.Valid {
 				sli.BillingPeriod = value.String
 			}
+		case subscriptionlineitem.FieldInvoiceCadence:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field invoice_cadence", values[i])
+			} else if value.Valid {
+				sli.InvoiceCadence = value.String
+			}
+		case subscriptionlineitem.FieldTrialPeriod:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field trial_period", values[i])
+			} else if value.Valid {
+				sli.TrialPeriod = int(value.Int64)
+			}
 		case subscriptionlineitem.FieldStartDate:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field start_date", values[i])
@@ -375,6 +393,12 @@ func (sli *SubscriptionLineItem) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("billing_period=")
 	builder.WriteString(sli.BillingPeriod)
+	builder.WriteString(", ")
+	builder.WriteString("invoice_cadence=")
+	builder.WriteString(sli.InvoiceCadence)
+	builder.WriteString(", ")
+	builder.WriteString("trial_period=")
+	builder.WriteString(fmt.Sprintf("%v", sli.TrialPeriod))
 	builder.WriteString(", ")
 	if v := sli.StartDate; v != nil {
 		builder.WriteString("start_date=")

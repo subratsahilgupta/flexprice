@@ -83,11 +83,10 @@ func (s *SubscriptionPauseTestSuite) setupPauseTestData() {
 
 	// Create test plan
 	s.pauseTestData.plan = &plan.Plan{
-		ID:             "plan_pause_123",
-		Name:           "Test Pause Plan",
-		Description:    "Test Pause Plan Description",
-		InvoiceCadence: types.InvoiceCadenceAdvance,
-		BaseModel:      types.GetDefaultBaseModel(ctx),
+		ID:          "plan_pause_123",
+		Name:        "Test Pause Plan",
+		Description: "Test Pause Plan Description",
+		BaseModel:   types.GetDefaultBaseModel(ctx),
 	}
 	s.NoError(s.GetStores().PlanRepo.Create(ctx, s.pauseTestData.plan))
 
@@ -105,8 +104,10 @@ func (s *SubscriptionPauseTestSuite) setupPauseTestData() {
 		SubscriptionStatus: types.SubscriptionStatusActive,
 		PauseStatus:        types.PauseStatusNone,
 		BaseModel:          types.GetDefaultBaseModel(ctx),
+		LineItems:          []*subscription.SubscriptionLineItem{},
 	}
-	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, s.pauseTestData.activeSubscription))
+
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, s.pauseTestData.activeSubscription, s.pauseTestData.activeSubscription.LineItems))
 
 	// Create a paused subscription for resume tests
 	pauseID := "pause_123"
@@ -124,8 +125,9 @@ func (s *SubscriptionPauseTestSuite) setupPauseTestData() {
 		PauseStatus:        types.PauseStatusActive,
 		ActivePauseID:      lo.ToPtr(pauseID),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
+		LineItems:          []*subscription.SubscriptionLineItem{},
 	}
-	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, s.pauseTestData.pausedSubscription))
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, s.pauseTestData.pausedSubscription, s.pauseTestData.pausedSubscription.LineItems))
 
 	// Create a pause record for the paused subscription
 	s.pauseTestData.pauseRecord = &subscription.SubscriptionPause{
@@ -209,8 +211,9 @@ func (s *SubscriptionPauseTestSuite) TestPauseSubscription() {
 		SubscriptionStatus: types.SubscriptionStatusActive,
 		PauseStatus:        types.PauseStatusNone,
 		BaseModel:          types.GetDefaultBaseModel(ctx),
+		LineItems:          []*subscription.SubscriptionLineItem{},
 	}
-	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, secondActiveSub))
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, secondActiveSub, secondActiveSub.LineItems))
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
@@ -453,8 +456,9 @@ func (s *SubscriptionPauseTestSuite) TestCalculatePauseImpact() {
 		SubscriptionStatus: types.SubscriptionStatusActive,
 		PauseStatus:        types.PauseStatusNone,
 		BaseModel:          types.GetDefaultBaseModel(ctx),
+		LineItems:          []*subscription.SubscriptionLineItem{},
 	}
-	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, activeSub))
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, activeSub, activeSub.LineItems))
 
 	testCases := []struct {
 		name           string
@@ -617,8 +621,9 @@ func (s *SubscriptionPauseTestSuite) TestUpdateBillingPeriodsWithPausedSubscript
 		PauseStatus:        types.PauseStatusActive,
 		ActivePauseID:      lo.ToPtr("pause_billing_test"),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
+		LineItems:          []*subscription.SubscriptionLineItem{},
 	}
-	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, pausedSub))
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, pausedSub, pausedSub.LineItems))
 
 	// Create a pause record for this subscription
 	pauseRecord := &subscription.SubscriptionPause{

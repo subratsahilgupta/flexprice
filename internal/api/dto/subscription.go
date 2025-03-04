@@ -22,7 +22,6 @@ type CreateSubscriptionRequest struct {
 	EndDate            *time.Time           `json:"end_date,omitempty"`
 	TrialStart         *time.Time           `json:"trial_start,omitempty"`
 	TrialEnd           *time.Time           `json:"trial_end,omitempty"`
-	InvoiceCadence     types.InvoiceCadence `json:"invoice_cadence" validate:"required"`
 	BillingCadence     types.BillingCadence `json:"billing_cadence" validate:"required"`
 	BillingPeriod      types.BillingPeriod  `json:"billing_period" validate:"required"`
 	BillingPeriodCount int                  `json:"billing_period_count" validate:"required,min=1"`
@@ -53,10 +52,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	// Validate currency
 	if err := types.ValidateCurrencyCode(r.Currency); err != nil {
 		return err
-	}
-
-	if err := r.InvoiceCadence.Validate(); err != nil {
-		return fmt.Errorf("invalid invoice cadence: %w", err)
 	}
 
 	if err := r.BillingCadence.Validate(); err != nil {
@@ -111,7 +106,6 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		EndDate:            r.EndDate,
 		TrialStart:         r.TrialStart,
 		TrialEnd:           r.TrialEnd,
-		InvoiceCadence:     r.InvoiceCadence,
 		BillingCadence:     r.BillingCadence,
 		BillingPeriod:      r.BillingPeriod,
 		BillingPeriodCount: r.BillingPeriodCount,

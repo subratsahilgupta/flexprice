@@ -45,6 +45,10 @@ const (
 	FieldBillingModel = "billing_model"
 	// FieldBillingCadence holds the string denoting the billing_cadence field in the database.
 	FieldBillingCadence = "billing_cadence"
+	// FieldInvoiceCadence holds the string denoting the invoice_cadence field in the database.
+	FieldInvoiceCadence = "invoice_cadence"
+	// FieldTrialPeriod holds the string denoting the trial_period field in the database.
+	FieldTrialPeriod = "trial_period"
 	// FieldMeterID holds the string denoting the meter_id field in the database.
 	FieldMeterID = "meter_id"
 	// FieldFilterValues holds the string denoting the filter_values field in the database.
@@ -84,6 +88,8 @@ var Columns = []string{
 	FieldBillingPeriodCount,
 	FieldBillingModel,
 	FieldBillingCadence,
+	FieldInvoiceCadence,
+	FieldTrialPeriod,
 	FieldMeterID,
 	FieldFilterValues,
 	FieldTierMode,
@@ -133,6 +139,8 @@ var (
 	BillingModelValidator func(string) error
 	// BillingCadenceValidator is a validator for the "billing_cadence" field. It is called by the builders before save.
 	BillingCadenceValidator func(string) error
+	// DefaultTrialPeriod holds the default value on creation for the "trial_period" field.
+	DefaultTrialPeriod int
 )
 
 // OrderOption defines the ordering options for the Price queries.
@@ -221,6 +229,16 @@ func ByBillingModel(opts ...sql.OrderTermOption) OrderOption {
 // ByBillingCadence orders the results by the billing_cadence field.
 func ByBillingCadence(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBillingCadence, opts...).ToFunc()
+}
+
+// ByInvoiceCadence orders the results by the invoice_cadence field.
+func ByInvoiceCadence(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInvoiceCadence, opts...).ToFunc()
+}
+
+// ByTrialPeriod orders the results by the trial_period field.
+func ByTrialPeriod(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTrialPeriod, opts...).ToFunc()
 }
 
 // ByMeterID orders the results by the meter_id field.

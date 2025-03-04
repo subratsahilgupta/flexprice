@@ -272,12 +272,6 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 	if req.LookupKey != nil {
 		plan.LookupKey = *req.LookupKey
 	}
-	if req.InvoiceCadence != nil {
-		plan.InvoiceCadence = *req.InvoiceCadence
-	}
-	if req.TrialPeriod != nil {
-		plan.TrialPeriod = *req.TrialPeriod
-	}
 
 	// Start a transaction for updating plan, prices, and entitlements
 	err = s.client.WithTx(ctx, func(ctx context.Context) error {

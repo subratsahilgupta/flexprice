@@ -44,6 +44,7 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		p.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
+	// Create the price using the standard Ent API
 	price, err := client.Price.Create().
 		SetID(p.ID).
 		SetTenantID(p.TenantID).
@@ -57,6 +58,8 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetBillingModel(string(p.BillingModel)).
 		SetBillingCadence(string(p.BillingCadence)).
 		SetNillableMeterID(lo.ToPtr(p.MeterID)).
+		SetInvoiceCadence(string(p.InvoiceCadence)).
+		SetTrialPeriod(p.TrialPeriod).
 		SetFilterValues(map[string][]string(p.FilterValues)).
 		SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 		SetTiers(p.ToEntTiers()).
@@ -257,6 +260,8 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 			SetBillingPeriodCount(p.BillingPeriodCount).
 			SetBillingModel(string(p.BillingModel)).
 			SetBillingCadence(string(p.BillingCadence)).
+			SetInvoiceCadence(string(p.InvoiceCadence)).
+			SetTrialPeriod(p.TrialPeriod).
 			SetNillableMeterID(lo.ToPtr(p.MeterID)).
 			SetFilterValues(map[string][]string(p.FilterValues)).
 			SetNillableTierMode(lo.ToPtr(string(p.TierMode))).

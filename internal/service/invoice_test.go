@@ -105,7 +105,6 @@ func (s *InvoiceServiceSuite) setupTestData() {
 		ID:             "plan_123",
 		Name:           "Test Plan",
 		Description:    "Test Plan Description",
-		InvoiceCadence: types.InvoiceCadenceAdvance,
 		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().PlanRepo.Create(s.GetContext(), s.testData.plan))
@@ -148,6 +147,7 @@ func (s *InvoiceServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_TIERED,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
 		TierMode:           types.BILLING_TIER_SLAB,
 		MeterID:            s.testData.meters.apiCalls.ID,
 		Tiers: []price.PriceTier{
@@ -169,6 +169,7 @@ func (s *InvoiceServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
 		MeterID:            s.testData.meters.storage.ID,
 		FilterValues:       map[string][]string{"region": {"us-east-1"}, "tier": {"standard"}},
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),

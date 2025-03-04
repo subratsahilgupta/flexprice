@@ -165,6 +165,34 @@ func (pc *PriceCreate) SetBillingCadence(s string) *PriceCreate {
 	return pc
 }
 
+// SetInvoiceCadence sets the "invoice_cadence" field.
+func (pc *PriceCreate) SetInvoiceCadence(s string) *PriceCreate {
+	pc.mutation.SetInvoiceCadence(s)
+	return pc
+}
+
+// SetNillableInvoiceCadence sets the "invoice_cadence" field if the given value is not nil.
+func (pc *PriceCreate) SetNillableInvoiceCadence(s *string) *PriceCreate {
+	if s != nil {
+		pc.SetInvoiceCadence(*s)
+	}
+	return pc
+}
+
+// SetTrialPeriod sets the "trial_period" field.
+func (pc *PriceCreate) SetTrialPeriod(i int) *PriceCreate {
+	pc.mutation.SetTrialPeriod(i)
+	return pc
+}
+
+// SetNillableTrialPeriod sets the "trial_period" field if the given value is not nil.
+func (pc *PriceCreate) SetNillableTrialPeriod(i *int) *PriceCreate {
+	if i != nil {
+		pc.SetTrialPeriod(*i)
+	}
+	return pc
+}
+
 // SetMeterID sets the "meter_id" field.
 func (pc *PriceCreate) SetMeterID(s string) *PriceCreate {
 	pc.mutation.SetMeterID(s)
@@ -310,6 +338,10 @@ func (pc *PriceCreate) defaults() {
 		v := price.DefaultEnvironmentID
 		pc.mutation.SetEnvironmentID(v)
 	}
+	if _, ok := pc.mutation.TrialPeriod(); !ok {
+		v := price.DefaultTrialPeriod
+		pc.mutation.SetTrialPeriod(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -397,6 +429,9 @@ func (pc *PriceCreate) check() error {
 		if err := price.BillingCadenceValidator(v); err != nil {
 			return &ValidationError{Name: "billing_cadence", err: fmt.Errorf(`ent: validator failed for field "Price.billing_cadence": %w`, err)}
 		}
+	}
+	if _, ok := pc.mutation.TrialPeriod(); !ok {
+		return &ValidationError{Name: "trial_period", err: errors.New(`ent: missing required field "Price.trial_period"`)}
 	}
 	return nil
 }
@@ -496,6 +531,14 @@ func (pc *PriceCreate) createSpec() (*Price, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.BillingCadence(); ok {
 		_spec.SetField(price.FieldBillingCadence, field.TypeString, value)
 		_node.BillingCadence = value
+	}
+	if value, ok := pc.mutation.InvoiceCadence(); ok {
+		_spec.SetField(price.FieldInvoiceCadence, field.TypeString, value)
+		_node.InvoiceCadence = value
+	}
+	if value, ok := pc.mutation.TrialPeriod(); ok {
+		_spec.SetField(price.FieldTrialPeriod, field.TypeInt, value)
+		_node.TrialPeriod = value
 	}
 	if value, ok := pc.mutation.MeterID(); ok {
 		_spec.SetField(price.FieldMeterID, field.TypeString, value)

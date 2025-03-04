@@ -69,9 +69,6 @@ type Subscription struct {
 	// BillingPeriodCount is the total number units of the billing period.
 	BillingPeriodCount int `db:"billing_period_count" json:"billing_period_count"`
 
-	// InvoiceCadence is the cadence of the invoice. This overrides the plan's invoice cadence.
-	InvoiceCadence types.InvoiceCadence `db:"invoice_cadence" json:"invoice_cadence"`
-
 	// Version is used for optimistic locking
 	Version int `db:"version" json:"version"`
 
@@ -126,7 +123,6 @@ func GetSubscriptionFromEnt(sub *ent.Subscription) *Subscription {
 		CancelAtPeriodEnd:  sub.CancelAtPeriodEnd,
 		TrialStart:         sub.TrialStart,
 		TrialEnd:           sub.TrialEnd,
-		InvoiceCadence:     types.InvoiceCadence(sub.InvoiceCadence),
 		BillingCadence:     types.BillingCadence(sub.BillingCadence),
 		BillingPeriod:      types.BillingPeriod(sub.BillingPeriod),
 		BillingPeriodCount: sub.BillingPeriodCount,

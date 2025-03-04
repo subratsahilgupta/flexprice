@@ -37,10 +37,6 @@ type Plan struct {
 	Name string `json:"name,omitempty"`
 	// Description holds the value of the "description" field.
 	Description string `json:"description,omitempty"`
-	// InvoiceCadence holds the value of the "invoice_cadence" field.
-	InvoiceCadence string `json:"invoice_cadence,omitempty"`
-	// TrialPeriod holds the value of the "trial_period" field.
-	TrialPeriod int `json:"trial_period,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the PlanQuery when eager-loading is set.
 	Edges        PlanEdges `json:"edges"`
@@ -70,9 +66,7 @@ func (*Plan) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case plan.FieldTrialPeriod:
-			values[i] = new(sql.NullInt64)
-		case plan.FieldID, plan.FieldTenantID, plan.FieldStatus, plan.FieldCreatedBy, plan.FieldUpdatedBy, plan.FieldEnvironmentID, plan.FieldLookupKey, plan.FieldName, plan.FieldDescription, plan.FieldInvoiceCadence:
+		case plan.FieldID, plan.FieldTenantID, plan.FieldStatus, plan.FieldCreatedBy, plan.FieldUpdatedBy, plan.FieldEnvironmentID, plan.FieldLookupKey, plan.FieldName, plan.FieldDescription:
 			values[i] = new(sql.NullString)
 		case plan.FieldCreatedAt, plan.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -157,18 +151,6 @@ func (pl *Plan) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				pl.Description = value.String
 			}
-		case plan.FieldInvoiceCadence:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field invoice_cadence", values[i])
-			} else if value.Valid {
-				pl.InvoiceCadence = value.String
-			}
-		case plan.FieldTrialPeriod:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field trial_period", values[i])
-			} else if value.Valid {
-				pl.TrialPeriod = int(value.Int64)
-			}
 		default:
 			pl.selectValues.Set(columns[i], values[i])
 		}
@@ -239,12 +221,6 @@ func (pl *Plan) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("description=")
 	builder.WriteString(pl.Description)
-	builder.WriteString(", ")
-	builder.WriteString("invoice_cadence=")
-	builder.WriteString(pl.InvoiceCadence)
-	builder.WriteString(", ")
-	builder.WriteString("trial_period=")
-	builder.WriteString(fmt.Sprintf("%v", pl.TrialPeriod))
 	builder.WriteByte(')')
 	return builder.String()
 }

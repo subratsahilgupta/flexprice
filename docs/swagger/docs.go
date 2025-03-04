@@ -3912,7 +3912,9 @@ const docTemplate = `{
                                 "MONTHLY",
                                 "ANNUAL",
                                 "WEEKLY",
-                                "DAILY"
+                                "DAILY",
+                                "QUARTERLY",
+                                "HALF_YEARLY"
                             ],
                             "type": "string"
                         },
@@ -3941,20 +3943,6 @@ const docTemplate = `{
                         "type": "boolean",
                         "description": "IncludeCanceled includes canceled subscriptions if true",
                         "name": "include_canceled",
-                        "in": "query"
-                    },
-                    {
-                        "type": "array",
-                        "items": {
-                            "enum": [
-                                "ARREAR",
-                                "ADVANCE"
-                            ],
-                            "type": "string"
-                        },
-                        "collectionFormat": "csv",
-                        "description": "InvoiceCadence filters by invoice cadence",
-                        "name": "invoice_cadence",
                         "in": "query"
                     },
                     {
@@ -5868,6 +5856,7 @@ const docTemplate = `{
                 "billing_period",
                 "billing_period_count",
                 "currency",
+                "invoice_cadence",
                 "type"
             ],
             "properties": {
@@ -5902,6 +5891,9 @@ const docTemplate = `{
                         }
                     }
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
                 "lookup_key": {
                     "type": "string"
                 },
@@ -5928,6 +5920,9 @@ const docTemplate = `{
                 },
                 "transform_quantity": {
                     "$ref": "#/definitions/price.TransformQuantity"
+                },
+                "trial_period": {
+                    "type": "integer"
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
@@ -5949,9 +5944,6 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.CreatePlanEntitlementRequest"
                     }
                 },
-                "invoice_cadence": {
-                    "$ref": "#/definitions/types.InvoiceCadence"
-                },
                 "lookup_key": {
                     "type": "string"
                 },
@@ -5963,9 +5955,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.CreatePlanPriceRequest"
                     }
-                },
-                "trial_period": {
-                    "type": "integer"
                 }
             }
         },
@@ -5977,6 +5966,7 @@ const docTemplate = `{
                 "billing_period",
                 "billing_period_count",
                 "currency",
+                "invoice_cadence",
                 "type"
             ],
             "properties": {
@@ -6011,6 +6001,9 @@ const docTemplate = `{
                         }
                     }
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
                 "lookup_key": {
                     "type": "string"
                 },
@@ -6037,6 +6030,9 @@ const docTemplate = `{
                 },
                 "transform_quantity": {
                     "$ref": "#/definitions/price.TransformQuantity"
+                },
+                "trial_period": {
+                    "type": "integer"
                 },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
@@ -6068,7 +6064,6 @@ const docTemplate = `{
                 "billing_period_count",
                 "currency",
                 "customer_id",
-                "invoice_cadence",
                 "plan_id",
                 "start_date"
             ],
@@ -6091,9 +6086,6 @@ const docTemplate = `{
                 },
                 "end_date": {
                     "type": "string"
-                },
-                "invoice_cadence": {
-                    "$ref": "#/definitions/types.InvoiceCadence"
                 },
                 "lookup_key": {
                     "type": "string"
@@ -7362,9 +7354,6 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
-                "invoice_cadence": {
-                    "$ref": "#/definitions/types.InvoiceCadence"
-                },
                 "lookup_key": {
                     "type": "string"
                 },
@@ -7382,9 +7371,6 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "string"
-                },
-                "trial_period": {
-                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -7463,6 +7449,14 @@ const docTemplate = `{
                     "description": "ID uuid identifier for the price",
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "description": "InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceCadence"
+                        }
+                    ]
+                },
                 "lookup_key": {
                     "description": "LookupKey used for looking up the price in the database",
                     "type": "string"
@@ -7514,6 +7508,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/price.JSONBTransformQuantity"
                         }
                     ]
+                },
+                "trial_period": {
+                    "description": "TrialPeriod is the number of days for the trial period\nNote: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)",
+                    "type": "integer"
                 },
                 "type": {
                     "description": "Type is the type of the price ex USAGE, FIXED",
@@ -7783,14 +7781,6 @@ const docTemplate = `{
                 "id": {
                     "description": "ID is the unique identifier for the subscription",
                     "type": "string"
-                },
-                "invoice_cadence": {
-                    "description": "InvoiceCadence is the cadence of the invoice. This overrides the plan's invoice cadence.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.InvoiceCadence"
-                        }
-                    ]
                 },
                 "line_items": {
                     "type": "array",
@@ -8206,6 +8196,7 @@ const docTemplate = `{
                 "billing_period",
                 "billing_period_count",
                 "currency",
+                "invoice_cadence",
                 "type"
             ],
             "properties": {
@@ -8244,6 +8235,9 @@ const docTemplate = `{
                     "description": "The ID of the price to update (present if the price is being updated)",
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
                 "lookup_key": {
                     "type": "string"
                 },
@@ -8271,6 +8265,9 @@ const docTemplate = `{
                 "transform_quantity": {
                     "$ref": "#/definitions/price.TransformQuantity"
                 },
+                "trial_period": {
+                    "type": "integer"
+                },
                 "type": {
                     "$ref": "#/definitions/types.PriceType"
                 }
@@ -8288,9 +8285,6 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.UpdatePlanEntitlementRequest"
                     }
                 },
-                "invoice_cadence": {
-                    "$ref": "#/definitions/types.InvoiceCadence"
-                },
                 "lookup_key": {
                     "type": "string"
                 },
@@ -8302,9 +8296,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/dto.UpdatePlanPriceRequest"
                     }
-                },
-                "trial_period": {
-                    "type": "integer"
                 }
             }
         },
@@ -8744,6 +8735,14 @@ const docTemplate = `{
                     "description": "ID uuid identifier for the price",
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "description": "InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceCadence"
+                        }
+                    ]
+                },
                 "lookup_key": {
                     "description": "LookupKey used for looking up the price in the database",
                     "type": "string"
@@ -8792,6 +8791,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/price.JSONBTransformQuantity"
                         }
                     ]
+                },
+                "trial_period": {
+                    "description": "TrialPeriod is the number of days for the trial period\nNote: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)",
+                    "type": "integer"
                 },
                 "type": {
                     "description": "Type is the type of the price ex USAGE, FIXED",
@@ -8869,6 +8872,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": {
@@ -8907,6 +8913,9 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "string"
+                },
+                "trial_period": {
+                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -9063,13 +9072,17 @@ const docTemplate = `{
                 "MONTHLY",
                 "ANNUAL",
                 "WEEKLY",
-                "DAILY"
+                "DAILY",
+                "QUARTERLY",
+                "HALF_YEARLY"
             ],
             "x-enum-varnames": [
                 "BILLING_PERIOD_MONTHLY",
                 "BILLING_PERIOD_ANNUAL",
                 "BILLING_PERIOD_WEEKLY",
-                "BILLING_PERIOD_DAILY"
+                "BILLING_PERIOD_DAILY",
+                "BILLING_PERIOD_QUARTER",
+                "BILLING_PERIOD_HALF_YEAR"
             ]
         },
         "types.BillingTier": {

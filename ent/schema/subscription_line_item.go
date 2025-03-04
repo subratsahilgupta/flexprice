@@ -90,6 +90,14 @@ func (SubscriptionLineItem) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			NotEmpty(),
+		field.String("invoice_cadence").
+			SchemaType(map[string]string{
+				"postgres": "varchar(20)",
+			}).
+			Immutable().
+			Optional(), // TODO: Remove this once we have migrated all the data
+		field.Int("trial_period").
+			Default(0),
 		field.Time("start_date").
 			Optional().
 			Nillable(),

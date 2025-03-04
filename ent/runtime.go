@@ -566,14 +566,6 @@ func init() {
 	planDescName := planFields[2].Descriptor()
 	// plan.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	plan.NameValidator = planDescName.Validators[0].(func(string) error)
-	// planDescInvoiceCadence is the schema descriptor for invoice_cadence field.
-	planDescInvoiceCadence := planFields[4].Descriptor()
-	// plan.InvoiceCadenceValidator is a validator for the "invoice_cadence" field. It is called by the builders before save.
-	plan.InvoiceCadenceValidator = planDescInvoiceCadence.Validators[0].(func(string) error)
-	// planDescTrialPeriod is the schema descriptor for trial_period field.
-	planDescTrialPeriod := planFields[5].Descriptor()
-	// plan.DefaultTrialPeriod holds the default value on creation for the trial_period field.
-	plan.DefaultTrialPeriod = planDescTrialPeriod.Default.(int)
 	priceMixin := schema.Price{}.Mixin()
 	priceMixinFields0 := priceMixin[0].Fields()
 	_ = priceMixinFields0
@@ -635,6 +627,10 @@ func init() {
 	priceDescBillingCadence := priceFields[9].Descriptor()
 	// price.BillingCadenceValidator is a validator for the "billing_cadence" field. It is called by the builders before save.
 	price.BillingCadenceValidator = priceDescBillingCadence.Validators[0].(func(string) error)
+	// priceDescTrialPeriod is the schema descriptor for trial_period field.
+	priceDescTrialPeriod := priceFields[11].Descriptor()
+	// price.DefaultTrialPeriod holds the default value on creation for the trial_period field.
+	price.DefaultTrialPeriod = priceDescTrialPeriod.Default.(int)
 	secretMixin := schema.Secret{}.Mixin()
 	secretMixinFields0 := secretMixin[0].Fields()
 	_ = secretMixinFields0
@@ -745,28 +741,24 @@ func init() {
 	subscriptionDescCancelAtPeriodEnd := subscriptionFields[13].Descriptor()
 	// subscription.DefaultCancelAtPeriodEnd holds the default value on creation for the cancel_at_period_end field.
 	subscription.DefaultCancelAtPeriodEnd = subscriptionDescCancelAtPeriodEnd.Default.(bool)
-	// subscriptionDescInvoiceCadence is the schema descriptor for invoice_cadence field.
-	subscriptionDescInvoiceCadence := subscriptionFields[16].Descriptor()
-	// subscription.InvoiceCadenceValidator is a validator for the "invoice_cadence" field. It is called by the builders before save.
-	subscription.InvoiceCadenceValidator = subscriptionDescInvoiceCadence.Validators[0].(func(string) error)
 	// subscriptionDescBillingCadence is the schema descriptor for billing_cadence field.
-	subscriptionDescBillingCadence := subscriptionFields[17].Descriptor()
+	subscriptionDescBillingCadence := subscriptionFields[16].Descriptor()
 	// subscription.BillingCadenceValidator is a validator for the "billing_cadence" field. It is called by the builders before save.
 	subscription.BillingCadenceValidator = subscriptionDescBillingCadence.Validators[0].(func(string) error)
 	// subscriptionDescBillingPeriod is the schema descriptor for billing_period field.
-	subscriptionDescBillingPeriod := subscriptionFields[18].Descriptor()
+	subscriptionDescBillingPeriod := subscriptionFields[17].Descriptor()
 	// subscription.BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
 	subscription.BillingPeriodValidator = subscriptionDescBillingPeriod.Validators[0].(func(string) error)
 	// subscriptionDescBillingPeriodCount is the schema descriptor for billing_period_count field.
-	subscriptionDescBillingPeriodCount := subscriptionFields[19].Descriptor()
+	subscriptionDescBillingPeriodCount := subscriptionFields[18].Descriptor()
 	// subscription.DefaultBillingPeriodCount holds the default value on creation for the billing_period_count field.
 	subscription.DefaultBillingPeriodCount = subscriptionDescBillingPeriodCount.Default.(int)
 	// subscriptionDescVersion is the schema descriptor for version field.
-	subscriptionDescVersion := subscriptionFields[20].Descriptor()
+	subscriptionDescVersion := subscriptionFields[19].Descriptor()
 	// subscription.DefaultVersion holds the default value on creation for the version field.
 	subscription.DefaultVersion = subscriptionDescVersion.Default.(int)
 	// subscriptionDescPauseStatus is the schema descriptor for pause_status field.
-	subscriptionDescPauseStatus := subscriptionFields[22].Descriptor()
+	subscriptionDescPauseStatus := subscriptionFields[21].Descriptor()
 	// subscription.DefaultPauseStatus holds the default value on creation for the pause_status field.
 	subscription.DefaultPauseStatus = subscriptionDescPauseStatus.Default.(string)
 	subscriptionlineitemMixin := schema.SubscriptionLineItem{}.Mixin()
@@ -822,6 +814,10 @@ func init() {
 	subscriptionlineitemDescBillingPeriod := subscriptionlineitemFields[12].Descriptor()
 	// subscriptionlineitem.BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
 	subscriptionlineitem.BillingPeriodValidator = subscriptionlineitemDescBillingPeriod.Validators[0].(func(string) error)
+	// subscriptionlineitemDescTrialPeriod is the schema descriptor for trial_period field.
+	subscriptionlineitemDescTrialPeriod := subscriptionlineitemFields[14].Descriptor()
+	// subscriptionlineitem.DefaultTrialPeriod holds the default value on creation for the trial_period field.
+	subscriptionlineitem.DefaultTrialPeriod = subscriptionlineitemDescTrialPeriod.Default.(int)
 	subscriptionpauseMixin := schema.SubscriptionPause{}.Mixin()
 	subscriptionpauseMixinFields0 := subscriptionpauseMixin[0].Fields()
 	_ = subscriptionpauseMixinFields0

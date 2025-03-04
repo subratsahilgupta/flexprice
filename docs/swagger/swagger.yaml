@@ -312,6 +312,8 @@ definitions:
             type: string
           type: array
         type: object
+      invoice_cadence:
+        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         type: string
       metadata:
@@ -330,6 +332,8 @@ definitions:
         type: array
       transform_quantity:
         $ref: '#/definitions/price.TransformQuantity'
+      trial_period:
+        type: integer
       type:
         $ref: '#/definitions/types.PriceType'
     required:
@@ -338,6 +342,7 @@ definitions:
     - billing_period
     - billing_period_count
     - currency
+    - invoice_cadence
     - type
     type: object
   dto.CreatePlanRequest:
@@ -348,8 +353,6 @@ definitions:
         items:
           $ref: '#/definitions/dto.CreatePlanEntitlementRequest'
         type: array
-      invoice_cadence:
-        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         type: string
       name:
@@ -358,8 +361,6 @@ definitions:
         items:
           $ref: '#/definitions/dto.CreatePlanPriceRequest'
         type: array
-      trial_period:
-        type: integer
     required:
     - name
     type: object
@@ -386,6 +387,8 @@ definitions:
             type: string
           type: array
         type: object
+      invoice_cadence:
+        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         type: string
       metadata:
@@ -404,6 +407,8 @@ definitions:
         type: array
       transform_quantity:
         $ref: '#/definitions/price.TransformQuantity'
+      trial_period:
+        type: integer
       type:
         $ref: '#/definitions/types.PriceType'
     required:
@@ -412,6 +417,7 @@ definitions:
     - billing_period
     - billing_period_count
     - currency
+    - invoice_cadence
     - type
     type: object
   dto.CreatePriceTier:
@@ -440,8 +446,6 @@ definitions:
         type: string
       end_date:
         type: string
-      invoice_cadence:
-        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         type: string
       metadata:
@@ -462,7 +466,6 @@ definitions:
     - billing_period_count
     - currency
     - customer_id
-    - invoice_cadence
     - plan_id
     - start_date
     type: object
@@ -1297,8 +1300,6 @@ definitions:
         type: string
       id:
         type: string
-      invoice_cadence:
-        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         type: string
       name:
@@ -1311,8 +1312,6 @@ definitions:
         $ref: '#/definitions/types.Status'
       tenant_id:
         type: string
-      trial_period:
-        type: integer
       updated_at:
         type: string
       updated_by:
@@ -1370,6 +1369,10 @@ definitions:
       id:
         description: ID uuid identifier for the price
         type: string
+      invoice_cadence:
+        allOf:
+        - $ref: '#/definitions/types.InvoiceCadence'
+        description: InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE
       lookup_key:
         description: LookupKey used for looking up the price in the database
         type: string
@@ -1403,6 +1406,11 @@ definitions:
         - $ref: '#/definitions/price.JSONBTransformQuantity'
         description: Transform is the quantity transformation in case of PACKAGE billing
           model
+      trial_period:
+        description: |-
+          TrialPeriod is the number of days for the trial period
+          Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
+        type: integer
       type:
         allOf:
         - $ref: '#/definitions/types.PriceType'
@@ -1593,11 +1601,6 @@ definitions:
       id:
         description: ID is the unique identifier for the subscription
         type: string
-      invoice_cadence:
-        allOf:
-        - $ref: '#/definitions/types.InvoiceCadence'
-        description: InvoiceCadence is the cadence of the invoice. This overrides
-          the plan's invoice cadence.
       line_items:
         items:
           $ref: '#/definitions/subscription.SubscriptionLineItem'
@@ -1902,6 +1905,8 @@ definitions:
         description: The ID of the price to update (present if the price is being
           updated)
         type: string
+      invoice_cadence:
+        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         type: string
       metadata:
@@ -1920,6 +1925,8 @@ definitions:
         type: array
       transform_quantity:
         $ref: '#/definitions/price.TransformQuantity'
+      trial_period:
+        type: integer
       type:
         $ref: '#/definitions/types.PriceType'
     required:
@@ -1928,6 +1935,7 @@ definitions:
     - billing_period
     - billing_period_count
     - currency
+    - invoice_cadence
     - type
     type: object
   dto.UpdatePlanRequest:
@@ -1938,8 +1946,6 @@ definitions:
         items:
           $ref: '#/definitions/dto.UpdatePlanEntitlementRequest'
         type: array
-      invoice_cadence:
-        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         type: string
       name:
@@ -1948,8 +1954,6 @@ definitions:
         items:
           $ref: '#/definitions/dto.UpdatePlanPriceRequest'
         type: array
-      trial_period:
-        type: integer
     type: object
   dto.UpdatePriceRequest:
     properties:
@@ -2251,6 +2255,10 @@ definitions:
       id:
         description: ID uuid identifier for the price
         type: string
+      invoice_cadence:
+        allOf:
+        - $ref: '#/definitions/types.InvoiceCadence'
+        description: InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE
       lookup_key:
         description: LookupKey used for looking up the price in the database
         type: string
@@ -2282,6 +2290,11 @@ definitions:
         - $ref: '#/definitions/price.JSONBTransformQuantity'
         description: Transform is the quantity transformation in case of PACKAGE billing
           model
+      trial_period:
+        description: |-
+          TrialPeriod is the number of days for the trial period
+          Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
+        type: integer
       type:
         allOf:
         - $ref: '#/definitions/types.PriceType'
@@ -2335,6 +2348,8 @@ definitions:
         type: string
       id:
         type: string
+      invoice_cadence:
+        $ref: '#/definitions/types.InvoiceCadence'
       metadata:
         additionalProperties:
           type: string
@@ -2361,6 +2376,8 @@ definitions:
         type: string
       tenant_id:
         type: string
+      trial_period:
+        type: integer
       updated_at:
         type: string
       updated_by:
@@ -2471,12 +2488,16 @@ definitions:
     - ANNUAL
     - WEEKLY
     - DAILY
+    - QUARTERLY
+    - HALF_YEARLY
     type: string
     x-enum-varnames:
     - BILLING_PERIOD_MONTHLY
     - BILLING_PERIOD_ANNUAL
     - BILLING_PERIOD_WEEKLY
     - BILLING_PERIOD_DAILY
+    - BILLING_PERIOD_QUARTER
+    - BILLING_PERIOD_HALF_YEAR
   types.BillingTier:
     enum:
     - VOLUME
@@ -5340,6 +5361,8 @@ paths:
           - ANNUAL
           - WEEKLY
           - DAILY
+          - QUARTERLY
+          - HALF_YEARLY
           type: string
         name: billing_period
         type: array
@@ -5357,16 +5380,6 @@ paths:
         in: query
         name: include_canceled
         type: boolean
-      - collectionFormat: csv
-        description: InvoiceCadence filters by invoice cadence
-        in: query
-        items:
-          enum:
-          - ARREAR
-          - ADVANCE
-          type: string
-        name: invoice_cadence
-        type: array
       - in: query
         maximum: 1000
         minimum: 1

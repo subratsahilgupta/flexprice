@@ -240,6 +240,34 @@ func (slic *SubscriptionLineItemCreate) SetBillingPeriod(s string) *Subscription
 	return slic
 }
 
+// SetInvoiceCadence sets the "invoice_cadence" field.
+func (slic *SubscriptionLineItemCreate) SetInvoiceCadence(s string) *SubscriptionLineItemCreate {
+	slic.mutation.SetInvoiceCadence(s)
+	return slic
+}
+
+// SetNillableInvoiceCadence sets the "invoice_cadence" field if the given value is not nil.
+func (slic *SubscriptionLineItemCreate) SetNillableInvoiceCadence(s *string) *SubscriptionLineItemCreate {
+	if s != nil {
+		slic.SetInvoiceCadence(*s)
+	}
+	return slic
+}
+
+// SetTrialPeriod sets the "trial_period" field.
+func (slic *SubscriptionLineItemCreate) SetTrialPeriod(i int) *SubscriptionLineItemCreate {
+	slic.mutation.SetTrialPeriod(i)
+	return slic
+}
+
+// SetNillableTrialPeriod sets the "trial_period" field if the given value is not nil.
+func (slic *SubscriptionLineItemCreate) SetNillableTrialPeriod(i *int) *SubscriptionLineItemCreate {
+	if i != nil {
+		slic.SetTrialPeriod(*i)
+	}
+	return slic
+}
+
 // SetStartDate sets the "start_date" field.
 func (slic *SubscriptionLineItemCreate) SetStartDate(t time.Time) *SubscriptionLineItemCreate {
 	slic.mutation.SetStartDate(t)
@@ -340,6 +368,10 @@ func (slic *SubscriptionLineItemCreate) defaults() {
 		v := subscriptionlineitem.DefaultQuantity
 		slic.mutation.SetQuantity(v)
 	}
+	if _, ok := slic.mutation.TrialPeriod(); !ok {
+		v := subscriptionlineitem.DefaultTrialPeriod
+		slic.mutation.SetTrialPeriod(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -403,6 +435,9 @@ func (slic *SubscriptionLineItemCreate) check() error {
 		if err := subscriptionlineitem.BillingPeriodValidator(v); err != nil {
 			return &ValidationError{Name: "billing_period", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.billing_period": %w`, err)}
 		}
+	}
+	if _, ok := slic.mutation.TrialPeriod(); !ok {
+		return &ValidationError{Name: "trial_period", err: errors.New(`ent: missing required field "SubscriptionLineItem.trial_period"`)}
 	}
 	if len(slic.mutation.SubscriptionIDs()) == 0 {
 		return &ValidationError{Name: "subscription", err: errors.New(`ent: missing required edge "SubscriptionLineItem.subscription"`)}
@@ -513,6 +548,14 @@ func (slic *SubscriptionLineItemCreate) createSpec() (*SubscriptionLineItem, *sq
 	if value, ok := slic.mutation.BillingPeriod(); ok {
 		_spec.SetField(subscriptionlineitem.FieldBillingPeriod, field.TypeString, value)
 		_node.BillingPeriod = value
+	}
+	if value, ok := slic.mutation.InvoiceCadence(); ok {
+		_spec.SetField(subscriptionlineitem.FieldInvoiceCadence, field.TypeString, value)
+		_node.InvoiceCadence = value
+	}
+	if value, ok := slic.mutation.TrialPeriod(); ok {
+		_spec.SetField(subscriptionlineitem.FieldTrialPeriod, field.TypeInt, value)
+		_node.TrialPeriod = value
 	}
 	if value, ok := slic.mutation.StartDate(); ok {
 		_spec.SetField(subscriptionlineitem.FieldStartDate, field.TypeTime, value)

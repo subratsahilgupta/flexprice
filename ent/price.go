@@ -51,6 +51,10 @@ type Price struct {
 	BillingModel string `json:"billing_model,omitempty"`
 	// BillingCadence holds the value of the "billing_cadence" field.
 	BillingCadence string `json:"billing_cadence,omitempty"`
+	// InvoiceCadence holds the value of the "invoice_cadence" field.
+	InvoiceCadence string `json:"invoice_cadence,omitempty"`
+	// TrialPeriod holds the value of the "trial_period" field.
+	TrialPeriod int `json:"trial_period,omitempty"`
 	// MeterID holds the value of the "meter_id" field.
 	MeterID *string `json:"meter_id,omitempty"`
 	// FilterValues holds the value of the "filter_values" field.
@@ -79,9 +83,9 @@ func (*Price) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case price.FieldAmount:
 			values[i] = new(sql.NullFloat64)
-		case price.FieldBillingPeriodCount:
+		case price.FieldBillingPeriodCount, price.FieldTrialPeriod:
 			values[i] = new(sql.NullInt64)
-		case price.FieldID, price.FieldTenantID, price.FieldStatus, price.FieldCreatedBy, price.FieldUpdatedBy, price.FieldEnvironmentID, price.FieldCurrency, price.FieldDisplayAmount, price.FieldPlanID, price.FieldType, price.FieldBillingPeriod, price.FieldBillingModel, price.FieldBillingCadence, price.FieldMeterID, price.FieldTierMode, price.FieldLookupKey, price.FieldDescription:
+		case price.FieldID, price.FieldTenantID, price.FieldStatus, price.FieldCreatedBy, price.FieldUpdatedBy, price.FieldEnvironmentID, price.FieldCurrency, price.FieldDisplayAmount, price.FieldPlanID, price.FieldType, price.FieldBillingPeriod, price.FieldBillingModel, price.FieldBillingCadence, price.FieldInvoiceCadence, price.FieldMeterID, price.FieldTierMode, price.FieldLookupKey, price.FieldDescription:
 			values[i] = new(sql.NullString)
 		case price.FieldCreatedAt, price.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -201,6 +205,18 @@ func (pr *Price) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field billing_cadence", values[i])
 			} else if value.Valid {
 				pr.BillingCadence = value.String
+			}
+		case price.FieldInvoiceCadence:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field invoice_cadence", values[i])
+			} else if value.Valid {
+				pr.InvoiceCadence = value.String
+			}
+		case price.FieldTrialPeriod:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field trial_period", values[i])
+			} else if value.Valid {
+				pr.TrialPeriod = int(value.Int64)
 			}
 		case price.FieldMeterID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -343,6 +359,12 @@ func (pr *Price) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("billing_cadence=")
 	builder.WriteString(pr.BillingCadence)
+	builder.WriteString(", ")
+	builder.WriteString("invoice_cadence=")
+	builder.WriteString(pr.InvoiceCadence)
+	builder.WriteString(", ")
+	builder.WriteString("trial_period=")
+	builder.WriteString(fmt.Sprintf("%v", pr.TrialPeriod))
 	builder.WriteString(", ")
 	if v := pr.MeterID; v != nil {
 		builder.WriteString("meter_id=")

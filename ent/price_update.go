@@ -501,6 +501,9 @@ func (pu *PriceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := pu.mutation.BillingCadence(); ok {
 		_spec.SetField(price.FieldBillingCadence, field.TypeString, value)
 	}
+	if pu.mutation.InvoiceCadenceCleared() {
+		_spec.ClearField(price.FieldInvoiceCadence, field.TypeString)
+	}
 	if value, ok := pu.mutation.MeterID(); ok {
 		_spec.SetField(price.FieldMeterID, field.TypeString, value)
 	}
@@ -1074,6 +1077,9 @@ func (puo *PriceUpdateOne) sqlSave(ctx context.Context) (_node *Price, err error
 	}
 	if value, ok := puo.mutation.BillingCadence(); ok {
 		_spec.SetField(price.FieldBillingCadence, field.TypeString, value)
+	}
+	if puo.mutation.InvoiceCadenceCleared() {
+		_spec.ClearField(price.FieldInvoiceCadence, field.TypeString)
 	}
 	if value, ok := puo.mutation.MeterID(); ok {
 		_spec.SetField(price.FieldMeterID, field.TypeString, value)

@@ -92,11 +92,10 @@ func (s *SubscriptionServiceSuite) setupTestData() {
 
 	// Create test plan
 	s.testData.plan = &plan.Plan{
-		ID:             "plan_123",
-		Name:           "Test Plan",
-		Description:    "Test Plan Description",
-		InvoiceCadence: types.InvoiceCadenceAdvance,
-		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		ID:          "plan_123",
+		Name:        "Test Plan",
+		Description: "Test Plan Description",
+		BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().PlanRepo.Create(s.GetContext(), s.testData.plan))
 
@@ -138,6 +137,7 @@ func (s *SubscriptionServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_TIERED,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
 		TierMode:           types.BILLING_TIER_SLAB,
 		MeterID:            s.testData.meters.apiCalls.ID,
 		Tiers: []price.PriceTier{
@@ -159,6 +159,7 @@ func (s *SubscriptionServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
 		MeterID:            s.testData.meters.storage.ID,
 		FilterValues:       map[string][]string{"region": {"us-east-1"}, "tier": {"standard"}},
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -175,6 +176,7 @@ func (s *SubscriptionServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
 		MeterID:            s.testData.meters.storage.ID,
 		FilterValues:       map[string][]string{"region": {"us-east-1"}, "tier": {"archive"}},
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -428,7 +430,6 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				StartDate:          s.testData.now,
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
-				InvoiceCadence:     types.InvoiceCadenceArrear,
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 				BillingPeriodCount: 1,
@@ -443,7 +444,6 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				StartDate:          s.testData.now,
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
-				InvoiceCadence:     types.InvoiceCadenceArrear,
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 				BillingPeriodCount: 1,
@@ -458,7 +458,6 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				StartDate:          s.testData.now,
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
-				InvoiceCadence:     types.InvoiceCadenceArrear,
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 				BillingPeriodCount: 1,
@@ -473,7 +472,6 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				StartDate:          s.testData.now,
 				EndDate:            lo.ToPtr(s.testData.now.Add(-24 * time.Hour)),
 				Currency:           "usd",
-				InvoiceCadence:     types.InvoiceCadenceArrear,
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 				BillingPeriodCount: 1,
@@ -551,8 +549,9 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		LineItems:          []*subscription.SubscriptionLineItem{},
 	}
-	s.NoError(s.GetStores().SubscriptionRepo.Create(s.GetContext(), activeSub))
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), activeSub, activeSub.LineItems))
 
 	testCases := []struct {
 		name    string
@@ -608,6 +607,7 @@ func (s *SubscriptionServiceSuite) TestListSubscriptions() {
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+			LineItems:          []*subscription.SubscriptionLineItem{},
 		},
 		{
 			ID:                 "sub_2",
@@ -619,11 +619,12 @@ func (s *SubscriptionServiceSuite) TestListSubscriptions() {
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+			LineItems:          []*subscription.SubscriptionLineItem{},
 		},
 	}
 
 	for _, sub := range testSubs {
-		s.NoError(s.GetStores().SubscriptionRepo.Create(s.GetContext(), sub))
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), sub, sub.LineItems))
 	}
 
 	testCases := []struct {

@@ -55,7 +55,6 @@ func (r *subscriptionRepository) Create(ctx context.Context, sub *domainSub.Subs
 		SetCancelAtPeriodEnd(sub.CancelAtPeriodEnd).
 		SetNillableTrialStart(sub.TrialStart).
 		SetNillableTrialEnd(sub.TrialEnd).
-		SetInvoiceCadence(string(sub.InvoiceCadence)).
 		SetBillingCadence(string(sub.BillingCadence)).
 		SetBillingPeriod(string(sub.BillingPeriod)).
 		SetBillingPeriodCount(sub.BillingPeriodCount).
@@ -370,15 +369,6 @@ func (o *SubscriptionQueryOptions) applyEntityQueryOptions(_ context.Context, f 
 		query = query.Where(subscription.SubscriptionStatusIn(statuses...))
 	}
 
-	// Apply invoice cadence filter
-	if len(f.InvoiceCadence) > 0 {
-		cadences := make([]string, len(f.InvoiceCadence))
-		for i, cadence := range f.InvoiceCadence {
-			cadences[i] = string(cadence)
-		}
-		query = query.Where(subscription.InvoiceCadenceIn(cadences...))
-	}
-
 	// Apply billing cadence filter
 	if len(f.BillingCadence) > 0 {
 		cadences := make([]string, len(f.BillingCadence))
@@ -461,6 +451,8 @@ func (r *subscriptionRepository) CreateWithLineItems(ctx context.Context, sub *d
 				SetBillingPeriod(string(item.BillingPeriod)).
 				SetNillableStartDate(types.ToNillableTime(item.StartDate)).
 				SetNillableEndDate(types.ToNillableTime(item.EndDate)).
+				SetInvoiceCadence(string(item.InvoiceCadence)).
+				SetTrialPeriod(item.TrialPeriod).
 				SetMetadata(item.Metadata).
 				SetTenantID(item.TenantID).
 				SetEnvironmentID(item.EnvironmentID).

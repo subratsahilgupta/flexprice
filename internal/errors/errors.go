@@ -7,6 +7,18 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
+// ErrorResponse represents the standard error response structure
+type ErrorResponse struct {
+	Success bool        `json:"success"`
+	Error   ErrorDetail `json:"error"`
+}
+
+// ErrorDetail contains error information
+type ErrorDetail struct {
+	Display string         `json:"message"`
+	Details map[string]any `json:"details,omitempty"`
+}
+
 // Common error types that can be used across the application
 // TODO: move to errors.New from cockroachdb/errors
 var (
