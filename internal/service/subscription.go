@@ -246,9 +246,14 @@ func (s *subscriptionService) CancelSubscription(ctx context.Context, id string,
 	}
 
 	now := time.Now().UTC()
-	subscription.SubscriptionStatus = types.SubscriptionStatusCancelled
 	subscription.CancelledAt = &now
-	subscription.CancelAtPeriodEnd = cancelAtPeriodEnd
+	if cancelAtPeriodEnd {
+		subscription.CancelAtPeriodEnd = cancelAtPeriodEnd
+		subscription.CancelAt = lo.ToPtr(subscription.CurrentPeriodEnd)
+	} else {
+		subscription.SubscriptionStatus = types.SubscriptionStatusCancelled
+		subscription.CancelAt = nil
+	}
 
 	if err := s.SubRepo.Update(ctx, subscription); err != nil {
 		return fmt.Errorf("failed to cancel subscription: %w", err)
