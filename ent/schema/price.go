@@ -72,6 +72,15 @@ func (Price) Fields() []ent.Field {
 				"postgres": "varchar(20)",
 			}).
 			NotEmpty(),
+		field.String("invoice_cadence").
+			SchemaType(map[string]string{
+				"postgres": "varchar(20)",
+			}).
+			Optional(). // TODO: Remove this once we have migrated all the data
+			Immutable(),
+		field.Int("trial_period").
+			Default(0).
+			Immutable(),
 		field.String("meter_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",

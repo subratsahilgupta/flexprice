@@ -58,8 +58,6 @@ const (
 	FieldTrialStart = "trial_start"
 	// FieldTrialEnd holds the string denoting the trial_end field in the database.
 	FieldTrialEnd = "trial_end"
-	// FieldInvoiceCadence holds the string denoting the invoice_cadence field in the database.
-	FieldInvoiceCadence = "invoice_cadence"
 	// FieldBillingCadence holds the string denoting the billing_cadence field in the database.
 	FieldBillingCadence = "billing_cadence"
 	// FieldBillingPeriod holds the string denoting the billing_period field in the database.
@@ -121,7 +119,6 @@ var Columns = []string{
 	FieldCancelAtPeriodEnd,
 	FieldTrialStart,
 	FieldTrialEnd,
-	FieldInvoiceCadence,
 	FieldBillingCadence,
 	FieldBillingPeriod,
 	FieldBillingPeriodCount,
@@ -172,8 +169,6 @@ var (
 	DefaultCurrentPeriodEnd func() time.Time
 	// DefaultCancelAtPeriodEnd holds the default value on creation for the "cancel_at_period_end" field.
 	DefaultCancelAtPeriodEnd bool
-	// InvoiceCadenceValidator is a validator for the "invoice_cadence" field. It is called by the builders before save.
-	InvoiceCadenceValidator func(string) error
 	// BillingCadenceValidator is a validator for the "billing_cadence" field. It is called by the builders before save.
 	BillingCadenceValidator func(string) error
 	// BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
@@ -302,11 +297,6 @@ func ByTrialStart(opts ...sql.OrderTermOption) OrderOption {
 // ByTrialEnd orders the results by the trial_end field.
 func ByTrialEnd(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTrialEnd, opts...).ToFunc()
-}
-
-// ByInvoiceCadence orders the results by the invoice_cadence field.
-func ByInvoiceCadence(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldInvoiceCadence, opts...).ToFunc()
 }
 
 // ByBillingCadence orders the results by the billing_cadence field.

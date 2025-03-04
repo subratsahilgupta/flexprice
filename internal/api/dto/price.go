@@ -23,6 +23,8 @@ type CreatePriceRequest struct {
 	MeterID            string                   `json:"meter_id,omitempty"`
 	FilterValues       map[string][]string      `json:"filter_values,omitempty"`
 	LookupKey          string                   `json:"lookup_key,omitempty"`
+	InvoiceCadence     types.InvoiceCadence     `json:"invoice_cadence" validate:"required"`
+	TrialPeriod        int                      `json:"trial_period"`
 	Description        string                   `json:"description,omitempty"`
 	Metadata           map[string]string        `json:"metadata,omitempty"`
 	TierMode           types.BillingTier        `json:"tier_mode,omitempty"`
@@ -79,6 +81,11 @@ func (r *CreatePriceRequest) Validate() error {
 	}
 
 	err = r.BillingPeriod.Validate()
+	if err != nil {
+		return err
+	}
+
+	err = r.InvoiceCadence.Validate()
 	if err != nil {
 		return err
 	}
@@ -144,6 +151,20 @@ func (r *CreatePriceRequest) Validate() error {
 			}
 		}
 	}
+
+	// trial period validations
+	// Trial period should be non-negative
+	if r.TrialPeriod < 0 {
+		return fmt.Errorf("trial period must be non-negative")
+	}
+
+	// Trial period should only be set for recurring fixed prices
+	if r.TrialPeriod > 0 &&
+		r.BillingCadence != types.BILLING_CADENCE_RECURRING &&
+		r.Type != types.PRICE_TYPE_FIXED {
+		return fmt.Errorf("trial period can only be set for recurring fixed prices")
+	}
+
 	return nil
 }
 
@@ -211,6 +232,8 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*price.Price, error) 
 		BillingPeriodCount: r.BillingPeriodCount,
 		BillingModel:       r.BillingModel,
 		BillingCadence:     r.BillingCadence,
+		InvoiceCadence:     r.InvoiceCadence,
+		TrialPeriod:        r.TrialPeriod,
 		MeterID:            r.MeterID,
 		FilterValues:       filterValues,
 		LookupKey:          r.LookupKey,

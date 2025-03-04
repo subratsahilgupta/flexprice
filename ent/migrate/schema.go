@@ -212,7 +212,7 @@ var (
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
 		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
-		{Name: "lookup_key", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "lookup_key", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -232,7 +232,7 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{FeaturesColumns[1], FeaturesColumns[7], FeaturesColumns[8]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "(lookup_key IS NOT NULL OR lookup_key != '') AND status = 'published'",
+					Where: "(lookup_key IS NOT NULL AND lookup_key != '') AND status = 'published'",
 				},
 			},
 			{
@@ -585,8 +585,6 @@ var (
 		{Name: "lookup_key", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
-		{Name: "invoice_cadence", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
-		{Name: "trial_period", Type: field.TypeInt, Default: 0},
 	}
 	// PlansTable holds the schema information for the "plans" table.
 	PlansTable = &schema.Table{
@@ -628,6 +626,8 @@ var (
 		{Name: "billing_period_count", Type: field.TypeInt},
 		{Name: "billing_model", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "billing_cadence", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "invoice_cadence", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "trial_period", Type: field.TypeInt, Default: 0},
 		{Name: "meter_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "filter_values", Type: field.TypeJSON, Nullable: true},
 		{Name: "tier_mode", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
@@ -646,7 +646,7 @@ var (
 			{
 				Name:    "price_tenant_id_environment_id_lookup_key",
 				Unique:  true,
-				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7], PricesColumns[22]},
+				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7], PricesColumns[24]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status != 'deleted' AND lookup_key IS NOT NULL AND lookup_key != ''",
 				},
@@ -731,7 +731,6 @@ var (
 		{Name: "cancel_at_period_end", Type: field.TypeBool, Default: false},
 		{Name: "trial_start", Type: field.TypeTime, Nullable: true},
 		{Name: "trial_end", Type: field.TypeTime, Nullable: true},
-		{Name: "invoice_cadence", Type: field.TypeString},
 		{Name: "billing_cadence", Type: field.TypeString},
 		{Name: "billing_period", Type: field.TypeString},
 		{Name: "billing_period_count", Type: field.TypeInt, Default: 1},
@@ -769,12 +768,12 @@ var (
 			{
 				Name:    "subscription_tenant_id_environment_id_pause_status_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[29], SubscriptionsColumns[2]},
+				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[28], SubscriptionsColumns[2]},
 			},
 			{
 				Name:    "subscription_tenant_id_environment_id_active_pause_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[30], SubscriptionsColumns[2]},
+				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[29], SubscriptionsColumns[2]},
 			},
 		},
 	}
@@ -799,6 +798,8 @@ var (
 		{Name: "quantity", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
 		{Name: "billing_period", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "invoice_cadence", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "trial_period", Type: field.TypeInt, Default: 0},
 		{Name: "start_date", Type: field.TypeTime, Nullable: true},
 		{Name: "end_date", Type: field.TypeTime, Nullable: true},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -812,7 +813,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "subscription_line_items_subscriptions_line_items",
-				Columns:    []*schema.Column{SubscriptionLineItemsColumns[22]},
+				Columns:    []*schema.Column{SubscriptionLineItemsColumns[24]},
 				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -821,7 +822,7 @@ var (
 			{
 				Name:    "subscriptionlineitem_tenant_id_environment_id_subscription_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[22], SubscriptionLineItemsColumns[2]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[24], SubscriptionLineItemsColumns[2]},
 			},
 			{
 				Name:    "subscriptionlineitem_tenant_id_environment_id_customer_id_status",
@@ -846,7 +847,7 @@ var (
 			{
 				Name:    "subscriptionlineitem_start_date_end_date",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[19], SubscriptionLineItemsColumns[20]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[21], SubscriptionLineItemsColumns[22]},
 			},
 		},
 	}

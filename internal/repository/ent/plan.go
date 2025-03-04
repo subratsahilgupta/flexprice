@@ -47,8 +47,6 @@ func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 		SetName(p.Name).
 		SetDescription(p.Description).
 		SetLookupKey(p.LookupKey).
-		SetInvoiceCadence(string(p.InvoiceCadence)).
-		SetTrialPeriod(p.TrialPeriod).
 		SetTenantID(p.TenantID).
 		SetStatus(string(p.Status)).
 		SetCreatedAt(p.CreatedAt).
@@ -178,8 +176,6 @@ func (r *planRepository) Update(ctx context.Context, p *domainPlan.Plan) error {
 		SetLookupKey(p.LookupKey).
 		SetName(p.Name).
 		SetDescription(p.Description).
-		SetInvoiceCadence(string(p.InvoiceCadence)).
-		SetTrialPeriod(p.TrialPeriod).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		Save(ctx)

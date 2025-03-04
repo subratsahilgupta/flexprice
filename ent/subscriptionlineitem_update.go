@@ -245,6 +245,27 @@ func (sliu *SubscriptionLineItemUpdate) SetNillableBillingPeriod(s *string) *Sub
 	return sliu
 }
 
+// SetTrialPeriod sets the "trial_period" field.
+func (sliu *SubscriptionLineItemUpdate) SetTrialPeriod(i int) *SubscriptionLineItemUpdate {
+	sliu.mutation.ResetTrialPeriod()
+	sliu.mutation.SetTrialPeriod(i)
+	return sliu
+}
+
+// SetNillableTrialPeriod sets the "trial_period" field if the given value is not nil.
+func (sliu *SubscriptionLineItemUpdate) SetNillableTrialPeriod(i *int) *SubscriptionLineItemUpdate {
+	if i != nil {
+		sliu.SetTrialPeriod(*i)
+	}
+	return sliu
+}
+
+// AddTrialPeriod adds i to the "trial_period" field.
+func (sliu *SubscriptionLineItemUpdate) AddTrialPeriod(i int) *SubscriptionLineItemUpdate {
+	sliu.mutation.AddTrialPeriod(i)
+	return sliu
+}
+
 // SetStartDate sets the "start_date" field.
 func (sliu *SubscriptionLineItemUpdate) SetStartDate(t time.Time) *SubscriptionLineItemUpdate {
 	sliu.mutation.SetStartDate(t)
@@ -438,6 +459,15 @@ func (sliu *SubscriptionLineItemUpdate) sqlSave(ctx context.Context) (n int, err
 	}
 	if value, ok := sliu.mutation.BillingPeriod(); ok {
 		_spec.SetField(subscriptionlineitem.FieldBillingPeriod, field.TypeString, value)
+	}
+	if sliu.mutation.InvoiceCadenceCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldInvoiceCadence, field.TypeString)
+	}
+	if value, ok := sliu.mutation.TrialPeriod(); ok {
+		_spec.SetField(subscriptionlineitem.FieldTrialPeriod, field.TypeInt, value)
+	}
+	if value, ok := sliu.mutation.AddedTrialPeriod(); ok {
+		_spec.AddField(subscriptionlineitem.FieldTrialPeriod, field.TypeInt, value)
 	}
 	if value, ok := sliu.mutation.StartDate(); ok {
 		_spec.SetField(subscriptionlineitem.FieldStartDate, field.TypeTime, value)
@@ -693,6 +723,27 @@ func (sliuo *SubscriptionLineItemUpdateOne) SetNillableBillingPeriod(s *string) 
 	return sliuo
 }
 
+// SetTrialPeriod sets the "trial_period" field.
+func (sliuo *SubscriptionLineItemUpdateOne) SetTrialPeriod(i int) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.ResetTrialPeriod()
+	sliuo.mutation.SetTrialPeriod(i)
+	return sliuo
+}
+
+// SetNillableTrialPeriod sets the "trial_period" field if the given value is not nil.
+func (sliuo *SubscriptionLineItemUpdateOne) SetNillableTrialPeriod(i *int) *SubscriptionLineItemUpdateOne {
+	if i != nil {
+		sliuo.SetTrialPeriod(*i)
+	}
+	return sliuo
+}
+
+// AddTrialPeriod adds i to the "trial_period" field.
+func (sliuo *SubscriptionLineItemUpdateOne) AddTrialPeriod(i int) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.AddTrialPeriod(i)
+	return sliuo
+}
+
 // SetStartDate sets the "start_date" field.
 func (sliuo *SubscriptionLineItemUpdateOne) SetStartDate(t time.Time) *SubscriptionLineItemUpdateOne {
 	sliuo.mutation.SetStartDate(t)
@@ -916,6 +967,15 @@ func (sliuo *SubscriptionLineItemUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if value, ok := sliuo.mutation.BillingPeriod(); ok {
 		_spec.SetField(subscriptionlineitem.FieldBillingPeriod, field.TypeString, value)
+	}
+	if sliuo.mutation.InvoiceCadenceCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldInvoiceCadence, field.TypeString)
+	}
+	if value, ok := sliuo.mutation.TrialPeriod(); ok {
+		_spec.SetField(subscriptionlineitem.FieldTrialPeriod, field.TypeInt, value)
+	}
+	if value, ok := sliuo.mutation.AddedTrialPeriod(); ok {
+		_spec.AddField(subscriptionlineitem.FieldTrialPeriod, field.TypeInt, value)
 	}
 	if value, ok := sliuo.mutation.StartDate(); ok {
 		_spec.SetField(subscriptionlineitem.FieldStartDate, field.TypeTime, value)

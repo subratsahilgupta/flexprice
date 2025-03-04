@@ -59,6 +59,7 @@ func (s *PlanServiceSuite) TestCreatePlan() {
 						BillingModel:       types.BILLING_MODEL_TIERED,
 						TierMode:           types.BILLING_TIER_SLAB,
 						BillingCadence:     types.BILLING_CADENCE_RECURRING,
+						InvoiceCadence:     types.InvoiceCadenceAdvance,
 						Description:        "Test Price",
 						MeterID:            "meter-1",
 						Tiers: ConvertToCreatePriceTier([]price.PriceTier{
@@ -94,6 +95,7 @@ func (s *PlanServiceSuite) TestCreatePlan() {
 						BillingPeriodCount: 1,
 						BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 						BillingCadence:     types.BILLING_CADENCE_RECURRING,
+						InvoiceCadence:     types.InvoiceCadenceAdvance,
 						Description:        "Flat Fee Price",
 					},
 				},
@@ -106,6 +108,7 @@ func (s *PlanServiceSuite) TestCreatePlan() {
 						BillingPeriodCount: 1,
 						BillingModel:       types.BILLING_MODEL_PACKAGE,
 						BillingCadence:     types.BILLING_CADENCE_RECURRING,
+						InvoiceCadence:     types.InvoiceCadenceAdvance,
 						TransformQuantity:  &price.TransformQuantity{DivideBy: 10},
 						MeterID:            "meter-2",
 						Description:        "Package Price",

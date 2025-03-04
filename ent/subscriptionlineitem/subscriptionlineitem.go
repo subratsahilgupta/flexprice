@@ -53,6 +53,10 @@ const (
 	FieldCurrency = "currency"
 	// FieldBillingPeriod holds the string denoting the billing_period field in the database.
 	FieldBillingPeriod = "billing_period"
+	// FieldInvoiceCadence holds the string denoting the invoice_cadence field in the database.
+	FieldInvoiceCadence = "invoice_cadence"
+	// FieldTrialPeriod holds the string denoting the trial_period field in the database.
+	FieldTrialPeriod = "trial_period"
 	// FieldStartDate holds the string denoting the start_date field in the database.
 	FieldStartDate = "start_date"
 	// FieldEndDate holds the string denoting the end_date field in the database.
@@ -94,6 +98,8 @@ var Columns = []string{
 	FieldQuantity,
 	FieldCurrency,
 	FieldBillingPeriod,
+	FieldInvoiceCadence,
+	FieldTrialPeriod,
 	FieldStartDate,
 	FieldEndDate,
 	FieldMetadata,
@@ -134,6 +140,8 @@ var (
 	CurrencyValidator func(string) error
 	// BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
 	BillingPeriodValidator func(string) error
+	// DefaultTrialPeriod holds the default value on creation for the "trial_period" field.
+	DefaultTrialPeriod int
 )
 
 // OrderOption defines the ordering options for the SubscriptionLineItem queries.
@@ -237,6 +245,16 @@ func ByCurrency(opts ...sql.OrderTermOption) OrderOption {
 // ByBillingPeriod orders the results by the billing_period field.
 func ByBillingPeriod(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBillingPeriod, opts...).ToFunc()
+}
+
+// ByInvoiceCadence orders the results by the invoice_cadence field.
+func ByInvoiceCadence(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInvoiceCadence, opts...).ToFunc()
+}
+
+// ByTrialPeriod orders the results by the trial_period field.
+func ByTrialPeriod(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTrialPeriod, opts...).ToFunc()
 }
 
 // ByStartDate orders the results by the start_date field.

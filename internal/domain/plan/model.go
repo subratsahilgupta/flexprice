@@ -6,13 +6,11 @@ import (
 )
 
 type Plan struct {
-	ID             string               `db:"id" json:"id"`
-	Name           string               `db:"name" json:"name"`
-	LookupKey      string               `db:"lookup_key" json:"lookup_key"`
-	Description    string               `db:"description" json:"description"`
-	InvoiceCadence types.InvoiceCadence `db:"invoice_cadence" json:"invoice_cadence"`
-	TrialPeriod    int                  `db:"trial_period" json:"trial_period"`
-	EnvironmentID  string               `db:"environment_id" json:"environment_id"`
+	ID            string `db:"id" json:"id"`
+	Name          string `db:"name" json:"name"`
+	LookupKey     string `db:"lookup_key" json:"lookup_key"`
+	Description   string `db:"description" json:"description"`
+	EnvironmentID string `db:"environment_id" json:"environment_id"`
 	types.BaseModel
 }
 
@@ -22,13 +20,11 @@ func FromEnt(e *ent.Plan) *Plan {
 		return nil
 	}
 	return &Plan{
-		ID:             e.ID,
-		Name:           e.Name,
-		LookupKey:      e.LookupKey,
-		Description:    e.Description,
-		InvoiceCadence: types.InvoiceCadence(e.InvoiceCadence),
-		TrialPeriod:    e.TrialPeriod,
-		EnvironmentID:  e.EnvironmentID,
+		ID:            e.ID,
+		Name:          e.Name,
+		LookupKey:     e.LookupKey,
+		Description:   e.Description,
+		EnvironmentID: e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

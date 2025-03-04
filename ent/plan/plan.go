@@ -34,10 +34,6 @@ const (
 	FieldName = "name"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
-	// FieldInvoiceCadence holds the string denoting the invoice_cadence field in the database.
-	FieldInvoiceCadence = "invoice_cadence"
-	// FieldTrialPeriod holds the string denoting the trial_period field in the database.
-	FieldTrialPeriod = "trial_period"
 	// EdgeEntitlements holds the string denoting the entitlements edge name in mutations.
 	EdgeEntitlements = "entitlements"
 	// Table holds the table name of the plan in the database.
@@ -64,8 +60,6 @@ var Columns = []string{
 	FieldLookupKey,
 	FieldName,
 	FieldDescription,
-	FieldInvoiceCadence,
-	FieldTrialPeriod,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -93,10 +87,6 @@ var (
 	DefaultEnvironmentID string
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
-	// InvoiceCadenceValidator is a validator for the "invoice_cadence" field. It is called by the builders before save.
-	InvoiceCadenceValidator func(string) error
-	// DefaultTrialPeriod holds the default value on creation for the "trial_period" field.
-	DefaultTrialPeriod int
 )
 
 // OrderOption defines the ordering options for the Plan queries.
@@ -155,16 +145,6 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByDescription orders the results by the description field.
 func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDescription, opts...).ToFunc()
-}
-
-// ByInvoiceCadence orders the results by the invoice_cadence field.
-func ByInvoiceCadence(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldInvoiceCadence, opts...).ToFunc()
-}
-
-// ByTrialPeriod orders the results by the trial_period field.
-func ByTrialPeriod(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTrialPeriod, opts...).ToFunc()
 }
 
 // ByEntitlementsCount orders the results by entitlements count.

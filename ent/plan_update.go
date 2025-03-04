@@ -123,41 +123,6 @@ func (pu *PlanUpdate) ClearDescription() *PlanUpdate {
 	return pu
 }
 
-// SetInvoiceCadence sets the "invoice_cadence" field.
-func (pu *PlanUpdate) SetInvoiceCadence(s string) *PlanUpdate {
-	pu.mutation.SetInvoiceCadence(s)
-	return pu
-}
-
-// SetNillableInvoiceCadence sets the "invoice_cadence" field if the given value is not nil.
-func (pu *PlanUpdate) SetNillableInvoiceCadence(s *string) *PlanUpdate {
-	if s != nil {
-		pu.SetInvoiceCadence(*s)
-	}
-	return pu
-}
-
-// SetTrialPeriod sets the "trial_period" field.
-func (pu *PlanUpdate) SetTrialPeriod(i int) *PlanUpdate {
-	pu.mutation.ResetTrialPeriod()
-	pu.mutation.SetTrialPeriod(i)
-	return pu
-}
-
-// SetNillableTrialPeriod sets the "trial_period" field if the given value is not nil.
-func (pu *PlanUpdate) SetNillableTrialPeriod(i *int) *PlanUpdate {
-	if i != nil {
-		pu.SetTrialPeriod(*i)
-	}
-	return pu
-}
-
-// AddTrialPeriod adds i to the "trial_period" field.
-func (pu *PlanUpdate) AddTrialPeriod(i int) *PlanUpdate {
-	pu.mutation.AddTrialPeriod(i)
-	return pu
-}
-
 // AddEntitlementIDs adds the "entitlements" edge to the Entitlement entity by IDs.
 func (pu *PlanUpdate) AddEntitlementIDs(ids ...string) *PlanUpdate {
 	pu.mutation.AddEntitlementIDs(ids...)
@@ -242,11 +207,6 @@ func (pu *PlanUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Plan.name": %w`, err)}
 		}
 	}
-	if v, ok := pu.mutation.InvoiceCadence(); ok {
-		if err := plan.InvoiceCadenceValidator(v); err != nil {
-			return &ValidationError{Name: "invoice_cadence", err: fmt.Errorf(`ent: validator failed for field "Plan.invoice_cadence": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -294,15 +254,6 @@ func (pu *PlanUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if pu.mutation.DescriptionCleared() {
 		_spec.ClearField(plan.FieldDescription, field.TypeString)
-	}
-	if value, ok := pu.mutation.InvoiceCadence(); ok {
-		_spec.SetField(plan.FieldInvoiceCadence, field.TypeString, value)
-	}
-	if value, ok := pu.mutation.TrialPeriod(); ok {
-		_spec.SetField(plan.FieldTrialPeriod, field.TypeInt, value)
-	}
-	if value, ok := pu.mutation.AddedTrialPeriod(); ok {
-		_spec.AddField(plan.FieldTrialPeriod, field.TypeInt, value)
 	}
 	if pu.mutation.EntitlementsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -463,41 +414,6 @@ func (puo *PlanUpdateOne) ClearDescription() *PlanUpdateOne {
 	return puo
 }
 
-// SetInvoiceCadence sets the "invoice_cadence" field.
-func (puo *PlanUpdateOne) SetInvoiceCadence(s string) *PlanUpdateOne {
-	puo.mutation.SetInvoiceCadence(s)
-	return puo
-}
-
-// SetNillableInvoiceCadence sets the "invoice_cadence" field if the given value is not nil.
-func (puo *PlanUpdateOne) SetNillableInvoiceCadence(s *string) *PlanUpdateOne {
-	if s != nil {
-		puo.SetInvoiceCadence(*s)
-	}
-	return puo
-}
-
-// SetTrialPeriod sets the "trial_period" field.
-func (puo *PlanUpdateOne) SetTrialPeriod(i int) *PlanUpdateOne {
-	puo.mutation.ResetTrialPeriod()
-	puo.mutation.SetTrialPeriod(i)
-	return puo
-}
-
-// SetNillableTrialPeriod sets the "trial_period" field if the given value is not nil.
-func (puo *PlanUpdateOne) SetNillableTrialPeriod(i *int) *PlanUpdateOne {
-	if i != nil {
-		puo.SetTrialPeriod(*i)
-	}
-	return puo
-}
-
-// AddTrialPeriod adds i to the "trial_period" field.
-func (puo *PlanUpdateOne) AddTrialPeriod(i int) *PlanUpdateOne {
-	puo.mutation.AddTrialPeriod(i)
-	return puo
-}
-
 // AddEntitlementIDs adds the "entitlements" edge to the Entitlement entity by IDs.
 func (puo *PlanUpdateOne) AddEntitlementIDs(ids ...string) *PlanUpdateOne {
 	puo.mutation.AddEntitlementIDs(ids...)
@@ -595,11 +511,6 @@ func (puo *PlanUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Plan.name": %w`, err)}
 		}
 	}
-	if v, ok := puo.mutation.InvoiceCadence(); ok {
-		if err := plan.InvoiceCadenceValidator(v); err != nil {
-			return &ValidationError{Name: "invoice_cadence", err: fmt.Errorf(`ent: validator failed for field "Plan.invoice_cadence": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -664,15 +575,6 @@ func (puo *PlanUpdateOne) sqlSave(ctx context.Context) (_node *Plan, err error) 
 	}
 	if puo.mutation.DescriptionCleared() {
 		_spec.ClearField(plan.FieldDescription, field.TypeString)
-	}
-	if value, ok := puo.mutation.InvoiceCadence(); ok {
-		_spec.SetField(plan.FieldInvoiceCadence, field.TypeString, value)
-	}
-	if value, ok := puo.mutation.TrialPeriod(); ok {
-		_spec.SetField(plan.FieldTrialPeriod, field.TypeInt, value)
-	}
-	if value, ok := puo.mutation.AddedTrialPeriod(); ok {
-		_spec.AddField(plan.FieldTrialPeriod, field.TypeInt, value)
 	}
 	if puo.mutation.EntitlementsCleared() {
 		edge := &sqlgraph.EdgeSpec{

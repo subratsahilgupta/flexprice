@@ -10,13 +10,11 @@ import (
 )
 
 type CreatePlanRequest struct {
-	Name           string                         `json:"name" validate:"required"`
-	LookupKey      string                         `json:"lookup_key"`
-	Description    string                         `json:"description"`
-	InvoiceCadence types.InvoiceCadence           `json:"invoice_cadence"`
-	TrialPeriod    int                            `json:"trial_period"`
-	Prices         []CreatePlanPriceRequest       `json:"prices"`
-	Entitlements   []CreatePlanEntitlementRequest `json:"entitlements"`
+	Name         string                         `json:"name" validate:"required"`
+	LookupKey    string                         `json:"lookup_key"`
+	Description  string                         `json:"description"`
+	Prices       []CreatePlanPriceRequest       `json:"prices"`
+	Entitlements []CreatePlanEntitlementRequest `json:"entitlements"`
 }
 
 type CreatePlanPriceRequest struct {
@@ -51,14 +49,12 @@ func (r *CreatePlanRequest) Validate() error {
 
 func (r *CreatePlanRequest) ToPlan(ctx context.Context) *plan.Plan {
 	plan := &plan.Plan{
-		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
-		LookupKey:      r.LookupKey,
-		Name:           r.Name,
-		Description:    r.Description,
-		InvoiceCadence: r.InvoiceCadence,
-		TrialPeriod:    r.TrialPeriod,
-		EnvironmentID:  types.GetEnvironmentID(ctx),
-		BaseModel:      types.GetDefaultBaseModel(ctx),
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
+		LookupKey:     r.LookupKey,
+		Name:          r.Name,
+		Description:   r.Description,
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}
 	return plan
 }
@@ -80,13 +76,11 @@ type PlanResponse struct {
 }
 
 type UpdatePlanRequest struct {
-	Name           *string                        `json:"name,omitempty"`
-	LookupKey      *string                        `json:"lookup_key,omitempty"`
-	Description    *string                        `json:"description,omitempty"`
-	InvoiceCadence *types.InvoiceCadence          `json:"invoice_cadence,omitempty"`
-	TrialPeriod    *int                           `json:"trial_period,omitempty"`
-	Prices         []UpdatePlanPriceRequest       `json:"prices,omitempty"`
-	Entitlements   []UpdatePlanEntitlementRequest `json:"entitlements,omitempty"`
+	Name         *string                        `json:"name,omitempty"`
+	LookupKey    *string                        `json:"lookup_key,omitempty"`
+	Description  *string                        `json:"description,omitempty"`
+	Prices       []UpdatePlanPriceRequest       `json:"prices,omitempty"`
+	Entitlements []UpdatePlanEntitlementRequest `json:"entitlements,omitempty"`
 }
 
 type UpdatePlanPriceRequest struct {

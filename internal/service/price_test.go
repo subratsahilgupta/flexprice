@@ -46,6 +46,7 @@ func (s *PriceServiceSuite) TestCreatePrice() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_TIERED,
 		TierMode:           types.BILLING_TIER_SLAB,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
 		Description:        "Test Price",
 		Metadata:           map[string]string{"key": "value"},

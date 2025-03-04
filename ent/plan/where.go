@@ -115,16 +115,6 @@ func Description(v string) predicate.Plan {
 	return predicate.Plan(sql.FieldEQ(FieldDescription, v))
 }
 
-// InvoiceCadence applies equality check predicate on the "invoice_cadence" field. It's identical to InvoiceCadenceEQ.
-func InvoiceCadence(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldEQ(FieldInvoiceCadence, v))
-}
-
-// TrialPeriod applies equality check predicate on the "trial_period" field. It's identical to TrialPeriodEQ.
-func TrialPeriod(v int) predicate.Plan {
-	return predicate.Plan(sql.FieldEQ(FieldTrialPeriod, v))
-}
-
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.Plan {
 	return predicate.Plan(sql.FieldEQ(FieldTenantID, v))
@@ -773,111 +763,6 @@ func DescriptionEqualFold(v string) predicate.Plan {
 // DescriptionContainsFold applies the ContainsFold predicate on the "description" field.
 func DescriptionContainsFold(v string) predicate.Plan {
 	return predicate.Plan(sql.FieldContainsFold(FieldDescription, v))
-}
-
-// InvoiceCadenceEQ applies the EQ predicate on the "invoice_cadence" field.
-func InvoiceCadenceEQ(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldEQ(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceNEQ applies the NEQ predicate on the "invoice_cadence" field.
-func InvoiceCadenceNEQ(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldNEQ(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceIn applies the In predicate on the "invoice_cadence" field.
-func InvoiceCadenceIn(vs ...string) predicate.Plan {
-	return predicate.Plan(sql.FieldIn(FieldInvoiceCadence, vs...))
-}
-
-// InvoiceCadenceNotIn applies the NotIn predicate on the "invoice_cadence" field.
-func InvoiceCadenceNotIn(vs ...string) predicate.Plan {
-	return predicate.Plan(sql.FieldNotIn(FieldInvoiceCadence, vs...))
-}
-
-// InvoiceCadenceGT applies the GT predicate on the "invoice_cadence" field.
-func InvoiceCadenceGT(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldGT(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceGTE applies the GTE predicate on the "invoice_cadence" field.
-func InvoiceCadenceGTE(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldGTE(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceLT applies the LT predicate on the "invoice_cadence" field.
-func InvoiceCadenceLT(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldLT(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceLTE applies the LTE predicate on the "invoice_cadence" field.
-func InvoiceCadenceLTE(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldLTE(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceContains applies the Contains predicate on the "invoice_cadence" field.
-func InvoiceCadenceContains(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldContains(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceHasPrefix applies the HasPrefix predicate on the "invoice_cadence" field.
-func InvoiceCadenceHasPrefix(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldHasPrefix(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceHasSuffix applies the HasSuffix predicate on the "invoice_cadence" field.
-func InvoiceCadenceHasSuffix(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldHasSuffix(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceEqualFold applies the EqualFold predicate on the "invoice_cadence" field.
-func InvoiceCadenceEqualFold(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldEqualFold(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceContainsFold applies the ContainsFold predicate on the "invoice_cadence" field.
-func InvoiceCadenceContainsFold(v string) predicate.Plan {
-	return predicate.Plan(sql.FieldContainsFold(FieldInvoiceCadence, v))
-}
-
-// TrialPeriodEQ applies the EQ predicate on the "trial_period" field.
-func TrialPeriodEQ(v int) predicate.Plan {
-	return predicate.Plan(sql.FieldEQ(FieldTrialPeriod, v))
-}
-
-// TrialPeriodNEQ applies the NEQ predicate on the "trial_period" field.
-func TrialPeriodNEQ(v int) predicate.Plan {
-	return predicate.Plan(sql.FieldNEQ(FieldTrialPeriod, v))
-}
-
-// TrialPeriodIn applies the In predicate on the "trial_period" field.
-func TrialPeriodIn(vs ...int) predicate.Plan {
-	return predicate.Plan(sql.FieldIn(FieldTrialPeriod, vs...))
-}
-
-// TrialPeriodNotIn applies the NotIn predicate on the "trial_period" field.
-func TrialPeriodNotIn(vs ...int) predicate.Plan {
-	return predicate.Plan(sql.FieldNotIn(FieldTrialPeriod, vs...))
-}
-
-// TrialPeriodGT applies the GT predicate on the "trial_period" field.
-func TrialPeriodGT(v int) predicate.Plan {
-	return predicate.Plan(sql.FieldGT(FieldTrialPeriod, v))
-}
-
-// TrialPeriodGTE applies the GTE predicate on the "trial_period" field.
-func TrialPeriodGTE(v int) predicate.Plan {
-	return predicate.Plan(sql.FieldGTE(FieldTrialPeriod, v))
-}
-
-// TrialPeriodLT applies the LT predicate on the "trial_period" field.
-func TrialPeriodLT(v int) predicate.Plan {
-	return predicate.Plan(sql.FieldLT(FieldTrialPeriod, v))
-}
-
-// TrialPeriodLTE applies the LTE predicate on the "trial_period" field.
-func TrialPeriodLTE(v int) predicate.Plan {
-	return predicate.Plan(sql.FieldLTE(FieldTrialPeriod, v))
 }
 
 // HasEntitlements applies the HasEdge predicate on the "entitlements" edge.

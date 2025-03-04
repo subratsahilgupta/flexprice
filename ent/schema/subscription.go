@@ -85,9 +85,6 @@ func (Subscription) Fields() []ent.Field {
 		field.Time("trial_end").
 			Optional().
 			Nillable(),
-		field.String("invoice_cadence").
-			NotEmpty().
-			Immutable(),
 		field.String("billing_cadence").
 			NotEmpty().
 			Immutable(),

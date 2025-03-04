@@ -14838,9 +14838,6 @@ type PlanMutation struct {
 	lookup_key          *string
 	name                *string
 	description         *string
-	invoice_cadence     *string
-	trial_period        *int
-	addtrial_period     *int
 	clearedFields       map[string]struct{}
 	entitlements        map[string]struct{}
 	removedentitlements map[string]struct{}
@@ -15379,98 +15376,6 @@ func (m *PlanMutation) ResetDescription() {
 	delete(m.clearedFields, plan.FieldDescription)
 }
 
-// SetInvoiceCadence sets the "invoice_cadence" field.
-func (m *PlanMutation) SetInvoiceCadence(s string) {
-	m.invoice_cadence = &s
-}
-
-// InvoiceCadence returns the value of the "invoice_cadence" field in the mutation.
-func (m *PlanMutation) InvoiceCadence() (r string, exists bool) {
-	v := m.invoice_cadence
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldInvoiceCadence returns the old "invoice_cadence" field's value of the Plan entity.
-// If the Plan object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PlanMutation) OldInvoiceCadence(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldInvoiceCadence is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldInvoiceCadence requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldInvoiceCadence: %w", err)
-	}
-	return oldValue.InvoiceCadence, nil
-}
-
-// ResetInvoiceCadence resets all changes to the "invoice_cadence" field.
-func (m *PlanMutation) ResetInvoiceCadence() {
-	m.invoice_cadence = nil
-}
-
-// SetTrialPeriod sets the "trial_period" field.
-func (m *PlanMutation) SetTrialPeriod(i int) {
-	m.trial_period = &i
-	m.addtrial_period = nil
-}
-
-// TrialPeriod returns the value of the "trial_period" field in the mutation.
-func (m *PlanMutation) TrialPeriod() (r int, exists bool) {
-	v := m.trial_period
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldTrialPeriod returns the old "trial_period" field's value of the Plan entity.
-// If the Plan object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PlanMutation) OldTrialPeriod(ctx context.Context) (v int, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldTrialPeriod is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldTrialPeriod requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldTrialPeriod: %w", err)
-	}
-	return oldValue.TrialPeriod, nil
-}
-
-// AddTrialPeriod adds i to the "trial_period" field.
-func (m *PlanMutation) AddTrialPeriod(i int) {
-	if m.addtrial_period != nil {
-		*m.addtrial_period += i
-	} else {
-		m.addtrial_period = &i
-	}
-}
-
-// AddedTrialPeriod returns the value that was added to the "trial_period" field in this mutation.
-func (m *PlanMutation) AddedTrialPeriod() (r int, exists bool) {
-	v := m.addtrial_period
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetTrialPeriod resets all changes to the "trial_period" field.
-func (m *PlanMutation) ResetTrialPeriod() {
-	m.trial_period = nil
-	m.addtrial_period = nil
-}
-
 // AddEntitlementIDs adds the "entitlements" edge to the Entitlement entity by ids.
 func (m *PlanMutation) AddEntitlementIDs(ids ...string) {
 	if m.entitlements == nil {
@@ -15559,7 +15464,7 @@ func (m *PlanMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PlanMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 10)
 	if m.tenant_id != nil {
 		fields = append(fields, plan.FieldTenantID)
 	}
@@ -15590,12 +15495,6 @@ func (m *PlanMutation) Fields() []string {
 	if m.description != nil {
 		fields = append(fields, plan.FieldDescription)
 	}
-	if m.invoice_cadence != nil {
-		fields = append(fields, plan.FieldInvoiceCadence)
-	}
-	if m.trial_period != nil {
-		fields = append(fields, plan.FieldTrialPeriod)
-	}
 	return fields
 }
 
@@ -15624,10 +15523,6 @@ func (m *PlanMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case plan.FieldDescription:
 		return m.Description()
-	case plan.FieldInvoiceCadence:
-		return m.InvoiceCadence()
-	case plan.FieldTrialPeriod:
-		return m.TrialPeriod()
 	}
 	return nil, false
 }
@@ -15657,10 +15552,6 @@ func (m *PlanMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldName(ctx)
 	case plan.FieldDescription:
 		return m.OldDescription(ctx)
-	case plan.FieldInvoiceCadence:
-		return m.OldInvoiceCadence(ctx)
-	case plan.FieldTrialPeriod:
-		return m.OldTrialPeriod(ctx)
 	}
 	return nil, fmt.Errorf("unknown Plan field %s", name)
 }
@@ -15740,20 +15631,6 @@ func (m *PlanMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDescription(v)
 		return nil
-	case plan.FieldInvoiceCadence:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetInvoiceCadence(v)
-		return nil
-	case plan.FieldTrialPeriod:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetTrialPeriod(v)
-		return nil
 	}
 	return fmt.Errorf("unknown Plan field %s", name)
 }
@@ -15761,21 +15638,13 @@ func (m *PlanMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *PlanMutation) AddedFields() []string {
-	var fields []string
-	if m.addtrial_period != nil {
-		fields = append(fields, plan.FieldTrialPeriod)
-	}
-	return fields
+	return nil
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *PlanMutation) AddedField(name string) (ent.Value, bool) {
-	switch name {
-	case plan.FieldTrialPeriod:
-		return m.AddedTrialPeriod()
-	}
 	return nil, false
 }
 
@@ -15784,13 +15653,6 @@ func (m *PlanMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *PlanMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case plan.FieldTrialPeriod:
-		v, ok := value.(int)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddTrialPeriod(v)
-		return nil
 	}
 	return fmt.Errorf("unknown Plan numeric field %s", name)
 }
@@ -15880,12 +15742,6 @@ func (m *PlanMutation) ResetField(name string) error {
 		return nil
 	case plan.FieldDescription:
 		m.ResetDescription()
-		return nil
-	case plan.FieldInvoiceCadence:
-		m.ResetInvoiceCadence()
-		return nil
-	case plan.FieldTrialPeriod:
-		m.ResetTrialPeriod()
 		return nil
 	}
 	return fmt.Errorf("unknown Plan field %s", name)
@@ -15999,6 +15855,9 @@ type PriceMutation struct {
 	addbilling_period_count *int
 	billing_model           *string
 	billing_cadence         *string
+	invoice_cadence         *string
+	trial_period            *int
+	addtrial_period         *int
 	meter_id                *string
 	filter_values           *map[string][]string
 	tier_mode               *string
@@ -16773,6 +16632,111 @@ func (m *PriceMutation) ResetBillingCadence() {
 	m.billing_cadence = nil
 }
 
+// SetInvoiceCadence sets the "invoice_cadence" field.
+func (m *PriceMutation) SetInvoiceCadence(s string) {
+	m.invoice_cadence = &s
+}
+
+// InvoiceCadence returns the value of the "invoice_cadence" field in the mutation.
+func (m *PriceMutation) InvoiceCadence() (r string, exists bool) {
+	v := m.invoice_cadence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceCadence returns the old "invoice_cadence" field's value of the Price entity.
+// If the Price object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PriceMutation) OldInvoiceCadence(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceCadence is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceCadence requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceCadence: %w", err)
+	}
+	return oldValue.InvoiceCadence, nil
+}
+
+// ClearInvoiceCadence clears the value of the "invoice_cadence" field.
+func (m *PriceMutation) ClearInvoiceCadence() {
+	m.invoice_cadence = nil
+	m.clearedFields[price.FieldInvoiceCadence] = struct{}{}
+}
+
+// InvoiceCadenceCleared returns if the "invoice_cadence" field was cleared in this mutation.
+func (m *PriceMutation) InvoiceCadenceCleared() bool {
+	_, ok := m.clearedFields[price.FieldInvoiceCadence]
+	return ok
+}
+
+// ResetInvoiceCadence resets all changes to the "invoice_cadence" field.
+func (m *PriceMutation) ResetInvoiceCadence() {
+	m.invoice_cadence = nil
+	delete(m.clearedFields, price.FieldInvoiceCadence)
+}
+
+// SetTrialPeriod sets the "trial_period" field.
+func (m *PriceMutation) SetTrialPeriod(i int) {
+	m.trial_period = &i
+	m.addtrial_period = nil
+}
+
+// TrialPeriod returns the value of the "trial_period" field in the mutation.
+func (m *PriceMutation) TrialPeriod() (r int, exists bool) {
+	v := m.trial_period
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTrialPeriod returns the old "trial_period" field's value of the Price entity.
+// If the Price object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PriceMutation) OldTrialPeriod(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTrialPeriod is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTrialPeriod requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTrialPeriod: %w", err)
+	}
+	return oldValue.TrialPeriod, nil
+}
+
+// AddTrialPeriod adds i to the "trial_period" field.
+func (m *PriceMutation) AddTrialPeriod(i int) {
+	if m.addtrial_period != nil {
+		*m.addtrial_period += i
+	} else {
+		m.addtrial_period = &i
+	}
+}
+
+// AddedTrialPeriod returns the value that was added to the "trial_period" field in this mutation.
+func (m *PriceMutation) AddedTrialPeriod() (r int, exists bool) {
+	v := m.addtrial_period
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTrialPeriod resets all changes to the "trial_period" field.
+func (m *PriceMutation) ResetTrialPeriod() {
+	m.trial_period = nil
+	m.addtrial_period = nil
+}
+
 // SetMeterID sets the "meter_id" field.
 func (m *PriceMutation) SetMeterID(s string) {
 	m.meter_id = &s
@@ -17215,7 +17179,7 @@ func (m *PriceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PriceMutation) Fields() []string {
-	fields := make([]string, 0, 24)
+	fields := make([]string, 0, 26)
 	if m.tenant_id != nil {
 		fields = append(fields, price.FieldTenantID)
 	}
@@ -17263,6 +17227,12 @@ func (m *PriceMutation) Fields() []string {
 	}
 	if m.billing_cadence != nil {
 		fields = append(fields, price.FieldBillingCadence)
+	}
+	if m.invoice_cadence != nil {
+		fields = append(fields, price.FieldInvoiceCadence)
+	}
+	if m.trial_period != nil {
+		fields = append(fields, price.FieldTrialPeriod)
 	}
 	if m.meter_id != nil {
 		fields = append(fields, price.FieldMeterID)
@@ -17328,6 +17298,10 @@ func (m *PriceMutation) Field(name string) (ent.Value, bool) {
 		return m.BillingModel()
 	case price.FieldBillingCadence:
 		return m.BillingCadence()
+	case price.FieldInvoiceCadence:
+		return m.InvoiceCadence()
+	case price.FieldTrialPeriod:
+		return m.TrialPeriod()
 	case price.FieldMeterID:
 		return m.MeterID()
 	case price.FieldFilterValues:
@@ -17385,6 +17359,10 @@ func (m *PriceMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldBillingModel(ctx)
 	case price.FieldBillingCadence:
 		return m.OldBillingCadence(ctx)
+	case price.FieldInvoiceCadence:
+		return m.OldInvoiceCadence(ctx)
+	case price.FieldTrialPeriod:
+		return m.OldTrialPeriod(ctx)
 	case price.FieldMeterID:
 		return m.OldMeterID(ctx)
 	case price.FieldFilterValues:
@@ -17522,6 +17500,20 @@ func (m *PriceMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetBillingCadence(v)
 		return nil
+	case price.FieldInvoiceCadence:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceCadence(v)
+		return nil
+	case price.FieldTrialPeriod:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTrialPeriod(v)
+		return nil
 	case price.FieldMeterID:
 		v, ok := value.(string)
 		if !ok {
@@ -17592,6 +17584,9 @@ func (m *PriceMutation) AddedFields() []string {
 	if m.addbilling_period_count != nil {
 		fields = append(fields, price.FieldBillingPeriodCount)
 	}
+	if m.addtrial_period != nil {
+		fields = append(fields, price.FieldTrialPeriod)
+	}
 	return fields
 }
 
@@ -17604,6 +17599,8 @@ func (m *PriceMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedAmount()
 	case price.FieldBillingPeriodCount:
 		return m.AddedBillingPeriodCount()
+	case price.FieldTrialPeriod:
+		return m.AddedTrialPeriod()
 	}
 	return nil, false
 }
@@ -17627,6 +17624,13 @@ func (m *PriceMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddBillingPeriodCount(v)
 		return nil
+	case price.FieldTrialPeriod:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTrialPeriod(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Price numeric field %s", name)
 }
@@ -17643,6 +17647,9 @@ func (m *PriceMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(price.FieldEnvironmentID) {
 		fields = append(fields, price.FieldEnvironmentID)
+	}
+	if m.FieldCleared(price.FieldInvoiceCadence) {
+		fields = append(fields, price.FieldInvoiceCadence)
 	}
 	if m.FieldCleared(price.FieldMeterID) {
 		fields = append(fields, price.FieldMeterID)
@@ -17690,6 +17697,9 @@ func (m *PriceMutation) ClearField(name string) error {
 		return nil
 	case price.FieldEnvironmentID:
 		m.ClearEnvironmentID()
+		return nil
+	case price.FieldInvoiceCadence:
+		m.ClearInvoiceCadence()
 		return nil
 	case price.FieldMeterID:
 		m.ClearMeterID()
@@ -17770,6 +17780,12 @@ func (m *PriceMutation) ResetField(name string) error {
 		return nil
 	case price.FieldBillingCadence:
 		m.ResetBillingCadence()
+		return nil
+	case price.FieldInvoiceCadence:
+		m.ResetInvoiceCadence()
+		return nil
+	case price.FieldTrialPeriod:
+		m.ResetTrialPeriod()
 		return nil
 	case price.FieldMeterID:
 		m.ResetMeterID()
@@ -19208,7 +19224,6 @@ type SubscriptionMutation struct {
 	cancel_at_period_end    *bool
 	trial_start             *time.Time
 	trial_end               *time.Time
-	invoice_cadence         *string
 	billing_cadence         *string
 	billing_period          *string
 	billing_period_count    *int
@@ -20243,42 +20258,6 @@ func (m *SubscriptionMutation) ResetTrialEnd() {
 	delete(m.clearedFields, subscription.FieldTrialEnd)
 }
 
-// SetInvoiceCadence sets the "invoice_cadence" field.
-func (m *SubscriptionMutation) SetInvoiceCadence(s string) {
-	m.invoice_cadence = &s
-}
-
-// InvoiceCadence returns the value of the "invoice_cadence" field in the mutation.
-func (m *SubscriptionMutation) InvoiceCadence() (r string, exists bool) {
-	v := m.invoice_cadence
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldInvoiceCadence returns the old "invoice_cadence" field's value of the Subscription entity.
-// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldInvoiceCadence(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldInvoiceCadence is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldInvoiceCadence requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldInvoiceCadence: %w", err)
-	}
-	return oldValue.InvoiceCadence, nil
-}
-
-// ResetInvoiceCadence resets all changes to the "invoice_cadence" field.
-func (m *SubscriptionMutation) ResetInvoiceCadence() {
-	m.invoice_cadence = nil
-}
-
 // SetBillingCadence sets the "billing_cadence" field.
 func (m *SubscriptionMutation) SetBillingCadence(s string) {
 	m.billing_cadence = &s
@@ -20739,7 +20718,7 @@ func (m *SubscriptionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionMutation) Fields() []string {
-	fields := make([]string, 0, 30)
+	fields := make([]string, 0, 29)
 	if m.tenant_id != nil {
 		fields = append(fields, subscription.FieldTenantID)
 	}
@@ -20805,9 +20784,6 @@ func (m *SubscriptionMutation) Fields() []string {
 	}
 	if m.trial_end != nil {
 		fields = append(fields, subscription.FieldTrialEnd)
-	}
-	if m.invoice_cadence != nil {
-		fields = append(fields, subscription.FieldInvoiceCadence)
 	}
 	if m.billing_cadence != nil {
 		fields = append(fields, subscription.FieldBillingCadence)
@@ -20882,8 +20858,6 @@ func (m *SubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.TrialStart()
 	case subscription.FieldTrialEnd:
 		return m.TrialEnd()
-	case subscription.FieldInvoiceCadence:
-		return m.InvoiceCadence()
 	case subscription.FieldBillingCadence:
 		return m.BillingCadence()
 	case subscription.FieldBillingPeriod:
@@ -20951,8 +20925,6 @@ func (m *SubscriptionMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldTrialStart(ctx)
 	case subscription.FieldTrialEnd:
 		return m.OldTrialEnd(ctx)
-	case subscription.FieldInvoiceCadence:
-		return m.OldInvoiceCadence(ctx)
 	case subscription.FieldBillingCadence:
 		return m.OldBillingCadence(ctx)
 	case subscription.FieldBillingPeriod:
@@ -21129,13 +21101,6 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTrialEnd(v)
-		return nil
-	case subscription.FieldInvoiceCadence:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetInvoiceCadence(v)
 		return nil
 	case subscription.FieldBillingCadence:
 		v, ok := value.(string)
@@ -21397,9 +21362,6 @@ func (m *SubscriptionMutation) ResetField(name string) error {
 	case subscription.FieldTrialEnd:
 		m.ResetTrialEnd()
 		return nil
-	case subscription.FieldInvoiceCadence:
-		m.ResetInvoiceCadence()
-		return nil
 	case subscription.FieldBillingCadence:
 		m.ResetBillingCadence()
 		return nil
@@ -21559,6 +21521,9 @@ type SubscriptionLineItemMutation struct {
 	quantity            *decimal.Decimal
 	currency            *string
 	billing_period      *string
+	invoice_cadence     *string
+	trial_period        *int
+	addtrial_period     *int
 	start_date          *time.Time
 	end_date            *time.Time
 	metadata            *map[string]string
@@ -22475,6 +22440,111 @@ func (m *SubscriptionLineItemMutation) ResetBillingPeriod() {
 	m.billing_period = nil
 }
 
+// SetInvoiceCadence sets the "invoice_cadence" field.
+func (m *SubscriptionLineItemMutation) SetInvoiceCadence(s string) {
+	m.invoice_cadence = &s
+}
+
+// InvoiceCadence returns the value of the "invoice_cadence" field in the mutation.
+func (m *SubscriptionLineItemMutation) InvoiceCadence() (r string, exists bool) {
+	v := m.invoice_cadence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceCadence returns the old "invoice_cadence" field's value of the SubscriptionLineItem entity.
+// If the SubscriptionLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionLineItemMutation) OldInvoiceCadence(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceCadence is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceCadence requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceCadence: %w", err)
+	}
+	return oldValue.InvoiceCadence, nil
+}
+
+// ClearInvoiceCadence clears the value of the "invoice_cadence" field.
+func (m *SubscriptionLineItemMutation) ClearInvoiceCadence() {
+	m.invoice_cadence = nil
+	m.clearedFields[subscriptionlineitem.FieldInvoiceCadence] = struct{}{}
+}
+
+// InvoiceCadenceCleared returns if the "invoice_cadence" field was cleared in this mutation.
+func (m *SubscriptionLineItemMutation) InvoiceCadenceCleared() bool {
+	_, ok := m.clearedFields[subscriptionlineitem.FieldInvoiceCadence]
+	return ok
+}
+
+// ResetInvoiceCadence resets all changes to the "invoice_cadence" field.
+func (m *SubscriptionLineItemMutation) ResetInvoiceCadence() {
+	m.invoice_cadence = nil
+	delete(m.clearedFields, subscriptionlineitem.FieldInvoiceCadence)
+}
+
+// SetTrialPeriod sets the "trial_period" field.
+func (m *SubscriptionLineItemMutation) SetTrialPeriod(i int) {
+	m.trial_period = &i
+	m.addtrial_period = nil
+}
+
+// TrialPeriod returns the value of the "trial_period" field in the mutation.
+func (m *SubscriptionLineItemMutation) TrialPeriod() (r int, exists bool) {
+	v := m.trial_period
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTrialPeriod returns the old "trial_period" field's value of the SubscriptionLineItem entity.
+// If the SubscriptionLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionLineItemMutation) OldTrialPeriod(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTrialPeriod is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTrialPeriod requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTrialPeriod: %w", err)
+	}
+	return oldValue.TrialPeriod, nil
+}
+
+// AddTrialPeriod adds i to the "trial_period" field.
+func (m *SubscriptionLineItemMutation) AddTrialPeriod(i int) {
+	if m.addtrial_period != nil {
+		*m.addtrial_period += i
+	} else {
+		m.addtrial_period = &i
+	}
+}
+
+// AddedTrialPeriod returns the value that was added to the "trial_period" field in this mutation.
+func (m *SubscriptionLineItemMutation) AddedTrialPeriod() (r int, exists bool) {
+	v := m.addtrial_period
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTrialPeriod resets all changes to the "trial_period" field.
+func (m *SubscriptionLineItemMutation) ResetTrialPeriod() {
+	m.trial_period = nil
+	m.addtrial_period = nil
+}
+
 // SetStartDate sets the "start_date" field.
 func (m *SubscriptionLineItemMutation) SetStartDate(t time.Time) {
 	m.start_date = &t
@@ -22683,7 +22753,7 @@ func (m *SubscriptionLineItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionLineItemMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 24)
 	if m.tenant_id != nil {
 		fields = append(fields, subscriptionlineitem.FieldTenantID)
 	}
@@ -22741,6 +22811,12 @@ func (m *SubscriptionLineItemMutation) Fields() []string {
 	if m.billing_period != nil {
 		fields = append(fields, subscriptionlineitem.FieldBillingPeriod)
 	}
+	if m.invoice_cadence != nil {
+		fields = append(fields, subscriptionlineitem.FieldInvoiceCadence)
+	}
+	if m.trial_period != nil {
+		fields = append(fields, subscriptionlineitem.FieldTrialPeriod)
+	}
 	if m.start_date != nil {
 		fields = append(fields, subscriptionlineitem.FieldStartDate)
 	}
@@ -22796,6 +22872,10 @@ func (m *SubscriptionLineItemMutation) Field(name string) (ent.Value, bool) {
 		return m.Currency()
 	case subscriptionlineitem.FieldBillingPeriod:
 		return m.BillingPeriod()
+	case subscriptionlineitem.FieldInvoiceCadence:
+		return m.InvoiceCadence()
+	case subscriptionlineitem.FieldTrialPeriod:
+		return m.TrialPeriod()
 	case subscriptionlineitem.FieldStartDate:
 		return m.StartDate()
 	case subscriptionlineitem.FieldEndDate:
@@ -22849,6 +22929,10 @@ func (m *SubscriptionLineItemMutation) OldField(ctx context.Context, name string
 		return m.OldCurrency(ctx)
 	case subscriptionlineitem.FieldBillingPeriod:
 		return m.OldBillingPeriod(ctx)
+	case subscriptionlineitem.FieldInvoiceCadence:
+		return m.OldInvoiceCadence(ctx)
+	case subscriptionlineitem.FieldTrialPeriod:
+		return m.OldTrialPeriod(ctx)
 	case subscriptionlineitem.FieldStartDate:
 		return m.OldStartDate(ctx)
 	case subscriptionlineitem.FieldEndDate:
@@ -22997,6 +23081,20 @@ func (m *SubscriptionLineItemMutation) SetField(name string, value ent.Value) er
 		}
 		m.SetBillingPeriod(v)
 		return nil
+	case subscriptionlineitem.FieldInvoiceCadence:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceCadence(v)
+		return nil
+	case subscriptionlineitem.FieldTrialPeriod:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTrialPeriod(v)
+		return nil
 	case subscriptionlineitem.FieldStartDate:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -23025,13 +23123,21 @@ func (m *SubscriptionLineItemMutation) SetField(name string, value ent.Value) er
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *SubscriptionLineItemMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addtrial_period != nil {
+		fields = append(fields, subscriptionlineitem.FieldTrialPeriod)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *SubscriptionLineItemMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case subscriptionlineitem.FieldTrialPeriod:
+		return m.AddedTrialPeriod()
+	}
 	return nil, false
 }
 
@@ -23040,6 +23146,13 @@ func (m *SubscriptionLineItemMutation) AddedField(name string) (ent.Value, bool)
 // type.
 func (m *SubscriptionLineItemMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case subscriptionlineitem.FieldTrialPeriod:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTrialPeriod(v)
+		return nil
 	}
 	return fmt.Errorf("unknown SubscriptionLineItem numeric field %s", name)
 }
@@ -23074,6 +23187,9 @@ func (m *SubscriptionLineItemMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(subscriptionlineitem.FieldDisplayName) {
 		fields = append(fields, subscriptionlineitem.FieldDisplayName)
+	}
+	if m.FieldCleared(subscriptionlineitem.FieldInvoiceCadence) {
+		fields = append(fields, subscriptionlineitem.FieldInvoiceCadence)
 	}
 	if m.FieldCleared(subscriptionlineitem.FieldStartDate) {
 		fields = append(fields, subscriptionlineitem.FieldStartDate)
@@ -23124,6 +23240,9 @@ func (m *SubscriptionLineItemMutation) ClearField(name string) error {
 		return nil
 	case subscriptionlineitem.FieldDisplayName:
 		m.ClearDisplayName()
+		return nil
+	case subscriptionlineitem.FieldInvoiceCadence:
+		m.ClearInvoiceCadence()
 		return nil
 	case subscriptionlineitem.FieldStartDate:
 		m.ClearStartDate()
@@ -23198,6 +23317,12 @@ func (m *SubscriptionLineItemMutation) ResetField(name string) error {
 		return nil
 	case subscriptionlineitem.FieldBillingPeriod:
 		m.ResetBillingPeriod()
+		return nil
+	case subscriptionlineitem.FieldInvoiceCadence:
+		m.ResetInvoiceCadence()
+		return nil
+	case subscriptionlineitem.FieldTrialPeriod:
+		m.ResetTrialPeriod()
 		return nil
 	case subscriptionlineitem.FieldStartDate:
 		m.ResetStartDate()

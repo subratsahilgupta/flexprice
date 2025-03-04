@@ -172,6 +172,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		item.CustomerID = sub.CustomerID
 		item.Currency = sub.Currency
 		item.BillingPeriod = sub.BillingPeriod
+		item.InvoiceCadence = price.InvoiceCadence
+		item.TrialPeriod = price.TrialPeriod
 		item.StartDate = sub.StartDate
 		if sub.EndDate != nil {
 			item.EndDate = *sub.EndDate
@@ -900,12 +902,13 @@ func (s *subscriptionService) PauseSubscription(
 	}
 
 	// Get the subscription
-	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
 		return nil, errors.WithError(err).
 			WithHint("Failed to get subscription for pausing").
 			Mark(errors.ErrNotFound)
 	}
+	sub.LineItems = lineItems
 
 	// Validate subscription can be paused
 	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
@@ -924,7 +927,7 @@ func (s *subscriptionService) PauseSubscription(
 	}
 
 	// Use the unified billing impact calculator
-	impact, err := s.calculateBillingImpact(ctx, sub, *pauseStart, pauseEnd, false, nil)
+	impact, err := s.calculateBillingImpact(ctx, sub, lineItems, *pauseStart, pauseEnd, false, nil)
 	if err != nil {
 		return nil, errors.WithError(err).
 			WithHint("Failed to calculate billing impact").
@@ -1036,6 +1039,14 @@ func (s *subscriptionService) ResumeSubscription(
 			WithHint("Failed to get subscription for resuming").
 			Mark(errors.ErrNotFound)
 	}
+	// get the line items
+	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
+	if err != nil {
+		return nil, errors.WithError(err).
+			WithHint("Failed to get line items for subscription").
+			Mark(errors.ErrNotFound)
+	}
+	sub.LineItems = lineItems
 
 	// Validate subscription can be resumed
 	if sub.SubscriptionStatus != types.SubscriptionStatusPaused &&
@@ -1070,7 +1081,7 @@ func (s *subscriptionService) ResumeSubscription(
 	}
 
 	// Use the unified billing impact calculator
-	impact, err := s.calculateBillingImpact(ctx, sub, activePause.PauseStart, activePause.PauseEnd, true, activePause)
+	impact, err := s.calculateBillingImpact(ctx, sub, lineItems, activePause.PauseStart, activePause.PauseEnd, true, activePause)
 	if err != nil {
 		return nil, errors.WithError(err).
 			WithHint("Failed to calculate billing impact").
@@ -1189,10 +1200,10 @@ func (s *subscriptionService) CalculatePauseImpact(
 	req *dto.PauseSubscriptionRequest,
 ) (*types.BillingImpactDetails, error) {
 	// Get the subscription
-	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
 		return nil, errors.WithError(err).
-			WithHint("Failed to get subscription for impact calculation").
+			WithHint("Failed to get line items for subscription").
 			Mark(errors.ErrNotFound)
 	}
 
@@ -1213,7 +1224,7 @@ func (s *subscriptionService) CalculatePauseImpact(
 	}
 
 	// Use the unified billing impact calculator
-	return s.calculateBillingImpact(ctx, sub, *pauseStart, pauseEnd, false, nil)
+	return s.calculateBillingImpact(ctx, sub, lineItems, *pauseStart, pauseEnd, false, nil)
 }
 
 // CalculateResumeImpact calculates the billing impact of resuming a subscription
@@ -1229,6 +1240,15 @@ func (s *subscriptionService) CalculateResumeImpact(
 			WithHint("Failed to get subscription for impact calculation").
 			Mark(errors.ErrNotFound)
 	}
+
+	// get the line items
+	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
+	if err != nil {
+		return nil, errors.WithError(err).
+			WithHint("Failed to get line items for subscription").
+			Mark(errors.ErrNotFound)
+	}
+	sub.LineItems = lineItems
 
 	// Validate subscription can be resumed
 	if sub.SubscriptionStatus != types.SubscriptionStatusPaused &&
@@ -1263,7 +1283,7 @@ func (s *subscriptionService) CalculateResumeImpact(
 	}
 
 	// Use the unified billing impact calculator
-	return s.calculateBillingImpact(ctx, sub, activePause.PauseStart, activePause.PauseEnd, true, activePause)
+	return s.calculateBillingImpact(ctx, sub, lineItems, activePause.PauseStart, activePause.PauseEnd, true, activePause)
 }
 
 // Pause subscription helper methods
@@ -1321,6 +1341,7 @@ func (s *subscriptionService) calculatePauseStartEnd(req *dto.PauseSubscriptionR
 func (s *subscriptionService) calculateBillingImpact(
 	_ context.Context,
 	sub *subscription.Subscription,
+	lineItems []*subscription.SubscriptionLineItem,
 	pauseStart time.Time,
 	pauseEnd *time.Time,
 	isResume bool,
@@ -1330,7 +1351,19 @@ func (s *subscriptionService) calculateBillingImpact(
 	impact := &types.BillingImpactDetails{}
 
 	// Get subscription configuration for billing model (advance vs. arrears)
-	invoiceCadence := sub.InvoiceCadence
+	// TODO: handle this when we implement add ons with one time charges
+	var invoiceCadence types.InvoiceCadence
+	for _, li := range lineItems {
+		if li.PriceType == types.PRICE_TYPE_FIXED {
+			invoiceCadence = li.InvoiceCadence
+			break
+		}
+	}
+
+	// TODO: need to handle this better for cases with no fixed prices
+	if invoiceCadence == "" {
+		invoiceCadence = types.InvoiceCadenceArrear
+	}
 
 	// Set original period information
 	if isResume && activePause != nil {

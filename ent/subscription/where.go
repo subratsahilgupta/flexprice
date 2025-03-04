@@ -175,11 +175,6 @@ func TrialEnd(v time.Time) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldTrialEnd, v))
 }
 
-// InvoiceCadence applies equality check predicate on the "invoice_cadence" field. It's identical to InvoiceCadenceEQ.
-func InvoiceCadence(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldInvoiceCadence, v))
-}
-
 // BillingCadence applies equality check predicate on the "billing_cadence" field. It's identical to BillingCadenceEQ.
 func BillingCadence(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldBillingCadence, v))
@@ -1398,71 +1393,6 @@ func TrialEndIsNil() predicate.Subscription {
 // TrialEndNotNil applies the NotNil predicate on the "trial_end" field.
 func TrialEndNotNil() predicate.Subscription {
 	return predicate.Subscription(sql.FieldNotNull(FieldTrialEnd))
-}
-
-// InvoiceCadenceEQ applies the EQ predicate on the "invoice_cadence" field.
-func InvoiceCadenceEQ(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceNEQ applies the NEQ predicate on the "invoice_cadence" field.
-func InvoiceCadenceNEQ(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNEQ(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceIn applies the In predicate on the "invoice_cadence" field.
-func InvoiceCadenceIn(vs ...string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldIn(FieldInvoiceCadence, vs...))
-}
-
-// InvoiceCadenceNotIn applies the NotIn predicate on the "invoice_cadence" field.
-func InvoiceCadenceNotIn(vs ...string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNotIn(FieldInvoiceCadence, vs...))
-}
-
-// InvoiceCadenceGT applies the GT predicate on the "invoice_cadence" field.
-func InvoiceCadenceGT(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGT(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceGTE applies the GTE predicate on the "invoice_cadence" field.
-func InvoiceCadenceGTE(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGTE(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceLT applies the LT predicate on the "invoice_cadence" field.
-func InvoiceCadenceLT(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLT(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceLTE applies the LTE predicate on the "invoice_cadence" field.
-func InvoiceCadenceLTE(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLTE(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceContains applies the Contains predicate on the "invoice_cadence" field.
-func InvoiceCadenceContains(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldContains(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceHasPrefix applies the HasPrefix predicate on the "invoice_cadence" field.
-func InvoiceCadenceHasPrefix(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldHasPrefix(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceHasSuffix applies the HasSuffix predicate on the "invoice_cadence" field.
-func InvoiceCadenceHasSuffix(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldHasSuffix(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceEqualFold applies the EqualFold predicate on the "invoice_cadence" field.
-func InvoiceCadenceEqualFold(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEqualFold(FieldInvoiceCadence, v))
-}
-
-// InvoiceCadenceContainsFold applies the ContainsFold predicate on the "invoice_cadence" field.
-func InvoiceCadenceContainsFold(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldContainsFold(FieldInvoiceCadence, v))
 }
 
 // BillingCadenceEQ applies the EQ predicate on the "billing_cadence" field.

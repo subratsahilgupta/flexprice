@@ -43,13 +43,6 @@ func (Plan) Fields() []ent.Field {
 			NotEmpty(),
 		field.Text("description").
 			Optional(),
-		field.String("invoice_cadence").
-			SchemaType(map[string]string{
-				"postgres": "varchar(20)",
-			}).
-			NotEmpty(),
-		field.Int("trial_period").
-			Default(0),
 	}
 }
 

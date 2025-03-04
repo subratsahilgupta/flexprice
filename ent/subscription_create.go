@@ -298,12 +298,6 @@ func (sc *SubscriptionCreate) SetNillableTrialEnd(t *time.Time) *SubscriptionCre
 	return sc
 }
 
-// SetInvoiceCadence sets the "invoice_cadence" field.
-func (sc *SubscriptionCreate) SetInvoiceCadence(s string) *SubscriptionCreate {
-	sc.mutation.SetInvoiceCadence(s)
-	return sc
-}
-
 // SetBillingCadence sets the "billing_cadence" field.
 func (sc *SubscriptionCreate) SetBillingCadence(s string) *SubscriptionCreate {
 	sc.mutation.SetBillingCadence(s)
@@ -564,14 +558,6 @@ func (sc *SubscriptionCreate) check() error {
 	if _, ok := sc.mutation.CancelAtPeriodEnd(); !ok {
 		return &ValidationError{Name: "cancel_at_period_end", err: errors.New(`ent: missing required field "Subscription.cancel_at_period_end"`)}
 	}
-	if _, ok := sc.mutation.InvoiceCadence(); !ok {
-		return &ValidationError{Name: "invoice_cadence", err: errors.New(`ent: missing required field "Subscription.invoice_cadence"`)}
-	}
-	if v, ok := sc.mutation.InvoiceCadence(); ok {
-		if err := subscription.InvoiceCadenceValidator(v); err != nil {
-			return &ValidationError{Name: "invoice_cadence", err: fmt.Errorf(`ent: validator failed for field "Subscription.invoice_cadence": %w`, err)}
-		}
-	}
 	if _, ok := sc.mutation.BillingCadence(); !ok {
 		return &ValidationError{Name: "billing_cadence", err: errors.New(`ent: missing required field "Subscription.billing_cadence"`)}
 	}
@@ -719,10 +705,6 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 	if value, ok := sc.mutation.TrialEnd(); ok {
 		_spec.SetField(subscription.FieldTrialEnd, field.TypeTime, value)
 		_node.TrialEnd = &value
-	}
-	if value, ok := sc.mutation.InvoiceCadence(); ok {
-		_spec.SetField(subscription.FieldInvoiceCadence, field.TypeString, value)
-		_node.InvoiceCadence = value
 	}
 	if value, ok := sc.mutation.BillingCadence(); ok {
 		_spec.SetField(subscription.FieldBillingCadence, field.TypeString, value)

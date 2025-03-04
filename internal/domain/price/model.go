@@ -53,6 +53,13 @@ type Price struct {
 	// BillingCadence is the billing cadence for the price ex RECURRING, ONETIME
 	BillingCadence types.BillingCadence `db:"billing_cadence" json:"billing_cadence"`
 
+	// InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE
+	InvoiceCadence types.InvoiceCadence `db:"invoice_cadence" json:"invoice_cadence"`
+
+	// TrialPeriod is the number of days for the trial period
+	// Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
+	TrialPeriod int `db:"trial_period" json:"trial_period"`
+
 	// Tiered pricing fields when BillingModel is TIERED
 	TierMode types.BillingTier `db:"tier_mode" json:"tier_mode"`
 
@@ -299,6 +306,8 @@ func FromEnt(e *ent.Price) *Price {
 		BillingPeriodCount: e.BillingPeriodCount,
 		BillingModel:       types.BillingModel(e.BillingModel),
 		BillingCadence:     types.BillingCadence(e.BillingCadence),
+		InvoiceCadence:     types.InvoiceCadence(e.InvoiceCadence),
+		TrialPeriod:        e.TrialPeriod,
 		TierMode:           types.BillingTier(lo.FromPtr(e.TierMode)),
 		Tiers:              tiers,
 		MeterID:            lo.FromPtr(e.MeterID),
@@ -348,4 +357,43 @@ func (p *Price) ToEntTiers() []schema.PriceTier {
 		}
 	}
 	return tiers
+}
+
+// ValidateTrialPeriod checks if trial period is valid
+func (p *Price) ValidateTrialPeriod() error {
+	// Trial period should be non-negative
+	if p.TrialPeriod < 0 {
+		return fmt.Errorf("trial period must be non-negative")
+	}
+
+	// Trial period should only be set for recurring fixed prices
+	if p.TrialPeriod > 0 &&
+		p.BillingCadence != types.BILLING_CADENCE_RECURRING &&
+		p.Type != types.PRICE_TYPE_FIXED {
+		return fmt.Errorf("trial period can only be set for recurring fixed prices")
+	}
+
+	return nil
+}
+
+// ValidateInvoiceCadence checks if invoice cadence is valid
+func (p *Price) ValidateInvoiceCadence() error {
+	return p.InvoiceCadence.Validate()
+}
+
+// Validate performs all validations on the price
+func (p *Price) Validate() error {
+	if err := p.ValidateAmount(); err != nil {
+		return err
+	}
+
+	if err := p.ValidateTrialPeriod(); err != nil {
+		return err
+	}
+
+	if err := p.ValidateInvoiceCadence(); err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -64,11 +64,6 @@ func subscriptionFilterFn(ctx context.Context, sub *subscription.Subscription, f
 		return false
 	}
 
-	// Filter by invoice cadence
-	if len(f.InvoiceCadence) > 0 && !lo.Contains(f.InvoiceCadence, sub.InvoiceCadence) {
-		return false
-	}
-
 	// Filter by billing cadence
 	if len(f.BillingCadence) > 0 && !lo.Contains(f.BillingCadence, sub.BillingCadence) {
 		return false
@@ -178,7 +173,6 @@ func (s *InMemorySubscriptionStore) ListAll(ctx context.Context, filter *types.S
 		CustomerID:         filter.CustomerID,
 		PlanID:             filter.PlanID,
 		SubscriptionStatus: filter.SubscriptionStatus,
-		InvoiceCadence:     filter.InvoiceCadence,
 		BillingCadence:     filter.BillingCadence,
 		BillingPeriod:      filter.BillingPeriod,
 		IncludeCanceled:    filter.IncludeCanceled,

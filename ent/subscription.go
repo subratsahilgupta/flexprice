@@ -62,8 +62,6 @@ type Subscription struct {
 	TrialStart *time.Time `json:"trial_start,omitempty"`
 	// TrialEnd holds the value of the "trial_end" field.
 	TrialEnd *time.Time `json:"trial_end,omitempty"`
-	// InvoiceCadence holds the value of the "invoice_cadence" field.
-	InvoiceCadence string `json:"invoice_cadence,omitempty"`
 	// BillingCadence holds the value of the "billing_cadence" field.
 	BillingCadence string `json:"billing_cadence,omitempty"`
 	// BillingPeriod holds the value of the "billing_period" field.
@@ -124,7 +122,7 @@ func (*Subscription) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case subscription.FieldBillingPeriodCount, subscription.FieldVersion:
 			values[i] = new(sql.NullInt64)
-		case subscription.FieldID, subscription.FieldTenantID, subscription.FieldStatus, subscription.FieldCreatedBy, subscription.FieldUpdatedBy, subscription.FieldEnvironmentID, subscription.FieldLookupKey, subscription.FieldCustomerID, subscription.FieldPlanID, subscription.FieldSubscriptionStatus, subscription.FieldCurrency, subscription.FieldInvoiceCadence, subscription.FieldBillingCadence, subscription.FieldBillingPeriod, subscription.FieldPauseStatus, subscription.FieldActivePauseID:
+		case subscription.FieldID, subscription.FieldTenantID, subscription.FieldStatus, subscription.FieldCreatedBy, subscription.FieldUpdatedBy, subscription.FieldEnvironmentID, subscription.FieldLookupKey, subscription.FieldCustomerID, subscription.FieldPlanID, subscription.FieldSubscriptionStatus, subscription.FieldCurrency, subscription.FieldBillingCadence, subscription.FieldBillingPeriod, subscription.FieldPauseStatus, subscription.FieldActivePauseID:
 			values[i] = new(sql.NullString)
 		case subscription.FieldCreatedAt, subscription.FieldUpdatedAt, subscription.FieldBillingAnchor, subscription.FieldStartDate, subscription.FieldEndDate, subscription.FieldCurrentPeriodStart, subscription.FieldCurrentPeriodEnd, subscription.FieldCancelledAt, subscription.FieldCancelAt, subscription.FieldTrialStart, subscription.FieldTrialEnd:
 			values[i] = new(sql.NullTime)
@@ -285,12 +283,6 @@ func (s *Subscription) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				s.TrialEnd = new(time.Time)
 				*s.TrialEnd = value.Time
-			}
-		case subscription.FieldInvoiceCadence:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field invoice_cadence", values[i])
-			} else if value.Valid {
-				s.InvoiceCadence = value.String
 			}
 		case subscription.FieldBillingCadence:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -458,9 +450,6 @@ func (s *Subscription) String() string {
 		builder.WriteString("trial_end=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
-	builder.WriteString(", ")
-	builder.WriteString("invoice_cadence=")
-	builder.WriteString(s.InvoiceCadence)
 	builder.WriteString(", ")
 	builder.WriteString("billing_cadence=")
 	builder.WriteString(s.BillingCadence)

@@ -145,26 +145,6 @@ func (pc *PlanCreate) SetNillableDescription(s *string) *PlanCreate {
 	return pc
 }
 
-// SetInvoiceCadence sets the "invoice_cadence" field.
-func (pc *PlanCreate) SetInvoiceCadence(s string) *PlanCreate {
-	pc.mutation.SetInvoiceCadence(s)
-	return pc
-}
-
-// SetTrialPeriod sets the "trial_period" field.
-func (pc *PlanCreate) SetTrialPeriod(i int) *PlanCreate {
-	pc.mutation.SetTrialPeriod(i)
-	return pc
-}
-
-// SetNillableTrialPeriod sets the "trial_period" field if the given value is not nil.
-func (pc *PlanCreate) SetNillableTrialPeriod(i *int) *PlanCreate {
-	if i != nil {
-		pc.SetTrialPeriod(*i)
-	}
-	return pc
-}
-
 // SetID sets the "id" field.
 func (pc *PlanCreate) SetID(s string) *PlanCreate {
 	pc.mutation.SetID(s)
@@ -237,10 +217,6 @@ func (pc *PlanCreate) defaults() {
 		v := plan.DefaultEnvironmentID
 		pc.mutation.SetEnvironmentID(v)
 	}
-	if _, ok := pc.mutation.TrialPeriod(); !ok {
-		v := plan.DefaultTrialPeriod
-		pc.mutation.SetTrialPeriod(v)
-	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -269,17 +245,6 @@ func (pc *PlanCreate) check() error {
 		if err := plan.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Plan.name": %w`, err)}
 		}
-	}
-	if _, ok := pc.mutation.InvoiceCadence(); !ok {
-		return &ValidationError{Name: "invoice_cadence", err: errors.New(`ent: missing required field "Plan.invoice_cadence"`)}
-	}
-	if v, ok := pc.mutation.InvoiceCadence(); ok {
-		if err := plan.InvoiceCadenceValidator(v); err != nil {
-			return &ValidationError{Name: "invoice_cadence", err: fmt.Errorf(`ent: validator failed for field "Plan.invoice_cadence": %w`, err)}
-		}
-	}
-	if _, ok := pc.mutation.TrialPeriod(); !ok {
-		return &ValidationError{Name: "trial_period", err: errors.New(`ent: missing required field "Plan.trial_period"`)}
 	}
 	return nil
 }
@@ -355,14 +320,6 @@ func (pc *PlanCreate) createSpec() (*Plan, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.Description(); ok {
 		_spec.SetField(plan.FieldDescription, field.TypeString, value)
 		_node.Description = value
-	}
-	if value, ok := pc.mutation.InvoiceCadence(); ok {
-		_spec.SetField(plan.FieldInvoiceCadence, field.TypeString, value)
-		_node.InvoiceCadence = value
-	}
-	if value, ok := pc.mutation.TrialPeriod(); ok {
-		_spec.SetField(plan.FieldTrialPeriod, field.TypeInt, value)
-		_node.TrialPeriod = value
 	}
 	if nodes := pc.mutation.EntitlementsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

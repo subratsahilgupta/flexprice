@@ -10,23 +10,25 @@ import (
 
 // SubscriptionLineItem represents a line item in a subscription
 type SubscriptionLineItem struct {
-	ID               string              `db:"id" json:"id"`
-	SubscriptionID   string              `db:"subscription_id" json:"subscription_id"`
-	CustomerID       string              `db:"customer_id" json:"customer_id"`
-	PlanID           string              `db:"plan_id" json:"plan_id,omitempty"`
-	PlanDisplayName  string              `db:"plan_display_name" json:"plan_display_name,omitempty"`
-	PriceID          string              `db:"price_id" json:"price_id"`
-	PriceType        types.PriceType     `db:"price_type" json:"price_type,omitempty"`
-	MeterID          string              `db:"meter_id" json:"meter_id,omitempty"`
-	MeterDisplayName string              `db:"meter_display_name" json:"meter_display_name,omitempty"`
-	DisplayName      string              `db:"display_name" json:"display_name,omitempty"`
-	Quantity         decimal.Decimal     `db:"quantity" json:"quantity"`
-	Currency         string              `db:"currency" json:"currency"`
-	BillingPeriod    types.BillingPeriod `db:"billing_period" json:"billing_period"`
-	StartDate        time.Time           `db:"start_date" json:"start_date,omitempty"`
-	EndDate          time.Time           `db:"end_date" json:"end_date,omitempty"`
-	Metadata         map[string]string   `db:"metadata" json:"metadata,omitempty"`
-	EnvironmentID    string              `db:"environment_id" json:"environment_id"`
+	ID               string               `db:"id" json:"id"`
+	SubscriptionID   string               `db:"subscription_id" json:"subscription_id"`
+	CustomerID       string               `db:"customer_id" json:"customer_id"`
+	PlanID           string               `db:"plan_id" json:"plan_id,omitempty"`
+	PlanDisplayName  string               `db:"plan_display_name" json:"plan_display_name,omitempty"`
+	PriceID          string               `db:"price_id" json:"price_id"`
+	PriceType        types.PriceType      `db:"price_type" json:"price_type,omitempty"`
+	MeterID          string               `db:"meter_id" json:"meter_id,omitempty"`
+	MeterDisplayName string               `db:"meter_display_name" json:"meter_display_name,omitempty"`
+	DisplayName      string               `db:"display_name" json:"display_name,omitempty"`
+	Quantity         decimal.Decimal      `db:"quantity" json:"quantity"`
+	Currency         string               `db:"currency" json:"currency"`
+	BillingPeriod    types.BillingPeriod  `db:"billing_period" json:"billing_period"`
+	InvoiceCadence   types.InvoiceCadence `db:"invoice_cadence" json:"invoice_cadence"`
+	TrialPeriod      int                  `db:"trial_period" json:"trial_period"`
+	StartDate        time.Time            `db:"start_date" json:"start_date,omitempty"`
+	EndDate          time.Time            `db:"end_date" json:"end_date,omitempty"`
+	Metadata         map[string]string    `db:"metadata" json:"metadata,omitempty"`
+	EnvironmentID    string               `db:"environment_id" json:"environment_id"`
 	types.BaseModel
 }
 
@@ -90,6 +92,8 @@ func SubscriptionLineItemFromEnt(e *ent.SubscriptionLineItem) *SubscriptionLineI
 		Quantity:         e.Quantity,
 		Currency:         e.Currency,
 		BillingPeriod:    types.BillingPeriod(e.BillingPeriod),
+		InvoiceCadence:   types.InvoiceCadence(e.InvoiceCadence),
+		TrialPeriod:      e.TrialPeriod,
 		StartDate:        startDate,
 		EndDate:          endDate,
 		Metadata:         e.Metadata,

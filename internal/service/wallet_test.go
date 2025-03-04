@@ -109,11 +109,10 @@ func (s *WalletServiceSuite) setupTestData() {
 
 	// Create test plan
 	s.testData.plan = &plan.Plan{
-		ID:             "plan_123",
-		Name:           "Test Plan",
-		Description:    "Test Plan Description",
-		InvoiceCadence: types.InvoiceCadenceAdvance,
-		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		ID:          "plan_123",
+		Name:        "Test Plan",
+		Description: "Test Plan Description",
+		BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().PlanRepo.Create(s.GetContext(), s.testData.plan))
 
@@ -155,6 +154,7 @@ func (s *WalletServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_TIERED,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
 		TierMode:           types.BILLING_TIER_SLAB,
 		MeterID:            s.testData.meters.apiCalls.ID,
 		Tiers: []price.PriceTier{
@@ -176,6 +176,7 @@ func (s *WalletServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
 		MeterID:            s.testData.meters.storage.ID,
 		FilterValues:       map[string][]string{"region": {"us-east-1"}, "tier": {"standard"}},
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -192,6 +193,7 @@ func (s *WalletServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
 		MeterID:            s.testData.meters.storage.ID,
 		FilterValues:       map[string][]string{"region": {"us-east-1"}, "tier": {"archive"}},
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -211,8 +213,9 @@ func (s *WalletServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		SubscriptionStatus: types.SubscriptionStatusActive,
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		LineItems:          []*subscription.SubscriptionLineItem{},
 	}
-	s.NoError(s.GetStores().SubscriptionRepo.Create(s.GetContext(), s.testData.subscription))
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), s.testData.subscription, s.testData.subscription.LineItems))
 
 	// Create test events
 	for i := 0; i < 1500; i++ {
