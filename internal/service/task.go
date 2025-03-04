@@ -214,7 +214,7 @@ func (s *taskService) downloadFile(ctx context.Context, t *task.Task) ([]byte, e
 			return nil, errors.New(errors.ErrCodeValidation, "invalid Google Drive URL")
 		}
 		downloadURL = fmt.Sprintf("https://drive.google.com/uc?export=download&id=%s", fileID)
-		s.logger.Debug("converted Google Drive URL", "original", t.FileURL, "download_url", downloadURL)
+		s.logger.Debugw("converted Google Drive URL", "original", t.FileURL, "download_url", downloadURL)
 	}
 
 	// Download file
@@ -243,7 +243,7 @@ func (s *taskService) downloadFile(ctx context.Context, t *task.Task) ([]byte, e
 	if len(resp.Body) < previewLen {
 		previewLen = len(resp.Body)
 	}
-	s.logger.Debug("received file content preview",
+	s.logger.Debugw("received file content preview",
 		"preview", string(resp.Body[:previewLen]),
 		"content_type", resp.Headers["Content-Type"],
 		"content_length", len(resp.Body))
@@ -253,6 +253,13 @@ func (s *taskService) downloadFile(ctx context.Context, t *task.Task) ([]byte, e
 
 // prepareCSVReader creates a configured CSV reader from the file content
 func (s *taskService) prepareCSVReader(fileContent []byte) (*csv.Reader, error) {
+	// Check for and remove BOM if present
+	if len(fileContent) >= 3 && fileContent[0] == 0xEF && fileContent[1] == 0xBB && fileContent[2] == 0xBF {
+		// BOM detected, remove it
+		fileContent = fileContent[3:]
+		s.logger.Debug("DEBUG: BOM detected and removed from file content")
+	}
+
 	reader := csv.NewReader(bytes.NewReader(fileContent))
 
 	// Configure CSV reader to handle potential issues
@@ -300,7 +307,7 @@ func (s *taskService) processCSVFile(
 		return errors.Wrap(err, errors.ErrCodeValidation, "failed to read CSV headers")
 	}
 
-	s.logger.Debug("parsed CSV headers", "headers", headers)
+	s.logger.Debugw("parsed CSV headers", "headers", headers)
 
 	// Process headers with the provided function
 	standardHeaders, specialColumns, err := processHeadersFunc(headers)
@@ -309,6 +316,10 @@ func (s *taskService) processCSVFile(
 		t.ErrorSummary = &errorSummary
 		return err
 	}
+
+	// Debug: Print processed headers
+	s.logger.Debug("DEBUG: Processed standard headers: %#v\n", standardHeaders)
+	s.logger.Debug("DEBUG: Special columns: %#v\n", specialColumns)
 
 	// Validate required columns
 	if err := validateHeaders(standardHeaders); err != nil {
@@ -470,16 +481,29 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 func (s *taskService) processCustomers(ctx context.Context, t *task.Task, tracker task.ProgressTracker) error {
 	// Define header processor for customers
 	processCustomerHeaders := func(headers []string) ([]string, map[int]string, error) {
+		s.logger.Debug("DEBUG: Processing customer headers: %v\n", headers)
 		metadataColumns := make(map[int]string) // index -> metadata key
 		standardHeaders := make([]string, 0)
 		for i, header := range headers {
+			// Trim whitespace from header
+			header = strings.TrimSpace(header)
+
+			// Remove BOM character if present (only needed for the first header)
+			if i == 0 {
+				header = strings.TrimPrefix(header, "\ufeff")
+			}
+
 			if strings.HasPrefix(header, "metadata.") {
 				metadataKey := strings.TrimPrefix(header, "metadata.")
 				metadataColumns[i] = metadataKey
+				s.logger.Debug("DEBUG: Found metadata column at index %d: %s -> %s\n", i, header, metadataKey)
 			} else {
 				standardHeaders = append(standardHeaders, header)
+				s.logger.Debug("DEBUG: Found standard column at index %d: %s\n", i, header)
 			}
 		}
+		s.logger.Debug("DEBUG: Final standard headers: %v\n", standardHeaders)
+		s.logger.Debug("DEBUG: Final metadata columns: %v\n", metadataColumns)
 		return standardHeaders, metadataColumns, nil
 	}
 
@@ -502,8 +526,6 @@ func (s *taskService) processCustomers(ctx context.Context, t *task.Task, tracke
 			}
 			value := record[i]
 			switch header {
-			case "id":
-				customerID = value
 			case "external_id":
 				customerReq.ExternalID = value
 			case "name":
@@ -522,6 +544,8 @@ func (s *taskService) processCustomers(ctx context.Context, t *task.Task, tracke
 				customerReq.AddressPostalCode = value
 			case "address_country":
 				customerReq.AddressCountry = value
+			case "id":
+				customerID = value
 			}
 		}
 
@@ -531,11 +555,7 @@ func (s *taskService) processCustomers(ctx context.Context, t *task.Task, tracke
 			return false, err
 		}
 
-		// Validate the customer request
-		if err := customerReq.Validate(); err != nil {
-			s.logger.Error("failed to validate customer", "line", lineNum, "error", err)
-			return false, err
-		}
+		s.logger.Debugw("parsed customer request", "customer_req", customerReq)
 
 		// Check if customer with this external ID already exists
 		if customerID != "" {
@@ -688,10 +708,17 @@ func validateCustomerRequiredColumns(headers []string) error {
 	requiredColumns := []string{"external_id"}
 	headerSet := make(map[string]bool)
 	for _, header := range headers {
-		headerSet[header] = true
+		// Trim whitespace and convert to lowercase for case-insensitive comparison
+		trimmedHeader := strings.TrimSpace(strings.ToLower(header))
+
+		// Remove BOM character if present
+		trimmedHeader = strings.TrimPrefix(trimmedHeader, "\ufeff")
+
+		headerSet[trimmedHeader] = true
 	}
 
 	for _, required := range requiredColumns {
+		required = strings.ToLower(required)
 		if !headerSet[required] {
 			return errors.New(errors.ErrCodeValidation, fmt.Sprintf("missing required column: %s", required))
 		}

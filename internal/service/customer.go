@@ -104,7 +104,11 @@ func (s *customerService) UpdateCustomer(ctx context.Context, id string, req dto
 		if !ok {
 			oldExternalIDs = ""
 		}
-		cust.Metadata["old_external_ids"] = oldExternalIDs + "," + cust.ExternalID
+		if oldExternalIDs == "" {
+			cust.Metadata["old_external_ids"] = cust.ExternalID
+		} else {
+			cust.Metadata["old_external_ids"] = oldExternalIDs + "," + cust.ExternalID
+		}
 	}
 
 	if req.Name != nil {
