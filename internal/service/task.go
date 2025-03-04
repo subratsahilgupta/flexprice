@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/task"
@@ -33,32 +34,35 @@ type TaskService interface {
 }
 
 type taskService struct {
-	taskRepo  task.Repository
-	eventRepo events.Repository
-	meterRepo meter.Repository
-	publisher publisher.EventPublisher
-	logger    *logger.Logger
-	db        postgres.IClient
-	client    httpclient.Client
+	taskRepo     task.Repository
+	eventRepo    events.Repository
+	meterRepo    meter.Repository
+	customerRepo customer.Repository
+	publisher    publisher.EventPublisher
+	logger       *logger.Logger
+	db           postgres.IClient
+	client       httpclient.Client
 }
 
 func NewTaskService(
 	taskRepo task.Repository,
 	eventRepo events.Repository,
 	meterRepo meter.Repository,
+	customerRepo customer.Repository,
 	publisher publisher.EventPublisher,
 	db postgres.IClient,
 	logger *logger.Logger,
 	client httpclient.Client,
 ) TaskService {
 	return &taskService{
-		taskRepo:  taskRepo,
-		eventRepo: eventRepo,
-		meterRepo: meterRepo,
-		publisher: publisher,
-		logger:    logger,
-		db:        db,
-		client:    client,
+		taskRepo:     taskRepo,
+		eventRepo:    eventRepo,
+		meterRepo:    meterRepo,
+		customerRepo: customerRepo,
+		publisher:    publisher,
+		logger:       logger,
+		db:           db,
+		client:       client,
 	}
 }
 
@@ -171,6 +175,8 @@ func (s *taskService) ProcessTask(ctx context.Context, id string) error {
 	switch t.EntityType {
 	case types.EntityTypeEvents:
 		processErr = s.processEvents(ctx, t, tracker)
+	case types.EntityTypeCustomers:
+		processErr = s.processCustomers(ctx, t, tracker)
 	default:
 		processErr = errors.New(errors.ErrCodeInvalidOperation, fmt.Sprintf("unsupported entity type: %s", t.EntityType))
 	}
@@ -196,20 +202,21 @@ func (s *taskService) ProcessTask(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker task.ProgressTracker) error {
+// downloadFile downloads a file from the given URL and returns the response body
+func (s *taskService) downloadFile(ctx context.Context, t *task.Task) ([]byte, error) {
 	// Get the actual download URL
 	downloadURL := t.FileURL
 	if strings.Contains(downloadURL, "drive.google.com") {
 		// Extract file ID from Google Drive URL
 		fileID := extractGoogleDriveFileID(downloadURL)
 		if fileID == "" {
-			return errors.New(errors.ErrCodeValidation, "invalid Google Drive URL")
+			return nil, errors.New(errors.ErrCodeValidation, "invalid Google Drive URL")
 		}
 		downloadURL = fmt.Sprintf("https://drive.google.com/uc?export=download&id=%s", fileID)
 		s.logger.Debug("converted Google Drive URL", "original", t.FileURL, "download_url", downloadURL)
 	}
 
-	// Download CSV file
+	// Download file
 	req := &httpclient.Request{
 		Method: "GET",
 		URL:    downloadURL,
@@ -220,14 +227,14 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 		s.logger.Error("failed to download file", "error", err, "url", downloadURL)
 		errorSummary := fmt.Sprintf("Failed to download file: %v", err)
 		t.ErrorSummary = &errorSummary
-		return errors.Wrap(err, errors.ErrCodeHTTPClient, "failed to download file")
+		return nil, errors.Wrap(err, errors.ErrCodeHTTPClient, "failed to download file")
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		s.logger.Error("failed to download file", "status_code", resp.StatusCode, "url", downloadURL)
 		errorSummary := fmt.Sprintf("Failed to download file: HTTP %d", resp.StatusCode)
 		t.ErrorSummary = &errorSummary
-		return errors.New(errors.ErrCodeHTTPClient, fmt.Sprintf("failed to download file: %d", resp.StatusCode))
+		return nil, errors.New(errors.ErrCodeHTTPClient, fmt.Sprintf("failed to download file: %d", resp.StatusCode))
 	}
 
 	// Log the first few bytes of the response for debugging
@@ -235,13 +242,17 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 	if len(resp.Body) < previewLen {
 		previewLen = len(resp.Body)
 	}
-	s.logger.Debug("received CSV content preview",
+	s.logger.Debug("received file content preview",
 		"preview", string(resp.Body[:previewLen]),
 		"content_type", resp.Headers["Content-Type"],
 		"content_length", len(resp.Body))
 
-	// First pass: read headers to identify property columns
-	reader := csv.NewReader(bytes.NewReader(resp.Body))
+	return resp.Body, nil
+}
+
+// prepareCSVReader creates a configured CSV reader from the file content
+func (s *taskService) prepareCSVReader(fileContent []byte) (*csv.Reader, error) {
+	reader := csv.NewReader(bytes.NewReader(fileContent))
 
 	// Configure CSV reader to handle potential issues
 	reader.LazyQuotes = true       // Allow lazy quotes
@@ -249,11 +260,40 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 	reader.ReuseRecord = true      // Reuse record memory
 	reader.TrimLeadingSpace = true // Trim leading space
 
+	return reader, nil
+}
+
+// processCSVFile is a generic function to process a CSV file with a custom row processor
+func (s *taskService) processCSVFile(
+	ctx context.Context,
+	t *task.Task,
+	tracker task.ProgressTracker,
+	validateHeaders func([]string) error,
+	processHeadersFunc func([]string) ([]string, map[int]string, error),
+	processRowFunc func(lineNum int, record []string, standardHeaders []string, specialColumns map[int]string) (bool, error),
+) error {
+	// Download the file
+	fileContent, err := s.downloadFile(ctx, t)
+	if err != nil {
+		return err
+	}
+
+	// Prepare CSV reader
+	reader, err := s.prepareCSVReader(fileContent)
+	if err != nil {
+		return err
+	}
+
+	// Read headers
 	headers, err := reader.Read()
 	if err != nil {
+		previewLen := 200
+		if len(fileContent) < previewLen {
+			previewLen = len(fileContent)
+		}
 		s.logger.Error("failed to read CSV headers",
 			"error", err,
-			"content_preview", string(resp.Body[:previewLen]))
+			"content_preview", string(fileContent[:previewLen]))
 		errorSummary := fmt.Sprintf("Failed to read CSV headers: %v", err)
 		t.ErrorSummary = &errorSummary
 		return errors.Wrap(err, errors.ErrCodeValidation, "failed to read CSV headers")
@@ -261,20 +301,16 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 
 	s.logger.Debug("parsed CSV headers", "headers", headers)
 
-	// Map property columns and validate standard headers
-	propertyColumns := make(map[int]string) // index -> property name
-	standardHeaders := make([]string, 0)
-	for i, header := range headers {
-		if strings.HasPrefix(header, "properties.") {
-			propertyName := strings.TrimPrefix(header, "properties.")
-			propertyColumns[i] = propertyName
-		} else {
-			standardHeaders = append(standardHeaders, header)
-		}
+	// Process headers with the provided function
+	standardHeaders, specialColumns, err := processHeadersFunc(headers)
+	if err != nil {
+		errorSummary := fmt.Sprintf("Failed to process headers: %v", err)
+		t.ErrorSummary = &errorSummary
+		return err
 	}
 
 	// Validate required columns
-	if err := validateRequiredColumns(standardHeaders); err != nil {
+	if err := validateHeaders(standardHeaders); err != nil {
 		errorSummary := fmt.Sprintf("Invalid CSV format: %v", err)
 		t.ErrorSummary = &errorSummary
 		return err
@@ -299,6 +335,67 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 			continue
 		}
 
+		// Process the row with the provided function
+		success, err := processRowFunc(lineNum, record, standardHeaders, specialColumns)
+		if !success {
+			errorLines = append(errorLines, fmt.Sprintf("Line %d: %v", lineNum, err))
+			tracker.Increment(false, err)
+			failureCount++
+			continue
+		}
+
+		tracker.Increment(true, nil)
+	}
+
+	// Return error if any rows failed
+	if failureCount > 0 {
+		// Create a summary of errors
+		// Keep only the first 10 error lines to avoid too long summaries
+		maxErrors := 10
+		if len(errorLines) > maxErrors {
+			errorSummary := fmt.Sprintf("%d records failed to process. First %d errors:\n%s\n(and %d more errors...)",
+				failureCount,
+				maxErrors,
+				strings.Join(errorLines[:maxErrors], "\n"),
+				len(errorLines)-maxErrors)
+			t.ErrorSummary = &errorSummary
+		} else {
+			errorSummary := fmt.Sprintf("%d records failed to process:\n%s",
+				failureCount,
+				strings.Join(errorLines, "\n"))
+			t.ErrorSummary = &errorSummary
+		}
+
+		// Update the task one final time to ensure error summary is saved
+		if err := s.taskRepo.Update(ctx, t); err != nil {
+			s.logger.Error("failed to update task with error summary", "error", err)
+		}
+
+		entityName := strings.ToLower(string(t.EntityType))
+		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("%d %s failed to process", failureCount, entityName))
+	}
+
+	return nil
+}
+
+func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker task.ProgressTracker) error {
+	// Define header processor for events
+	processEventHeaders := func(headers []string) ([]string, map[int]string, error) {
+		propertyColumns := make(map[int]string) // index -> property name
+		standardHeaders := make([]string, 0)
+		for i, header := range headers {
+			if strings.HasPrefix(header, "properties.") {
+				propertyName := strings.TrimPrefix(header, "properties.")
+				propertyColumns[i] = propertyName
+			} else {
+				standardHeaders = append(standardHeaders, header)
+			}
+		}
+		return standardHeaders, propertyColumns, nil
+	}
+
+	// Define row processor for events
+	processEventRow := func(lineNum int, record []string, standardHeaders []string, propertyColumns map[int]string) (bool, error) {
 		// Create event request with standard fields
 		eventReq := &dto.IngestEventRequest{
 			Properties: make(map[string]interface{}),
@@ -327,28 +424,19 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 		// Parse property fields
 		if err := s.parsePropertyFields(record, propertyColumns, eventReq); err != nil {
 			s.logger.Error("failed to parse property fields", "line", lineNum, "error", err)
-			errorLines = append(errorLines, fmt.Sprintf("Line %d: Failed to parse properties - %v", lineNum, err))
-			tracker.Increment(false, err)
-			failureCount++
-			continue
+			return false, err
 		}
 
 		// Validate the event request
 		if err := eventReq.Validate(); err != nil {
 			s.logger.Error("failed to validate event", "line", lineNum, "error", err)
-			errorLines = append(errorLines, fmt.Sprintf("Line %d: Validation failed - %v", lineNum, err))
-			tracker.Increment(false, err)
-			failureCount++
-			continue
+			return false, err
 		}
 
 		// Parse timestamp
 		if err := s.parseTimestamp(eventReq); err != nil {
 			s.logger.Error("failed to parse timestamp", "line", lineNum, "error", err)
-			errorLines = append(errorLines, fmt.Sprintf("Line %d: Invalid timestamp - %v", lineNum, err))
-			tracker.Increment(false, err)
-			failureCount++
-			continue
+			return false, err
 		}
 
 		// Process event
@@ -358,49 +446,109 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 			s.publisher,
 			s.logger,
 		)
-		err = eventSvc.CreateEvent(ctx, eventReq)
+		err := eventSvc.CreateEvent(ctx, eventReq)
 		if err != nil {
 			s.logger.Error("failed to create event", "line", lineNum, "error", err)
-			errorLines = append(errorLines, fmt.Sprintf("Line %d: Failed to create event - %v", lineNum, err))
-			tracker.Increment(false, err)
-			failureCount++
-			continue
+			return false, err
 		}
 
-		tracker.Increment(true, nil)
+		return true, nil
 	}
 
-	// Ensure all progress is updated
-	tracker.Complete()
+	// Process the CSV file with the event-specific processors
+	return s.processCSVFile(
+		ctx,
+		t,
+		tracker,
+		validateEventsRequiredColumns,
+		processEventHeaders,
+		processEventRow,
+	)
+}
 
-	// Return error if any events failed
-	if failureCount > 0 {
-		// Create a summary of errors
-		// Keep only the first 10 error lines to avoid too long summaries
-		maxErrors := 10
-		if len(errorLines) > maxErrors {
-			errorSummary := fmt.Sprintf("%d events failed to process. First %d errors:\n%s\n(and %d more errors...)",
-				failureCount,
-				maxErrors,
-				strings.Join(errorLines[:maxErrors], "\n"),
-				len(errorLines)-maxErrors)
-			t.ErrorSummary = &errorSummary
-		} else {
-			errorSummary := fmt.Sprintf("%d events failed to process:\n%s",
-				failureCount,
-				strings.Join(errorLines, "\n"))
-			t.ErrorSummary = &errorSummary
+func (s *taskService) processCustomers(ctx context.Context, t *task.Task, tracker task.ProgressTracker) error {
+	// Define header processor for customers
+	processCustomerHeaders := func(headers []string) ([]string, map[int]string, error) {
+		metadataColumns := make(map[int]string) // index -> metadata key
+		standardHeaders := make([]string, 0)
+		for i, header := range headers {
+			if strings.HasPrefix(header, "metadata.") {
+				metadataKey := strings.TrimPrefix(header, "metadata.")
+				metadataColumns[i] = metadataKey
+			} else {
+				standardHeaders = append(standardHeaders, header)
+			}
 		}
-
-		// Update the task one final time to ensure error summary is saved
-		if err := s.taskRepo.Update(ctx, t); err != nil {
-			s.logger.Error("failed to update task with error summary", "error", err)
-		}
-
-		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("%d events failed to process", failureCount))
+		return standardHeaders, metadataColumns, nil
 	}
 
-	return nil
+	// Define row processor for customers
+	processCustomerRow := func(lineNum int, record []string, standardHeaders []string, metadataColumns map[int]string) (bool, error) {
+		// Create customer request with standard fields
+		customerReq := &dto.CreateCustomerRequest{
+			Metadata: make(map[string]string),
+		}
+
+		// Map standard fields
+		for i, header := range standardHeaders {
+			if i >= len(record) {
+				continue
+			}
+			value := record[i]
+			switch header {
+			case "external_id":
+				customerReq.ExternalID = value
+			case "name":
+				customerReq.Name = value
+			case "email":
+				customerReq.Email = value
+			case "address_line1":
+				customerReq.AddressLine1 = value
+			case "address_line2":
+				customerReq.AddressLine2 = value
+			case "address_city":
+				customerReq.AddressCity = value
+			case "address_state":
+				customerReq.AddressState = value
+			case "address_postal_code":
+				customerReq.AddressPostalCode = value
+			case "address_country":
+				customerReq.AddressCountry = value
+			}
+		}
+
+		// Parse metadata fields
+		if err := s.parseCustomerMetadataFields(record, metadataColumns, customerReq); err != nil {
+			s.logger.Error("failed to parse metadata fields", "line", lineNum, "error", err)
+			return false, err
+		}
+
+		// Validate the customer request
+		if err := customerReq.Validate(); err != nil {
+			s.logger.Error("failed to validate customer", "line", lineNum, "error", err)
+			return false, err
+		}
+
+		// Process customer
+		customerSvc := NewCustomerService(s.customerRepo)
+		_, err := customerSvc.CreateCustomer(ctx, *customerReq)
+		if err != nil {
+			s.logger.Error("failed to create customer", "line", lineNum, "error", err)
+			return false, err
+		}
+
+		return true, nil
+	}
+
+	// Process the CSV file with the customer-specific processors
+	return s.processCSVFile(
+		ctx,
+		t,
+		tracker,
+		validateCustomerRequiredColumns,
+		processCustomerHeaders,
+		processCustomerRow,
+	)
 }
 
 func (s *taskService) parsePropertyFields(record []string, propertyColumns map[int]string, eventReq *dto.IngestEventRequest) error {
@@ -434,8 +582,33 @@ func (s *taskService) parseTimestamp(eventReq *dto.IngestEventRequest) error {
 	return nil
 }
 
-func validateRequiredColumns(headers []string) error {
+func validateEventsRequiredColumns(headers []string) error {
 	requiredColumns := []string{"event_name", "external_customer_id"}
+	headerSet := make(map[string]bool)
+	for _, header := range headers {
+		headerSet[header] = true
+	}
+
+	for _, required := range requiredColumns {
+		if !headerSet[required] {
+			return errors.New(errors.ErrCodeValidation, fmt.Sprintf("missing required column: %s", required))
+		}
+	}
+	return nil
+}
+
+func (s *taskService) parseCustomerMetadataFields(record []string, metadataColumns map[int]string, customerReq *dto.CreateCustomerRequest) error {
+	for idx, metadataKey := range metadataColumns {
+		if idx < len(record) {
+			value := record[idx]
+			customerReq.Metadata[metadataKey] = value
+		}
+	}
+	return nil
+}
+
+func validateCustomerRequiredColumns(headers []string) error {
+	requiredColumns := []string{"external_id"}
 	headerSet := make(map[string]bool)
 	for _, header := range headers {
 		headerSet[header] = true

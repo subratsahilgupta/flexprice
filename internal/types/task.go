@@ -33,8 +33,9 @@ func (t TaskType) Validate() error {
 type EntityType string
 
 const (
-	EntityTypeEvents EntityType = "EVENTS"
-	EntityTypePrices EntityType = "PRICES"
+	EntityTypeEvents    EntityType = "EVENTS"
+	EntityTypePrices    EntityType = "PRICES"
+	EntityTypeCustomers EntityType = "CUSTOMERS"
 )
 
 func (e EntityType) String() string {
@@ -45,6 +46,7 @@ func (e EntityType) Validate() error {
 	allowed := []EntityType{
 		EntityTypeEvents,
 		EntityTypePrices,
+		EntityTypeCustomers,
 	}
 	if !lo.Contains(allowed, e) {
 		return errors.New(errors.ErrCodeValidation, "invalid entity type")
