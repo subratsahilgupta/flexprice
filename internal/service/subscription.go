@@ -945,8 +945,11 @@ func (s *subscriptionService) PauseSubscription(
 		return nil, err
 	}
 
+	response := dto.NewSubscriptionPauseResponse(sub, pause)
+	response.BillingImpact = impact
+
 	// Return the response
-	return dto.NewSubscriptionPauseResponse(sub, pause), nil
+	return response, nil
 }
 
 // executePause creates the pause record and updates the subscription
@@ -1326,9 +1329,8 @@ func (s *subscriptionService) calculateBillingImpact(
 	// Initialize impact details
 	impact := &types.BillingImpactDetails{}
 
-	// Get tenant configuration for billing model (advance vs. arrears)
-	// For now, assume advance billing as default
-	billingModel := types.InvoiceCadenceAdvance
+	// Get subscription configuration for billing model (advance vs. arrears)
+	invoiceCadence := sub.InvoiceCadence
 
 	// Set original period information
 	if isResume && activePause != nil {
@@ -1363,7 +1365,7 @@ func (s *subscriptionService) calculateBillingImpact(
 		impact.AdjustedPeriodEnd = &adjustedEnd
 
 		// Calculate next billing amount based on billing model
-		if billingModel == types.InvoiceCadenceAdvance {
+		if invoiceCadence == types.InvoiceCadenceAdvance {
 			// For advance billing, calculate the prorated amount for the resumed period
 			// This is a simplified calculation - in a real implementation, you would
 			// need to consider the subscription's line items, pricing, etc.
@@ -1381,7 +1383,7 @@ func (s *subscriptionService) calculateBillingImpact(
 		// Pause impact calculation
 
 		// Calculate the current period adjustment (credit for unused time)
-		if billingModel == types.InvoiceCadenceAdvance {
+		if invoiceCadence == types.InvoiceCadenceAdvance {
 			// For advance billing, calculate credit for unused portion
 			totalPeriodDuration := sub.CurrentPeriodEnd.Sub(sub.CurrentPeriodStart)
 			unusedDuration := sub.CurrentPeriodEnd.Sub(pauseStart)
