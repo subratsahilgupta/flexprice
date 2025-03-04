@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/task"
 	"github.com/flexprice/flexprice/internal/testutil"
@@ -511,7 +512,7 @@ func (s *TaskServiceSuite) TestProcessTaskWithCustomers() {
 	}
 	s.NoError(s.GetStores().TaskRepo.Create(s.GetContext(), customerTask))
 
-	// Create a separate task for testing missing required fields
+	// Create a task for testing missing required fields
 	customerTaskMissingFields := &task.Task{
 		ID:         "task_customer_import_missing_fields",
 		TaskType:   types.TaskTypeImport,
@@ -522,6 +523,37 @@ func (s *TaskServiceSuite) TestProcessTaskWithCustomers() {
 		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().TaskRepo.Create(s.GetContext(), customerTaskMissingFields))
+
+	// Create a task for testing update functionality
+	customerTaskUpdate := &task.Task{
+		ID:         "task_customer_import_update",
+		TaskType:   types.TaskTypeImport,
+		EntityType: types.EntityTypeCustomers,
+		FileURL:    "https://example.com/customers_update.csv",
+		FileType:   types.FileTypeCSV,
+		TaskStatus: types.TaskStatusPending,
+		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().TaskRepo.Create(s.GetContext(), customerTaskUpdate))
+
+	// Create an existing customer for the update test
+	existingCustomer := &customer.Customer{
+		ID:            "cust_existing_1",
+		ExternalID:    "cust_ext_1",
+		Name:          "Original Name",
+		Email:         "original@example.com",
+		Metadata:      map[string]string{"company_size": "50", "industry": "Software"},
+		EnvironmentID: "",
+		BaseModel: types.BaseModel{
+			TenantID:  "tenant_123",
+			Status:    types.StatusPublished,
+			CreatedAt: s.testData.now,
+			UpdatedAt: s.testData.now,
+			CreatedBy: "user_123",
+			UpdatedBy: "user_123",
+		},
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(s.GetContext(), existingCustomer))
 
 	tests := []struct {
 		name      string
@@ -568,6 +600,24 @@ func (s *TaskServiceSuite) TestProcessTaskWithCustomers() {
 			}(),
 			wantErr:   true,
 			wantState: types.TaskStatusFailed,
+		},
+		{
+			name:    "process_customer_import_with_update",
+			id:      customerTaskUpdate.ID,
+			fileUrl: "https://example.com/customers_update.csv",
+			mockCSV: true,
+			csvData: func() []byte {
+				data := [][]string{
+					{"id", "email", "name", "external_id", "metadata.company_size", "metadata.industry"},
+					{"cust_existing_1", "updated@example.com", "Updated Name", "cust_ext_1", "200", "Technology"},
+				}
+				var buf bytes.Buffer
+				writer := csv.NewWriter(&buf)
+				s.NoError(writer.WriteAll(data))
+				return buf.Bytes()
+			}(),
+			wantErr:   false,
+			wantState: types.TaskStatusCompleted,
 		},
 	}
 

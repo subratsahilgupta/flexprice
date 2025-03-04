@@ -98,9 +98,15 @@ func (s *customerService) UpdateCustomer(ctx context.Context, id string, req dto
 	}
 
 	// Update basic fields
-	if req.ExternalID != nil {
+	if req.ExternalID != nil && *req.ExternalID != cust.ExternalID {
 		cust.ExternalID = *req.ExternalID
+		oldExternalIDs, ok := cust.Metadata["old_external_ids"]
+		if !ok {
+			oldExternalIDs = ""
+		}
+		cust.Metadata["old_external_ids"] = oldExternalIDs + "," + cust.ExternalID
 	}
+
 	if req.Name != nil {
 		cust.Name = *req.Name
 	}

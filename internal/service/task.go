@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"regexp"
 	"strings"
@@ -489,6 +490,11 @@ func (s *taskService) processCustomers(ctx context.Context, t *task.Task, tracke
 			Metadata: make(map[string]string),
 		}
 
+		customerID := ""
+
+		// Process customer
+		customerSvc := NewCustomerService(s.customerRepo)
+
 		// Map standard fields
 		for i, header := range standardHeaders {
 			if i >= len(record) {
@@ -496,6 +502,8 @@ func (s *taskService) processCustomers(ctx context.Context, t *task.Task, tracke
 			}
 			value := record[i]
 			switch header {
+			case "id":
+				customerID = value
 			case "external_id":
 				customerReq.ExternalID = value
 			case "name":
@@ -529,14 +537,83 @@ func (s *taskService) processCustomers(ctx context.Context, t *task.Task, tracke
 			return false, err
 		}
 
-		// Process customer
-		customerSvc := NewCustomerService(s.customerRepo)
+		// Check if customer with this external ID already exists
+		if customerID != "" {
+			customer, err := customerSvc.GetCustomer(ctx, customerID)
+			if err != nil {
+				s.logger.Error("failed to search for existing customer", "line", lineNum, "external_id", customerReq.ExternalID, "error", err)
+				return false, err
+			}
+
+			// If customer exists, update it
+			if customer != nil && customer.Status == types.StatusPublished {
+				existingCustomer := customer
+
+				// Create update request from create request
+				updateReq := dto.UpdateCustomerRequest{}
+
+				// Only update external ID if it's different
+				if existingCustomer.ExternalID != customerReq.ExternalID {
+					updateReq.ExternalID = &customerReq.ExternalID
+				}
+
+				if existingCustomer.Email != customerReq.Email {
+					updateReq.Email = &customerReq.Email
+				}
+
+				if existingCustomer.Name != customerReq.Name {
+					updateReq.Name = &customerReq.Name
+				}
+
+				if existingCustomer.AddressLine1 != customerReq.AddressLine1 {
+					updateReq.AddressLine1 = &customerReq.AddressLine1
+				}
+
+				if existingCustomer.AddressLine2 != customerReq.AddressLine2 {
+					updateReq.AddressLine2 = &customerReq.AddressLine2
+				}
+
+				if existingCustomer.AddressCity != customerReq.AddressCity {
+					updateReq.AddressCity = &customerReq.AddressCity
+				}
+
+				if existingCustomer.AddressState != customerReq.AddressState {
+					updateReq.AddressState = &customerReq.AddressState
+				}
+
+				if existingCustomer.AddressPostalCode != customerReq.AddressPostalCode {
+					updateReq.AddressPostalCode = &customerReq.AddressPostalCode
+				}
+
+				if existingCustomer.AddressCountry != customerReq.AddressCountry {
+					updateReq.AddressCountry = &customerReq.AddressCountry
+				}
+
+				mergedMetadata := make(map[string]string)
+				maps.Copy(mergedMetadata, existingCustomer.Metadata)
+				maps.Copy(mergedMetadata, customerReq.Metadata)
+				updateReq.Metadata = mergedMetadata
+
+				// Update the customer
+				_, err := customerSvc.UpdateCustomer(ctx, existingCustomer.ID, updateReq)
+				if err != nil {
+					s.logger.Error("failed to update customer", "line", lineNum, "customer_id", existingCustomer.ID, "error", err)
+					return false, err
+				}
+
+				s.logger.Info("updated existing customer", "line", lineNum, "customer_id", existingCustomer.ID, "external_id", customerReq.ExternalID)
+				return true, nil
+			}
+		}
+
+		// If no existing customer found, create a new one
 		_, err := customerSvc.CreateCustomer(ctx, *customerReq)
 		if err != nil {
 			s.logger.Error("failed to create customer", "line", lineNum, "error", err)
 			return false, err
 		}
 
+		s.logger.Info("created new customer", "line", lineNum, "external_id", customerReq.ExternalID)
 		return true, nil
 	}
 
