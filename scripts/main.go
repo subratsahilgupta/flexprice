@@ -24,6 +24,11 @@ var commands = []Command{
 		Run:         internal.SeedEventsClickhouse,
 	},
 	{
+		Name:        "seed-events-by-meters",
+		Description: "Seed events data into Clickhouse by meters",
+		Run:         internal.SeedEventsFromMeters,
+	},
+	{
 		Name:        "generate-apikey",
 		Description: "Generate a new API key",
 		Run:         internal.GenerateNewAPIKey,

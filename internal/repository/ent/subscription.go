@@ -116,10 +116,17 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 		SetCurrentPeriodEnd(sub.CurrentPeriodEnd).
 		SetNillableCancelledAt(sub.CancelledAt).
 		SetNillableCancelAt(sub.CancelAt).
+		SetPauseStatus(string(sub.PauseStatus)).
 		SetCancelAtPeriodEnd(sub.CancelAtPeriodEnd).
 		SetUpdatedAt(now).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		AddVersion(1) // Increment version atomically
+
+	if sub.ActivePauseID != nil {
+		query.SetActivePauseID(*sub.ActivePauseID)
+	} else {
+		query.ClearActivePauseID()
+	}
 
 	// Execute update
 	n, err := query.Save(ctx)
