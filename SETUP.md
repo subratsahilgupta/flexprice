@@ -2,41 +2,69 @@
 
 ## Prerequisites
 
-- Go 1.23.0 or later
-- Docker and Docker Compose
-- Make
-- PostgreSQL client (psql)
-- Git
+- [Golang](https://go.dev/)
+- [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/)
+- Supported platforms:
+  - Linux-based environment
+  - macOS (Darwin)
+  - WSL under Windows
 
-## Local Development Setup
+## Quick Setup with Docker Compose
 
-1. Clone the repository:
+The easiest way to get started is using our Docker Compose setup:
+
 ```bash
+# Clone the repository
 git clone https://github.com/flexprice/flexprice
 cd flexprice
-```
 
-2. Set up the local environment:
-```bash
-make setup-local
+# Set up the complete development environment
+make dev-setup
 ```
 
 This command will:
-- Start all required Docker containers (PostgreSQL, ClickHouse, Kafka, Redis)
-- Run database migrations for PostgreSQL and ClickHouse
-- Seed initial data
-- Create required Kafka topics
+1. Start all required infrastructure (PostgreSQL, Kafka, ClickHouse, Temporal)
+2. Build the FlexPrice application image
+3. Run database migrations and initialize Kafka
+4. Start all FlexPrice services (API, Consumer, Worker)
 
-3. Verify the setup:
+## Accessing Services
+
+Once setup is complete, you can access:
+- FlexPrice API: http://localhost:8080
+- Temporal UI: http://localhost:8088
+- Kafka UI: http://localhost:8084 (with profile 'dev')
+- ClickHouse UI: http://localhost:8123
+
+## Useful Commands
+
 ```bash
-# Check Docker containers
-docker compose ps
+# Restart only the FlexPrice services
+make restart-flexprice
 
-# Verify PostgreSQL connection
-psql -h localhost -U flexprice -d flexprice
+# Stop all services
+make down
 
-# Check Kafka UI
-open http://localhost:8084
+# Clean everything and start fresh
+make clean-start
+
+# Build the FlexPrice image separately
+make build-image
+
+# Start only the FlexPrice services
+make start-flexprice
+```
+
+## Running Without Docker
+
+If you prefer to run the application directly:
+
+```bash
+# Start the required infrastructure
+docker compose up -d postgres kafka clickhouse temporal temporal-ui
+
+# Run the application locally
+go run cmd/server/main.go
 ```
 
 ## Development Credentials
@@ -57,7 +85,7 @@ open http://localhost:8084
 
 ### Kafka
 - Bootstrap Server: localhost:29092
-- UI: http://localhost:8084
+- UI: http://localhost:8084 (with profile 'dev')
 
 ## API Documentation
 
@@ -80,42 +108,35 @@ The API documentation is available in OpenAPI 3.0 format at `docs/swagger/swagge
    - Initial Value: `0cc505d7b917e0b1f25ccbea029dd43f4002edfea46b7f941f281911246768fe`
    - Current Value: `0cc505d7b917e0b1f25ccbea029dd43f4002edfea46b7f941f281911246768fe`
 
-## Common Development Tasks
-
-### Reset Local Environment
-```bash
-make clean-docker
-make setup-local
-```
-
-### Run Migrations
-```bash
-make migrate-postgres
-make migrate-clickhouse
-```
-
-### Seed Data
-```bash
-make seed-db
-```
-
-### Initialize Kafka Topics
-```bash
-make init-kafka
-```
-
 ## Troubleshooting
 
-### Database Connection Issues
-1. Ensure Docker containers are running:
+### Docker Issues
+1. Ensure Docker is running properly:
+```bash
+docker info
+```
+
+2. Check the status of all containers:
 ```bash
 docker compose ps
 ```
 
-2. Check database logs:
+3. View logs for a specific service:
+```bash
+docker compose logs [service_name]
+```
+
+### Database Connection Issues
+1. Check database logs:
 ```bash
 docker compose logs postgres
 docker compose logs clickhouse
+```
+
+2. Verify the database is running:
+```bash
+docker compose ps postgres
+docker compose ps clickhouse
 ```
 
 ### Kafka Issues
@@ -133,6 +154,7 @@ docker compose exec kafka kafka-topics --bootstrap-server kafka:9092 --list
 
 ## Additional Resources
 
-- [Go Documentation](https://golang.org/doc/)
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
-- [ClickHouse Documentation](https://clickhouse.com/docs/)
+- [Contribution Guidelines](https://github.com/flexprice/flexprice/blob/main/CONTRIBUTING.md)
+- [API Documentation](https://docs.flexprice.io/)
+- [Code of Conduct](https://github.com/flexprice/flexprice/blob/main/CODE_OF_CONDUCT.md)
+- [FlexPrice Website](https://flexprice.io)

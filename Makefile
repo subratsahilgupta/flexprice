@@ -172,6 +172,57 @@ clean-start:
 	@docker compose down -v
 	@make setup-local
 
+# Build the flexprice image separately
+.PHONY: build-image
+build-image:
+	@echo "Building flexprice image..."
+	@docker compose build flexprice-build
+	@echo "Flexprice image built successfully"
+
+# Start only the flexprice services
+.PHONY: start-flexprice
+start-flexprice:
+	@echo "Starting flexprice services..."
+	@docker compose up -d flexprice-api flexprice-consumer flexprice-worker
+	@echo "Flexprice services started successfully"
+
+# Stop only the flexprice services
+.PHONY: stop-flexprice
+stop-flexprice:
+	@echo "Stopping flexprice services..."
+	@docker compose stop flexprice-api flexprice-consumer flexprice-worker
+	@echo "Flexprice services stopped successfully"
+
+# Restart only the flexprice services
+.PHONY: restart-flexprice
+restart-flexprice: stop-flexprice start-flexprice
+	@echo "Flexprice services restarted successfully"
+
+# Full developer setup with clear instructions
+.PHONY: dev-setup
+dev-setup:
+	@echo "Setting up FlexPrice development environment..."
+	@echo "Step 1: Starting infrastructure services..."
+	@docker compose up -d postgres kafka clickhouse temporal temporal-ui
+	@echo "Step 2: Building FlexPrice application image..."
+	@make build-image
+	@echo "Step 3: Running database migrations and initializing Kafka..."
+	@make init-db init-kafka migrate-ent seed-db 
+	@echo "Step 4: Starting FlexPrice services..."
+	@make start-flexprice
+	@echo ""
+	@echo "✅ FlexPrice development environment is now ready!"
+	@echo "📊 Available services:"
+	@echo "   - API:          http://localhost:8080"
+	@echo "   - Temporal UI:  http://localhost:8088"
+	@echo "   - Kafka UI:     http://localhost:8084 (with profile 'dev')"
+	@echo "   - ClickHouse:   http://localhost:8123"
+	@echo ""
+	@echo "💡 Useful commands:"
+	@echo "   - make restart-flexprice  # Restart FlexPrice services"
+	@echo "   - make down              # Stop all services"
+	@echo "   - make clean-start       # Clean everything and start fresh"
+
 .PHONY: apply-migration
 apply-migration:
 	@if [ -z "$(file)" ]; then \

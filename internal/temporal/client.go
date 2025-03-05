@@ -37,14 +37,17 @@ func NewTemporalClient(cfg *config.TemporalConfig, log *logger.Logger) (*Tempora
 		Namespace: cfg.Namespace,
 	}
 
-	c, err := client.Dial(client.Options{
+	clientOptions := client.Options{
 		HostPort:        cfg.Address,
 		Namespace:       cfg.Namespace,
 		HeadersProvider: apiKeyProvider,
-		ConnectionOptions: client.ConnectionOptions{
-			TLS: &tls.Config{},
-		},
-	})
+	}
+
+	if cfg.TLS {
+		clientOptions.ConnectionOptions.TLS = &tls.Config{}
+	}
+
+	c, err := client.Dial(clientOptions)
 	if err != nil {
 		log.Error("Failed to create temporal client", "error", err)
 		return nil, err

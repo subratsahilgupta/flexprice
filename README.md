@@ -58,14 +58,65 @@ Flexprice offers APIs, SDKs, self serve UI widgest, internal dashboards and more
 To run Flexprice for local development or running from source, you will need
 
 1. [Golang](https://go.dev/)
-2. Any of the below supported platform environments:
+2. [Docker](https://www.docker.com/) and [Docker Compose](https://docs.docker.com/compose/)
+3. Any of the below supported platform environments:
     1. [Linux based environment](https://en.wikipedia.org/wiki/Comparison_of_Linux_distributions)
     2. [OSX (Darwin) based environment](https://en.wikipedia.org/wiki/MacOS)
     3. WSL under Windows
 
+#### Quick Setup with Docker Compose
+
+The easiest way to get started is using our Docker Compose setup:
+
 ```bash
+# Clone the repository
 git clone https://github.com/flexprice/flexprice
 cd flexprice
+
+# Set up the complete development environment
+make dev-setup
+```
+
+This will:
+1. Start all required infrastructure (PostgreSQL, Kafka, ClickHouse, Temporal)
+2. Build the FlexPrice application image
+3. Run database migrations and initialize Kafka
+4. Start all FlexPrice services (API, Consumer, Worker)
+
+Once complete, you can access:
+- FlexPrice API: http://localhost:8080
+- Temporal UI: http://localhost:8088
+- Kafka UI: http://localhost:8084 (with profile 'dev')
+- ClickHouse UI: http://localhost:8123
+
+#### Useful Commands
+
+```bash
+# Restart only the FlexPrice services
+make restart-flexprice
+
+# Stop all services
+make down
+
+# Clean everything and start fresh
+make clean-start
+
+# Build the FlexPrice image separately
+make build-image
+
+# Start only the FlexPrice services
+make start-flexprice
+```
+
+#### Running Without Docker
+
+If you prefer to run the application directly:
+
+```bash
+# Start the required infrastructure
+docker compose up -d postgres kafka clickhouse temporal temporal-ui
+
+# Run the application locally
 go run cmd/server/main.go
 ```
 
