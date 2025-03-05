@@ -1,5 +1,5 @@
 deployment:
-  mode: "local"
+  mode: "local" # "local", "docker", "production"
 
 server:
   address: ":8080"
@@ -20,8 +20,8 @@ auth:
         is_active: true
 
 kafka:
-  brokers:
-    - "localhost:29092"
+  brokers: "localhost:29092" # For local mode
+  # Will be overridden by FLEXPRICE_KAFKA_BROKERS env var in Docker
   consumer_group: "flexprice-consumer-local"
   topic: "events"
   use_sasl: false
@@ -31,14 +31,16 @@ kafka:
   client_id: "flexprice-client-local"
 
 clickhouse:
-  address: 127.0.0.1:9000
+  address: 127.0.0.1:9000 # For local mode
+  # Will be overridden by FLEXPRICE_CLICKHOUSE_ADDRESS env var in Docker
   tls: false
   username: flexprice
   password: flexprice123
   database: flexprice
 
 postgres:
-  host: 127.0.0.1
+  host: 127.0.0.1 # For local mode
+  # Will be overridden by FLEXPRICE_POSTGRES_HOST env var in Docker
   port: 5432
   user: flexprice
   password: flexprice123
@@ -86,7 +88,9 @@ webhook:
         - "tenant.updated"
 
 temporal:
-  address: "127.0.0.1:7233"
+  address: "127.0.0.1:7233" # For local mode
+  # Will be overridden by TEMPORAL_ADDRESS env var in Docker
+  tls: false
   namespace: "default"
   task_queue: "billing-task-queue"
   api_key: "strong api key"

@@ -112,6 +112,7 @@ type TemporalConfig struct {
 	Namespace  string `mapstructure:"namespace" validate:"required"`
 	APIKey     string `mapstructure:"api_key"`
 	APIKeyName string `mapstructure:"api_key_name"`
+	TLS        bool   `mapstructure:"tls"`
 }
 
 type SecretsConfig struct {
@@ -137,7 +138,6 @@ func NewConfig() (*Configuration, error) {
 	// Step 4: Environment variable key mapping (e.g., FLEXPRICE_KAFKA_CONSUMER_GROUP)
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	// Step 5: Read the YAML file
 	// Step 5: Read the YAML file
 	if err := v.ReadInConfig(); err != nil {
 		fmt.Printf("Error reading config file: %v\n", err)
