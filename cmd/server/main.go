@@ -146,6 +146,7 @@ func main() {
 			service.NewPaymentProcessorService,
 			service.NewTaskService,
 			service.NewSecretService,
+			service.NewOnboardingService,
 		),
 	)
 
@@ -188,6 +189,7 @@ func provideHandlers(
 	paymentProcessorService service.PaymentProcessorService,
 	taskService service.TaskService,
 	secretService service.SecretService,
+	onboardingService service.OnboardingService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:            v1.NewEventsHandler(eventService, logger),
@@ -209,6 +211,7 @@ func provideHandlers(
 		Payment:           v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
 		Task:              v1.NewTaskHandler(taskService, logger),
 		Secret:            v1.NewSecretHandler(secretService, logger),
+		Onboarding:        v1.NewOnboardingHandler(onboardingService, logger),
 		CronSubscription:  cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
 		CronWallet:        cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService),
 	}
@@ -240,6 +243,7 @@ func startServer(
 	temporalService *temporal.Service,
 	webhookService *webhook.WebhookService,
 	router *pubsubRouter.Router,
+	onboardingService service.OnboardingService,
 	log *logger.Logger,
 ) {
 	mode := cfg.Deployment.Mode
@@ -254,11 +258,11 @@ func startServer(
 		}
 		startAPIServer(lc, r, cfg, log)
 		startConsumer(lc, consumer, eventRepo, cfg, log)
-		startMessageRouter(lc, router, webhookService, log)
+		startMessageRouter(lc, router, webhookService, onboardingService, log)
 		startTemporalWorker(lc, temporalClient, &cfg.Temporal, log)
 	case types.ModeAPI:
 		startAPIServer(lc, r, cfg, log)
-		startMessageRouter(lc, router, webhookService, log)
+		startMessageRouter(lc, router, webhookService, onboardingService, log)
 
 	case types.ModeTemporalWorker:
 		startTemporalWorker(lc, temporalClient, &cfg.Temporal, log)
@@ -269,7 +273,7 @@ func startServer(
 		startConsumer(lc, consumer, eventRepo, cfg, log)
 	case types.ModeAWSLambdaAPI:
 		startAWSLambdaAPI(r)
-		startMessageRouter(lc, router, webhookService, log)
+		startMessageRouter(lc, router, webhookService, onboardingService, log)
 	case types.ModeAWSLambdaConsumer:
 		startAWSLambdaConsumer(eventRepo, log)
 	default:
@@ -408,10 +412,12 @@ func startMessageRouter(
 	lc fx.Lifecycle,
 	router *pubsubRouter.Router,
 	webhookService *webhook.WebhookService,
+	onboardingService service.OnboardingService,
 	logger *logger.Logger,
 ) {
 	// Register handlers before starting the router
 	webhookService.RegisterHandler(router)
+	onboardingService.RegisterHandler()
 
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {

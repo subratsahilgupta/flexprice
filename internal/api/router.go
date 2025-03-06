@@ -33,6 +33,8 @@ type Handlers struct {
 	Payment           *v1.PaymentHandler
 	Task              *v1.TaskHandler
 	Secret            *v1.SecretHandler
+	// Portal handlers
+	Onboarding *v1.OnboardingHandler
 	// Cron jobs : TODO: move crons out of API based architecture
 	CronSubscription *cron.SubscriptionHandler
 	CronWallet       *cron.WalletCronHandler
@@ -250,6 +252,15 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, secretService, logger))
 		{
 			// All admin routes to go here
+		}
+
+		// Portal routes (UI-specific endpoints)
+		portalRoutes := v1Private.Group("/portal")
+		{
+			onboarding := portalRoutes.Group("/onboarding")
+			{
+				onboarding.POST("/events", handlers.Onboarding.GenerateEvents)
+			}
 		}
 	}
 
