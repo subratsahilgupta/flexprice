@@ -417,7 +417,9 @@ func (s *onboardingService) SetupSandboxEnvironment(ctx context.Context, tenantI
 	}
 
 	if env.Type != types.EnvironmentDevelopment {
-		return errors.Wrap(err, errors.ErrCodeSystemError, "sandbox environment must be a development environment")
+		return errors.NewError("environment to set up data must be a development environment").
+			WithHint("Can only set up data for development environment").
+			Mark(errors.ErrInvalidOperation)
 	}
 
 	// create a db transaction

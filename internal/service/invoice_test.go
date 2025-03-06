@@ -78,6 +78,10 @@ func (s *InvoiceServiceSuite) setupService() {
 		InvoiceRepo:      s.invoiceRepo,
 		EntitlementRepo:  s.GetStores().EntitlementRepo,
 		FeatureRepo:      s.GetStores().FeatureRepo,
+		EnvironmentRepo:  s.GetStores().EnvironmentRepo,
+		TenantRepo:       s.GetStores().TenantRepo,
+		UserRepo:         s.GetStores().UserRepo,
+		AuthRepo:         s.GetStores().AuthRepo,
 		EventPublisher:   s.GetPublisher(),
 		WebhookPublisher: s.GetWebhookPublisher(),
 		DB:               s.GetDB(),
@@ -102,10 +106,10 @@ func (s *InvoiceServiceSuite) setupTestData() {
 
 	// Create test plan
 	s.testData.plan = &plan.Plan{
-		ID:             "plan_123",
-		Name:           "Test Plan",
-		Description:    "Test Plan Description",
-		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		ID:          "plan_123",
+		Name:        "Test Plan",
+		Description: "Test Plan Description",
+		BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().PlanRepo.Create(s.GetContext(), s.testData.plan))
 

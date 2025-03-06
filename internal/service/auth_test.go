@@ -26,17 +26,30 @@ func (s *AuthServiceSuite) SetupTest() {
 }
 
 func (s *AuthServiceSuite) setupService() {
-	s.userRepo = s.GetStores().UserRepo.(*testutil.InMemoryUserStore)
+	stores := s.GetStores()
+	s.userRepo = stores.UserRepo.(*testutil.InMemoryUserStore)
+	pubSub := testutil.NewInMemoryPubSub()
 
-	s.authService = NewAuthService(
-		s.GetConfig(),
-		s.userRepo,
-		s.GetStores().AuthRepo,
-		s.GetStores().TenantRepo,
-		s.GetStores().EnvironmentRepo,
-		s.GetLogger(),
-		s.GetDB(),
-	)
+	s.authService = NewAuthService(ServiceParams{
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
+		SubRepo:          stores.SubscriptionRepo,
+		PlanRepo:         stores.PlanRepo,
+		PriceRepo:        stores.PriceRepo,
+		EventRepo:        stores.EventRepo,
+		MeterRepo:        stores.MeterRepo,
+		CustomerRepo:     stores.CustomerRepo,
+		InvoiceRepo:      stores.InvoiceRepo,
+		EntitlementRepo:  stores.EntitlementRepo,
+		EnvironmentRepo:  stores.EnvironmentRepo,
+		FeatureRepo:      stores.FeatureRepo,
+		TenantRepo:       stores.TenantRepo,
+		UserRepo:         stores.UserRepo,
+		AuthRepo:         stores.AuthRepo,
+		EventPublisher:   s.GetPublisher(),
+		WebhookPublisher: s.GetWebhookPublisher(),
+	}, pubSub)
 }
 
 func (s *AuthServiceSuite) setupTestData() {
