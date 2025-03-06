@@ -33,7 +33,8 @@ func (h *OnboardingHandler) GenerateEvents(c *gin.Context) {
 	}
 
 	if err := req.Validate(); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		h.log.Errorw("invalid request payload", "error", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request payload"})
 		return
 	}
 
@@ -42,14 +43,43 @@ func (h *OnboardingHandler) GenerateEvents(c *gin.Context) {
 		h.log.Debugw("setting default duration",
 			"customer_id", req.CustomerID,
 			"feature_id", req.FeatureID,
+			"subscription_id", req.SubscriptionID,
 			"default_duration", 60,
 		)
 		req.Duration = 60
 	}
 
+	// Log which mode we're using
+	if req.SubscriptionID != "" {
+		h.log.Infow("generating events using subscription ID",
+			"subscription_id", req.SubscriptionID,
+			"duration", req.Duration,
+		)
+
+		// If both subscription ID and customer/feature IDs are provided, log a warning
+		if req.CustomerID != "" && req.FeatureID != "" {
+			h.log.Warnw("both subscription ID and customer/feature IDs provided, using subscription ID",
+				"subscription_id", req.SubscriptionID,
+				"customer_id", req.CustomerID,
+				"feature_id", req.FeatureID,
+			)
+		}
+	} else {
+		h.log.Infow("generating events using customer and feature IDs",
+			"customer_id", req.CustomerID,
+			"feature_id", req.FeatureID,
+			"duration", req.Duration,
+		)
+	}
+
 	response, err := h.onboardingService.GenerateEvents(ctx, &req)
 	if err != nil {
-		h.log.Error("Failed to generate events", "error", err)
+		h.log.Errorw("Failed to generate events",
+			"error", err,
+			"subscription_id", req.SubscriptionID,
+			"customer_id", req.CustomerID,
+			"feature_id", req.FeatureID,
+		)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to generate events"})
 		return
 	}

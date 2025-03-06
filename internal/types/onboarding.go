@@ -15,6 +15,7 @@ type OnboardingEventsMessage struct {
 	Meters           []MeterInfo `json:"meters"`
 	TenantID         string      `json:"tenant_id"`
 	RequestTimestamp time.Time   `json:"request_timestamp"`
+	SubscriptionID   string      `json:"subscription_id,omitempty"`
 }
 
 // MeterInfo contains the essential meter information for event generation

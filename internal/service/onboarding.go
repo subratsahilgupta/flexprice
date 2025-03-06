@@ -13,11 +13,14 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/pubsub"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
 
 const (
@@ -31,14 +34,16 @@ type OnboardingService interface {
 }
 
 type onboardingService struct {
-	eventRepo    events.Repository
-	meterRepo    meter.Repository
-	customerRepo customer.Repository
-	featureRepo  feature.Repository
-	publisher    publisher.EventPublisher
-	pubSub       pubsub.PubSub
-	pubSubRouter *pubsubRouter.Router
-	logger       *logger.Logger
+	eventRepo        events.Repository
+	meterRepo        meter.Repository
+	customerRepo     customer.Repository
+	featureRepo      feature.Repository
+	subscriptionRepo subscription.Repository
+	priceRepo        price.Repository
+	publisher        publisher.EventPublisher
+	pubSub           pubsub.PubSub
+	pubSubRouter     *pubsubRouter.Router
+	logger           *logger.Logger
 }
 
 // NewOnboardingService creates a new onboarding service
@@ -47,80 +52,91 @@ func NewOnboardingService(
 	customerRepo customer.Repository,
 	featureRepo feature.Repository,
 	meterRepo meter.Repository,
+	subscriptionRepo subscription.Repository,
+	priceRepo price.Repository,
 	publisher publisher.EventPublisher,
 	pubSub pubsub.PubSub,
 	pubSubRouter *pubsubRouter.Router,
 	logger *logger.Logger,
 ) OnboardingService {
 	return &onboardingService{
-		eventRepo:    eventRepo,
-		customerRepo: customerRepo,
-		featureRepo:  featureRepo,
-		meterRepo:    meterRepo,
-		publisher:    publisher,
-		pubSub:       pubSub,
-		pubSubRouter: pubSubRouter,
-		logger:       logger,
+		eventRepo:        eventRepo,
+		customerRepo:     customerRepo,
+		featureRepo:      featureRepo,
+		meterRepo:        meterRepo,
+		subscriptionRepo: subscriptionRepo,
+		priceRepo:        priceRepo,
+		publisher:        publisher,
+		pubSub:           pubSub,
+		pubSubRouter:     pubSubRouter,
+		logger:           logger,
 	}
 }
 
-// GenerateEvents generates events for a specific customer and feature
+// GenerateEvents generates events for a specific customer and feature or subscription
 func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.OnboardingEventsRequest) (*dto.OnboardingEventsResponse, error) {
-	// Validate customer exists
-	cust, err := s.customerRepo.Get(ctx, req.CustomerID)
+	var customerID string
+	var meters []types.MeterInfo
+	featureService := NewFeatureService(s.featureRepo, s.meterRepo, s.logger)
+	featureFilter := types.NewNoLimitFeatureFilter()
+	featureFilter.Expand = lo.ToPtr(string(types.ExpandMeters))
+
+	// If subscription ID is provided, fetch customer and feature information from the subscription
+	if req.SubscriptionID != "" {
+		// Get subscription
+		subscription, subscriptionLineItems, err := s.subscriptionRepo.GetWithLineItems(ctx, req.SubscriptionID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get subscription: %w", err)
+		}
+
+		// Set customer ID from subscription
+		customerID = subscription.CustomerID
+
+		for _, lineItem := range subscriptionLineItems {
+			if lineItem.PriceType == types.PRICE_TYPE_USAGE {
+				featureFilter.MeterIDs = []string{lineItem.MeterID}
+				break
+			}
+		}
+
+	} else {
+		customerID = req.CustomerID
+		featureFilter.FeatureIDs = []string{req.FeatureID}
+	}
+
+	customer, err := s.customerRepo.Get(ctx, customerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get customer: %w", err)
 	}
 
-	// Validate feature exists
-	feat, err := s.featureRepo.Get(ctx, req.FeatureID)
+	features, err := featureService.GetFeatures(ctx, featureFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get feature: %w", err)
+		return nil, fmt.Errorf("failed to get features: %w", err)
 	}
 
-	// Get all meters - in a real implementation, you'd filter by feature
-	meters, err := s.meterRepo.List(ctx, &types.MeterFilter{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get meters: %w", err)
+	if len(features.Items) == 0 || len(features.Items) > 1 {
+		return nil, fmt.Errorf("expected 1 feature for meter, got %d", len(features.Items))
 	}
 
-	if len(meters) == 0 {
-		return nil, fmt.Errorf("no meters found")
-	}
+	selectedFeature := features.Items[0]
+	meter := selectedFeature.Meter
+	meters = []types.MeterInfo{createMeterInfoFromMeter(meter)}
 
-	// For simplicity, just use the first meter
-	// In a real implementation, you'd use meters associated with the feature
-	meter := meters[0]
-
-	// Create a simplified MeterInfo
-	meterInfo := types.MeterInfo{
-		ID:        meter.ID,
-		EventName: meter.EventName,
-		Aggregation: types.AggregationInfo{
-			Type:  meter.Aggregation.Type,
-			Field: meter.Aggregation.Field,
-		},
-		Filters: []types.FilterInfo{},
-	}
-
-	// Add filters if any
-	for _, f := range meter.Filters {
-		meterInfo.Filters = append(meterInfo.Filters, types.FilterInfo{
-			Key:    f.Key,
-			Values: f.Values,
-		})
-	}
+	// Set the customer and feature IDs in the request for logging
+	req.CustomerID = customerID
+	req.FeatureID = selectedFeature.ID
 
 	// Create a message with the request details
 	msg := &types.OnboardingEventsMessage{
-		CustomerID:       req.CustomerID,
-		CustomerExtID:    cust.ExternalID,
-		FeatureID:        req.FeatureID,
-		FeatureName:      feat.Name,
+		CustomerID:       customerID,
+		CustomerExtID:    customer.ExternalID,
+		FeatureID:        selectedFeature.ID,
+		FeatureName:      selectedFeature.Name,
 		Duration:         req.Duration,
-		Meters:           []types.MeterInfo{meterInfo},
+		Meters:           meters,
 		TenantID:         types.GetTenantID(ctx),
 		RequestTimestamp: time.Now(),
+		SubscriptionID:   req.SubscriptionID,
 	}
 
 	// Publish the message to the onboarding events topic
@@ -135,8 +151,9 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 
 	s.logger.Infow("publishing onboarding events message",
 		"message_id", messageID,
-		"customer_id", req.CustomerID,
-		"feature_id", req.FeatureID,
+		"customer_id", customerID,
+		"feature_id", selectedFeature.ID,
+		"subscription_id", req.SubscriptionID,
 		"duration", req.Duration,
 	)
 
@@ -145,11 +162,35 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 	}
 
 	return &dto.OnboardingEventsResponse{
-		Message:   "Event generation started",
-		StartedAt: time.Now(),
-		Duration:  req.Duration,
-		Count:     req.Duration, // One event per second
+		Message:        "Event generation started",
+		StartedAt:      time.Now(),
+		Duration:       req.Duration,
+		Count:          req.Duration, // One event per second
+		CustomerID:     customerID,
+		FeatureID:      selectedFeature.ID,
+		SubscriptionID: req.SubscriptionID,
 	}, nil
+}
+
+// Helper function to create MeterInfo from a Meter
+func createMeterInfoFromMeter(m *dto.MeterResponse) types.MeterInfo {
+	filterInfos := make([]types.FilterInfo, len(m.Filters))
+	for j, f := range m.Filters {
+		filterInfos[j] = types.FilterInfo{
+			Key:    f.Key,
+			Values: f.Values,
+		}
+	}
+
+	return types.MeterInfo{
+		ID:        m.ID,
+		EventName: m.EventName,
+		Aggregation: types.AggregationInfo{
+			Type:  m.Aggregation.Type,
+			Field: m.Aggregation.Field,
+		},
+		Filters: filterInfos,
+	}
 }
 
 // RegisterHandler registers a handler for onboarding events
@@ -181,6 +222,7 @@ func (s *onboardingService) processMessage(msg *message.Message) error {
 	s.logger.Infow("processing onboarding events",
 		"customer_id", eventMsg.CustomerID,
 		"feature_id", eventMsg.FeatureID,
+		"subscription_id", eventMsg.SubscriptionID,
 		"duration", eventMsg.Duration,
 		"meters_count", len(eventMsg.Meters),
 	)
@@ -205,10 +247,6 @@ func (s *onboardingService) generateEvents(ctx context.Context, eventMsg *types.
 	// Create a ticker to generate events at a rate of 1 per second
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-
-	// Create a done channel to signal completion
-	done := make(chan struct{})
-	defer close(done)
 
 	// Create a counter for successful events
 	successCount := 0
@@ -261,9 +299,6 @@ func (s *onboardingService) generateEvents(ctx context.Context, eventMsg *types.
 				"reason", ctx.Err(),
 			)
 			return
-		case <-done:
-			// This case should never be reached, but it's here for safety
-			return
 		}
 	}
 
@@ -283,6 +318,7 @@ func (s *onboardingService) createEventRequest(eventMsg *types.OnboardingEventsM
 
 	// Handle properties based on meter aggregation and filters
 	if meter.Aggregation.Type == types.AggregationSum ||
+		meter.Aggregation.Type == types.AggregationCountUnique ||
 		meter.Aggregation.Type == types.AggregationAvg {
 		// For sum/avg aggregation, we need to generate a value for the aggregation field
 		if meter.Aggregation.Field != "" {

@@ -44,6 +44,13 @@ func featureFilterFn(ctx context.Context, f *feature.Feature, filter interface{}
 		return false
 	}
 
+	// Filter by meter IDs
+	if len(filter_.MeterIDs) > 0 {
+		if !lo.Contains(filter_.MeterIDs, f.MeterID) {
+			return false
+		}
+	}
+
 	// Filter by feature IDs
 	if len(filter_.FeatureIDs) > 0 {
 		if !lo.Contains(filter_.FeatureIDs, f.ID) {
