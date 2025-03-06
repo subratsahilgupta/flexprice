@@ -281,6 +281,11 @@ func (o FeatureQueryOptions) applyEntityQueryOptions(_ context.Context, f *types
 		query = query.Where(feature.IDIn(f.FeatureIDs...))
 	}
 
+	// Apply meter IDs filter if specified
+	if len(f.MeterIDs) > 0 {
+		query = query.Where(feature.MeterIDIn(f.MeterIDs...))
+	}
+
 	// Apply key filter if specified
 	if f.LookupKey != "" {
 		query = query.Where(feature.LookupKey(f.LookupKey))

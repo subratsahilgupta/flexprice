@@ -40,6 +40,7 @@ type FeatureFilter struct {
 
 	// Feature specific filters
 	FeatureIDs []string `form:"feature_ids" json:"feature_ids"`
+	MeterIDs   []string `form:"meter_ids" json:"meter_ids"`
 	LookupKey  string   `form:"lookup_key" json:"lookup_key"`
 }
 
