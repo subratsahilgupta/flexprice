@@ -129,11 +129,11 @@ func main() {
 			service.NewTenantService,
 			service.NewAuthService,
 			service.NewUserService,
+			service.NewEnvironmentService,
 
 			// Business services
 			service.NewMeterService,
 			service.NewEventService,
-			service.NewEnvironmentService,
 			service.NewPriceService,
 			service.NewCustomerService,
 			service.NewPlanService,
@@ -417,7 +417,7 @@ func startMessageRouter(
 ) {
 	// Register handlers before starting the router
 	webhookService.RegisterHandler(router)
-	onboardingService.RegisterHandler()
+	onboardingService.RegisterHandler(router)
 
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {

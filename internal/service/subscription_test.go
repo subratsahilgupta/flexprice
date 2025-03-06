@@ -73,6 +73,10 @@ func (s *SubscriptionServiceSuite) setupService() {
 		InvoiceRepo:      stores.InvoiceRepo,
 		EntitlementRepo:  stores.EntitlementRepo,
 		FeatureRepo:      stores.FeatureRepo,
+		EnvironmentRepo:  stores.EnvironmentRepo,
+		TenantRepo:       stores.TenantRepo,
+		UserRepo:         stores.UserRepo,
+		AuthRepo:         stores.AuthRepo,
 		EventPublisher:   s.GetPublisher(),
 		WebhookPublisher: s.GetWebhookPublisher(),
 	})

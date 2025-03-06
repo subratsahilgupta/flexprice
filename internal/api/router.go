@@ -260,6 +260,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			onboarding := portalRoutes.Group("/onboarding")
 			{
 				onboarding.POST("/events", handlers.Onboarding.GenerateEvents)
+				onboarding.POST("/setup", handlers.Onboarding.SetupDemo)
 			}
 		}
 	}

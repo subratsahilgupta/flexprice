@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -85,4 +86,20 @@ func (h *OnboardingHandler) GenerateEvents(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, response)
+}
+
+func (h *OnboardingHandler) SetupDemo(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := types.GetUserID(ctx)
+	tenantID := types.GetTenantID(ctx)
+	envID := types.GetEnvironmentID(ctx)
+
+	err := h.onboardingService.SetupSandboxEnvironment(ctx, tenantID, userID, envID)
+	if err != nil {
+		h.log.Errorw("Failed to setup sandbox environment", "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to setup sandbox environment"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "Sandbox environment setup successfully"})
 }
