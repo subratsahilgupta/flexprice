@@ -76,7 +76,7 @@ func NewOnboardingService(
 // GenerateEvents generates events for a specific customer and feature or subscription
 func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.OnboardingEventsRequest) (*dto.OnboardingEventsResponse, error) {
 	var customerID string
-	var meters []types.MeterInfo
+	meters := make([]types.MeterInfo, 0)
 	featureService := NewFeatureService(s.featureRepo, s.meterRepo, s.logger)
 	featureFilter := types.NewNoLimitFeatureFilter()
 	featureFilter.Expand = lo.ToPtr(string(types.ExpandMeters))
@@ -92,10 +92,10 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 		// Set customer ID from subscription
 		customerID = subscription.CustomerID
 
+		featureFilter.MeterIDs = []string{}
 		for _, lineItem := range subscriptionLineItems {
 			if lineItem.PriceType == types.PRICE_TYPE_USAGE {
-				featureFilter.MeterIDs = []string{lineItem.MeterID}
-				break
+				featureFilter.MeterIDs = append(featureFilter.MeterIDs, lineItem.MeterID)
 			}
 		}
 
@@ -114,15 +114,16 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 		return nil, fmt.Errorf("failed to get features: %w", err)
 	}
 
-	if len(features.Items) == 0 || len(features.Items) > 1 {
-		return nil, fmt.Errorf("expected 1 feature for meter, got %d", len(features.Items))
+	for _, feature := range features.Items {
+		meters = append(meters, createMeterInfoFromMeter(feature.Meter))
 	}
 
-	selectedFeature := features.Items[0]
-	meter := selectedFeature.Meter
-	meters = []types.MeterInfo{createMeterInfoFromMeter(meter)}
+	if len(meters) == 0 {
+		return nil, fmt.Errorf("no meters found for feature %s", req.FeatureID)
+	}
 
 	// Set the customer and feature IDs in the request for logging
+	selectedFeature := features.Items[0]
 	req.CustomerID = customerID
 	req.FeatureID = selectedFeature.ID
 
