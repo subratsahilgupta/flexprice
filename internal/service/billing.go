@@ -98,12 +98,41 @@ func (s *billingService) CalculateUsageCharges(
 	periodStart,
 	periodEnd time.Time,
 ) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal, error) {
+	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
+	entitlementService := NewEntitlementService(s.EntitlementRepo, s.PlanRepo, s.FeatureRepo, s.MeterRepo, s.Logger)
+
 	if usage == nil {
 		return nil, decimal.Zero, nil
 	}
 
 	usageCharges := make([]dto.CreateInvoiceLineItemRequest, 0)
 	totalUsageCost := decimal.Zero
+
+	planIDs := make([]string, 0)
+	for _, item := range sub.LineItems {
+		if item.PriceType == types.PRICE_TYPE_USAGE {
+			planIDs = append(planIDs, item.PlanID)
+		}
+	}
+	planIDs = lo.Uniq(planIDs)
+
+	// map of plan ID to meter ID to entitlement
+	entitlementsByPlanMeterID := make(map[string]map[string]*dto.EntitlementResponse)
+	for _, planID := range planIDs {
+		entitlements, err := entitlementService.GetPlanEntitlements(ctx, planID)
+		if err != nil {
+			return nil, decimal.Zero, errors.WithOp(err, "entitlement.get")
+		}
+
+		for _, entitlement := range entitlements.Items {
+			if entitlement.FeatureType == types.FeatureTypeMetered {
+				if _, ok := entitlementsByPlanMeterID[planID]; !ok {
+					entitlementsByPlanMeterID[planID] = make(map[string]*dto.EntitlementResponse)
+				}
+				entitlementsByPlanMeterID[planID][entitlement.Feature.MeterID] = entitlement
+			}
+		}
+	}
 
 	// Process usage charges from line items
 	for _, item := range sub.LineItems {
@@ -128,8 +157,38 @@ func (s *billingService) CalculateUsageCharges(
 			continue
 		}
 
-		lineItemAmount := decimal.NewFromFloat(matchingCharge.Amount)
+		quantityForCalculation := decimal.NewFromFloat(matchingCharge.Quantity)
+		matchingEntitlement, ok := entitlementsByPlanMeterID[item.PlanID][item.MeterID]
+		if ok && matchingEntitlement != nil {
+			if matchingEntitlement.UsageLimit != nil {
+				// usage limit is set, so we decrement the usage quantity by the already entitled usage
+				usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
+				adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
+				quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
+			} else {
+				// unlimited usage allowed, so we set the usage quantity for calculation to 0
+				quantityForCalculation = decimal.Zero
+			}
+		}
+
+		// Recompute the amount based on the quantity for calculation
+		lineItemAmount := priceService.CalculateCost(ctx, matchingCharge.Price, quantityForCalculation)
 		totalUsageCost = totalUsageCost.Add(lineItemAmount)
+
+		s.Logger.Debugw("usage charges for line item",
+			"original_amount", matchingCharge.Amount,
+			"calculated_amount", lineItemAmount,
+			"original_quantity", matchingCharge.Quantity,
+			"calculated_quantity", quantityForCalculation,
+			"subscription_id", sub.ID,
+			"line_item_id", item.ID,
+			"price_id", item.PriceID)
+
+		// TODO: for now we skip line items with no usage charges
+		// but this needs to be behind a feature flag as per tenant config
+		if lineItemAmount.Equal(decimal.Zero) {
+			continue
+		}
 
 		usageCharges = append(usageCharges, dto.CreateInvoiceLineItemRequest{
 			PlanID:           lo.ToPtr(item.PlanID),
@@ -140,17 +199,13 @@ func (s *billingService) CalculateUsageCharges(
 			MeterDisplayName: lo.ToPtr(item.MeterDisplayName),
 			DisplayName:      lo.ToPtr(item.DisplayName),
 			Amount:           lineItemAmount,
-			Quantity:         decimal.NewFromFloat(matchingCharge.Quantity),
+			Quantity:         quantityForCalculation,
 			PeriodStart:      lo.ToPtr(periodStart),
 			PeriodEnd:        lo.ToPtr(periodEnd),
 			Metadata: types.Metadata{
 				"description": fmt.Sprintf("%s (Usage Charge)", item.DisplayName),
 			},
 		})
-	}
-
-	if !totalUsageCost.Equal(decimal.NewFromFloat(usage.Amount)) {
-		return usageCharges, totalUsageCost, fmt.Errorf("usage cost calculation mismatch at line item level")
 	}
 
 	return usageCharges, totalUsageCost, nil
