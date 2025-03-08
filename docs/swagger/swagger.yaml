@@ -2510,10 +2510,12 @@ definitions:
     enum:
     - EVENTS
     - PRICES
+    - CUSTOMERS
     type: string
     x-enum-varnames:
     - EntityTypeEvents
     - EntityTypePrices
+    - EntityTypeCustomers
   types.FeatureType:
     enum:
     - metered
@@ -2837,15 +2839,6 @@ definitions:
     - WindowSizeMinute
     - WindowSizeHour
     - WindowSizeDay
-  v1.ErrorResponse:
-    properties:
-      detail:
-        example: Invalid request payload
-        type: string
-      error:
-        example: Invalid request payload
-        type: string
-    type: object
 info:
   contact: {}
   description: FlexPrice API Service
@@ -2874,7 +2867,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Login
       tags:
       - Auth
@@ -2900,7 +2893,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Sign up
       tags:
       - Auth
@@ -2970,11 +2963,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get customers
@@ -3001,11 +2994,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a customer
@@ -3030,11 +3023,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete a customer
@@ -3060,11 +3053,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a customer
@@ -3096,11 +3089,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update a customer
@@ -3127,11 +3120,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a customer invoice summary
@@ -3160,11 +3153,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get wallets by customer ID
@@ -3191,15 +3184,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a customer by lookup key
@@ -3286,11 +3279,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get entitlements
@@ -3317,11 +3310,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new entitlement
@@ -3348,11 +3341,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete an entitlement
@@ -3378,11 +3371,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get an entitlement by ID
@@ -3414,11 +3407,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update an entitlement
@@ -3466,11 +3459,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get environments
@@ -3497,11 +3490,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create an environment
@@ -3528,15 +3521,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get an environment
@@ -3568,15 +3561,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update an environment
@@ -3624,11 +3617,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get raw events
@@ -3657,11 +3650,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Ingest event
@@ -3687,11 +3680,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get usage statistics
@@ -3717,15 +3710,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get usage by meter
@@ -3735,7 +3728,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get features with the specified filter
+      description: List features with optional filtering
       parameters:
       - in: query
         name: end_time
@@ -3758,6 +3751,12 @@ paths:
       - in: query
         name: lookup_key
         type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: meter_ids
+        type: array
       - in: query
         minimum: 0
         name: offset
@@ -3795,22 +3794,22 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Get features
+      summary: List features
       tags:
       - Features
     post:
       consumes:
       - application/json
-      description: Create a new feature with the specified configuration
+      description: Create a new feature
       parameters:
-      - description: Feature configuration
+      - description: Feature to create
         in: body
         name: feature
         required: true
@@ -3826,11 +3825,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new feature
@@ -3840,7 +3839,7 @@ paths:
     delete:
       consumes:
       - application/json
-      description: Delete a feature
+      description: Delete a feature by ID
       parameters:
       - description: Feature ID
         in: path
@@ -3857,11 +3856,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete a feature
@@ -3887,11 +3890,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a feature by ID
@@ -3900,14 +3907,14 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update a feature with the specified configuration
+      description: Update a feature by ID
       parameters:
       - description: Feature ID
         in: path
         name: id
         required: true
         type: string
-      - description: Feature configuration
+      - description: Feature update data
         in: body
         name: feature
         required: true
@@ -3923,11 +3930,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update a feature
@@ -4027,11 +4038,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: List invoices
       tags:
       - Invoices
@@ -4056,11 +4067,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Create a new invoice
       tags:
       - Invoices
@@ -4085,11 +4096,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Get an invoice by ID
       tags:
       - Invoices
@@ -4114,11 +4125,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Finalize an invoice
       tags:
       - Invoices
@@ -4149,15 +4160,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update invoice payment status
@@ -4184,11 +4195,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Void an invoice
       tags:
       - Invoices
@@ -4214,11 +4225,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Get a preview invoice
       tags:
       - Invoices
@@ -4285,7 +4296,7 @@ paths:
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: List meters
@@ -4312,11 +4323,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create meter
@@ -4343,11 +4354,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete meter
@@ -4371,11 +4382,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get meter
@@ -4407,15 +4418,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update meter
@@ -4442,11 +4453,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: 'Disable meter [TODO: Deprecate]'
@@ -4530,11 +4541,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: List payments
@@ -4561,11 +4572,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new payment
@@ -4592,11 +4603,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete a payment
@@ -4622,11 +4633,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a payment by ID
@@ -4658,11 +4669,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update a payment
@@ -4689,11 +4700,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Process a payment
@@ -4703,7 +4714,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get plans with the specified filter
+      description: Get plans with optional filtering
       parameters:
       - in: query
         name: end_time
@@ -4759,11 +4770,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get plans
@@ -4790,11 +4801,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new plan
@@ -4821,14 +4832,18 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Delete a plan by ID
+      summary: Delete a plan
       tags:
       - Plans
     get:
@@ -4851,14 +4866,18 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Get a plan by ID
+      summary: Get a plan
       tags:
       - Plans
     put:
@@ -4871,7 +4890,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Plan configuration
+      - description: Plan update
         in: body
         name: plan
         required: true
@@ -4887,14 +4906,18 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Update a plan by ID
+      summary: Update a plan
       tags:
       - Plans
   /plans/{id}/entitlements:
@@ -4918,11 +4941,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get plan entitlements
@@ -4994,11 +5021,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get prices
@@ -5025,11 +5052,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new price
@@ -5056,11 +5083,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete a price
@@ -5086,11 +5113,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a price by ID
@@ -5122,11 +5149,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update a price
@@ -5160,11 +5187,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: List API keys
       tags:
       - secrets
@@ -5189,11 +5216,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Create a new API key
       tags:
       - secrets
@@ -5216,11 +5243,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Delete an API key
       tags:
       - secrets
@@ -5243,11 +5270,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Delete an integration
       tags:
       - secrets
@@ -5272,11 +5299,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Get integration details
       tags:
       - secrets
@@ -5306,11 +5333,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Create or update an integration
       tags:
       - secrets
@@ -5330,7 +5357,7 @@ paths:
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: List linked integrations
       tags:
       - secrets
@@ -5442,11 +5469,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: List subscriptions
@@ -5473,11 +5500,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create subscription
@@ -5502,11 +5529,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get subscription
@@ -5537,11 +5564,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Cancel subscription
@@ -5660,9 +5687,11 @@ paths:
       - Subscriptions
   /subscriptions/usage:
     post:
-      description: Get usage by subscription
+      consumes:
+      - application/json
+      description: Get usage for a subscription
       parameters:
-      - description: Request
+      - description: Usage request
         in: body
         name: request
         required: true
@@ -5678,11 +5707,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get usage by subscription
@@ -5703,12 +5732,14 @@ paths:
       - enum:
         - EVENTS
         - PRICES
+        - CUSTOMERS
         in: query
         name: entity_type
         type: string
         x-enum-varnames:
         - EntityTypeEvents
         - EntityTypePrices
+        - EntityTypeCustomers
       - in: query
         name: expand
         type: string
@@ -5776,11 +5807,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: List tasks
       tags:
       - Tasks
@@ -5805,11 +5836,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Create a new task
       tags:
       - Tasks
@@ -5834,11 +5865,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Get a task by ID
       tags:
       - Tasks
@@ -5863,15 +5894,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Process a task
       tags:
       - Tasks
@@ -5902,15 +5933,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Update task status
       tags:
       - Tasks
@@ -5936,11 +5967,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new tenant
@@ -5967,11 +5998,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get tenant by ID
@@ -5992,11 +6023,11 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get user info
@@ -6024,11 +6055,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new wallet
@@ -6055,15 +6086,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get wallet by ID
@@ -6095,15 +6126,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Update a wallet
       tags:
       - Wallets
@@ -6128,15 +6159,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get wallet balance
@@ -6163,15 +6194,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Terminate a wallet
       tags:
       - Wallets
@@ -6202,15 +6233,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Top up wallet
@@ -6334,15 +6365,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get wallet transactions
