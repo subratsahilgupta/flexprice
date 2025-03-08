@@ -1,27 +1,36 @@
 package validator
 
 import (
+	"sync"
+
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/go-playground/validator/v10"
 )
 
-var validate *validator.Validate
+var (
+	validate *validator.Validate
+	once     sync.Once
+)
+
+// initValidator initializes the validator exactly once
+func initValidator() {
+	once.Do(func() {
+		validate = validator.New()
+	})
+}
 
 func NewValidator() *validator.Validate {
-	validate = validator.New()
+	initValidator()
 	return validate
 }
 
 func GetValidator() *validator.Validate {
+	initValidator()
 	return validate
 }
 
 func ValidateRequest(req interface{}) error {
-	if validate == nil {
-		return ierr.NewError("validator not initialized").
-			WithHint("Validator must be initialized before using it").
-			Mark(ierr.ErrSystem)
-	}
+	initValidator()
 
 	if err := validate.Struct(req); err != nil {
 		details := make(map[string]any)
