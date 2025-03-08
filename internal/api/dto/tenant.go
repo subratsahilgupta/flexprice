@@ -6,7 +6,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 )
 
 type CreateTenantRequest struct {
@@ -27,7 +27,7 @@ type AssignTenantRequest struct {
 }
 
 func (r *CreateTenantRequest) Validate() error {
-	return validator.New().Struct(r)
+	return validator.ValidateRequest(r)
 }
 
 func (r *CreateTenantRequest) ToTenant(ctx context.Context) *tenant.Tenant {
@@ -41,11 +41,7 @@ func (r *CreateTenantRequest) ToTenant(ctx context.Context) *tenant.Tenant {
 }
 
 func (r *AssignTenantRequest) Validate(ctx context.Context) error {
-	err := validator.New().Struct(r)
-	if err != nil {
-		return err
-	}
-	return nil
+	return validator.ValidateRequest(r)
 }
 
 func NewTenantResponse(t *tenant.Tenant) *TenantResponse {

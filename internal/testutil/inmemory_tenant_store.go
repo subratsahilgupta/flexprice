@@ -2,11 +2,11 @@ package testutil
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/tenant"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
 type InMemoryTenantStore struct {
@@ -22,14 +22,18 @@ func NewInMemoryTenantStore() *InMemoryTenantStore {
 
 func (s *InMemoryTenantStore) Create(ctx context.Context, t *tenant.Tenant) error {
 	if t == nil {
-		return fmt.Errorf("tenant cannot be nil")
+		return ierr.NewError("tenant cannot be nil").
+			WithHint("Please provide a valid tenant").
+			Mark(ierr.ErrValidation)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, exists := s.tenants[t.ID]; exists {
-		return fmt.Errorf("tenant already exists")
+		return ierr.NewError("tenant already exists").
+			WithHint("Please provide a unique tenant ID").
+			Mark(ierr.ErrDatabase)
 	}
 
 	t.CreatedAt = time.Now()
@@ -45,7 +49,9 @@ func (s *InMemoryTenantStore) GetByID(ctx context.Context, id string) (*tenant.T
 	if t, exists := s.tenants[id]; exists {
 		return t, nil
 	}
-	return nil, fmt.Errorf("tenant not found")
+	return nil, ierr.NewError("tenant not found").
+		WithHint("Please provide a valid tenant ID").
+		Mark(ierr.ErrDatabase)
 }
 
 func (s *InMemoryTenantStore) Clear() {

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/wallet"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -43,29 +43,43 @@ type UpdateWalletRequest struct {
 func (r *UpdateWalletRequest) Validate() error {
 	if r.AutoTopupTrigger != nil {
 		if err := r.AutoTopupTrigger.Validate(); err != nil {
-			return err
+			return ierr.WithError(err).
+				WithHint("Invalid auto-topup trigger").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
-	if *r.AutoTopupTrigger == types.AutoTopupTriggerBalanceBelowThreshold {
+	if r.AutoTopupTrigger != nil && *r.AutoTopupTrigger == types.AutoTopupTriggerBalanceBelowThreshold {
 		if r.AutoTopupMinBalance == nil || r.AutoTopupAmount == nil {
-			return errors.New(errors.ErrCodeValidation, "auto_topup_min_balance and auto_topup_amount are required when auto_topup_trigger is balance_below_threshold")
+			return ierr.NewError("auto_topup_min_balance and auto_topup_amount are required when auto_topup_trigger is balance_below_threshold").
+				WithHint("Both minimum balance and topup amount must be provided for threshold-based auto-topup").
+				Mark(ierr.ErrValidation)
 		}
 		if r.AutoTopupMinBalance.LessThanOrEqual(decimal.Zero) {
-			return errors.New(errors.ErrCodeValidation, "auto_topup_min_balance must be greater than 0")
+			return ierr.NewError("auto_topup_min_balance must be greater than 0").
+				WithHint("Minimum balance threshold must be a positive value").
+				WithReportableDetails(map[string]interface{}{
+					"min_balance": r.AutoTopupMinBalance,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 		if r.AutoTopupAmount.LessThanOrEqual(decimal.Zero) {
-			return errors.New(errors.ErrCodeValidation, "auto_topup_amount must be greater than 0")
+			return ierr.NewError("auto_topup_amount must be greater than 0").
+				WithHint("Auto-topup amount must be a positive value").
+				WithReportableDetails(map[string]interface{}{
+					"topup_amount": r.AutoTopupAmount,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 	}
 
 	if r.Config != nil {
 		if err := r.Config.Validate(); err != nil {
-			return errors.Wrap(err, errors.ErrCodeValidation, "invalid wallet config")
+			return err
 		}
 	}
 
-	return validator.New().Struct(r)
+	return validator.ValidateRequest(r)
 }
 
 // ToWallet converts a create wallet request to a wallet
@@ -131,9 +145,14 @@ func (r *CreateWalletRequest) Validate() error {
 		return err
 	}
 	if r.ConversionRate.LessThan(decimal.Zero) {
-		return errors.New(errors.ErrCodeValidation, "conversion_rate must be greater than 0")
+		return ierr.NewError("conversion_rate must be greater than 0").
+			WithHint("Conversion rate must be a positive value").
+			WithReportableDetails(map[string]interface{}{
+				"conversion_rate": r.ConversionRate,
+			}).
+			Mark(ierr.ErrValidation)
 	}
-	return validator.New().Struct(r)
+	return validator.ValidateRequest(r)
 }
 
 // WalletResponse represents a wallet in API responses
@@ -252,7 +271,12 @@ type TopUpWalletRequest struct {
 
 func (r *TopUpWalletRequest) Validate() error {
 	if r.Amount.LessThanOrEqual(decimal.Zero) {
-		return errors.New(errors.ErrCodeValidation, "amount must be greater than 0")
+		return ierr.NewError("amount must be greater than 0").
+			WithHint("Top-up amount must be a positive value").
+			WithReportableDetails(map[string]interface{}{
+				"amount": r.Amount,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil

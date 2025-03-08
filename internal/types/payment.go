@@ -1,8 +1,7 @@
 package types
 
 import (
-	"fmt"
-
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
 )
 
@@ -32,7 +31,12 @@ func (s PaymentStatus) Validate() error {
 		PaymentStatusPartiallyRefunded,
 	}
 	if !lo.Contains(allowed, s) {
-		return fmt.Errorf("invalid payment status: %s", s)
+		return ierr.NewError("invalid payment status").
+			WithHint("Please provide a valid payment status").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -59,7 +63,12 @@ func (s PaymentMethodType) Validate() error {
 		PaymentMethodTypeCredits,
 	}
 	if !lo.Contains(allowed, s) {
-		return fmt.Errorf("invalid payment method type: %s", s)
+		return ierr.NewError("invalid payment method type").
+			WithHint("Please provide a valid payment method type").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -80,7 +89,12 @@ func (s PaymentDestinationType) Validate() error {
 		PaymentDestinationTypeInvoice,
 	}
 	if !lo.Contains(allowed, s) {
-		return fmt.Errorf("invalid payment destination type: %s", s)
+		return ierr.NewError("invalid payment destination type").
+			WithHint("Please provide a valid payment destination type").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }

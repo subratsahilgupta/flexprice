@@ -24,6 +24,7 @@ import (
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/temporal"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/flexprice/flexprice/internal/webhook"
 	"go.uber.org/fx"
 
@@ -57,6 +58,9 @@ func main() {
 	// Core dependencies
 	opts = append(opts,
 		fx.Provide(
+			// Validator
+			validator.NewValidator,
+
 			// Config
 			config.NewConfig,
 

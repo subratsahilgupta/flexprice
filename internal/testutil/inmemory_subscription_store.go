@@ -2,9 +2,9 @@ package testutil
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 )
@@ -110,7 +110,9 @@ func subscriptionSortFn(i, j *subscription.Subscription) bool {
 
 func (s *InMemorySubscriptionStore) Create(ctx context.Context, sub *subscription.Subscription) error {
 	if sub == nil {
-		return fmt.Errorf("subscription cannot be nil")
+		return ierr.NewError("subscription cannot be nil").
+			WithHint("Subscription data is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Set environment ID from context if not already set
@@ -118,13 +120,43 @@ func (s *InMemorySubscriptionStore) Create(ctx context.Context, sub *subscriptio
 		sub.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
-	return s.InMemoryStore.Create(ctx, sub.ID, sub)
+	err := s.InMemoryStore.Create(ctx, sub.ID, sub)
+	if err != nil {
+		if ierr.IsAlreadyExists(err) {
+			return ierr.WithError(err).
+				WithHint("A subscription with this ID already exists").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": sub.ID,
+				}).
+				Mark(ierr.ErrAlreadyExists)
+		}
+		return ierr.WithError(err).
+			WithHint("Failed to create subscription").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": sub.ID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+	return nil
 }
 
 func (s *InMemorySubscriptionStore) Get(ctx context.Context, id string) (*subscription.Subscription, error) {
 	sub, err := s.InMemoryStore.Get(ctx, id)
 	if err != nil {
-		return nil, err
+		if ierr.IsNotFound(err) {
+			return nil, ierr.WithError(err).
+				WithHint("Subscription not found").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": id,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+		return nil, ierr.WithError(err).
+			WithHint("Failed to retrieve subscription").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": id,
+			}).
+			Mark(ierr.ErrDatabase)
 	}
 	// Attach line items if they exist
 	if items, ok := s.lineItems[id]; ok {
@@ -136,7 +168,9 @@ func (s *InMemorySubscriptionStore) Get(ctx context.Context, id string) (*subscr
 func (s *InMemorySubscriptionStore) List(ctx context.Context, filter *types.SubscriptionFilter) ([]*subscription.Subscription, error) {
 	subs, err := s.InMemoryStore.List(ctx, filter, subscriptionFilterFn, subscriptionSortFn)
 	if err != nil {
-		return nil, err
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list subscriptions").
+			Mark(ierr.ErrDatabase)
 	}
 	// Attach line items to each subscription
 	for _, sub := range subs {
@@ -148,20 +182,62 @@ func (s *InMemorySubscriptionStore) List(ctx context.Context, filter *types.Subs
 }
 
 func (s *InMemorySubscriptionStore) Count(ctx context.Context, filter *types.SubscriptionFilter) (int, error) {
-	return s.InMemoryStore.Count(ctx, filter, subscriptionFilterFn)
+	count, err := s.InMemoryStore.Count(ctx, filter, subscriptionFilterFn)
+	if err != nil {
+		return 0, ierr.WithError(err).
+			WithHint("Failed to count subscriptions").
+			Mark(ierr.ErrDatabase)
+	}
+	return count, nil
 }
 
 func (s *InMemorySubscriptionStore) Update(ctx context.Context, sub *subscription.Subscription) error {
 	if sub == nil {
-		return fmt.Errorf("subscription cannot be nil")
+		return ierr.NewError("subscription cannot be nil").
+			WithHint("Subscription data is required").
+			Mark(ierr.ErrValidation)
 	}
-	return s.InMemoryStore.Update(ctx, sub.ID, sub)
+	err := s.InMemoryStore.Update(ctx, sub.ID, sub)
+	if err != nil {
+		if ierr.IsNotFound(err) {
+			return ierr.WithError(err).
+				WithHint("Subscription not found").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": sub.ID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+		return ierr.WithError(err).
+			WithHint("Failed to update subscription").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": sub.ID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+	return nil
 }
 
 func (s *InMemorySubscriptionStore) Delete(ctx context.Context, id string) error {
 	// Delete line items first
 	delete(s.lineItems, id)
-	return s.InMemoryStore.Delete(ctx, id)
+	err := s.InMemoryStore.Delete(ctx, id)
+	if err != nil {
+		if ierr.IsNotFound(err) {
+			return ierr.WithError(err).
+				WithHint("Subscription not found").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": id,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+		return ierr.WithError(err).
+			WithHint("Failed to delete subscription").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": id,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+	return nil
 }
 
 // ListAll returns all subscriptions without pagination
@@ -212,7 +288,9 @@ func (s *InMemorySubscriptionStore) GetWithLineItems(ctx context.Context, id str
 // CreatePause creates a new subscription pause
 func (s *InMemorySubscriptionStore) CreatePause(ctx context.Context, pause *subscription.SubscriptionPause) error {
 	if pause == nil {
-		return fmt.Errorf("pause cannot be nil")
+		return ierr.NewError("pause cannot be nil").
+			WithHint("Pause data is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Set environment ID from context if not already set
@@ -233,7 +311,12 @@ func (s *InMemorySubscriptionStore) CreatePause(ctx context.Context, pause *subs
 func (s *InMemorySubscriptionStore) GetPause(ctx context.Context, id string) (*subscription.SubscriptionPause, error) {
 	pause, ok := s.pauseByID[id]
 	if !ok {
-		return nil, fmt.Errorf("pause not found: %s", id)
+		return nil, ierr.NewError("pause not found").
+			WithHint("Pause not found").
+			WithReportableDetails(map[string]interface{}{
+				"id": id,
+			}).
+			Mark(ierr.ErrNotFound)
 	}
 	return pause, nil
 }
@@ -241,13 +324,20 @@ func (s *InMemorySubscriptionStore) GetPause(ctx context.Context, id string) (*s
 // UpdatePause updates a subscription pause
 func (s *InMemorySubscriptionStore) UpdatePause(ctx context.Context, pause *subscription.SubscriptionPause) error {
 	if pause == nil {
-		return fmt.Errorf("pause cannot be nil")
+		return ierr.NewError("pause cannot be nil").
+			WithHint("Pause data is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Check if pause exists
 	_, ok := s.pauseByID[pause.ID]
 	if !ok {
-		return fmt.Errorf("pause not found: %s", pause.ID)
+		return ierr.NewError("pause not found").
+			WithHint("Pause not found").
+			WithReportableDetails(map[string]interface{}{
+				"id": pause.ID,
+			}).
+			Mark(ierr.ErrNotFound)
 	}
 
 	// Update the pause

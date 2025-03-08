@@ -18,7 +18,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/task"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -69,24 +69,24 @@ func NewTaskService(
 
 func (s *taskService) CreateTask(ctx context.Context, req dto.CreateTaskRequest) (*dto.TaskResponse, error) {
 	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
+		return nil, err
 	}
 
 	t := req.ToTask(ctx)
 	if err := t.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid task: %w", err)
+		return nil, err
 	}
 
 	if err := s.taskRepo.Create(ctx, t); err != nil {
 		s.logger.Error("failed to create task", "error", err)
-		return nil, fmt.Errorf("creating task: %w", err)
+		return nil, err
 	}
 
 	// Start processing the task in sync for now
 	// TODO: Start processing the task in async using temporal
 	if err := s.ProcessTask(ctx, t.ID); err != nil {
 		s.logger.Error("failed to process task", "error", err)
-		return nil, fmt.Errorf("processing task: %w", err)
+		return nil, err
 	}
 
 	return dto.NewTaskResponse(t), nil
@@ -95,7 +95,7 @@ func (s *taskService) CreateTask(ctx context.Context, req dto.CreateTaskRequest)
 func (s *taskService) GetTask(ctx context.Context, id string) (*dto.TaskResponse, error) {
 	t, err := s.taskRepo.Get(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("getting task: %w", err)
+		return nil, err
 	}
 
 	return dto.NewTaskResponse(t), nil
@@ -104,12 +104,12 @@ func (s *taskService) GetTask(ctx context.Context, id string) (*dto.TaskResponse
 func (s *taskService) ListTasks(ctx context.Context, filter *types.TaskFilter) (*dto.ListTasksResponse, error) {
 	tasks, err := s.taskRepo.List(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("listing tasks: %w", err)
+		return nil, err
 	}
 
 	count, err := s.taskRepo.Count(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("counting tasks: %w", err)
+		return nil, err
 	}
 
 	items := make([]*dto.TaskResponse, len(tasks))
@@ -130,12 +130,20 @@ func (s *taskService) ListTasks(ctx context.Context, filter *types.TaskFilter) (
 func (s *taskService) UpdateTaskStatus(ctx context.Context, id string, status types.TaskStatus) error {
 	t, err := s.taskRepo.Get(ctx, id)
 	if err != nil {
-		return fmt.Errorf("getting task: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to get task").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate status transition
 	if !isValidStatusTransition(t.TaskStatus, status) {
-		return fmt.Errorf("invalid status transition from %s to %s", t.TaskStatus, status)
+		return ierr.NewError(fmt.Sprintf("invalid status transition from %s to %s", t.TaskStatus, status)).
+			WithHint("Invalid status transition").
+			WithReportableDetails(map[string]interface{}{
+				"from": t.TaskStatus,
+				"to":   status,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	now := time.Now().UTC()
@@ -150,7 +158,9 @@ func (s *taskService) UpdateTaskStatus(ctx context.Context, id string, status ty
 	}
 
 	if err := s.taskRepo.Update(ctx, t); err != nil {
-		return fmt.Errorf("updating task: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to update task").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -159,13 +169,17 @@ func (s *taskService) UpdateTaskStatus(ctx context.Context, id string, status ty
 func (s *taskService) ProcessTask(ctx context.Context, id string) error {
 	// Update status to processing
 	if err := s.UpdateTaskStatus(ctx, id, types.TaskStatusProcessing); err != nil {
-		return fmt.Errorf("updating task status: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to update task status").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Refresh task after status update
 	t, err := s.taskRepo.Get(ctx, id)
 	if err != nil {
-		return fmt.Errorf("getting task: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to get task").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Create progress tracker with the task object
@@ -179,7 +193,12 @@ func (s *taskService) ProcessTask(ctx context.Context, id string) error {
 	case types.EntityTypeCustomers:
 		processErr = s.processCustomers(ctx, t, tracker)
 	default:
-		processErr = errors.New(errors.ErrCodeInvalidOperation, fmt.Sprintf("unsupported entity type: %s", t.EntityType))
+		processErr = ierr.NewError("unsupported entity type").
+			WithHint("Unsupported entity type").
+			WithReportableDetails(map[string]interface{}{
+				"entity_type": t.EntityType,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// Ensure all progress is updated before updating final status
@@ -191,13 +210,13 @@ func (s *taskService) ProcessTask(ctx context.Context, id string) error {
 		if err := s.UpdateTaskStatus(ctx, id, types.TaskStatusFailed); err != nil {
 			s.logger.Error("failed to update task status", "error", err)
 		}
-		return fmt.Errorf("processing task: %w", processErr)
+		return processErr
 	}
 
 	// Only mark as completed if there was no error
 	if err := s.UpdateTaskStatus(ctx, id, types.TaskStatusCompleted); err != nil {
 		s.logger.Error("failed to update task status", "error", err)
-		return fmt.Errorf("updating task status: %w", err)
+		return err
 	}
 
 	return nil
@@ -211,7 +230,12 @@ func (s *taskService) downloadFile(ctx context.Context, t *task.Task) ([]byte, e
 		// Extract file ID from Google Drive URL
 		fileID := extractGoogleDriveFileID(downloadURL)
 		if fileID == "" {
-			return nil, errors.New(errors.ErrCodeValidation, "invalid Google Drive URL")
+			return nil, ierr.NewError("invalid Google Drive URL").
+				WithHint("Invalid Google Drive URL").
+				WithReportableDetails(map[string]interface{}{
+					"url": downloadURL,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 		downloadURL = fmt.Sprintf("https://drive.google.com/uc?export=download&id=%s", fileID)
 		s.logger.Debugw("converted Google Drive URL", "original", t.FileURL, "download_url", downloadURL)
@@ -228,14 +252,20 @@ func (s *taskService) downloadFile(ctx context.Context, t *task.Task) ([]byte, e
 		s.logger.Error("failed to download file", "error", err, "url", downloadURL)
 		errorSummary := fmt.Sprintf("Failed to download file: %v", err)
 		t.ErrorSummary = &errorSummary
-		return nil, errors.Wrap(err, errors.ErrCodeHTTPClient, "failed to download file")
+		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		s.logger.Error("failed to download file", "status_code", resp.StatusCode, "url", downloadURL)
 		errorSummary := fmt.Sprintf("Failed to download file: HTTP %d", resp.StatusCode)
 		t.ErrorSummary = &errorSummary
-		return nil, errors.New(errors.ErrCodeHTTPClient, fmt.Sprintf("failed to download file: %d", resp.StatusCode))
+		return nil, ierr.NewError(fmt.Sprintf("failed to download file: %d", resp.StatusCode)).
+			WithHint("Failed to download file").
+			WithReportableDetails(map[string]interface{}{
+				"status_code": resp.StatusCode,
+				"url":         downloadURL,
+			}).
+			Mark(ierr.ErrHTTPClient)
 	}
 
 	// Log the first few bytes of the response for debugging
@@ -304,7 +334,12 @@ func (s *taskService) processCSVFile(
 			"content_preview", string(fileContent[:previewLen]))
 		errorSummary := fmt.Sprintf("Failed to read CSV headers: %v", err)
 		t.ErrorSummary = &errorSummary
-		return errors.Wrap(err, errors.ErrCodeValidation, "failed to read CSV headers")
+		return ierr.NewError("failed to read CSV headers").
+			WithHint("Failed to read CSV headers").
+			WithReportableDetails(map[string]interface{}{
+				"error": err,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	s.logger.Debugw("parsed CSV headers", "headers", headers)
@@ -384,7 +419,13 @@ func (s *taskService) processCSVFile(
 		}
 
 		entityName := strings.ToLower(string(t.EntityType))
-		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("%d %s failed to process", failureCount, entityName))
+		return ierr.NewError(fmt.Sprintf("%d %s failed to process", failureCount, entityName)).
+			WithHint("Failed to process").
+			WithReportableDetails(map[string]interface{}{
+				"entity_name":   entityName,
+				"failure_count": failureCount,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -670,7 +711,12 @@ func (s *taskService) parseTimestamp(eventReq *dto.IngestEventRequest) error {
 	if eventReq.TimestampStr != "" {
 		timestamp, err := time.Parse(time.RFC3339, eventReq.TimestampStr)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeValidation, "invalid timestamp format")
+			return ierr.NewError("invalid timestamp format").
+				WithHint("Invalid timestamp format").
+				WithReportableDetails(map[string]interface{}{
+					"error": err,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 		eventReq.Timestamp = timestamp
 	} else {
@@ -688,7 +734,12 @@ func validateEventsRequiredColumns(headers []string) error {
 
 	for _, required := range requiredColumns {
 		if !headerSet[required] {
-			return errors.New(errors.ErrCodeValidation, fmt.Sprintf("missing required column: %s", required))
+			return ierr.NewError(fmt.Sprintf("missing required column: %s", required)).
+				WithHint("Missing required column").
+				WithReportableDetails(map[string]interface{}{
+					"column": required,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 	}
 	return nil
@@ -720,7 +771,12 @@ func validateCustomerRequiredColumns(headers []string) error {
 	for _, required := range requiredColumns {
 		required = strings.ToLower(required)
 		if !headerSet[required] {
-			return errors.New(errors.ErrCodeValidation, fmt.Sprintf("missing required column: %s", required))
+			return ierr.NewError(fmt.Sprintf("missing required column: %s", required)).
+				WithHint("Missing required column").
+				WithReportableDetails(map[string]interface{}{
+					"column": required,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 	}
 	return nil

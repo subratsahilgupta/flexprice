@@ -1,10 +1,9 @@
 package types
 
 import (
-	"fmt"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -36,7 +35,13 @@ func (t WalletType) Validate() error {
 		string(WalletTypePrePaid),
 	}
 	if !lo.Contains(allowedValues, string(t)) {
-		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("invalid wallet type: %s", t))
+		return ierr.NewError("invalid wallet type").
+			WithHint("Invalid wallet type").
+			WithReportableDetails(map[string]any{
+				"allowed": allowedValues,
+				"type":    t,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -71,7 +76,13 @@ func (t TransactionReason) Validate() error {
 		string(TransactionReasonWalletTermination),
 	}
 	if !lo.Contains(allowedValues, string(t)) {
-		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("invalid transaction reason: %s", t))
+		return ierr.NewError("invalid transaction reason").
+			WithHint("Invalid transaction reason").
+			WithReportableDetails(map[string]any{
+				"allowed": allowedValues,
+				"type":    t,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -98,7 +109,13 @@ func (t WalletTxReferenceType) Validate() error {
 		string(WalletTxReferenceTypeRequest),
 	}
 	if !lo.Contains(allowedValues, string(t)) {
-		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("invalid wallet transaction reference type: %s", t))
+		return ierr.NewError("invalid wallet transaction reference type").
+			WithHint("Invalid wallet transaction reference type").
+			WithReportableDetails(map[string]any{
+				"allowed": allowedValues,
+				"type":    t,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -123,7 +140,13 @@ func (t AutoTopupTrigger) Validate() error {
 	}
 
 	if !lo.Contains(allowedValues, string(t)) {
-		return errors.New(errors.ErrCodeValidation, fmt.Sprintf("invalid auto top-up trigger: %s", t))
+		return ierr.NewError("invalid auto top-up trigger").
+			WithHint("Invalid auto top-up trigger").
+			WithReportableDetails(map[string]any{
+				"allowed": allowedValues,
+				"type":    t,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -180,7 +203,9 @@ func (f WalletTransactionFilter) Validate() error {
 	}
 
 	if f.ReferenceType != nil && f.ReferenceID == nil || f.ReferenceID != nil && *f.ReferenceID == "" {
-		return errors.New(errors.ErrCodeValidation, "reference_type and reference_id must be provided together")
+		return ierr.NewError("reference_type and reference_id must be provided together").
+			WithHint("Reference type and reference id must be provided together").
+			Mark(ierr.ErrValidation)
 	}
 
 	if f.TimeRangeFilter != nil {
@@ -191,13 +216,13 @@ func (f WalletTransactionFilter) Validate() error {
 
 	if f.ExpiryDateBefore != nil && f.ExpiryDateAfter != nil {
 		if f.ExpiryDateBefore.Before(*f.ExpiryDateAfter) {
-			return errors.New(errors.ErrCodeValidation, "expiry_date_before must be after expiry_date_after")
+			return ierr.NewError("expiry_date_before must be after expiry_date_after").
+				WithHint("Expiry date before must be after expiry date after").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
-	if f.TransactionReason != nil {
-		// Add validation for transaction reason if needed
-	}
+	// TODO: Add validation for transaction reason if needed
 
 	return nil
 }
@@ -288,7 +313,13 @@ func (c WalletConfig) Validate() error {
 	if c.AllowedPriceTypes != nil {
 		for _, priceType := range c.AllowedPriceTypes {
 			if !lo.Contains(allowedPriceTypes, string(priceType)) {
-				return errors.New(errors.ErrCodeValidation, fmt.Sprintf("invalid price type: %s", priceType))
+				return ierr.NewError("invalid price type").
+					WithHint("Invalid price type").
+					WithReportableDetails(map[string]any{
+						"allowed": allowedPriceTypes,
+						"type":    priceType,
+					}).
+					Mark(ierr.ErrValidation)
 			}
 		}
 	}

@@ -2,11 +2,11 @@ package testutil
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/environment"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -23,14 +23,18 @@ func NewInMemoryEnvironmentStore() *InMemoryEnvironmentStore {
 
 func (s *InMemoryEnvironmentStore) Create(ctx context.Context, env *environment.Environment) error {
 	if env == nil {
-		return fmt.Errorf("environment cannot be nil")
+		return ierr.NewError("environment cannot be nil").
+			WithHint("Environment cannot be nil").
+			Mark(ierr.ErrDatabase)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, exists := s.environments[env.ID]; exists {
-		return fmt.Errorf("environment already exists")
+		return ierr.NewError("environment already exists").
+			WithHint("Environment already exists").
+			Mark(ierr.ErrDatabase)
 	}
 
 	env.CreatedAt = time.Now()
@@ -46,7 +50,9 @@ func (s *InMemoryEnvironmentStore) Get(ctx context.Context, id string) (*environ
 	if env, exists := s.environments[id]; exists {
 		return env, nil
 	}
-	return nil, fmt.Errorf("environment not found")
+	return nil, ierr.NewError("environment not found").
+		WithHint("Environment not found").
+		Mark(ierr.ErrDatabase)
 }
 
 func (s *InMemoryEnvironmentStore) List(ctx context.Context, filter types.Filter) ([]*environment.Environment, error) {
@@ -74,7 +80,9 @@ func (s *InMemoryEnvironmentStore) List(ctx context.Context, filter types.Filter
 
 func (s *InMemoryEnvironmentStore) Update(ctx context.Context, env *environment.Environment) error {
 	if env == nil {
-		return fmt.Errorf("environment cannot be nil")
+		return ierr.NewError("environment cannot be nil").
+			WithHint("Environment cannot be nil").
+			Mark(ierr.ErrDatabase)
 	}
 
 	s.mu.Lock()
@@ -82,7 +90,9 @@ func (s *InMemoryEnvironmentStore) Update(ctx context.Context, env *environment.
 
 	existing, exists := s.environments[env.ID]
 	if !exists {
-		return fmt.Errorf("environment not found")
+		return ierr.NewError("environment not found").
+			WithHint("Environment not found").
+			Mark(ierr.ErrDatabase)
 	}
 
 	existing.Name = env.Name

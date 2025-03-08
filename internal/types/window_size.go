@@ -1,6 +1,6 @@
 package types
 
-import "fmt"
+import ierr "github.com/flexprice/flexprice/internal/errors"
 
 type WindowSize string
 
@@ -20,6 +20,13 @@ func (w WindowSize) Validate() error {
 	case WindowSizeMinute, WindowSizeHour, WindowSizeDay:
 		return nil
 	default:
-		return fmt.Errorf("invalid window size: %s", w)
+		return ierr.NewError("invalid window size").
+			WithHint("Invalid window size").
+			WithReportableDetails(
+				map[string]any{
+					"window_size": w,
+				},
+			).
+			Mark(ierr.ErrValidation)
 	}
 }

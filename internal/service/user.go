@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -29,12 +29,16 @@ func NewUserService(userRepo user.Repository, tenantRepo tenant.Repository) User
 func (s *userService) GetUserInfo(ctx context.Context) (*dto.UserResponse, error) {
 	userID := types.GetUserID(ctx)
 	if userID == "" {
-		return nil, fmt.Errorf("user ID is required")
+		return nil, ierr.NewError("user ID is required").
+			WithHint("User ID is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	tenantID := types.GetTenantID(ctx)
 	if tenantID == "" {
-		return nil, fmt.Errorf("tenant ID is required")
+		return nil, ierr.NewError("tenant ID is required").
+			WithHint("Tenant ID is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	user, err := s.userRepo.GetByID(ctx, userID)

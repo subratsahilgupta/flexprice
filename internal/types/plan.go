@@ -1,6 +1,6 @@
 package types
 
-import "fmt"
+import ierr "github.com/flexprice/flexprice/internal/errors"
 
 // PlanFilter represents the filter options for plans
 type PlanFilter struct {
@@ -38,7 +38,9 @@ func (f *PlanFilter) Validate() error {
 
 	for _, planID := range f.PlanIDs {
 		if planID == "" {
-			return fmt.Errorf("plan id can not be empty")
+			return ierr.NewError("plan id can not be empty").
+				WithHint("Plan info can not be empty").
+				Mark(ierr.ErrValidation)
 		}
 	}
 	return nil

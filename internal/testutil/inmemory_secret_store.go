@@ -2,11 +2,10 @@ package testutil
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/secret"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -83,7 +82,9 @@ func secretSortFn(i, j *secret.Secret) bool {
 
 func (s *InMemorySecretStore) Create(ctx context.Context, secret *secret.Secret) error {
 	if secret == nil {
-		return fmt.Errorf("secret cannot be nil")
+		return ierr.NewError("secret cannot be nil").
+			WithHint("Please provide a valid secret").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Set environment ID from context if not already set
@@ -136,7 +137,12 @@ func (s *InMemorySecretStore) GetAPIKeyByValue(ctx context.Context, value string
 		}
 	}
 
-	return nil, errors.Wrap(errors.ErrNotFound, errors.ErrCodeNotFound, "invalid secret")
+	return nil, ierr.NewError("invalid secret").
+		WithHint("Invalid secret").
+		WithReportableDetails(map[string]interface{}{
+			"value": value,
+		}).
+		Mark(ierr.ErrNotFound)
 }
 
 func (s *InMemorySecretStore) UpdateLastUsed(ctx context.Context, id string) error {

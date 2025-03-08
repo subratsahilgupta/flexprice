@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/subscription"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -26,37 +26,37 @@ func (r *PauseSubscriptionRequest) Validate() error {
 	}
 
 	if r.PauseMode == types.PauseModeScheduled && r.PauseStart == nil {
-		return errors.NewError("pause_start is required when pause_mode is scheduled").
+		return ierr.NewError("pause_start is required when pause_mode is scheduled").
 			WithHint("Please provide a valid date to start the pause").
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	if r.PauseEnd != nil && r.PauseDays != nil {
-		return errors.NewError("invalid pause parameters").
+		return ierr.NewError("invalid pause parameters").
 			WithHint("Cannot specify both pause end date and number of pause days").
 			WithReportableDetails(map[string]any{
 				"pauseEnd":  r.PauseEnd,
 				"pauseDays": r.PauseDays,
 			}).
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	if r.PauseDays != nil && *r.PauseDays <= 0 {
-		return errors.NewError("invalid pause parameters").
+		return ierr.NewError("invalid pause parameters").
 			WithHint("Number of pause days must be a positive integer").
 			WithReportableDetails(map[string]any{
 				"pauseDays": r.PauseDays,
 			}).
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	if r.PauseEnd != nil && r.PauseEnd.Before(time.Now().UTC()) {
-		return errors.NewError("invalid pause parameters").
+		return ierr.NewError("invalid pause parameters").
 			WithHint("Pause end date must be in the future").
 			WithReportableDetails(map[string]any{
 				"pauseEnd": r.PauseEnd,
 			}).
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -80,7 +80,7 @@ type ResumeSubscriptionRequest struct {
 // Validate validates the resume subscription request
 func (r *ResumeSubscriptionRequest) Validate() error {
 	if err := r.ResumeMode.Validate(); err != nil {
-		return errors.New(errors.ErrCodeValidation, "invalid resume mode")
+		return err
 	}
 
 	return nil

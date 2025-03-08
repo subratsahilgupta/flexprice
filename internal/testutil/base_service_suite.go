@@ -26,6 +26,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/validator"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/stretchr/testify/suite"
 )
@@ -65,6 +66,9 @@ type BaseServiceTestSuite struct {
 
 // SetupSuite is called once before running the tests in the suite
 func (s *BaseServiceTestSuite) SetupSuite() {
+	// Initialize validator
+	validator.NewValidator()
+
 	// Initialize logger with test config
 	cfg := &config.Configuration{
 		Logging: config.LoggingConfig{

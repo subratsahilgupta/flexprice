@@ -4,7 +4,7 @@ import (
 	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 )
 
 // OnboardingEventsRequest represents the request to generate events for onboarding
@@ -20,12 +20,12 @@ func (r *OnboardingEventsRequest) Validate() error {
 	// Either customer_id + feature_id OR subscription_id must be provided
 	if (r.CustomerID == "" || r.FeatureID == "") && r.SubscriptionID == "" {
 		return ierr.NewError("either customer_id + feature_id or subscription_id must be provided").
-			WithHint("Please provide either a customer_id and feature_id or a subscription_id").
+			WithHint("Please provide Customer or Subscription information").
 			Mark(ierr.ErrValidation)
 	}
 
 	// If both are provided, subscription_id takes precedence (we can add a warning log)
-	return validator.New().Struct(r)
+	return validator.ValidateRequest(r)
 }
 
 // OnboardingEventsResponse represents the response for onboarding events generation

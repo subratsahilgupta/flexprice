@@ -1,10 +1,9 @@
 package types
 
 import (
-	"fmt"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
 )
 
@@ -25,7 +24,9 @@ func (t TaskType) Validate() error {
 		TaskTypeExport,
 	}
 	if !lo.Contains(allowed, t) {
-		return errors.New(errors.ErrCodeValidation, "invalid task type")
+		return ierr.NewError("invalid task type").
+			WithHint("Invalid task type").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -49,7 +50,9 @@ func (e EntityType) Validate() error {
 		EntityTypeCustomers,
 	}
 	if !lo.Contains(allowed, e) {
-		return errors.New(errors.ErrCodeValidation, "invalid entity type")
+		return ierr.NewError("invalid entity type").
+			WithHint("Invalid entity type").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -71,7 +74,9 @@ func (f FileType) Validate() error {
 		FileTypeJSON,
 	}
 	if !lo.Contains(allowed, f) {
-		return errors.New(errors.ErrCodeValidation, "invalid file type")
+		return ierr.NewError("invalid file type").
+			WithHint("Invalid file type").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -97,19 +102,11 @@ func (s TaskStatus) Validate() error {
 		TaskStatusFailed,
 	}
 	if !lo.Contains(allowed, s) {
-		return errors.New(errors.ErrCodeValidation, "invalid task status")
+		return ierr.NewError("invalid task status").
+			WithHint("Invalid task status").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
-}
-
-// Define task-specific errors
-var (
-	ErrTaskNotFound = fmt.Errorf("task not found")
-)
-
-// IsNotFoundError checks if the error is a not found error
-func IsNotFoundError(err error) bool {
-	return err == ErrTaskNotFound
 }
 
 // TaskFilter defines the filter parameters for listing tasks

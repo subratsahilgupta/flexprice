@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
@@ -35,36 +35,51 @@ func NewPriceService(repo price.Repository, meterRepo meter.Repository, logger *
 
 func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceRequest) (*dto.PriceResponse, error) {
 	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
+		return nil, err
 	}
 
 	if req.PlanID == "" {
-		return nil, fmt.Errorf("plan_id is required")
+		return nil, ierr.NewError("plan_id is required").
+			WithHint("Plan ID is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	price, err := req.ToPrice(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse price: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to parse price data").
+			Mark(ierr.ErrValidation)
 	}
 
 	if err := s.repo.Create(ctx, price); err != nil {
-		return nil, fmt.Errorf("failed to create price: %w", err)
+		return nil, err
 	}
 
 	return &dto.PriceResponse{Price: price}, nil
 }
 
 func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceResponse, error) {
+	if id == "" {
+		return nil, ierr.NewError("price_id is required").
+			WithHint("Price ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
 	price, err := s.repo.Get(ctx, id)
 	if err != nil {
-
-		return nil, fmt.Errorf("failed to get price: %w", err)
+		return nil, err
 	}
 
 	return &dto.PriceResponse{Price: price}, nil
 }
 
 func (s *priceService) GetPricesByPlanID(ctx context.Context, planID string) (*dto.ListPricesResponse, error) {
+	if planID == "" {
+		return nil, ierr.NewError("plan_id is required").
+			WithHint("Plan ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
 	// Use unlimited filter to fetch all prices
 	priceFilter := types.NewNoLimitPriceFilter().
 		WithPlanIDs([]string{planID}).
@@ -76,22 +91,24 @@ func (s *priceService) GetPricesByPlanID(ctx context.Context, planID string) (*d
 
 func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter) (*dto.ListPricesResponse, error) {
 	meterService := NewMeterService(s.meterRepo)
+
 	// Validate expand fields
 	if err := filter.GetExpand().Validate(types.PriceExpandConfig); err != nil {
-		return nil, fmt.Errorf("invalid expand fields: %w", err)
+		return nil, err
 	}
 
-	// Fetch prices
+	// Get prices
 	prices, err := s.repo.List(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list prices: %w", err)
+		return nil, err
 	}
 
 	priceCount, err := s.repo.Count(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count prices: %w", err)
+		return nil, err
 	}
 
+	// Build response
 	response := &dto.ListPricesResponse{
 		Items: make([]*dto.PriceResponse, len(prices)),
 	}
@@ -102,7 +119,7 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		// Fetch all meters in one query
 		metersResponse, err := meterService.GetAllMeters(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch meters: %w", err)
+			return nil, err
 		}
 
 		// Create a map for quick meter lookup
@@ -138,7 +155,7 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.UpdatePriceRequest) (*dto.PriceResponse, error) {
 	price, err := s.repo.Get(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get price: %w", err)
+		return nil, err
 	}
 
 	price.Description = req.Description
@@ -146,7 +163,7 @@ func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.Updat
 	price.LookupKey = req.LookupKey
 
 	if err := s.repo.Update(ctx, price); err != nil {
-		return nil, fmt.Errorf("failed to update price: %w", err)
+		return nil, err
 	}
 
 	return &dto.PriceResponse{Price: price}, nil
@@ -154,7 +171,7 @@ func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.Updat
 
 func (s *priceService) DeletePrice(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
-		return fmt.Errorf("failed to delete price: %w", err)
+		return err
 	}
 	return nil
 }

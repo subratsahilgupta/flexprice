@@ -3,7 +3,8 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"fmt"
+
+	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
 // Metadata represents a JSONB field for storing key-value pairs
@@ -18,7 +19,9 @@ func (m *Metadata) Scan(value interface{}) error {
 
 	bytes, ok := value.([]byte)
 	if !ok {
-		return fmt.Errorf("failed to unmarshal JSONB value: %v", value)
+		return ierr.NewError("failed to unmarshal JSONB value").
+			WithHint("Please provide a valid JSON value").
+			Mark(ierr.ErrValidation)
 	}
 
 	result := make(Metadata)

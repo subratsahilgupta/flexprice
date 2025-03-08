@@ -89,7 +89,9 @@ func IsMatchingCurrency(a, b string) bool {
 // TODO : use some library to validate iso 3166-1 alpha-3 currency codes
 func ValidateCurrencyCode(currency string) error {
 	if len(currency) != 3 {
-		return ierr.NewError("invalid currency code").WithHint("currency code must be 3 characters long").Mark(ierr.ErrValidation)
+		return ierr.NewError("invalid currency code").
+			WithHint("Currency code must be 3 characters long").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }

@@ -2,12 +2,13 @@ package dynamodb
 
 import (
 	"context"
-	"fmt"
+
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"go.uber.org/zap"
 
 	"github.com/flexprice/flexprice/internal/config"
@@ -56,7 +57,9 @@ func (p *EventPublisher) Publish(ctx context.Context, event *events.Event) error
 
 	item, err := attributevalue.MarshalMap(dynamoEvent)
 	if err != nil {
-		return fmt.Errorf("failed to marshal event: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to marshal event").
+			Mark(ierr.ErrValidation)
 	}
 
 	input := &dynamodb.PutItemInput{
@@ -72,7 +75,9 @@ func (p *EventPublisher) Publish(ctx context.Context, event *events.Event) error
 
 	_, err = p.client.db.PutItem(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to put item in dynamodb: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to put item in dynamodb").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil

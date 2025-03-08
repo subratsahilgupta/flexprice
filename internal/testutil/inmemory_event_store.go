@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/flexprice/flexprice/internal/domain/events"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -26,7 +27,9 @@ func NewInMemoryEventStore() *InMemoryEventStore {
 
 func (s *InMemoryEventStore) InsertEvent(ctx context.Context, event *events.Event) error {
 	if event == nil {
-		return fmt.Errorf("event cannot be nil")
+		return ierr.NewError("event cannot be nil").
+			WithHint("Event cannot be nil").
+			Mark(ierr.ErrValidation)
 	}
 
 	s.mu.Lock()
@@ -171,7 +174,9 @@ func (s *InMemoryEventStore) GetEvents(ctx context.Context, params *events.GetEv
 
 func (s *InMemoryEventStore) GetUsageWithFilters(ctx context.Context, params *events.UsageWithFiltersParams) ([]*events.AggregationResult, error) {
 	if params == nil || params.UsageParams == nil {
-		return nil, fmt.Errorf("params cannot be nil")
+		return nil, ierr.NewError("params cannot be nil").
+			WithHint("Params cannot be nil").
+			Mark(ierr.ErrValidation)
 	}
 
 	s.mu.RLock()

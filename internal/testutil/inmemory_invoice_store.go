@@ -86,7 +86,9 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 
 func (s *InMemoryInvoiceStore) Create(ctx context.Context, inv *invoice.Invoice) error {
 	if inv == nil {
-		return fmt.Errorf("invoice cannot be nil")
+		return ierr.NewError("invoice cannot be nil").
+			WithHint("Invoice cannot be nil").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Set environment ID from context if not already set

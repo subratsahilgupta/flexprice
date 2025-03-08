@@ -68,6 +68,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	public := router.Group("/", middleware.GuestAuthenticateMiddleware)
 
 	v1Public := public.Group("/v1")
+	v1Public.Use(middleware.ErrorHandler())
 
 	{
 		// Auth routes
@@ -79,6 +80,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, logger))
 
 	v1Private := private.Group("/v1")
+	v1Private.Use(middleware.ErrorHandler())
 	{
 		user := v1Private.Group("/users")
 		{
@@ -178,7 +180,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		}
 
 		invoices := v1Private.Group("/invoices")
-		invoices.Use(middleware.ErrorHandler())
 		{
 			invoices.POST("", handlers.Invoice.CreateInvoice)
 			invoices.GET("", handlers.Invoice.ListInvoices)
@@ -192,7 +193,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		feature := v1Private.Group("/features")
 		{
 			feature.POST("", handlers.Feature.CreateFeature)
-			feature.GET("", handlers.Feature.GetFeatures)
+			feature.GET("", handlers.Feature.ListFeatures)
 			feature.GET("/:id", handlers.Feature.GetFeature)
 			feature.PUT("/:id", handlers.Feature.UpdateFeature)
 			feature.DELETE("/:id", handlers.Feature.DeleteFeature)

@@ -29,13 +29,13 @@ func (h *OnboardingHandler) GenerateEvents(c *gin.Context) {
 	var req dto.OnboardingEventsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.log.Error("Failed to bind JSON", "error", err)
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request payload"})
+		c.Error(err)
 		return
 	}
 
 	if err := req.Validate(); err != nil {
 		h.log.Errorw("invalid request payload", "error", err)
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request payload"})
+		c.Error(err)
 		return
 	}
 
@@ -81,7 +81,7 @@ func (h *OnboardingHandler) GenerateEvents(c *gin.Context) {
 			"customer_id", req.CustomerID,
 			"feature_id", req.FeatureID,
 		)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to generate events"})
+		c.Error(err)
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *OnboardingHandler) SetupDemo(c *gin.Context) {
 	err := h.onboardingService.SetupSandboxEnvironment(ctx, tenantID, userID, envID)
 	if err != nil {
 		h.log.Errorw("Failed to setup sandbox environment", "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to setup sandbox environment"})
+		c.Error(err)
 		return
 	}
 
