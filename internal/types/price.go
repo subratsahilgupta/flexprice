@@ -1,8 +1,7 @@
 package types
 
 import (
-	"fmt"
-
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
 )
 
@@ -72,7 +71,13 @@ func (b BillingCadence) Validate() error {
 		BILLING_CADENCE_ONETIME,
 	}
 	if !lo.Contains(allowed, b) {
-		return fmt.Errorf("invalid billing cadence: %s", b)
+		return ierr.NewError("invalid billing cadence").
+			WithHint("Invalid billing cadence").
+			WithReportableDetails(map[string]interface{}{
+				"billing_cadence": b,
+				"allowed":         allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -91,7 +96,12 @@ func (b BillingPeriod) Validate() error {
 		BILLING_PERIOD_HALF_YEAR,
 	}
 	if !lo.Contains(allowed, b) {
-		return fmt.Errorf("invalid billing period: %s", b)
+		return ierr.NewError("invalid billing period").
+			WithHint("Invalid billing period").
+			WithReportableDetails(map[string]interface{}{
+				"billing_period": b,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -103,7 +113,13 @@ func (b BillingModel) Validate() error {
 		BILLING_MODEL_TIERED,
 	}
 	if !lo.Contains(allowed, b) {
-		return fmt.Errorf("invalid billing model: %s", b)
+		return ierr.NewError("invalid billing model").
+			WithHint("Invalid billing model").
+			WithReportableDetails(map[string]interface{}{
+				"billing_model": b,
+				"allowed":       allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -114,7 +130,13 @@ func (b BillingTier) Validate() error {
 		BILLING_TIER_SLAB,
 	}
 	if !lo.Contains(allowed, b) {
-		return fmt.Errorf("invalid billing tier: %s", b)
+		return ierr.NewError("invalid billing tier").
+			WithHint("Invalid billing tier").
+			WithReportableDetails(map[string]interface{}{
+				"billing_tier": b,
+				"allowed":      allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -125,7 +147,13 @@ func (p PriceType) Validate() error {
 		PRICE_TYPE_FIXED,
 	}
 	if !lo.Contains(allowed, p) {
-		return fmt.Errorf("invalid price type: %s", p)
+		return ierr.NewError("invalid price type").
+			WithHint("Invalid price type").
+			WithReportableDetails(map[string]interface{}{
+				"price_type": p,
+				"allowed":    allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -167,13 +195,17 @@ func (f PriceFilter) Validate() error {
 
 	for _, planID := range f.PlanIDs {
 		if planID == "" {
-			return fmt.Errorf("plan id can not be empty")
+			return ierr.NewError("plan id can not be empty").
+				WithHint("Plan ID cannot be empty").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
 	for _, priceID := range f.PriceIDs {
 		if priceID == "" {
-			return fmt.Errorf("price id can not be empty")
+			return ierr.NewError("price id can not be empty").
+				WithHint("Price ID cannot be empty").
+				Mark(ierr.ErrValidation)
 		}
 	}
 

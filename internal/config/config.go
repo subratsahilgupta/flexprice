@@ -10,7 +10,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/Shopify/sarama"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
@@ -175,8 +175,7 @@ func NewConfig() (*Configuration, error) {
 }
 
 func (c Configuration) Validate() error {
-	validate := validator.New()
-	return validate.Struct(c)
+	return validator.ValidateRequest(c)
 }
 
 // GetDefaultConfig returns a default configuration for local development

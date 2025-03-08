@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/payment"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -155,11 +155,22 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 		p.PaymentGateway = nil
 		p.GatewayPaymentID = nil
 		if p.PaymentMethodID != "" {
-			return nil, errors.New(errors.ErrCodeValidation, "payment method id is not allowed for offline payment method type")
+			return nil, ierr.NewError("payment method id is not allowed for offline payment method type").
+				WithHint("Do not provide payment method ID for offline or credits payment methods").
+				WithReportableDetails(map[string]interface{}{
+					"payment_method_type": r.PaymentMethodType,
+					"payment_method_id":   r.PaymentMethodID,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 	} else {
 		if p.PaymentMethodID == "" {
-			return nil, errors.New(errors.ErrCodeValidation, "payment method id is required for online payment method type")
+			return nil, ierr.NewError("payment method id is required for online payment method type").
+				WithHint("Payment method ID is required for online payment methods").
+				WithReportableDetails(map[string]interface{}{
+					"payment_method_type": r.PaymentMethodType,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 		p.TrackAttempts = true
 	}

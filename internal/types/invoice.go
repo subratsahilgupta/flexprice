@@ -1,8 +1,6 @@
 package types
 
 import (
-	"fmt"
-
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
 )
@@ -26,7 +24,12 @@ func (c InvoiceCadence) Validate() error {
 		InvoiceCadenceAdvance,
 	}
 	if !lo.Contains(allowed, c) {
-		return fmt.Errorf("invalid invoice cadence: %s", c)
+		return ierr.NewError("invalid invoice cadence").
+			WithHint("Please provide a valid invoice cadence").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -53,7 +56,12 @@ func (t InvoiceType) Validate() error {
 		InvoiceTypeCredit,
 	}
 	if !lo.Contains(allowed, t) {
-		return fmt.Errorf("invalid invoice type: %s", t)
+		return ierr.NewError("invalid invoice type").
+			WithHint("Please provide a valid invoice type").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -80,7 +88,12 @@ func (s InvoiceStatus) Validate() error {
 		InvoiceStatusVoided,
 	}
 	if !lo.Contains(allowed, s) {
-		return fmt.Errorf("invalid invoice status: %s", s)
+		return ierr.NewError("invalid invoice status").
+			WithHint("Please provide a valid invoice status").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -110,7 +123,12 @@ func (r InvoiceBillingReason) Validate() error {
 		InvoiceBillingReasonManual,
 	}
 	if !lo.Contains(allowed, r) {
-		return fmt.Errorf("invalid invoice billing reason: %s", r)
+		return ierr.NewError("invalid invoice billing reason").
+			WithHint("Please provide a valid invoice billing reason").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }

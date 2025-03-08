@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/errors"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/shopspring/decimal"
 )
 
@@ -49,8 +49,8 @@ func NewEventService(
 }
 
 func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.IngestEventRequest) error {
-	if err := validator.New().Struct(createEventRequest); err != nil {
-		return fmt.Errorf("validation failed: %w", err)
+	if err := validator.ValidateRequest(createEventRequest); err != nil {
+		return err
 	}
 
 	tenantID := types.GetTenantID(ctx)
@@ -79,12 +79,12 @@ func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.
 
 func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsageRequest) (*events.AggregationResult, error) {
 	if err := getUsageRequest.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
+		return nil, err
 	}
 
 	result, err := s.eventRepo.GetUsage(ctx, getUsageRequest.ToUsageParams())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get usage: %w", err)
+		return nil, err
 	}
 
 	return result, nil
@@ -93,10 +93,8 @@ func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsa
 func (s *eventService) GetUsageByMeter(ctx context.Context, req *dto.GetUsageByMeterRequest) (*events.AggregationResult, error) {
 	m, err := s.meterRepo.GetMeter(ctx, req.MeterID)
 	if err != nil {
-		s.logger.Errorf("failed to get meter: %v", err)
-		return nil, errors.NewAttributeNotFoundError("meter")
+		return nil, err
 	}
-
 	getUsageRequest := dto.GetUsageRequest{
 		ExternalCustomerID: req.ExternalCustomerID,
 		CustomerID:         req.CustomerID,
@@ -111,7 +109,7 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, req *dto.GetUsageByM
 
 	usage, err := s.GetUsage(ctx, &getUsageRequest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate usage: %w", err)
+		return nil, err
 	}
 
 	if m.ResetUsage == types.ResetUsageNever {
@@ -122,7 +120,7 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, req *dto.GetUsageByM
 
 		historicUsage, err := s.GetUsage(ctx, &getHistoricUsageRequest)
 		if err != nil {
-			return nil, fmt.Errorf("calculate before usage: %w", err)
+			return nil, err
 		}
 
 		return s.combineResults(historicUsage, usage, m), nil
@@ -134,7 +132,7 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, req *dto.GetUsageByM
 func (s *eventService) GetUsageByMeterWithFilters(ctx context.Context, req *dto.GetUsageByMeterRequest, filterGroups map[string]map[string][]string) ([]*events.AggregationResult, error) {
 	m, err := s.meterRepo.GetMeter(ctx, req.MeterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get meter: %w", err)
+		return nil, err
 	}
 
 	meterFilters := make(map[string][]string)
@@ -175,7 +173,7 @@ func (s *eventService) GetUsageByMeterWithFilters(ctx context.Context, req *dto.
 
 	results, err := s.eventRepo.GetUsageWithFilters(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get usage with filters: %w", err)
+		return nil, err
 	}
 
 	if len(results) == 0 {
@@ -214,12 +212,12 @@ func (s *eventService) GetEvents(ctx context.Context, req *dto.GetEventsRequest)
 
 	iterFirst, err := parseEventIteratorToStruct(req.IterFirstKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid before cursor key: %w", err)
+		return nil, err
 	}
 
 	iterLast, err := parseEventIteratorToStruct(req.IterLastKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid after cursor key: %w", err)
+		return nil, err
 	}
 
 	eventsList, err := s.eventRepo.GetEvents(ctx, &events.GetEventsParams{
@@ -233,7 +231,7 @@ func (s *eventService) GetEvents(ctx context.Context, req *dto.GetEventsRequest)
 		PageSize:           req.PageSize + 1,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("get events: %w", err)
+		return nil, err
 	}
 
 	hasMore := len(eventsList) > req.PageSize
@@ -278,12 +276,16 @@ func parseEventIteratorToStruct(key string) (*events.EventIterator, error) {
 
 	parts := strings.Split(key, "::")
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid cursor key format")
+		return nil, ierr.NewError("invalid cursor key format").
+			WithHint("Invalid cursor key format").
+			Mark(ierr.ErrValidation)
 	}
 
 	timestampNanoseconds, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid timestamp while parsing cursor: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Invalid timestamp while parsing cursor").
+			Mark(ierr.ErrValidation)
 	}
 
 	timestamp := time.Unix(0, timestampNanoseconds)

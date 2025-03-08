@@ -1,6 +1,8 @@
 package types
 
-import "fmt"
+import (
+	ierr "github.com/flexprice/flexprice/internal/errors"
+)
 
 // TransactionType represents the type of wallet transaction
 type TransactionType string
@@ -21,7 +23,13 @@ func (t TransactionType) Validate() error {
 			return nil
 		}
 	}
-	return fmt.Errorf("invalid transaction type: %s", t)
+	return ierr.NewError("invalid transaction type").
+		WithHint("Please provide a valid transaction type").
+		WithReportableDetails(map[string]any{
+			"allowed": allowedTypes,
+			"type":    t,
+		}).
+		Mark(ierr.ErrValidation)
 }
 
 // TransactionStatus represents the status of a wallet transaction
@@ -44,5 +52,11 @@ func (t TransactionStatus) Validate() error {
 			return nil
 		}
 	}
-	return fmt.Errorf("invalid transaction status: %s", t)
+	return ierr.NewError("invalid transaction status").
+		WithHint("Please provide a valid transaction status").
+		WithReportableDetails(map[string]any{
+			"allowed": allowedStatuses,
+			"status":  t,
+		}).
+		Mark(ierr.ErrValidation)
 }

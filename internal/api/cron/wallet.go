@@ -38,7 +38,7 @@ func (h *WalletCronHandler) ExpireCredits(c *gin.Context) {
 	tenants, err := h.tenantService.GetAllTenants(c.Request.Context())
 	if err != nil {
 		h.logger.Errorw("failed to get all tenants", "error", err)
-		c.Status(http.StatusInternalServerError)
+		c.Error(err)
 		return
 	}
 
@@ -72,7 +72,7 @@ func (h *WalletCronHandler) ExpireCredits(c *gin.Context) {
 			h.logger.Errorw("failed to list expired credits",
 				"error", err,
 			)
-			c.Status(http.StatusInternalServerError)
+			c.Error(err)
 			return
 		}
 

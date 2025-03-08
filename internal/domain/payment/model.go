@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -52,28 +52,42 @@ type PaymentAttempt struct {
 // Validate validates the payment
 func (p *Payment) Validate() error {
 	if p.Amount.IsZero() || p.Amount.IsNegative() {
-		return errors.New(errors.ErrCodeValidation, "invalid amount")
+		return ierr.NewError("invalid amount").
+			WithHint("Amount must be greater than 0").
+			Mark(ierr.ErrValidation)
 	}
 	if err := p.DestinationType.Validate(); err != nil {
-		return errors.New(errors.ErrCodeValidation, "invalid destination type")
+		return ierr.NewError("invalid destination type").
+			WithHint("Destination type is invalid").
+			Mark(ierr.ErrValidation)
 	}
 	if p.DestinationID == "" {
-		return errors.New(errors.ErrCodeValidation, "invalid destination id")
+		return ierr.NewError("invalid destination id").
+			WithHint("Destination id is invalid").
+			Mark(ierr.ErrValidation)
 	}
 	if p.PaymentMethodType == "" {
-		return errors.New(errors.ErrCodeValidation, "invalid payment method type")
+		return ierr.NewError("invalid payment method type").
+			WithHint("Payment method type is invalid").
+			Mark(ierr.ErrValidation)
 	}
 	if p.Currency == "" {
-		return errors.New(errors.ErrCodeValidation, "invalid currency")
+		return ierr.NewError("invalid currency").
+			WithHint("Currency is invalid").
+			Mark(ierr.ErrValidation)
 	}
 
 	// payment method type validations
 	if p.PaymentMethodType == types.PaymentMethodTypeOffline {
 		if p.PaymentMethodID != "" {
-			return errors.New(errors.ErrCodeValidation, "payment method id is not allowed for offline payment method type")
+			return ierr.NewError("payment method id is not allowed for offline payment method type").
+				WithHint("Payment method id is invalid").
+				Mark(ierr.ErrValidation)
 		}
 	} else if p.PaymentMethodID == "" {
-		return errors.New(errors.ErrCodeValidation, "invalid payment method id")
+		return ierr.NewError("invalid payment method id").
+			WithHint("Payment method id is invalid").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -82,10 +96,14 @@ func (p *Payment) Validate() error {
 // Validate validates the payment attempt
 func (pa *PaymentAttempt) Validate() error {
 	if pa.PaymentID == "" {
-		return errors.New(errors.ErrCodeValidation, "invalid payment id")
+		return ierr.NewError("invalid payment id").
+			WithHint("Payment id is invalid").
+			Mark(ierr.ErrValidation)
 	}
 	if pa.AttemptNumber <= 0 {
-		return errors.New(errors.ErrCodeValidation, "invalid attempt number")
+		return ierr.NewError("invalid attempt number").
+			WithHint("Attempt number is invalid").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }

@@ -7,7 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -30,12 +30,18 @@ func NewPaymentProcessorService(params ServiceParams) PaymentProcessorService {
 func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*payment.Payment, error) {
 	paymentObj, err := p.PaymentRepo.Get(ctx, id)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "payment not found")
+		return nil, err
 	}
 
 	// If payment is not in pending state, return error
 	if paymentObj.PaymentStatus != types.PaymentStatusPending {
-		return paymentObj, errors.New(errors.ErrCodeInvalidOperation, fmt.Sprintf("payment is not in pending state: %s", paymentObj.PaymentStatus))
+		return paymentObj, ierr.NewError("payment is not in pending state").
+			WithHint("Invalid payment status for processing payment").
+			WithReportableDetails(map[string]interface{}{
+				"payment_id": paymentObj.ID,
+				"status":     paymentObj.PaymentStatus,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// Create a new payment attempt if tracking is enabled
@@ -43,7 +49,7 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 	if paymentObj.TrackAttempts {
 		attempt, err = p.createNewAttempt(ctx, paymentObj)
 		if err != nil {
-			return paymentObj, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to create payment attempt")
+			return paymentObj, err
 		}
 	}
 
@@ -51,7 +57,7 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 	paymentObj.PaymentStatus = types.PaymentStatusProcessing
 	paymentObj.UpdatedAt = time.Now().UTC()
 	if err := p.PaymentRepo.Update(ctx, paymentObj); err != nil {
-		return paymentObj, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to update payment status to processing")
+		return paymentObj, err
 	}
 
 	// Process payment based on payment method type
@@ -64,12 +70,27 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 		processErr = p.handleCreditsPayment(ctx, paymentObj)
 	case types.PaymentMethodTypeCard:
 		// TODO: Implement card payment processing
-		processErr = errors.New(errors.ErrCodeInvalidOperation, "card payment processing not implemented")
+		processErr = ierr.NewError("card payment processing not implemented").
+			WithHint("Card payment processing is not implemented").
+			WithReportableDetails(map[string]interface{}{
+				"payment_id": paymentObj.ID,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	case types.PaymentMethodTypeACH:
 		// TODO: Implement ACH payment processing
-		processErr = errors.New(errors.ErrCodeInvalidOperation, "ACH payment processing not implemented")
+		processErr = ierr.NewError("ACH payment processing not implemented").
+			WithHint("ACH payment processing is not supported yet").
+			WithReportableDetails(map[string]interface{}{
+				"payment_id": paymentObj.ID,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	default:
-		processErr = errors.New(errors.ErrCodeInvalidOperation, fmt.Sprintf("unsupported payment method type: %s", paymentObj.PaymentMethodType))
+		processErr = ierr.NewError(fmt.Sprintf("unsupported payment method type: %s", paymentObj.PaymentMethodType)).
+			WithHint("Unsupported payment method type").
+			WithReportableDetails(map[string]interface{}{
+				"payment_id": paymentObj.ID,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// Update attempt status if tracking is enabled
@@ -101,7 +122,7 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 
 	paymentObj.UpdatedAt = time.Now().UTC()
 	if err := p.PaymentRepo.Update(ctx, paymentObj); err != nil {
-		return paymentObj, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to update payment status")
+		return paymentObj, err
 	}
 
 	// If payment succeeded, handle post-processing
@@ -113,7 +134,7 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 	}
 
 	if processErr != nil {
-		return paymentObj, errors.Wrap(processErr, errors.ErrCodeInvalidOperation, "failed to process payment")
+		return paymentObj, processErr
 	}
 
 	return paymentObj, nil
@@ -123,19 +144,36 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 	// In case of credits, we need to find the wallet by the set payment method id
 	selectedWallet, err := p.WalletRepo.GetWalletByID(ctx, paymentObj.PaymentMethodID)
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeNotFound, "wallet not found")
+		return err
 	}
 
 	if selectedWallet.WalletStatus != types.WalletStatusActive {
-		return errors.New(errors.ErrCodeInvalidOperation, "wallet is not active")
+		return ierr.NewError("wallet is not active").
+			WithHint("Wallet is not active").
+			WithReportableDetails(map[string]interface{}{
+				"wallet_id": selectedWallet.ID,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	if !types.IsMatchingCurrency(selectedWallet.Currency, paymentObj.Currency) {
-		return errors.New(errors.ErrCodeInvalidOperation, "wallet currency does not match payment currency")
+		return ierr.NewError("wallet currency does not match payment currency").
+			WithHint("Wallet currency does not match payment currency").
+			WithReportableDetails(map[string]interface{}{
+				"wallet_id": selectedWallet.ID,
+				"currency":  paymentObj.Currency,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	if selectedWallet.Balance.LessThan(paymentObj.Amount) {
-		return errors.New(errors.ErrCodeInvalidOperation, "wallet balance is less than payment amount")
+		return ierr.NewError("wallet balance is less than payment amount").
+			WithHint("Wallet balance is less than payment amount").
+			WithReportableDetails(map[string]interface{}{
+				"wallet_id": selectedWallet.ID,
+				"amount":    paymentObj.Amount,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// Update payment method ID with selected wallet
@@ -164,19 +202,19 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 	err = p.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Debit wallet
 		if err := walletService.DebitWallet(ctx, operation); err != nil {
-			return errors.Wrap(err, errors.ErrCodeSystemError, "failed to debit wallet")
+			return err
 		}
 
 		// Update payment with wallet ID
 		if err := p.PaymentRepo.Update(ctx, paymentObj); err != nil {
-			return errors.Wrap(err, errors.ErrCodeSystemError, "failed to update payment")
+			return err
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeSystemError, "failed to process payment")
+		return err
 	}
 
 	return nil
@@ -187,7 +225,13 @@ func (p *paymentProcessor) handlePostProcessing(ctx context.Context, paymentObj 
 	case types.PaymentDestinationTypeInvoice:
 		return p.handleInvoicePostProcessing(ctx, paymentObj)
 	default:
-		return errors.New(errors.ErrCodeInvalidOperation, fmt.Sprintf("unsupported destination type: %s", paymentObj.DestinationType))
+		return ierr.NewError("unsupported payment destination type").
+			WithHint("Unsupported payment destination type").
+			WithReportableDetails(map[string]interface{}{
+				"payment_id":       paymentObj.ID,
+				"destination_type": paymentObj.DestinationType,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 }
 
@@ -195,7 +239,7 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 	// Get the invoice
 	invoice, err := p.InvoiceRepo.Get(ctx, paymentObj.DestinationID)
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeNotFound, "invoice not found")
+		return err
 	}
 
 	// Get all successful payments for this invoice
@@ -206,14 +250,22 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 	}
 	payments, err := p.PaymentRepo.List(ctx, filter)
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to list payments")
+		return err
 	}
 
 	// Calculate total paid amount
 	totalPaid := decimal.Zero
 	for _, p := range payments {
 		if p.Currency != invoice.Currency {
-			return errors.New(errors.ErrCodeValidation, fmt.Sprintf("payment currency (%s) does not match invoice currency (%s)", p.Currency, invoice.Currency))
+			return ierr.NewError("payment currency does not match invoice currency").
+				WithHint("Payment currency does not match invoice currency").
+				WithReportableDetails(map[string]interface{}{
+					"payment_id":       paymentObj.ID,
+					"invoice_id":       invoice.ID,
+					"payment_currency": p.Currency,
+					"invoice_currency": invoice.Currency,
+				}).
+				Mark(ierr.ErrInvalidOperation)
 		}
 		totalPaid = totalPaid.Add(p.Amount)
 	}
@@ -240,7 +292,7 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 
 	// Update the invoice
 	if err := p.InvoiceRepo.Update(ctx, invoice); err != nil {
-		return errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to update invoice")
+		return err
 	}
 
 	return nil
@@ -249,8 +301,8 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 func (p *paymentProcessor) createNewAttempt(ctx context.Context, paymentObj *payment.Payment) (*payment.PaymentAttempt, error) {
 	// Get latest attempt to determine attempt number
 	latestAttempt, err := p.PaymentRepo.GetLatestAttempt(ctx, paymentObj.ID)
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to get latest attempt: %w", err)
+	if err != nil && !ierr.IsNotFound(err) {
+		return nil, err
 	}
 
 	attemptNumber := 1
@@ -269,7 +321,7 @@ func (p *paymentProcessor) createNewAttempt(ctx context.Context, paymentObj *pay
 	}
 
 	if err := p.PaymentRepo.CreateAttempt(ctx, attempt); err != nil {
-		return nil, fmt.Errorf("failed to create payment attempt: %w", err)
+		return nil, err
 	}
 
 	return attempt, nil

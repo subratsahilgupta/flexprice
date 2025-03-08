@@ -2,7 +2,7 @@ package customer
 
 import (
 	"github.com/flexprice/flexprice/ent"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -110,23 +110,35 @@ func ValidateAddressPostalCode(postalCode string, country string) bool {
 // ValidateAddress validates all address fields
 func ValidateAddress(c *Customer) error {
 	if !ValidateAddressCountry(c.AddressCountry) {
-		return errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "invalid country code format")
+		return ierr.NewError("invalid country code format").
+			WithHint("Country code must be 2 characters").
+			Mark(ierr.ErrValidation)
 	}
 	if !ValidateAddressPostalCode(c.AddressPostalCode, c.AddressCountry) {
-		return errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "invalid postal code format")
+		return ierr.NewError("invalid postal code format").
+			WithHint("Postal code must be less than 20 characters").
+			Mark(ierr.ErrValidation)
 	}
 	// Validate field lengths
 	if len(c.AddressLine1) > 255 {
-		return errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "address line 1 too long")
+		return ierr.NewError("address line 1 too long").
+			WithHint("Address line 1 must be less than 255 characters").
+			Mark(ierr.ErrValidation)
 	}
 	if len(c.AddressLine2) > 255 {
-		return errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "address line 2 too long")
+		return ierr.NewError("address line 2 too long").
+			WithHint("Address line 2 must be less than 255 characters").
+			Mark(ierr.ErrValidation)
 	}
 	if len(c.AddressCity) > 100 {
-		return errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "city name too long")
+		return ierr.NewError("city name too long").
+			WithHint("City name must be less than 100 characters").
+			Mark(ierr.ErrValidation)
 	}
 	if len(c.AddressState) > 100 {
-		return errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "state name too long")
+		return ierr.NewError("state name too long").
+			WithHint("State name must be less than 100 characters").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }

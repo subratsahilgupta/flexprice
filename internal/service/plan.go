@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
@@ -10,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
@@ -55,8 +55,11 @@ func NewPlanService(
 }
 
 func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest) (*dto.CreatePlanResponse, error) {
+	// Validate request
 	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Invalid plan data provided").
+			Mark(ierr.ErrValidation)
 	}
 
 	plan := req.ToPlan(ctx)
@@ -65,7 +68,7 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 	err := s.client.WithTx(ctx, func(ctx context.Context) error {
 		// 1. Create the plan
 		if err := s.planRepo.Create(ctx, plan); err != nil {
-			return fmt.Errorf("failed to create plan: %w", err)
+			return err
 		}
 
 		// 2. Create prices in bulk if present
@@ -74,7 +77,9 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 			for i, priceReq := range req.Prices {
 				price, err := priceReq.ToPrice(ctx)
 				if err != nil {
-					return fmt.Errorf("failed to create price: %w", err)
+					return ierr.WithError(err).
+						WithHint("Failed to create price").
+						Mark(ierr.ErrValidation)
 				}
 				price.PlanID = plan.ID
 				prices[i] = price
@@ -82,7 +87,7 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 
 			// Create prices in bulk
 			if err := s.priceRepo.CreateBulk(ctx, prices); err != nil {
-				return fmt.Errorf("failed to create prices: %w", err)
+				return err
 			}
 		}
 
@@ -98,7 +103,7 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 
 			// Create entitlements in bulk
 			if _, err := s.entitlementRepo.CreateBulk(ctx, entitlements); err != nil {
-				return fmt.Errorf("failed to create entitlements: %w", err)
+				return err
 			}
 		}
 
@@ -115,9 +120,15 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 }
 
 func (s *planService) GetPlan(ctx context.Context, id string) (*dto.PlanResponse, error) {
+	if id == "" {
+		return nil, ierr.NewError("plan ID is required").
+			WithHint("Please provide a valid plan ID").
+			Mark(ierr.ErrValidation)
+	}
+
 	plan, err := s.planRepo.Get(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get plan: %w", err)
+		return nil, err
 	}
 
 	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
@@ -144,27 +155,29 @@ func (s *planService) GetPlan(ctx context.Context, id string) (*dto.PlanResponse
 }
 
 func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*dto.ListPlansResponse, error) {
-	s.logger.Debugw("getting plans", "filter", filter)
-
 	if filter == nil {
 		filter = types.NewPlanFilter()
 	}
 
 	if err := filter.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid filter: %w", err)
+		return nil, err
 	}
 
 	// Fetch plans
 	plans, err := s.planRepo.List(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list plans: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to retrieve plans").
+			Mark(ierr.ErrDatabase)
 	}
 
+	// Get count
 	count, err := s.planRepo.Count(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count plans: %w", err)
+		return nil, err
 	}
 
+	// Build response
 	response := &dto.ListPlansResponse{
 		Items: make([]*dto.PlanResponse, len(plans)),
 		Pagination: types.NewPaginationResponse(
@@ -208,7 +221,7 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 
 		prices, err := priceService.GetPrices(ctx, priceFilter)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch prices: %w", err)
+			return nil, err
 		}
 
 		for _, p := range prices.Items {
@@ -229,7 +242,7 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 
 		entitlements, err := entitlementService.ListEntitlements(ctx, entFilter)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch entitlements: %w", err)
+			return nil, err
 		}
 
 		for _, e := range entitlements.Items {
@@ -255,9 +268,16 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 }
 
 func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdatePlanRequest) (*dto.PlanResponse, error) {
+	if id == "" {
+		return nil, ierr.NewError("plan ID is required").
+			WithHint("Plan ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get the existing plan
 	planResponse, err := s.GetPlan(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get plan: %w", err)
+		return nil, err
 	}
 
 	plan := planResponse.Plan
@@ -277,7 +297,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 	err = s.client.WithTx(ctx, func(ctx context.Context) error {
 		// 1. Update the plan
 		if err := s.planRepo.Update(ctx, plan); err != nil {
-			return fmt.Errorf("failed to update plan: %w", err)
+			return err
 		}
 
 		// 2. Handle prices
@@ -301,7 +321,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 					price.Metadata = reqPrice.Metadata
 					price.LookupKey = reqPrice.LookupKey
 					if err := s.priceRepo.Update(ctx, price.Price); err != nil {
-						return fmt.Errorf("failed to update price: %w", err)
+						return err
 					}
 				} else {
 					// Delete price not in request
@@ -312,7 +332,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 			// Delete prices in bulk
 			if len(pricesToDelete) > 0 {
 				if err := s.priceRepo.DeleteBulk(ctx, pricesToDelete); err != nil {
-					return fmt.Errorf("failed to delete prices: %w", err)
+					return err
 				}
 			}
 
@@ -322,7 +342,9 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 				if reqPrice.ID == "" {
 					newPrice, err := reqPrice.ToPrice(ctx)
 					if err != nil {
-						return fmt.Errorf("failed to create price: %w", err)
+						return ierr.WithError(err).
+							WithHint("Failed to create price").
+							Mark(ierr.ErrValidation)
 					}
 					newPrice.PlanID = plan.ID
 					newPrices = append(newPrices, newPrice)
@@ -331,7 +353,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 
 			if len(newPrices) > 0 {
 				if err := s.priceRepo.CreateBulk(ctx, newPrices); err != nil {
-					return fmt.Errorf("failed to create prices: %w", err)
+					return err
 				}
 			}
 		}
@@ -359,7 +381,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 					ent.IsSoftLimit = reqEnt.IsSoftLimit
 					ent.StaticValue = reqEnt.StaticValue
 					if _, err := s.entitlementRepo.Update(ctx, ent.Entitlement); err != nil {
-						return fmt.Errorf("failed to update entitlement: %w", err)
+						return err
 					}
 				} else {
 					// Delete entitlement not in request
@@ -370,7 +392,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 			// Delete entitlements in bulk
 			if len(entsToDelete) > 0 {
 				if err := s.entitlementRepo.DeleteBulk(ctx, entsToDelete); err != nil {
-					return fmt.Errorf("failed to delete entitlements: %w", err)
+					return err
 				}
 			}
 
@@ -385,7 +407,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 
 			if len(newEntitlements) > 0 {
 				if _, err := s.entitlementRepo.CreateBulk(ctx, newEntitlements); err != nil {
-					return fmt.Errorf("failed to create entitlements: %w", err)
+					return err
 				}
 			}
 		}
@@ -403,7 +425,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 func (s *planService) DeletePlan(ctx context.Context, id string) error {
 	err := s.planRepo.Delete(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to delete plan: %w", err)
+		return err
 	}
 	return nil
 }

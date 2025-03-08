@@ -1,8 +1,6 @@
 package types
 
-import (
-	"fmt"
-)
+import ierr "github.com/flexprice/flexprice/internal/errors"
 
 // CustomerFilter represents filters for customer queries
 type CustomerFilter struct {
@@ -42,7 +40,9 @@ func (f CustomerFilter) Validate() error {
 	}
 
 	if f.Email != "" && !IsValidEmail(f.Email) {
-		return fmt.Errorf("invalid email")
+		return ierr.NewError("invalid email").
+			WithHint("Please provide a valid email").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil

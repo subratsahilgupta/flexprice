@@ -3,6 +3,8 @@ package types
 import (
 	"fmt"
 	"strings"
+
+	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
 // ExpandableField represents a field that can be expanded in API responses
@@ -142,14 +144,28 @@ func (e Expand) Validate(config ExpandConfig) error {
 			}
 		}
 		if !allowed {
-			return fmt.Errorf("field %s is not allowed to be expanded", field)
+			return ierr.NewError("field not allowed to be expanded").
+				WithHint("Field is not allowed to be expanded").
+				WithReportableDetails(
+					map[string]any{
+						"field": field,
+					},
+				).
+				Mark(ierr.ErrValidation)
 		}
 
 		// Check nested expands
 		if nested, ok := e.NestedExpands[field]; ok {
 			allowedNested, ok := config.NestedExpands[field]
 			if !ok {
-				return fmt.Errorf("field %s does not support nested expands", field)
+				return ierr.NewError("field does not support nested expands").
+					WithHint("Field does not support nested expands").
+					WithReportableDetails(
+						map[string]any{
+							"field": field,
+						},
+					).
+					Mark(ierr.ErrValidation)
 			}
 
 			// Create a config for nested validation

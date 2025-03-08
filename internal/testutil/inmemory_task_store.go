@@ -2,10 +2,9 @@ package testutil
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/flexprice/flexprice/internal/domain/task"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -50,7 +49,9 @@ func copyTask(t *task.Task) *task.Task {
 
 func (s *InMemoryTaskStore) Create(ctx context.Context, t *task.Task) error {
 	if t == nil {
-		return fmt.Errorf("task cannot be nil")
+		return ierr.NewError("task cannot be nil").
+			WithHint("Task cannot be nil").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Set environment ID from context if not already set
@@ -64,14 +65,21 @@ func (s *InMemoryTaskStore) Create(ctx context.Context, t *task.Task) error {
 func (s *InMemoryTaskStore) Get(ctx context.Context, id string) (*task.Task, error) {
 	t, err := s.InMemoryStore.Get(ctx, id)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeNotFound, "task not found")
+		return nil, ierr.NewError("task not found").
+			WithHint("Task not found").
+			WithReportableDetails(map[string]interface{}{
+				"id": id,
+			}).
+			Mark(ierr.ErrNotFound)
 	}
 	return copyTask(t), nil
 }
 
 func (s *InMemoryTaskStore) Update(ctx context.Context, t *task.Task) error {
 	if t == nil {
-		return fmt.Errorf("task cannot be nil")
+		return ierr.NewError("task cannot be nil").
+			WithHint("Task cannot be nil").
+			Mark(ierr.ErrValidation)
 	}
 	return s.InMemoryStore.Update(ctx, t.ID, copyTask(t))
 }

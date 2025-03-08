@@ -8,7 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/secret"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/security"
 	"github.com/flexprice/flexprice/internal/types"
@@ -118,7 +118,7 @@ func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyR
 
 	// Save to repository
 	if err := s.repo.Create(ctx, secretEntity); err != nil {
-		return nil, "", errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to create API key")
+		return nil, "", err
 	}
 
 	return secretEntity, apiKey, nil
@@ -138,12 +138,12 @@ func (s *secretService) ListAPIKeys(ctx context.Context, filter *types.SecretFil
 
 	secrets, err := s.repo.List(ctx, filter)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to list API keys")
+		return nil, err
 	}
 
 	count, err := s.repo.Count(ctx, filter)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to count API keys")
+		return nil, err
 	}
 
 	return &dto.ListSecretsResponse{
@@ -155,13 +155,18 @@ func (s *secretService) ListAPIKeys(ctx context.Context, filter *types.SecretFil
 func (s *secretService) CreateIntegration(ctx context.Context, req *dto.CreateIntegrationRequest) (*secret.Secret, error) {
 	// Validate required fields
 	if req.Name == "" {
-		return nil, errors.New(errors.ErrCodeValidation, "validation failed: name is required")
+		return nil, ierr.NewError("validation failed: name is required").
+			WithHint("Name is required").
+			Mark(ierr.ErrValidation)
 	}
 	if len(req.Credentials) == 0 {
-		return nil, errors.New(errors.ErrCodeValidation, "validation failed: credentials are required")
+		return nil, ierr.NewError("validation failed: credentials are required").
+			Mark(ierr.ErrValidation)
 	}
 	if req.Provider == types.SecretProviderFlexPrice {
-		return nil, errors.New(errors.ErrCodeValidation, "validation failed: invalid provider")
+		return nil, ierr.NewError("validation failed: invalid provider").
+			WithHint("Invalid provider").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Encrypt each credential
@@ -169,7 +174,7 @@ func (s *secretService) CreateIntegration(ctx context.Context, req *dto.CreateIn
 	for key, value := range req.Credentials {
 		encrypted, err := s.encryptionService.Encrypt(value)
 		if err != nil {
-			return nil, errors.Wrap(err, errors.ErrCodeSystemError, "failed to encrypt credentials")
+			return nil, err
 		}
 		encryptedCreds[key] = encrypted
 	}
@@ -192,7 +197,7 @@ func (s *secretService) CreateIntegration(ctx context.Context, req *dto.CreateIn
 
 	// Save to repository
 	if err := s.repo.Create(ctx, secretEntity); err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to create integration")
+		return nil, err
 	}
 
 	return secretEntity, nil
@@ -211,12 +216,12 @@ func (s *secretService) ListIntegrations(ctx context.Context, filter *types.Secr
 
 	secrets, err := s.repo.List(ctx, filter)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to list integrations")
+		return nil, err
 	}
 
 	count, err := s.repo.Count(ctx, filter)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to count integrations")
+		return nil, err
 	}
 
 	return &dto.ListSecretsResponse{
@@ -227,14 +232,16 @@ func (s *secretService) ListIntegrations(ctx context.Context, filter *types.Secr
 
 func (s *secretService) Delete(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
-		return errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to delete secret")
+		return err
 	}
 	return nil
 }
 
 func (s *secretService) VerifyAPIKey(ctx context.Context, apiKey string) (*secret.Secret, error) {
 	if apiKey == "" {
-		return nil, errors.New(errors.ErrCodeValidation, "validation failed: API key is required")
+		return nil, ierr.NewError("validation failed: API key is required").
+			WithHint("API key is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Hash the entire API key for verification
@@ -243,27 +250,37 @@ func (s *secretService) VerifyAPIKey(ctx context.Context, apiKey string) (*secre
 	// Get secret by value
 	secretEntity, err := s.repo.GetAPIKeyByValue(ctx, hashedKey)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "invalid API key")
+		return nil, ierr.NewError("invalid API key").
+			WithHint("Invalid API key").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Check if expired
 	if secretEntity.IsExpired() {
-		return nil, errors.New(errors.ErrCodeValidation, "API key has expired")
+		return nil, ierr.NewError("API key has expired").
+			WithHint("API key has expired").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Check if secret is active
 	if !secretEntity.IsActive() {
-		return nil, errors.New(errors.ErrCodeValidation, "API key is not active")
+		return nil, ierr.NewError("API key is not active").
+			WithHint("API key is not active").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Check if secret is an API key
 	if !secretEntity.IsAPIKey() {
-		return nil, errors.New(errors.ErrCodeValidation, "invalid API key type")
+		return nil, ierr.NewError("invalid API key type").
+			WithHint("Invalid API key type").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Check if the secret has expired
 	if secretEntity.ExpiresAt != nil && secretEntity.ExpiresAt.Before(time.Now()) {
-		return nil, errors.New(errors.ErrCodeInvalidOperation, "secret has expired")
+		return nil, ierr.NewError("secret has expired").
+			WithHint("Secret has expired").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Update last used timestamp
@@ -285,11 +302,12 @@ func (s *secretService) getIntegrationCredentials(ctx context.Context, provider 
 
 	secrets, err := s.repo.List(ctx, filter)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to get integration credentials")
+		return nil, err
 	}
 
 	if len(secrets) == 0 {
-		return nil, errors.Wrap(errors.ErrNotFound, errors.ErrCodeNotFound, fmt.Sprintf("%s integration not configured", provider))
+		return nil, ierr.NewError(fmt.Sprintf("%s integration not configured", provider)).
+			Mark(ierr.ErrNotFound)
 	}
 
 	// Decrypt credentials for all integrations
@@ -299,7 +317,7 @@ func (s *secretService) getIntegrationCredentials(ctx context.Context, provider 
 		for key, encryptedValue := range secretEntity.ProviderData {
 			decrypted, err := s.encryptionService.Decrypt(encryptedValue)
 			if err != nil {
-				return nil, errors.Wrap(err, errors.ErrCodeSystemError, "failed to decrypt credentials")
+				return nil, err
 			}
 			decryptedCreds[key] = decrypted
 		}
@@ -318,7 +336,7 @@ func (s *secretService) ListLinkedIntegrations(ctx context.Context) ([]string, e
 
 	secrets, err := s.repo.List(ctx, filter)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeInvalidOperation, "failed to list linked integrations")
+		return nil, err
 	}
 
 	// Extract unique providers

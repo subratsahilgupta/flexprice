@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -196,7 +195,7 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 	if inv.InvoiceType == types.InvoiceTypeSubscription {
 		subscription, err := subscriptionService.GetSubscription(ctx, *inv.SubscriptionID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get subscription: %w", err)
+			return nil, err
 		}
 		response.WithSubscription(subscription)
 		if subscription.Customer != nil {
@@ -208,7 +207,7 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 	if response.Customer == nil {
 		customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get customer: %w", err)
+			return nil, err
 		}
 		response.WithCustomer(&dto.CustomerResponse{Customer: customer})
 	}
@@ -238,7 +237,7 @@ func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.Invoice
 	customerFilter.CustomerIDs = lo.Keys(customerMap)
 	customers, err := s.CustomerRepo.List(ctx, customerFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list customers: %w", err)
+		return nil, err
 	}
 
 	for _, cust := range customers {
@@ -405,13 +404,13 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	// Get subscription with line items
 	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get subscription with line items: %w", err)
+		return nil, err
 	}
 
 	// Prepare invoice request using billing service
 	invoiceReq, err := billingService.PrepareSubscriptionInvoiceRequest(ctx, subscription, req.PeriodStart, req.PeriodEnd, req.IsPreview)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare invoice request: %w", err)
+		return nil, err
 	}
 
 	// Create the invoice
@@ -423,7 +422,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 
 	sub, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get subscription: %w", err)
+		return nil, err
 	}
 
 	if req.PeriodStart == nil {
@@ -438,7 +437,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 	invReq, err := billingService.PrepareSubscriptionInvoiceRequest(
 		ctx, sub, *req.PeriodStart, *req.PeriodEnd, true)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare invoice request: %w", err)
+		return nil, err
 	}
 
 	// Create a draft invoice object for preview
@@ -453,7 +452,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 	// Get customer information
 	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get customer: %w", err)
+		return nil, err
 	}
 	response.WithCustomer(&dto.CustomerResponse{Customer: customer})
 
@@ -550,7 +549,7 @@ func (s *invoiceService) GetCustomerMultiCurrencyInvoiceSummary(ctx context.Cont
 
 	subs, err := s.SubRepo.List(ctx, subscriptionFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
+		return nil, err
 	}
 
 	currencies := make([]string, 0, len(subs))

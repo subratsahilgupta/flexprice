@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -45,26 +44,38 @@ func NewSubscriptionService(params ServiceParams) SubscriptionService {
 }
 func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.CreateSubscriptionRequest) (*dto.SubscriptionResponse, error) {
 	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
+		return nil, err
 	}
 
 	// Check if customer exists
 	customer, err := s.CustomerRepo.Get(ctx, req.CustomerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get customer: %w", err)
+		return nil, err
 	}
 
 	if customer.Status != types.StatusPublished {
-		return nil, fmt.Errorf("customer is not active")
+		return nil, ierr.NewError("customer is not active").
+			WithHint("The customer must be active to create a subscription").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+				"status":      customer.Status,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	plan, err := s.PlanRepo.Get(ctx, req.PlanID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get plan: %w", err)
+		return nil, err
 	}
 
 	if plan.Status != types.StatusPublished {
-		return nil, fmt.Errorf("plan is not active")
+		return nil, ierr.NewError("plan is not active").
+			WithHint("The plan must be active to create a subscription").
+			WithReportableDetails(map[string]interface{}{
+				"plan_id": req.PlanID,
+				"status":  plan.Status,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
@@ -73,11 +84,16 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		WithExpand(string(types.ExpandMeters))
 	pricesResponse, err := priceService.GetPrices(ctx, priceFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get prices: %w", err)
+		return nil, err
 	}
 
 	if len(pricesResponse.Items) == 0 {
-		return nil, fmt.Errorf("no prices found for plan")
+		return nil, ierr.NewError("no prices found for plan").
+			WithHint("The plan must have at least one price to create a subscription").
+			WithReportableDetails(map[string]interface{}{
+				"plan_id": req.PlanID,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	prices := make([]price.Price, len(pricesResponse.Items))
@@ -95,7 +111,14 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	// Filter prices for subscription that are valid for the plan
 	validPrices := filterValidPricesForSubscription(pricesResponse.Items, sub)
 	if len(validPrices) == 0 {
-		return nil, fmt.Errorf("no valid prices found for subscription")
+		return nil, ierr.NewError("no valid prices found for subscription").
+			WithHint("No prices match the subscription criteria").
+			WithReportableDetails(map[string]interface{}{
+				"plan_id":         req.PlanID,
+				"billing_period":  sub.BillingPeriod,
+				"billing_cadence": sub.BillingCadence,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	now := time.Now().UTC()
@@ -114,7 +137,13 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		sub.BillingAnchor = sub.BillingAnchor.UTC()
 		// Validate that billing anchor is not before start date
 		if sub.BillingAnchor.Before(sub.StartDate) {
-			return nil, fmt.Errorf("billing anchor cannot be before start date")
+			return nil, ierr.NewError("billing anchor cannot be before start date").
+				WithHint("The billing anchor must be on or after the start date").
+				WithReportableDetails(map[string]interface{}{
+					"start_date":     sub.StartDate,
+					"billing_anchor": sub.BillingAnchor,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 	}
 
@@ -125,7 +154,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	// Calculate the first billing period end date
 	nextBillingDate, err := types.NextBillingDate(sub.StartDate, sub.BillingAnchor, sub.BillingPeriodCount, sub.BillingPeriod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate next billing date: %w", err)
+		return nil, err
 	}
 
 	sub.CurrentPeriodStart = sub.StartDate
@@ -146,7 +175,12 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	for _, item := range lineItems {
 		price, ok := priceMap[item.PriceID]
 		if !ok {
-			return nil, fmt.Errorf("failed to get price %s: price not found", item.PriceID)
+			return nil, ierr.NewError("failed to get price %s: price not found").
+				WithHint("Ensure all prices are valid and available").
+				WithReportableDetails(map[string]interface{}{
+					"price_id": item.PriceID,
+				}).
+				Mark(ierr.ErrDatabase)
 		}
 
 		if price.Type == types.PRICE_TYPE_USAGE && price.Meter != nil {
@@ -193,7 +227,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 	// Create subscription with line items
 	if err := s.SubRepo.CreateWithLineItems(ctx, sub, sub.LineItems); err != nil {
-		return nil, fmt.Errorf("failed to create subscription: %w", err)
+		return nil, err
 	}
 
 	response := &dto.SubscriptionResponse{Subscription: sub}
@@ -204,7 +238,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 	// Get subscription with line items
 	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get subscription: %w", err)
+		return nil, err
 	}
 
 	response := &dto.SubscriptionResponse{Subscription: subscription}
@@ -213,7 +247,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 	if subscription.PauseStatus != types.PauseStatusNone {
 		pauses, err := s.SubRepo.ListPauses(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get pauses: %w", err)
+			return nil, err
 		}
 		response.Pauses = pauses
 	}
@@ -223,7 +257,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 
 	plan, err := planService.GetPlan(ctx, subscription.PlanID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get plan: %w", err)
+		return nil, err
 	}
 	response.Plan = plan
 
@@ -231,7 +265,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 	customerService := NewCustomerService(s.CustomerRepo)
 	customer, err := customerService.GetCustomer(ctx, subscription.CustomerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get customer: %w", err)
+		return nil, err
 	}
 	response.Customer = customer
 	return response, nil
@@ -240,11 +274,16 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 func (s *subscriptionService) CancelSubscription(ctx context.Context, id string, cancelAtPeriodEnd bool) error {
 	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to get subscription: %w", err)
+		return err
 	}
 
 	if subscription.SubscriptionStatus == types.SubscriptionStatusCancelled {
-		return fmt.Errorf("subscription is already cancelled")
+		return ierr.NewError("subscription is already cancelled").
+			WithHint("The subscription is already cancelled").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": id,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	now := time.Now().UTC()
@@ -258,7 +297,7 @@ func (s *subscriptionService) CancelSubscription(ctx context.Context, id string,
 	}
 
 	if err := s.SubRepo.Update(ctx, subscription); err != nil {
-		return fmt.Errorf("failed to cancel subscription: %w", err)
+		return err
 	}
 
 	return nil
@@ -269,12 +308,12 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 
 	subscriptions, err := s.SubRepo.List(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
+		return nil, err
 	}
 
 	count, err := s.SubRepo.Count(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count subscriptions: %w", err)
+		return nil, err
 	}
 
 	response := &dto.ListSubscriptionsResponse{
@@ -297,7 +336,7 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 	planFilter.PlanIDs = lo.Keys(planIDMap)
 	planResponse, err := planService.GetPlans(ctx, planFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get plans: %w", err)
+		return nil, err
 	}
 
 	// Build plan map for quick lookup
@@ -325,13 +364,13 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	// Get subscription with line items
 	subscription, lineItems, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get subscription: %w", err)
+		return nil, err
 	}
 
 	// Get customer
 	customer, err := s.CustomerRepo.Get(ctx, subscription.CustomerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get customer: %w", err)
+		return nil, err
 	}
 
 	usageStartTime := req.StartTime
@@ -371,7 +410,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	priceFilter.PriceIDs = priceIDs
 	prices, err := s.PriceRepo.List(ctx, priceFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get prices: %w", err)
+		return nil, err
 	}
 
 	// Build price map for quick lookup
@@ -397,7 +436,12 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		// Get price details from map
 		price, ok := priceMap[item.PriceID]
 		if !ok {
-			return nil, fmt.Errorf("failed to get price %s: price not found", item.PriceID)
+			return nil, ierr.NewError("failed to get price %s: price not found").
+				WithHint("Ensure all prices are valid and available").
+				WithReportableDetails(map[string]interface{}{
+					"price_id": item.PriceID,
+				}).
+				Mark(ierr.ErrDatabase)
 		}
 		meterPrices[meterID] = append(meterPrices[meterID], price)
 	}
@@ -465,7 +509,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			EndTime:            usageEndTime,
 		}, filterGroupsMap)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get usage for meter %s: %w", meterID, err)
+			return nil, err
 		}
 
 		// Append charges in the same order as meterPriceGroup
@@ -555,7 +599,7 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.Su
 
 		subs, err := s.SubRepo.ListAllTenant(ctx, filter)
 		if err != nil {
-			return response, fmt.Errorf("failed to list subscriptions: %w", err)
+			return response, err
 		}
 
 		s.Logger.Infow("processing subscription batch",
@@ -776,11 +820,11 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 				PeriodEnd:      period.end,
 			})
 			if err != nil {
-				return fmt.Errorf("failed to create subscription invoice for period: %w", err)
+				return err
 			}
 
 			if err := invoiceService.FinalizeInvoice(ctx, inv.ID); err != nil {
-				return fmt.Errorf("failed to finalize subscription invoice for period: %w", err)
+				return err
 			}
 
 			s.Logger.Infow("created invoice for period",
@@ -810,7 +854,7 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		}
 
 		if err := s.SubRepo.Update(ctx, sub); err != nil {
-			return fmt.Errorf("failed to update subscription: %w", err)
+			return err
 		}
 
 		s.Logger.Infow("completed subscription period processing",
@@ -904,20 +948,20 @@ func (s *subscriptionService) PauseSubscription(
 	// Get the subscription
 	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
-		return nil, errors.WithError(err).
+		return nil, ierr.WithError(err).
 			WithHint("Failed to get subscription for pausing").
-			Mark(errors.ErrNotFound)
+			Mark(ierr.ErrNotFound)
 	}
 	sub.LineItems = lineItems
 
 	// Validate subscription can be paused
 	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
-		return nil, errors.NewError("invalid subscription status").
+		return nil, ierr.NewError("invalid subscription status").
 			WithHint("Subscription is not active").
 			WithReportableDetails(map[string]any{
 				"status": sub.SubscriptionStatus,
 			}).
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	// Calculate pause start and end
@@ -929,9 +973,9 @@ func (s *subscriptionService) PauseSubscription(
 	// Use the unified billing impact calculator
 	impact, err := s.calculateBillingImpact(ctx, sub, lineItems, *pauseStart, pauseEnd, false, nil)
 	if err != nil {
-		return nil, errors.WithError(err).
+		return nil, ierr.WithError(err).
 			WithHint("Failed to calculate billing impact").
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	// If this is a dry run, return the impact without making changes
@@ -1000,16 +1044,12 @@ func (s *subscriptionService) executePause(
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// Create the pause record
 		if err := s.SubRepo.CreatePause(txCtx, pause); err != nil {
-			return errors.WithError(err).
-				WithHint("Failed to create subscription pause").
-				Mark(errors.ErrDatabase)
+			return err
 		}
 
 		// Update the subscription
 		if err := s.SubRepo.Update(txCtx, sub); err != nil {
-			return errors.WithError(err).
-				WithHint("Failed to update subscription with pause status").
-				Mark(errors.ErrDatabase)
+			return err
 		}
 
 		return nil
@@ -1033,36 +1073,33 @@ func (s *subscriptionService) ResumeSubscription(
 	}
 
 	// Get the subscription with its pauses
-	sub, pauses, err := s.SubRepo.GetWithPauses(ctx, subscriptionID)
+	_, pauses, err := s.SubRepo.GetWithPauses(ctx, subscriptionID)
 	if err != nil {
-		return nil, errors.WithError(err).
-			WithHint("Failed to get subscription for resuming").
-			Mark(errors.ErrNotFound)
+		return nil, err
 	}
 	// get the line items
 	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
-		return nil, errors.WithError(err).
-			WithHint("Failed to get line items for subscription").
-			Mark(errors.ErrNotFound)
+		return nil, err
 	}
 	sub.LineItems = lineItems
+	sub.Pauses = pauses
 
 	// Validate subscription can be resumed
 	if sub.SubscriptionStatus != types.SubscriptionStatusPaused &&
 		sub.PauseStatus != types.PauseStatusScheduled {
-		return nil, errors.NewError("invalid subscription status").
+		return nil, ierr.NewError("invalid subscription status").
 			WithHint("Subscription is not paused").
 			WithReportableDetails(map[string]any{
 				"status": sub.SubscriptionStatus,
 			}).
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	if sub.ActivePauseID == nil {
-		return nil, errors.NewError("invalid subscription status").
+		return nil, ierr.NewError("invalid subscription status").
 			WithHint("Subscription has no active pause").
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	// Find the active pause
@@ -1075,17 +1112,17 @@ func (s *subscriptionService) ResumeSubscription(
 	}
 
 	if activePause == nil {
-		return nil, errors.NewError("invalid subscription status").
+		return nil, ierr.NewError("invalid subscription status").
 			WithHint("Active pause not found").
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	// Use the unified billing impact calculator
 	impact, err := s.calculateBillingImpact(ctx, sub, lineItems, activePause.PauseStart, activePause.PauseEnd, true, activePause)
 	if err != nil {
-		return nil, errors.WithError(err).
+		return nil, ierr.WithError(err).
 			WithHint("Failed to calculate billing impact").
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	// If this is a dry run, return the impact without making changes
@@ -1149,16 +1186,12 @@ func (s *subscriptionService) executeResume(
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// Update the pause record
 		if err := s.SubRepo.UpdatePause(txCtx, activePause); err != nil {
-			return errors.WithError(err).
-				WithHint("Failed to update subscription pause").
-				Mark(errors.ErrDatabase)
+			return err
 		}
 
 		// Update the subscription
 		if err := s.SubRepo.Update(txCtx, sub); err != nil {
-			return errors.WithError(err).
-				WithHint("Failed to update subscription with resumed status").
-				Mark(errors.ErrDatabase)
+			return err
 		}
 
 		return nil
@@ -1175,9 +1208,7 @@ func (s *subscriptionService) executeResume(
 func (s *subscriptionService) GetPause(ctx context.Context, pauseID string) (*subscription.SubscriptionPause, error) {
 	pause, err := s.SubRepo.GetPause(ctx, pauseID)
 	if err != nil {
-		return nil, errors.WithError(err).
-			WithHintf("Failed to get pause with ID %s", pauseID).
-			Mark(errors.ErrNotFound)
+		return nil, err
 	}
 	return pause, nil
 }
@@ -1186,9 +1217,7 @@ func (s *subscriptionService) GetPause(ctx context.Context, pauseID string) (*su
 func (s *subscriptionService) ListPauses(ctx context.Context, subscriptionID string) (*dto.ListSubscriptionPausesResponse, error) {
 	pauses, err := s.SubRepo.ListPauses(ctx, subscriptionID)
 	if err != nil {
-		return nil, errors.WithError(err).
-			WithHintf("Failed to list pauses for subscription %s", subscriptionID).
-			Mark(errors.ErrDatabase)
+		return nil, err
 	}
 	return dto.NewListSubscriptionPausesResponse(pauses), nil
 }
@@ -1202,19 +1231,17 @@ func (s *subscriptionService) CalculatePauseImpact(
 	// Get the subscription
 	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
-		return nil, errors.WithError(err).
-			WithHint("Failed to get line items for subscription").
-			Mark(errors.ErrNotFound)
+		return nil, err
 	}
 
 	// Validate subscription can be paused
 	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
-		return nil, errors.NewError("invalid subscription status").
+		return nil, ierr.NewError("invalid subscription status").
 			WithHint("Subscription is not active").
 			WithReportableDetails(map[string]any{
 				"status": sub.SubscriptionStatus,
 			}).
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	// Calculate pause start and end
@@ -1234,37 +1261,34 @@ func (s *subscriptionService) CalculateResumeImpact(
 	req *dto.ResumeSubscriptionRequest,
 ) (*types.BillingImpactDetails, error) {
 	// Get the subscription with its pauses
-	sub, pauses, err := s.SubRepo.GetWithPauses(ctx, subscriptionID)
+	_, pauses, err := s.SubRepo.GetWithPauses(ctx, subscriptionID)
 	if err != nil {
-		return nil, errors.WithError(err).
-			WithHint("Failed to get subscription for impact calculation").
-			Mark(errors.ErrNotFound)
+		return nil, err
 	}
 
 	// get the line items
 	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
-		return nil, errors.WithError(err).
-			WithHint("Failed to get line items for subscription").
-			Mark(errors.ErrNotFound)
+		return nil, err
 	}
 	sub.LineItems = lineItems
+	sub.Pauses = pauses
 
 	// Validate subscription can be resumed
 	if sub.SubscriptionStatus != types.SubscriptionStatusPaused &&
 		sub.PauseStatus != types.PauseStatusScheduled {
-		return nil, errors.NewError("invalid subscription status").
+		return nil, ierr.NewError("invalid subscription status").
 			WithHint("Subscription is not paused").
 			WithReportableDetails(map[string]any{
 				"status": sub.SubscriptionStatus,
 			}).
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	if sub.ActivePauseID == nil {
-		return nil, errors.NewError("invalid subscription status").
+		return nil, ierr.NewError("invalid subscription status").
 			WithHint("Subscription has no active pause").
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	// Find the active pause
@@ -1277,9 +1301,9 @@ func (s *subscriptionService) CalculateResumeImpact(
 	}
 
 	if activePause == nil {
-		return nil, errors.NewError("invalid subscription status").
+		return nil, ierr.NewError("invalid subscription status").
 			WithHint("Active pause not found").
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	// Use the unified billing impact calculator
@@ -1304,18 +1328,18 @@ func (s *subscriptionService) calculatePauseStartEnd(req *dto.PauseSubscriptionR
 	case types.PauseModePeriodEnd:
 		pauseStart = lo.ToPtr(sub.CurrentPeriodEnd)
 	default:
-		return nil, nil, errors.NewError("invalid pause mode").
+		return nil, nil, ierr.NewError("invalid pause mode").
 			WithHint("Invalid pause mode").
 			WithReportableDetails(map[string]any{
 				"pauseMode": req.PauseMode,
 			}).
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	if pauseStart == nil || pauseStart.IsZero() {
-		return nil, nil, errors.NewError("invalid pause start date").
+		return nil, nil, ierr.NewError("invalid pause start date").
 			WithHint("Pause start date is required").
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	if req.PauseDays != nil {
@@ -1325,13 +1349,13 @@ func (s *subscriptionService) calculatePauseStartEnd(req *dto.PauseSubscriptionR
 	}
 
 	if pauseEnd == nil || pauseEnd.IsZero() || pauseEnd.Before(*pauseStart) {
-		return nil, nil, errors.NewError("invalid pause end date").
+		return nil, nil, ierr.NewError("invalid pause end date").
 			WithHint("Pause end date is not valid").
 			WithReportableDetails(map[string]any{
 				"pauseStart": pauseStart,
 				"pauseEnd":   pauseEnd,
 			}).
-			Mark(errors.ErrValidation)
+			Mark(ierr.ErrValidation)
 	}
 
 	return pauseStart, pauseEnd, nil
@@ -1379,9 +1403,9 @@ func (s *subscriptionService) calculateBillingImpact(
 	if isResume {
 		// Resume impact calculation
 		if activePause == nil {
-			return nil, errors.NewError("missing active pause").
+			return nil, ierr.NewError("missing active pause").
 				WithHint("Cannot calculate resume impact without active pause").
-				Mark(errors.ErrValidation)
+				Mark(ierr.ErrValidation)
 		}
 
 		// Calculate pause duration

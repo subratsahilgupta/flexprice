@@ -6,6 +6,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/gin-gonic/gin"
@@ -32,17 +33,14 @@ func NewAuthHandler(cfg *config.Configuration, authService service.AuthService, 
 // @Produce json
 // @Param signup body dto.SignUpRequest true "Sign up request"
 // @Success 200 {object} dto.AuthResponse
-// @Failure 400 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
 // @Router /auth/signup [post]
 func (h *AuthHandler) SignUp(c *gin.Context) {
 	var req dto.SignUpRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := req.Validate(); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
@@ -57,7 +55,7 @@ func (h *AuthHandler) SignUp(c *gin.Context) {
 	authResponse, err := h.authService.SignUp(c.Request.Context(), &req)
 	if err != nil {
 		h.logger.Errorw("failed to sign up", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to sign up", err)
+		c.Error(err)
 		return
 	}
 
@@ -71,24 +69,26 @@ func (h *AuthHandler) SignUp(c *gin.Context) {
 // @Produce json
 // @Param login body dto.LoginRequest true "Login request"
 // @Success 200 {object} dto.AuthResponse
-// @Failure 400 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
 // @Router /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	if err := req.Validate(); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(err)
 		return
 	}
 
 	authResponse, err := h.authService.Login(c.Request.Context(), &req)
 	if err != nil {
 		h.logger.Errorw("failed to login", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Error(err)
 		return
 	}
 

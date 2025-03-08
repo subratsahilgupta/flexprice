@@ -7,7 +7,6 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
-	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -65,7 +64,7 @@ func (s *billingService) CalculateFixedCharges(
 
 		price, err := priceService.GetPrice(ctx, item.PriceID)
 		if err != nil {
-			return nil, fixedCost, errors.WithOp(err, "price.get")
+			return nil, fixedCost, err
 		}
 
 		amount := priceService.CalculateCost(ctx, price.Price, item.Quantity)
@@ -121,7 +120,7 @@ func (s *billingService) CalculateUsageCharges(
 	for _, planID := range planIDs {
 		entitlements, err := entitlementService.GetPlanEntitlements(ctx, planID)
 		if err != nil {
-			return nil, decimal.Zero, errors.WithOp(err, "entitlement.get")
+			return nil, decimal.Zero, err
 		}
 
 		for _, entitlement := range entitlements.Items {
@@ -221,13 +220,13 @@ func (s *billingService) CalculateAllCharges(
 	// Calculate fixed charges
 	fixedCharges, fixedTotal, err := s.CalculateFixedCharges(ctx, sub, periodStart, periodEnd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate fixed charges: %w", err)
+		return nil, err
 	}
 
 	// Calculate usage charges
 	usageCharges, usageTotal, err := s.CalculateUsageCharges(ctx, sub, usage, periodStart, periodEnd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate usage charges: %w", err)
+		return nil, err
 	}
 
 	return &BillingCalculationResult{
@@ -260,13 +259,13 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		EndTime:        periodEnd,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get usage data: %w", err)
+		return nil, err
 	}
 
 	// Calculate all charges
 	result, err := s.CalculateAllCharges(ctx, sub, usage, periodStart, periodEnd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate charges: %w", err)
+		return nil, err
 	}
 
 	// Prepare invoice due date

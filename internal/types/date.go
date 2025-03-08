@@ -1,8 +1,9 @@
 package types
 
 import (
-	"fmt"
 	"time"
+
+	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
 // NextBillingDate calculates the next billing date based on the current period start,
@@ -13,7 +14,14 @@ import (
 // - For WEEKLY/DAILY periods, it's used only for validation
 func NextBillingDate(currentPeriodStart, billingAnchor time.Time, unit int, period BillingPeriod) (time.Time, error) {
 	if unit <= 0 {
-		return currentPeriodStart, fmt.Errorf("billing period unit must be a positive integer, got %d", unit)
+		return currentPeriodStart, ierr.NewError("billing period unit must be a positive integer").
+			WithHint("Billing period unit must be a positive integer").
+			WithReportableDetails(
+				map[string]any{
+					"unit": unit,
+				},
+			).
+			Mark(ierr.ErrValidation)
 	}
 
 	// For daily and weekly periods, we can use simple addition
@@ -36,7 +44,14 @@ func NextBillingDate(currentPeriodStart, billingAnchor time.Time, unit int, peri
 	case BILLING_PERIOD_HALF_YEAR:
 		months = unit * 6
 	default:
-		return currentPeriodStart, fmt.Errorf("invalid billing period type: %s", period)
+		return currentPeriodStart, ierr.NewError("invalid billing period type").
+			WithHint("Invalid billing period type").
+			WithReportableDetails(
+				map[string]any{
+					"period": period,
+				},
+			).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Get the current year and month

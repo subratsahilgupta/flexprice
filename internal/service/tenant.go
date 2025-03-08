@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/auth"
@@ -31,13 +30,13 @@ func NewTenantService(repo tenant.Repository, cfg *config.Configuration) TenantS
 
 func (s *tenantService) CreateTenant(ctx context.Context, req dto.CreateTenantRequest) (*dto.TenantResponse, error) {
 	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
+		return nil, err
 	}
 
 	newTenant := req.ToTenant(ctx)
 
 	if err := s.repo.Create(ctx, newTenant); err != nil {
-		return nil, fmt.Errorf("failed to create tenant: %w", err)
+		return nil, err
 	}
 
 	return dto.NewTenantResponse(newTenant), nil
@@ -46,7 +45,7 @@ func (s *tenantService) CreateTenant(ctx context.Context, req dto.CreateTenantRe
 func (s *tenantService) GetTenantByID(ctx context.Context, id string) (*dto.TenantResponse, error) {
 	t, err := s.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve tenant: %w", err)
+		return nil, err
 	}
 
 	return dto.NewTenantResponse(t), nil
@@ -54,20 +53,20 @@ func (s *tenantService) GetTenantByID(ctx context.Context, id string) (*dto.Tena
 
 func (s *tenantService) AssignTenantToUser(ctx context.Context, req dto.AssignTenantRequest) error {
 	if err := req.Validate(ctx); err != nil {
-		return fmt.Errorf("invalid request: %w", err)
+		return err
 	}
 
 	// Verify tenant exists
 	_, err := s.GetTenantByID(ctx, req.TenantID)
 	if err != nil {
-		return fmt.Errorf("tenant not found: %w", err)
+		return err
 	}
 
 	authProvider := auth.NewProvider(s.cfg)
 
 	// Assign tenant to user using auth provider
 	if err := authProvider.AssignUserToTenant(ctx, req.UserID, req.TenantID); err != nil {
-		return fmt.Errorf("failed to assign tenant to user: %w", err)
+		return err
 	}
 
 	return nil
@@ -76,7 +75,7 @@ func (s *tenantService) AssignTenantToUser(ctx context.Context, req dto.AssignTe
 func (s *tenantService) GetAllTenants(ctx context.Context) ([]*dto.TenantResponse, error) {
 	tenants, err := s.repo.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve tenants: %w", err)
+		return nil, err
 	}
 
 	tenantResponses := make([]*dto.TenantResponse, 0, len(tenants))

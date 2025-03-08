@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/pubsub"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/types"
@@ -62,7 +61,7 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 		// Get subscription
 		subscription, subscriptionLineItems, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get subscription: %w", err)
+			return nil, err
 		}
 
 		// Set customer ID from subscription
@@ -82,12 +81,12 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 
 	customer, err := s.CustomerRepo.Get(ctx, customerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get customer: %w", err)
+		return nil, err
 	}
 
 	features, err := featureService.GetFeatures(ctx, featureFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get features: %w", err)
+		return nil, err
 	}
 
 	for _, feature := range features.Items {
@@ -95,7 +94,14 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 	}
 
 	if len(meters) == 0 {
-		return nil, fmt.Errorf("no meters found for feature %s", req.FeatureID)
+		return nil, ierr.NewError("no meters found for feature %s").
+			WithHint("No meters found for feature").
+			WithReportableDetails(
+				map[string]interface{}{
+					"feature_id": req.FeatureID,
+				},
+			).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Set the customer and feature IDs in the request for logging
@@ -120,7 +126,9 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 	messageID := watermill.NewUUID()
 	payload, err := msg.Marshal()
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal message: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to marshal message").
+			Mark(ierr.ErrValidation)
 	}
 
 	watermillMsg := message.NewMessage(messageID, payload)
@@ -135,7 +143,9 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 	)
 
 	if err := s.pubSub.Publish(ctx, OnboardingEventsTopic, watermillMsg); err != nil {
-		return nil, fmt.Errorf("failed to publish message: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to publish message").
+			Mark(ierr.ErrValidation)
 	}
 
 	return &dto.OnboardingEventsResponse{
@@ -339,7 +349,7 @@ func (s *onboardingService) OnboardNewUserWithTenant(ctx context.Context, userID
 	}
 
 	if err := s.TenantRepo.Create(ctx, newTenant); err != nil {
-		return errors.Wrap(err, errors.ErrCodeSystemError, "unable to create tenant")
+		return err
 	}
 
 	// Create a new user without a tenant ID initially
@@ -357,7 +367,7 @@ func (s *onboardingService) OnboardNewUserWithTenant(ctx context.Context, userID
 	}
 
 	if err := s.UserRepo.Create(ctx, newUser); err != nil {
-		return errors.Wrap(err, errors.ErrCodeSystemError, "unable to create user")
+		return err
 	}
 
 	// Create default environments (development, production)
@@ -387,13 +397,13 @@ func (s *onboardingService) OnboardNewUserWithTenant(ctx context.Context, userID
 		}
 
 		if err := s.EnvironmentRepo.Create(ctx, env); err != nil {
-			return errors.Wrap(err, errors.ErrCodeSystemError, "unable to create environment")
+			return err
 		}
 	}
 
 	err := s.SetupSandboxEnvironment(ctx, tenantID, userID, sandboxEnvironmentID)
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeSystemError, "unable to setup sandbox environment")
+		return err
 	}
 
 	return nil
@@ -413,13 +423,13 @@ func (s *onboardingService) SetupSandboxEnvironment(ctx context.Context, tenantI
 	// validate if development environment
 	env, err := s.EnvironmentRepo.Get(ctx, envID)
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeSystemError, "unable to get environment")
+		return err
 	}
 
 	if env.Type != types.EnvironmentDevelopment {
-		return errors.NewError("environment to set up data must be a development environment").
+		return ierr.NewError("environment to set up data must be a development environment").
 			WithHint("Can only set up data for development environment").
-			Mark(errors.ErrInvalidOperation)
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// create a db transaction
@@ -433,31 +443,31 @@ func (s *onboardingService) SetupSandboxEnvironment(ctx context.Context, tenantI
 		// Step 1: Create meters
 		meters, err := s.createDefaultMeters(ctx)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeSystemError, "unable to create default meters")
+			return err
 		}
 
 		// Step 2: Create features using the meters
 		features, err := s.createDefaultFeatures(ctx, meters)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeSystemError, "unable to create default features")
+			return err
 		}
 
 		// Step 3: Create plans (Hobby, Pro, Business)
 		plans, err := s.createDefaultPlans(ctx, features, meters)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeSystemError, "unable to create default plans")
+			return err
 		}
 
 		// Step 4: Create customers
 		customers, err := s.createDefaultCustomers(ctx)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeSystemError, "unable to create default customers")
+			return err
 		}
 
 		// Step 5: Create subscriptions for the customers and plans
 		err = s.createDefaultSubscriptions(ctx, customers, plans)
 		if err != nil {
-			return errors.Wrap(err, errors.ErrCodeSystemError, "unable to create default subscriptions")
+			return err
 		}
 
 		// Optional steps - can be skipped for now
@@ -523,19 +533,19 @@ func (s *onboardingService) createDefaultMeters(ctx context.Context) ([]*meter.M
 	// Create meters
 	completionsResp, err := meterService.CreateMeter(ctx, completionsMeter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create completions meter: %w", err)
+		return nil, err
 	}
 	s.Logger.Infow("created completions meter", "meter_id", completionsResp.ID)
 
 	slowPremiumResp, err := meterService.CreateMeter(ctx, slowPremiumRequestsMeter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create slow premium requests meter: %w", err)
+		return nil, err
 	}
 	s.Logger.Infow("created slow premium requests meter", "meter_id", slowPremiumResp.ID)
 
 	fastPremiumResp, err := meterService.CreateMeter(ctx, fastPremiumRequestsMeter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create fast premium requests meter: %w", err)
+		return nil, err
 	}
 	s.Logger.Infow("created fast premium requests meter", "meter_id", fastPremiumResp.ID)
 
@@ -614,7 +624,7 @@ func (s *onboardingService) createDefaultFeatures(ctx context.Context, meters []
 	for i := range features {
 		resp, err := featureService.CreateFeature(ctx, features[i])
 		if err != nil {
-			return nil, fmt.Errorf("failed to create feature '%s': %w", features[i].Name, err)
+			return nil, err
 		}
 		s.Logger.Infow("created feature",
 			"feature_id", resp.ID,
@@ -663,13 +673,13 @@ func (s *onboardingService) createDefaultPlans(ctx context.Context, features []*
 	// Create prices for the plans and meters
 	err := s.setDefaultPriceRequests(ctx, plans, meters)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeSystemError, "unable to create default prices")
+		return nil, err
 	}
 
 	// Create entitlements for the plans and features
 	err = s.setDefaultEntitlements(ctx, plans, features)
 	if err != nil {
-		return nil, errors.Wrap(err, errors.ErrCodeSystemError, "unable to create default entitlements")
+		return nil, err
 	}
 
 	// Create each plan and collect responses
@@ -677,7 +687,7 @@ func (s *onboardingService) createDefaultPlans(ctx context.Context, features []*
 	for i := range plans {
 		resp, err := planService.CreatePlan(ctx, lo.FromPtr(plans[i]))
 		if err != nil {
-			return nil, fmt.Errorf("failed to create plan '%s': %w", plans[i].Name, err)
+			return nil, err
 		}
 		s.Logger.Infow("created plan",
 			"plan_id", resp.ID,
@@ -690,7 +700,7 @@ func (s *onboardingService) createDefaultPlans(ctx context.Context, features []*
 	return planResponses, nil
 }
 
-func (s *onboardingService) setDefaultPriceRequests(ctx context.Context, plans []*dto.CreatePlanRequest, meters []*meter.Meter) error {
+func (s *onboardingService) setDefaultPriceRequests(_ context.Context, plans []*dto.CreatePlanRequest, meters []*meter.Meter) error {
 	s.Logger.Infow("creating default prices for Cursor pricing model")
 
 	// Find plans by name
@@ -721,11 +731,15 @@ func (s *onboardingService) setDefaultPriceRequests(ctx context.Context, plans [
 
 	// Validate that we found all required plans and meters
 	if hobbyPlan == nil || proPlan == nil || businessPlan == nil {
-		return fmt.Errorf("not all required plans were found")
+		return ierr.NewError("not all required plans were found").
+			WithHint("Not all required plans were found").
+			Mark(ierr.ErrValidation)
 	}
 
 	if completionsMeter == nil || slowPremiumMeter == nil || fastPremiumMeter == nil {
-		return fmt.Errorf("not all required meters were found")
+		return ierr.NewError("not all required meters were found").
+			WithHint("Not all required meters were found").
+			Mark(ierr.ErrValidation)
 	}
 
 	usageBasedPriceRequests := []dto.CreatePlanPriceRequest{
@@ -897,7 +911,7 @@ func (s *onboardingService) createDefaultCustomers(ctx context.Context) ([]*dto.
 
 	resp, err := customerService.CreateCustomer(ctx, customer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create customer: %w", err)
+		return nil, err
 	}
 
 	s.Logger.Infow("created customer",
@@ -915,7 +929,9 @@ func (s *onboardingService) createDefaultSubscriptions(ctx context.Context, cust
 
 	// Validate that we have at least one customer
 	if len(customers) == 0 {
-		return fmt.Errorf("no customers found to create subscriptions for")
+		return ierr.NewError("no customers found to create subscriptions for").
+			WithHint("No customers found to create subscriptions for").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Find the Pro plan
@@ -928,7 +944,9 @@ func (s *onboardingService) createDefaultSubscriptions(ctx context.Context, cust
 	}
 
 	if proPlan == nil {
-		return fmt.Errorf("pro plan not found")
+		return ierr.NewError("pro plan not found").
+			WithHint("Pro plan not found").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Get the first customer
@@ -947,7 +965,7 @@ func (s *onboardingService) createDefaultSubscriptions(ctx context.Context, cust
 
 	resp, err := subscriptionService.CreateSubscription(ctx, subscription)
 	if err != nil {
-		return fmt.Errorf("failed to create subscription: %w", err)
+		return err
 	}
 
 	s.Logger.Infow("created subscription",
@@ -958,7 +976,7 @@ func (s *onboardingService) createDefaultSubscriptions(ctx context.Context, cust
 	return nil
 }
 
-func (s *onboardingService) setDefaultEntitlements(ctx context.Context, plans []*dto.CreatePlanRequest, features []*dto.FeatureResponse) error {
+func (s *onboardingService) setDefaultEntitlements(_ context.Context, plans []*dto.CreatePlanRequest, features []*dto.FeatureResponse) error {
 	s.Logger.Infow("creating default entitlements for Cursor pricing model")
 
 	// Find plans by name
@@ -985,7 +1003,9 @@ func (s *onboardingService) setDefaultEntitlements(ctx context.Context, plans []
 
 	// Validate that we found all required plans
 	if hobbyPlan == nil || proPlan == nil || businessPlan == nil {
-		return fmt.Errorf("not all required plans were found")
+		return ierr.NewError("not all required plans were found").
+			WithHint("Not all required plans were found").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate that we found all required features
@@ -1001,7 +1021,12 @@ func (s *onboardingService) setDefaultEntitlements(ctx context.Context, plans []
 
 	for _, name := range requiredFeatures {
 		if _, ok := featureMap[name]; !ok {
-			return fmt.Errorf("required feature '%s' not found", name)
+			return ierr.NewError("required feature '%s' not found").
+				WithHint("Required feature not found").
+				WithReportableDetails(map[string]interface{}{
+					"feature_name": name,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 	}
 

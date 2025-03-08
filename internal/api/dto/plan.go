@@ -6,7 +6,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 )
 
 type CreatePlanRequest struct {
@@ -26,8 +26,7 @@ type CreatePlanEntitlementRequest struct {
 }
 
 func (r *CreatePlanRequest) Validate() error {
-	validator := validator.New()
-	err := validator.Struct(r)
+	err := validator.ValidateRequest(r)
 	if err != nil {
 		return err
 	}

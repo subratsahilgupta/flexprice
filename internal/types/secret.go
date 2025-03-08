@@ -1,7 +1,7 @@
 package types
 
 import (
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
 )
 
@@ -17,7 +17,9 @@ const (
 func (t SecretType) Validate() error {
 	allowedSecretTypes := []SecretType{SecretTypePrivateKey, SecretTypePublishableKey, SecretTypeIntegration}
 	if !lo.Contains(allowedSecretTypes, t) {
-		return errors.New(errors.ErrCodeValidation, "invalid secret type")
+		return ierr.NewError("invalid secret type").
+			WithHint("Invalid secret type").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -34,7 +36,9 @@ const (
 func (p SecretProvider) Validate() error {
 	allowedSecretProviders := []SecretProvider{SecretProviderFlexPrice, SecretProviderStripe, SecretProviderRazorpay}
 	if !lo.Contains(allowedSecretProviders, p) {
-		return errors.New(errors.ErrCodeValidation, "invalid secret provider")
+		return ierr.NewError("invalid secret provider").
+			WithHint("Invalid secret provider").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }

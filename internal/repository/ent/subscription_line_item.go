@@ -2,13 +2,12 @@ package ent
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -57,28 +56,54 @@ func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subsc
 		SetStatus(string(item.Status)).
 		SetCreatedBy(item.CreatedBy).
 		SetUpdatedBy(item.UpdatedBy).
-		SetCreatedAt(time.Now()).
-		SetUpdatedAt(time.Now()).
+		SetCreatedAt(item.CreatedAt).
+		SetUpdatedAt(item.UpdatedAt).
 		Save(ctx)
 
-	return err
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to create subscription line item").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": item.SubscriptionID,
+				"price_id":        item.PriceID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	return nil
 }
 
-// Get gets a subscription line item by ID
+// Get retrieves a subscription line item by ID
 func (r *subscriptionLineItemRepository) Get(ctx context.Context, id string) (*subscription.SubscriptionLineItem, error) {
 	client := r.client.Querier(ctx)
 	if client == nil {
-		return nil, fmt.Errorf("failed to get client")
+		return nil, ierr.NewError("failed to get database client").
+			WithHint("Database client is not available").
+			Mark(ierr.ErrDatabase)
 	}
 
 	item, err := client.SubscriptionLineItem.Query().
-		Where(subscriptionlineitem.ID(id)).
-		First(ctx)
+		Where(
+			subscriptionlineitem.ID(id),
+			subscriptionlineitem.TenantID(types.GetTenantID(ctx)),
+		).
+		Only(ctx)
+
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, errors.ErrNotFound
+			return nil, ierr.WithError(err).
+				WithHint("Subscription line item not found").
+				WithReportableDetails(map[string]interface{}{
+					"line_item_id": id,
+				}).
+				Mark(ierr.ErrNotFound)
 		}
-		return nil, err
+		return nil, ierr.WithError(err).
+			WithHint("Failed to retrieve subscription line item").
+			WithReportableDetails(map[string]interface{}{
+				"line_item_id": id,
+			}).
+			Mark(ierr.ErrDatabase)
 	}
 
 	return subscription.SubscriptionLineItemFromEnt(item), nil
@@ -106,29 +131,59 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 		SetUpdatedAt(time.Now()).
 		Save(ctx)
 
-	return err
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return ierr.WithError(err).
+				WithHint("Subscription line item not found").
+				WithReportableDetails(map[string]interface{}{
+					"line_item_id": item.ID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+		return ierr.WithError(err).
+			WithHint("Failed to update subscription line item").
+			WithReportableDetails(map[string]interface{}{
+				"line_item_id": item.ID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	return nil
 }
 
 // Delete deletes a subscription line item
 func (r *subscriptionLineItemRepository) Delete(ctx context.Context, id string) error {
 	client := r.client.Querier(ctx)
-	if client == nil {
-		return fmt.Errorf("failed to get client")
+	_, err := client.SubscriptionLineItem.Delete().
+		Where(
+			subscriptionlineitem.ID(id),
+			subscriptionlineitem.TenantID(types.GetTenantID(ctx)),
+		).
+		Exec(ctx)
+
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to delete subscription line item").
+			WithReportableDetails(map[string]interface{}{
+				"line_item_id": id,
+			}).
+			Mark(ierr.ErrDatabase)
 	}
 
-	return client.SubscriptionLineItem.DeleteOneID(id).Exec(ctx)
+	return nil
 }
 
-// CreateBulk creates multiple subscription line items
+// CreateBulk creates multiple subscription line items in bulk
 func (r *subscriptionLineItemRepository) CreateBulk(ctx context.Context, items []*subscription.SubscriptionLineItem) error {
-	client := r.client.Querier(ctx)
-	if client == nil {
-		return fmt.Errorf("failed to get client")
+	if len(items) == 0 {
+		return nil
 	}
 
+	client := r.client.Querier(ctx)
+
+	// Create bulk operation
 	bulk := make([]*ent.SubscriptionLineItemCreate, len(items))
 	for i, item := range items {
-		// Set environment ID from context if not already set
 		if item.EnvironmentID == "" {
 			item.EnvironmentID = types.GetEnvironmentID(ctx)
 		}
@@ -157,85 +212,120 @@ func (r *subscriptionLineItemRepository) CreateBulk(ctx context.Context, items [
 			SetStatus(string(item.Status)).
 			SetCreatedBy(item.CreatedBy).
 			SetUpdatedBy(item.UpdatedBy).
-			SetCreatedAt(time.Now()).
-			SetUpdatedAt(time.Now())
+			SetCreatedAt(item.CreatedAt).
+			SetUpdatedAt(item.UpdatedAt)
 	}
 
-	return client.SubscriptionLineItem.CreateBulk(bulk...).Exec(ctx)
+	// Execute bulk create
+	_, err := client.SubscriptionLineItem.CreateBulk(bulk...).Save(ctx)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to create subscription line items in bulk").
+			WithReportableDetails(map[string]interface{}{
+				"count": len(items),
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	return nil
 }
 
-// ListBySubscription lists all subscription line items for a subscription
+// ListBySubscription retrieves all line items for a subscription
 func (r *subscriptionLineItemRepository) ListBySubscription(ctx context.Context, subscriptionID string) ([]*subscription.SubscriptionLineItem, error) {
 	client := r.client.Querier(ctx)
-	if client == nil {
-		return nil, fmt.Errorf("failed to get client")
-	}
 
 	items, err := client.SubscriptionLineItem.Query().
-		Where(subscriptionlineitem.SubscriptionID(subscriptionID)).
+		Where(
+			subscriptionlineitem.SubscriptionID(subscriptionID),
+			subscriptionlineitem.TenantID(types.GetTenantID(ctx)),
+		).
 		All(ctx)
+
 	if err != nil {
-		return nil, err
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list subscription line items").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": subscriptionID,
+			}).
+			Mark(ierr.ErrDatabase)
 	}
 
 	return subscription.GetLineItemFromEntList(items), nil
 }
 
-// ListByCustomer lists all subscription line items for a customer
+// ListByCustomer retrieves all line items for a customer
 func (r *subscriptionLineItemRepository) ListByCustomer(ctx context.Context, customerID string) ([]*subscription.SubscriptionLineItem, error) {
 	client := r.client.Querier(ctx)
-	if client == nil {
-		return nil, fmt.Errorf("failed to get client")
-	}
 
 	items, err := client.SubscriptionLineItem.Query().
-		Where(subscriptionlineitem.CustomerID(customerID)).
+		Where(
+			subscriptionlineitem.CustomerID(customerID),
+			subscriptionlineitem.TenantID(types.GetTenantID(ctx)),
+		).
 		All(ctx)
+
 	if err != nil {
-		return nil, err
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list customer subscription line items").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": customerID,
+			}).
+			Mark(ierr.ErrDatabase)
 	}
 
 	return subscription.GetLineItemFromEntList(items), nil
 }
 
-// List lists subscription line items based on filter
+// List retrieves subscription line items based on filter
 func (r *subscriptionLineItemRepository) List(ctx context.Context, filter *types.SubscriptionLineItemFilter) ([]*subscription.SubscriptionLineItem, error) {
 	client := r.client.Querier(ctx)
 	if client == nil {
-		return nil, fmt.Errorf("failed to get client")
+		return nil, ierr.NewError("failed to get database client").
+			WithHint("Database client is not available").
+			Mark(ierr.ErrDatabase)
 	}
 
-	query := client.SubscriptionLineItem.Query()
+	query := client.SubscriptionLineItem.Query().
+		Where(subscriptionlineitem.TenantID(types.GetTenantID(ctx)))
 
-	if len(filter.SubscriptionIDs) > 0 {
-		query = query.Where(subscriptionlineitem.SubscriptionIDIn(filter.SubscriptionIDs...))
-	}
-	if len(filter.CustomerIDs) > 0 {
-		query = query.Where(subscriptionlineitem.CustomerIDIn(filter.CustomerIDs...))
-	}
-	if len(filter.PlanIDs) > 0 {
-		query = query.Where(subscriptionlineitem.PlanIDIn(filter.PlanIDs...))
-	}
-	if len(filter.PriceIDs) > 0 {
-		query = query.Where(subscriptionlineitem.PriceIDIn(filter.PriceIDs...))
-	}
-	if len(filter.MeterIDs) > 0 {
-		query = query.Where(subscriptionlineitem.MeterIDIn(filter.MeterIDs...))
-	}
-	if len(filter.Currencies) > 0 {
-		query = query.Where(subscriptionlineitem.CurrencyIn(filter.Currencies...))
-	}
-	if len(filter.BillingPeriods) > 0 {
-		query = query.Where(subscriptionlineitem.BillingPeriodIn(filter.BillingPeriods...))
+	// Apply filters
+	if filter != nil {
+		if len(filter.SubscriptionIDs) > 0 {
+			query = query.Where(subscriptionlineitem.SubscriptionIDIn(filter.SubscriptionIDs...))
+		}
+		if len(filter.CustomerIDs) > 0 {
+			query = query.Where(subscriptionlineitem.CustomerIDIn(filter.CustomerIDs...))
+		}
+		if len(filter.PlanIDs) > 0 {
+			query = query.Where(subscriptionlineitem.PlanIDIn(filter.PlanIDs...))
+		}
+		if len(filter.PriceIDs) > 0 {
+			query = query.Where(subscriptionlineitem.PriceIDIn(filter.PriceIDs...))
+		}
+		if len(filter.MeterIDs) > 0 {
+			query = query.Where(subscriptionlineitem.MeterIDIn(filter.MeterIDs...))
+		}
+		if len(filter.Currencies) > 0 {
+			query = query.Where(subscriptionlineitem.CurrencyIn(filter.Currencies...))
+		}
+		if len(filter.BillingPeriods) > 0 {
+			query = query.Where(subscriptionlineitem.BillingPeriodIn(filter.BillingPeriods...))
+		}
+
+		// Apply pagination
+		if filter.Limit != nil {
+			query = query.Limit(*filter.Limit)
+		}
+		if filter.Offset != nil {
+			query = query.Offset(*filter.Offset)
+		}
 	}
 
-	items, err := query.
-		Limit(filter.GetLimit()).
-		Offset(filter.GetOffset()).
-		Order(ent.Desc(subscriptionlineitem.FieldCreatedAt)).
-		All(ctx)
+	items, err := query.All(ctx)
 	if err != nil {
-		return nil, err
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list subscription line items").
+			Mark(ierr.ErrDatabase)
 	}
 
 	return subscription.GetLineItemFromEntList(items), nil
@@ -244,66 +334,91 @@ func (r *subscriptionLineItemRepository) List(ctx context.Context, filter *types
 // Count counts subscription line items based on filter
 func (r *subscriptionLineItemRepository) Count(ctx context.Context, filter *types.SubscriptionLineItemFilter) (int, error) {
 	client := r.client.Querier(ctx)
-	if client == nil {
-		return 0, fmt.Errorf("failed to get client")
+
+	query := client.SubscriptionLineItem.Query().
+		Where(subscriptionlineitem.TenantID(types.GetTenantID(ctx)))
+
+	// Apply filters
+	if filter != nil {
+		if len(filter.SubscriptionIDs) > 0 {
+			query = query.Where(subscriptionlineitem.SubscriptionIDIn(filter.SubscriptionIDs...))
+		}
+		if len(filter.CustomerIDs) > 0 {
+			query = query.Where(subscriptionlineitem.CustomerIDIn(filter.CustomerIDs...))
+		}
+		if len(filter.PlanIDs) > 0 {
+			query = query.Where(subscriptionlineitem.PlanIDIn(filter.PlanIDs...))
+		}
+		if len(filter.PriceIDs) > 0 {
+			query = query.Where(subscriptionlineitem.PriceIDIn(filter.PriceIDs...))
+		}
+		if len(filter.MeterIDs) > 0 {
+			query = query.Where(subscriptionlineitem.MeterIDIn(filter.MeterIDs...))
+		}
+		if len(filter.Currencies) > 0 {
+			query = query.Where(subscriptionlineitem.CurrencyIn(filter.Currencies...))
+		}
+		if len(filter.BillingPeriods) > 0 {
+			query = query.Where(subscriptionlineitem.BillingPeriodIn(filter.BillingPeriods...))
+		}
 	}
 
-	query := client.SubscriptionLineItem.Query()
-
-	if len(filter.SubscriptionIDs) > 0 {
-		query = query.Where(subscriptionlineitem.SubscriptionIDIn(filter.SubscriptionIDs...))
-	}
-	if len(filter.CustomerIDs) > 0 {
-		query = query.Where(subscriptionlineitem.CustomerIDIn(filter.CustomerIDs...))
-	}
-	if len(filter.PlanIDs) > 0 {
-		query = query.Where(subscriptionlineitem.PlanIDIn(filter.PlanIDs...))
-	}
-	if len(filter.PriceIDs) > 0 {
-		query = query.Where(subscriptionlineitem.PriceIDIn(filter.PriceIDs...))
-	}
-	if len(filter.MeterIDs) > 0 {
-		query = query.Where(subscriptionlineitem.MeterIDIn(filter.MeterIDs...))
-	}
-	if len(filter.Currencies) > 0 {
-		query = query.Where(subscriptionlineitem.CurrencyIn(filter.Currencies...))
-	}
-	if len(filter.BillingPeriods) > 0 {
-		query = query.Where(subscriptionlineitem.BillingPeriodIn(filter.BillingPeriods...))
+	count, err := query.Count(ctx)
+	if err != nil {
+		return 0, ierr.WithError(err).
+			WithHint("Failed to count subscription line items").
+			Mark(ierr.ErrDatabase)
 	}
 
-	return query.Count(ctx)
+	return count, nil
 }
 
-// GetByPriceID gets subscription line items by price ID
+// GetByPriceID retrieves all line items for a price
 func (r *subscriptionLineItemRepository) GetByPriceID(ctx context.Context, priceID string) ([]*subscription.SubscriptionLineItem, error) {
 	client := r.client.Querier(ctx)
-	if client == nil {
-		return nil, fmt.Errorf("failed to get client")
-	}
 
 	items, err := client.SubscriptionLineItem.Query().
-		Where(subscriptionlineitem.PriceID(priceID)).
+		Where(
+			subscriptionlineitem.PriceID(priceID),
+			subscriptionlineitem.TenantID(types.GetTenantID(ctx)),
+		).
 		All(ctx)
+
 	if err != nil {
-		return nil, err
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get subscription line items by price").
+			WithReportableDetails(map[string]interface{}{
+				"price_id": priceID,
+			}).
+			Mark(ierr.ErrDatabase)
 	}
 
 	return subscription.GetLineItemFromEntList(items), nil
 }
 
-// GetByPlanID gets subscription line items by plan ID
+// GetByPlanID retrieves all line items for a plan
 func (r *subscriptionLineItemRepository) GetByPlanID(ctx context.Context, planID string) ([]*subscription.SubscriptionLineItem, error) {
 	client := r.client.Querier(ctx)
 	if client == nil {
-		return nil, fmt.Errorf("failed to get client")
+		return nil, ierr.NewError("failed to get database client").
+			WithHint("Database client is not available").
+			Mark(ierr.ErrDatabase)
 	}
 
 	items, err := client.SubscriptionLineItem.Query().
-		Where(subscriptionlineitem.PlanID(planID)).
+		Where(
+			subscriptionlineitem.PlanID(planID),
+			subscriptionlineitem.TenantID(types.GetTenantID(ctx)),
+		).
 		All(ctx)
+
 	if err != nil {
-		return nil, err
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get subscription line items by plan").
+			WithReportableDetails(map[string]interface{}{
+				"plan_id": planID,
+			}).
+			Mark(ierr.ErrDatabase)
 	}
 
 	return subscription.GetLineItemFromEntList(items), nil
