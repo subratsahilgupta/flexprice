@@ -387,11 +387,10 @@ func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilte
 	query := client.Invoice.Query().
 		WithLineItems()
 
-	// Apply entity-specific filters
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
-
 	// Apply common query options
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
+	// Apply entity-specific filters
+	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 
 	invoices, err := query.All(ctx)
 	if err != nil {
@@ -621,6 +620,12 @@ func (o InvoiceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types
 			paymentStatuses[i] = string(status)
 		}
 		query = query.Where(invoice.PaymentStatusIn(paymentStatuses...))
+	}
+	if f.AmountDueGt != nil {
+		query = query.Where(invoice.AmountDueGT(*f.AmountDueGt))
+	}
+	if f.AmountRemainingGt != nil {
+		query = query.Where(invoice.AmountRemainingGT(*f.AmountRemainingGt))
 	}
 
 	// Apply time range filters

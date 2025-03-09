@@ -3951,6 +3951,12 @@ paths:
       description: List invoices with optional filtering
       parameters:
       - in: query
+        name: amount_due_gt
+        type: number
+      - in: query
+        name: amount_remaining_gt
+        type: number
+      - in: query
         name: customer_id
         type: string
       - in: query
@@ -4172,6 +4178,39 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Update invoice payment status
+      tags:
+      - Invoices
+  /invoices/{id}/payment/attempt:
+    post:
+      consumes:
+      - application/json
+      description: Attempt to pay an invoice using customer's available wallets
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Attempt payment for an invoice
       tags:
       - Invoices
   /invoices/{id}/void:

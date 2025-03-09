@@ -54,6 +54,7 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 	}
 
 	// Update payment status to processing
+	// TODO: take a lock on the payment object here to avoid race conditions
 	paymentObj.PaymentStatus = types.PaymentStatusProcessing
 	paymentObj.UpdatedAt = time.Now().UTC()
 	if err := p.PaymentRepo.Update(ctx, paymentObj); err != nil {
@@ -147,6 +148,7 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 		return err
 	}
 
+	// Validate wallet status
 	if selectedWallet.WalletStatus != types.WalletStatusActive {
 		return ierr.NewError("wallet is not active").
 			WithHint("Wallet is not active").
@@ -156,6 +158,7 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 			Mark(ierr.ErrInvalidOperation)
 	}
 
+	// Validate currency match
 	if !types.IsMatchingCurrency(selectedWallet.Currency, paymentObj.Currency) {
 		return ierr.NewError("wallet currency does not match payment currency").
 			WithHint("Wallet currency does not match payment currency").
@@ -166,6 +169,7 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 			Mark(ierr.ErrInvalidOperation)
 	}
 
+	// Validate sufficient balance
 	if selectedWallet.Balance.LessThan(paymentObj.Amount) {
 		return ierr.NewError("wallet balance is less than payment amount").
 			WithHint("Wallet balance is less than payment amount").
@@ -175,9 +179,6 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 			}).
 			Mark(ierr.ErrInvalidOperation)
 	}
-
-	// Update payment method ID with selected wallet
-	paymentObj.PaymentMethodID = selectedWallet.ID
 
 	// Create wallet operation
 	operation := &wallet.WalletOperation{
@@ -192,6 +193,7 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 			"payment_id":     paymentObj.ID,
 			"invoice_id":     paymentObj.DestinationID,
 			"payment_method": string(paymentObj.PaymentMethodType),
+			"wallet_type":    string(selectedWallet.WalletType),
 		},
 	}
 
@@ -202,11 +204,6 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 	err = p.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Debit wallet
 		if err := walletService.DebitWallet(ctx, operation); err != nil {
-			return err
-		}
-
-		// Update payment with wallet ID
-		if err := p.PaymentRepo.Update(ctx, paymentObj); err != nil {
 			return err
 		}
 

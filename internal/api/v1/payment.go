@@ -43,7 +43,7 @@ func (h *PaymentHandler) CreatePayment(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.CreatePayment(c.Request.Context(), req)
+	resp, err := h.service.CreatePayment(c.Request.Context(), &req)
 	if err != nil {
 		h.log.Error("Failed to create payment", "error", err)
 		c.Error(err)

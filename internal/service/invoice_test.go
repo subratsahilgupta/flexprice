@@ -65,10 +65,13 @@ func (s *InvoiceServiceSuite) TearDownTest() {
 }
 
 func (s *InvoiceServiceSuite) setupService() {
-	s.eventRepo = testutil.NewInMemoryEventStore()
-	s.invoiceRepo = testutil.NewInMemoryInvoiceStore()
+	s.eventRepo = s.GetStores().EventRepo.(*testutil.InMemoryEventStore)
+	s.invoiceRepo = s.GetStores().InvoiceRepo.(*testutil.InMemoryInvoiceStore)
 
 	s.service = NewInvoiceService(ServiceParams{
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
 		SubRepo:          s.GetStores().SubscriptionRepo,
 		PlanRepo:         s.GetStores().PlanRepo,
 		PriceRepo:        s.GetStores().PriceRepo,
@@ -77,16 +80,15 @@ func (s *InvoiceServiceSuite) setupService() {
 		CustomerRepo:     s.GetStores().CustomerRepo,
 		InvoiceRepo:      s.invoiceRepo,
 		EntitlementRepo:  s.GetStores().EntitlementRepo,
-		FeatureRepo:      s.GetStores().FeatureRepo,
 		EnvironmentRepo:  s.GetStores().EnvironmentRepo,
+		FeatureRepo:      s.GetStores().FeatureRepo,
 		TenantRepo:       s.GetStores().TenantRepo,
 		UserRepo:         s.GetStores().UserRepo,
 		AuthRepo:         s.GetStores().AuthRepo,
+		WalletRepo:       s.GetStores().WalletRepo,
+		PaymentRepo:      s.GetStores().PaymentRepo,
 		EventPublisher:   s.GetPublisher(),
 		WebhookPublisher: s.GetWebhookPublisher(),
-		DB:               s.GetDB(),
-		Logger:           s.GetLogger(),
-		Config:           s.GetConfig(),
 	})
 }
 
@@ -774,6 +776,266 @@ func (s *InvoiceServiceSuite) TestGetCustomerInvoiceSummary() {
 			s.True(tc.expectedSummary.UnpaidFixedCharges.Equal(summary.UnpaidFixedCharges),
 				"UnpaidFixedCharges mismatch: expected %s, got %s",
 				tc.expectedSummary.UnpaidFixedCharges, summary.UnpaidFixedCharges)
+		})
+	}
+}
+
+func (s *InvoiceServiceSuite) setupWallets() {
+	// Clear all stores to prevent conflicts with previous tests
+	s.GetStores().WalletRepo.(*testutil.InMemoryWalletStore).Clear()
+	// Create wallet service
+	walletService := NewWalletService(ServiceParams{
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
+		SubRepo:          s.GetStores().SubscriptionRepo,
+		PlanRepo:         s.GetStores().PlanRepo,
+		PriceRepo:        s.GetStores().PriceRepo,
+		EventRepo:        s.eventRepo,
+		MeterRepo:        s.GetStores().MeterRepo,
+		CustomerRepo:     s.GetStores().CustomerRepo,
+		InvoiceRepo:      s.invoiceRepo,
+		EntitlementRepo:  s.GetStores().EntitlementRepo,
+		EnvironmentRepo:  s.GetStores().EnvironmentRepo,
+		FeatureRepo:      s.GetStores().FeatureRepo,
+		TenantRepo:       s.GetStores().TenantRepo,
+		UserRepo:         s.GetStores().UserRepo,
+		AuthRepo:         s.GetStores().AuthRepo,
+		WalletRepo:       s.GetStores().WalletRepo,
+		PaymentRepo:      s.GetStores().PaymentRepo,
+		EventPublisher:   s.GetPublisher(),
+		WebhookPublisher: s.GetWebhookPublisher(),
+	})
+
+	// Create test wallets for the test customer
+	// 1. Promotional wallet with $50
+	promoWallet, err := walletService.CreateWallet(s.GetContext(), &dto.CreateWalletRequest{
+		CustomerID:     s.testData.customer.ID,
+		Currency:       "usd",
+		WalletType:     types.WalletTypePromotional,
+		ConversionRate: decimal.NewFromInt(1),
+		Config:         types.GetDefaultWalletConfig(),
+	})
+	s.NoError(err)
+
+	// Top up the promotional wallet
+	_, err = walletService.TopUpWallet(s.GetContext(), promoWallet.ID, &dto.TopUpWalletRequest{
+		Amount:      decimal.NewFromInt(50),
+		Description: "Test top-up for AttemptPayment",
+	})
+	s.NoError(err)
+
+	// 2. Prepaid wallet with $100
+	prepaidWallet, err := walletService.CreateWallet(s.GetContext(), &dto.CreateWalletRequest{
+		CustomerID:     s.testData.customer.ID,
+		Currency:       "usd",
+		WalletType:     types.WalletTypePrePaid,
+		ConversionRate: decimal.NewFromInt(1),
+		Config:         types.GetDefaultWalletConfig(),
+	})
+	s.NoError(err)
+
+	// Top up the prepaid wallet
+	_, err = walletService.TopUpWallet(s.GetContext(), prepaidWallet.ID, &dto.TopUpWalletRequest{
+		Amount:      decimal.NewFromInt(100),
+		Description: "Test top-up for AttemptPayment",
+	})
+	s.NoError(err)
+}
+
+func (s *InvoiceServiceSuite) TestAttemptPayment() {
+	s.GetStores().InvoiceRepo.(*testutil.InMemoryInvoiceStore).Clear()
+
+	// Setup test cases
+	testCases := []struct {
+		name                 string
+		setupInvoice         func() *invoice.Invoice
+		expectedError        bool
+		expectedErrorMessage string
+		expectedPaymentState types.PaymentStatus
+		expectedAmountPaid   decimal.Decimal
+	}{
+		{
+			name: "Successfully pay invoice with wallets",
+			setupInvoice: func() *invoice.Invoice {
+				inv := &invoice.Invoice{
+					ID:              "inv_test_full_payment",
+					CustomerID:      s.testData.customer.ID,
+					InvoiceType:     types.InvoiceTypeOneOff,
+					InvoiceStatus:   types.InvoiceStatusFinalized,
+					PaymentStatus:   types.PaymentStatusPending,
+					Currency:        "usd",
+					AmountDue:       decimal.NewFromInt(100),
+					AmountPaid:      decimal.Zero,
+					AmountRemaining: decimal.NewFromInt(100),
+					Description:     "Test Invoice - Full Payment",
+					BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+				}
+				s.NoError(s.invoiceRepo.Create(s.GetContext(), inv))
+				return inv
+			},
+			expectedError:        false,
+			expectedPaymentState: types.PaymentStatusSucceeded,
+			expectedAmountPaid:   decimal.NewFromInt(100),
+		},
+		{
+			name: "Partially pay invoice with insufficient wallet balance",
+			setupInvoice: func() *invoice.Invoice {
+				inv := &invoice.Invoice{
+					ID:              "inv_test_partial_payment",
+					CustomerID:      s.testData.customer.ID,
+					InvoiceType:     types.InvoiceTypeOneOff,
+					InvoiceStatus:   types.InvoiceStatusFinalized,
+					PaymentStatus:   types.PaymentStatusPending,
+					Currency:        "usd",
+					AmountDue:       decimal.NewFromInt(200),
+					AmountPaid:      decimal.Zero,
+					AmountRemaining: decimal.NewFromInt(200),
+					Description:     "Test Invoice - Partial Payment",
+					BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+				}
+				s.NoError(s.invoiceRepo.Create(s.GetContext(), inv))
+				return inv
+			},
+			expectedError:        false,
+			expectedPaymentState: types.PaymentStatusPending, // Still pending as it's partially paid
+			expectedAmountPaid:   decimal.NewFromInt(150),    // 50 (promo) + 100 (prepaid)
+		},
+		{
+			name: "Invoice not in finalized state",
+			setupInvoice: func() *invoice.Invoice {
+				inv := &invoice.Invoice{
+					ID:              "inv_test_not_finalized",
+					CustomerID:      s.testData.customer.ID,
+					InvoiceType:     types.InvoiceTypeOneOff,
+					InvoiceStatus:   types.InvoiceStatusDraft, // Not finalized
+					PaymentStatus:   types.PaymentStatusPending,
+					Currency:        "usd",
+					AmountDue:       decimal.NewFromInt(100),
+					AmountPaid:      decimal.Zero,
+					AmountRemaining: decimal.NewFromInt(100),
+					Description:     "Test Invoice - Not Finalized",
+					BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+				}
+				s.NoError(s.invoiceRepo.Create(s.GetContext(), inv))
+				return inv
+			},
+			expectedError:        true,
+			expectedErrorMessage: "invoice must be finalized",
+		},
+		{
+			name: "Invoice not in pending payment state",
+			setupInvoice: func() *invoice.Invoice {
+				inv := &invoice.Invoice{
+					ID:              "inv_test_not_pending",
+					CustomerID:      s.testData.customer.ID,
+					InvoiceType:     types.InvoiceTypeOneOff,
+					InvoiceStatus:   types.InvoiceStatusFinalized,
+					PaymentStatus:   types.PaymentStatusSucceeded, // Not pending
+					Currency:        "usd",
+					AmountDue:       decimal.NewFromInt(100),
+					AmountPaid:      decimal.NewFromInt(100),
+					AmountRemaining: decimal.Zero,
+					Description:     "Test Invoice - Not Pending",
+					BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+				}
+				s.NoError(s.invoiceRepo.Create(s.GetContext(), inv))
+				return inv
+			},
+			expectedError:        true,
+			expectedErrorMessage: "invoice is already paid by payment status",
+		},
+		{
+			name: "No remaining amount to pay",
+			setupInvoice: func() *invoice.Invoice {
+				inv := &invoice.Invoice{
+					ID:              "inv_test_no_remaining",
+					CustomerID:      s.testData.customer.ID,
+					InvoiceType:     types.InvoiceTypeOneOff,
+					InvoiceStatus:   types.InvoiceStatusFinalized,
+					PaymentStatus:   types.PaymentStatusPending,
+					Currency:        "usd",
+					AmountDue:       decimal.NewFromInt(100),
+					AmountPaid:      decimal.NewFromInt(100),
+					AmountRemaining: decimal.Zero, // No remaining amount
+					Description:     "Test Invoice - No Remaining Amount",
+					BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+				}
+				s.NoError(s.invoiceRepo.Create(s.GetContext(), inv))
+				return inv
+			},
+			expectedError:        true,
+			expectedErrorMessage: "invoice has no remaining amount to pay",
+		},
+		{
+			name: "Customer with no wallets",
+			setupInvoice: func() *invoice.Invoice {
+				// Create a customer with no wallets
+				customer := &customer.Customer{
+					ID:         "cust_no_wallets",
+					ExternalID: "ext_cust_no_wallets",
+					Name:       "Customer With No Wallets",
+					Email:      "no-wallets@example.com",
+					BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+				}
+				s.NoError(s.GetStores().CustomerRepo.Create(s.GetContext(), customer))
+
+				inv := &invoice.Invoice{
+					ID:              "inv_test_no_wallets",
+					CustomerID:      customer.ID, // Customer with no wallets
+					InvoiceType:     types.InvoiceTypeOneOff,
+					InvoiceStatus:   types.InvoiceStatusFinalized,
+					PaymentStatus:   types.PaymentStatusPending,
+					Currency:        "usd",
+					AmountDue:       decimal.NewFromInt(100),
+					AmountPaid:      decimal.Zero,
+					AmountRemaining: decimal.NewFromInt(100),
+					Description:     "Test Invoice - No Wallets",
+					BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+				}
+				s.NoError(s.invoiceRepo.Create(s.GetContext(), inv))
+				return inv
+			},
+			expectedError:        false,
+			expectedPaymentState: types.PaymentStatusPending, // Still pending as nothing was paid
+			expectedAmountPaid:   decimal.Zero,               // No payment processed
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Setup invoice for this test case
+			inv := tc.setupInvoice()
+			s.setupWallets()
+
+			// Attempt payment
+			err := s.service.AttemptPayment(s.GetContext(), inv.ID)
+
+			if tc.expectedError {
+				s.Error(err)
+				if tc.expectedErrorMessage != "" {
+					s.Contains(err.Error(), tc.expectedErrorMessage)
+				}
+				return
+			}
+
+			s.NoError(err)
+
+			// Get updated invoice
+			updatedInv, err := s.invoiceRepo.Get(s.GetContext(), inv.ID)
+			s.NoError(err)
+
+			s.Equal(tc.expectedPaymentState, updatedInv.PaymentStatus)
+
+			// Verify amount paid if expecting a successful payment
+			if !tc.expectedAmountPaid.IsZero() {
+				s.True(tc.expectedAmountPaid.Equal(updatedInv.AmountPaid),
+					"Expected amount paid %s, got %s", tc.expectedAmountPaid, updatedInv.AmountPaid)
+
+				expectedRemaining := updatedInv.AmountDue.Sub(tc.expectedAmountPaid)
+				s.True(expectedRemaining.Equal(updatedInv.AmountRemaining),
+					"Expected amount remaining %s, got %s", expectedRemaining, updatedInv.AmountRemaining)
+			}
 		})
 	}
 }

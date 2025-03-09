@@ -310,3 +310,34 @@ func (h *InvoiceHandler) GenerateInvoice(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+// AttemptPayment godoc
+// @Summary Attempt payment for an invoice
+// @Description Attempt to pay an invoice using customer's available wallets
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Param id path string true "Invoice ID"
+// @Success 200 {object} gin.H
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /invoices/{id}/payment/attempt [post]
+func (h *InvoiceHandler) AttemptPayment(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("invalid invoice id").
+			WithHint("Invalid invoice id").
+			Mark(ierr.ErrValidation),
+		)
+		return
+	}
+
+	if err := h.invoiceService.AttemptPayment(c.Request.Context(), id); err != nil {
+		h.logger.Errorw("failed to attempt payment for invoice", "error", err, "invoice_id", id)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "payment processed successfully"})
+}

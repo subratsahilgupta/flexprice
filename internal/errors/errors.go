@@ -99,6 +99,14 @@ func IsNotFound(err error) bool {
 	return errors.Is(err, ErrNotFound)
 }
 
+func IsDatabase(err error) bool {
+	return errors.Is(err, ErrDatabase)
+}
+
+func IsSystem(err error) bool {
+	return errors.Is(err, ErrSystem)
+}
+
 // IsAlreadyExists checks if an error is an already exists error
 func IsAlreadyExists(err error) bool {
 	return errors.Is(err, ErrAlreadyExists)
