@@ -679,7 +679,7 @@ func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
 				"invoice_id":     id,
 				"payment_status": inv.PaymentStatus,
 			}).
-			Mark(ierr.ErrValidation)
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// Check if there's any amount remaining to pay

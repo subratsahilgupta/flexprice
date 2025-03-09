@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -70,7 +70,8 @@ func (s *walletPaymentService) ProcessInvoicePaymentWithWallets(
 	options WalletPaymentOptions,
 ) (decimal.Decimal, error) {
 	if inv == nil {
-		return decimal.Zero, fmt.Errorf("invoice cannot be nil")
+		return decimal.Zero, ierr.NewError("invoice cannot be nil").
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// Check if there's any amount remaining to pay
@@ -81,7 +82,7 @@ func (s *walletPaymentService) ProcessInvoicePaymentWithWallets(
 	// Get wallets suitable for payment
 	wallets, err := s.GetWalletsForPayment(ctx, inv.CustomerID, inv.Currency, options)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("failed to get wallets for payment: %w", err)
+		return decimal.Zero, err
 	}
 
 	if len(wallets) == 0 {
@@ -174,7 +175,7 @@ func (s *walletPaymentService) GetWalletsForPayment(
 	// Get all wallets for the customer
 	wallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, customerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get customer wallets: %w", err)
+		return nil, err
 	}
 
 	// Filter active wallets with matching currency

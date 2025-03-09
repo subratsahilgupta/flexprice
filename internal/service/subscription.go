@@ -569,6 +569,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 // UpdateBillingPeriods updates the current billing periods for all active subscriptions
 // This should be run every 15 minutes to ensure billing periods are up to date
+// TODO: move to billing service
 func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.SubscriptionUpdatePeriodResponse, error) {
 	const batchSize = 100
 	now := time.Now().UTC()
@@ -825,6 +826,17 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 
 			if err := invoiceService.FinalizeInvoice(ctx, inv.ID); err != nil {
 				return err
+			}
+
+			// TODO: move to billing service
+			if err := invoiceService.AttemptPayment(ctx, inv.ID); err != nil {
+				// return only if it's a database or system error else log and continue
+				if ierr.IsDatabase(err) || ierr.IsSystem(err) {
+					return err
+				}
+				s.Logger.Errorw("failed to attempt payment for invoice",
+					"invoice_id", inv.ID,
+					"error", err)
 			}
 
 			s.Logger.Infow("created invoice for period",
