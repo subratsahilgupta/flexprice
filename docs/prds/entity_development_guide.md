@@ -62,6 +62,12 @@ func (Entity) Indexes() []ent.Index {
 
 ### 2. Generate Ent Code
 Run the ent code generation command:
+```bash 
+make generate-ent
+```
+
+Or directly run:
+
 ```bash
 go run -mod=mod entgo.io/ent/cmd/ent generate --feature sql/execquery ./ent/schema
 ```

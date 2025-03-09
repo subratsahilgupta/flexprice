@@ -387,10 +387,18 @@ func (s *WalletServiceSuite) setupTestData() {
 		s.NoError(err)
 	}
 
+	s.setupWallet()
+}
+
+func (s *WalletServiceSuite) setupWallet() {
+	s.GetStores().WalletRepo.(*testutil.InMemoryWalletStore).Clear()
+	s.GetStores().PaymentRepo.(*testutil.InMemoryPaymentStore).Clear()
+
 	s.testData.wallet = &wallet.Wallet{
 		ID:             "wallet-1",
 		CustomerID:     s.testData.customer.ID,
 		Currency:       "usd",
+		WalletType:     types.WalletTypePrePaid,
 		Balance:        decimal.NewFromInt(1000),
 		CreditBalance:  decimal.NewFromInt(1000),
 		ConversionRate: decimal.NewFromFloat(1.0),
@@ -976,6 +984,7 @@ func (s *WalletServiceSuite) TestDebitWithExpiredCredits() {
 }
 
 func (s *WalletServiceSuite) TestDebitWithMultipleCredits() {
+	s.setupWallet()
 	// Reset the wallet's initial state
 	s.testData.wallet.Balance = decimal.Zero
 	s.testData.wallet.CreditBalance = decimal.Zero

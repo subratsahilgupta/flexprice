@@ -78,17 +78,14 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	}
 
 	for _, w := range existingWallets {
-		if w.WalletStatus == types.WalletStatusActive && w.Currency == req.Currency {
-			s.Logger.Warnw("customer already has an active wallet in the same currency",
-				"customer_id", req.CustomerID,
-				"existing_wallet_id", w.ID,
-			)
-			return nil, ierr.NewError("customer already has an active wallet").
-				WithHint("A customer can only have one active wallet per currency").
+		if w.WalletStatus == types.WalletStatusActive && w.Currency == req.Currency && w.WalletType == req.WalletType {
+			return nil, ierr.NewError("customer already has an active wallet with the same currency and wallet type").
+				WithHint("A customer can only have one active wallet per currency and wallet type").
 				WithReportableDetails(map[string]interface{}{
 					"customer_id": req.CustomerID,
 					"wallet_id":   w.ID,
 					"currency":    req.Currency,
+					"wallet_type": req.WalletType,
 				}).
 				Mark(ierr.ErrAlreadyExists)
 		}
@@ -223,7 +220,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 	}
 
 	if err := s.CreditWallet(ctx, creditReq); err != nil {
-		return nil, err // Repository already using ierr
+		return nil, err
 	}
 
 	// Get updated wallet

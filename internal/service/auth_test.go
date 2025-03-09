@@ -26,27 +26,28 @@ func (s *AuthServiceSuite) SetupTest() {
 }
 
 func (s *AuthServiceSuite) setupService() {
-	stores := s.GetStores()
-	s.userRepo = stores.UserRepo.(*testutil.InMemoryUserStore)
+	s.userRepo = s.GetStores().UserRepo.(*testutil.InMemoryUserStore)
 	pubSub := testutil.NewInMemoryPubSub()
 
 	s.authService = NewAuthService(ServiceParams{
 		Logger:           s.GetLogger(),
 		Config:           s.GetConfig(),
 		DB:               s.GetDB(),
-		SubRepo:          stores.SubscriptionRepo,
-		PlanRepo:         stores.PlanRepo,
-		PriceRepo:        stores.PriceRepo,
-		EventRepo:        stores.EventRepo,
-		MeterRepo:        stores.MeterRepo,
-		CustomerRepo:     stores.CustomerRepo,
-		InvoiceRepo:      stores.InvoiceRepo,
-		EntitlementRepo:  stores.EntitlementRepo,
-		EnvironmentRepo:  stores.EnvironmentRepo,
-		FeatureRepo:      stores.FeatureRepo,
-		TenantRepo:       stores.TenantRepo,
-		UserRepo:         stores.UserRepo,
-		AuthRepo:         stores.AuthRepo,
+		SubRepo:          s.GetStores().SubscriptionRepo,
+		PlanRepo:         s.GetStores().PlanRepo,
+		PriceRepo:        s.GetStores().PriceRepo,
+		EventRepo:        s.GetStores().EventRepo,
+		MeterRepo:        s.GetStores().MeterRepo,
+		CustomerRepo:     s.GetStores().CustomerRepo,
+		InvoiceRepo:      s.GetStores().InvoiceRepo,
+		EntitlementRepo:  s.GetStores().EntitlementRepo,
+		EnvironmentRepo:  s.GetStores().EnvironmentRepo,
+		FeatureRepo:      s.GetStores().FeatureRepo,
+		TenantRepo:       s.GetStores().TenantRepo,
+		UserRepo:         s.GetStores().UserRepo,
+		AuthRepo:         s.GetStores().AuthRepo,
+		WalletRepo:       s.GetStores().WalletRepo,
+		PaymentRepo:      s.GetStores().PaymentRepo,
 		EventPublisher:   s.GetPublisher(),
 		WebhookPublisher: s.GetWebhookPublisher(),
 	}, pubSub)

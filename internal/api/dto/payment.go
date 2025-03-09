@@ -150,7 +150,7 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 	// Set payment status to pending
 	p.PaymentStatus = types.PaymentStatusPending
 
-	if r.PaymentMethodType == types.PaymentMethodTypeOffline || r.PaymentMethodType == types.PaymentMethodTypeCredits {
+	if r.PaymentMethodType == types.PaymentMethodTypeOffline {
 		p.TrackAttempts = false
 		p.PaymentGateway = nil
 		p.GatewayPaymentID = nil
@@ -163,7 +163,7 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 				}).
 				Mark(ierr.ErrValidation)
 		}
-	} else {
+	} else if r.PaymentMethodType != types.PaymentMethodTypeCredits {
 		if p.PaymentMethodID == "" {
 			return nil, ierr.NewError("payment method id is required for online payment method type").
 				WithHint("Payment method ID is required for online payment methods").

@@ -1743,6 +1743,16 @@
                 "summary": "List invoices",
                 "parameters": [
                     {
+                        "type": "number",
+                        "name": "amount_due_gt",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "name": "amount_remaining_gt",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "name": "customer_id",
                         "in": "query"
@@ -2097,6 +2107,56 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/dto.InvoiceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/invoices/{id}/payment/attempt": {
+            "post": {
+                "description": "Attempt to pay an invoice using customer's available wallets",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Attempt payment for an invoice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invoice ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
                         }
                     },
                     "400": {

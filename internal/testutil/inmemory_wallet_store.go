@@ -157,7 +157,7 @@ func (s *InMemoryWalletStore) CreateWallet(ctx context.Context, w *wallet.Wallet
 	}
 
 	// Set environment ID from context if not already set
-	if w.EnvironmentID == "" {
+	if w.EnvironmentID == "" && types.GetEnvironmentID(ctx) != "" {
 		w.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
@@ -224,7 +224,7 @@ func (s *InMemoryWalletStore) UpdateWalletStatus(ctx context.Context, id string,
 	return nil
 }
 
-// FindEligibleCredits retrieves valid credits for debit operation with pagination
+// FindEligibleCredits finds eligible credits for a wallet
 func (s *InMemoryWalletStore) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int) ([]*wallet.Transaction, error) {
 	var allCredits []*wallet.Transaction
 
@@ -291,7 +291,7 @@ func (s *InMemoryWalletStore) FindEligibleCredits(ctx context.Context, walletID 
 	return allCredits, nil
 }
 
-// ConsumeCredits processes debit operation across multiple credits
+// ConsumeCredits consumes credits from a wallet
 func (s *InMemoryWalletStore) ConsumeCredits(ctx context.Context, credits []*wallet.Transaction, amount decimal.Decimal) error {
 	remainingAmount := amount
 
@@ -303,11 +303,11 @@ func (s *InMemoryWalletStore) ConsumeCredits(ctx context.Context, credits []*wal
 		toConsume := decimal.Min(remainingAmount, credit.CreditsAvailable)
 		newAvailable := credit.CreditsAvailable.Sub(toConsume)
 
-		// Update credit's available amount
 		credit.CreditsAvailable = newAvailable
 		credit.UpdatedAt = time.Now().UTC()
 		credit.UpdatedBy = types.GetUserID(ctx)
 
+		// Update credit's available amount
 		if err := s.transactions.Update(ctx, credit.ID, credit); err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to update credit available amount").

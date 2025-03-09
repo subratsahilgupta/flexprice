@@ -282,6 +282,16 @@ func invoiceFilterFn(ctx context.Context, inv *invoice.Invoice, filter interface
 		return false
 	}
 
+	// Filter by due amount
+	if f.AmountDueGt != nil && inv.AmountDue.LessThanOrEqual(*f.AmountDueGt) {
+		return false
+	}
+
+	// Filter by amount remaining
+	if f.AmountRemainingGt != nil && inv.AmountRemaining.LessThanOrEqual(*f.AmountRemainingGt) {
+		return false
+	}
+
 	// Filter by status
 	if f.Status != nil && inv.Status != *f.Status {
 		return false

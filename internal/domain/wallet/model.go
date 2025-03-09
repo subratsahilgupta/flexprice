@@ -16,7 +16,7 @@ type Wallet struct {
 	Balance             decimal.Decimal        `db:"balance" json:"balance"`
 	CreditBalance       decimal.Decimal        `db:"credit_balance" json:"credit_balance"`
 	WalletStatus        types.WalletStatus     `db:"wallet_status" json:"wallet_status"`
-	Name                string                 `json:"name,omitempty"`
+	Name                string                 `db:"name" json:"name,omitempty"`
 	Description         string                 `db:"description" json:"description"`
 	Metadata            types.Metadata         `db:"metadata" json:"metadata"`
 	AutoTopupTrigger    types.AutoTopupTrigger `db:"auto_topup_trigger" json:"auto_topup_trigger"`
