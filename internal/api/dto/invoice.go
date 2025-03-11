@@ -31,6 +31,7 @@ type CreateInvoiceRequest struct {
 	AmountPaid     *decimal.Decimal               `json:"amount_paid,omitempty"`
 	LineItems      []CreateInvoiceLineItemRequest `json:"line_items,omitempty"`
 	Metadata       types.Metadata                 `json:"metadata,omitempty"`
+	EnvironmentID  string                         `json:"environment_id,omitempty"`
 }
 
 func (r *CreateInvoiceRequest) Validate() error {
@@ -118,9 +119,14 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 		PeriodEnd:       r.PeriodEnd,
 		BillingReason:   string(r.BillingReason),
 		Metadata:        r.Metadata,
-		EnvironmentID:   types.GetEnvironmentID(ctx),
 		BaseModel:       types.GetDefaultBaseModel(ctx),
 		AmountRemaining: decimal.Zero,
+	}
+
+	if r.EnvironmentID != "" {
+		inv.EnvironmentID = r.EnvironmentID
+	} else {
+		inv.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
 	// Default invoice status and payment status
@@ -441,8 +447,26 @@ type CustomerMultiCurrencyInvoiceSummary struct {
 
 // CreateSubscriptionInvoiceRequest represents a request to create a subscription invoice
 type CreateSubscriptionInvoiceRequest struct {
-	SubscriptionID string    `json:"subscription_id" binding:"required"`
-	PeriodStart    time.Time `json:"period_start" binding:"required"`
-	PeriodEnd      time.Time `json:"period_end" binding:"required"`
-	IsPreview      bool      `json:"is_preview"`
+	SubscriptionID string                      `json:"subscription_id" binding:"required"`
+	PeriodStart    time.Time                   `json:"period_start" binding:"required"`
+	PeriodEnd      time.Time                   `json:"period_end" binding:"required"`
+	IsPreview      bool                        `json:"is_preview"`
+	ReferencePoint types.InvoiceReferencePoint `json:"reference_point"`
+}
+
+func (r *CreateSubscriptionInvoiceRequest) Validate() error {
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	if err := r.ReferencePoint.Validate(); err != nil {
+		return err
+	}
+
+	if r.PeriodStart.After(r.PeriodEnd) {
+		return ierr.NewError("period_start must be before period_end").
+			WithHint("Invoice period start must be before period end").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
 }

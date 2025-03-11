@@ -3,6 +3,8 @@ package types
 import (
 	"time"
 
+	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -31,4 +33,41 @@ type BillingImpactDetails struct {
 
 	// The total pause duration in days
 	PauseDurationDays int `json:"pause_duration_days,omitempty"`
+}
+
+// InvoiceReferencePoint indicates the point in time relative to a billing period
+// that determines which charges to include in an invoice
+type InvoiceReferencePoint string
+
+const (
+	// ReferencePointPeriodStart indicates invoice creation at the beginning of a period (for advance charges)
+	ReferencePointPeriodStart InvoiceReferencePoint = "period_start"
+	// ReferencePointPeriodEnd indicates invoice creation at the end of a period (for arrear charges)
+	ReferencePointPeriodEnd InvoiceReferencePoint = "period_end"
+	// ReferencePointPreview indicates a preview invoice that should include all charges
+	ReferencePointPreview InvoiceReferencePoint = "preview"
+)
+
+func (r InvoiceReferencePoint) String() string {
+	return string(r)
+}
+
+func (r InvoiceReferencePoint) Validate() error {
+	allowedValues := []InvoiceReferencePoint{
+		ReferencePointPeriodStart,
+		ReferencePointPeriodEnd,
+		ReferencePointPreview,
+	}
+
+	if !lo.Contains(allowedValues, r) {
+		return ierr.NewError("invalid invoice reference point").
+			WithHint("Invalid invoice reference point").
+			WithReportableDetails(map[string]any{
+				"allowed_values": allowedValues,
+				"provided_value": r,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }

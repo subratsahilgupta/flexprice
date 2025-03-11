@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/auth"
@@ -192,8 +191,13 @@ func OnboardNewTenant() error {
 		types.EnvironmentProduction,
 	}
 
+	envNameMap := map[types.EnvironmentType]string{
+		types.EnvironmentDevelopment: "Sandbox",
+		types.EnvironmentProduction:  "Production",
+	}
+
 	for _, envType := range envTypes {
-		env, err := script.createEnvironment(ctx, strings.ToTitle(string(envType)), envType, t.ID)
+		env, err := script.createEnvironment(ctx, envNameMap[envType], envType, t.ID)
 		if err != nil {
 			log.Fatalf("Failed to create environment %s: %v", envType, err)
 		}

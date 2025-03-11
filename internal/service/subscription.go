@@ -46,6 +46,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
+	invoiceService := NewInvoiceService(s.ServiceParams)
 
 	// Check if customer exists
 	customer, err := s.CustomerRepo.Get(ctx, req.CustomerID)
@@ -225,8 +226,23 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		"valid_prices", len(validPrices),
 		"num_line_items", len(sub.LineItems))
 
-	// Create subscription with line items
-	if err := s.SubRepo.CreateWithLineItems(ctx, sub, sub.LineItems); err != nil {
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// Create subscription with line items
+		err = s.SubRepo.CreateWithLineItems(ctx, sub, sub.LineItems)
+		if err != nil {
+			return err
+		}
+
+		// Create invoice for the subscription (in case it has advance charges)
+		_, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+			SubscriptionID: sub.ID,
+			PeriodStart:    sub.CurrentPeriodStart,
+			PeriodEnd:      sub.CurrentPeriodEnd,
+			ReferencePoint: types.ReferencePointPeriodStart,
+		})
+		return err
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -814,29 +830,15 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		for i := 0; i < len(periods)-1; i++ {
 			period := periods[i]
 
-			// Create and finalize invoice for this period
+			// Create a single invoice for both arrear and advance charges at period end
 			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 				SubscriptionID: sub.ID,
 				PeriodStart:    period.start,
 				PeriodEnd:      period.end,
+				ReferencePoint: types.ReferencePointPeriodEnd,
 			})
 			if err != nil {
 				return err
-			}
-
-			if err := invoiceService.FinalizeInvoice(ctx, inv.ID); err != nil {
-				return err
-			}
-
-			// TODO: move to billing service
-			if err := invoiceService.AttemptPayment(ctx, inv.ID); err != nil {
-				// return only if it's a database or system error else log and continue
-				if ierr.IsDatabase(err) || ierr.IsSystem(err) {
-					return err
-				}
-				s.Logger.Errorw("failed to attempt payment for invoice",
-					"invoice_id", inv.ID,
-					"error", err)
 			}
 
 			s.Logger.Infow("created invoice for period",
@@ -865,6 +867,7 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			sub.CancelledAt = sub.CancelAt
 		}
 
+		// Update the subscription
 		if err := s.SubRepo.Update(ctx, sub); err != nil {
 			return err
 		}
