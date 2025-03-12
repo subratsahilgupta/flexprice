@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -18,6 +20,14 @@ type BillingCalculationResult struct {
 	UsageCharges []dto.CreateInvoiceLineItemRequest
 	TotalAmount  decimal.Decimal
 	Currency     string
+}
+
+// LineItemClassification represents the classification of line items based on cadence and type
+type LineItemClassification struct {
+	CurrentPeriodAdvance []*subscription.SubscriptionLineItem
+	CurrentPeriodArrear  []*subscription.SubscriptionLineItem
+	NextPeriodAdvance    []*subscription.SubscriptionLineItem
+	HasUsageCharges      bool
 }
 
 // BillingService handles all billing calculations
@@ -32,7 +42,20 @@ type BillingService interface {
 	CalculateAllCharges(ctx context.Context, sub *subscription.Subscription, usage *dto.GetUsageBySubscriptionResponse, periodStart, periodEnd time.Time) (*BillingCalculationResult, error)
 
 	// PrepareSubscriptionInvoiceRequest prepares a complete invoice request for a subscription period
-	PrepareSubscriptionInvoiceRequest(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, isPreview bool) (*dto.CreateInvoiceRequest, error)
+	// using the reference point to determine which charges to include
+	PrepareSubscriptionInvoiceRequest(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, referencePoint types.InvoiceReferencePoint) (*dto.CreateInvoiceRequest, error)
+
+	// ClassifyLineItems classifies line items based on cadence and type
+	ClassifyLineItems(sub *subscription.Subscription, currentPeriodStart, currentPeriodEnd time.Time, nextPeriodStart, nextPeriodEnd time.Time) *LineItemClassification
+
+	// FilterLineItemsToBeInvoiced filters the line items to be invoiced for the given period
+	FilterLineItemsToBeInvoiced(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, lineItems []*subscription.SubscriptionLineItem) ([]*subscription.SubscriptionLineItem, error)
+
+	// CalculateCharges calculates charges for the given line items and period
+	CalculateCharges(ctx context.Context, sub *subscription.Subscription, lineItems []*subscription.SubscriptionLineItem, periodStart, periodEnd time.Time, includeUsage bool) (*BillingCalculationResult, error)
+
+	// CreateInvoiceRequestForCharges creates an invoice creation request for the given charges
+	CreateInvoiceRequestForCharges(ctx context.Context, sub *subscription.Subscription, result *BillingCalculationResult, periodStart, periodEnd time.Time, description string, metadata types.Metadata) (*dto.CreateInvoiceRequest, error)
 }
 
 type billingService struct {
@@ -242,39 +265,365 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 	sub *subscription.Subscription,
 	periodStart,
 	periodEnd time.Time,
-	isPreview bool,
+	referencePoint types.InvoiceReferencePoint,
 ) (*dto.CreateInvoiceRequest, error) {
 	s.Logger.Infow("preparing subscription invoice request",
 		"subscription_id", sub.ID,
 		"period_start", periodStart,
 		"period_end", periodEnd,
-		"is_preview", isPreview)
+		"reference_point", referencePoint)
 
-	// Get usage for the period
-	subscriptionService := NewSubscriptionService(s.ServiceParams)
-
-	usage, err := subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
-		SubscriptionID: sub.ID,
-		StartTime:      periodStart,
-		EndTime:        periodEnd,
-	})
+	// nothing to invoice default response 0$ invoice
+	zeroAmountInvoice, err := s.CreateInvoiceRequestForCharges(ctx,
+		sub, nil, periodStart, periodEnd, "", types.Metadata{})
 	if err != nil {
 		return nil, err
 	}
 
-	// Calculate all charges
-	result, err := s.CalculateAllCharges(ctx, sub, usage, periodStart, periodEnd)
+	// Calculate next period for advance charges
+	nextPeriodStart := periodEnd
+	nextPeriodEnd, err := types.NextBillingDate(
+		nextPeriodStart,
+		sub.BillingAnchor,
+		sub.BillingPeriodCount,
+		sub.BillingPeriod,
+	)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("failed to calculate next billing date").
+			Mark(ierr.ErrSystem)
+	}
+
+	// Classify line items
+	classification := s.ClassifyLineItems(sub, periodStart, periodEnd, nextPeriodStart, nextPeriodEnd)
+
+	var calculationResult *BillingCalculationResult
+	var metadata types.Metadata = make(types.Metadata)
+	var description string
+
+	switch referencePoint {
+	case types.ReferencePointPeriodStart:
+		// Only include advance charges for current period
+		advanceLineItems, err := s.FilterLineItemsToBeInvoiced(ctx, sub, periodStart, periodEnd, classification.CurrentPeriodAdvance)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(advanceLineItems) == 0 {
+			return zeroAmountInvoice, nil
+		}
+
+		calculationResult, err = s.CalculateCharges(
+			ctx,
+			sub,
+			advanceLineItems,
+			periodStart,
+			periodEnd,
+			false, // No usage for advance
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		description = fmt.Sprintf("Invoice for advance charges - subscription %s", sub.ID)
+
+	case types.ReferencePointPeriodEnd:
+		// Include both arrear charges for current period and advance charges for next period
+		// First, process arrear charges for current period
+		arrearLineItems, err := s.FilterLineItemsToBeInvoiced(ctx, sub, periodStart, periodEnd, classification.CurrentPeriodArrear)
+		if err != nil {
+			return nil, err
+		}
+
+		// Then, process advance charges for next period
+		advanceLineItems, err := s.FilterLineItemsToBeInvoiced(ctx, sub, nextPeriodStart, nextPeriodEnd, classification.NextPeriodAdvance)
+		if err != nil {
+			return nil, err
+		}
+
+		// Combine both sets of line items
+		combinedLineItems := append(arrearLineItems, advanceLineItems...)
+		if len(combinedLineItems) == 0 {
+			return nil, ierr.NewError("no charges to invoice").
+				WithHint("All charges have already been invoiced").
+				Mark(ierr.ErrAlreadyExists)
+		}
+
+		// For current period arrear charges
+		arrearResult, err := s.CalculateCharges(
+			ctx,
+			sub,
+			arrearLineItems,
+			periodStart,
+			periodEnd,
+			classification.HasUsageCharges, // Include usage for arrear
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// For next period advance charges
+		advanceResult, err := s.CalculateCharges(
+			ctx,
+			sub,
+			advanceLineItems,
+			nextPeriodStart,
+			nextPeriodEnd,
+			false, // No usage for advance
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Combine results
+		calculationResult = &BillingCalculationResult{
+			FixedCharges: append(arrearResult.FixedCharges, advanceResult.FixedCharges...),
+			UsageCharges: arrearResult.UsageCharges, // Only arrear has usage
+			TotalAmount:  arrearResult.TotalAmount.Add(advanceResult.TotalAmount),
+			Currency:     sub.Currency,
+		}
+
+		description = fmt.Sprintf("Invoice for subscription %s", sub.ID)
+
+	case types.ReferencePointPreview:
+		// For preview, include both current period arrear and next period advance
+		// but don't filter out already invoiced items
+
+		// For current period arrear charges
+		arrearResult, err := s.CalculateCharges(
+			ctx,
+			sub,
+			classification.CurrentPeriodArrear,
+			periodStart,
+			periodEnd,
+			classification.HasUsageCharges, // Include usage for arrear
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// For next period advance charges
+		advanceResult, err := s.CalculateCharges(
+			ctx,
+			sub,
+			classification.NextPeriodAdvance,
+			nextPeriodStart,
+			nextPeriodEnd,
+			false, // No usage for advance
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Combine results
+		calculationResult = &BillingCalculationResult{
+			FixedCharges: append(arrearResult.FixedCharges, advanceResult.FixedCharges...),
+			UsageCharges: arrearResult.UsageCharges, // Only arrear has usage
+			TotalAmount:  arrearResult.TotalAmount.Add(advanceResult.TotalAmount),
+			Currency:     sub.Currency,
+		}
+
+		description = fmt.Sprintf("Preview invoice for subscription %s", sub.ID)
+		metadata["is_preview"] = "true"
+
+	default:
+		return nil, ierr.NewError("invalid reference point").
+			WithHint(fmt.Sprintf("Reference point '%s' is not supported", referencePoint)).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Create invoice request for the calculated charges
+	return s.CreateInvoiceRequestForCharges(
+		ctx,
+		sub,
+		calculationResult,
+		periodStart,
+		periodEnd,
+		description,
+		metadata,
+	)
+}
+func (s *billingService) checkIfChargeInvoiced(
+	invoice *invoice.Invoice,
+	charge *subscription.SubscriptionLineItem,
+	periodStart,
+	periodEnd time.Time,
+) bool {
+	for _, item := range invoice.LineItems {
+		// match the price id
+		if item.PriceID == charge.PriceID {
+			// match the period start and end
+			if item.PeriodStart.Equal(periodStart) &&
+				item.PeriodEnd.Equal(periodEnd) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ClassifyLineItems classifies line items based on cadence and type
+func (s *billingService) ClassifyLineItems(
+	sub *subscription.Subscription,
+	currentPeriodStart,
+	currentPeriodEnd time.Time,
+	nextPeriodStart,
+	nextPeriodEnd time.Time,
+) *LineItemClassification {
+	result := &LineItemClassification{
+		CurrentPeriodAdvance: make([]*subscription.SubscriptionLineItem, 0),
+		CurrentPeriodArrear:  make([]*subscription.SubscriptionLineItem, 0),
+		NextPeriodAdvance:    make([]*subscription.SubscriptionLineItem, 0),
+		HasUsageCharges:      false,
+	}
+
+	for _, item := range sub.LineItems {
+		// Current period advance charges (fixed only)
+		// TODO: add support for usage charges with advance cadence later
+		if item.InvoiceCadence == types.InvoiceCadenceAdvance &&
+			item.PriceType == types.PRICE_TYPE_FIXED {
+			result.CurrentPeriodAdvance = append(result.CurrentPeriodAdvance, item)
+
+			// Also add to next period advance for preview purposes
+			result.NextPeriodAdvance = append(result.NextPeriodAdvance, item)
+		}
+
+		// Current period arrear charges (fixed and usage)
+		if item.InvoiceCadence == types.InvoiceCadenceArrear {
+			result.CurrentPeriodArrear = append(result.CurrentPeriodArrear, item)
+		}
+
+		// Check if there are any usage charges
+		if item.PriceType == types.PRICE_TYPE_USAGE {
+			result.HasUsageCharges = true
+		}
+	}
+
+	return result
+}
+
+// FilterLineItemsToBeInvoiced filters the line items to be invoiced for the given period
+// by checking if an invoice already exists for those line items and period
+func (s *billingService) FilterLineItemsToBeInvoiced(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	periodStart,
+	periodEnd time.Time,
+	lineItems []*subscription.SubscriptionLineItem,
+) ([]*subscription.SubscriptionLineItem, error) {
+	// If no line items to process, return empty slice immediately
+	if len(lineItems) == 0 {
+		return []*subscription.SubscriptionLineItem{}, nil
+	}
+
+	filteredLineItems := make([]*subscription.SubscriptionLineItem, 0, len(lineItems))
+
+	// Get existing invoices for this period
+	invoiceFilter := types.NewNoLimitInvoiceFilter()
+	invoiceFilter.SubscriptionID = sub.ID
+	invoiceFilter.InvoiceType = types.InvoiceTypeSubscription
+	invoiceFilter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusDraft, types.InvoiceStatusFinalized}
+	invoiceFilter.TimeRangeFilter = &types.TimeRangeFilter{
+		StartTime: lo.ToPtr(periodStart),
+		EndTime:   lo.ToPtr(periodEnd),
+	}
+
+	invoices, err := s.InvoiceRepo.List(ctx, invoiceFilter)
 	if err != nil {
 		return nil, err
 	}
 
+	// If no invoices exist, return all line items
+	if len(invoices) == 0 {
+		s.Logger.Debugw("no existing invoices found for period, including all line items",
+			"subscription_id", sub.ID,
+			"period_start", periodStart,
+			"period_end", periodEnd,
+			"num_line_items", len(lineItems))
+		return lineItems, nil
+	}
+
+	// Check line items against existing invoices to determine which are not yet invoiced
+	for _, lineItem := range lineItems {
+		lineItemInvoiced := false
+
+		for _, invoice := range invoices {
+			if s.checkIfChargeInvoiced(invoice, lineItem, periodStart, periodEnd) {
+				lineItemInvoiced = true
+				break
+			}
+		}
+
+		// Include line item only if it has not been invoiced yet
+		if !lineItemInvoiced {
+			filteredLineItems = append(filteredLineItems, lineItem)
+		}
+	}
+
+	s.Logger.Debugw("filtered line items to be invoiced",
+		"subscription_id", sub.ID,
+		"period_start", periodStart,
+		"period_end", periodEnd,
+		"total_line_items", len(lineItems),
+		"filtered_line_items", len(filteredLineItems))
+
+	return filteredLineItems, nil
+}
+
+// CalculateCharges calculates charges for the given line items and period
+func (s *billingService) CalculateCharges(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	lineItems []*subscription.SubscriptionLineItem,
+	periodStart,
+	periodEnd time.Time,
+	includeUsage bool,
+) (*BillingCalculationResult, error) {
+	// Create a filtered subscription with only the specified line items
+	filteredSub := *sub
+	filteredSub.LineItems = lineItems
+
+	// Get usage data if needed
+	var usage *dto.GetUsageBySubscriptionResponse
+	var err error
+
+	if includeUsage {
+		subscriptionService := NewSubscriptionService(s.ServiceParams)
+		usage, err = subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
+			SubscriptionID: sub.ID,
+			StartTime:      periodStart,
+			EndTime:        periodEnd,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Calculate charges
+	return s.CalculateAllCharges(ctx, &filteredSub, usage, periodStart, periodEnd)
+}
+
+// CreateInvoiceRequestForCharges creates an invoice for the given charges
+func (s *billingService) CreateInvoiceRequestForCharges(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	result *BillingCalculationResult,
+	periodStart,
+	periodEnd time.Time,
+	description string, // mark optional
+	metadata types.Metadata, // mark optional
+) (*dto.CreateInvoiceRequest, error) {
 	// Prepare invoice due date
 	invoiceDueDate := periodEnd.Add(24 * time.Hour * types.InvoiceDefaultDueDays)
 
-	// Prepare description based on preview status
-	description := fmt.Sprintf("Invoice for subscription %s", sub.ID)
-	if isPreview {
-		description = fmt.Sprintf("Preview invoice for subscription %s", sub.ID)
+	if result == nil {
+		// prepare result for zero amount invoice
+		result = &BillingCalculationResult{
+			TotalAmount:  decimal.Zero,
+			Currency:     sub.Currency,
+			FixedCharges: make([]dto.CreateInvoiceLineItemRequest, 0),
+			UsageCharges: make([]dto.CreateInvoiceLineItemRequest, 0),
+		}
 	}
 
 	// Create invoice request
@@ -292,15 +641,10 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		PeriodStart:    &periodStart,
 		PeriodEnd:      &periodEnd,
 		BillingReason:  types.InvoiceBillingReasonSubscriptionCycle,
-		Metadata:       types.Metadata{},
+		EnvironmentID:  sub.EnvironmentID,
+		Metadata:       metadata,
 		LineItems:      append(result.FixedCharges, result.UsageCharges...),
 	}
-
-	s.Logger.Infow("prepared invoice request",
-		"subscription_id", sub.ID,
-		"total_amount", result.TotalAmount,
-		"fixed_line_items", len(result.FixedCharges),
-		"usage_line_items", len(result.UsageCharges))
 
 	return req, nil
 }

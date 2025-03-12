@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
@@ -21,6 +22,7 @@ type InvoiceService interface {
 	ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error)
 	FinalizeInvoice(ctx context.Context, id string) error
 	VoidInvoice(ctx context.Context, id string) error
+	ProcessDraftInvoice(ctx context.Context, id string) error
 	UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
 	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
@@ -58,6 +60,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 				"customer_id":  req.CustomerID,
 				"period_start": req.PeriodStart,
 				"period_end":   req.PeriodEnd,
+				"timestamp":    time.Now().UTC(), // TODO: rethink this
 			}
 			scope := idempotency.ScopeOneOffInvoice
 			if req.SubscriptionID != nil {
@@ -92,7 +95,11 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 				return err
 			}
 			if exists {
-				return ierr.NewError("invoice already exists").WithHint("invoice already exists for the given period").Mark(ierr.ErrAlreadyExists)
+				s.Logger.Infow("another invoice for same subscription period exists",
+					"subscription_id", *req.SubscriptionID,
+					"period_start", *req.PeriodStart,
+					"period_end", *req.PeriodEnd)
+				// do nothing, just log and continue
 			}
 
 			// Get billing sequence
@@ -270,6 +277,10 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
 		return err
 	}
 
+	return s.performFinalizeInvoiceActions(ctx, inv)
+}
+
+func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv *invoice.Invoice) error {
 	if inv.InvoiceStatus != types.InvoiceStatusDraft {
 		return ierr.NewError("invoice is not in draft status").WithHint("invoice must be in draft status to be finalized").Mark(ierr.ErrValidation)
 	}
@@ -327,6 +338,32 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 	}
 
 	s.publishWebhookEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
+	return nil
+}
+
+func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string) error {
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if inv.InvoiceStatus != types.InvoiceStatusDraft {
+		return ierr.NewError("invoice is not in draft status").WithHint("invoice must be in draft status to be processed").Mark(ierr.ErrValidation)
+	}
+
+	// try to finalize the invoice
+	if err := s.performFinalizeInvoiceActions(ctx, inv); err != nil {
+		return err
+	}
+
+	// try to process payment for the invoice and log any errors
+	// this is not a blocker for the invoice to be processed
+	if err := s.performPaymentAttemptActions(ctx, inv); err != nil {
+		s.Logger.Errorw("failed to process payment for invoice",
+			"error", err.Error(),
+			"invoice_id", inv.ID)
+	}
+
 	return nil
 }
 
@@ -398,7 +435,12 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	s.Logger.Infow("creating subscription invoice",
 		"subscription_id", req.SubscriptionID,
 		"period_start", req.PeriodStart,
-		"period_end", req.PeriodEnd)
+		"period_end", req.PeriodEnd,
+		"reference_point", req.ReferencePoint)
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
 
 	billingService := NewBillingService(s.ServiceParams)
 
@@ -409,13 +451,28 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	}
 
 	// Prepare invoice request using billing service
-	invoiceReq, err := billingService.PrepareSubscriptionInvoiceRequest(ctx, subscription, req.PeriodStart, req.PeriodEnd, req.IsPreview)
+	invoiceReq, err := billingService.PrepareSubscriptionInvoiceRequest(ctx,
+		subscription,
+		req.PeriodStart,
+		req.PeriodEnd,
+		req.ReferencePoint,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create the invoice
-	return s.CreateInvoice(ctx, *invoiceReq)
+	inv, err := s.CreateInvoice(ctx, *invoiceReq)
+	if err != nil {
+		return nil, err
+	}
+
+	// Process the invoice
+	if err := s.ProcessDraftInvoice(ctx, inv.ID); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
 }
 
 func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error) {
@@ -434,9 +491,9 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		req.PeriodEnd = &sub.CurrentPeriodEnd
 	}
 
-	// Prepare invoice request using billing service
+	// Prepare invoice request using billing service with the preview reference point
 	invReq, err := billingService.PrepareSubscriptionInvoiceRequest(
-		ctx, sub, *req.PeriodStart, *req.PeriodEnd, true)
+		ctx, sub, *req.PeriodStart, *req.PeriodEnd, types.ReferencePointPreview)
 	if err != nil {
 		return nil, err
 	}
@@ -664,6 +721,10 @@ func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
 		return err
 	}
 
+	return s.performPaymentAttemptActions(ctx, inv)
+}
+
+func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *invoice.Invoice) error {
 	// Validate invoice status
 	if inv.InvoiceStatus != types.InvoiceStatusFinalized {
 		return ierr.NewError("invoice must be finalized").
@@ -676,7 +737,7 @@ func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
 		return ierr.NewError("invoice is already paid by payment status").
 			WithHint("Invoice is already paid").
 			WithReportableDetails(map[string]any{
-				"invoice_id":     id,
+				"invoice_id":     inv.ID,
 				"payment_status": inv.PaymentStatus,
 			}).
 			Mark(ierr.ErrInvalidOperation)
@@ -707,15 +768,15 @@ func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
 
 	if amountPaid.IsZero() {
 		s.Logger.Infow("no payments processed for invoice",
-			"invoice_id", id,
+			"invoice_id", inv.ID,
 			"amount_remaining", inv.AmountRemaining)
 	} else if amountPaid.Equal(inv.AmountRemaining) {
 		s.Logger.Infow("invoice fully paid with wallets",
-			"invoice_id", id,
+			"invoice_id", inv.ID,
 			"amount_paid", amountPaid)
 	} else {
 		s.Logger.Infow("invoice partially paid with wallets",
-			"invoice_id", id,
+			"invoice_id", inv.ID,
 			"amount_paid", amountPaid,
 			"amount_remaining", inv.AmountRemaining.Sub(amountPaid))
 	}

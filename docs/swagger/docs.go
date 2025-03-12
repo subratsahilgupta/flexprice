@@ -5815,6 +5815,9 @@ const docTemplate = `{
                 "due_date": {
                     "type": "string"
                 },
+                "environment_id": {
+                    "type": "string"
+                },
                 "idempotency_key": {
                     "type": "string"
                 },
