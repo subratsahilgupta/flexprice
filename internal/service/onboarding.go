@@ -152,7 +152,7 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 		Message:        "Event generation started",
 		StartedAt:      time.Now(),
 		Duration:       req.Duration,
-		Count:          req.Duration, // One event per second
+		Count:          req.Duration * 5, // Five events per second
 		CustomerID:     customerID,
 		FeatureID:      selectedFeature.ID,
 		SubscriptionID: req.SubscriptionID,
@@ -231,8 +231,8 @@ func (s *onboardingService) processMessage(msg *message.Message) error {
 func (s *onboardingService) generateEvents(ctx context.Context, eventMsg *types.OnboardingEventsMessage) {
 	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger)
 
-	// Create a ticker to generate events at a rate of 1 per second
-	ticker := time.NewTicker(time.Second)
+	// Create a ticker to generate events at a rate of 5 per second
+	ticker := time.NewTicker(time.Millisecond * 200)
 	defer ticker.Stop()
 
 	// Create a counter for successful events
@@ -245,8 +245,11 @@ func (s *onboardingService) generateEvents(ctx context.Context, eventMsg *types.
 		"duration", eventMsg.Duration,
 	)
 
+	// multiply duration by 5
+	duration := eventMsg.Duration * 5
+
 	// Generate events
-	for i := 0; i < eventMsg.Duration; i++ {
+	for i := 0; i < duration; i++ {
 		select {
 		case <-ticker.C:
 			// Generate an event for each meter
