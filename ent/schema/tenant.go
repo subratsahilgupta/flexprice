@@ -37,6 +37,12 @@ func (Tenant) Fields() []ent.Field {
 		field.Time("updated_at").
 			Default(time.Now).
 			UpdateDefault(time.Now),
+		field.JSON("billing_details", map[string]any{}).
+			Optional().
+			Default(map[string]interface{}{}).
+			SchemaType(map[string]string{
+				"postgres": "jsonb",
+			}),
 	}
 }
 

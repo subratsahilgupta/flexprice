@@ -68,6 +68,12 @@ func (tc *TenantCreate) SetNillableUpdatedAt(t *time.Time) *TenantCreate {
 	return tc
 }
 
+// SetBillingDetails sets the "billing_details" field.
+func (tc *TenantCreate) SetBillingDetails(m map[string]interface{}) *TenantCreate {
+	tc.mutation.SetBillingDetails(m)
+	return tc
+}
+
 // SetID sets the "id" field.
 func (tc *TenantCreate) SetID(s string) *TenantCreate {
 	tc.mutation.SetID(s)
@@ -120,6 +126,10 @@ func (tc *TenantCreate) defaults() {
 	if _, ok := tc.mutation.UpdatedAt(); !ok {
 		v := tenant.DefaultUpdatedAt()
 		tc.mutation.SetUpdatedAt(v)
+	}
+	if _, ok := tc.mutation.BillingDetails(); !ok {
+		v := tenant.DefaultBillingDetails
+		tc.mutation.SetBillingDetails(v)
 	}
 }
 
@@ -192,6 +202,10 @@ func (tc *TenantCreate) createSpec() (*Tenant, *sqlgraph.CreateSpec) {
 	if value, ok := tc.mutation.UpdatedAt(); ok {
 		_spec.SetField(tenant.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if value, ok := tc.mutation.BillingDetails(); ok {
+		_spec.SetField(tenant.FieldBillingDetails, field.TypeJSON, value)
+		_node.BillingDetails = value
 	}
 	return _node, _spec
 }
