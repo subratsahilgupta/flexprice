@@ -70,3 +70,36 @@ func (h *TenantHandler) GetTenantByID(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
+// @Summary Update a tenant
+// @Description Update a tenant's details including name and billing information
+// @Tags Tenants
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Tenant ID"
+// @Param request body dto.UpdateTenantRequest true "Update tenant request"
+// @Success 200 {object} dto.TenantResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /tenants/{id} [put]
+func (h *TenantHandler) UpdateTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	var req dto.UpdateTenantRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.UpdateTenant(c.Request.Context(), id, req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}

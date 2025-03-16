@@ -36,6 +36,7 @@ func (r *tenantRepository) Create(ctx context.Context, tenant *domainTenant.Tena
 		SetStatus(string(tenant.Status)).
 		SetCreatedAt(tenant.CreatedAt).
 		SetUpdatedAt(tenant.UpdatedAt).
+		SetBillingDetails(tenant.BillingDetails.ToMap()).
 		Save(ctx)
 
 	if err != nil {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/auth"
@@ -14,6 +15,7 @@ type TenantService interface {
 	GetTenantByID(ctx context.Context, id string) (*dto.TenantResponse, error)
 	AssignTenantToUser(ctx context.Context, req dto.AssignTenantRequest) error
 	GetAllTenants(ctx context.Context) ([]*dto.TenantResponse, error)
+	UpdateTenant(ctx context.Context, id string, req dto.UpdateTenantRequest) (*dto.TenantResponse, error)
 }
 
 type tenantService struct {
@@ -84,4 +86,44 @@ func (s *tenantService) GetAllTenants(ctx context.Context) ([]*dto.TenantRespons
 	}
 
 	return tenantResponses, nil
+}
+
+func (s *tenantService) UpdateTenant(ctx context.Context, id string, req dto.UpdateTenantRequest) (*dto.TenantResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Get the existing tenant
+	existingTenant, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.BillingDetails != (dto.TenantBillingDetails{}) {
+		// Convert from DTO to domain
+		billingDetails := tenant.BillingDetails{
+			Email:     req.BillingDetails.Email,
+			HelpEmail: req.BillingDetails.HelpEmail,
+			Phone:     req.BillingDetails.Phone,
+			Address: tenant.Address{
+				Line1:      req.BillingDetails.Address.Line1,
+				Line2:      req.BillingDetails.Address.Line2,
+				City:       req.BillingDetails.Address.City,
+				State:      req.BillingDetails.Address.State,
+				PostalCode: req.BillingDetails.Address.PostalCode,
+				Country:    req.BillingDetails.Address.Country,
+			},
+		}
+		existingTenant.BillingDetails = billingDetails
+	}
+
+	// Update the timestamp
+	existingTenant.UpdatedAt = time.Now()
+
+	// Save the updated tenant
+	if err := s.repo.Update(ctx, existingTenant); err != nil {
+		return nil, err
+	}
+
+	return dto.NewTenantResponse(existingTenant), nil
 }
