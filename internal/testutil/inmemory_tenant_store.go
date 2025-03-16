@@ -71,3 +71,17 @@ func (s *InMemoryTenantStore) List(ctx context.Context) ([]*tenant.Tenant, error
 	}
 	return tenants, nil
 }
+
+func (s *InMemoryTenantStore) Update(ctx context.Context, t *tenant.Tenant) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.tenants[t.ID]; !exists {
+		return ierr.NewError("tenant not found").
+			WithHint("Please provide a valid tenant ID").
+			Mark(ierr.ErrDatabase)
+	}
+
+	s.tenants[t.ID] = t
+	return nil
+}
