@@ -4913,7 +4913,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tenants/add-billing-details": {
+        "/tenants/update": {
             "put": {
                 "security": [
                     {

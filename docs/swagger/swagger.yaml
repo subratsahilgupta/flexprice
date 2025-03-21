@@ -6089,7 +6089,7 @@ paths:
       summary: Get tenant by ID
       tags:
       - Tenants
-  /tenants/add-billing-details:
+  /tenants/update:
     put:
       consumes:
       - application/json

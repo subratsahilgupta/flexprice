@@ -176,7 +176,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		tenantRoutes := v1Private.Group("/tenants")
 		{
 			tenantRoutes.POST("", handlers.Tenant.CreateTenant)
-			tenantRoutes.PUT("/add-billing-details", handlers.Tenant.UpdateTenant)
+			tenantRoutes.PUT("/update", handlers.Tenant.UpdateTenant)
 			tenantRoutes.GET("/:id", handlers.Tenant.GetTenantByID)
 		}
 

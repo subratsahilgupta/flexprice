@@ -83,7 +83,7 @@ func (h *TenantHandler) GetTenantByID(c *gin.Context) {
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /tenants/add-billing-details [put]
+// @Router /tenants/update [put]
 func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 	tenantID := c.Request.Context().Value(types.CtxTenantID).(string)
 
