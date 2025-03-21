@@ -7,6 +7,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -77,15 +78,14 @@ func (h *TenantHandler) GetTenantByID(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param id path string true "Tenant ID"
 // @Param request body dto.UpdateTenantRequest true "Update tenant request"
 // @Success 200 {object} dto.TenantResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /tenants/{id} [put]
+// @Router /tenants/add-billing-details [put]
 func (h *TenantHandler) UpdateTenant(c *gin.Context) {
-	id := c.Param("id")
+	tenantID := c.Request.Context().Value(types.CtxTenantID).(string)
 
 	var req dto.UpdateTenantRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -95,7 +95,7 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.UpdateTenant(c.Request.Context(), id, req)
+	resp, err := h.service.UpdateTenant(c.Request.Context(), tenantID, req)
 	if err != nil {
 		c.Error(err)
 		return
