@@ -957,7 +957,7 @@ func init() {
 	// tenantDescBillingDetails is the schema descriptor for billing_details field.
 	tenantDescBillingDetails := tenantFields[5].Descriptor()
 	// tenant.DefaultBillingDetails holds the default value on creation for the billing_details field.
-	tenant.DefaultBillingDetails = tenantDescBillingDetails.Default.(map[string]interface{})
+	tenant.DefaultBillingDetails = tenantDescBillingDetails.Default.(schema.TenantBillingDetails)
 	userMixin := schema.User{}.Mixin()
 	userMixinFields0 := userMixin[0].Fields()
 	_ = userMixinFields0

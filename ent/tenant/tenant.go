@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"github.com/flexprice/flexprice/ent/schema"
 )
 
 const (
@@ -59,7 +60,7 @@ var (
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
 	// DefaultBillingDetails holds the default value on creation for the "billing_details" field.
-	DefaultBillingDetails map[string]interface{}
+	DefaultBillingDetails schema.TenantBillingDetails
 )
 
 // OrderOption defines the ordering options for the Tenant queries.

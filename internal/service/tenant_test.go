@@ -120,11 +120,11 @@ func (s *TenantServiceSuite) TestGetTenantWithBillingDetails() {
 	tenantWithBilling := &tenant.Tenant{
 		ID:   "tenant-with-billing",
 		Name: "Billing Tenant",
-		BillingDetails: tenant.BillingDetails{
+		BillingDetails: tenant.TenantBillingDetails{
 			Email:     "billing@example.com",
 			HelpEmail: "help@example.com",
 			Phone:     "+1-555-987-6543",
-			Address: tenant.Address{
+			Address: tenant.TenantAddress{
 				Line1:      "456 Market Street",
 				Line2:      "Floor 3",
 				City:       "San Francisco",
@@ -134,17 +134,18 @@ func (s *TenantServiceSuite) TestGetTenantWithBillingDetails() {
 			},
 		},
 	}
-	_ = s.tenantRepo.Create(s.ctx, tenantWithBilling)
+	err := s.tenantRepo.Create(s.ctx, tenantWithBilling)
+	s.NoError(err)
 
 	// Create tenant without billing details
 	tenantWithoutBilling := &tenant.Tenant{
 		ID:   "tenant-without-billing",
 		Name: "No Billing Tenant",
-		BillingDetails: tenant.BillingDetails{
+		BillingDetails: tenant.TenantBillingDetails{
 			Email:     "",
 			HelpEmail: "",
 			Phone:     "",
-			Address: tenant.Address{
+			Address: tenant.TenantAddress{
 				Line1:      "",
 				Line2:      "",
 				City:       "",
@@ -154,7 +155,8 @@ func (s *TenantServiceSuite) TestGetTenantWithBillingDetails() {
 			},
 		},
 	}
-	_ = s.tenantRepo.Create(s.ctx, tenantWithoutBilling)
+	err = s.tenantRepo.Create(s.ctx, tenantWithoutBilling)
+	s.NoError(err)
 
 	testCases := []struct {
 		name                string

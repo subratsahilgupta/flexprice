@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/tenant"
 )
 
@@ -27,7 +28,7 @@ type Tenant struct {
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// BillingDetails holds the value of the "billing_details" field.
-	BillingDetails map[string]interface{} `json:"billing_details,omitempty"`
+	BillingDetails schema.TenantBillingDetails `json:"billing_details,omitempty"`
 	selectValues   sql.SelectValues
 }
 

@@ -26675,7 +26675,7 @@ type TenantMutation struct {
 	status          *string
 	created_at      *time.Time
 	updated_at      *time.Time
-	billing_details *map[string]interface{}
+	billing_details *schema.TenantBillingDetails
 	clearedFields   map[string]struct{}
 	done            bool
 	oldValue        func(context.Context) (*Tenant, error)
@@ -26931,12 +26931,12 @@ func (m *TenantMutation) ResetUpdatedAt() {
 }
 
 // SetBillingDetails sets the "billing_details" field.
-func (m *TenantMutation) SetBillingDetails(value map[string]interface{}) {
-	m.billing_details = &value
+func (m *TenantMutation) SetBillingDetails(sbd schema.TenantBillingDetails) {
+	m.billing_details = &sbd
 }
 
 // BillingDetails returns the value of the "billing_details" field in the mutation.
-func (m *TenantMutation) BillingDetails() (r map[string]interface{}, exists bool) {
+func (m *TenantMutation) BillingDetails() (r schema.TenantBillingDetails, exists bool) {
 	v := m.billing_details
 	if v == nil {
 		return
@@ -26947,7 +26947,7 @@ func (m *TenantMutation) BillingDetails() (r map[string]interface{}, exists bool
 // OldBillingDetails returns the old "billing_details" field's value of the Tenant entity.
 // If the Tenant object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TenantMutation) OldBillingDetails(ctx context.Context) (v map[string]interface{}, err error) {
+func (m *TenantMutation) OldBillingDetails(ctx context.Context) (v schema.TenantBillingDetails, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldBillingDetails is only allowed on UpdateOne operations")
 	}
@@ -27104,7 +27104,7 @@ func (m *TenantMutation) SetField(name string, value ent.Value) error {
 		m.SetUpdatedAt(v)
 		return nil
 	case tenant.FieldBillingDetails:
-		v, ok := value.(map[string]interface{})
+		v, ok := value.(schema.TenantBillingDetails)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

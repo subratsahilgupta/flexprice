@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/tenant"
 )
 
@@ -69,8 +70,16 @@ func (tc *TenantCreate) SetNillableUpdatedAt(t *time.Time) *TenantCreate {
 }
 
 // SetBillingDetails sets the "billing_details" field.
-func (tc *TenantCreate) SetBillingDetails(m map[string]interface{}) *TenantCreate {
-	tc.mutation.SetBillingDetails(m)
+func (tc *TenantCreate) SetBillingDetails(sbd schema.TenantBillingDetails) *TenantCreate {
+	tc.mutation.SetBillingDetails(sbd)
+	return tc
+}
+
+// SetNillableBillingDetails sets the "billing_details" field if the given value is not nil.
+func (tc *TenantCreate) SetNillableBillingDetails(sbd *schema.TenantBillingDetails) *TenantCreate {
+	if sbd != nil {
+		tc.SetBillingDetails(*sbd)
+	}
 	return tc
 }
 

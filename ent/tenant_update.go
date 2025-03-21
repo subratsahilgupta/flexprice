@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/tenant"
 )
 
@@ -63,8 +64,16 @@ func (tu *TenantUpdate) SetUpdatedAt(t time.Time) *TenantUpdate {
 }
 
 // SetBillingDetails sets the "billing_details" field.
-func (tu *TenantUpdate) SetBillingDetails(m map[string]interface{}) *TenantUpdate {
-	tu.mutation.SetBillingDetails(m)
+func (tu *TenantUpdate) SetBillingDetails(sbd schema.TenantBillingDetails) *TenantUpdate {
+	tu.mutation.SetBillingDetails(sbd)
+	return tu
+}
+
+// SetNillableBillingDetails sets the "billing_details" field if the given value is not nil.
+func (tu *TenantUpdate) SetNillableBillingDetails(sbd *schema.TenantBillingDetails) *TenantUpdate {
+	if sbd != nil {
+		tu.SetBillingDetails(*sbd)
+	}
 	return tu
 }
 
@@ -207,8 +216,16 @@ func (tuo *TenantUpdateOne) SetUpdatedAt(t time.Time) *TenantUpdateOne {
 }
 
 // SetBillingDetails sets the "billing_details" field.
-func (tuo *TenantUpdateOne) SetBillingDetails(m map[string]interface{}) *TenantUpdateOne {
-	tuo.mutation.SetBillingDetails(m)
+func (tuo *TenantUpdateOne) SetBillingDetails(sbd schema.TenantBillingDetails) *TenantUpdateOne {
+	tuo.mutation.SetBillingDetails(sbd)
+	return tuo
+}
+
+// SetNillableBillingDetails sets the "billing_details" field if the given value is not nil.
+func (tuo *TenantUpdateOne) SetNillableBillingDetails(sbd *schema.TenantBillingDetails) *TenantUpdateOne {
+	if sbd != nil {
+		tuo.SetBillingDetails(*sbd)
+	}
 	return tuo
 }
 

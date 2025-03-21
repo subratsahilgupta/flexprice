@@ -99,13 +99,13 @@ func (s *tenantService) UpdateTenant(ctx context.Context, id string, req dto.Upd
 		return nil, err
 	}
 
-	if req.BillingDetails != (dto.TenantBillingDetails{}) {
-		// Convert from DTO to domain
-		billingDetails := tenant.BillingDetails{
+	var billingDetails tenant.TenantBillingDetails
+	if req.BillingDetails != nil {
+		billingDetails = tenant.TenantBillingDetails{
 			Email:     req.BillingDetails.Email,
 			HelpEmail: req.BillingDetails.HelpEmail,
 			Phone:     req.BillingDetails.Phone,
-			Address: tenant.Address{
+			Address: tenant.TenantAddress{
 				Line1:      req.BillingDetails.Address.Line1,
 				Line2:      req.BillingDetails.Address.Line2,
 				City:       req.BillingDetails.Address.City,
@@ -114,8 +114,8 @@ func (s *tenantService) UpdateTenant(ctx context.Context, id string, req dto.Upd
 				Country:    req.BillingDetails.Address.Country,
 			},
 		}
-		existingTenant.BillingDetails = billingDetails
 	}
+	existingTenant.BillingDetails = billingDetails
 
 	// Update the timestamp
 	existingTenant.UpdatedAt = time.Now()

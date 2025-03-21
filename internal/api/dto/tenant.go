@@ -16,7 +16,7 @@ type TenantBillingDetails struct {
 	Address   Address `json:"address,omitempty"`
 }
 
-func NewTenantBillingDetails(b tenant.BillingDetails) TenantBillingDetails {
+func NewTenantBillingDetails(b tenant.TenantBillingDetails) TenantBillingDetails {
 	return TenantBillingDetails{
 		Email:     b.Email,
 		HelpEmail: b.HelpEmail,
@@ -31,12 +31,12 @@ func NewTenantBillingDetails(b tenant.BillingDetails) TenantBillingDetails {
 		},
 	}
 }
-func (r *TenantBillingDetails) ToDomain() tenant.BillingDetails {
-	return tenant.BillingDetails{
+func (r *TenantBillingDetails) ToDomain() tenant.TenantBillingDetails {
+	return tenant.TenantBillingDetails{
 		Email:     r.Email,
 		HelpEmail: r.HelpEmail,
 		Phone:     r.Phone,
-		Address: tenant.Address{
+		Address: tenant.TenantAddress{
 			Line1:      r.Address.Line1,
 			Line2:      r.Address.Line2,
 			City:       r.Address.City,
@@ -48,17 +48,17 @@ func (r *TenantBillingDetails) ToDomain() tenant.BillingDetails {
 }
 
 type CreateTenantRequest struct {
-	Name           string               `json:"name" validate:"required"`
-	BillingDetails TenantBillingDetails `json:"billing_details,omitempty"`
+	Name           string                `json:"name" validate:"required"`
+	BillingDetails *TenantBillingDetails `json:"billing_details,omitempty"`
 }
 
 type TenantResponse struct {
-	ID             string               `json:"id"`
-	Name           string               `json:"name"`
-	BillingDetails TenantBillingDetails `json:"billing_details,omitempty"`
-	Status         string               `json:"status"`
-	CreatedAt      string               `json:"created_at"`
-	UpdatedAt      string               `json:"updated_at"`
+	ID             string                `json:"id"`
+	Name           string                `json:"name"`
+	BillingDetails *TenantBillingDetails `json:"billing_details,omitempty"`
+	Status         string                `json:"status"`
+	CreatedAt      string                `json:"created_at"`
+	UpdatedAt      string                `json:"updated_at"`
 }
 
 type AssignTenantRequest struct {
@@ -71,11 +71,16 @@ func (r *CreateTenantRequest) Validate() error {
 }
 
 func (r *CreateTenantRequest) ToTenant(ctx context.Context) *tenant.Tenant {
+	var billingDetails tenant.TenantBillingDetails
+	if r.BillingDetails != nil {
+		billingDetails = r.BillingDetails.ToDomain()
+	}
+
 	return &tenant.Tenant{
 		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TENANT),
 		Name:           r.Name,
 		Status:         types.StatusPublished,
-		BillingDetails: r.BillingDetails.ToDomain(),
+		BillingDetails: billingDetails,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -87,18 +92,23 @@ func (r *AssignTenantRequest) Validate(ctx context.Context) error {
 }
 
 func NewTenantResponse(t *tenant.Tenant) *TenantResponse {
+	var billingDetails TenantBillingDetails
+	// how can we improve this?
+	if t.BillingDetails != (tenant.TenantBillingDetails{}) {
+		billingDetails = NewTenantBillingDetails(t.BillingDetails)
+	}
 	return &TenantResponse{
 		ID:             t.ID,
 		Name:           t.Name,
 		Status:         string(t.Status),
 		CreatedAt:      t.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:      t.UpdatedAt.Format(time.RFC3339),
-		BillingDetails: NewTenantBillingDetails(t.BillingDetails),
+		BillingDetails: &billingDetails,
 	}
 }
 
 type UpdateTenantRequest struct {
-	BillingDetails TenantBillingDetails `json:"billing_details,omitempty"`
+	BillingDetails *TenantBillingDetails `json:"billing_details,omitempty"`
 }
 
 func (r *UpdateTenantRequest) Validate() error {
