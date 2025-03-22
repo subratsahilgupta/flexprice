@@ -11,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/payment"
+	"github.com/flexprice/flexprice/internal/domain/pdfgen"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/secret"
@@ -48,6 +49,7 @@ type ServiceParams struct {
 	PaymentRepo     payment.Repository
 	SecretRepo      secret.Repository
 	EnvironmentRepo environment.Repository
+	PdfGenRepo      pdfgen.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -77,6 +79,7 @@ func NewServiceParams(
 	environmentRepo environment.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
+	pdfGenRepo pdfgen.Repository,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:           logger,
@@ -100,5 +103,6 @@ func NewServiceParams(
 		EnvironmentRepo:  environmentRepo,
 		EventPublisher:   eventPublisher,
 		WebhookPublisher: webhookPublisher,
+		PdfGenRepo:       pdfGenRepo,
 	}
 }

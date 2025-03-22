@@ -51,3 +51,6 @@ scripts/hacks/*
 # continue / cursor rules
 .continue/*
 .cursorrules
+
+# build directory
+build/

@@ -17,13 +17,15 @@ import (
 
 type InvoiceHandler struct {
 	invoiceService  service.InvoiceService
+	pdfGenService   service.PdfGenService
 	temporalService *temporal.Service
 	logger          *logger.Logger
 }
 
-func NewInvoiceHandler(invoiceService service.InvoiceService, temporalService *temporal.Service, logger *logger.Logger) *InvoiceHandler {
+func NewInvoiceHandler(invoiceService service.InvoiceService, pdfGenService service.PdfGenService, temporalService *temporal.Service, logger *logger.Logger) *InvoiceHandler {
 	return &InvoiceHandler{
 		invoiceService:  invoiceService,
+		pdfGenService:   pdfGenService,
 		temporalService: temporalService,
 		logger:          logger,
 	}
@@ -340,4 +342,21 @@ func (h *InvoiceHandler) AttemptPayment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "payment processed successfully"})
+}
+
+func (h *InvoiceHandler) GetInvoicePDF(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("invalid invoice id").WithHint("invalid invoice id").Mark(ierr.ErrValidation))
+		return
+	}
+
+	pdf, err := h.pdfGenService.GenerateInvoicePDF(c.Request.Context(), id)
+	if err != nil {
+		h.logger.Errorw("failed to generate invoice pdf", "error", err, "invoice_id", id)
+		c.Error(err)
+		return
+	}
+
+	c.Data(http.StatusOK, "application/pdf", pdf)
 }
