@@ -32,6 +32,26 @@ type SubscriptionLineItem struct {
 	types.BaseModel
 }
 
+// IsActive returns true if the line item is active
+func (li *SubscriptionLineItem) IsActive() bool {
+	if li.Status != types.StatusPublished {
+		return false
+	}
+	now := time.Now()
+	if li.StartDate.IsZero() {
+		return false
+	}
+
+	if li.StartDate.After(now) {
+		return false
+	}
+
+	if !li.EndDate.IsZero() && li.EndDate.Before(now) {
+		return false
+	}
+	return true
+}
+
 // FromEntList converts a list of Ent SubscriptionLineItems to domain SubscriptionLineItems
 func GetLineItemFromEntList(list []*ent.SubscriptionLineItem) []*SubscriptionLineItem {
 	if list == nil {

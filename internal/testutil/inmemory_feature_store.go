@@ -276,3 +276,19 @@ func (s *InMemoryFeatureStore) DeleteBulk(ctx context.Context, ids []string) err
 func (s *InMemoryFeatureStore) Clear() {
 	s.InMemoryStore.Clear()
 }
+
+// ListByIDs retrieves features by their IDs
+func (s *InMemoryFeatureStore) ListByIDs(ctx context.Context, featureIDs []string) ([]*feature.Feature, error) {
+	if len(featureIDs) == 0 {
+		return []*feature.Feature{}, nil
+	}
+
+	// Create a filter with feature IDs
+	filter := &types.FeatureFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		FeatureIDs:  featureIDs,
+	}
+
+	// Use the existing List method
+	return s.List(ctx, filter)
+}

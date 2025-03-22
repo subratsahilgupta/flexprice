@@ -37,7 +37,7 @@ type MeterType struct {
 }
 
 var (
-	// Define meter types based on Lago billable metrics
+	// Define meter types based on billable metrics
 	tokenMeters = []MeterType{
 		{Code: "deepseek-coder-33b-input-tokens", MinValue: 100, MaxValue: 2000, Description: "Deepseek Coder 33B input tokens"},
 		{Code: "deepseek-coder-33b-output-tokens", MinValue: 200, MaxValue: 4000, Description: "Deepseek Coder 33B output tokens"},

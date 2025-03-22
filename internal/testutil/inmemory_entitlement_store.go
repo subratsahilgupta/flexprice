@@ -237,3 +237,35 @@ func (s *InMemoryEntitlementStore) DeleteBulk(ctx context.Context, ids []string)
 func (s *InMemoryEntitlementStore) Clear() {
 	s.InMemoryStore.Clear()
 }
+
+// ListByPlanIDs retrieves all entitlements for the given plan IDs
+func (s *InMemoryEntitlementStore) ListByPlanIDs(ctx context.Context, planIDs []string) ([]*entitlement.Entitlement, error) {
+	if len(planIDs) == 0 {
+		return []*entitlement.Entitlement{}, nil
+	}
+
+	// Create a filter with plan IDs
+	filter := &types.EntitlementFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		PlanIDs:     planIDs,
+	}
+
+	// Use the existing List method
+	return s.List(ctx, filter)
+}
+
+// ListByFeatureIDs retrieves all entitlements for the given feature IDs
+func (s *InMemoryEntitlementStore) ListByFeatureIDs(ctx context.Context, featureIDs []string) ([]*entitlement.Entitlement, error) {
+	if len(featureIDs) == 0 {
+		return []*entitlement.Entitlement{}, nil
+	}
+
+	// Create a filter with feature IDs
+	filter := &types.EntitlementFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		FeatureIDs:  featureIDs,
+	}
+
+	// Use the existing List method
+	return s.List(ctx, filter)
+}

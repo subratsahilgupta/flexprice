@@ -115,6 +115,9 @@ type SubscriptionFilter struct {
 	IncludeCanceled bool `json:"include_canceled,omitempty" form:"include_canceled"`
 	// ActiveAt filters subscriptions that are active at the given time
 	ActiveAt *time.Time `json:"active_at,omitempty" form:"active_at"`
+
+	// WithLineItems includes line items in the response
+	WithLineItems bool `json:"with_line_items,omitempty" form:"with_line_items"`
 }
 
 // NewSubscriptionFilter creates a new SubscriptionFilter with default values

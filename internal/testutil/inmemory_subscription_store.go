@@ -181,6 +181,36 @@ func (s *InMemorySubscriptionStore) List(ctx context.Context, filter *types.Subs
 	return subs, nil
 }
 
+func (s *InMemorySubscriptionStore) ListByCustomerID(ctx context.Context, customerID string) ([]*subscription.Subscription, error) {
+	// Create a filter with customer ID
+	filter := &types.SubscriptionFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		CustomerID:  customerID,
+		SubscriptionStatus: []types.SubscriptionStatus{
+			types.SubscriptionStatusActive,
+			types.SubscriptionStatusTrialing,
+		},
+	}
+
+	// Use the existing List method
+	return s.List(ctx, filter)
+}
+
+func (s *InMemorySubscriptionStore) ListByIDs(ctx context.Context, ids []string) ([]*subscription.Subscription, error) {
+	allSubs, err := s.ListAll(ctx, &types.SubscriptionFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+	})
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list subscriptions").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Filter the subscriptions by IDs
+	return lo.Filter(allSubs, func(sub *subscription.Subscription, _ int) bool {
+		return lo.Contains(ids, sub.ID)
+	}), nil
+}
 func (s *InMemorySubscriptionStore) Count(ctx context.Context, filter *types.SubscriptionFilter) (int, error) {
 	count, err := s.InMemoryStore.Count(ctx, filter, subscriptionFilterFn)
 	if err != nil {

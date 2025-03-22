@@ -151,6 +151,7 @@ func main() {
 			service.NewTaskService,
 			service.NewSecretService,
 			service.NewOnboardingService,
+			service.NewBillingService,
 		),
 	)
 
@@ -194,6 +195,7 @@ func provideHandlers(
 	taskService service.TaskService,
 	secretService service.SecretService,
 	onboardingService service.OnboardingService,
+	billingService service.BillingService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:            v1.NewEventsHandler(eventService, logger),
@@ -203,7 +205,7 @@ func provideHandlers(
 		Environment:       v1.NewEnvironmentHandler(environmentService, logger),
 		Health:            v1.NewHealthHandler(logger),
 		Price:             v1.NewPriceHandler(priceService, logger),
-		Customer:          v1.NewCustomerHandler(customerService, logger),
+		Customer:          v1.NewCustomerHandler(customerService, billingService, logger),
 		Plan:              v1.NewPlanHandler(planService, entitlementService, logger),
 		Subscription:      v1.NewSubscriptionHandler(subscriptionService, logger),
 		SubscriptionPause: v1.NewSubscriptionPauseHandler(subscriptionService, logger),
