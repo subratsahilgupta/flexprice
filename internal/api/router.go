@@ -132,6 +132,10 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.DELETE("/:id", handlers.Customer.DeleteCustomer)
 			customer.GET("/lookup/:lookup_key", handlers.Customer.GetCustomerByLookupKey)
 
+			// New endpoints for entitlements and usage
+			customer.GET("/:id/entitlements", handlers.Customer.GetCustomerEntitlements)
+			customer.GET("/:id/usage", handlers.Customer.GetCustomerUsageSummary)
+
 			// other routes for customer
 			customer.GET("/:id/wallets", handlers.Wallet.GetWalletsByCustomerID)
 			customer.GET("/:id/invoices/summary", handlers.Invoice.GetCustomerInvoiceSummary)

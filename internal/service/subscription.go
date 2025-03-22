@@ -906,6 +906,7 @@ func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost 
 		DisplayAmount:    price.GetDisplayAmountWithPrecision(cost, priceObj.Currency),
 		Quantity:         quantity.InexactFloat64(),
 		FilterValues:     priceObj.FilterValues,
+		MeterID:          priceObj.MeterID,
 		MeterDisplayName: meterDisplayName,
 		Price:            priceObj,
 	}

@@ -258,6 +258,24 @@ func (r *featureRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListByIDs retrieves features by their IDs
+func (r *featureRepository) ListByIDs(ctx context.Context, featureIDs []string) ([]*domainFeature.Feature, error) {
+	if len(featureIDs) == 0 {
+		return []*domainFeature.Feature{}, nil
+	}
+
+	r.log.Debugw("listing features by IDs", "feature_ids", featureIDs)
+
+	// Create a filter with feature IDs
+	filter := &types.FeatureFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		FeatureIDs:  featureIDs,
+	}
+
+	// Use the existing List method
+	return r.List(ctx, filter)
+}
+
 // FeatureQuery type alias for better readability
 type FeatureQuery = *ent.FeatureQuery
 

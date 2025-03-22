@@ -14,11 +14,20 @@ import (
 
 type CustomerHandler struct {
 	service service.CustomerService
+	billing service.BillingService
 	log     *logger.Logger
 }
 
-func NewCustomerHandler(service service.CustomerService, log *logger.Logger) *CustomerHandler {
-	return &CustomerHandler{service: service, log: log}
+func NewCustomerHandler(
+	service service.CustomerService,
+	billing service.BillingService,
+	log *logger.Logger,
+) *CustomerHandler {
+	return &CustomerHandler{
+		service: service,
+		billing: billing,
+		log:     log,
+	}
 }
 
 // @Summary Create a customer
@@ -189,4 +198,72 @@ func (h *CustomerHandler) GetCustomerByLookupKey(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// @Summary Get customer entitlements
+// @Description Get customer entitlements
+// @Tags Customers
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Customer ID"
+// @Param filter query dto.GetCustomerEntitlementsRequest false "Filter"
+// @Success 200 {object} dto.CustomerEntitlementsResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /customers/{id}/entitlements [get]
+func (h *CustomerHandler) GetCustomerEntitlements(c *gin.Context) {
+	id := c.Param("id")
+
+	// Parse query parameters using binding
+	var req dto.GetCustomerEntitlementsRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid query parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Call billing service instead of customer service
+	response, err := h.billing.GetCustomerEntitlements(c.Request.Context(), id, &req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// @Summary Get customer usage summary
+// @Description Get customer usage summary
+// @Tags Customers
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Customer ID"
+// @Param filter query dto.GetCustomerUsageSummaryRequest false "Filter"
+// @Success 200 {object} dto.CustomerUsageSummaryResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /customers/{id}/usage [get]
+func (h *CustomerHandler) GetCustomerUsageSummary(c *gin.Context) {
+	id := c.Param("id")
+
+	// Parse query parameters using binding
+	var req dto.GetCustomerUsageSummaryRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid query parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Call billing service instead of customer service
+	response, err := h.billing.GetCustomerUsageSummary(c.Request.Context(), id, &req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
 }

@@ -56,6 +56,11 @@ func (r *CreateEntitlementRequest) Validate() error {
 }
 
 func (r *CreateEntitlementRequest) ToEntitlement(ctx context.Context) *entitlement.Entitlement {
+	// If the feature is static or metered, it is by default enabled
+	if r.FeatureType == types.FeatureTypeStatic || r.FeatureType == types.FeatureTypeMetered {
+		r.IsEnabled = true
+	}
+
 	return &entitlement.Entitlement{
 		ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT),
 		PlanID:           r.PlanID,

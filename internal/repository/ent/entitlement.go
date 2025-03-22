@@ -336,6 +336,42 @@ func (r *entitlementRepository) DeleteBulk(ctx context.Context, ids []string) er
 	return nil
 }
 
+// ListByPlanIDs retrieves all entitlements for the given plan IDs
+func (r *entitlementRepository) ListByPlanIDs(ctx context.Context, planIDs []string) ([]*domainEntitlement.Entitlement, error) {
+	if len(planIDs) == 0 {
+		return []*domainEntitlement.Entitlement{}, nil
+	}
+
+	r.log.Debugw("listing entitlements by plan IDs", "plan_ids", planIDs)
+
+	// Create a filter with plan IDs
+	filter := &types.EntitlementFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		PlanIDs:     planIDs,
+	}
+
+	// Use the existing List method
+	return r.List(ctx, filter)
+}
+
+// ListByFeatureIDs retrieves all entitlements for the given feature IDs
+func (r *entitlementRepository) ListByFeatureIDs(ctx context.Context, featureIDs []string) ([]*domainEntitlement.Entitlement, error) {
+	if len(featureIDs) == 0 {
+		return []*domainEntitlement.Entitlement{}, nil
+	}
+
+	r.log.Debugw("listing entitlements by feature IDs", "feature_ids", featureIDs)
+
+	// Create a filter with feature IDs
+	filter := &types.EntitlementFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		FeatureIDs:  featureIDs,
+	}
+
+	// Use the existing List method
+	return r.List(ctx, filter)
+}
+
 // EntitlementQuery type alias for better readability
 type EntitlementQuery = *ent.EntitlementQuery
 

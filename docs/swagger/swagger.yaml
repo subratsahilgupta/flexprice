@@ -20,6 +20,33 @@ definitions:
         maxLength: 100
         type: string
     type: object
+  dto.AggregatedEntitlement:
+    properties:
+      is_enabled:
+        type: boolean
+      is_soft_limit:
+        type: boolean
+      static_values:
+        description: For static/SLA features
+        items:
+          type: string
+        type: array
+      usage_limit:
+        type: integer
+      usage_reset_period:
+        $ref: '#/definitions/types.BillingPeriod'
+    type: object
+  dto.AggregatedFeature:
+    properties:
+      entitlement:
+        $ref: '#/definitions/dto.AggregatedEntitlement'
+      feature:
+        $ref: '#/definitions/dto.FeatureResponse'
+      sources:
+        items:
+          $ref: '#/definitions/dto.EntitlementSource'
+        type: array
+    type: object
   dto.AuthResponse:
     properties:
       tenant_id:
@@ -27,6 +54,16 @@ definitions:
       token:
         type: string
       user_id:
+        type: string
+    type: object
+  dto.BillingPeriodInfo:
+    properties:
+      end_time:
+        type: string
+      period:
+        description: e.g., "monthly", "yearly"
+        type: string
+      start_time:
         type: string
     type: object
   dto.CreateAPIKeyRequest:
@@ -552,6 +589,15 @@ definitions:
     - currency
     - customer_id
     type: object
+  dto.CustomerEntitlementsResponse:
+    properties:
+      customer_id:
+        type: string
+      features:
+        items:
+          $ref: '#/definitions/dto.AggregatedFeature'
+        type: array
+    type: object
   dto.CustomerInvoiceSummary:
     properties:
       currency:
@@ -640,6 +686,19 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.CustomerUsageSummaryResponse:
+    properties:
+      customer_id:
+        type: string
+      features:
+        items:
+          $ref: '#/definitions/dto.FeatureUsageSummary'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+      period:
+        $ref: '#/definitions/dto.BillingPeriodInfo'
+    type: object
   dto.EntitlementResponse:
     properties:
       created_at:
@@ -678,6 +737,25 @@ definitions:
         type: integer
       usage_reset_period:
         $ref: '#/definitions/types.BillingPeriod'
+    type: object
+  dto.EntitlementSource:
+    properties:
+      entitlement_id:
+        type: string
+      is_enabled:
+        type: boolean
+      plan_id:
+        type: string
+      plan_name:
+        type: string
+      quantity:
+        type: integer
+      static_value:
+        type: string
+      subscription_id:
+        type: string
+      usage_limit:
+        type: integer
     type: object
   dto.EnvironmentResponse:
     properties:
@@ -746,6 +824,25 @@ definitions:
         type: string
       updated_by:
         type: string
+    type: object
+  dto.FeatureUsageSummary:
+    properties:
+      current_usage:
+        type: number
+      feature:
+        $ref: '#/definitions/dto.FeatureResponse'
+      is_enabled:
+        type: boolean
+      is_soft_limit:
+        type: boolean
+      sources:
+        items:
+          $ref: '#/definitions/dto.EntitlementSource'
+        type: array
+      total_limit:
+        type: integer
+      usage_percent:
+        type: number
     type: object
   dto.GetEventsResponse:
     properties:
@@ -1686,6 +1783,8 @@ definitions:
       filter_values:
         $ref: '#/definitions/price.JSONBFilters'
       meter_display_name:
+        type: string
+      meter_id:
         type: string
       price:
         $ref: '#/definitions/price.Price'
@@ -3141,6 +3240,49 @@ paths:
       summary: Update a customer
       tags:
       - Customers
+  /customers/{id}/entitlements:
+    get:
+      consumes:
+      - application/json
+      description: Get customer entitlements
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: feature_ids
+        type: array
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: subscription_ids
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CustomerEntitlementsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get customer entitlements
+      tags:
+      - Customers
   /customers/{id}/invoices/summary:
     get:
       consumes:
@@ -3172,6 +3314,49 @@ paths:
       summary: Get a customer invoice summary
       tags:
       - Invoices
+  /customers/{id}/usage:
+    get:
+      consumes:
+      - application/json
+      description: Get customer usage summary
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: feature_ids
+        type: array
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: subscription_ids
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CustomerUsageSummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get customer usage summary
+      tags:
+      - Customers
   /customers/{id}/wallets:
     get:
       consumes:
@@ -5540,6 +5725,10 @@ paths:
           type: string
         name: subscription_status
         type: array
+      - description: WithLineItems includes line items in the response
+        in: query
+        name: with_line_items
+        type: boolean
       produces:
       - application/json
       responses:

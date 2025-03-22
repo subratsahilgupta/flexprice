@@ -6,7 +6,10 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -56,6 +59,12 @@ type BillingService interface {
 
 	// CreateInvoiceRequestForCharges creates an invoice creation request for the given charges
 	CreateInvoiceRequestForCharges(ctx context.Context, sub *subscription.Subscription, result *BillingCalculationResult, periodStart, periodEnd time.Time, description string, metadata types.Metadata) (*dto.CreateInvoiceRequest, error)
+
+	// GetCustomerEntitlements returns aggregated entitlements for a customer across all subscriptions
+	GetCustomerEntitlements(ctx context.Context, customerID string, req *dto.GetCustomerEntitlementsRequest) (*dto.CustomerEntitlementsResponse, error)
+
+	// GetCustomerUsageSummary returns usage summaries for a customer's features
+	GetCustomerUsageSummary(ctx context.Context, customerID string, req *dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error)
 }
 
 type billingService struct {
@@ -647,4 +656,426 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 	}
 
 	return req, nil
+}
+
+// Helper functions for aggregating entitlements
+func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlement) *dto.AggregatedEntitlement {
+	var totalLimit int64 = 0
+	isSoftLimit := true
+	var usageResetPeriod types.BillingPeriod
+
+	// First pass: check if any hard limits exist
+	for _, e := range entitlements {
+		if e.IsEnabled && !e.IsSoftLimit {
+			isSoftLimit = false
+			break
+		}
+	}
+
+	// Second pass: calculate total limit based on soft/hard limit policy
+	if isSoftLimit {
+		// For soft limits, sum all limits
+		for _, e := range entitlements {
+			if e.IsEnabled && e.UsageLimit != nil {
+				totalLimit += *e.UsageLimit
+			}
+		}
+	} else {
+		// For hard limits, use the minimum non-zero limit
+		var minLimit *int64
+		for _, e := range entitlements {
+			if e.IsEnabled && e.UsageLimit != nil && !e.IsSoftLimit {
+				if minLimit == nil || *e.UsageLimit < *minLimit {
+					minLimit = e.UsageLimit
+				}
+			}
+		}
+		if minLimit != nil {
+			totalLimit = *minLimit
+		}
+	}
+
+	// Determine reset period (use most common)
+	resetPeriodCounts := make(map[types.BillingPeriod]int)
+	for _, e := range entitlements {
+		if e.IsEnabled && e.UsageResetPeriod != "" {
+			resetPeriodCounts[e.UsageResetPeriod]++
+		}
+	}
+
+	maxCount := 0
+	for period, count := range resetPeriodCounts {
+		if count > maxCount {
+			maxCount = count
+			usageResetPeriod = period
+		}
+	}
+
+	return &dto.AggregatedEntitlement{
+		IsEnabled:        len(entitlements) > 0,
+		UsageLimit:       &totalLimit,
+		IsSoftLimit:      isSoftLimit,
+		UsageResetPeriod: usageResetPeriod,
+	}
+}
+
+func aggregateBooleanEntitlementsForBilling(entitlements []*entitlement.Entitlement) *dto.AggregatedEntitlement {
+	isEnabled := false
+
+	// If any subscription enables the feature, it's enabled
+	for _, e := range entitlements {
+		if e.IsEnabled {
+			isEnabled = true
+			break
+		}
+	}
+
+	return &dto.AggregatedEntitlement{
+		IsEnabled: isEnabled,
+	}
+}
+
+func aggregateStaticEntitlementsForBilling(entitlements []*entitlement.Entitlement) *dto.AggregatedEntitlement {
+	isEnabled := false
+	staticValues := []string{}
+	valueMap := make(map[string]bool) // To deduplicate values
+
+	for _, e := range entitlements {
+		if e.IsEnabled {
+			isEnabled = true
+			if e.StaticValue != "" && !valueMap[e.StaticValue] {
+				staticValues = append(staticValues, e.StaticValue)
+				valueMap[e.StaticValue] = true
+			}
+		}
+	}
+
+	return &dto.AggregatedEntitlement{
+		IsEnabled:    isEnabled,
+		StaticValues: staticValues,
+	}
+}
+
+func (s *billingService) GetCustomerEntitlements(ctx context.Context, customerID string, req *dto.GetCustomerEntitlementsRequest) (*dto.CustomerEntitlementsResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	resp := &dto.CustomerEntitlementsResponse{
+		CustomerID: customerID,
+		Features:   []*dto.AggregatedFeature{},
+	}
+
+	// 1. Get active subscriptions for the customer
+	subscriptions, err := s.SubRepo.ListByCustomerID(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter subscriptions if IDs are specified
+	if len(req.SubscriptionIDs) > 0 {
+		filteredSubscriptions := make([]*subscription.Subscription, 0)
+		for _, sub := range subscriptions {
+			if lo.Contains(req.SubscriptionIDs, sub.ID) {
+				filteredSubscriptions = append(filteredSubscriptions, sub)
+			}
+		}
+		subscriptions = filteredSubscriptions
+	}
+
+	// Return empty response if no subscriptions found
+	if len(subscriptions) == 0 {
+		return resp, nil
+	}
+
+	// 2. Extract plan IDs from active line items in subscriptions
+	planIDs := make([]string, 0)
+	subscriptionMap := make(map[string]*subscription.Subscription)
+
+	for _, sub := range subscriptions {
+		subscriptionMap[sub.ID] = sub
+		for _, li := range sub.LineItems {
+			if li.IsActive() {
+				planIDs = append(planIDs, li.PlanID)
+			}
+		}
+	}
+	// Deduplicate plan IDs
+	planIDs = lo.Uniq(planIDs)
+
+	// 3. Get plans for the subscriptions
+	planFilter := types.NewNoLimitPlanFilter()
+	planFilter.PlanIDs = planIDs
+	plans, err := s.PlanRepo.List(ctx, planFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a map of plan IDs to plans for easy lookup
+	planMap := make(map[string]*plan.Plan)
+	for _, p := range plans {
+		planMap[p.ID] = p
+	}
+
+	// 4. Get entitlements for the plans
+	entitlements, err := s.EntitlementRepo.ListByPlanIDs(ctx, planIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter by feature IDs if provided
+	if len(req.FeatureIDs) > 0 {
+		filteredEntitlements := make([]*entitlement.Entitlement, 0)
+		for _, e := range entitlements {
+			if lo.Contains(req.FeatureIDs, e.FeatureID) {
+				filteredEntitlements = append(filteredEntitlements, e)
+			}
+		}
+		entitlements = filteredEntitlements
+	}
+
+	if len(entitlements) == 0 {
+		return resp, nil
+	}
+
+	// 5. Get all unique feature IDs and organize entitlements
+	featureIDs := make([]string, 0)
+
+	// Map of plan ID to its entitlements
+	entitlementsByPlan := make(map[string][]*entitlement.Entitlement)
+
+	for _, e := range entitlements {
+		featureIDs = append(featureIDs, e.FeatureID)
+		if _, ok := entitlementsByPlan[e.PlanID]; !ok {
+			entitlementsByPlan[e.PlanID] = make([]*entitlement.Entitlement, 0)
+		}
+		entitlementsByPlan[e.PlanID] = append(entitlementsByPlan[e.PlanID], e)
+	}
+	featureIDs = lo.Uniq(featureIDs)
+
+	// 6. Get features
+	features, err := s.FeatureRepo.ListByIDs(ctx, featureIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a map of feature IDs to features for easy lookup
+	featureMap := make(map[string]*feature.Feature)
+	for _, f := range features {
+		featureMap[f.ID] = f
+	}
+
+	// 7. Group entitlements by feature (across all subscriptions and line items)
+	// This will be used to create our final response with one entry per feature
+	entitlementsByFeature := make(map[string][]*entitlement.Entitlement)
+
+	// Track sources for each feature
+	sourcesByFeature := make(map[string][]*dto.EntitlementSource)
+	// Use a map to deduplicate sources by unique key
+	sourceDedupeMap := make(map[string]bool)
+
+	// Process each subscription and its line items
+	for _, sub := range subscriptions {
+		// Process each line item in the subscription
+		for _, li := range sub.LineItems {
+			if !li.IsActive() {
+				continue
+			}
+
+			// Get entitlements for this plan
+			planEntitlements, ok := entitlementsByPlan[li.PlanID]
+			if !ok {
+				continue
+			}
+
+			// Get the plan details
+			p, ok := planMap[li.PlanID]
+			if !ok {
+				continue
+			}
+
+			// Convert quantity to int (floor the decimal)
+			quantity := li.Quantity.IntPart()
+			if quantity <= 0 {
+				quantity = 1 // Ensure at least 1 quantity
+			}
+
+			// Process each entitlement for this plan
+			for _, e := range planEntitlements {
+				// Create a unique key for deduplication
+				sourceKey := fmt.Sprintf("%s-%s-%s-%s", e.FeatureID, sub.ID, p.ID, e.ID)
+				if sourceDedupeMap[sourceKey] {
+					continue // Skip if we've already processed this source
+				}
+				sourceDedupeMap[sourceKey] = true
+
+				// Create a source for this entitlement
+				source := &dto.EntitlementSource{
+					SubscriptionID: sub.ID,
+					PlanID:         p.ID,
+					PlanName:       p.Name,
+					Quantity:       quantity,
+					EntitlementID:  e.ID,
+					IsEnabled:      e.IsEnabled,
+					UsageLimit:     e.UsageLimit,
+					StaticValue:    e.StaticValue,
+				}
+
+				// Initialize feature collections if needed
+				if _, ok := entitlementsByFeature[e.FeatureID]; !ok {
+					entitlementsByFeature[e.FeatureID] = make([]*entitlement.Entitlement, 0)
+					sourcesByFeature[e.FeatureID] = make([]*dto.EntitlementSource, 0)
+				}
+
+				// Add source to feature sources
+				sourcesByFeature[e.FeatureID] = append(sourcesByFeature[e.FeatureID], source)
+
+				// For each quantity of the line item, add the entitlement
+				for range quantity {
+					// Duplicate the entitlement for each quantity
+					entitlementCopy := *e // Make a copy to avoid modifying the original
+					entitlementsByFeature[e.FeatureID] = append(entitlementsByFeature[e.FeatureID], &entitlementCopy)
+				}
+			}
+		}
+	}
+
+	// 8. Aggregate entitlements by feature and build the response
+	aggregatedFeatures := make([]*dto.AggregatedFeature, 0, len(featureIDs))
+
+	for featureID, featureEntitlements := range entitlementsByFeature {
+		f, ok := featureMap[featureID]
+		if !ok {
+			// Skip if feature not found
+			continue
+		}
+
+		// Create feature response
+		featureResponse := &dto.FeatureResponse{Feature: f}
+
+		// Aggregate entitlements based on feature type
+		var aggregatedEntitlement *dto.AggregatedEntitlement
+		switch f.Type {
+		case types.FeatureTypeMetered:
+			aggregatedEntitlement = aggregateMeteredEntitlementsForBilling(featureEntitlements)
+		case types.FeatureTypeBoolean:
+			aggregatedEntitlement = aggregateBooleanEntitlementsForBilling(featureEntitlements)
+		case types.FeatureTypeStatic:
+			aggregatedEntitlement = aggregateStaticEntitlementsForBilling(featureEntitlements)
+		default:
+			// Skip unknown feature types
+			continue
+		}
+
+		// Create aggregated feature with sources
+		aggregatedFeature := &dto.AggregatedFeature{
+			Feature:     featureResponse,
+			Entitlement: aggregatedEntitlement,
+			Sources:     sourcesByFeature[featureID],
+		}
+
+		aggregatedFeatures = append(aggregatedFeatures, aggregatedFeature)
+	}
+
+	// 9. Build final response
+	response := &dto.CustomerEntitlementsResponse{
+		CustomerID: customerID,
+		Features:   aggregatedFeatures,
+	}
+
+	return response, nil
+}
+
+func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID string, req *dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error) {
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	// 1. Get customer entitlements first
+	entitlementsReq := &dto.GetCustomerEntitlementsRequest{
+		SubscriptionIDs: req.SubscriptionIDs,
+		FeatureIDs:      req.FeatureIDs,
+	}
+
+	entitlements, err := s.GetCustomerEntitlements(ctx, customerID, entitlementsReq)
+	if err != nil {
+		return nil, err
+	}
+
+	subscriptionIDs := make([]string, 0)
+	for _, entitlement := range entitlements.Features {
+		for _, source := range entitlement.Sources {
+			subscriptionIDs = append(subscriptionIDs, source.SubscriptionID)
+		}
+	}
+	subscriptionIDs = lo.Uniq(subscriptionIDs)
+
+	// 2. Initialize response with customer ID
+	resp := &dto.CustomerUsageSummaryResponse{
+		CustomerID: customerID,
+		Features:   make([]*dto.FeatureUsageSummary, 0),
+	}
+
+	// If no features found, return empty response
+	if len(entitlements.Features) == 0 {
+		return resp, nil
+	}
+
+	// 3. Create a map to track usage by feature ID
+	usageByFeature := make(map[string]decimal.Decimal)
+	meterFeatureMap := make(map[string]string)
+
+	for _, feature := range entitlements.Features {
+		usageByFeature[feature.Feature.ID] = decimal.Zero
+		meterFeatureMap[feature.Feature.MeterID] = feature.Feature.ID
+	}
+
+	// 4. Get usage for each subscription
+	for _, subscriptionID := range subscriptionIDs {
+		usageReq := &dto.GetUsageBySubscriptionRequest{
+			SubscriptionID: subscriptionID,
+		}
+
+		usage, err := subscriptionService.GetUsageBySubscription(ctx, usageReq)
+		if err != nil {
+			return nil, err
+		}
+
+		// Add usage if found for this feature
+		for _, charge := range usage.Charges {
+			if featureID, ok := meterFeatureMap[charge.MeterID]; ok {
+				currentUsage := usageByFeature[featureID]
+				usageByFeature[featureID] = currentUsage.Add(decimal.NewFromFloat(charge.Quantity))
+			}
+		}
+	}
+
+	// 5. Build final response combining entitlements and usage
+	for _, feature := range entitlements.Features {
+		featureID := feature.Feature.ID
+		usage := usageByFeature[featureID]
+
+		featureSummary := &dto.FeatureUsageSummary{
+			Feature:      feature.Feature,
+			TotalLimit:   feature.Entitlement.UsageLimit,
+			CurrentUsage: usage,
+			UsagePercent: s.getUsagePercent(usage, feature.Entitlement.UsageLimit),
+			IsEnabled:    feature.Entitlement.IsEnabled,
+			IsSoftLimit:  feature.Entitlement.IsSoftLimit,
+			Sources:      feature.Sources,
+		}
+
+		resp.Features = append(resp.Features, featureSummary)
+	}
+
+	return resp, nil
+}
+
+func (s *billingService) getUsagePercent(usage decimal.Decimal, limit *int64) decimal.Decimal {
+	if limit == nil {
+		return decimal.Zero
+	}
+
+	if *limit == 0 {
+		return decimal.Zero
+	}
+
+	return usage.Div(decimal.NewFromInt(*limit))
 }

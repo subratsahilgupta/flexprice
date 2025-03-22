@@ -19,4 +19,8 @@ type Repository interface {
 	// Bulk operations
 	CreateBulk(ctx context.Context, entitlements []*Entitlement) ([]*Entitlement, error)
 	DeleteBulk(ctx context.Context, ids []string) error
+
+	// Specific filter operations
+	ListByPlanIDs(ctx context.Context, planIDs []string) ([]*Entitlement, error)
+	ListByFeatureIDs(ctx context.Context, featureIDs []string) ([]*Entitlement, error)
 }
