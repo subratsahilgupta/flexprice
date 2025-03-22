@@ -7,7 +7,7 @@ This document outlines the implementation plan for two new APIs that provide cus
 1. **GetCustomerEntitlements**: Aggregates all entitlements for a customer across all subscriptions at the feature level
 2. **GetCustomerUsageSummary**: Provides usage summary for the current period for all metered entitlements across subscriptions
 
-These APIs will be implemented in the billing service since they focus on customer-level aggregation that spac across entites and will be designed to be lightweight, fast, and informative.
+These APIs will be implemented in the billing service since they focus on customer-level aggregation that span across entities and will be designed to be lightweight, fast, and informative.
 
 ## 2. API Specifications
 
