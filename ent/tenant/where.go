@@ -294,6 +294,16 @@ func UpdatedAtLTE(v time.Time) predicate.Tenant {
 	return predicate.Tenant(sql.FieldLTE(FieldUpdatedAt, v))
 }
 
+// BillingDetailsIsNil applies the IsNil predicate on the "billing_details" field.
+func BillingDetailsIsNil() predicate.Tenant {
+	return predicate.Tenant(sql.FieldIsNull(FieldBillingDetails))
+}
+
+// BillingDetailsNotNil applies the NotNil predicate on the "billing_details" field.
+func BillingDetailsNotNil() predicate.Tenant {
+	return predicate.Tenant(sql.FieldNotNull(FieldBillingDetails))
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Tenant) predicate.Tenant {
 	return predicate.Tenant(sql.AndPredicates(predicates...))

@@ -4913,6 +4913,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/tenants/update": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update a tenant's details including name and billing information",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tenants"
+                ],
+                "summary": "Update a tenant",
+                "parameters": [
+                    {
+                        "description": "Update tenant request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateTenantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TenantResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/tenants/{id}": {
             "get": {
                 "security": [
@@ -5531,6 +5588,34 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dto.Address": {
+            "type": "object",
+            "properties": {
+                "address_city": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "address_country": {
+                    "type": "string"
+                },
+                "address_line1": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "address_line2": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "address_postal_code": {
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "address_state": {
+                    "type": "string",
+                    "maxLength": 100
+                }
+            }
+        },
         "dto.AuthResponse": {
             "type": "object",
             "properties": {
@@ -6265,6 +6350,9 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "billing_details": {
+                    "$ref": "#/definitions/dto.TenantBillingDetails"
+                },
                 "name": {
                     "type": "string"
                 }
@@ -8076,9 +8164,29 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.TenantBillingDetails": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "$ref": "#/definitions/dto.Address"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "help_email": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.TenantResponse": {
             "type": "object",
             "properties": {
+                "billing_details": {
+                    "$ref": "#/definitions/dto.TenantBillingDetails"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -8443,6 +8551,14 @@ const docTemplate = `{
             "properties": {
                 "task_status": {
                     "$ref": "#/definitions/types.TaskStatus"
+                }
+            }
+        },
+        "dto.UpdateTenantRequest": {
+            "type": "object",
+            "properties": {
+                "billing_details": {
+                    "$ref": "#/definitions/dto.TenantBillingDetails"
                 }
             }
         },

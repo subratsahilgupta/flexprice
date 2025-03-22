@@ -1,5 +1,25 @@
 basePath: /v1
 definitions:
+  dto.Address:
+    properties:
+      address_city:
+        maxLength: 100
+        type: string
+      address_country:
+        type: string
+      address_line1:
+        maxLength: 255
+        type: string
+      address_line2:
+        maxLength: 255
+        type: string
+      address_postal_code:
+        maxLength: 20
+        type: string
+      address_state:
+        maxLength: 100
+        type: string
+    type: object
   dto.AuthResponse:
     properties:
       tenant_id:
@@ -494,6 +514,8 @@ definitions:
     type: object
   dto.CreateTenantRequest:
     properties:
+      billing_details:
+        $ref: '#/definitions/dto.TenantBillingDetails'
       name:
         type: string
     required:
@@ -1718,8 +1740,21 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.TenantBillingDetails:
+    properties:
+      address:
+        $ref: '#/definitions/dto.Address'
+      email:
+        type: string
+      help_email:
+        type: string
+      phone:
+        type: string
+    type: object
   dto.TenantResponse:
     properties:
+      billing_details:
+        $ref: '#/definitions/dto.TenantBillingDetails'
       created_at:
         type: string
       id:
@@ -1974,6 +2009,11 @@ definitions:
         $ref: '#/definitions/types.TaskStatus'
     required:
     - task_status
+    type: object
+  dto.UpdateTenantRequest:
+    properties:
+      billing_details:
+        $ref: '#/definitions/dto.TenantBillingDetails'
     type: object
   dto.UpdateWalletRequest:
     properties:
@@ -6047,6 +6087,42 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get tenant by ID
+      tags:
+      - Tenants
+  /tenants/update:
+    put:
+      consumes:
+      - application/json
+      description: Update a tenant's details including name and billing information
+      parameters:
+      - description: Update tenant request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateTenantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TenantResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update a tenant
       tags:
       - Tenants
   /users/me:

@@ -3,12 +3,14 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/tenant"
 )
 
@@ -24,8 +26,10 @@ type Tenant struct {
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
-	selectValues sql.SelectValues
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	// BillingDetails holds the value of the "billing_details" field.
+	BillingDetails schema.TenantBillingDetails `json:"billing_details,omitempty"`
+	selectValues   sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -33,6 +37,8 @@ func (*Tenant) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case tenant.FieldBillingDetails:
+			values[i] = new([]byte)
 		case tenant.FieldID, tenant.FieldName, tenant.FieldStatus:
 			values[i] = new(sql.NullString)
 		case tenant.FieldCreatedAt, tenant.FieldUpdatedAt:
@@ -82,6 +88,14 @@ func (t *Tenant) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				t.UpdatedAt = value.Time
 			}
+		case tenant.FieldBillingDetails:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_details", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &t.BillingDetails); err != nil {
+					return fmt.Errorf("unmarshal field billing_details: %w", err)
+				}
+			}
 		default:
 			t.selectValues.Set(columns[i], values[i])
 		}
@@ -129,6 +143,9 @@ func (t *Tenant) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_at=")
 	builder.WriteString(t.UpdatedAt.Format(time.ANSIC))
+	builder.WriteString(", ")
+	builder.WriteString("billing_details=")
+	builder.WriteString(fmt.Sprintf("%v", t.BillingDetails))
 	builder.WriteByte(')')
 	return builder.String()
 }

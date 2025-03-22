@@ -26668,17 +26668,18 @@ func (m *TaskMutation) ResetEdge(name string) error {
 // TenantMutation represents an operation that mutates the Tenant nodes in the graph.
 type TenantMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *string
-	name          *string
-	status        *string
-	created_at    *time.Time
-	updated_at    *time.Time
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*Tenant, error)
-	predicates    []predicate.Tenant
+	op              Op
+	typ             string
+	id              *string
+	name            *string
+	status          *string
+	created_at      *time.Time
+	updated_at      *time.Time
+	billing_details *schema.TenantBillingDetails
+	clearedFields   map[string]struct{}
+	done            bool
+	oldValue        func(context.Context) (*Tenant, error)
+	predicates      []predicate.Tenant
 }
 
 var _ ent.Mutation = (*TenantMutation)(nil)
@@ -26929,6 +26930,55 @@ func (m *TenantMutation) ResetUpdatedAt() {
 	m.updated_at = nil
 }
 
+// SetBillingDetails sets the "billing_details" field.
+func (m *TenantMutation) SetBillingDetails(sbd schema.TenantBillingDetails) {
+	m.billing_details = &sbd
+}
+
+// BillingDetails returns the value of the "billing_details" field in the mutation.
+func (m *TenantMutation) BillingDetails() (r schema.TenantBillingDetails, exists bool) {
+	v := m.billing_details
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingDetails returns the old "billing_details" field's value of the Tenant entity.
+// If the Tenant object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TenantMutation) OldBillingDetails(ctx context.Context) (v schema.TenantBillingDetails, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingDetails is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingDetails requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingDetails: %w", err)
+	}
+	return oldValue.BillingDetails, nil
+}
+
+// ClearBillingDetails clears the value of the "billing_details" field.
+func (m *TenantMutation) ClearBillingDetails() {
+	m.billing_details = nil
+	m.clearedFields[tenant.FieldBillingDetails] = struct{}{}
+}
+
+// BillingDetailsCleared returns if the "billing_details" field was cleared in this mutation.
+func (m *TenantMutation) BillingDetailsCleared() bool {
+	_, ok := m.clearedFields[tenant.FieldBillingDetails]
+	return ok
+}
+
+// ResetBillingDetails resets all changes to the "billing_details" field.
+func (m *TenantMutation) ResetBillingDetails() {
+	m.billing_details = nil
+	delete(m.clearedFields, tenant.FieldBillingDetails)
+}
+
 // Where appends a list predicates to the TenantMutation builder.
 func (m *TenantMutation) Where(ps ...predicate.Tenant) {
 	m.predicates = append(m.predicates, ps...)
@@ -26963,7 +27013,7 @@ func (m *TenantMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TenantMutation) Fields() []string {
-	fields := make([]string, 0, 4)
+	fields := make([]string, 0, 5)
 	if m.name != nil {
 		fields = append(fields, tenant.FieldName)
 	}
@@ -26975,6 +27025,9 @@ func (m *TenantMutation) Fields() []string {
 	}
 	if m.updated_at != nil {
 		fields = append(fields, tenant.FieldUpdatedAt)
+	}
+	if m.billing_details != nil {
+		fields = append(fields, tenant.FieldBillingDetails)
 	}
 	return fields
 }
@@ -26992,6 +27045,8 @@ func (m *TenantMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedAt()
 	case tenant.FieldUpdatedAt:
 		return m.UpdatedAt()
+	case tenant.FieldBillingDetails:
+		return m.BillingDetails()
 	}
 	return nil, false
 }
@@ -27009,6 +27064,8 @@ func (m *TenantMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldCreatedAt(ctx)
 	case tenant.FieldUpdatedAt:
 		return m.OldUpdatedAt(ctx)
+	case tenant.FieldBillingDetails:
+		return m.OldBillingDetails(ctx)
 	}
 	return nil, fmt.Errorf("unknown Tenant field %s", name)
 }
@@ -27046,6 +27103,13 @@ func (m *TenantMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUpdatedAt(v)
 		return nil
+	case tenant.FieldBillingDetails:
+		v, ok := value.(schema.TenantBillingDetails)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingDetails(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Tenant field %s", name)
 }
@@ -27075,7 +27139,11 @@ func (m *TenantMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *TenantMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(tenant.FieldBillingDetails) {
+		fields = append(fields, tenant.FieldBillingDetails)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -27088,6 +27156,11 @@ func (m *TenantMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *TenantMutation) ClearField(name string) error {
+	switch name {
+	case tenant.FieldBillingDetails:
+		m.ClearBillingDetails()
+		return nil
+	}
 	return fmt.Errorf("unknown Tenant nullable field %s", name)
 }
 
@@ -27106,6 +27179,9 @@ func (m *TenantMutation) ResetField(name string) error {
 		return nil
 	case tenant.FieldUpdatedAt:
 		m.ResetUpdatedAt()
+		return nil
+	case tenant.FieldBillingDetails:
+		m.ResetBillingDetails()
 		return nil
 	}
 	return fmt.Errorf("unknown Tenant field %s", name)

@@ -36,6 +36,7 @@ func (r *tenantRepository) Create(ctx context.Context, tenant *domainTenant.Tena
 		SetStatus(string(tenant.Status)).
 		SetCreatedAt(tenant.CreatedAt).
 		SetUpdatedAt(tenant.UpdatedAt).
+		SetBillingDetails(tenant.BillingDetails.ToSchema()).
 		Save(ctx)
 
 	if err != nil {
@@ -96,4 +97,23 @@ func (r *tenantRepository) List(ctx context.Context) ([]*domainTenant.Tenant, er
 	}
 
 	return domainTenant.FromEntList(tenants), nil
+}
+
+// Update implements tenant.Repository.
+func (r *tenantRepository) Update(ctx context.Context, tenant *domainTenant.Tenant) error {
+	client := r.client.Querier(ctx)
+
+	_, err := client.Tenant.
+		UpdateOneID(tenant.ID).
+		SetName(tenant.Name).
+		SetBillingDetails(tenant.BillingDetails.ToSchema()).
+		Save(ctx)
+
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to update tenant").
+			Mark(ierr.ErrDatabase)
+	}
+
+	return nil
 }
