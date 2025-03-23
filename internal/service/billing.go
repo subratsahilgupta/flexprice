@@ -1073,8 +1073,8 @@ func (s *billingService) getUsagePercent(usage decimal.Decimal, limit *int64) de
 		return decimal.Zero
 	}
 
-	if *limit == 0 {
-		return decimal.Zero
+	if *limit <= 0 {
+		return decimal.NewFromInt(100)
 	}
 
 	return usage.Div(decimal.NewFromInt(*limit))
