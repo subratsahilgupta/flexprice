@@ -660,49 +660,35 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 
 // Helper functions for aggregating entitlements
 func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlement) *dto.AggregatedEntitlement {
+	hasUnlimitedEntitlement := false
+	isSoftLimit := false
 	var totalLimit int64 = 0
-	isSoftLimit := true
 	var usageResetPeriod types.BillingPeriod
+	resetPeriodCounts := make(map[types.BillingPeriod]int)
 
-	// First pass: check if any hard limits exist
 	for _, e := range entitlements {
-		if e.IsEnabled && !e.IsSoftLimit {
-			isSoftLimit = false
+		if !e.IsEnabled {
+			continue
+		}
+
+		if e.UsageLimit == nil {
+			hasUnlimitedEntitlement = true
 			break
 		}
-	}
 
-	// Second pass: calculate total limit based on soft/hard limit policy
-	if isSoftLimit {
-		// For soft limits, sum all limits
-		for _, e := range entitlements {
-			if e.IsEnabled && e.UsageLimit != nil {
-				totalLimit += *e.UsageLimit
-			}
+		if e.IsSoftLimit {
+			isSoftLimit = true
 		}
-	} else {
-		// For hard limits, use the minimum non-zero limit
-		var minLimit *int64
-		for _, e := range entitlements {
-			if e.IsEnabled && e.UsageLimit != nil && !e.IsSoftLimit {
-				if minLimit == nil || *e.UsageLimit < *minLimit {
-					minLimit = e.UsageLimit
-				}
-			}
-		}
-		if minLimit != nil {
-			totalLimit = *minLimit
-		}
-	}
 
-	// Determine reset period (use most common)
-	resetPeriodCounts := make(map[types.BillingPeriod]int)
-	for _, e := range entitlements {
-		if e.IsEnabled && e.UsageResetPeriod != "" {
+		// total limit is the sum of all limits
+		totalLimit += *e.UsageLimit
+
+		if e.UsageResetPeriod != "" {
 			resetPeriodCounts[e.UsageResetPeriod]++
 		}
 	}
 
+	// TODO: handle this better
 	maxCount := 0
 	for period, count := range resetPeriodCounts {
 		if count > maxCount {
@@ -711,12 +697,18 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 		}
 	}
 
+	var finalLimit *int64
+	if !hasUnlimitedEntitlement {
+		finalLimit = &totalLimit
+	}
+
 	return &dto.AggregatedEntitlement{
 		IsEnabled:        len(entitlements) > 0,
-		UsageLimit:       &totalLimit,
+		UsageLimit:       finalLimit,
 		IsSoftLimit:      isSoftLimit,
 		UsageResetPeriod: usageResetPeriod,
 	}
+
 }
 
 func aggregateBooleanEntitlementsForBilling(entitlements []*entitlement.Entitlement) *dto.AggregatedEntitlement {

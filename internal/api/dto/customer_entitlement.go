@@ -93,7 +93,7 @@ type CustomerUsageSummaryResponse struct {
 // FeatureUsageSummary represents usage for a single feature
 type FeatureUsageSummary struct {
 	Feature      *FeatureResponse     `json:"feature"`
-	TotalLimit   *int64               `json:"total_limit,omitempty"`
+	TotalLimit   *int64               `json:"total_limit"`
 	CurrentUsage decimal.Decimal      `json:"current_usage"`
 	UsagePercent decimal.Decimal      `json:"usage_percent"`
 	IsEnabled    bool                 `json:"is_enabled"`
