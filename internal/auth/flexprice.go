@@ -80,6 +80,7 @@ func (f *flexpriceAuth) Login(ctx context.Context, req AuthRequest, userAuthInfo
 	response := &AuthResponse{
 		ProviderToken: userAuthInfo.Token,
 		AuthToken:     authToken,
+		ID:            userAuthInfo.UserID,
 	}
 
 	return response, nil
