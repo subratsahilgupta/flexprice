@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	pdf "github.com/flexprice/flexprice/internal/domain/pdf"
+	"github.com/flexprice/flexprice/internal/domain/tenant"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
@@ -29,6 +32,7 @@ type InvoiceService interface {
 	GetCustomerInvoiceSummary(ctx context.Context, customerID string, currency string) (*dto.CustomerInvoiceSummary, error)
 	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
 	AttemptPayment(ctx context.Context, id string) error
+	GetInvoicePDF(ctx context.Context, id string) ([]byte, error)
 }
 
 type invoiceService struct {
@@ -782,4 +786,122 @@ func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *
 	}
 
 	return nil
+}
+
+// GetInvoicePDF implements InvoiceService.
+func (s *invoiceService) GetInvoicePDF(ctx context.Context, id string) ([]byte, error) {
+	// get invoice by id
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// fetch customer info
+	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// fetch biller info - tenant info from tenant id
+	tenant, err := s.TenantRepo.GetByID(ctx, inv.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	invoiceData, err := s.getInvoiceData(ctx, inv, customer, tenant)
+	if err != nil {
+		return nil, err
+	}
+
+	// generate pdf
+	return s.PDFGenerator.RenderInvoicePdf(ctx, invoiceData)
+
+}
+
+func (s *invoiceService) getInvoiceData(
+	ctx context.Context,
+	inv *invoice.Invoice,
+	customer *customer.Customer,
+	tenant *tenant.Tenant,
+) (*pdf.InvoiceData, error) {
+	if len(inv.LineItems) == 0 {
+		return nil, ierr.NewError("no line items found").Mark(ierr.ErrSystem)
+	}
+
+	invoiceNum := ""
+	if inv.InvoiceNumber != nil {
+		invoiceNum = *inv.InvoiceNumber
+	}
+
+	amountDue, _ := inv.AmountDue.Float64()
+	// Convert to InvoiceData
+	data := &pdf.InvoiceData{
+		ID:            inv.ID,
+		InvoiceNumber: invoiceNum,
+		InvoiceStatus: string(inv.InvoiceStatus),
+		Currency:      inv.Currency,
+		AmountDue:     amountDue,
+		BillingReason: inv.BillingReason,
+		Notes:         "",  // resolved from invoice metadata
+		VAT:           0.0, // resolved from invoice metadata
+		Biller:        tenant.ToPdfgenBillerInfo(),
+		Recipient:     customer.ToPdfgenRecipientInfo(),
+	}
+
+	// Convert dates
+	if inv.DueDate != nil {
+		data.DueDate = pdf.CustomTime{Time: *inv.DueDate}
+	}
+
+	// Parse metadata if available
+	if inv.Metadata != nil {
+		// Try to extract notes from metadata
+		if notes, ok := inv.Metadata["notes"]; ok {
+			data.Notes = notes
+		}
+
+		// Try to extract VAT from metadata
+		if vat, ok := inv.Metadata["vat"]; ok {
+			vatValue, err := strconv.ParseFloat(vat, 64)
+			if err != nil {
+				return nil, ierr.WithError(err).WithHintf("failed to parse VAT %s", vat).Mark(ierr.ErrDatabase)
+			}
+			data.VAT = vatValue
+		}
+	}
+
+	data.LineItems = make([]pdf.LineItemData, len(inv.LineItems))
+
+	for i, item := range inv.LineItems {
+		planDisplayName := ""
+		if item.PlanDisplayName != nil {
+			planDisplayName = *item.PlanDisplayName
+		}
+		displayName := ""
+		if item.DisplayName != nil {
+			displayName = *item.DisplayName
+		}
+
+		amount, _ := item.Amount.Float64()
+		quantity, _ := item.Quantity.Float64()
+
+		lineItem := pdf.LineItemData{
+			PlanDisplayName: planDisplayName,
+			DisplayName:     displayName,
+			Amount:          amount,
+			Quantity:        quantity,
+			Currency:        item.Currency,
+		}
+
+		if item.PeriodStart != nil {
+			lineItem.PeriodStart = item.PeriodStart
+		}
+		if item.PeriodEnd != nil {
+			lineItem.PeriodEnd = item.PeriodEnd
+		}
+
+		data.LineItems[i] = lineItem
+	}
+
+	return data, nil
 }

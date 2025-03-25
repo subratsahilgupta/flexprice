@@ -5,11 +5,11 @@ import (
 	"os"
 	"path/filepath"
 
-	domain "github.com/flexprice/flexprice/internal/domain/pdfgen"
+	domain "github.com/flexprice/flexprice/internal/domain/pdf"
 	"github.com/flexprice/flexprice/internal/pdfgen"
 )
 
-// Service defines the interface for PDF generation operations
+// PdfGenService defines the interface for PDF generation operations
 type PdfGenService interface {
 	// GenerateInvoicePDF generates a PDF for the given invoice ID
 	GenerateInvoicePDF(ctx context.Context, invoiceID string) ([]byte, error)
@@ -29,7 +29,6 @@ type PdfGenConfig struct {
 }
 
 type pdfGenService struct {
-	invoiceGenRepo  domain.Repository
 	templateDir     string
 	outputDir       string
 	fontDir         string
@@ -39,7 +38,6 @@ type pdfGenService struct {
 
 func NewPdfGenService(params ServiceParams, renderer pdfgen.InvoiceRenderer) PdfGenService {
 	return &pdfGenService{
-		invoiceGenRepo:  params.PdfGenRepo,
 		templateDir:     "assets/typsts",
 		outputDir:       "assets/typsts",
 		fontDir:         "assets/fonts",
@@ -62,12 +60,7 @@ func (s *pdfGenService) GenerateInvoicePDF(ctx context.Context, invoiceID string
 
 // GetInvoiceData retrieves invoice data for PDF generation
 func (s *pdfGenService) GetInvoiceData(ctx context.Context, invoiceID string) (*domain.InvoiceData, error) {
-	// Get invoice data with line items
-	data, err := s.invoiceGenRepo.GetInvoiceDataWithLineItems(ctx, invoiceID)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
+	return nil, nil
 }
 
 // RenderInvoice implements PdfGenService.

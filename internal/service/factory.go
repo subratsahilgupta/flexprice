@@ -11,7 +11,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/payment"
-	"github.com/flexprice/flexprice/internal/domain/pdfgen"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/secret"
@@ -20,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
@@ -28,9 +28,10 @@ import (
 // ServiceParams holds common dependencies for services
 // TODO: start using this for all services init
 type ServiceParams struct {
-	Logger *logger.Logger
-	Config *config.Configuration
-	DB     postgres.IClient
+	Logger       *logger.Logger
+	Config       *config.Configuration
+	DB           postgres.IClient
+	PDFGenerator pdf.Generator
 
 	// Repositories
 	AuthRepo        auth.Repository
@@ -49,7 +50,6 @@ type ServiceParams struct {
 	PaymentRepo     payment.Repository
 	SecretRepo      secret.Repository
 	EnvironmentRepo environment.Repository
-	PdfGenRepo      pdfgen.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -61,6 +61,7 @@ func NewServiceParams(
 	logger *logger.Logger,
 	config *config.Configuration,
 	db postgres.IClient,
+	pdfGenerator pdf.Generator,
 	authRepo auth.Repository,
 	userRepo user.Repository,
 	eventRepo events.Repository,
@@ -79,12 +80,12 @@ func NewServiceParams(
 	environmentRepo environment.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
-	pdfGenRepo pdfgen.Repository,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:           logger,
 		Config:           config,
 		DB:               db,
+		PDFGenerator:     pdfGenerator,
 		AuthRepo:         authRepo,
 		UserRepo:         userRepo,
 		EventRepo:        eventRepo,
@@ -103,6 +104,5 @@ func NewServiceParams(
 		EnvironmentRepo:  environmentRepo,
 		EventPublisher:   eventPublisher,
 		WebhookPublisher: webhookPublisher,
-		PdfGenRepo:       pdfGenRepo,
 	}
 }

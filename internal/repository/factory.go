@@ -11,7 +11,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/payment"
-	"github.com/flexprice/flexprice/internal/domain/pdfgen"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/secret"
@@ -102,8 +101,4 @@ func NewTaskRepository(p RepositoryParams) task.Repository {
 
 func NewSecretRepository(p RepositoryParams) secret.Repository {
 	return entRepo.NewSecretRepository(p.EntClient, p.Logger)
-}
-
-func NewPdfGenRepository(p RepositoryParams) pdfgen.Repository {
-	return entRepo.NewPdfGenRepository(p.EntClient, p.Logger)
 }

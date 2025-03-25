@@ -50,40 +50,24 @@
   result.rev() + decimal-part
 }
 
-
-
+// Define the default-invoice function
 #let default-invoice(
   language: "en",
-  country: none,
   currency: "$",
   title: none,
   banner-image: none,
-  invoice-id: none,
-  customer-id: none,
-  subscription-id: none,
-  invoice-type: "SUBSCRIPTION",  // SUBSCRIPTION, ONE_OFF, CREDIT
   invoice-status: "DRAFT",       // DRAFT, FINALIZED, VOIDED
-  payment-status: "PENDING",     // PENDING, PAID, UNPAID, PARTIALLY_PAID
   invoice-number: none,
   issuing-date: none,
   due-date: none,
-  period-start: none,
-  period-end: none,
-  amount-due: 0,
-  amount-paid: 0,
-  amount-remaining: 0,
+  amount-due: 0,  
   notes: "",
-  billing-reason: none,         // SUBSCRIPTION_CREATE, SUBSCRIPTION_CYCLE, SUBSCRIPTION_UPDATE, MANUAL
-  paid-at: none,
-  voided-at: none,
-  finalized-at: none,
   biller: (:),                  // Company info
   recipient: (:),               // Customer info
   keywords: (),
   styling: (:),                 // font, font-size, margin (sets defaults below)
   items: (),                    // Line items
-  vat: 0,                       // VAT percentage as decimal (0.19 = 19%)
-  metadata: (:),                // Additional metadata
+  vat: 0,                       // VAT percentage as decimal
   doc,
 ) = {
   // Set styling defaults
@@ -242,7 +226,7 @@
   v(2em)
 
   // Payment information
-  if invoice-status == "FINALIZED" and amount-remaining > 0 {
+  if invoice-status == "FINALIZED" {
     [== Payment Information]
     v(1em)
 

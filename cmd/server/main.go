@@ -16,7 +16,7 @@ import (
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/pdfgen"
+	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
@@ -25,6 +25,7 @@ import (
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/temporal"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/typst"
 	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/flexprice/flexprice/internal/webhook"
 	"go.uber.org/fx"
@@ -82,7 +83,10 @@ func main() {
 			clickhouse.NewClickHouseStore,
 
 			// Typst
-			pdfgen.NewTypstRenderer,
+			typst.DefaultCompiler,
+
+			// Pdf generation
+			pdf.NewGenerator,
 
 			// Optional DBs
 			dynamodb.NewClient,
@@ -115,7 +119,6 @@ func main() {
 			repository.NewPaymentRepository,
 			repository.NewTaskRepository,
 			repository.NewSecretRepository,
-			repository.NewPdfGenRepository,
 			// PubSub
 			pubsubRouter.NewRouter,
 
@@ -156,7 +159,6 @@ func main() {
 			service.NewSecretService,
 			service.NewOnboardingService,
 			service.NewBillingService,
-			service.NewPdfGenService,
 		),
 	)
 
@@ -201,7 +203,6 @@ func provideHandlers(
 	secretService service.SecretService,
 	onboardingService service.OnboardingService,
 	billingService service.BillingService,
-	pdfGenService service.PdfGenService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:            v1.NewEventsHandler(eventService, logger),
@@ -217,7 +218,7 @@ func provideHandlers(
 		SubscriptionPause: v1.NewSubscriptionPauseHandler(subscriptionService, logger),
 		Wallet:            v1.NewWalletHandler(walletService, logger),
 		Tenant:            v1.NewTenantHandler(tenantService, logger),
-		Invoice:           v1.NewInvoiceHandler(invoiceService, pdfGenService, temporalService, logger),
+		Invoice:           v1.NewInvoiceHandler(invoiceService, temporalService, logger),
 		Feature:           v1.NewFeatureHandler(featureService, logger),
 		Entitlement:       v1.NewEntitlementHandler(entitlementService, logger),
 		Payment:           v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),

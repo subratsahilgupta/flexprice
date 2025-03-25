@@ -17,15 +17,13 @@ import (
 
 type InvoiceHandler struct {
 	invoiceService  service.InvoiceService
-	pdfGenService   service.PdfGenService
 	temporalService *temporal.Service
 	logger          *logger.Logger
 }
 
-func NewInvoiceHandler(invoiceService service.InvoiceService, pdfGenService service.PdfGenService, temporalService *temporal.Service, logger *logger.Logger) *InvoiceHandler {
+func NewInvoiceHandler(invoiceService service.InvoiceService, temporalService *temporal.Service, logger *logger.Logger) *InvoiceHandler {
 	return &InvoiceHandler{
 		invoiceService:  invoiceService,
-		pdfGenService:   pdfGenService,
 		temporalService: temporalService,
 		logger:          logger,
 	}
@@ -351,7 +349,7 @@ func (h *InvoiceHandler) GetInvoicePDF(c *gin.Context) {
 		return
 	}
 
-	pdf, err := h.pdfGenService.GenerateInvoicePDF(c.Request.Context(), id)
+	pdf, err := h.invoiceService.GetInvoicePDF(c.Request.Context(), id)
 	if err != nil {
 		h.logger.Errorw("failed to generate invoice pdf", "error", err, "invoice_id", id)
 		c.Error(err)
