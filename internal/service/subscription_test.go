@@ -350,7 +350,26 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscription() {
 				EndTime:   s.testData.now.Add(-50 * 24 * time.Hour),
 				Amount:    0,
 				Currency:  "usd",
-				Charges:   []*dto.SubscriptionUsageByMetersResponse{},
+				Charges: []*dto.SubscriptionUsageByMetersResponse{
+					{
+						MeterDisplayName: "Storage",
+						Quantity:         decimal.NewFromInt(0).InexactFloat64(),
+						Amount:           0,
+						Price:            s.testData.prices.storage,
+					},
+					{
+						MeterDisplayName: "Storage",
+						Quantity:         decimal.NewFromInt(0).InexactFloat64(),
+						Amount:           0,
+						Price:            s.testData.prices.storageArchive,
+					},
+					{
+						MeterDisplayName: "API Calls",
+						Quantity:         decimal.NewFromInt(0).InexactFloat64(),
+						Amount:          0,
+						Price:            s.testData.prices.apiCalls,
+					},
+				},
 			},
 			wantErr: false,
 		},
@@ -364,6 +383,26 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscription() {
 				EndTime:   s.testData.subscription.CurrentPeriodEnd,
 				Amount:    61.5, // same as first test since events fall in current period
 				Currency:  "usd",
+				Charges: []*dto.SubscriptionUsageByMetersResponse{
+					{
+						MeterDisplayName: "Storage",
+						Quantity:         decimal.NewFromInt(300).InexactFloat64(),
+						Amount:           30, // standard: 300 * 0.1
+						Price:            s.testData.prices.storage,
+					},
+					{
+						MeterDisplayName: "Storage",
+						Quantity:         decimal.NewFromInt(300).InexactFloat64(),
+						Amount:           9, // archive: 300 * 0.03
+						Price:            s.testData.prices.storageArchive,
+					},
+					{
+						MeterDisplayName: "API Calls",
+						Quantity:         decimal.NewFromInt(1500).InexactFloat64(),
+						Amount:           22.5, // tiers: (1000 *0.02=20) + (500*0.005=2.5)
+						Price:            s.testData.prices.apiCalls,
+					},
+				},
 			},
 			wantErr: false,
 		},
@@ -398,7 +437,7 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscription() {
 			s.Equal(tt.want.Currency, got.Currency)
 
 			if tt.want.Charges != nil {
-				s.Len(got.Charges, len(tt.want.Charges))
+				s.Len(got.Charges, len(tt.want.Charges), "Charges length mismatch", got.Charges, tt.want.Charges)
 				for i, wantCharge := range tt.want.Charges {
 					if wantCharge == nil {
 						continue

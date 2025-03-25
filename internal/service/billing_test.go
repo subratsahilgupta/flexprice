@@ -66,18 +66,26 @@ func (s *BillingServiceSuite) setupService() {
 	s.invoiceRepo = s.GetStores().InvoiceRepo.(*testutil.InMemoryInvoiceStore)
 
 	s.service = NewBillingService(ServiceParams{
-		DB:              s.GetDB(),
-		Logger:          s.GetLogger(),
-		EventRepo:       s.GetStores().EventRepo,
-		InvoiceRepo:     s.GetStores().InvoiceRepo,
-		SubRepo:         s.GetStores().SubscriptionRepo,
-		PriceRepo:       s.GetStores().PriceRepo,
-		MeterRepo:       s.GetStores().MeterRepo,
-		CustomerRepo:    s.GetStores().CustomerRepo,
-		EntitlementRepo: s.GetStores().EntitlementRepo,
-		PlanRepo:        s.GetStores().PlanRepo,
-		FeatureRepo:     s.GetStores().FeatureRepo,
-		EventPublisher:  s.GetPublisher(),
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
+		SubRepo:          s.GetStores().SubscriptionRepo,
+		PlanRepo:         s.GetStores().PlanRepo,
+		PriceRepo:        s.GetStores().PriceRepo,
+		EventRepo:        s.GetStores().EventRepo,
+		MeterRepo:        s.GetStores().MeterRepo,
+		CustomerRepo:     s.GetStores().CustomerRepo,
+		InvoiceRepo:      s.GetStores().InvoiceRepo,
+		EntitlementRepo:  s.GetStores().EntitlementRepo,
+		EnvironmentRepo:  s.GetStores().EnvironmentRepo,
+		FeatureRepo:      s.GetStores().FeatureRepo,
+		TenantRepo:       s.GetStores().TenantRepo,
+		UserRepo:         s.GetStores().UserRepo,
+		AuthRepo:         s.GetStores().AuthRepo,
+		WalletRepo:       s.GetStores().WalletRepo,
+		PaymentRepo:      s.GetStores().PaymentRepo,
+		EventPublisher:   s.GetPublisher(),
+		WebhookPublisher: s.GetWebhookPublisher(),
 	})
 }
 
