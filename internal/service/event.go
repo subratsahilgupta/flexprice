@@ -15,12 +15,12 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/shopspring/decimal"
 )
 
 type EventService interface {
 	CreateEvent(ctx context.Context, createEventRequest *dto.IngestEventRequest) error
+	BulkCreateEvents(ctx context.Context, createEventRequest *dto.BulkIngestEventRequest) error
 	GetUsage(ctx context.Context, getUsageRequest *dto.GetUsageRequest) (*events.AggregationResult, error)
 	GetUsageByMeter(ctx context.Context, getUsageByMeterRequest *dto.GetUsageByMeterRequest) (*events.AggregationResult, error)
 	GetUsageByMeterWithFilters(ctx context.Context, req *dto.GetUsageByMeterRequest, filterGroups map[string]map[string][]string) ([]*events.AggregationResult, error)
@@ -49,21 +49,11 @@ func NewEventService(
 }
 
 func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.IngestEventRequest) error {
-	if err := validator.ValidateRequest(createEventRequest); err != nil {
+	if err := createEventRequest.Validate(); err != nil {
 		return err
 	}
 
-	tenantID := types.GetTenantID(ctx)
-	event := events.NewEvent(
-		createEventRequest.EventName,
-		tenantID,
-		createEventRequest.ExternalCustomerID,
-		createEventRequest.Properties,
-		createEventRequest.Timestamp,
-		createEventRequest.EventID,
-		createEventRequest.CustomerID,
-		createEventRequest.Source,
-	)
+	event := createEventRequest.ToEvent(ctx)
 
 	if err := s.publisher.Publish(ctx, event); err != nil {
 		// Log the error but don't fail the request
@@ -74,6 +64,22 @@ func (s *eventService) CreateEvent(ctx context.Context, createEventRequest *dto.
 	}
 
 	createEventRequest.EventID = event.ID
+	return nil
+}
+
+// CreateBulkEvents creates multiple events in a single operation
+func (s *eventService) BulkCreateEvents(ctx context.Context, events *dto.BulkIngestEventRequest) error {
+	if len(events.Events) == 0 {
+		return nil
+	}
+
+	// publish events to Kafka for downstream processing
+	for _, event := range events.Events {
+		if err := s.CreateEvent(ctx, event); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

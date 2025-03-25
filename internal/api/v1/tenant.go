@@ -16,8 +16,14 @@ type TenantHandler struct {
 	log     *logger.Logger
 }
 
-func NewTenantHandler(service service.TenantService, log *logger.Logger) *TenantHandler {
-	return &TenantHandler{service: service, log: log}
+func NewTenantHandler(
+	service service.TenantService,
+	log *logger.Logger,
+) *TenantHandler {
+	return &TenantHandler{
+		service: service,
+		log:     log,
+	}
 }
 
 // @Summary Create a new tenant
@@ -102,4 +108,25 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// @Summary Get billing usage for the current tenant
+// @Description Get the subscription and usage details for the current tenant
+// @Tags Tenants
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} dto.TenantBillingUsage
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /tenant/billing [get]
+func (h *TenantHandler) GetTenantBillingUsage(c *gin.Context) {
+	usage, err := h.service.GetBillingUsage(c.Request.Context())
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, usage)
 }

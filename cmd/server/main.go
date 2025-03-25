@@ -281,7 +281,7 @@ func startServer(
 		startAWSLambdaAPI(r)
 		startMessageRouter(lc, router, webhookService, onboardingService, log)
 	case types.ModeAWSLambdaConsumer:
-		startAWSLambdaConsumer(eventRepo, log)
+		startAWSLambdaConsumer(eventRepo, cfg, log)
 	default:
 		log.Fatalf("Unknown deployment mode: %s", mode)
 	}
@@ -330,7 +330,7 @@ func startConsumer(
 ) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			go consumeMessages(consumer, eventRepo, cfg.Kafka.Topic, log)
+			go consumeMessages(consumer, eventRepo, cfg, log)
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
@@ -345,7 +345,7 @@ func startAWSLambdaAPI(r *gin.Engine) {
 	lambda.Start(ginLambda.ProxyWithContext)
 }
 
-func startAWSLambdaConsumer(eventRepo events.Repository, log *logger.Logger) {
+func startAWSLambdaConsumer(eventRepo events.Repository, cfg *config.Configuration, log *logger.Logger) {
 	handler := func(ctx context.Context, kafkaEvent lambdaEvents.KafkaEvent) error {
 		log.Debugf("Received Kafka event: %+v", kafkaEvent)
 
@@ -364,15 +364,8 @@ func startAWSLambdaConsumer(eventRepo events.Repository, log *logger.Logger) {
 					continue
 				}
 
-				var event events.Event
-				if err := json.Unmarshal(decodedPayload, &event); err != nil {
-					log.Errorf("Failed to unmarshal event: %v, payload: %s", err, decodedPayload)
-					continue // Skip invalid messages
-				}
-
-				if err := eventRepo.InsertEvent(ctx, &event); err != nil {
-					log.Errorf("Failed to insert event: %v, event: %+v", err, event)
-					// TODO: Handle error and decide if we should retry or send to DLQ
+				if err := handleEventConsumption(cfg, log, eventRepo, decodedPayload); err != nil {
+					log.Errorf("Failed to process event: %v, payload: %s", err, string(decodedPayload))
 					continue
 				}
 
@@ -386,32 +379,65 @@ func startAWSLambdaConsumer(eventRepo events.Repository, log *logger.Logger) {
 	lambda.Start(handler)
 }
 
-func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository, topic string, log *logger.Logger) {
-	messages, err := consumer.Subscribe(topic)
+func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository, cfg *config.Configuration, log *logger.Logger) {
+	messages, err := consumer.Subscribe(cfg.Kafka.Topic)
 	if err != nil {
-		log.Fatalf("Failed to subscribe to topic %s: %v", topic, err)
+		log.Fatalf("Failed to subscribe to topic %s: %v", cfg.Kafka.Topic, err)
 	}
 
 	for msg := range messages {
-		var event events.Event
-		if err := json.Unmarshal(msg.Payload, &event); err != nil {
-			log.Errorf("Failed to unmarshal event: %v, payload: %s", err, string(msg.Payload))
-			msg.Ack() // Acknowledge invalid messages
+		if err := handleEventConsumption(cfg, log, eventRepo, msg.Payload); err != nil {
+			log.Errorf("Failed to process event: %v, payload: %s", err, string(msg.Payload))
+			msg.Nack()
 			continue
 		}
-
-		log.Debugf("Starting to process event: %+v", event)
-
-		if err := eventRepo.InsertEvent(context.Background(), &event); err != nil {
-			log.Errorf("Failed to insert event: %v, event: %+v", err, event)
-			// TODO: Handle error and decide if we should retry or send to DLQ
-		}
 		msg.Ack()
-		log.Debugf(
-			"Successfully processed event with lag : %v ms : %+v",
-			time.Since(event.Timestamp).Milliseconds(), event,
-		)
 	}
+}
+
+func handleEventConsumption(cfg *config.Configuration, log *logger.Logger, eventRepo events.Repository, payload []byte) error {
+	var event events.Event
+	if err := json.Unmarshal(payload, &event); err != nil {
+		log.Errorf("Failed to unmarshal event: %v, payload: %s", err, string(payload))
+		return err
+	}
+
+	log.Debugf("Starting to process event: %+v", event)
+
+	eventsToInsert := []*events.Event{&event}
+
+	if cfg.Billing.TenantID != "" {
+		// Create a billing copy with the tenant ID as the external customer ID
+		billingEvent := events.NewEvent(
+			"tenant_event", // Standardized event name for billing
+			cfg.Billing.TenantID,
+			event.TenantID, // Use original tenant ID as external customer ID
+			map[string]interface{}{
+				"original_event_id":   event.ID,
+				"original_event_name": event.EventName,
+				"original_timestamp":  event.Timestamp,
+				"tenant_id":           event.TenantID,
+				"source":              event.Source,
+			},
+			time.Now(),
+			"", // Customer ID will be looked up by external ID
+			"", // Generate new ID
+			"system",
+		)
+		eventsToInsert = append(eventsToInsert, billingEvent)
+	}
+
+	// Insert both events in a single operation
+	if err := eventRepo.BulkInsertEvents(context.Background(), eventsToInsert); err != nil {
+		log.Errorf("Failed to insert events: %v, original event: %+v", err, event)
+		return err
+	}
+
+	log.Debugf(
+		"Successfully processed event with lag : %v ms : %+v",
+		time.Since(event.Timestamp).Milliseconds(), event,
+	)
+	return nil
 }
 
 func startMessageRouter(

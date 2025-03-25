@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -11,9 +10,8 @@ import (
 )
 
 type TenantServiceSuite struct {
-	suite.Suite
-	ctx           context.Context
-	tenantService *tenantService // Pointer to the concrete implementation
+	testutil.BaseServiceTestSuite
+	tenantService TenantService // Pointer to the concrete implementation
 	tenantRepo    *testutil.InMemoryTenantStore
 }
 
@@ -22,12 +20,45 @@ func TestTenantService(t *testing.T) {
 }
 
 func (s *TenantServiceSuite) SetupTest() {
-	// Initialize context and repository
-	s.ctx = testutil.SetupContext()
-	s.tenantRepo = testutil.NewInMemoryTenantStore()
+	s.BaseServiceTestSuite.SetupTest()
+	s.setupService()
+	s.setupTestData()
+}
 
-	// Create the tenantService with the repository
-	s.tenantService = &tenantService{repo: s.tenantRepo} // Directly assign the concrete struct
+func (s *TenantServiceSuite) TearDownTest() {
+	s.BaseServiceTestSuite.TearDownTest()
+	s.tenantRepo.Clear()
+}
+
+func (s *TenantServiceSuite) setupService() {
+	s.tenantRepo = s.GetStores().TenantRepo.(*testutil.InMemoryTenantStore)
+
+	s.tenantService = NewTenantService(ServiceParams{
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
+		SubRepo:          s.GetStores().SubscriptionRepo,
+		PlanRepo:         s.GetStores().PlanRepo,
+		PriceRepo:        s.GetStores().PriceRepo,
+		EventRepo:        s.GetStores().EventRepo,
+		MeterRepo:        s.GetStores().MeterRepo,
+		CustomerRepo:     s.GetStores().CustomerRepo,
+		InvoiceRepo:      s.GetStores().InvoiceRepo,
+		EntitlementRepo:  s.GetStores().EntitlementRepo,
+		EnvironmentRepo:  s.GetStores().EnvironmentRepo,
+		FeatureRepo:      s.GetStores().FeatureRepo,
+		TenantRepo:       s.GetStores().TenantRepo,
+		UserRepo:         s.GetStores().UserRepo,
+		AuthRepo:         s.GetStores().AuthRepo,
+		WalletRepo:       s.GetStores().WalletRepo,
+		PaymentRepo:      s.GetStores().PaymentRepo,
+		EventPublisher:   s.GetPublisher(),
+		WebhookPublisher: s.GetWebhookPublisher(),
+	})
+}
+
+func (s *TenantServiceSuite) setupTestData() {
+	// Clear any existing data
 }
 
 func (s *TenantServiceSuite) TestCreateTenant() {
@@ -57,7 +88,7 @@ func (s *TenantServiceSuite) TestCreateTenant() {
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
 			// Call the service method
-			resp, err := s.tenantService.CreateTenant(s.ctx, tc.request)
+			resp, err := s.tenantService.CreateTenant(s.GetContext(), tc.request)
 
 			// Assert results
 			if tc.expectedError {
@@ -73,7 +104,7 @@ func (s *TenantServiceSuite) TestCreateTenant() {
 }
 
 func (s *TenantServiceSuite) TestGetTenantByID() {
-	_ = s.tenantRepo.Create(s.ctx, &tenant.Tenant{
+	_ = s.tenantRepo.Create(s.GetContext(), &tenant.Tenant{
 		ID:   "tenant-1",
 		Name: "Test Tenant",
 	})
@@ -100,7 +131,7 @@ func (s *TenantServiceSuite) TestGetTenantByID() {
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
 			// Call the service method
-			resp, err := s.tenantService.GetTenantByID(s.ctx, tc.id)
+			resp, err := s.tenantService.GetTenantByID(s.GetContext(), tc.id)
 
 			// Assert results
 			if tc.expectedError {
@@ -134,7 +165,7 @@ func (s *TenantServiceSuite) TestGetTenantWithBillingDetails() {
 			},
 		},
 	}
-	err := s.tenantRepo.Create(s.ctx, tenantWithBilling)
+	err := s.tenantRepo.Create(s.GetContext(), tenantWithBilling)
 	s.NoError(err)
 
 	// Create tenant without billing details
@@ -155,7 +186,7 @@ func (s *TenantServiceSuite) TestGetTenantWithBillingDetails() {
 			},
 		},
 	}
-	err = s.tenantRepo.Create(s.ctx, tenantWithoutBilling)
+	err = s.tenantRepo.Create(s.GetContext(), tenantWithoutBilling)
 	s.NoError(err)
 
 	testCases := []struct {
@@ -198,7 +229,7 @@ func (s *TenantServiceSuite) TestGetTenantWithBillingDetails() {
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
 			// Call the service method
-			resp, err := s.tenantService.GetTenantByID(s.ctx, tc.id)
+			resp, err := s.tenantService.GetTenantByID(s.GetContext(), tc.id)
 
 			// Assert results
 			if tc.expectedError {

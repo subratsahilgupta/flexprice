@@ -38,6 +38,15 @@ func (s *InMemoryEventStore) InsertEvent(ctx context.Context, event *events.Even
 	return nil
 }
 
+func (s *InMemoryEventStore) BulkInsertEvents(ctx context.Context, events []*events.Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, event := range events {
+		s.events[event.ID] = event
+	}
+	return nil
+}
+
 func (s *InMemoryEventStore) GetUsage(ctx context.Context, params *events.UsageParams) (*events.AggregationResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

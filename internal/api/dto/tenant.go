@@ -114,3 +114,8 @@ type UpdateTenantRequest struct {
 func (r *UpdateTenantRequest) Validate() error {
 	return validator.ValidateRequest(r)
 }
+
+type TenantBillingUsage struct {
+	Usage         *CustomerUsageSummaryResponse `json:"usage"`
+	Subscriptions []*SubscriptionResponse       `json:"subscriptions"`
+}

@@ -27,8 +27,9 @@ type Configuration struct {
 	Event      EventConfig      `validate:"required"`
 	DynamoDB   DynamoDBConfig   `validate:"required"`
 	Temporal   TemporalConfig   `validate:"required"`
-	Webhook    Webhook
-	Secrets    SecretsConfig `validate:"required"`
+	Webhook    Webhook          `validate:"omitempty"`
+	Secrets    SecretsConfig    `validate:"required"`
+	Billing    BillingConfig    `validate:"omitempty"`
 }
 
 type DeploymentConfig struct {
@@ -117,6 +118,11 @@ type TemporalConfig struct {
 
 type SecretsConfig struct {
 	EncryptionKey string `mapstructure:"encryption_key" validate:"required"`
+}
+
+type BillingConfig struct {
+	TenantID      string `mapstructure:"tenant_id" validate:"omitempty"`
+	EnvironmentID string `mapstructure:"environment_id" validate:"omitempty"`
 }
 
 func NewConfig() (*Configuration, error) {

@@ -74,7 +74,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		// Auth routes
 		v1Public.POST("/auth/signup", handlers.Auth.SignUp)
 		v1Public.POST("/auth/login", handlers.Auth.Login)
-		v1Public.POST("/events/ingest", handlers.Events.IngestEvent)
 	}
 
 	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, logger))
@@ -99,6 +98,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		events := v1Private.Group("/events")
 		{
 			events.POST("", handlers.Events.IngestEvent)
+			events.POST("/bulk", handlers.Events.BulkIngestEvent)
 			events.GET("", handlers.Events.GetEvents)
 			events.POST("/usage", handlers.Events.GetUsage)
 			events.POST("/usage/meter", handlers.Events.GetUsageByMeter)
@@ -182,6 +182,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			tenantRoutes.POST("", handlers.Tenant.CreateTenant)
 			tenantRoutes.PUT("/update", handlers.Tenant.UpdateTenant)
 			tenantRoutes.GET("/:id", handlers.Tenant.GetTenantByID)
+			tenantRoutes.GET("/billing", handlers.Tenant.GetTenantBillingUsage)
 		}
 
 		invoices := v1Private.Group("/invoices")

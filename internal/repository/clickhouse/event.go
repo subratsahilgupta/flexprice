@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/repository/clickhouse/builder"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -66,6 +67,80 @@ func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) 
 				"event_name": event.EventName,
 			}).
 			Mark(ierr.ErrDatabase)
+	}
+
+	return nil
+}
+
+// BulkInsertEvents inserts multiple events in a bulk operation for better performance
+func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events.Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	// split events in batches of 100
+	eventsBatches := lo.Chunk(events, 100)
+
+	for _, eventsBatch := range eventsBatches {
+		// Prepare batch statement
+		batch, err := r.store.GetConn().PrepareBatch(ctx, `
+		INSERT INTO events (
+			id, external_customer_id, customer_id, tenant_id, event_name, timestamp, source, properties
+		)
+	`)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to prepare batch for events").
+				Mark(ierr.ErrDatabase)
+		}
+
+		// Validate all events before inserting
+		for _, event := range eventsBatch {
+			if err := event.Validate(); err != nil {
+				return err
+			}
+
+			propertiesJSON, err := json.Marshal(event.Properties)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHint("Failed to marshal event properties").
+					WithReportableDetails(map[string]interface{}{
+						"event_id": event.ID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+
+			err = batch.Append(
+				event.ID,
+				event.ExternalCustomerID,
+				event.CustomerID,
+				event.TenantID,
+				event.EventName,
+				event.Timestamp,
+				event.Source,
+				string(propertiesJSON),
+			)
+
+			if err != nil {
+				return ierr.WithError(err).
+					WithHint("Failed to append event to batch").
+					WithReportableDetails(map[string]interface{}{
+						"event_id":   event.ID,
+						"event_name": event.EventName,
+					}).
+					Mark(ierr.ErrDatabase)
+			}
+		}
+
+		// Execute the batch
+		if err := batch.Send(); err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to execute batch insert for events").
+				WithReportableDetails(map[string]interface{}{
+					"event_count": len(events),
+				}).
+				Mark(ierr.ErrDatabase)
+		}
 	}
 
 	return nil
