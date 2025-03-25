@@ -57,8 +57,9 @@ type AddressInfo struct {
 type LineItemData struct {
 	PlanDisplayName string     `json:"plan_display_name"`
 	DisplayName     string     `json:"display_name"`
-	PeriodStart     *time.Time `json:"period_start,omitempty"`
-	PeriodEnd       *time.Time `json:"period_end,omitempty"`
+	Description     string     `json:"description"`
+	PeriodStart     CustomTime `json:"period_start,omitempty"`
+	PeriodEnd       CustomTime `json:"period_end,omitempty"`
 	Amount          float64    `json:"amount"`
 	Quantity        float64    `json:"quantity"`
 	Currency        string     `json:"currency"`

@@ -20,10 +20,10 @@
     // website: invoice-data.biller.website,
     name: invoice-data.biller.name,
     email: if "email" in invoice-data.biller {
-      str(invoice-data.biller.email)
+      invoice-data.biller.email
     },
     help-email: if "help_email" in invoice-data.biller {
-      str(invoice-data.biller.help_email)
+      invoice-data.biller.help_email
     },
     address: (
       street: invoice-data.biller.address.street,
@@ -43,7 +43,7 @@
   recipient: (
     name: invoice-data.recipient.name,
     email: if "email" in invoice-data.recipient {
-      str(invoice-data.recipient.email)
+      invoice-data.recipient.email
     },
     address: (
       street: invoice-data.recipient.address.street,

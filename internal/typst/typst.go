@@ -154,8 +154,7 @@ func (c *compiler) CompileToBytes(opts CompileOpts) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// defer os.Remove(pdfPath)
-
+	defer os.Remove(pdfPath)
 	return os.ReadFile(pdfPath)
 }
 

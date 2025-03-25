@@ -153,7 +153,7 @@
       #text(weight: "semibold", size: 12pt)[From]
       #v(0.25em)
       #text(weight: "medium")[#biller.name] \
-      // #text(fill: gray)[#biller.at("email", default: "--")] \
+      #text(fill: gray)[#biller.at("email", default: "--")] \
       #text(fill: styling.secondary-color)[#biller.at("address", default: (:)).at("street", default: "--")] \
       #text(fill: styling.secondary-color)[#biller.at("address", default: (:)).at("city", default: "--")] \
       #text(fill: styling.secondary-color)[#biller.at("address", default: (:)).at("postal-code", default: "--")]
@@ -163,9 +163,10 @@
       #text(weight: "semibold", size: 12pt)[Bill to]
       #v(0.25em)
       #text(weight: "medium")[#recipient.name] \
+      #text(fill: gray)[#recipient.at("email", default: "--")] \
       #text(fill: styling.secondary-color)[#recipient.at("address", default: (:)).at("street", default: "--")] \
       #text(fill: styling.secondary-color)[#recipient.at("address", default: (:)).at("city", default: "--")] \
-      #text(fill: styling.secondary-color)[#biller.at("address", default: (:)).at("postal-code", default: "--")]
+      #text(fill: styling.secondary-color)[#recipient.at("address", default: (:)).at("postal-code", default: "--")]
     ]
   )
 
@@ -194,10 +195,10 @@
     ),
     ..items.map((item) => {
       (
-        item.at("plan-display-name", default: "Plan"),
-        item.at("display-name", default: "Recurring"),
-        if item.at("period-start", default: none) != none and item.at("period-end", default: none) != none {
-          [#format-date(parse-date(item.at("period-start"))) - #format-date(parse-date(item.at("period-end")))]
+        item.at("plan_display_name", default: "Plan"),
+        item.at("description", default: "Recurring"),
+        if item.at("period_start", default: none) != none and item.at("period_end", default: none) != none {
+          [#format-date(parse-date(item.at("period_start"))) - #format-date(parse-date(item.at("period_end")))]
         } else {
           "-"
         },

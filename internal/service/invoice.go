@@ -839,7 +839,7 @@ func (s *invoiceService) getInvoiceData(
 		ID:            inv.ID,
 		InvoiceNumber: invoiceNum,
 		InvoiceStatus: string(inv.InvoiceStatus),
-		Currency:      inv.Currency,
+		Currency:      types.GetCurrencySymbol(inv.Currency),
 		AmountDue:     amountDue,
 		BillingReason: inv.BillingReason,
 		Notes:         "",  // resolved from invoice metadata
@@ -851,6 +851,10 @@ func (s *invoiceService) getInvoiceData(
 	// Convert dates
 	if inv.DueDate != nil {
 		data.DueDate = pdf.CustomTime{Time: *inv.DueDate}
+	}
+
+	if inv.FinalizedAt != nil {
+		data.IssuingDate = pdf.CustomTime{Time: *inv.FinalizedAt}
 	}
 
 	// Parse metadata if available
@@ -885,19 +889,27 @@ func (s *invoiceService) getInvoiceData(
 		amount, _ := item.Amount.Float64()
 		quantity, _ := item.Quantity.Float64()
 
+		description := ""
+		if item.Metadata != nil {
+			if desc, ok := item.Metadata["description"]; ok {
+				description = desc
+			}
+		}
+
 		lineItem := pdf.LineItemData{
 			PlanDisplayName: planDisplayName,
 			DisplayName:     displayName,
+			Description:     description,
 			Amount:          amount,
 			Quantity:        quantity,
-			Currency:        item.Currency,
+			Currency:        types.GetCurrencySymbol(item.Currency),
 		}
 
 		if item.PeriodStart != nil {
-			lineItem.PeriodStart = item.PeriodStart
+			lineItem.PeriodStart = pdf.CustomTime{Time: *item.PeriodStart}
 		}
 		if item.PeriodEnd != nil {
-			lineItem.PeriodEnd = item.PeriodEnd
+			lineItem.PeriodEnd = pdf.CustomTime{Time: *item.PeriodEnd}
 		}
 
 		data.LineItems[i] = lineItem
