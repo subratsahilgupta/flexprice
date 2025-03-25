@@ -10,6 +10,7 @@ import (
 
 type Repository interface {
 	InsertEvent(ctx context.Context, event *Event) error
+	BulkInsertEvents(ctx context.Context, events []*Event) error
 	GetUsage(ctx context.Context, params *UsageParams) (*AggregationResult, error)
 	GetUsageWithFilters(ctx context.Context, params *UsageWithFiltersParams) ([]*AggregationResult, error)
 	GetEvents(ctx context.Context, params *GetEventsParams) ([]*Event, error)

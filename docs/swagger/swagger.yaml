@@ -66,6 +66,17 @@ definitions:
       start_time:
         type: string
     type: object
+  dto.BulkIngestEventRequest:
+    properties:
+      events:
+        items:
+          $ref: '#/definitions/dto.IngestEventRequest'
+        maxItems: 1000
+        minItems: 1
+        type: array
+    required:
+    - events
+    type: object
   dto.CreateAPIKeyRequest:
     properties:
       expires_at:
@@ -1849,6 +1860,15 @@ definitions:
         type: string
       phone:
         type: string
+    type: object
+  dto.TenantBillingUsage:
+    properties:
+      subscriptions:
+        items:
+          $ref: '#/definitions/dto.SubscriptionResponse'
+        type: array
+      usage:
+        $ref: '#/definitions/dto.CustomerUsageSummaryResponse'
     type: object
   dto.TenantResponse:
     properties:
@@ -3885,6 +3905,40 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Ingest event
+      tags:
+      - Events
+  /events/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Ingest bulk events into the system
+      parameters:
+      - description: Event data
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/dto.BulkIngestEventRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: message:Event accepted for processing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Bulk Ingest events
       tags:
       - Events
   /events/usage:
@@ -6215,6 +6269,35 @@ paths:
       summary: Update task status
       tags:
       - Tasks
+  /tenant/billing:
+    get:
+      consumes:
+      - application/json
+      description: Get the subscription and usage details for the current tenant
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TenantBillingUsage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get billing usage for the current tenant
+      tags:
+      - Tenants
   /tenants:
     post:
       consumes:

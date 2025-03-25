@@ -566,10 +566,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 				if filteredUsageCharge == nil {
 					continue
 				}
-
-				if filteredUsageCharge.Quantity > 0 && filteredUsageCharge.Amount > 0 {
-					response.Charges = append(response.Charges, filteredUsageCharge)
-				}
+				response.Charges = append(response.Charges, filteredUsageCharge)
 			}
 		}
 	}
@@ -896,9 +893,6 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 
 func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost decimal.Decimal, meterDisplayName string) *dto.SubscriptionUsageByMetersResponse {
 	finalAmount := price.FormatAmountToFloat64WithPrecision(cost, priceObj.Currency)
-	if finalAmount <= 0 {
-		return nil
-	}
 
 	return &dto.SubscriptionUsageByMetersResponse{
 		Amount:           finalAmount,

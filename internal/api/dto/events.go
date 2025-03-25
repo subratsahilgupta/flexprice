@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -18,6 +19,31 @@ type IngestEventRequest struct {
 	TimestampStr       string                 `json:"-" csv:"timestamp"`                                // Used for CSV parsing
 	Source             string                 `json:"source" example:"api" csv:"source"`
 	Properties         map[string]interface{} `json:"properties" swaggertype:"object,string,number" example:"{\"request_size\":100,\"response_status\":200}" csv:"-"` // Handled separately for dynamic columns
+}
+
+func (r *IngestEventRequest) Validate() error {
+	return validator.ValidateRequest(r)
+}
+
+type BulkIngestEventRequest struct {
+	Events []*IngestEventRequest `json:"events" validate:"required,min=1,max=1000"`
+}
+
+func (r *BulkIngestEventRequest) Validate() error {
+	return validator.ValidateRequest(r)
+}
+
+func (r *IngestEventRequest) ToEvent(ctx context.Context) *events.Event {
+	return events.NewEvent(
+		r.EventName,
+		types.GetTenantID(ctx),
+		r.ExternalCustomerID,
+		r.Properties,
+		r.Timestamp,
+		r.EventID,
+		r.CustomerID,
+		r.Source,
+	)
 }
 
 type GetUsageRequest struct {
@@ -104,10 +130,6 @@ func FromAggregationResult(result *events.AggregationResult) *GetUsageResponse {
 	}
 
 	return response
-}
-
-func (r *IngestEventRequest) Validate() error {
-	return validator.ValidateRequest(r)
 }
 
 func (r *GetUsageRequest) Validate() error {

@@ -62,6 +62,38 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"message": "Event accepted for processing", "event_id": req.EventID})
 }
 
+// @Summary Bulk Ingest events
+// @Description Ingest bulk events into the system
+// @Tags Events
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param event body dto.BulkIngestEventRequest true "Event data"
+// @Success 202 {object} map[string]string "message:Event accepted for processing"
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /events/bulk [post]
+func (h *EventsHandler) BulkIngestEvent(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req dto.BulkIngestEventRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request payload").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	err := h.eventService.BulkCreateEvents(ctx, &req)
+	if err != nil {
+		h.log.Error("Failed to bulk ingest events", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "Events accepted for processing"})
+}
+
 // @Summary Get usage by meter
 // @Description Retrieve aggregated usage statistics using meter configuration
 // @Tags Events
