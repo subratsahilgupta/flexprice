@@ -98,15 +98,16 @@ func DefaultCompiler(logger *logger.Logger) Compiler {
 func (c *compiler) Compile(opts CompileOpts) (string, error) {
 	// Determine output file path
 	outputFile := filepath.Join(c.outputDir, opts.OutputFile)
-	if outputFile == "" {
-		tmpFile, err := os.CreateTemp(c.outputDir, fmt.Sprintf("typst-%d.pdf", time.Now().UnixMilli()))
+	if opts.OutputFile == "" {
+		tmpFilePath := filepath.Join(c.outputDir, fmt.Sprintf("typst-%d.pdf", time.Now().UnixMilli()))
+		tmpFile, err := os.Create(tmpFilePath)
 		if err != nil {
 			return "", ierr.WithError(err).
 				WithMessage("failed to create temporary output file").
 				WithHint("template error").Mark(ierr.ErrSystem)
 		}
 		tmpFile.Close()
-		outputFile = filepath.Join(c.outputDir, tmpFile.Name())
+		outputFile = tmpFilePath
 	}
 
 	// Build font directories argument
@@ -130,12 +131,15 @@ func (c *compiler) Compile(opts CompileOpts) (string, error) {
 	// Add input and output files
 	args = append(args, opts.InputFile, outputFile)
 
-	// Execute command
+	c.logger.Debugf("Executing command to compile typst document: %s %v", c.binaryPath, args)
+
 	cmd := exec.Command(c.binaryPath, args...)
+
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		c.logger.Errorf("Typst compilation failed: %s", stderr.String())
 		return "", ierr.WithError(err).
 			WithMessage("typst compilation failed").
 			WithHint("typst error").
@@ -159,16 +163,10 @@ func (c *compiler) CompileToBytes(opts CompileOpts) ([]byte, error) {
 }
 
 // CompileTemplate compiles a Typst template with the provided data
-// the data needs to be a valid JSON string compatible with the template
+// the data needs to be a valid JSON compatible with the template
 // example:
 //
 //	data := "invoice-data={\"invoice_id\": \"1234567890\", \"invoice_number\": \"INV-1234567890\", \"customer_id\": \"1234567890\"}"
-//
-// the key invoice-data is the name of the variable in the template
-//
-// the data is a JSON string that will be parsed into a typst dictionary
-//
-// #let invoice-data = json.decode(sys.inputs.invoice-data)
 func (c *compiler) CompileTemplate(
 	templateName string,
 	data []byte,
@@ -221,6 +219,45 @@ func (c *compiler) CleanupGeneratedFiles(files ...string) {
 			os.Remove(file)
 		}
 	}
+}
+
+// CopyDir copies a directory recursively from src to dst
+func CopyDir(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if !srcInfo.IsDir() {
+		return fmt.Errorf("%s is not a directory", src)
+	}
+
+	err = os.MkdirAll(dst, srcInfo.Mode())
+	if err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := CopyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			if err := CopyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // CopyFile copies a file from src to dst

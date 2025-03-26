@@ -24,6 +24,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
@@ -64,6 +65,7 @@ type BaseServiceTestSuite struct {
 	logger           *logger.Logger
 	config           *config.Configuration
 	now              time.Time
+	pdfGenerator     pdf.Generator
 }
 
 // SetupSuite is called once before running the tests in the suite
@@ -129,6 +131,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 	}
 
 	s.db = NewMockPostgresClient(s.logger)
+	s.pdfGenerator = NewMockPDFGenerator(s.logger)
 	eventStore := s.stores.EventRepo.(*InMemoryEventStore)
 	s.publisher = NewInMemoryEventPublisher(eventStore)
 	pubsub := NewInMemoryPubSub()
@@ -191,6 +194,11 @@ func (s *BaseServiceTestSuite) GetWebhookPublisher() webhookPublisher.WebhookPub
 // GetDB returns the test database client
 func (s *BaseServiceTestSuite) GetDB() postgres.IClient {
 	return s.db
+}
+
+// GetPDFGenerator returns the test PDF generator
+func (s *BaseServiceTestSuite) GetPDFGenerator() pdf.Generator {
+	return s.pdfGenerator
 }
 
 // GetLogger returns the test logger
