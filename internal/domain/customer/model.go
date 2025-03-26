@@ -1,10 +1,7 @@
 package customer
 
 import (
-	"fmt"
-
 	"github.com/flexprice/flexprice/ent"
-	pdfgen "github.com/flexprice/flexprice/internal/domain/pdf"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -144,45 +141,4 @@ func ValidateAddress(c *Customer) error {
 			Mark(ierr.ErrValidation)
 	}
 	return nil
-}
-
-func (c *Customer) ToPdfgenRecipientInfo() *pdfgen.RecipientInfo {
-	if c == nil {
-		return nil
-	}
-
-	name := fmt.Sprintf("Customer %s", c.ID)
-	if c.Name != "" {
-		name = c.Name
-	}
-
-	result := &pdfgen.RecipientInfo{
-		Name: name,
-		Address: pdfgen.AddressInfo{
-			Street:     "--",
-			City:       "--",
-			PostalCode: "--",
-		},
-	}
-
-	if c.AddressLine1 != "" {
-		result.Address.Street = c.AddressLine1
-	}
-	if c.AddressLine2 != "" {
-		result.Address.Street += "\n" + c.AddressLine2
-	}
-	if c.AddressCity != "" {
-		result.Address.City = c.AddressCity
-	}
-	if c.AddressState != "" {
-		result.Address.State = c.AddressState
-	}
-	if c.AddressPostalCode != "" {
-		result.Address.PostalCode = c.AddressPostalCode
-	}
-	if c.AddressCountry != "" {
-		result.Address.Country = c.AddressCountry
-	}
-
-	return result
 }

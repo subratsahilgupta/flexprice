@@ -1,12 +1,10 @@
 package tenant
 
 import (
-	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/schema"
-	"github.com/flexprice/flexprice/internal/domain/pdf"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -105,36 +103,4 @@ func (t TenantAddress) ToSchema() schema.TenantAddress {
 		PostalCode: t.PostalCode,
 		Country:    t.Country,
 	}
-}
-
-func (t *Tenant) ToPdfgenBillerInfo() *pdf.BillerInfo {
-	if t == nil {
-		return nil
-	}
-
-	billerInfo := pdf.BillerInfo{
-		Name: t.Name,
-		Address: pdf.AddressInfo{
-			Street:     "--",
-			City:       "--",
-			PostalCode: "--",
-		},
-	}
-
-	if t.BillingDetails != (TenantBillingDetails{}) {
-		billingDetails := t.BillingDetails
-		billerInfo.Email = billingDetails.Email
-		// billerInfo.Website = billingDetails.Website //TODO: Add this
-		billerInfo.HelpEmail = billingDetails.HelpEmail
-		// billerInfo.PaymentInstructions = billingDetails.PaymentInstructions //TODO: Add this
-		billerInfo.Address = pdf.AddressInfo{
-			Street:     strings.Join([]string{billingDetails.Address.Line1, billingDetails.Address.Line2}, "\n"),
-			City:       billingDetails.Address.City,
-			PostalCode: billingDetails.Address.PostalCode,
-			Country:    billingDetails.Address.Country,
-			State:      billingDetails.Address.State,
-		}
-	}
-
-	return &billerInfo
 }
