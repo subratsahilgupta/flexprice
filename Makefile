@@ -54,32 +54,7 @@ run: run-server
 .PHONY: test test-verbose test-coverage
 
 # Run all tests
-test:
-	@which typst > /dev/null || (ARCH=$(uname -m) && OS=$(uname) && if [ "$OS" = "Darwin" ]; then \
-		echo "Installing typst binary for Darwin"; \
-		if [ "$ARCH" = "arm64" ]; then \
-			curl -L https://github.com/typst/typst/releases/download/v0.13.1/typst-aarch64-apple-darwin.tar.xz -o /usr/local/bin/typst; \
-		else \
-			curl -L https://github.com/typst/typst/releases/download/v0.13.1/typst-x86_64-apple-darwin.tar.xz -o /usr/local/bin/typst; \
-		fi; \
-	elif [ "$OS" = "Linux" ]; then \
-		echo "Installing typst binary for Linux"; \
-		if [ "$ARCH" = "aarch64" ]; then \
-			curl -L https://github.com/typst/typst/releases/download/v0.13.1/typst-aarch64-unknown-linux-musl.tar.xz -o /usr/local/bin/typst; \
-		elif [ "$ARCH" = "x86_64" ]; then \
-			curl -L https://github.com/typst/typst/releases/download/v0.13.1/typst-x86_64-unknown-linux-musl.tar.xz -o /usr/local/bin/typst; \
-		elif [ "$ARCH" = "armv7" ]; then \
-			curl -L https://github.com/typst/typst/releases/download/v0.13.1/typst-armv7-unknown-linux-musleabi.tar.xz -o /usr/local/bin/typst; \
-		elif [ "$ARCH" = "riscv64" ]; then \
-			curl -L https://github.com/typst/typst/releases/download/v0.13.1/typst-riscv64gc-unknown-linux-gnu.tar.xz -o /usr/local/bin/typst; \
-		fi; \
-	elif [ "$OS" = "CYGWIN" ] || [ "$OS" = "MINGW" ]; then \
-		echo "Installing typst binary for Windows"; \
-		curl -L https://github.com/typst/typst/releases/download/v0.13.1/typst-x86_64-pc-windows-msvc.zip -o /usr/local/bin/typst.zip; \
-		unzip /usr/local/bin/typst.zip -d /usr/local/bin/typst; \
-		rm /usr/local/bin/typst.zip; \
-	fi && chmod +x /usr/local/bin/typst)
-
+test: install-typst
 	go test ./...
 
 # Run tests with verbose output
@@ -266,4 +241,6 @@ apply-migration:
 docker-build-local:
 	docker compose build flexprice-build
 
-
+.PHONY: install-typst
+install-typst:
+	@./scripts/install-typst.sh
