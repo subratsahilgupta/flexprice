@@ -2,9 +2,11 @@ package pdf
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/domain/pdf"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/typst"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -44,10 +46,31 @@ func TestRenderInvoicePdf(t *testing.T) {
 	data := &pdf.InvoiceData{ID: "123"}
 	expectedPDF := []byte("mocked PDF content")
 
-	mockCompiler.On("CompileTemplate", "invoice.typ", mock.Anything, mock.Anything).Return(expectedPDF, nil)
+	jsonData, err := json.Marshal(data)
+	assert.NoError(t, err)
+
+	mockCompiler.On("CompileTemplate", "invoice.typ", jsonData, mock.Anything).Return(expectedPDF, nil)
 
 	pdf, err := service.RenderInvoicePdf(context.Background(), data)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expectedPDF, pdf)
+}
+
+func TestRenderInvoicePdf_Error(t *testing.T) {
+	mockCompiler := new(MockCompiler)
+	service := &service{
+		typst: mockCompiler,
+	}
+
+	data := &pdf.InvoiceData{ID: "123"}
+	expectedError := ierr.NewError("compilation error").Mark(ierr.ErrSystem)
+
+	mockCompiler.On("CompileTemplate", "invoice.typ", mock.Anything, mock.Anything).Return([]byte{}, expectedError)
+
+	pdf, err := service.RenderInvoicePdf(context.Background(), data)
+
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, expectedError)
+	assert.Nil(t, pdf)
 }

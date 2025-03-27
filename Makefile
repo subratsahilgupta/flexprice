@@ -261,3 +261,9 @@ apply-migration:
 		-d $(shell grep -A 2 "postgres:" config.yaml | grep database | awk '{print $$2}') \
 		-f $(file)
 	@echo "Migration applied successfully"
+
+.PHONY: docker-build-local
+docker-build-local:
+	docker compose build flexprice-build
+
+

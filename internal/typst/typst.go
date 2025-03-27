@@ -89,7 +89,7 @@ func DefaultCompiler(logger *logger.Logger) Compiler {
 		logger:      logger,
 		binaryPath:  "typst",
 		fontDir:     "assets/fonts",
-		templateDir: "internal/typst/templates",
+		templateDir: "assets/typst-templates",
 		outputDir:   os.TempDir(),
 	}
 }
