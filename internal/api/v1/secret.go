@@ -121,7 +121,7 @@ func (h *SecretHandler) DeleteAPIKey(c *gin.Context) {
 // CreateIntegration godoc
 // @Summary Create or update an integration
 // @Description Create or update integration credentials
-// @Tags secrets
+// @Tags Integrations
 // @Accept json
 // @Produce json
 // @Param provider path string true "Integration provider"
@@ -155,7 +155,7 @@ func (h *SecretHandler) CreateIntegration(c *gin.Context) {
 // GetIntegration godoc
 // @Summary Get integration details
 // @Description Get details of a specific integration
-// @Tags secrets
+// @Tags Integrations
 // @Accept json
 // @Produce json
 // @Param provider path string true "Integration provider"
@@ -184,7 +184,7 @@ func (h *SecretHandler) GetIntegration(c *gin.Context) {
 // DeleteIntegration godoc
 // @Summary Delete an integration
 // @Description Delete integration credentials
-// @Tags secrets
+// @Tags Integrations
 // @Accept json
 // @Produce json
 // @Param id path string true "Integration ID"
@@ -207,7 +207,7 @@ func (h *SecretHandler) DeleteIntegration(c *gin.Context) {
 // ListLinkedIntegrations godoc
 // @Summary List linked integrations
 // @Description Get a list of unique providers which have a valid linked integration secret
-// @Tags secrets
+// @Tags Integrations
 // @Accept json
 // @Produce json
 // @Success 200 {object} dto.LinkedIntegrationsResponse

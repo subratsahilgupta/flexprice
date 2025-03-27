@@ -8,6 +8,7 @@ type ErrorResponse struct {
 
 // ErrorDetail contains error information
 type ErrorDetail struct {
-	Display string         `json:"message"`
-	Details map[string]any `json:"details,omitempty"`
+	Display       string         `json:"message"`
+	InternalError string         `json:"internal_error,omitempty"`
+	Details       map[string]any `json:"details,omitempty"`
 }

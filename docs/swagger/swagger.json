@@ -4054,7 +4054,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "List linked integrations",
                 "responses": {
@@ -4083,7 +4083,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "Delete an integration",
                 "parameters": [
@@ -4124,7 +4124,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "Get integration details",
                 "parameters": [
@@ -4166,7 +4166,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "Create or update an integration",
                 "parameters": [
@@ -9281,6 +9281,9 @@
                 "details": {
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "internal_error": {
+                    "type": "string"
                 },
                 "message": {
                     "type": "string"

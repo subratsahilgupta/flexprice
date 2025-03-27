@@ -2303,6 +2303,8 @@ definitions:
       details:
         additionalProperties: {}
         type: object
+      internal_error:
+        type: string
       message:
         type: string
     type: object
@@ -5626,7 +5628,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       summary: Delete an integration
       tags:
-      - secrets
+      - Integrations
   /secrets/integrations/{provider}:
     get:
       consumes:
@@ -5655,7 +5657,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       summary: Get integration details
       tags:
-      - secrets
+      - Integrations
     post:
       consumes:
       - application/json
@@ -5689,7 +5691,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       summary: Create or update an integration
       tags:
-      - secrets
+      - Integrations
   /secrets/integrations/linked:
     get:
       consumes:
@@ -5709,7 +5711,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       summary: List linked integrations
       tags:
-      - secrets
+      - Integrations
   /subscriptions:
     get:
       description: Get subscriptions with optional filtering
