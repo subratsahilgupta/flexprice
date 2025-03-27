@@ -55,7 +55,7 @@ run: run-server
 
 # Run all tests
 test: install-typst
-	go test ./...
+	go test -v -race ./... 
 
 # Run tests with verbose output
 test-verbose:
