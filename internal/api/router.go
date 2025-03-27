@@ -195,6 +195,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			invoices.POST("/preview", handlers.Invoice.GetPreviewInvoice)
 			invoices.PUT("/:id/payment", handlers.Invoice.UpdatePaymentStatus)
 			invoices.POST("/:id/payment/attempt", handlers.Invoice.AttemptPayment)
+			invoices.GET("/:id/pdf", handlers.Invoice.GetInvoicePDF)
 		}
 
 		feature := v1Private.Group("/features")

@@ -21,6 +21,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
     -o server cmd/server/main.go
 
 # Runtime stage
+FROM ghcr.io/typst/typst:v0.13.1 as typst
 FROM --platform=${TARGETPLATFORM} public.ecr.aws/amazonlinux/amazonlinux:2023
 
 # Install necessary dependencies
@@ -34,8 +35,13 @@ WORKDIR /app
 # Copy the binary from the builder stage
 COPY --from=builder /app/server /app/server
 
+# Copy typst binary
+COPY --from=typst /bin/typst /usr/local/bin/
+
 # Copy configuration files if needed
 COPY internal/config ./config
+COPY assets/fonts ./assets/fonts
+COPY assets/typst-templates ./assets/typst-templates
 
 # Set execute permissions for the binary
 RUN chmod +x /app/server

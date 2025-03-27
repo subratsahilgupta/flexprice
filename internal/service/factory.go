@@ -19,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
@@ -27,9 +28,10 @@ import (
 // ServiceParams holds common dependencies for services
 // TODO: start using this for all services init
 type ServiceParams struct {
-	Logger *logger.Logger
-	Config *config.Configuration
-	DB     postgres.IClient
+	Logger       *logger.Logger
+	Config       *config.Configuration
+	DB           postgres.IClient
+	PDFGenerator pdf.Generator
 
 	// Repositories
 	AuthRepo        auth.Repository
@@ -59,6 +61,7 @@ func NewServiceParams(
 	logger *logger.Logger,
 	config *config.Configuration,
 	db postgres.IClient,
+	pdfGenerator pdf.Generator,
 	authRepo auth.Repository,
 	userRepo user.Repository,
 	eventRepo events.Repository,
@@ -82,6 +85,7 @@ func NewServiceParams(
 		Logger:           logger,
 		Config:           config,
 		DB:               db,
+		PDFGenerator:     pdfGenerator,
 		AuthRepo:         authRepo,
 		UserRepo:         userRepo,
 		EventRepo:        eventRepo,

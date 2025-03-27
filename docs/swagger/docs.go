@@ -2371,6 +2371,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/invoices/{id}/pdf": {
+            "get": {
+                "description": "Retrieve the PDF document for a specific invoice by its ID",
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Get PDF for an invoice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invoice ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/invoices/{id}/void": {
             "post": {
                 "description": "Void an invoice that hasn't been paid",

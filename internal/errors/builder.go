@@ -30,6 +30,11 @@ func (b *ErrorBuilder) WithMessage(msg string) *ErrorBuilder {
 	return b
 }
 
+func (b *ErrorBuilder) WithMessagef(format string, args ...any) *ErrorBuilder {
+	b.err = errors.WithMessagef(b.err, format, args...)
+	return b
+}
+
 // WithHint adds context to the error
 // this is for the frontend error messages
 func (b *ErrorBuilder) WithHint(hint string) *ErrorBuilder {

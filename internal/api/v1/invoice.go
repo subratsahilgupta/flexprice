@@ -341,3 +341,29 @@ func (h *InvoiceHandler) AttemptPayment(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "payment processed successfully"})
 }
+// GetInvoicePDF godoc
+// @Summary Get PDF for an invoice
+// @Description Retrieve the PDF document for a specific invoice by its ID
+// @Tags Invoices
+// @Param id path string true "Invoice ID"
+// @Success 200 {file} application/pdf
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /invoices/{id}/pdf [get]
+func (h *InvoiceHandler) GetInvoicePDF(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("invalid invoice id").WithHint("invalid invoice id").Mark(ierr.ErrValidation))
+		return
+	}
+
+	pdf, err := h.invoiceService.GetInvoicePDF(c.Request.Context(), id)
+	if err != nil {
+		h.logger.Errorw("failed to generate invoice pdf", "error", err, "invoice_id", id)
+		c.Error(err)
+		return
+	}
+
+	c.Data(http.StatusOK, "application/pdf", pdf)
+}

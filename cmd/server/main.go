@@ -16,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
@@ -24,6 +25,7 @@ import (
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/temporal"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/typst"
 	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/flexprice/flexprice/internal/webhook"
 	"go.uber.org/fx"
@@ -80,6 +82,12 @@ func main() {
 			// Clickhouse
 			clickhouse.NewClickHouseStore,
 
+			// Typst
+			typst.DefaultCompiler,
+
+			// Pdf generation
+			pdf.NewGenerator,
+
 			// Optional DBs
 			dynamodb.NewClient,
 
@@ -111,7 +119,6 @@ func main() {
 			repository.NewPaymentRepository,
 			repository.NewTaskRepository,
 			repository.NewSecretRepository,
-
 			// PubSub
 			pubsubRouter.NewRouter,
 
