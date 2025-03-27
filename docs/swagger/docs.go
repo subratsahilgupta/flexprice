@@ -4057,7 +4057,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "List linked integrations",
                 "responses": {
@@ -4086,7 +4086,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "Delete an integration",
                 "parameters": [
@@ -4127,7 +4127,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "Get integration details",
                 "parameters": [
@@ -4169,7 +4169,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "Create or update an integration",
                 "parameters": [
