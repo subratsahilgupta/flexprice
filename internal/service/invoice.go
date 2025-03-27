@@ -935,6 +935,10 @@ func (s *invoiceService) getRecipientInfo(c *customer.Customer) *pdf.RecipientIn
 		},
 	}
 
+	if c.Email != "" {
+		result.Email = c.Email
+	}
+
 	if c.AddressLine1 != "" {
 		result.Address.Street = c.AddressLine1
 	}
