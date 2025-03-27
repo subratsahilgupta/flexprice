@@ -8,33 +8,8 @@ import (
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
-
-// MockCompiler is a mock implementation of the Compiler interface
-type MockCompiler struct {
-	mock.Mock
-}
-
-func (m *MockCompiler) Compile(opts CompileOpts) (string, error) {
-	args := m.Called(opts)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockCompiler) CompileToBytes(opts CompileOpts) ([]byte, error) {
-	args := m.Called(opts)
-	return args.Get(0).([]byte), args.Error(1)
-}
-
-func (m *MockCompiler) CompileTemplate(templateName string, data []byte, opts ...CompileOptsBuilder) ([]byte, error) {
-	args := m.Called(templateName, data, opts)
-	return args.Get(0).([]byte), args.Error(1)
-}
-
-func (m *MockCompiler) CleanupGeneratedFiles(files ...string) {
-	m.Called(files)
-}
 
 type TypstCompilerSuite struct {
 	suite.Suite
@@ -76,11 +51,10 @@ func (s *TypstCompilerSuite) SetupTest() {
 	err = os.MkdirAll(s.fontsDir, 0755)
 	s.Require().NoError(err)
 
-	// copy templates from templates dir to temp dir
-	// get current directory
+	// copy templates from ../../assets/typst-templates dir to temp dir
 	currentDir, err := os.Getwd()
 	s.Require().NoError(err)
-	err = CopyDir(filepath.Join(currentDir, "templates"), s.templateDir)
+	err = CopyDir(filepath.Join(currentDir, "../../assets", "typst-templates"), s.templateDir)
 	s.Require().NoError(err)
 
 	// Create a sample Typst file
