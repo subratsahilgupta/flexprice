@@ -1,3 +1,5 @@
+#!/bin/bash
+
 add_local_bin_to_path() {
     # Add ~/.local/bin to PATH if it's not already there
     if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
