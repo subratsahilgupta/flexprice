@@ -26,8 +26,9 @@ func ErrorHandler() gin.HandlerFunc {
 			response := ierr.ErrorResponse{
 				Success: false,
 				Error: ierr.ErrorDetail{
-					Display: display,
-					Details: details,
+					Display:       display,
+					InternalError: err.Error(),
+					Details:       details,
 				},
 			}
 

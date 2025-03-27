@@ -57,6 +57,15 @@ func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 		Save(ctx)
 
 	if err != nil {
+		if ent.IsConstraintError(err) {
+			return ierr.WithError(err).
+				WithHint("Plan with this name already exists").
+				WithReportableDetails(map[string]any{
+					"plan_id":   p.ID,
+					"plan_name": p.Name,
+				}).
+				Mark(ierr.ErrDatabase)
+		}
 		return ierr.WithError(err).
 			WithHint("Failed to create plan").
 			WithReportableDetails(map[string]any{

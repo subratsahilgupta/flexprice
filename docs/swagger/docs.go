@@ -9285,6 +9285,9 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {}
                 },
+                "internal_error": {
+                    "type": "string"
+                },
                 "message": {
                     "type": "string"
                 }
