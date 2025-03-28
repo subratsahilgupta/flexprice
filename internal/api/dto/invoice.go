@@ -17,7 +17,7 @@ type CreateInvoiceRequest struct {
 	CustomerID     string                         `json:"customer_id" validate:"required"`
 	SubscriptionID *string                        `json:"subscription_id,omitempty"`
 	IdempotencyKey *string                        `json:"idempotency_key"`
-	InvoiceType    types.InvoiceType              `json:"invoice_type" validate:"oneof=SUBSCRIPTION ONE_OFF CREDIT"`
+	InvoiceType    types.InvoiceType              `json:"invoice_type"`
 	Currency       string                         `json:"currency" validate:"required"`
 	AmountDue      decimal.Decimal                `json:"amount_due" validate:"required"`
 	Description    string                         `json:"description,omitempty"`
@@ -36,6 +36,10 @@ type CreateInvoiceRequest struct {
 
 func (r *CreateInvoiceRequest) Validate() error {
 	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	if err := r.InvoiceType.Validate(); err != nil {
 		return err
 	}
 
@@ -349,7 +353,6 @@ type InvoiceResponse struct {
 	CreatedBy       string                     `json:"created_by,omitempty"`
 	UpdatedBy       string                     `json:"updated_by,omitempty"`
 
-	// Edges
 	Subscription *SubscriptionResponse `json:"subscription,omitempty"`
 	Customer     *CustomerResponse     `json:"customer,omitempty"`
 }

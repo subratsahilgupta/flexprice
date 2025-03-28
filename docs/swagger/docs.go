@@ -6006,15 +6006,7 @@ const docTemplate = `{
                     }
                 },
                 "type": {
-                    "enum": [
-                        "private_key",
-                        "publishable_key"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.SecretType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.SecretType"
                 }
             }
         },
@@ -6266,16 +6258,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.InvoiceStatus"
                 },
                 "invoice_type": {
-                    "enum": [
-                        "SUBSCRIPTION",
-                        "ONE_OFF",
-                        "CREDIT"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.InvoiceType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.InvoiceType"
                 },
                 "line_items": {
                     "type": "array",
@@ -6305,7 +6288,8 @@ const docTemplate = `{
             "required": [
                 "aggregation",
                 "event_name",
-                "name"
+                "name",
+                "reset_usage"
             ],
             "properties": {
                 "aggregation": {
@@ -6326,12 +6310,7 @@ const docTemplate = `{
                     "example": "API Usage Meter"
                 },
                 "reset_usage": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.ResetUsage"
-                        }
-                    ],
-                    "example": "BILLING_PERIOD"
+                    "$ref": "#/definitions/types.ResetUsage"
                 }
             }
         },
@@ -6753,12 +6732,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "wallet_type": {
-                    "default": "PRE_PAID",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.WalletType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.WalletType"
                 }
             }
         },
@@ -7215,12 +7189,7 @@ const docTemplate = `{
                     "example": "2024-11-09T00:00:00Z"
                 },
                 "window_size": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.WindowSize"
-                        }
-                    ],
-                    "example": "HOUR"
+                    "$ref": "#/definitions/types.WindowSize"
                 }
             }
         },
@@ -7282,8 +7251,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "aggregation_type": {
-                    "type": "string",
-                    "example": "COUNT"
+                    "$ref": "#/definitions/types.AggregationType"
                 },
                 "customer_id": {
                     "type": "string",
@@ -7320,12 +7288,7 @@ const docTemplate = `{
                     "example": "2024-03-13T00:00:00Z"
                 },
                 "window_size": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.WindowSize"
-                        }
-                    ],
-                    "example": "HOUR"
+                    "$ref": "#/definitions/types.WindowSize"
                 }
             }
         },
@@ -7556,12 +7519,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "subscription": {
-                    "description": "Edges",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dto.SubscriptionResponse"
-                        }
-                    ]
+                    "$ref": "#/definitions/dto.SubscriptionResponse"
                 },
                 "subscription_id": {
                     "type": "string"
@@ -8043,28 +8001,13 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "billing_cadence": {
-                    "description": "BillingCadence is the billing cadence for the price ex RECURRING, ONETIME",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingCadence"
                 },
                 "billing_model": {
-                    "description": "BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingModel"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingModel"
                 },
                 "billing_period": {
-                    "description": "BillingPeriod is the billing period for the price ex month, year",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingPeriod"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingPeriod"
                 },
                 "billing_period_count": {
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
@@ -8093,36 +8036,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "filter_values": {
-                    "description": "FilterValues are the filter values for the price in case of usage based pricing",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBFilters"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBFilters"
                 },
                 "id": {
                     "description": "ID uuid identifier for the price",
                     "type": "string"
                 },
                 "invoice_cadence": {
-                    "description": "InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.InvoiceCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.InvoiceCadence"
                 },
                 "lookup_key": {
                     "description": "LookupKey used for looking up the price in the database",
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a jsonb field for additional information",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBMetadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBMetadata"
                 },
                 "meter": {
                     "$ref": "#/definitions/dto.MeterResponse"
@@ -8142,39 +8070,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tier_mode": {
-                    "description": "Tiered pricing fields when BillingModel is TIERED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingTier"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingTier"
                 },
                 "tiers": {
-                    "description": "Tiers are the tiers for the price when BillingModel is TIERED",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/price.PriceTier"
                     }
                 },
                 "transform_quantity": {
-                    "description": "Transform is the quantity transformation in case of PACKAGE billing model",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBTransformQuantity"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBTransformQuantity"
                 },
                 "trial_period": {
                     "description": "TrialPeriod is the number of days for the trial period\nNote: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)",
                     "type": "integer"
                 },
                 "type": {
-                    "description": "Type is the type of the price ex USAGE, FIXED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PriceType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PriceType"
                 },
                 "updated_at": {
                     "type": "string"
@@ -8284,12 +8196,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a map of key-value pairs that can be attached to the pause",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "original_period_end": {
                     "description": "OriginalPeriodEnd is the end of the billing period when the pause was created",
@@ -8304,36 +8211,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "pause_mode": {
-                    "description": "PauseMode indicates how the pause was applied",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseMode"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseMode"
                 },
                 "pause_start": {
                     "description": "PauseStart is when the pause actually started",
                     "type": "string"
                 },
                 "pause_status": {
-                    "description": "PauseStatus is the status of the pause",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseStatus"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseStatus"
                 },
                 "reason": {
                     "description": "Reason is the reason for pausing",
                     "type": "string"
                 },
                 "resume_mode": {
-                    "description": "ResumeMode indicates how the resume will be applied",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.ResumeMode"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.ResumeMode"
                 },
                 "resumed_at": {
                     "description": "ResumedAt is when the pause was actually ended (if manually resumed)",
@@ -8369,20 +8261,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "billing_cadence": {
-                    "description": "BillingCadence is the cadence of the billing cycle.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingCadence"
                 },
                 "billing_period": {
-                    "description": "BillingPeriod is the period of the billing cycle.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingPeriod"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingPeriod"
                 },
                 "billing_period_count": {
                     "description": "BillingPeriodCount is the total number units of the billing period.",
@@ -8448,20 +8330,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a map of key-value pairs that can be attached to the subscription",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "pause_status": {
-                    "description": "PauseStatus tracks the current pause state",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseStatus"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseStatus"
                 },
                 "pauses": {
                     "type": "array",
@@ -8484,12 +8356,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.Status"
                 },
                 "subscription_status": {
-                    "description": "Status is the status of the subscription",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.SubscriptionStatus"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.SubscriptionStatus"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -8692,12 +8559,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "metadata": {
-                    "description": "metadata to add any additional information about the transaction",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "purchased_credits": {
                     "description": "purchased_credits when true, the credits are added as purchased credits",
@@ -9037,12 +8899,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "auto_topup_trigger": {
-                    "default": "disabled",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.AutoTopupTrigger"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.AutoTopupTrigger"
                 },
                 "config": {
                     "$ref": "#/definitions/types.WalletConfig"
@@ -9316,12 +9173,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "description": "Type is the type of aggregation to be applied on the events\nFor ex sum, count, avg, max, min etc",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.AggregationType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.AggregationType"
                 }
             }
         },
@@ -9377,28 +9229,13 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "billing_cadence": {
-                    "description": "BillingCadence is the billing cadence for the price ex RECURRING, ONETIME",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingCadence"
                 },
                 "billing_model": {
-                    "description": "BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingModel"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingModel"
                 },
                 "billing_period": {
-                    "description": "BillingPeriod is the billing period for the price ex month, year",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingPeriod"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingPeriod"
                 },
                 "billing_period_count": {
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
@@ -9427,36 +9264,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "filter_values": {
-                    "description": "FilterValues are the filter values for the price in case of usage based pricing",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBFilters"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBFilters"
                 },
                 "id": {
                     "description": "ID uuid identifier for the price",
                     "type": "string"
                 },
                 "invoice_cadence": {
-                    "description": "InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.InvoiceCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.InvoiceCadence"
                 },
                 "lookup_key": {
                     "description": "LookupKey used for looking up the price in the database",
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a jsonb field for additional information",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBMetadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBMetadata"
                 },
                 "meter_id": {
                     "description": "MeterID is the id of the meter for usage based pricing",
@@ -9473,39 +9295,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tier_mode": {
-                    "description": "Tiered pricing fields when BillingModel is TIERED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingTier"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingTier"
                 },
                 "tiers": {
-                    "description": "Tiers are the tiers for the price when BillingModel is TIERED",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/price.PriceTier"
                     }
                 },
                 "transform_quantity": {
-                    "description": "Transform is the quantity transformation in case of PACKAGE billing model",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBTransformQuantity"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBTransformQuantity"
                 },
                 "trial_period": {
                     "description": "TrialPeriod is the number of days for the trial period\nNote: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)",
                     "type": "integer"
                 },
                 "type": {
-                    "description": "Type is the type of the price ex USAGE, FIXED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PriceType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PriceType"
                 },
                 "updated_at": {
                     "type": "string"
@@ -9646,12 +9452,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a map of key-value pairs that can be attached to the pause",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "original_period_end": {
                     "description": "OriginalPeriodEnd is the end of the billing period when the pause was created",
@@ -9666,36 +9467,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "pause_mode": {
-                    "description": "PauseMode indicates how the pause was applied",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseMode"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseMode"
                 },
                 "pause_start": {
                     "description": "PauseStart is when the pause actually started",
                     "type": "string"
                 },
                 "pause_status": {
-                    "description": "PauseStatus is the status of the pause",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseStatus"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseStatus"
                 },
                 "reason": {
                     "description": "Reason is the reason for pausing",
                     "type": "string"
                 },
                 "resume_mode": {
-                    "description": "ResumeMode indicates how the resume will be applied",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.ResumeMode"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.ResumeMode"
                 },
                 "resumed_at": {
                     "description": "ResumedAt is when the pause was actually ended (if manually resumed)",

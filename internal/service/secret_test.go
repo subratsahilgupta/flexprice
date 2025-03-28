@@ -149,7 +149,7 @@ func (s *SecretServiceSuite) TestCreateAPIKey() {
 				Type: "invalid",
 			},
 			wantErr:   true,
-			errString: "Error:Field validation",
+			errString: "invalid secret type",
 		},
 	}
 

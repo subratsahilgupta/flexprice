@@ -6,6 +6,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE, etc
 type InvoiceCadence string
 
 const (

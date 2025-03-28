@@ -13,7 +13,7 @@ import (
 // CreateAPIKeyRequest represents the request to create a new API key
 type CreateAPIKeyRequest struct {
 	Name        string           `json:"name" binding:"required" validate:"required"`
-	Type        types.SecretType `json:"type" binding:"required,oneof=private_key publishable_key" validate:"required,oneof=private_key publishable_key"`
+	Type        types.SecretType `json:"type" binding:"required" validate:"required"`
 	Permissions []string         `json:"permissions"`
 	ExpiresAt   *time.Time       `json:"expires_at,omitempty"`
 }
