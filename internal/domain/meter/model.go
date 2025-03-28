@@ -52,8 +52,6 @@ type Filter struct {
 }
 
 type Aggregation struct {
-	// Type is the type of aggregation to be applied on the events
-	// For ex sum, count, avg, max, min etc
 	Type types.AggregationType `json:"type"`
 
 	// Field is the key in $event.properties on which the aggregation is to be applied

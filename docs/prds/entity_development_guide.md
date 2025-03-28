@@ -412,6 +412,110 @@ Database Error
 - Use in-memory store for service tests
 - Implement integration tests for critical paths
 
+### 5. Swagger Documentation Best Practices
+
+To ensure clean and consistent Swagger API documentation, follow these guidelines when defining DTO structs:
+
+#### a. Type Field Tagging
+
+When using custom types (from the `types` package) in DTO structs, avoid using these tags:
+
+- **Don't use `example` tags on custom type fields**:
+  ```go
+  // INCORRECT:
+  AggregationType types.AggregationType `json:"aggregation_type" example:"COUNT"`
+  
+  // CORRECT:
+  AggregationType types.AggregationType `json:"aggregation_type"`
+  ```
+
+- **Don't use `default` tags on custom type fields**:
+  ```go
+  // INCORRECT:
+  WalletType types.WalletType `json:"wallet_type" default:"PRE_PAID"`
+  
+  // CORRECT:
+  WalletType types.WalletType `json:"wallet_type"`
+  ```
+  
+- **Don't use `oneof` validation on custom type fields**:
+  ```go
+  // INCORRECT:
+  InvoiceType types.InvoiceType `json:"invoice_type" validate:"oneof=SUBSCRIPTION ONE_OFF CREDIT"`
+  
+  // CORRECT:
+  InvoiceType types.InvoiceType `json:"invoice_type"`
+  ```
+
+#### b. Handle Defaults in Validate() Methods
+
+Instead of using `default` tags in struct fields, handle default values in the `Validate()` method:
+
+```go
+// Instead of:
+PageSize int `json:"page_size" default:"50"`
+
+// Do this:
+PageSize int `json:"page_size"`
+
+// And handle the default in Validate():
+func (r *MyRequest) Validate() error {
+    if r.PageSize <= 0 {
+        r.PageSize = 50 // Set default page size
+    }
+    return validator.ValidateRequest(r)
+}
+```
+
+#### c. Handle Validation in Type Validate() Methods
+
+For custom types, implement and use the `Validate()` method in the type definition:
+
+```go
+// In types/your_type.go:
+func (t YourType) Validate() error {
+    allowedValues := []YourType{Value1, Value2, Value3}
+    if !lo.Contains(allowedValues, t) {
+        return ierr.NewError("invalid value").
+            WithHint("Invalid value provided").
+            WithReportableDetails(map[string]any{
+                "allowed_values": allowedValues,
+                "provided_value": t,
+            }).
+            Mark(ierr.ErrValidation)
+    }
+    return nil
+}
+
+// In your DTO:
+func (r *YourRequest) Validate() error {
+    if err := validator.ValidateRequest(r); err != nil {
+        return err
+    }
+    
+    // Call the type's Validate method
+    if err := r.YourType.Validate(); err != nil {
+        return err
+    }
+    
+    return nil
+}
+```
+
+#### d. Keep Examples on Primitive Types
+
+You can still use `example` tags on primitive types (string, int, etc.) as they don't cause issues in Swagger:
+
+```go
+// ACCEPTABLE:
+EventName string `json:"event_name" example:"api_request"`
+PageSize  int    `json:"page_size" example:"50"`
+```
+
+#### e. Why This Matters
+
+Following these guidelines prevents Swagger from generating `allOf`, `oneOf`, or `enum` constructs in the generated documentation, which leads to cleaner, more consistent API documentation and a better developer experience for API consumers.
+
 ## Implementation Checklist
 
 - [ ] Schema definition

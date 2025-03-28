@@ -88,11 +88,7 @@ definitions:
           type: string
         type: array
       type:
-        allOf:
-        - $ref: '#/definitions/types.SecretType'
-        enum:
-        - private_key
-        - publishable_key
+        $ref: '#/definitions/types.SecretType'
     required:
     - name
     - type
@@ -261,12 +257,7 @@ definitions:
       invoice_status:
         $ref: '#/definitions/types.InvoiceStatus'
       invoice_type:
-        allOf:
-        - $ref: '#/definitions/types.InvoiceType'
-        enum:
-        - SUBSCRIPTION
-        - ONE_OFF
-        - CREDIT
+        $ref: '#/definitions/types.InvoiceType'
       line_items:
         items:
           $ref: '#/definitions/dto.CreateInvoiceLineItemRequest'
@@ -301,13 +292,12 @@ definitions:
         example: API Usage Meter
         type: string
       reset_usage:
-        allOf:
-        - $ref: '#/definitions/types.ResetUsage'
-        example: BILLING_PERIOD
+        $ref: '#/definitions/types.ResetUsage'
     required:
     - aggregation
     - event_name
     - name
+    - reset_usage
     type: object
   dto.CreatePaymentRequest:
     properties:
@@ -593,9 +583,7 @@ definitions:
       name:
         type: string
       wallet_type:
-        allOf:
-        - $ref: '#/definitions/types.WalletType'
-        default: PRE_PAID
+        $ref: '#/definitions/types.WalletType'
     required:
     - currency
     - customer_id
@@ -903,9 +891,7 @@ definitions:
         example: "2024-11-09T00:00:00Z"
         type: string
       window_size:
-        allOf:
-        - $ref: '#/definitions/types.WindowSize'
-        example: HOUR
+        $ref: '#/definitions/types.WindowSize'
     required:
     - meter_id
     type: object
@@ -946,8 +932,7 @@ definitions:
   dto.GetUsageRequest:
     properties:
       aggregation_type:
-        example: COUNT
-        type: string
+        $ref: '#/definitions/types.AggregationType'
       customer_id:
         example: customer456
         type: string
@@ -974,9 +959,7 @@ definitions:
         example: "2024-03-13T00:00:00Z"
         type: string
       window_size:
-        allOf:
-        - $ref: '#/definitions/types.WindowSize'
-        example: HOUR
+        $ref: '#/definitions/types.WindowSize'
     required:
     - aggregation_type
     - event_name
@@ -1135,9 +1118,7 @@ definitions:
       status:
         type: string
       subscription:
-        allOf:
-        - $ref: '#/definitions/dto.SubscriptionResponse'
-        description: Edges
+        $ref: '#/definitions/dto.SubscriptionResponse'
       subscription_id:
         type: string
       tenant_id:
@@ -1457,19 +1438,11 @@ definitions:
           For USD: 12.50 means $12.50
         type: number
       billing_cadence:
-        allOf:
-        - $ref: '#/definitions/types.BillingCadence'
-        description: BillingCadence is the billing cadence for the price ex RECURRING,
-          ONETIME
+        $ref: '#/definitions/types.BillingCadence'
       billing_model:
-        allOf:
-        - $ref: '#/definitions/types.BillingModel'
-        description: BillingModel is the billing model for the price ex FLAT_FEE,
-          PACKAGE, TIERED
+        $ref: '#/definitions/types.BillingModel'
       billing_period:
-        allOf:
-        - $ref: '#/definitions/types.BillingPeriod'
-        description: BillingPeriod is the billing period for the price ex month, year
+        $ref: '#/definitions/types.BillingPeriod'
       billing_period_count:
         description: BillingPeriodCount is the count of the billing period ex 1, 3,
           6, 12
@@ -1494,24 +1467,17 @@ definitions:
         description: EnvironmentID is the environment identifier for the price
         type: string
       filter_values:
-        allOf:
-        - $ref: '#/definitions/price.JSONBFilters'
-        description: FilterValues are the filter values for the price in case of usage
-          based pricing
+        $ref: '#/definitions/price.JSONBFilters'
       id:
         description: ID uuid identifier for the price
         type: string
       invoice_cadence:
-        allOf:
-        - $ref: '#/definitions/types.InvoiceCadence'
-        description: InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE
+        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         description: LookupKey used for looking up the price in the database
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/price.JSONBMetadata'
-        description: Metadata is a jsonb field for additional information
+        $ref: '#/definitions/price.JSONBMetadata'
       meter:
         $ref: '#/definitions/dto.MeterResponse'
       meter_id:
@@ -1525,28 +1491,20 @@ definitions:
       tenant_id:
         type: string
       tier_mode:
-        allOf:
-        - $ref: '#/definitions/types.BillingTier'
-        description: Tiered pricing fields when BillingModel is TIERED
+        $ref: '#/definitions/types.BillingTier'
       tiers:
-        description: Tiers are the tiers for the price when BillingModel is TIERED
         items:
           $ref: '#/definitions/price.PriceTier'
         type: array
       transform_quantity:
-        allOf:
-        - $ref: '#/definitions/price.JSONBTransformQuantity'
-        description: Transform is the quantity transformation in case of PACKAGE billing
-          model
+        $ref: '#/definitions/price.JSONBTransformQuantity'
       trial_period:
         description: |-
           TrialPeriod is the number of days for the trial period
           Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
         type: integer
       type:
-        allOf:
-        - $ref: '#/definitions/types.PriceType'
-        description: Type is the type of the price ex USAGE, FIXED
+        $ref: '#/definitions/types.PriceType'
       updated_at:
         type: string
       updated_by:
@@ -1619,10 +1577,7 @@ definitions:
         description: ID is the unique identifier for the subscription pause
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/types.Metadata'
-        description: Metadata is a map of key-value pairs that can be attached to
-          the pause
+        $ref: '#/definitions/types.Metadata'
       original_period_end:
         description: OriginalPeriodEnd is the end of the billing period when the pause
           was created
@@ -1635,23 +1590,17 @@ definitions:
         description: PauseEnd is when the pause will end (null for indefinite)
         type: string
       pause_mode:
-        allOf:
-        - $ref: '#/definitions/types.PauseMode'
-        description: PauseMode indicates how the pause was applied
+        $ref: '#/definitions/types.PauseMode'
       pause_start:
         description: PauseStart is when the pause actually started
         type: string
       pause_status:
-        allOf:
-        - $ref: '#/definitions/types.PauseStatus'
-        description: PauseStatus is the status of the pause
+        $ref: '#/definitions/types.PauseStatus'
       reason:
         description: Reason is the reason for pausing
         type: string
       resume_mode:
-        allOf:
-        - $ref: '#/definitions/types.ResumeMode'
-        description: ResumeMode indicates how the resume will be applied
+        $ref: '#/definitions/types.ResumeMode'
       resumed_at:
         description: ResumedAt is when the pause was actually ended (if manually resumed)
         type: string
@@ -1681,13 +1630,9 @@ definitions:
           and the month of year for year intervals. The timestamp is in UTC format.
         type: string
       billing_cadence:
-        allOf:
-        - $ref: '#/definitions/types.BillingCadence'
-        description: BillingCadence is the cadence of the billing cycle.
+        $ref: '#/definitions/types.BillingCadence'
       billing_period:
-        allOf:
-        - $ref: '#/definitions/types.BillingPeriod'
-        description: BillingPeriod is the period of the billing cycle.
+        $ref: '#/definitions/types.BillingPeriod'
       billing_period_count:
         description: BillingPeriodCount is the total number units of the billing period.
         type: integer
@@ -1741,14 +1686,9 @@ definitions:
         description: LookupKey is the key used to lookup the subscription in our system
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/types.Metadata'
-        description: Metadata is a map of key-value pairs that can be attached to
-          the subscription
+        $ref: '#/definitions/types.Metadata'
       pause_status:
-        allOf:
-        - $ref: '#/definitions/types.PauseStatus'
-        description: PauseStatus tracks the current pause state
+        $ref: '#/definitions/types.PauseStatus'
       pauses:
         items:
           $ref: '#/definitions/subscription.SubscriptionPause'
@@ -1764,9 +1704,7 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
       subscription_status:
-        allOf:
-        - $ref: '#/definitions/types.SubscriptionStatus'
-        description: Status is the status of the subscription
+        $ref: '#/definitions/types.SubscriptionStatus'
       tenant_id:
         type: string
       trial_end:
@@ -1904,9 +1842,7 @@ definitions:
           the transaction
         type: boolean
       metadata:
-        allOf:
-        - $ref: '#/definitions/types.Metadata'
-        description: metadata to add any additional information about the transaction
+        $ref: '#/definitions/types.Metadata'
       purchased_credits:
         description: purchased_credits when true, the credits are added as purchased
           credits
@@ -2141,9 +2077,7 @@ definitions:
       auto_topup_min_balance:
         type: number
       auto_topup_trigger:
-        allOf:
-        - $ref: '#/definitions/types.AutoTopupTrigger'
-        default: disabled
+        $ref: '#/definitions/types.AutoTopupTrigger'
       config:
         $ref: '#/definitions/types.WalletConfig'
       description:
@@ -2326,11 +2260,7 @@ definitions:
           For ex if the aggregation type is sum for API usage, the field could be "duration_ms"
         type: string
       type:
-        allOf:
-        - $ref: '#/definitions/types.AggregationType'
-        description: |-
-          Type is the type of aggregation to be applied on the events
-          For ex sum, count, avg, max, min etc
+        $ref: '#/definitions/types.AggregationType'
     type: object
   meter.Filter:
     properties:
@@ -2374,19 +2304,11 @@ definitions:
           For USD: 12.50 means $12.50
         type: number
       billing_cadence:
-        allOf:
-        - $ref: '#/definitions/types.BillingCadence'
-        description: BillingCadence is the billing cadence for the price ex RECURRING,
-          ONETIME
+        $ref: '#/definitions/types.BillingCadence'
       billing_model:
-        allOf:
-        - $ref: '#/definitions/types.BillingModel'
-        description: BillingModel is the billing model for the price ex FLAT_FEE,
-          PACKAGE, TIERED
+        $ref: '#/definitions/types.BillingModel'
       billing_period:
-        allOf:
-        - $ref: '#/definitions/types.BillingPeriod'
-        description: BillingPeriod is the billing period for the price ex month, year
+        $ref: '#/definitions/types.BillingPeriod'
       billing_period_count:
         description: BillingPeriodCount is the count of the billing period ex 1, 3,
           6, 12
@@ -2411,24 +2333,17 @@ definitions:
         description: EnvironmentID is the environment identifier for the price
         type: string
       filter_values:
-        allOf:
-        - $ref: '#/definitions/price.JSONBFilters'
-        description: FilterValues are the filter values for the price in case of usage
-          based pricing
+        $ref: '#/definitions/price.JSONBFilters'
       id:
         description: ID uuid identifier for the price
         type: string
       invoice_cadence:
-        allOf:
-        - $ref: '#/definitions/types.InvoiceCadence'
-        description: InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE
+        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         description: LookupKey used for looking up the price in the database
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/price.JSONBMetadata'
-        description: Metadata is a jsonb field for additional information
+        $ref: '#/definitions/price.JSONBMetadata'
       meter_id:
         description: MeterID is the id of the meter for usage based pricing
         type: string
@@ -2440,28 +2355,20 @@ definitions:
       tenant_id:
         type: string
       tier_mode:
-        allOf:
-        - $ref: '#/definitions/types.BillingTier'
-        description: Tiered pricing fields when BillingModel is TIERED
+        $ref: '#/definitions/types.BillingTier'
       tiers:
-        description: Tiers are the tiers for the price when BillingModel is TIERED
         items:
           $ref: '#/definitions/price.PriceTier'
         type: array
       transform_quantity:
-        allOf:
-        - $ref: '#/definitions/price.JSONBTransformQuantity'
-        description: Transform is the quantity transformation in case of PACKAGE billing
-          model
+        $ref: '#/definitions/price.JSONBTransformQuantity'
       trial_period:
         description: |-
           TrialPeriod is the number of days for the trial period
           Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
         type: integer
       type:
-        allOf:
-        - $ref: '#/definitions/types.PriceType'
-        description: Type is the type of the price ex USAGE, FIXED
+        $ref: '#/definitions/types.PriceType'
       updated_at:
         type: string
       updated_by:
@@ -2559,10 +2466,7 @@ definitions:
         description: ID is the unique identifier for the subscription pause
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/types.Metadata'
-        description: Metadata is a map of key-value pairs that can be attached to
-          the pause
+        $ref: '#/definitions/types.Metadata'
       original_period_end:
         description: OriginalPeriodEnd is the end of the billing period when the pause
           was created
@@ -2575,23 +2479,17 @@ definitions:
         description: PauseEnd is when the pause will end (null for indefinite)
         type: string
       pause_mode:
-        allOf:
-        - $ref: '#/definitions/types.PauseMode'
-        description: PauseMode indicates how the pause was applied
+        $ref: '#/definitions/types.PauseMode'
       pause_start:
         description: PauseStart is when the pause actually started
         type: string
       pause_status:
-        allOf:
-        - $ref: '#/definitions/types.PauseStatus'
-        description: PauseStatus is the status of the pause
+        $ref: '#/definitions/types.PauseStatus'
       reason:
         description: Reason is the reason for pausing
         type: string
       resume_mode:
-        allOf:
-        - $ref: '#/definitions/types.ResumeMode'
-        description: ResumeMode indicates how the resume will be applied
+        $ref: '#/definitions/types.ResumeMode'
       resumed_at:
         description: ResumedAt is when the pause was actually ended (if manually resumed)
         type: string

@@ -15,14 +15,9 @@ type SubscriptionPause struct {
 	// SubscriptionID is the identifier for the subscription
 	SubscriptionID string `db:"subscription_id" json:"subscription_id"`
 
-	// PauseStatus is the status of the pause
-	PauseStatus types.PauseStatus `db:"pause_status" json:"pause_status"` // none, active, scheduled, completed, cancelled
-
-	// PauseMode indicates how the pause was applied
-	PauseMode types.PauseMode `db:"pause_mode" json:"pause_mode"` // immediate, scheduled, period_end
-
-	// ResumeMode indicates how the resume will be applied
-	ResumeMode types.ResumeMode `db:"resume_mode" json:"resume_mode,omitempty"` // immediate, scheduled, auto
+	PauseStatus types.PauseStatus `db:"pause_status" json:"pause_status"`
+	PauseMode   types.PauseMode   `db:"pause_mode" json:"pause_mode"`
+	ResumeMode  types.ResumeMode  `db:"resume_mode" json:"resume_mode,omitempty"`
 
 	// PauseStart is when the pause actually started
 	PauseStart time.Time `db:"pause_start" json:"pause_start"`
@@ -42,7 +37,6 @@ type SubscriptionPause struct {
 	// Reason is the reason for pausing
 	Reason string `db:"reason" json:"reason,omitempty"`
 
-	// Metadata is a map of key-value pairs that can be attached to the pause
 	Metadata types.Metadata `db:"metadata" json:"metadata,omitempty"`
 
 	// EnvironmentID is the environment identifier for the pause

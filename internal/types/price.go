@@ -18,6 +18,7 @@ type BillingCadence string
 // calculate the price for a given quantity
 type BillingTier string
 
+// PriceType is the type of the price ex USAGE, FIXED
 type PriceType string
 
 const (

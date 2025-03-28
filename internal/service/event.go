@@ -106,7 +106,7 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, req *dto.GetUsageByM
 		CustomerID:         req.CustomerID,
 		EventName:          m.EventName,
 		PropertyName:       m.Aggregation.Field,
-		AggregationType:    string(m.Aggregation.Type),
+		AggregationType:    m.Aggregation.Type,
 		StartTime:          req.StartTime,
 		WindowSize:         req.WindowSize,
 		EndTime:            req.EndTime,

@@ -20,7 +20,6 @@ type Subscription struct {
 	// PlanID is the identifier for the plan in our system
 	PlanID string `db:"plan_id" json:"plan_id"`
 
-	// Status is the status of the subscription
 	SubscriptionStatus types.SubscriptionStatus `db:"subscription_status" json:"subscription_status"`
 
 	// Currency is the currency of the subscription in lowercase 3 digit ISO codes
@@ -60,10 +59,8 @@ type Subscription struct {
 	// TrialEnd is the end date of the trial period
 	TrialEnd *time.Time `db:"trial_end" json:"trial_end"`
 
-	// BillingCadence is the cadence of the billing cycle.
 	BillingCadence types.BillingCadence `db:"billing_cadence" json:"billing_cadence"`
 
-	// BillingPeriod is the period of the billing cycle.
 	BillingPeriod types.BillingPeriod `db:"billing_period" json:"billing_period"`
 
 	// BillingPeriodCount is the total number units of the billing period.
@@ -72,13 +69,11 @@ type Subscription struct {
 	// Version is used for optimistic locking
 	Version int `db:"version" json:"version"`
 
-	// Metadata is a map of key-value pairs that can be attached to the subscription
 	Metadata types.Metadata `db:"metadata" json:"metadata,omitempty"`
 
 	// EnvironmentID is the environment identifier for the subscription
 	EnvironmentID string `db:"environment_id" json:"environment_id"`
 
-	// PauseStatus tracks the current pause state
 	PauseStatus types.PauseStatus `db:"pause_status" json:"pause_status"`
 
 	// ActivePauseID references the current active pause configuration

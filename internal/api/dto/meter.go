@@ -14,7 +14,7 @@ type CreateMeterRequest struct {
 	EventName   string            `json:"event_name" binding:"required" example:"api_request"`
 	Aggregation meter.Aggregation `json:"aggregation" binding:"required"`
 	Filters     []meter.Filter    `json:"filters"`
-	ResetUsage  types.ResetUsage  `json:"reset_usage" example:"BILLING_PERIOD"`
+	ResetUsage  types.ResetUsage  `json:"reset_usage" binding:"required"`
 }
 
 // UpdateMeterRequest represents the request payload for updating a meter
@@ -65,7 +65,16 @@ func (r *CreateMeterRequest) ToMeter(tenantID, createdBy string) *meter.Meter {
 
 // Request validations
 func (r *CreateMeterRequest) Validate() error {
-	return validator.ValidateRequest(r)
+	err := validator.ValidateRequest(r)
+	if err != nil {
+		return err
+	}
+
+	if err := r.ResetUsage.Validate(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ListMetersResponse represents a paginated list of meters

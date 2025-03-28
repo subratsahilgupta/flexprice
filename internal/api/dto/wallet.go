@@ -24,7 +24,7 @@ type CreateWalletRequest struct {
 	AutoTopupTrigger    types.AutoTopupTrigger `json:"auto_topup_trigger,omitempty"`
 	AutoTopupMinBalance decimal.Decimal        `json:"auto_topup_min_balance,omitempty"`
 	AutoTopupAmount     decimal.Decimal        `json:"auto_topup_amount,omitempty"`
-	WalletType          types.WalletType       `json:"wallet_type" default:"PRE_PAID"`
+	WalletType          types.WalletType       `json:"wallet_type"`
 	Config              *types.WalletConfig    `json:"config,omitempty"`
 	ConversionRate      decimal.Decimal        `json:"conversion_rate" default:"1"`
 }
@@ -34,7 +34,7 @@ type UpdateWalletRequest struct {
 	Name                *string                 `json:"name,omitempty"`
 	Description         *string                 `json:"description,omitempty"`
 	Metadata            *types.Metadata         `json:"metadata,omitempty"`
-	AutoTopupTrigger    *types.AutoTopupTrigger `json:"auto_topup_trigger,omitempty" default:"disabled"`
+	AutoTopupTrigger    *types.AutoTopupTrigger `json:"auto_topup_trigger,omitempty"`
 	AutoTopupMinBalance *decimal.Decimal        `json:"auto_topup_min_balance,omitempty"`
 	AutoTopupAmount     *decimal.Decimal        `json:"auto_topup_amount,omitempty"`
 	Config              *types.WalletConfig     `json:"config,omitempty"`
@@ -84,6 +84,14 @@ func (r *UpdateWalletRequest) Validate() error {
 
 // ToWallet converts a create wallet request to a wallet
 func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
+	if r.ConversionRate.IsZero() {
+		r.ConversionRate = decimal.NewFromInt(1)
+	}
+
+	if r.WalletType == "" {
+		r.WalletType = types.WalletTypePrePaid
+	}
+
 	// Validate currency
 	if err := types.ValidateCurrencyCode(r.Currency); err != nil {
 		return nil
@@ -91,10 +99,6 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 
 	if r.Config == nil {
 		r.Config = types.GetDefaultWalletConfig()
-	}
-
-	if r.WalletType == "" {
-		r.WalletType = types.WalletTypePrePaid
 	}
 
 	if r.ConversionRate.LessThanOrEqual(decimal.NewFromInt(0)) {
@@ -265,7 +269,6 @@ type TopUpWalletRequest struct {
 	ReferenceType string `json:"reference_type,omitempty"`
 	// reference_id is the ID of the reference ex payment ID, invoice ID, request ID
 	ReferenceID string `json:"reference_id,omitempty"`
-	// metadata to add any additional information about the transaction
 	Metadata types.Metadata `json:"metadata,omitempty"`
 }
 

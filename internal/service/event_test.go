@@ -186,7 +186,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 			request: &dto.GetUsageRequest{
 				ExternalCustomerID: "cust-1",
 				EventName:          "api_request",
-				AggregationType:    string(types.AggregationCount),
+				AggregationType:    types.AggregationCount,
 				StartTime:          time.Now().Add(-2 * time.Hour),
 				EndTime:            time.Now(),
 			},
@@ -199,7 +199,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 				ExternalCustomerID: "cust-1",
 				EventName:          "api_request",
 				PropertyName:       "duration_ms",
-				AggregationType:    string(types.AggregationSum),
+				AggregationType:    types.AggregationSum,
 				StartTime:          time.Now().Add(-2 * time.Hour),
 				EndTime:            time.Now(),
 				Filters: map[string][]string{
@@ -215,7 +215,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 				ExternalCustomerID: "cust-1",
 				EventName:          "api_request",
 				PropertyName:       "duration_ms",
-				AggregationType:    string(types.AggregationSum),
+				AggregationType:    types.AggregationSum,
 				StartTime:          time.Now().Add(-2 * time.Hour),
 				EndTime:            time.Now(),
 				Filters: map[string][]string{
@@ -231,7 +231,7 @@ func (s *EventServiceSuite) TestGetUsage() {
 			request: &dto.GetUsageRequest{
 				ExternalCustomerID: "cust-1",
 				EventName:          "api_request",
-				AggregationType:    string(types.AggregationCount),
+				AggregationType:    types.AggregationCount,
 				StartTime:          time.Now().Add(-2 * time.Hour),
 				EndTime:            time.Now(),
 				Filters: map[string][]string{
