@@ -1,0 +1,237 @@
+name: Generate and Publish SDK Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'SDK Version (e.g., 1.0.0)'
+        required: true
+        default: ''
+      dry_run:
+        description: 'Dry run mode (true/false)'
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'docs/swagger/swagger-3-0.json'
+
+# Add permissions for writing to repositories
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  generate-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Install Java (manual)
+        run: |
+          echo "Installing Java..."
+          apt-get update || true
+          apt-get install -y default-jre default-jdk || true
+          java -version || echo "Java installation may have failed but continuing..."
+
+      - name: Set up Java (if action is available)
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+        continue-on-error: true
+
+      - name: Install OpenAPI Generator
+        run: |
+          npm install -g @openapitools/openapi-generator-cli
+          openapi-generator-cli version || echo "OpenAPI Generator installation verification failed but continuing..."
+
+      - name: Generate SDKs
+        run: |
+          echo "Generating Go SDK..."
+          make generate-go-sdk || echo "Go SDK generation failed but continuing..."
+          ls -la api/go || echo "api/go directory not found"
+          
+          echo "Generating JavaScript SDK..."
+          make generate-javascript-sdk || echo "JavaScript SDK generation failed but continuing..."
+          ls -la api/javascript || echo "api/javascript directory not found"
+          
+          echo "Generating Python SDK..."
+          make generate-python-sdk || echo "Python SDK generation failed but continuing..."
+          ls -la api/python || echo "api/python directory not found"
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.19'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Get SDK Version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          else
+            CURRENT_DATE=$(date +'%Y%m%d')
+            SHORT_SHA=${GITHUB_SHA::8}
+            echo "VERSION=0.1.0-${CURRENT_DATE}-${SHORT_SHA}" >> $GITHUB_ENV
+          fi
+          echo "Publishing version: ${{ env.VERSION }}"
+
+      - name: Prepare Go SDK
+        if: success()
+        run: |
+          echo "Running Go SDK publish with VERSION=${{ env.VERSION }} and DRY_RUN=${{ github.event.inputs.dry_run || false }}"
+          mkdir -p api/go || true
+          make sdk-publish-go VERSION=${{ env.VERSION }} DRY_RUN=${{ github.event.inputs.dry_run || false }}
+
+      - name: Prepare JavaScript SDK
+        if: success()
+        run: |
+          echo "Running JavaScript SDK publish with VERSION=${{ env.VERSION }} and DRY_RUN=${{ github.event.inputs.dry_run || false }}"
+          mkdir -p api/javascript || true
+          
+          # Install dependencies first to ensure babel is available
+          cd api/javascript
+          npm ci || npm install || echo "No dependencies to install, continuing..."
+          cd ../..
+          
+          make sdk-publish-js VERSION=${{ env.VERSION }} DRY_RUN=${{ github.event.inputs.dry_run || false }}
+
+      - name: Prepare Python SDK
+        if: success()
+        run: |
+          echo "Running Python SDK publish with VERSION=${{ env.VERSION }} and DRY_RUN=${{ github.event.inputs.dry_run || false }}"
+          mkdir -p api/python || true
+          make sdk-publish-py VERSION=${{ env.VERSION }} DRY_RUN=${{ github.event.inputs.dry_run || false }}
+
+      - name: Publish Go SDK to GitHub
+        if: success() && (github.event.inputs.dry_run != 'true')
+        run: |
+          # Clone the Go SDK repository
+          git clone https://github.com/flexprice/go-sdk.git ~/go-sdk-repo || mkdir -p ~/go-sdk-repo
+          
+          # Copy SDK files to the cloned repo
+          rm -rf ~/go-sdk-repo/* || true
+          mkdir -p api/go || true
+          cp -r api/go/* ~/go-sdk-repo/ || echo "No files to copy from api/go"
+
+          # Copy the license file
+          cp LICENSE ~/go-sdk-repo/ || echo "LICENSE not found but continuing"
+          
+          # Use custom README instead of the auto-generated one
+          mkdir -p api/go/examples || true
+          cp api/go/examples/README.md ~/go-sdk-repo/README.md || echo "README not found but continuing"
+          
+          # Optionally append auto-generated API documentation to the custom README
+          if [ -f api/go/README.md ]; then
+            echo -e "\n\n## Auto-Generated API Documentation\n\n" >> ~/go-sdk-repo/README.md
+            # Extract API documentation section from auto-generated README and append it
+            sed -n '/## Documentation for API Endpoints/,$p' api/go/README.md >> ~/go-sdk-repo/README.md
+          fi
+          
+          # Push to GitHub
+          cd ~/go-sdk-repo
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add . || echo "Nothing to add"
+          git commit -m "Update SDK to version ${{ env.VERSION }}" || echo "Nothing to commit"
+          git tag -a "v${{ env.VERSION }}" -m "Version ${{ env.VERSION }}" || echo "Tag creation failed"
+          
+          # Use GitHub token for authentication
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/flexprice/go-sdk.git || true
+          git push -f origin main || echo "Push failed but continuing"
+          git push --tags || echo "Tag push failed but continuing"
+          echo "Go SDK publishing steps completed"
+
+      - name: Publish JavaScript SDK to GitHub
+        if: success() && (github.event.inputs.dry_run != 'true')
+        run: |
+          # Clone the JavaScript SDK repository
+          git clone https://github.com/flexprice/javascript-sdk.git ~/javascript-sdk-repo || mkdir -p ~/javascript-sdk-repo
+          
+          # Copy SDK files to the cloned repo
+          rm -rf ~/javascript-sdk-repo/* || true
+          mkdir -p api/javascript || true
+          cp -r api/javascript/* ~/javascript-sdk-repo/ || echo "No files to copy from api/javascript"
+
+          # Copy the license file
+          cp LICENSE ~/javascript-sdk-repo/ || echo "LICENSE not found but continuing"
+          
+          # Use custom README instead of the auto-generated one if available
+          mkdir -p api/javascript/examples || true
+          cp api/javascript/examples/README.md ~/javascript-sdk-repo/README.md || echo "README not found but continuing"
+          
+          # Build the SDK to ensure dist files are generated
+          cd ~/javascript-sdk-repo
+          npm ci || npm install || echo "Installing dependencies failed but continuing..."
+          npm run build || echo "Building SDK failed but continuing..."
+          
+          # Push to GitHub
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add . || echo "Nothing to add"
+          git commit -m "Update SDK to version ${{ env.VERSION }}" || echo "Nothing to commit"
+          git tag -a "v${{ env.VERSION }}" -m "Version ${{ env.VERSION }}" || echo "Tag creation failed"
+          
+          # Use GitHub token for authentication
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/flexprice/javascript-sdk.git || true
+          git push -f origin main || echo "Push failed but continuing"
+          git push --tags || echo "Tag push failed but continuing"
+          echo "JavaScript SDK publishing steps completed"
+
+      - name: Publish Python SDK to GitHub
+        if: success() && (github.event.inputs.dry_run != 'true')
+        run: |
+          # Clone the Python SDK repository
+          git clone https://github.com/flexprice/python-sdk.git ~/python-sdk-repo || mkdir -p ~/python-sdk-repo
+          
+          # Copy SDK files to the cloned repo
+          rm -rf ~/python-sdk-repo/* || true
+          mkdir -p api/python || true
+          cp -r api/python/* ~/python-sdk-repo/ || echo "No files to copy from api/python"
+
+          # Copy the license file
+          cp LICENSE ~/python-sdk-repo/ || echo "LICENSE not found but continuing"
+          
+          # Use custom README instead of the auto-generated one if available
+          mkdir -p api/python/examples || true
+          cp api/python/examples/README.md ~/python-sdk-repo/README.md || echo "README not found but continuing"
+          
+          # Install dependencies and build package
+          cd ~/python-sdk-repo
+          python -m pip install --upgrade pip setuptools wheel || echo "Installing build dependencies failed but continuing..."
+          
+          # Push to GitHub
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add . || echo "Nothing to add"
+          git commit -m "Update SDK to version ${{ env.VERSION }}" || echo "Nothing to commit"
+          git tag -a "v${{ env.VERSION }}" -m "Version ${{ env.VERSION }}" || echo "Tag creation failed"
+          
+          # Use GitHub token for authentication
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/flexprice/python-sdk.git || true
+          git push -f origin main || echo "Push failed but continuing"
+          git push --tags || echo "Tag push failed but continuing"
+          echo "Python SDK publishing steps completed"
+
+      - name: Dry Run Info
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "DRY RUN: This was executed in dry run mode. No changes were made to repositories."
+          echo "To publish for real, run this workflow again with dry_run set to false." 

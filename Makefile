@@ -244,3 +244,80 @@ docker-build-local:
 .PHONY: install-typst
 install-typst:
 	@./scripts/install-typst.sh
+
+# SDK Generation targets
+.PHONY: install-openapi-generator
+install-openapi-generator:
+	@which openapi-generator-cli > /dev/null || (npm install -g @openapitools/openapi-generator-cli)
+
+.PHONY: generate-sdk generate-go-sdk generate-python-sdk generate-javascript-sdk
+
+# Generate all SDKs
+generate-sdk: generate-go-sdk generate-python-sdk generate-javascript-sdk
+	@echo "All SDKs generated successfully"
+
+# Generate Go SDK
+generate-go-sdk: install-openapi-generator
+	@echo "Generating Go SDK..."
+	@openapi-generator-cli generate \
+		-i docs/swagger/swagger-3-0.json \
+		-g go \
+		-o api/go \
+		--additional-properties=packageName=flexprice,isGoSubmodule=true,enumClassPrefix=true,structPrefix=true \
+		--git-repo-id=go-sdk \
+		--git-user-id=flexprice \
+		--global-property apiTests=false,modelTests=false
+	@echo "Go SDK generated successfully"
+
+# Generate Python SDK
+generate-python-sdk: install-openapi-generator
+	@echo "Generating Python SDK..."
+	@openapi-generator-cli generate \
+		-i docs/swagger/swagger-3-0.json \
+		-g python \
+		-o api/python \
+		--additional-properties=packageName=flexprice \
+		--git-repo-id=python-sdk \
+		--git-user-id=flexprice \
+		--global-property apiTests=false,modelTests=false
+	@echo "Python SDK generated successfully"
+
+# Generate JavaScript SDK
+generate-javascript-sdk: install-openapi-generator
+	@echo "Generating JavaScript SDK..."
+	@openapi-generator-cli generate \
+		-i docs/swagger/swagger-3-0.json \
+		-g javascript \
+		-o api/javascript \
+		--additional-properties=projectName=@flexprice/sdk \
+		--git-repo-id=javascript-sdk \
+		--git-user-id=flexprice \
+		--global-property apiTests=false,modelTests=false
+	@echo "JavaScript SDK generated successfully"
+
+# SDK publishing
+sdk-publish-js:
+	@api/publish.sh --js $(if $(filter true,$(DRY_RUN)),--dry-run,) $(if $(VERSION),--version $(VERSION),)
+
+sdk-publish-py:
+	@api/publish.sh --py $(if $(filter true,$(DRY_RUN)),--dry-run,) $(if $(VERSION),--version $(VERSION),)
+
+sdk-publish-go:
+	@api/publish.sh --go $(if $(filter true,$(DRY_RUN)),--dry-run,) $(if $(VERSION),--version $(VERSION),)
+
+sdk-publish-all:
+	@api/publish.sh --all $(if $(filter true,$(DRY_RUN)),--dry-run,)
+
+sdk-publish-all-with-version:
+	@echo "Usage: make sdk-publish-all-with-version VERSION=x.y.z"
+	@test -n "$(VERSION)" || (echo "Error: VERSION is required"; exit 1)
+	@api/publish.sh --all --version $(VERSION) $(if $(filter true,$(DRY_RUN)),--dry-run,)
+
+# Test GitHub workflow locally using act
+test-github-workflow:
+	@echo "Testing GitHub workflow locally..."
+	@test -n "$(VERSION)" || (echo "Error: VERSION is required"; exit 1)
+	@./scripts/ensure-act.sh
+	@act workflow_dispatch -e .github/workflows/test-event.json -s GITHUB_TOKEN="$(shell cat .secrets.git)" -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/amd64 --action-offline-mode
+
+.PHONY: sdk-publish-js sdk-publish-py sdk-publish-go sdk-publish-all sdk-publish-all-with-version test-github-workflow
