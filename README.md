@@ -7,7 +7,7 @@
 </b>
 </h3 >
 <p align="center">
-🌟 Built with developers in mind, so you don’t have to create
+🌟 Built with developers in mind, so you don't have to create
 billing and metering from scratch. 🌟
 </p>
 
@@ -139,3 +139,46 @@ Whether you're a newbie coder or a wizard 🧙‍♀️, your perspective is gol
 ## ✨ Resources!
 
 📖 [API Docs](https://docs.flexprice.io/)
+
+## 🛠️ API SDKs
+
+Flexprice provides SDKs for multiple languages to make integration easier. These SDKs are automatically generated from our OpenAPI specifications.
+
+### Generating SDKs
+
+To generate the SDKs, run:
+
+```bash
+make generate-sdks
+```
+
+This will create SDKs for:
+- JavaScript (npm)
+- Python (PyPI)
+- Go (GitHub)
+
+### Versioning SDKs
+
+To update the version of all SDKs:
+
+```bash
+make sdk-version VERSION=1.0.0
+```
+
+### Publishing SDKs
+
+To publish all SDKs with a new version:
+
+```bash
+make sdk-publish-all-with-version VERSION=1.0.0
+```
+
+Or publish individual SDKs:
+
+```bash
+make sdk-publish-js  # Publish JavaScript SDK to npm
+make sdk-publish-py  # Publish Python SDK to PyPI
+make sdk-publish-go  # Prepare Go SDK for publishing
+```
+
+For more details on SDK generation and publishing, see the [API SDK documentation](api/README.md).
