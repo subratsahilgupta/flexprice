@@ -116,6 +116,67 @@ def run_example():
         print(f"Unexpected error: {e}")
 ```
 
+## Asynchronous Event Submission
+
+The FlexPrice SDK provides asynchronous event submission functionality that allows you to:
+
+- Submit events in a non-blocking manner with "fire-and-forget" capability
+- Include optional callbacks to handle success/failure responses
+- Automatically retry failed event submissions with exponential backoff
+- Process events in background threads
+
+### Basic Async Usage
+
+```python
+from flexprice import Configuration, ApiClient, EventsApi
+from flexprice.models import DtoIngestEventRequest
+
+# Configure the client
+configuration = Configuration(api_key={'ApiKeyAuth': 'YOUR_API_KEY'})
+configuration.host = "https://api.cloud.flexprice.io/v1"
+
+# Create API client and event API instance
+api_client = ApiClient(configuration)
+events_api = EventsApi(api_client)
+
+# Create an event
+event = DtoIngestEventRequest(
+    external_customer_id="customer123",
+    event_name="api_call",
+    properties={"region": "us-west", "method": "GET"},
+    source="my_application"
+)
+
+# Submit asynchronously (fire-and-forget)
+events_api.events_post_async(event)
+```
+
+### Using Callbacks
+
+```python
+# Define a callback function
+def on_event_processed(result, error, success):
+    if success:
+        print(f"Event processed successfully: {result}")
+    else:
+        print(f"Event processing failed: {error}")
+
+# Create and submit event with callback
+event = DtoIngestEventRequest(
+    external_customer_id="customer123",
+    event_name="user_action",
+    properties={"action": "login", "device": "mobile"},
+    source="user_portal"
+)
+
+# Submit with callback
+events_api.events_post_async(event, callback=on_event_processed)
+```
+
+### Complete Example
+
+For a complete example of asynchronous event submission, see the `async_event_example.py` file in the examples directory.
+
 ## Running the Example
 
 To run the provided example:
@@ -144,13 +205,18 @@ To run the provided example:
    python example.py
    ```
 
+5. Run the async example:
+   ```bash
+   python async_event_example.py
+   ```
+
 ## Features
 
 - Complete API coverage
 - Strong type hints
 - Detailed documentation
 - Error handling
-- Asynchronous support
+- Asynchronous support for event submission
 
 ## Documentation
 
@@ -174,9 +240,9 @@ except Exception as e:
     print(f"General exception: {e}")
 ```
 
-### Asynchronous Usage
+### Asynchronous API Usage with asyncio
 
-The SDK can be used asynchronously with libraries like `asyncio`:
+In addition to the built-in asynchronous event submission, the SDK can be used with libraries like `asyncio` for other operations:
 
 ```python
 import asyncio

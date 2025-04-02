@@ -58,6 +58,8 @@ build/
 
 # Generated SDK code (exclude test files)
 api/*/*
+# custom scripts
+!api/scripts/*
 # skip examples and README.md modifications
 !api/*/examples
 !api/*/README.md

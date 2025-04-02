@@ -280,6 +280,7 @@ generate-python-sdk: install-openapi-generator
 		--git-repo-id=python-sdk \
 		--git-user-id=flexprice \
 		--global-property apiTests=false,modelTests=false
+	@python api/scripts/python/add_python_async.py || echo "Failed to add async functionality, but continuing..."
 	@echo "Python SDK generated successfully"
 
 # Generate JavaScript SDK
