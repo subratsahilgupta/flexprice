@@ -29,7 +29,7 @@ def run_example():
     try:
         # Configure the API client
         api_key = os.getenv("FLEXPRICE_API_KEY")
-        api_host = os.getenv("FLEXPRICE_API_HOST", "api-dev.cloud.flexprice.io")
+        api_host = os.getenv("FLEXPRICE_API_HOST", "api.cloud.flexprice.io")
 
         if not api_key:
             raise ValueError("FLEXPRICE_API_KEY environment variable is required")
@@ -74,6 +74,9 @@ def run_example():
             
             event_result = events_api_instance.events_post(event=event_request)
             print(f"Event created successfully! ID: {event_result.event_id if hasattr(event_result, 'event_id') else 'unknown'}")
+            
+            # Sleep for 1 second to allow the event to be processed
+            time.sleep(1)
 
             # Step 2: Retrieve events for this customer
             print(f"Retrieving events for customer {customer_id}...")
