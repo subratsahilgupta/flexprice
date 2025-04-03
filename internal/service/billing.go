@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -1038,6 +1039,24 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 			}
 		}
 	}
+
+	// define priority for feature types
+
+	features := entitlements.Features
+	featureOrder := map[types.FeatureType]int{
+		types.FeatureTypeMetered: 1,
+		types.FeatureTypeStatic:  2,
+		types.FeatureTypeBoolean: 3,
+	}
+
+	sort.SliceStable(features, func(i, j int) bool {
+		// Compare by FeatureType priority first
+		if featureOrder[features[i].Feature.Type] != featureOrder[features[j].Feature.Type] {
+			return featureOrder[features[i].Feature.Type] < featureOrder[features[j].Feature.Type]
+		}
+		// If same FeatureType, sort by Name alphabetically
+		return features[i].Feature.Name < features[j].Feature.Name
+	})
 
 	// 5. Build final response combining entitlements and usage
 	for _, feature := range entitlements.Features {
