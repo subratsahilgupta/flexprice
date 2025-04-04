@@ -1,12 +1,12 @@
 package types
 
 import (
-	"fmt"
-
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 )
 
+// InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE, etc
 type InvoiceCadence string
 
 const (
@@ -26,7 +26,12 @@ func (c InvoiceCadence) Validate() error {
 		InvoiceCadenceAdvance,
 	}
 	if !lo.Contains(allowed, c) {
-		return fmt.Errorf("invalid invoice cadence: %s", c)
+		return ierr.NewError("invalid invoice cadence").
+			WithHint("Please provide a valid invoice cadence").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -53,7 +58,12 @@ func (t InvoiceType) Validate() error {
 		InvoiceTypeCredit,
 	}
 	if !lo.Contains(allowed, t) {
-		return fmt.Errorf("invalid invoice type: %s", t)
+		return ierr.NewError("invalid invoice type").
+			WithHint("Please provide a valid invoice type").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -80,7 +90,12 @@ func (s InvoiceStatus) Validate() error {
 		InvoiceStatusVoided,
 	}
 	if !lo.Contains(allowed, s) {
-		return fmt.Errorf("invalid invoice status: %s", s)
+		return ierr.NewError("invalid invoice status").
+			WithHint("Please provide a valid invoice status").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -110,7 +125,12 @@ func (r InvoiceBillingReason) Validate() error {
 		InvoiceBillingReasonManual,
 	}
 	if !lo.Contains(allowed, r) {
-		return fmt.Errorf("invalid invoice billing reason: %s", r)
+		return ierr.NewError("invalid invoice billing reason").
+			WithHint("Please provide a valid invoice billing reason").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -123,11 +143,13 @@ const (
 type InvoiceFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
-	CustomerID     string          `json:"customer_id,omitempty" form:"customer_id"`
-	SubscriptionID string          `json:"subscription_id,omitempty" form:"subscription_id"`
-	InvoiceType    InvoiceType     `json:"invoice_type,omitempty" form:"invoice_type"`
-	InvoiceStatus  []InvoiceStatus `json:"invoice_status,omitempty" form:"invoice_status"`
-	PaymentStatus  []PaymentStatus `json:"payment_status,omitempty" form:"payment_status"`
+	CustomerID        string           `json:"customer_id,omitempty" form:"customer_id"`
+	SubscriptionID    string           `json:"subscription_id,omitempty" form:"subscription_id"`
+	InvoiceType       InvoiceType      `json:"invoice_type,omitempty" form:"invoice_type"`
+	InvoiceStatus     []InvoiceStatus  `json:"invoice_status,omitempty" form:"invoice_status"`
+	PaymentStatus     []PaymentStatus  `json:"payment_status,omitempty" form:"payment_status"`
+	AmountDueGt       *decimal.Decimal `json:"amount_due_gt,omitempty" form:"amount_due_gt"`
+	AmountRemainingGt *decimal.Decimal `json:"amount_remaining_gt,omitempty" form:"amount_remaining_gt"`
 }
 
 // NewInvoiceFilter creates a new invoice filter with default options

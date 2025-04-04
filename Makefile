@@ -54,8 +54,8 @@ run: run-server
 .PHONY: test test-verbose test-coverage
 
 # Run all tests
-test:
-	go test ./...
+test: install-typst
+	go test -v -race ./... 
 
 # Run tests with verbose output
 test-verbose:
@@ -172,6 +172,57 @@ clean-start:
 	@docker compose down -v
 	@make setup-local
 
+# Build the flexprice image separately
+.PHONY: build-image
+build-image:
+	@echo "Building flexprice image..."
+	@docker compose build flexprice-build
+	@echo "Flexprice image built successfully"
+
+# Start only the flexprice services
+.PHONY: start-flexprice
+start-flexprice:
+	@echo "Starting flexprice services..."
+	@docker compose up -d flexprice-api flexprice-consumer flexprice-worker
+	@echo "Flexprice services started successfully"
+
+# Stop only the flexprice services
+.PHONY: stop-flexprice
+stop-flexprice:
+	@echo "Stopping flexprice services..."
+	@docker compose stop flexprice-api flexprice-consumer flexprice-worker
+	@echo "Flexprice services stopped successfully"
+
+# Restart only the flexprice services
+.PHONY: restart-flexprice
+restart-flexprice: stop-flexprice start-flexprice
+	@echo "Flexprice services restarted successfully"
+
+# Full developer setup with clear instructions
+.PHONY: dev-setup
+dev-setup:
+	@echo "Setting up FlexPrice development environment..."
+	@echo "Step 1: Starting infrastructure services..."
+	@docker compose up -d postgres kafka clickhouse temporal temporal-ui
+	@echo "Step 2: Building FlexPrice application image..."
+	@make build-image
+	@echo "Step 3: Running database migrations and initializing Kafka..."
+	@make init-db init-kafka migrate-ent seed-db 
+	@echo "Step 4: Starting FlexPrice services..."
+	@make start-flexprice
+	@echo ""
+	@echo "✅ FlexPrice development environment is now ready!"
+	@echo "📊 Available services:"
+	@echo "   - API:          http://localhost:8080"
+	@echo "   - Temporal UI:  http://localhost:8088"
+	@echo "   - Kafka UI:     http://localhost:8084 (with profile 'dev')"
+	@echo "   - ClickHouse:   http://localhost:8123"
+	@echo ""
+	@echo "💡 Useful commands:"
+	@echo "   - make restart-flexprice  # Restart FlexPrice services"
+	@echo "   - make down              # Stop all services"
+	@echo "   - make clean-start       # Clean everything and start fresh"
+
 .PHONY: apply-migration
 apply-migration:
 	@if [ -z "$(file)" ]; then \
@@ -185,3 +236,89 @@ apply-migration:
 		-d $(shell grep -A 2 "postgres:" config.yaml | grep database | awk '{print $$2}') \
 		-f $(file)
 	@echo "Migration applied successfully"
+
+.PHONY: docker-build-local
+docker-build-local:
+	docker compose build flexprice-build
+
+.PHONY: install-typst
+install-typst:
+	@./scripts/install-typst.sh
+
+# SDK Generation targets
+.PHONY: install-openapi-generator
+install-openapi-generator:
+	@which openapi-generator-cli > /dev/null || (npm install -g @openapitools/openapi-generator-cli)
+
+.PHONY: generate-sdk generate-go-sdk generate-python-sdk generate-javascript-sdk
+
+# Generate all SDKs
+generate-sdk: generate-go-sdk generate-python-sdk generate-javascript-sdk
+	@echo "All SDKs generated successfully"
+
+# Generate Go SDK
+generate-go-sdk: install-openapi-generator
+	@echo "Generating Go SDK..."
+	@openapi-generator-cli generate \
+		-i docs/swagger/swagger-3-0.json \
+		-g go \
+		-o api/go \
+		--additional-properties=packageName=flexprice,isGoSubmodule=true,enumClassPrefix=true,structPrefix=true \
+		--git-repo-id=go-sdk \
+		--git-user-id=flexprice \
+		--global-property apiTests=false,modelTests=false
+	@echo "Go SDK generated successfully"
+
+# Generate Python SDK
+generate-python-sdk: install-openapi-generator
+	@echo "Generating Python SDK..."
+	@openapi-generator-cli generate \
+		-i docs/swagger/swagger-3-0.json \
+		-g python \
+		-o api/python \
+		--additional-properties=packageName=flexprice \
+		--git-repo-id=python-sdk \
+		--git-user-id=flexprice \
+		--global-property apiTests=false,modelTests=false
+	@python api/scripts/python/add_python_async.py || echo "Failed to add async functionality, but continuing..."
+	@echo "Python SDK generated successfully"
+
+# Generate JavaScript SDK
+generate-javascript-sdk: install-openapi-generator
+	@echo "Generating JavaScript SDK..."
+	@openapi-generator-cli generate \
+		-i docs/swagger/swagger-3-0.json \
+		-g javascript \
+		-o api/javascript \
+		--additional-properties=projectName=@flexprice/sdk \
+		--git-repo-id=javascript-sdk \
+		--git-user-id=flexprice \
+		--global-property apiTests=false,modelTests=false
+	@echo "JavaScript SDK generated successfully"
+
+# SDK publishing
+sdk-publish-js:
+	@api/publish.sh --js $(if $(filter true,$(DRY_RUN)),--dry-run,) $(if $(VERSION),--version $(VERSION),)
+
+sdk-publish-py:
+	@api/publish.sh --py $(if $(filter true,$(DRY_RUN)),--dry-run,) $(if $(VERSION),--version $(VERSION),)
+
+sdk-publish-go:
+	@api/publish.sh --go $(if $(filter true,$(DRY_RUN)),--dry-run,) $(if $(VERSION),--version $(VERSION),)
+
+sdk-publish-all:
+	@api/publish.sh --all $(if $(filter true,$(DRY_RUN)),--dry-run,)
+
+sdk-publish-all-with-version:
+	@echo "Usage: make sdk-publish-all-with-version VERSION=x.y.z"
+	@test -n "$(VERSION)" || (echo "Error: VERSION is required"; exit 1)
+	@api/publish.sh --all --version $(VERSION) $(if $(filter true,$(DRY_RUN)),--dry-run,)
+
+# Test GitHub workflow locally using act
+test-github-workflow:
+	@echo "Testing GitHub workflow locally..."
+	@test -n "$(VERSION)" || (echo "Error: VERSION is required"; exit 1)
+	@./scripts/ensure-act.sh
+	@act workflow_dispatch -e .github/workflows/test-event.json -s GITHUB_TOKEN="$(shell cat .secrets.git)" -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/amd64 --action-offline-mode
+
+.PHONY: sdk-publish-js sdk-publish-py sdk-publish-go sdk-publish-all sdk-publish-all-with-version test-github-workflow

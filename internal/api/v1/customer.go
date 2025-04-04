@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
@@ -14,11 +14,20 @@ import (
 
 type CustomerHandler struct {
 	service service.CustomerService
+	billing service.BillingService
 	log     *logger.Logger
 }
 
-func NewCustomerHandler(service service.CustomerService, log *logger.Logger) *CustomerHandler {
-	return &CustomerHandler{service: service, log: log}
+func NewCustomerHandler(
+	service service.CustomerService,
+	billing service.BillingService,
+	log *logger.Logger,
+) *CustomerHandler {
+	return &CustomerHandler{
+		service: service,
+		billing: billing,
+		log:     log,
+	}
 }
 
 // @Summary Create a customer
@@ -29,19 +38,21 @@ func NewCustomerHandler(service service.CustomerService, log *logger.Logger) *Cu
 // @Security ApiKeyAuth
 // @Param customer body dto.CreateCustomerRequest true "Customer"
 // @Success 201 {object} dto.CustomerResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /customers [post]
 func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 	var req dto.CreateCustomerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	resp, err := h.service.CreateCustomer(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Error(err)
 		return
 	}
 
@@ -56,15 +67,15 @@ func (h *CustomerHandler) CreateCustomer(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param id path string true "Customer ID"
 // @Success 200 {object} dto.CustomerResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /customers/{id} [get]
 func (h *CustomerHandler) GetCustomer(c *gin.Context) {
 	id := c.Param("id")
 
 	resp, err := h.service.GetCustomer(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Error(err)
 		return
 	}
 
@@ -79,13 +90,15 @@ func (h *CustomerHandler) GetCustomer(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param filter query types.CustomerFilter false "Filter"
 // @Success 200 {object} dto.ListCustomersResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /customers [get]
 func (h *CustomerHandler) GetCustomers(c *gin.Context) {
 	var filter types.CustomerFilter
 	if err := c.ShouldBindQuery(&filter); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid filter parameters").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
@@ -95,7 +108,7 @@ func (h *CustomerHandler) GetCustomers(c *gin.Context) {
 
 	resp, err := h.service.GetCustomers(c.Request.Context(), &filter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Error(err)
 		return
 	}
 
@@ -111,21 +124,23 @@ func (h *CustomerHandler) GetCustomers(c *gin.Context) {
 // @Param id path string true "Customer ID"
 // @Param customer body dto.UpdateCustomerRequest true "Customer"
 // @Success 200 {object} dto.CustomerResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /customers/{id} [put]
 func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 	id := c.Param("id")
 
 	var req dto.UpdateCustomerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	resp, err := h.service.UpdateCustomer(c.Request.Context(), id, req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Error(err)
 		return
 	}
 
@@ -140,15 +155,15 @@ func (h *CustomerHandler) UpdateCustomer(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param id path string true "Customer ID"
 // @Success 204
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /customers/{id} [delete]
 func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 	id := c.Param("id")
 
 	err := h.service.DeleteCustomer(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Error(err)
 		return
 	}
 
@@ -163,26 +178,92 @@ func (h *CustomerHandler) DeleteCustomer(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param lookup_key path string true "Customer Lookup Key (external_id)"
 // @Success 200 {object} dto.CustomerResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /customers/lookup/{lookup_key} [get]
 func (h *CustomerHandler) GetCustomerByLookupKey(c *gin.Context) {
 	lookupKey := c.Param("lookup_key")
 	if lookupKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "lookup key is required"})
+		c.Error(ierr.NewError("lookup key is required").
+			WithHint("Lookup key is required").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	resp, err := h.service.GetCustomerByLookupKey(c.Request.Context(), lookupKey)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Error(err)
 		return
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// @Summary Get customer entitlements
+// @Description Get customer entitlements
+// @Tags Customers
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Customer ID"
+// @Param filter query dto.GetCustomerEntitlementsRequest false "Filter"
+// @Success 200 {object} dto.CustomerEntitlementsResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /customers/{id}/entitlements [get]
+func (h *CustomerHandler) GetCustomerEntitlements(c *gin.Context) {
+	id := c.Param("id")
+
+	// Parse query parameters using binding
+	var req dto.GetCustomerEntitlementsRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid query parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Call billing service instead of customer service
+	response, err := h.billing.GetCustomerEntitlements(c.Request.Context(), id, &req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// @Summary Get customer usage summary
+// @Description Get customer usage summary
+// @Tags Customers
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Customer ID"
+// @Param filter query dto.GetCustomerUsageSummaryRequest false "Filter"
+// @Success 200 {object} dto.CustomerUsageSummaryResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /customers/{id}/usage [get]
+func (h *CustomerHandler) GetCustomerUsageSummary(c *gin.Context) {
+	id := c.Param("id")
+
+	// Parse query parameters using binding
+	var req dto.GetCustomerUsageSummaryRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid query parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Call billing service instead of customer service
+	response, err := h.billing.GetCustomerUsageSummary(c.Request.Context(), id, &req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
 }

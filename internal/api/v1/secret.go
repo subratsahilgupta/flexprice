@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
@@ -33,8 +34,8 @@ func NewSecretHandler(service service.SecretService, logger *logger.Logger) *Sec
 // @Param offset query int false "Offset"
 // @Param status query string false "Status (published/archived)"
 // @Success 200 {object} dto.ListSecretsResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /secrets/api/keys [get]
 func (h *SecretHandler) ListAPIKeys(c *gin.Context) {
 	filter := &types.SecretFilter{
@@ -45,14 +46,16 @@ func (h *SecretHandler) ListAPIKeys(c *gin.Context) {
 
 	if err := c.ShouldBindQuery(filter); err != nil {
 		h.logger.Errorw("failed to bind query", "error", err)
-		NewErrorResponse(c, http.StatusBadRequest, "failed to bind query", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the query parameters").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	secrets, err := h.service.ListAPIKeys(c.Request.Context(), filter)
 	if err != nil {
 		h.logger.Errorw("failed to list secrets", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to list secrets", err)
+		c.Error(err)
 		return
 	}
 
@@ -67,21 +70,23 @@ func (h *SecretHandler) ListAPIKeys(c *gin.Context) {
 // @Produce json
 // @Param request body dto.CreateAPIKeyRequest true "API key creation request"
 // @Success 201 {object} dto.CreateAPIKeyResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /secrets/api/keys [post]
 func (h *SecretHandler) CreateAPIKey(c *gin.Context) {
 	var req dto.CreateAPIKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Errorw("failed to bind request", "error", err)
-		NewErrorResponse(c, http.StatusBadRequest, "failed to bind request", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	secret, apiKey, err := h.service.CreateAPIKey(c.Request.Context(), &req)
 	if err != nil {
 		h.logger.Errorw("failed to create api key", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to create api key", err)
+		c.Error(err)
 		return
 	}
 
@@ -99,14 +104,14 @@ func (h *SecretHandler) CreateAPIKey(c *gin.Context) {
 // @Produce json
 // @Param id path string true "API key ID"
 // @Success 204 "No Content"
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /secrets/api/keys/{id} [delete]
 func (h *SecretHandler) DeleteAPIKey(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.service.Delete(c.Request.Context(), id); err != nil {
 		h.logger.Errorw("failed to delete api key", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to delete api key", err)
+		c.Error(err)
 		return
 	}
 
@@ -116,21 +121,23 @@ func (h *SecretHandler) DeleteAPIKey(c *gin.Context) {
 // CreateIntegration godoc
 // @Summary Create or update an integration
 // @Description Create or update integration credentials
-// @Tags secrets
+// @Tags Integrations
 // @Accept json
 // @Produce json
 // @Param provider path string true "Integration provider"
 // @Param request body dto.CreateIntegrationRequest true "Integration creation request"
 // @Success 201 {object} dto.SecretResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /secrets/integrations/{provider} [post]
 func (h *SecretHandler) CreateIntegration(c *gin.Context) {
 	provider := types.SecretProvider(c.Param("provider"))
 	var req dto.CreateIntegrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Errorw("failed to bind request", "error", err)
-		NewErrorResponse(c, http.StatusBadRequest, "failed to bind request", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
@@ -138,7 +145,7 @@ func (h *SecretHandler) CreateIntegration(c *gin.Context) {
 	secret, err := h.service.CreateIntegration(c.Request.Context(), &req)
 	if err != nil {
 		h.logger.Errorw("failed to create integration", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to create integration", err)
+		c.Error(err)
 		return
 	}
 
@@ -148,13 +155,13 @@ func (h *SecretHandler) CreateIntegration(c *gin.Context) {
 // GetIntegration godoc
 // @Summary Get integration details
 // @Description Get details of a specific integration
-// @Tags secrets
+// @Tags Integrations
 // @Accept json
 // @Produce json
 // @Param provider path string true "Integration provider"
 // @Success 200 {object} dto.SecretResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /secrets/integrations/{provider} [get]
 func (h *SecretHandler) GetIntegration(c *gin.Context) {
 	provider := types.SecretProvider(c.Param("provider"))
@@ -167,7 +174,7 @@ func (h *SecretHandler) GetIntegration(c *gin.Context) {
 	secrets, err := h.service.ListIntegrations(c.Request.Context(), filter)
 	if err != nil {
 		h.logger.Errorw("failed to list secrets", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to list secrets", err)
+		c.Error(err)
 		return
 	}
 
@@ -177,20 +184,20 @@ func (h *SecretHandler) GetIntegration(c *gin.Context) {
 // DeleteIntegration godoc
 // @Summary Delete an integration
 // @Description Delete integration credentials
-// @Tags secrets
+// @Tags Integrations
 // @Accept json
 // @Produce json
 // @Param id path string true "Integration ID"
 // @Success 204 "No Content"
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /secrets/integrations/{id} [delete]
 func (h *SecretHandler) DeleteIntegration(c *gin.Context) {
 	id := c.Param("id")
 
 	if err := h.service.Delete(c.Request.Context(), id); err != nil {
 		h.logger.Errorw("failed to delete integration", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to delete integration", err)
+		c.Error(err)
 		return
 	}
 
@@ -200,17 +207,17 @@ func (h *SecretHandler) DeleteIntegration(c *gin.Context) {
 // ListLinkedIntegrations godoc
 // @Summary List linked integrations
 // @Description Get a list of unique providers which have a valid linked integration secret
-// @Tags secrets
+// @Tags Integrations
 // @Accept json
 // @Produce json
 // @Success 200 {object} dto.LinkedIntegrationsResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /secrets/integrations/linked [get]
 func (h *SecretHandler) ListLinkedIntegrations(c *gin.Context) {
 	providers, err := h.service.ListLinkedIntegrations(c.Request.Context())
 	if err != nil {
 		h.logger.Errorw("failed to list linked integrations", "error", err)
-		NewErrorResponse(c, http.StatusInternalServerError, "failed to list linked integrations", err)
+		c.Error(err)
 		return
 	}
 

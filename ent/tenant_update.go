@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/tenant"
 )
 
@@ -59,6 +60,26 @@ func (tu *TenantUpdate) SetNillableStatus(s *string) *TenantUpdate {
 // SetUpdatedAt sets the "updated_at" field.
 func (tu *TenantUpdate) SetUpdatedAt(t time.Time) *TenantUpdate {
 	tu.mutation.SetUpdatedAt(t)
+	return tu
+}
+
+// SetBillingDetails sets the "billing_details" field.
+func (tu *TenantUpdate) SetBillingDetails(sbd schema.TenantBillingDetails) *TenantUpdate {
+	tu.mutation.SetBillingDetails(sbd)
+	return tu
+}
+
+// SetNillableBillingDetails sets the "billing_details" field if the given value is not nil.
+func (tu *TenantUpdate) SetNillableBillingDetails(sbd *schema.TenantBillingDetails) *TenantUpdate {
+	if sbd != nil {
+		tu.SetBillingDetails(*sbd)
+	}
+	return tu
+}
+
+// ClearBillingDetails clears the value of the "billing_details" field.
+func (tu *TenantUpdate) ClearBillingDetails() *TenantUpdate {
+	tu.mutation.ClearBillingDetails()
 	return tu
 }
 
@@ -134,6 +155,12 @@ func (tu *TenantUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := tu.mutation.UpdatedAt(); ok {
 		_spec.SetField(tenant.FieldUpdatedAt, field.TypeTime, value)
 	}
+	if value, ok := tu.mutation.BillingDetails(); ok {
+		_spec.SetField(tenant.FieldBillingDetails, field.TypeJSON, value)
+	}
+	if tu.mutation.BillingDetailsCleared() {
+		_spec.ClearField(tenant.FieldBillingDetails, field.TypeJSON)
+	}
 	if n, err = sqlgraph.UpdateNodes(ctx, tu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{tenant.Label}
@@ -185,6 +212,26 @@ func (tuo *TenantUpdateOne) SetNillableStatus(s *string) *TenantUpdateOne {
 // SetUpdatedAt sets the "updated_at" field.
 func (tuo *TenantUpdateOne) SetUpdatedAt(t time.Time) *TenantUpdateOne {
 	tuo.mutation.SetUpdatedAt(t)
+	return tuo
+}
+
+// SetBillingDetails sets the "billing_details" field.
+func (tuo *TenantUpdateOne) SetBillingDetails(sbd schema.TenantBillingDetails) *TenantUpdateOne {
+	tuo.mutation.SetBillingDetails(sbd)
+	return tuo
+}
+
+// SetNillableBillingDetails sets the "billing_details" field if the given value is not nil.
+func (tuo *TenantUpdateOne) SetNillableBillingDetails(sbd *schema.TenantBillingDetails) *TenantUpdateOne {
+	if sbd != nil {
+		tuo.SetBillingDetails(*sbd)
+	}
+	return tuo
+}
+
+// ClearBillingDetails clears the value of the "billing_details" field.
+func (tuo *TenantUpdateOne) ClearBillingDetails() *TenantUpdateOne {
+	tuo.mutation.ClearBillingDetails()
 	return tuo
 }
 
@@ -289,6 +336,12 @@ func (tuo *TenantUpdateOne) sqlSave(ctx context.Context) (_node *Tenant, err err
 	}
 	if value, ok := tuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(tenant.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := tuo.mutation.BillingDetails(); ok {
+		_spec.SetField(tenant.FieldBillingDetails, field.TypeJSON, value)
+	}
+	if tuo.mutation.BillingDetailsCleared() {
+		_spec.ClearField(tenant.FieldBillingDetails, field.TypeJSON)
 	}
 	_node = &Tenant{config: tuo.config}
 	_spec.Assign = _node.assignValues

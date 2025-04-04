@@ -49,7 +49,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -89,7 +89,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -201,13 +201,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -250,13 +250,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -299,19 +299,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -354,13 +354,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -410,13 +410,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -454,13 +454,80 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/customers/{id}/entitlements": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get customer entitlements",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Get customer entitlements",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "feature_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "subscription_ids",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CustomerEntitlementsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -503,13 +570,80 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/customers/{id}/usage": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get customer usage summary",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Get customer usage summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "feature_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "subscription_ids",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CustomerUsageSummaryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -555,13 +689,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -693,13 +827,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -742,13 +876,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -791,13 +925,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -847,13 +981,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -894,13 +1028,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -976,13 +1110,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1025,13 +1159,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1074,19 +1208,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1136,19 +1270,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1223,13 +1357,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1275,13 +1409,67 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/bulk": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Ingest bulk events into the system",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Bulk Ingest events",
+                "parameters": [
+                    {
+                        "description": "Event data",
+                        "name": "event",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.BulkIngestEventRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "message:Event accepted for processing",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1323,13 +1511,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1371,19 +1559,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1396,7 +1584,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get features with the specified filter",
+                "description": "List features with optional filtering",
                 "consumes": [
                     "application/json"
                 ],
@@ -1406,7 +1594,7 @@ const docTemplate = `{
                 "tags": [
                     "Features"
                 ],
-                "summary": "Get features",
+                "summary": "List features",
                 "parameters": [
                     {
                         "type": "string",
@@ -1438,6 +1626,15 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "name": "lookup_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "meter_ids",
                         "in": "query"
                     },
                     {
@@ -1491,13 +1688,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1508,7 +1705,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Create a new feature with the specified configuration",
+                "description": "Create a new feature",
                 "consumes": [
                     "application/json"
                 ],
@@ -1521,7 +1718,7 @@ const docTemplate = `{
                 "summary": "Create a new feature",
                 "parameters": [
                     {
-                        "description": "Feature configuration",
+                        "description": "Feature to create",
                         "name": "feature",
                         "in": "body",
                         "required": true,
@@ -1540,13 +1737,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1589,13 +1786,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1606,7 +1809,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Update a feature with the specified configuration",
+                "description": "Update a feature by ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -1626,7 +1829,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Feature configuration",
+                        "description": "Feature update data",
                         "name": "feature",
                         "in": "body",
                         "required": true,
@@ -1645,13 +1848,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1662,7 +1871,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Delete a feature",
+                "description": "Delete a feature by ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -1692,13 +1901,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1718,6 +1933,16 @@ const docTemplate = `{
                 ],
                 "summary": "List invoices",
                 "parameters": [
+                    {
+                        "type": "number",
+                        "name": "amount_due_gt",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "name": "amount_remaining_gt",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "name": "customer_id",
@@ -1842,13 +2067,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1886,13 +2111,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1932,13 +2157,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -1976,13 +2201,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2020,13 +2245,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2078,19 +2303,113 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/invoices/{id}/payment/attempt": {
+            "post": {
+                "description": "Attempt to pay an invoice using customer's available wallets",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Attempt payment for an invoice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invoice ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/invoices/{id}/pdf": {
+            "get": {
+                "description": "Retrieve the PDF document for a specific invoice by its ID",
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Get PDF for an invoice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invoice ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2128,13 +2447,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2241,7 +2560,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2284,13 +2603,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2330,13 +2649,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2386,19 +2705,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2439,13 +2758,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2488,13 +2807,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2626,13 +2945,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2675,13 +2994,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2724,13 +3043,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2780,13 +3099,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2827,13 +3146,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2876,13 +3195,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -2895,7 +3214,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get plans with the specified filter",
+                "description": "Get plans with optional filtering",
                 "consumes": [
                     "application/json"
                 ],
@@ -2984,13 +3303,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3033,13 +3352,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3062,7 +3381,7 @@ const docTemplate = `{
                 "tags": [
                     "Plans"
                 ],
-                "summary": "Get a plan by ID",
+                "summary": "Get a plan",
                 "parameters": [
                     {
                         "type": "string",
@@ -3082,13 +3401,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3109,7 +3434,7 @@ const docTemplate = `{
                 "tags": [
                     "Plans"
                 ],
-                "summary": "Update a plan by ID",
+                "summary": "Update a plan",
                 "parameters": [
                     {
                         "type": "string",
@@ -3119,7 +3444,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Plan configuration",
+                        "description": "Plan update",
                         "name": "plan",
                         "in": "body",
                         "required": true,
@@ -3138,13 +3463,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3165,7 +3496,7 @@ const docTemplate = `{
                 "tags": [
                     "Plans"
                 ],
-                "summary": "Delete a plan by ID",
+                "summary": "Delete a plan",
                 "parameters": [
                     {
                         "type": "string",
@@ -3185,13 +3516,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3234,13 +3571,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3351,13 +3694,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3400,13 +3743,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3449,13 +3792,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3505,13 +3848,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3552,13 +3895,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3607,13 +3950,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3651,13 +3994,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3692,13 +4035,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3714,7 +4057,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "List linked integrations",
                 "responses": {
@@ -3727,7 +4070,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3743,7 +4086,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "Delete an integration",
                 "parameters": [
@@ -3762,13 +4105,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3784,7 +4127,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "Get integration details",
                 "parameters": [
@@ -3806,13 +4149,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -3826,7 +4169,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "secrets"
+                    "Integrations"
                 ],
                 "summary": "Create or update an integration",
                 "parameters": [
@@ -3857,13 +4200,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4017,6 +4360,12 @@ const docTemplate = `{
                         "description": "SubscriptionStatus filters by subscription status",
                         "name": "subscription_status",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "WithLineItems includes line items in the response",
+                        "name": "with_line_items",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4029,13 +4378,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4078,13 +4427,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4097,7 +4446,10 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get usage by subscription",
+                "description": "Get usage for a subscription",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -4107,7 +4459,7 @@ const docTemplate = `{
                 "summary": "Get usage by subscription",
                 "parameters": [
                     {
-                        "description": "Request",
+                        "description": "Usage request",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4126,13 +4478,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4172,13 +4524,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4227,13 +4579,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4434,12 +4786,14 @@ const docTemplate = `{
                     {
                         "enum": [
                             "EVENTS",
-                            "PRICES"
+                            "PRICES",
+                            "CUSTOMERS"
                         ],
                         "type": "string",
                         "x-enum-varnames": [
                             "EntityTypeEvents",
-                            "EntityTypePrices"
+                            "EntityTypePrices",
+                            "EntityTypeCustomers"
                         ],
                         "name": "entity_type",
                         "in": "query"
@@ -4537,13 +4891,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4581,13 +4935,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4625,13 +4979,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4669,19 +5023,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4728,19 +5082,65 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/tenant/billing": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get the subscription and usage details for the current tenant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tenants"
+                ],
+                "summary": "Get billing usage for the current tenant",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TenantBillingUsage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4785,13 +5185,70 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/tenants/update": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update a tenant's details including name and billing information",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tenants"
+                ],
+                "summary": "Update a tenant",
+                "parameters": [
+                    {
+                        "description": "Update tenant request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateTenantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TenantResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4834,13 +5291,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4874,13 +5331,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4925,13 +5382,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -4974,19 +5431,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -5031,19 +5488,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -5086,19 +5543,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -5136,19 +5593,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -5200,19 +5657,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -5395,19 +5852,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     }
                 }
@@ -5415,6 +5872,75 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dto.Address": {
+            "type": "object",
+            "properties": {
+                "address_city": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "address_country": {
+                    "type": "string"
+                },
+                "address_line1": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "address_line2": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "address_postal_code": {
+                    "type": "string",
+                    "maxLength": 20
+                },
+                "address_state": {
+                    "type": "string",
+                    "maxLength": 100
+                }
+            }
+        },
+        "dto.AggregatedEntitlement": {
+            "type": "object",
+            "properties": {
+                "is_enabled": {
+                    "type": "boolean"
+                },
+                "is_soft_limit": {
+                    "type": "boolean"
+                },
+                "static_values": {
+                    "description": "For static/SLA features",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "usage_limit": {
+                    "type": "integer"
+                },
+                "usage_reset_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                }
+            }
+        },
+        "dto.AggregatedFeature": {
+            "type": "object",
+            "properties": {
+                "entitlement": {
+                    "$ref": "#/definitions/dto.AggregatedEntitlement"
+                },
+                "feature": {
+                    "$ref": "#/definitions/dto.FeatureResponse"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EntitlementSource"
+                    }
+                }
+            }
+        },
         "dto.AuthResponse": {
             "type": "object",
             "properties": {
@@ -5426,6 +5952,37 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.BillingPeriodInfo": {
+            "type": "object",
+            "properties": {
+                "end_time": {
+                    "type": "string"
+                },
+                "period": {
+                    "description": "e.g., \"monthly\", \"yearly\"",
+                    "type": "string"
+                },
+                "start_time": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.BulkIngestEventRequest": {
+            "type": "object",
+            "required": [
+                "events"
+            ],
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/dto.IngestEventRequest"
+                    }
                 }
             }
         },
@@ -5449,15 +6006,7 @@ const docTemplate = `{
                     }
                 },
                 "type": {
-                    "enum": [
-                        "private_key",
-                        "publishable_key"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.SecretType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.SecretType"
                 }
             }
         },
@@ -5699,6 +6248,9 @@ const docTemplate = `{
                 "due_date": {
                     "type": "string"
                 },
+                "environment_id": {
+                    "type": "string"
+                },
                 "idempotency_key": {
                     "type": "string"
                 },
@@ -5706,16 +6258,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.InvoiceStatus"
                 },
                 "invoice_type": {
-                    "enum": [
-                        "SUBSCRIPTION",
-                        "ONE_OFF",
-                        "CREDIT"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.InvoiceType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.InvoiceType"
                 },
                 "line_items": {
                     "type": "array",
@@ -5745,7 +6288,8 @@ const docTemplate = `{
             "required": [
                 "aggregation",
                 "event_name",
-                "name"
+                "name",
+                "reset_usage"
             ],
             "properties": {
                 "aggregation": {
@@ -5766,12 +6310,7 @@ const docTemplate = `{
                     "example": "API Usage Meter"
                 },
                 "reset_usage": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.ResetUsage"
-                        }
-                    ],
-                    "example": "BILLING_PERIOD"
+                    "$ref": "#/definitions/types.ResetUsage"
                 }
             }
         },
@@ -6146,6 +6685,9 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "billing_details": {
+                    "$ref": "#/definitions/dto.TenantBillingDetails"
+                },
                 "name": {
                     "type": "string"
                 }
@@ -6190,12 +6732,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "wallet_type": {
-                    "default": "PRE_PAID",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.WalletType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.WalletType"
+                }
+            }
+        },
+        "dto.CustomerEntitlementsResponse": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "string"
+                },
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AggregatedFeature"
+                    }
                 }
             }
         },
@@ -6325,6 +6876,26 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CustomerUsageSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "string"
+                },
+                "features": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.FeatureUsageSummary"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                },
+                "period": {
+                    "$ref": "#/definitions/dto.BillingPeriodInfo"
+                }
+            }
+        },
         "dto.EntitlementResponse": {
             "type": "object",
             "properties": {
@@ -6381,6 +6952,35 @@ const docTemplate = `{
                 },
                 "usage_reset_period": {
                     "$ref": "#/definitions/types.BillingPeriod"
+                }
+            }
+        },
+        "dto.EntitlementSource": {
+            "type": "object",
+            "properties": {
+                "entitlement_id": {
+                    "type": "string"
+                },
+                "is_enabled": {
+                    "type": "boolean"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "plan_name": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "integer"
+                },
+                "static_value": {
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "usage_limit": {
+                    "type": "integer"
                 }
             }
         },
@@ -6487,6 +7087,35 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.FeatureUsageSummary": {
+            "type": "object",
+            "properties": {
+                "current_usage": {
+                    "type": "number"
+                },
+                "feature": {
+                    "$ref": "#/definitions/dto.FeatureResponse"
+                },
+                "is_enabled": {
+                    "type": "boolean"
+                },
+                "is_soft_limit": {
+                    "type": "boolean"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EntitlementSource"
+                    }
+                },
+                "total_limit": {
+                    "type": "integer"
+                },
+                "usage_percent": {
+                    "type": "number"
+                }
+            }
+        },
         "dto.GetEventsResponse": {
             "type": "object",
             "properties": {
@@ -6560,12 +7189,7 @@ const docTemplate = `{
                     "example": "2024-11-09T00:00:00Z"
                 },
                 "window_size": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.WindowSize"
-                        }
-                    ],
-                    "example": "HOUR"
+                    "$ref": "#/definitions/types.WindowSize"
                 }
             }
         },
@@ -6627,8 +7251,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "aggregation_type": {
-                    "type": "string",
-                    "example": "COUNT"
+                    "$ref": "#/definitions/types.AggregationType"
                 },
                 "customer_id": {
                     "type": "string",
@@ -6665,12 +7288,7 @@ const docTemplate = `{
                     "example": "2024-03-13T00:00:00Z"
                 },
                 "window_size": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.WindowSize"
-                        }
-                    ],
-                    "example": "HOUR"
+                    "$ref": "#/definitions/types.WindowSize"
                 }
             }
         },
@@ -6901,12 +7519,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "subscription": {
-                    "description": "Edges",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dto.SubscriptionResponse"
-                        }
-                    ]
+                    "$ref": "#/definitions/dto.SubscriptionResponse"
                 },
                 "subscription_id": {
                     "type": "string"
@@ -7388,28 +8001,13 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "billing_cadence": {
-                    "description": "BillingCadence is the billing cadence for the price ex RECURRING, ONETIME",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingCadence"
                 },
                 "billing_model": {
-                    "description": "BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingModel"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingModel"
                 },
                 "billing_period": {
-                    "description": "BillingPeriod is the billing period for the price ex month, year",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingPeriod"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingPeriod"
                 },
                 "billing_period_count": {
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
@@ -7438,36 +8036,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "filter_values": {
-                    "description": "FilterValues are the filter values for the price in case of usage based pricing",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBFilters"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBFilters"
                 },
                 "id": {
                     "description": "ID uuid identifier for the price",
                     "type": "string"
                 },
                 "invoice_cadence": {
-                    "description": "InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.InvoiceCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.InvoiceCadence"
                 },
                 "lookup_key": {
                     "description": "LookupKey used for looking up the price in the database",
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a jsonb field for additional information",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBMetadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBMetadata"
                 },
                 "meter": {
                     "$ref": "#/definitions/dto.MeterResponse"
@@ -7487,39 +8070,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tier_mode": {
-                    "description": "Tiered pricing fields when BillingModel is TIERED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingTier"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingTier"
                 },
                 "tiers": {
-                    "description": "Tiers are the tiers for the price when BillingModel is TIERED",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/price.PriceTier"
                     }
                 },
                 "transform_quantity": {
-                    "description": "Transform is the quantity transformation in case of PACKAGE billing model",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBTransformQuantity"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBTransformQuantity"
                 },
                 "trial_period": {
                     "description": "TrialPeriod is the number of days for the trial period\nNote: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)",
                     "type": "integer"
                 },
                 "type": {
-                    "description": "Type is the type of the price ex USAGE, FIXED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PriceType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PriceType"
                 },
                 "updated_at": {
                     "type": "string"
@@ -7629,12 +8196,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a map of key-value pairs that can be attached to the pause",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "original_period_end": {
                     "description": "OriginalPeriodEnd is the end of the billing period when the pause was created",
@@ -7649,36 +8211,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "pause_mode": {
-                    "description": "PauseMode indicates how the pause was applied",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseMode"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseMode"
                 },
                 "pause_start": {
                     "description": "PauseStart is when the pause actually started",
                     "type": "string"
                 },
                 "pause_status": {
-                    "description": "PauseStatus is the status of the pause",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseStatus"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseStatus"
                 },
                 "reason": {
                     "description": "Reason is the reason for pausing",
                     "type": "string"
                 },
                 "resume_mode": {
-                    "description": "ResumeMode indicates how the resume will be applied",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.ResumeMode"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.ResumeMode"
                 },
                 "resumed_at": {
                     "description": "ResumedAt is when the pause was actually ended (if manually resumed)",
@@ -7714,20 +8261,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "billing_cadence": {
-                    "description": "BillingCadence is the cadence of the billing cycle.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingCadence"
                 },
                 "billing_period": {
-                    "description": "BillingPeriod is the period of the billing cycle.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingPeriod"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingPeriod"
                 },
                 "billing_period_count": {
                     "description": "BillingPeriodCount is the total number units of the billing period.",
@@ -7793,20 +8330,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a map of key-value pairs that can be attached to the subscription",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "pause_status": {
-                    "description": "PauseStatus tracks the current pause state",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseStatus"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseStatus"
                 },
                 "pauses": {
                     "type": "array",
@@ -7829,12 +8356,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.Status"
                 },
                 "subscription_status": {
-                    "description": "Status is the status of the subscription",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.SubscriptionStatus"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.SubscriptionStatus"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -7875,6 +8397,9 @@ const docTemplate = `{
                     "$ref": "#/definitions/price.JSONBFilters"
                 },
                 "meter_display_name": {
+                    "type": "string"
+                },
+                "meter_id": {
                     "type": "string"
                 },
                 "price": {
@@ -7957,9 +8482,43 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.TenantBillingDetails": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "$ref": "#/definitions/dto.Address"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "help_email": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.TenantBillingUsage": {
+            "type": "object",
+            "properties": {
+                "subscriptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SubscriptionResponse"
+                    }
+                },
+                "usage": {
+                    "$ref": "#/definitions/dto.CustomerUsageSummaryResponse"
+                }
+            }
+        },
         "dto.TenantResponse": {
             "type": "object",
             "properties": {
+                "billing_details": {
+                    "$ref": "#/definitions/dto.TenantBillingDetails"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -8000,12 +8559,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "metadata": {
-                    "description": "metadata to add any additional information about the transaction",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "purchased_credits": {
                     "description": "purchased_credits when true, the credits are added as purchased credits",
@@ -8327,6 +8881,14 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdateTenantRequest": {
+            "type": "object",
+            "properties": {
+                "billing_details": {
+                    "$ref": "#/definitions/dto.TenantBillingDetails"
+                }
+            }
+        },
         "dto.UpdateWalletRequest": {
             "type": "object",
             "properties": {
@@ -8337,12 +8899,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "auto_topup_trigger": {
-                    "default": "disabled",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.AutoTopupTrigger"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.AutoTopupTrigger"
                 },
                 "config": {
                     "$ref": "#/definitions/types.WalletConfig"
@@ -8585,6 +9142,9 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {}
                 },
+                "internal_error": {
+                    "type": "string"
+                },
                 "message": {
                     "type": "string"
                 }
@@ -8613,12 +9173,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "description": "Type is the type of aggregation to be applied on the events\nFor ex sum, count, avg, max, min etc",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.AggregationType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.AggregationType"
                 }
             }
         },
@@ -8674,28 +9229,13 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "billing_cadence": {
-                    "description": "BillingCadence is the billing cadence for the price ex RECURRING, ONETIME",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingCadence"
                 },
                 "billing_model": {
-                    "description": "BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingModel"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingModel"
                 },
                 "billing_period": {
-                    "description": "BillingPeriod is the billing period for the price ex month, year",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingPeriod"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingPeriod"
                 },
                 "billing_period_count": {
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
@@ -8724,36 +9264,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "filter_values": {
-                    "description": "FilterValues are the filter values for the price in case of usage based pricing",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBFilters"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBFilters"
                 },
                 "id": {
                     "description": "ID uuid identifier for the price",
                     "type": "string"
                 },
                 "invoice_cadence": {
-                    "description": "InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.InvoiceCadence"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.InvoiceCadence"
                 },
                 "lookup_key": {
                     "description": "LookupKey used for looking up the price in the database",
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a jsonb field for additional information",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBMetadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBMetadata"
                 },
                 "meter_id": {
                     "description": "MeterID is the id of the meter for usage based pricing",
@@ -8770,39 +9295,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tier_mode": {
-                    "description": "Tiered pricing fields when BillingModel is TIERED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.BillingTier"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.BillingTier"
                 },
                 "tiers": {
-                    "description": "Tiers are the tiers for the price when BillingModel is TIERED",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/price.PriceTier"
                     }
                 },
                 "transform_quantity": {
-                    "description": "Transform is the quantity transformation in case of PACKAGE billing model",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/price.JSONBTransformQuantity"
-                        }
-                    ]
+                    "$ref": "#/definitions/price.JSONBTransformQuantity"
                 },
                 "trial_period": {
                     "description": "TrialPeriod is the number of days for the trial period\nNote: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)",
                     "type": "integer"
                 },
                 "type": {
-                    "description": "Type is the type of the price ex USAGE, FIXED",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PriceType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PriceType"
                 },
                 "updated_at": {
                     "type": "string"
@@ -8943,12 +9452,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata is a map of key-value pairs that can be attached to the pause",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "original_period_end": {
                     "description": "OriginalPeriodEnd is the end of the billing period when the pause was created",
@@ -8963,36 +9467,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "pause_mode": {
-                    "description": "PauseMode indicates how the pause was applied",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseMode"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseMode"
                 },
                 "pause_start": {
                     "description": "PauseStart is when the pause actually started",
                     "type": "string"
                 },
                 "pause_status": {
-                    "description": "PauseStatus is the status of the pause",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PauseStatus"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.PauseStatus"
                 },
                 "reason": {
                     "description": "Reason is the reason for pausing",
                     "type": "string"
                 },
                 "resume_mode": {
-                    "description": "ResumeMode indicates how the resume will be applied",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.ResumeMode"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.ResumeMode"
                 },
                 "resumed_at": {
                     "description": "ResumedAt is when the pause was actually ended (if manually resumed)",
@@ -9100,11 +9589,13 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "EVENTS",
-                "PRICES"
+                "PRICES",
+                "CUSTOMERS"
             ],
             "x-enum-varnames": [
                 "EntityTypeEvents",
-                "EntityTypePrices"
+                "EntityTypePrices",
+                "EntityTypeCustomers"
             ]
         },
         "types.FeatureType": {
@@ -9522,19 +10013,6 @@ const docTemplate = `{
                 "WindowSizeHour",
                 "WindowSizeDay"
             ]
-        },
-        "v1.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "detail": {
-                    "type": "string",
-                    "example": "Invalid request payload"
-                },
-                "error": {
-                    "type": "string",
-                    "example": "Invalid request payload"
-                }
-            }
         }
     },
     "securityDefinitions": {

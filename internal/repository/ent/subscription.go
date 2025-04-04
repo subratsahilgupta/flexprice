@@ -9,7 +9,7 @@ import (
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionpause"
 	domainSub "github.com/flexprice/flexprice/internal/domain/subscription"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
@@ -86,9 +86,13 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, domainSub.NewNotFoundError(id)
+			return nil, ierr.NewError("subscription not found").
+				WithHint("Subscription not found").
+				Mark(ierr.ErrNotFound)
 		}
-		return nil, errors.WithOp(err, "repository.subscription.Get")
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get subscription").
+			Mark(ierr.ErrDatabase)
 	}
 
 	return domainSub.GetSubscriptionFromEnt(sub), nil
@@ -130,7 +134,9 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 	// Execute update
 	n, err := query.Save(ctx)
 	if err != nil {
-		return errors.WithOp(err, "repository.subscription.Update")
+		return ierr.WithError(err).
+			WithHint("Failed to update subscription").
+			Mark(ierr.ErrDatabase)
 	}
 	if n == 0 {
 		// No rows were updated - either record doesn't exist or version mismatch
@@ -141,13 +147,26 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 			).
 			Exist(ctx)
 		if err != nil {
-			return errors.WithOp(err, "repository.subscription.Update.CheckExists")
+			return ierr.WithError(err).
+				WithHint("Failed to check if subscription exists").
+				Mark(ierr.ErrDatabase)
 		}
 		if !exists {
-			return domainSub.NewNotFoundError(sub.ID)
+			return ierr.NewError("subscription not found").
+				WithHint("Subscription not found").
+				Mark(ierr.ErrNotFound)
 		}
 		// Record exists but version mismatch
-		return domainSub.NewVersionConflictError(sub.ID, sub.Version, sub.Version+1)
+		return ierr.NewError("version conflict").
+			WithHint("Version conflict").
+			WithReportableDetails(
+				map[string]any{
+					"subscription_id":  sub.ID,
+					"expected_version": sub.Version,
+					"actual_version":   sub.Version + 1,
+				},
+			).
+			Mark(ierr.ErrVersionConflict)
 	}
 
 	return nil
@@ -167,9 +186,13 @@ func (r *subscriptionRepository) Delete(ctx context.Context, id string) error {
 
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return domainSub.NewNotFoundError(id)
+			return ierr.NewError("subscription not found").
+				WithHint("Subscription not found").
+				Mark(ierr.ErrNotFound)
 		}
-		return errors.WithOp(err, "repository.subscription.Delete")
+		return ierr.WithError(err).
+			WithHint("Failed to delete subscription").
+			Mark(ierr.ErrDatabase)
 	}
 
 	return nil
@@ -191,6 +214,9 @@ func (r *subscriptionRepository) List(ctx context.Context, filter *types.Subscri
 
 	client := r.client.Querier(ctx)
 	query := client.Subscription.Query()
+	if filter.WithLineItems {
+		query = query.WithLineItems()
+	}
 
 	// Apply entity-specific filters
 	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
@@ -484,9 +510,13 @@ func (r *subscriptionRepository) GetWithLineItems(ctx context.Context, id string
 
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, nil, domainSub.NewNotFoundError(id)
+			return nil, nil, ierr.NewError("subscription not found").
+				WithHint("Subscription not found").
+				Mark(ierr.ErrNotFound)
 		}
-		return nil, nil, errors.WithOp(err, "repository.subscription.GetWithLineItems")
+		return nil, nil, ierr.WithError(err).
+			WithHint("Failed to get subscription with line items").
+			Mark(ierr.ErrDatabase)
 	}
 
 	s := domainSub.GetSubscriptionFromEnt(sub)
@@ -525,9 +555,9 @@ func (r *subscriptionRepository) CreatePause(ctx context.Context, pause *domainS
 		Save(ctx)
 
 	if err != nil {
-		return errors.WithError(err).
+		return ierr.WithError(err).
 			WithHint("Failed to create subscription pause").
-			Mark(errors.ErrDatabase)
+			Mark(ierr.ErrDatabase)
 	}
 
 	// Update the input pause with created data
@@ -548,13 +578,13 @@ func (r *subscriptionRepository) GetPause(ctx context.Context, id string) (*doma
 
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, errors.WithError(err).
+			return nil, ierr.WithError(err).
 				WithHintf("Subscription pause %s not found", id).
-				Mark(errors.ErrNotFound)
+				Mark(ierr.ErrNotFound)
 		}
-		return nil, errors.WithError(err).
+		return nil, ierr.WithError(err).
 			WithHint("Failed to get subscription pause").
-			Mark(errors.ErrDatabase)
+			Mark(ierr.ErrDatabase)
 	}
 
 	return domainSub.SubscriptionPauseFromEnt(p), nil
@@ -575,13 +605,13 @@ func (r *subscriptionRepository) UpdatePause(ctx context.Context, pause *domainS
 
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return errors.WithError(err).
+			return ierr.WithError(err).
 				WithHintf("Subscription pause %s not found", pause.ID).
-				Mark(errors.ErrNotFound)
+				Mark(ierr.ErrNotFound)
 		}
-		return errors.WithError(err).
+		return ierr.WithError(err).
 			WithHint("Failed to get subscription pause for update").
-			Mark(errors.ErrDatabase)
+			Mark(ierr.ErrDatabase)
 	}
 
 	_, err = p.Update().
@@ -596,9 +626,9 @@ func (r *subscriptionRepository) UpdatePause(ctx context.Context, pause *domainS
 		Save(ctx)
 
 	if err != nil {
-		return errors.WithError(err).
+		return ierr.WithError(err).
 			WithHint("Failed to update subscription pause").
-			Mark(errors.ErrDatabase)
+			Mark(ierr.ErrDatabase)
 	}
 
 	return nil
@@ -618,9 +648,9 @@ func (r *subscriptionRepository) ListPauses(ctx context.Context, subscriptionID 
 		All(ctx)
 
 	if err != nil {
-		return nil, errors.WithError(err).
+		return nil, ierr.WithError(err).
 			WithHint("Failed to list subscription pauses").
-			Mark(errors.ErrDatabase)
+			Mark(ierr.ErrDatabase)
 	}
 
 	return domainSub.SubscriptionPauseListFromEnt(pauses), nil
@@ -644,13 +674,13 @@ func (r *subscriptionRepository) GetWithPauses(ctx context.Context, id string) (
 
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, nil, errors.WithError(err).
+			return nil, nil, ierr.WithError(err).
 				WithHintf("Subscription %s not found", id).
-				Mark(errors.ErrNotFound)
+				Mark(ierr.ErrNotFound)
 		}
-		return nil, nil, errors.WithError(err).
+		return nil, nil, ierr.WithError(err).
 			WithHint("Failed to get subscription with pauses").
-			Mark(errors.ErrDatabase)
+			Mark(ierr.ErrDatabase)
 	}
 
 	subscription := domainSub.GetSubscriptionFromEnt(sub)
@@ -660,4 +690,66 @@ func (r *subscriptionRepository) GetWithPauses(ctx context.Context, id string) (
 	}
 
 	return subscription, pauses, nil
+}
+
+// ListByCustomerID retrieves all active subscriptions for a customer and includes line items
+func (r *subscriptionRepository) ListByCustomerID(ctx context.Context, customerID string) ([]*domainSub.Subscription, error) {
+	r.logger.Debugw("listing subscriptions by customer ID",
+		"customer_id", customerID)
+
+	// Create a filter with customer ID
+	filter := &types.SubscriptionFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		CustomerID:  customerID,
+		SubscriptionStatus: []types.SubscriptionStatus{
+			types.SubscriptionStatusActive,
+			types.SubscriptionStatusTrialing,
+		},
+		WithLineItems: true,
+	}
+
+	// Use the existing List method
+	return r.List(ctx, filter)
+}
+
+// ListByIDs retrieves subscriptions by their IDs and includes line items
+func (r *subscriptionRepository) ListByIDs(ctx context.Context, subscriptionIDs []string) ([]*domainSub.Subscription, error) {
+	if len(subscriptionIDs) == 0 {
+		return []*domainSub.Subscription{}, nil
+	}
+
+	r.logger.Debugw("listing subscriptions by IDs", "subscription_ids", subscriptionIDs)
+
+	// Since SubscriptionFilter doesn't have a SubscriptionIDs field,
+	// we need to use a direct query instead of the List method
+	client := r.client.Querier(ctx)
+	query := client.Subscription.Query().
+		WithLineItems().
+		Where(
+			subscription.IDIn(subscriptionIDs...),
+			subscription.TenantID(types.GetTenantID(ctx)),
+			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
+			subscription.Status(string(types.StatusPublished)),
+		)
+
+	// Order by created date descending
+	query = query.Order(ent.Desc(subscription.FieldCreatedAt))
+
+	subs, err := query.All(ctx)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list subscriptions by IDs").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_ids": subscriptionIDs,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Convert to domain model
+	result := make([]*domainSub.Subscription, len(subs))
+	for i, sub := range subs {
+		result[i] = domainSub.GetSubscriptionFromEnt(sub)
+	}
+
+	return result, nil
 }

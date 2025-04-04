@@ -2,12 +2,11 @@ package auth
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/auth"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/golang-jwt/jwt"
@@ -49,17 +48,20 @@ func (s *supabaseAuth) SignUp(ctx context.Context, req AuthRequest) (*AuthRespon
 	// Instead, we validate the token and get user info
 	// For Supabase, we validate the token and extract user info
 	if req.Token == "" {
-		return nil, errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "token is required")
+		return nil, ierr.NewError("token is required").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	// Validate the token and extract user ID
 	claims, err := s.ValidateToken(ctx, req.Token)
 	if err != nil {
-		return nil, errors.Wrap(errors.ErrPermissionDenied, errors.ErrCodePermissionDenied, "invalid token")
+		return nil, ierr.NewError("invalid token").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	if claims.Email != req.Email {
-		return nil, errors.Wrap(errors.ErrPermissionDenied, errors.ErrCodePermissionDenied, "email mismatch")
+		return nil, ierr.NewError("email mismatch").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	// Create auth response with the token
@@ -79,7 +81,9 @@ func (s *supabaseAuth) Login(ctx context.Context, req AuthRequest, userAuthInfo 
 		Password: req.Password,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get user").
+			Mark(ierr.ErrPermissionDenied)
 	}
 	return &AuthResponse{
 		ProviderToken: user.User.ID,
@@ -91,23 +95,34 @@ func (s *supabaseAuth) Login(ctx context.Context, req AuthRequest, userAuthInfo 
 func (s *supabaseAuth) ValidateToken(ctx context.Context, token string) (*auth.Claims, error) {
 	parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, ierr.NewError("unexpected signing method").
+				WithHint("Unexpected signing method").
+				WithReportableDetails(map[string]interface{}{
+					"signing_method": token.Method.Alg(),
+				}).
+				Mark(ierr.ErrPermissionDenied)
 		}
 		return []byte(s.AuthConfig.Secret), nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("token parse error: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Token parse error").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok || !parsedToken.Valid {
-		return nil, fmt.Errorf("invalid token claims")
+		return nil, ierr.NewError("invalid token claims").
+			WithHint("Invalid token claims").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	userID, userOk := claims["sub"].(string)
 	if !userOk {
-		return nil, fmt.Errorf("token missing user ID")
+		return nil, ierr.NewError("token missing user ID").
+			WithHint("Token missing user ID").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	// Get tenant_id from app_metadata
@@ -120,7 +135,9 @@ func (s *supabaseAuth) ValidateToken(ctx context.Context, token string) (*auth.C
 
 	email, ok := claims["email"].(string)
 	if !ok {
-		return nil, fmt.Errorf("token missing email")
+		return nil, ierr.NewError("token missing email").
+			WithHint("Token missing email").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	return &auth.Claims{
@@ -140,7 +157,9 @@ func (s *supabaseAuth) AssignUserToTenant(ctx context.Context, userID string, te
 
 	resp, err := s.client.Admin.UpdateUser(ctx, userID, params)
 	if err != nil {
-		return fmt.Errorf("failed to assign tenant to user: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to assign tenant to user").
+			Mark(ierr.ErrSystem)
 	}
 
 	s.logger.Debugw("assigned tenant to user",

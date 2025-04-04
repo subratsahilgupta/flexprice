@@ -2,11 +2,11 @@ package ent
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/flexprice/flexprice/ent"
 	entTenant "github.com/flexprice/flexprice/ent/tenant"
 	domainTenant "github.com/flexprice/flexprice/internal/domain/tenant"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 )
@@ -36,10 +36,17 @@ func (r *tenantRepository) Create(ctx context.Context, tenant *domainTenant.Tena
 		SetStatus(string(tenant.Status)).
 		SetCreatedAt(tenant.CreatedAt).
 		SetUpdatedAt(tenant.UpdatedAt).
+		SetBillingDetails(tenant.BillingDetails.ToSchema()).
 		Save(ctx)
 
 	if err != nil {
-		return fmt.Errorf("failed to create tenant: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to create tenant").
+			WithReportableDetails(map[string]interface{}{
+				"tenant_id": tenant.ID,
+				"name":      tenant.Name,
+			}).
+			Mark(ierr.ErrDatabase)
 	}
 
 	return nil
@@ -57,9 +64,19 @@ func (r *tenantRepository) GetByID(ctx context.Context, id string) (*domainTenan
 
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, fmt.Errorf("tenant not found: %w", err)
+			return nil, ierr.WithError(err).
+				WithHint("Tenant not found").
+				WithReportableDetails(map[string]interface{}{
+					"tenant_id": id,
+				}).
+				Mark(ierr.ErrNotFound)
 		}
-		return nil, fmt.Errorf("failed to get tenant: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to retrieve tenant").
+			WithReportableDetails(map[string]interface{}{
+				"tenant_id": id,
+			}).
+			Mark(ierr.ErrDatabase)
 	}
 
 	return domainTenant.FromEnt(tenant), nil
@@ -74,8 +91,29 @@ func (r *tenantRepository) List(ctx context.Context) ([]*domainTenant.Tenant, er
 		All(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tenants: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list tenants").
+			Mark(ierr.ErrDatabase)
 	}
 
 	return domainTenant.FromEntList(tenants), nil
+}
+
+// Update implements tenant.Repository.
+func (r *tenantRepository) Update(ctx context.Context, tenant *domainTenant.Tenant) error {
+	client := r.client.Querier(ctx)
+
+	_, err := client.Tenant.
+		UpdateOneID(tenant.ID).
+		SetName(tenant.Name).
+		SetBillingDetails(tenant.BillingDetails.ToSchema()).
+		Save(ctx)
+
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to update tenant").
+			Mark(ierr.ErrDatabase)
+	}
+
+	return nil
 }

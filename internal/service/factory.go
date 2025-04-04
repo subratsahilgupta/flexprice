@@ -5,6 +5,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -18,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
@@ -26,9 +28,10 @@ import (
 // ServiceParams holds common dependencies for services
 // TODO: start using this for all services init
 type ServiceParams struct {
-	Logger *logger.Logger
-	Config *config.Configuration
-	DB     postgres.IClient
+	Logger       *logger.Logger
+	Config       *config.Configuration
+	DB           postgres.IClient
+	PDFGenerator pdf.Generator
 
 	// Repositories
 	AuthRepo        auth.Repository
@@ -46,6 +49,7 @@ type ServiceParams struct {
 	EntitlementRepo entitlement.Repository
 	PaymentRepo     payment.Repository
 	SecretRepo      secret.Repository
+	EnvironmentRepo environment.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -57,6 +61,7 @@ func NewServiceParams(
 	logger *logger.Logger,
 	config *config.Configuration,
 	db postgres.IClient,
+	pdfGenerator pdf.Generator,
 	authRepo auth.Repository,
 	userRepo user.Repository,
 	eventRepo events.Repository,
@@ -72,6 +77,7 @@ func NewServiceParams(
 	entitlementRepo entitlement.Repository,
 	paymentRepo payment.Repository,
 	secretRepo secret.Repository,
+	environmentRepo environment.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
 ) ServiceParams {
@@ -79,6 +85,7 @@ func NewServiceParams(
 		Logger:           logger,
 		Config:           config,
 		DB:               db,
+		PDFGenerator:     pdfGenerator,
 		AuthRepo:         authRepo,
 		UserRepo:         userRepo,
 		EventRepo:        eventRepo,
@@ -94,6 +101,7 @@ func NewServiceParams(
 		EntitlementRepo:  entitlementRepo,
 		PaymentRepo:      paymentRepo,
 		SecretRepo:       secretRepo,
+		EnvironmentRepo:  environmentRepo,
 		EventPublisher:   eventPublisher,
 		WebhookPublisher: webhookPublisher,
 	}

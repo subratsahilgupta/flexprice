@@ -40,7 +40,7 @@ func (h *SubscriptionPauseHandler) PauseSubscription(c *gin.Context) {
 	subscriptionID := c.Param("id")
 	if subscriptionID == "" {
 		h.log.Errorw("subscription ID is required")
-		c.Error(ierr.New(ierr.ErrCodeValidation, "Subscription ID is required"))
+		c.Error(ierr.NewError("Subscription ID is required").Mark(ierr.ErrValidation))
 		return
 	}
 
@@ -103,7 +103,7 @@ func (h *SubscriptionPauseHandler) ResumeSubscription(c *gin.Context) {
 	subscriptionID := c.Param("id")
 	if subscriptionID == "" {
 		h.log.Errorw("subscription ID is required")
-		c.Error(ierr.New(ierr.ErrCodeValidation, "Subscription ID is required"))
+		c.Error(ierr.NewError("Subscription ID is required").Mark(ierr.ErrValidation))
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *SubscriptionPauseHandler) ListPauses(c *gin.Context) {
 	subscriptionID := c.Param("id")
 	if subscriptionID == "" {
 		h.log.Errorw("subscription ID is required")
-		c.Error(ierr.New(ierr.ErrCodeValidation, "Subscription ID is required"))
+		c.Error(ierr.NewError("Subscription ID is required").Mark(ierr.ErrValidation))
 		return
 	}
 

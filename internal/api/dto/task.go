@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/task"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 )
 
 // CreateTaskRequest represents the request to create a new task
@@ -28,18 +28,15 @@ func (r *CreateTaskRequest) Validate() error {
 		return err
 	}
 	if r.FileURL == "" {
-		return errors.New(errors.ErrCodeValidation, "file_url cannot be empty")
+		return ierr.NewError("file_url cannot be empty").
+			WithHint("File URL cannot be empty").
+			Mark(ierr.ErrValidation)
 	}
 	if err := r.FileType.Validate(); err != nil {
 		return err
 	}
 
-	validator := validator.New()
-	err := validator.Struct(r)
-	if err != nil {
-		return errors.New(errors.ErrCodeValidation, err.Error())
-	}
-	return nil
+	return validator.ValidateRequest(r)
 }
 
 // ToTask converts the request to a domain task
@@ -129,7 +126,9 @@ type UpdateTaskStatusRequest struct {
 
 func (r *UpdateTaskStatusRequest) Validate() error {
 	if r.TaskStatus == "" {
-		return errors.New(errors.ErrCodeValidation, "task_status cannot be empty")
+		return ierr.NewError("task_status cannot be empty").
+			WithHint("Task status cannot be empty").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }

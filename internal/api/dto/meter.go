@@ -5,7 +5,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 )
 
 // CreateMeterRequest represents the request payload for creating a meter
@@ -14,7 +14,7 @@ type CreateMeterRequest struct {
 	EventName   string            `json:"event_name" binding:"required" example:"api_request"`
 	Aggregation meter.Aggregation `json:"aggregation" binding:"required"`
 	Filters     []meter.Filter    `json:"filters"`
-	ResetUsage  types.ResetUsage  `json:"reset_usage" example:"BILLING_PERIOD"`
+	ResetUsage  types.ResetUsage  `json:"reset_usage" binding:"required"`
 }
 
 // UpdateMeterRequest represents the request payload for updating a meter
@@ -65,7 +65,16 @@ func (r *CreateMeterRequest) ToMeter(tenantID, createdBy string) *meter.Meter {
 
 // Request validations
 func (r *CreateMeterRequest) Validate() error {
-	return validator.New().Struct(r)
+	err := validator.ValidateRequest(r)
+	if err != nil {
+		return err
+	}
+
+	if err := r.ResetUsage.Validate(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ListMetersResponse represents a paginated list of meters

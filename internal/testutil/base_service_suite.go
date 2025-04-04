@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/secret"
@@ -23,9 +24,11 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/validator"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/stretchr/testify/suite"
 )
@@ -40,6 +43,7 @@ type Stores struct {
 	CustomerRepo     customer.Repository
 	InvoiceRepo      invoice.Repository
 	WalletRepo       wallet.Repository
+	PaymentRepo      payment.Repository
 	AuthRepo         auth.Repository
 	UserRepo         user.Repository
 	TenantRepo       tenant.Repository
@@ -61,10 +65,14 @@ type BaseServiceTestSuite struct {
 	logger           *logger.Logger
 	config           *config.Configuration
 	now              time.Time
+	pdfGenerator     pdf.Generator
 }
 
 // SetupSuite is called once before running the tests in the suite
 func (s *BaseServiceTestSuite) SetupSuite() {
+	// Initialize validator
+	validator.NewValidator()
+
 	// Initialize logger with test config
 	cfg := &config.Configuration{
 		Logging: config.LoggingConfig{
@@ -111,6 +119,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 		CustomerRepo:     NewInMemoryCustomerStore(),
 		InvoiceRepo:      NewInMemoryInvoiceStore(),
 		WalletRepo:       NewInMemoryWalletStore(),
+		PaymentRepo:      NewInMemoryPaymentStore(),
 		AuthRepo:         NewInMemoryAuthRepository(),
 		UserRepo:         NewInMemoryUserStore(),
 		TenantRepo:       NewInMemoryTenantStore(),
@@ -122,6 +131,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 	}
 
 	s.db = NewMockPostgresClient(s.logger)
+	s.pdfGenerator = NewMockPDFGenerator(s.logger)
 	eventStore := s.stores.EventRepo.(*InMemoryEventStore)
 	s.publisher = NewInMemoryEventPublisher(eventStore)
 	pubsub := NewInMemoryPubSub()
@@ -141,6 +151,7 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.CustomerRepo.(*InMemoryCustomerStore).Clear()
 	s.stores.InvoiceRepo.(*InMemoryInvoiceStore).Clear()
 	s.stores.WalletRepo.(*InMemoryWalletStore).Clear()
+	s.stores.PaymentRepo.(*InMemoryPaymentStore).Clear()
 	s.stores.AuthRepo.(*InMemoryAuthRepository).Clear()
 	s.stores.UserRepo.(*InMemoryUserStore).Clear()
 	s.stores.TenantRepo.(*InMemoryTenantStore).Clear()
@@ -183,6 +194,11 @@ func (s *BaseServiceTestSuite) GetWebhookPublisher() webhookPublisher.WebhookPub
 // GetDB returns the test database client
 func (s *BaseServiceTestSuite) GetDB() postgres.IClient {
 	return s.db
+}
+
+// GetPDFGenerator returns the test PDF generator
+func (s *BaseServiceTestSuite) GetPDFGenerator() pdf.Generator {
+	return s.pdfGenerator
 }
 
 // GetLogger returns the test logger

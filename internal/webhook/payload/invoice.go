@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
 type InvoicePayloadBuilder struct {
@@ -25,18 +27,26 @@ func (b *InvoicePayloadBuilder) BuildPayload(ctx context.Context, eventType stri
 
 	err := json.Unmarshal(data.(json.RawMessage), &parsedPayload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal invoice event payload: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Unable to unmarshal invoice event payload").
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	invoiceID, tenantID := parsedPayload.InvoiceID, parsedPayload.TenantID
 	if invoiceID == "" || tenantID == "" {
-		return nil, fmt.Errorf("invalid data type for invoice event, expected string got %T", data)
+		return nil, ierr.NewError("invalid data type for invoice event").
+			WithHint("Please provide a valid invoice ID and tenant ID").
+			WithReportableDetails(map[string]any{
+				"expected": "string",
+				"got":      fmt.Sprintf("%T", data),
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// Get invoice details
 	invoice, err := b.services.InvoiceService.GetInvoice(ctx, invoiceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get invoice: %w", err)
+		return nil, err
 	}
 
 	// Return the invoice response as is

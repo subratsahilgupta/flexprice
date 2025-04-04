@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/gin-gonic/gin"
@@ -32,31 +33,65 @@ func NewEventsHandler(eventService service.EventService, log *logger.Logger) *Ev
 // @Security ApiKeyAuth
 // @Param event body dto.IngestEventRequest true "Event data"
 // @Success 202 {object} map[string]string "message:Event accepted for processing"
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /events [post]
 func (h *EventsHandler) IngestEvent(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req dto.IngestEventRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.log.Error("Failed to bind JSON", "error", err)
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request payload"})
+		c.Error(ierr.NewError("invalid request payload").
+			WithHint("Invalid request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	if err := req.Validate(); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.Error(err)
 		return
 	}
 
 	err := h.eventService.CreateEvent(ctx, &req)
 	if err != nil {
 		h.log.Error("Failed to ingest event", "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to ingest event"})
+		c.Error(err)
 		return
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "Event accepted for processing", "event_id": req.EventID})
+}
+
+// @Summary Bulk Ingest events
+// @Description Ingest bulk events into the system
+// @Tags Events
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param event body dto.BulkIngestEventRequest true "Event data"
+// @Success 202 {object} map[string]string "message:Event accepted for processing"
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /events/bulk [post]
+func (h *EventsHandler) BulkIngestEvent(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req dto.BulkIngestEventRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request payload").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	err := h.eventService.BulkCreateEvents(ctx, &req)
+	if err != nil {
+		h.log.Error("Failed to bulk ingest events", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "Events accepted for processing"})
 }
 
 // @Summary Get usage by meter
@@ -66,9 +101,9 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param request body dto.GetUsageByMeterRequest true "Request body"
 // @Success 200 {object} dto.GetUsageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /events/usage/meter [post]
 func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -76,19 +111,23 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 
 	var req dto.GetUsageByMeterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	req.StartTime, req.EndTime, err = validateStartAndEndTime(req.StartTime, req.EndTime)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	result, err := h.eventService.GetUsageByMeter(ctx, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.Error(err)
 		return
 	}
 
@@ -103,8 +142,8 @@ func (h *EventsHandler) GetUsageByMeter(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param request body dto.GetUsageRequest true "Request body"
 // @Success 200 {object} dto.GetUsageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /events/usage [post]
 func (h *EventsHandler) GetUsage(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -112,19 +151,23 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 
 	var req dto.GetUsageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	req.StartTime, req.EndTime, err = validateStartAndEndTime(req.StartTime, req.EndTime)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
 	result, err := h.eventService.GetUsage(ctx, &req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.Error(err)
 		return
 	}
 
@@ -145,8 +188,8 @@ func (h *EventsHandler) GetUsage(c *gin.Context) {
 // @Param iter_last_key query string false "Iter Last Key (unix_timestamp_nanoseconds::event_id)"
 // @Param page_size query int false "Page Size (1-50)"
 // @Success 200 {object} dto.GetEventsResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
 // @Router /events [get]
 func (h *EventsHandler) GetEvents(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -169,7 +212,9 @@ func (h *EventsHandler) GetEvents(c *gin.Context) {
 
 	startTime, endTime, err := parseStartAndEndTime(startTimeStr, endTimeStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
@@ -185,7 +230,7 @@ func (h *EventsHandler) GetEvents(c *gin.Context) {
 	})
 	if err != nil {
 		h.log.Error("Failed to get events", "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get events"})
+		c.Error(err)
 		return
 	}
 

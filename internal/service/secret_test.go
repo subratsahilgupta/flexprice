@@ -140,7 +140,7 @@ func (s *SecretServiceSuite) TestCreateAPIKey() {
 				Type: types.SecretTypePrivateKey,
 			},
 			wantErr:   true,
-			errString: "validation_error",
+			errString: "Error:Field validation",
 		},
 		{
 			name: "error - invalid type",
@@ -149,7 +149,7 @@ func (s *SecretServiceSuite) TestCreateAPIKey() {
 				Type: "invalid",
 			},
 			wantErr:   true,
-			errString: "validation_error",
+			errString: "invalid secret type",
 		},
 	}
 
@@ -206,7 +206,7 @@ func (s *SecretServiceSuite) TestCreateIntegration() {
 				},
 			},
 			wantErr:   true,
-			errString: "validation_error",
+			errString: "validation failed",
 		},
 		{
 			name: "error - missing credentials",
@@ -215,7 +215,7 @@ func (s *SecretServiceSuite) TestCreateIntegration() {
 				Provider: types.SecretProviderStripe,
 			},
 			wantErr:   true,
-			errString: "validation_error",
+			errString: "validation failed",
 		},
 		{
 			name: "error - invalid provider",
@@ -227,7 +227,7 @@ func (s *SecretServiceSuite) TestCreateIntegration() {
 				},
 			},
 			wantErr:   true,
-			errString: "validation_error",
+			errString: "validation failed",
 		},
 	}
 
@@ -268,13 +268,13 @@ func (s *SecretServiceSuite) TestVerifyAPIKey() {
 			name:      "error - empty API key",
 			apiKey:    "",
 			wantErr:   true,
-			errString: "validation_error",
+			errString: "validation failed",
 		},
 		{
 			name:      "error - invalid API key",
 			apiKey:    "invalid_key",
 			wantErr:   true,
-			errString: "not found",
+			errString: "invalid API key",
 		},
 	}
 
@@ -314,7 +314,7 @@ func (s *SecretServiceSuite) TestGetIntegrationCredentials() {
 			name:      "error - provider not found",
 			provider:  "non_existent_provider",
 			wantErr:   true,
-			errString: "not found",
+			errString: "non_existent_provider integration not configured",
 		},
 	}
 

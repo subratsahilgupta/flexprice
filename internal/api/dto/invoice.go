@@ -2,17 +2,14 @@ package dto
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/shopspring/decimal"
-
-	"github.com/cockroachdb/errors"
 )
 
 // CreateInvoiceRequest represents the request to create a new invoice
@@ -20,7 +17,7 @@ type CreateInvoiceRequest struct {
 	CustomerID     string                         `json:"customer_id" validate:"required"`
 	SubscriptionID *string                        `json:"subscription_id,omitempty"`
 	IdempotencyKey *string                        `json:"idempotency_key"`
-	InvoiceType    types.InvoiceType              `json:"invoice_type" validate:"oneof=SUBSCRIPTION ONE_OFF CREDIT"`
+	InvoiceType    types.InvoiceType              `json:"invoice_type"`
 	Currency       string                         `json:"currency" validate:"required"`
 	AmountDue      decimal.Decimal                `json:"amount_due" validate:"required"`
 	Description    string                         `json:"description,omitempty"`
@@ -34,19 +31,16 @@ type CreateInvoiceRequest struct {
 	AmountPaid     *decimal.Decimal               `json:"amount_paid,omitempty"`
 	LineItems      []CreateInvoiceLineItemRequest `json:"line_items,omitempty"`
 	Metadata       types.Metadata                 `json:"metadata,omitempty"`
+	EnvironmentID  string                         `json:"environment_id,omitempty"`
 }
 
 func (r *CreateInvoiceRequest) Validate() error {
-	validate := validator.New()
-	if err := validate.Struct(r); err != nil {
-		details := make(map[string]any)
-		var validateErrs validator.ValidationErrors
-		if errors.As(err, &validateErrs) {
-			for _, err := range validateErrs {
-				details[err.Field()] = err.Error()
-			}
-		}
-		return ierr.WithError(err).WithHint("request validation failed").WithReportableDetails(details).Mark(ierr.ErrValidation)
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	if err := r.InvoiceType.Validate(); err != nil {
+		return err
 	}
 
 	if r.AmountDue.IsNegative() {
@@ -129,9 +123,14 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 		PeriodEnd:       r.PeriodEnd,
 		BillingReason:   string(r.BillingReason),
 		Metadata:        r.Metadata,
-		EnvironmentID:   types.GetEnvironmentID(ctx),
 		BaseModel:       types.GetDefaultBaseModel(ctx),
 		AmountRemaining: decimal.Zero,
+	}
+
+	if r.EnvironmentID != "" {
+		inv.EnvironmentID = r.EnvironmentID
+	} else {
+		inv.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
 	// Default invoice status and payment status
@@ -177,22 +176,27 @@ type CreateInvoiceLineItemRequest struct {
 }
 
 func (r *CreateInvoiceLineItemRequest) Validate() error {
-	validate := validator.New()
-	if err := validate.Struct(r); err != nil {
+	if err := validator.ValidateRequest(r); err != nil {
 		return err
 	}
 
 	if r.Amount.IsNegative() {
-		return fmt.Errorf("amount must be non-negative")
+		return ierr.NewError("amount must be non-negative").
+			WithHint("Amount cannot be negative").
+			Mark(ierr.ErrValidation)
 	}
 
 	if r.Quantity.IsNegative() {
-		return fmt.Errorf("quantity must be non-negative")
+		return ierr.NewError("quantity must be non-negative").
+			WithHint("Quantity cannot be negative").
+			Mark(ierr.ErrValidation)
 	}
 
 	if r.PeriodStart != nil && r.PeriodEnd != nil {
 		if r.PeriodEnd.Before(*r.PeriodStart) {
-			return fmt.Errorf("period_end must be after period_start")
+			return ierr.NewError("period_end must be after period_start").
+				WithHint("Subscription cannot end before it starts").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
@@ -289,7 +293,9 @@ type UpdateInvoicePaymentRequest struct {
 
 func (r *UpdateInvoicePaymentRequest) Validate() error {
 	if r.PaymentStatus == "" {
-		return fmt.Errorf("payment_status is required")
+		return ierr.NewError("payment_status is required").
+			WithHint("Payment status is required").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -302,7 +308,12 @@ type UpdatePaymentStatusRequest struct {
 
 func (r *UpdatePaymentStatusRequest) Validate() error {
 	if r.Amount != nil && r.Amount.IsNegative() {
-		return fmt.Errorf("amount must be non-negative")
+		return ierr.NewError("amount must be non-negative").
+			WithHint("Amount cannot be negative").
+			WithReportableDetails(map[string]interface{}{
+				"amount": r.Amount.String(),
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -342,7 +353,6 @@ type InvoiceResponse struct {
 	CreatedBy       string                     `json:"created_by,omitempty"`
 	UpdatedBy       string                     `json:"updated_by,omitempty"`
 
-	// Edges
 	Subscription *SubscriptionResponse `json:"subscription,omitempty"`
 	Customer     *CustomerResponse     `json:"customer,omitempty"`
 }
@@ -440,8 +450,26 @@ type CustomerMultiCurrencyInvoiceSummary struct {
 
 // CreateSubscriptionInvoiceRequest represents a request to create a subscription invoice
 type CreateSubscriptionInvoiceRequest struct {
-	SubscriptionID string    `json:"subscription_id" binding:"required"`
-	PeriodStart    time.Time `json:"period_start" binding:"required"`
-	PeriodEnd      time.Time `json:"period_end" binding:"required"`
-	IsPreview      bool      `json:"is_preview"`
+	SubscriptionID string                      `json:"subscription_id" binding:"required"`
+	PeriodStart    time.Time                   `json:"period_start" binding:"required"`
+	PeriodEnd      time.Time                   `json:"period_end" binding:"required"`
+	IsPreview      bool                        `json:"is_preview"`
+	ReferencePoint types.InvoiceReferencePoint `json:"reference_point"`
+}
+
+func (r *CreateSubscriptionInvoiceRequest) Validate() error {
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	if err := r.ReferencePoint.Validate(); err != nil {
+		return err
+	}
+
+	if r.PeriodStart.After(r.PeriodEnd) {
+		return ierr.NewError("period_start must be before period_end").
+			WithHint("Invoice period start must be before period end").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
 }

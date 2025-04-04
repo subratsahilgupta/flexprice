@@ -7,11 +7,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
 	"io"
 
 	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 )
 
@@ -35,7 +34,9 @@ type aesEncryptionService struct {
 // NewEncryptionService creates a new encryption service using the master key from config
 func NewEncryptionService(cfg *config.Configuration, logger *logger.Logger) (EncryptionService, error) {
 	if cfg.Secrets.EncryptionKey == "" {
-		return nil, errors.New(errors.ErrCodeSystemError, "master encryption key not configured")
+		return nil, ierr.NewError("master encryption key not configured").
+			WithHint("Master encryption key is not configured").
+			Mark(ierr.ErrSystem)
 	}
 
 	// Use the auth secret as the master key (in production, this should come from a secure source like KMS)
@@ -64,19 +65,25 @@ func (s *aesEncryptionService) Encrypt(plaintext string) (string, error) {
 	// Create a new AES cipher block
 	block, err := aes.NewCipher(s.key)
 	if err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeSystemError, "failed to create cipher block")
+		return "", ierr.WithError(err).
+			WithHint("Failed to create cipher block").
+			Mark(ierr.ErrSystem)
 	}
 
 	// Create a new GCM cipher mode
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeSystemError, "failed to create GCM")
+		return "", ierr.WithError(err).
+			WithHint("Failed to create GCM").
+			Mark(ierr.ErrSystem)
 	}
 
 	// Create a nonce (number used once)
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeSystemError, "failed to generate nonce")
+		return "", ierr.WithError(err).
+			WithHint("Failed to generate nonce").
+			Mark(ierr.ErrSystem)
 	}
 
 	// Encrypt and authenticate the plaintext
@@ -97,25 +104,33 @@ func (s *aesEncryptionService) Decrypt(ciphertext string) (string, error) {
 	// Decode the base64-encoded ciphertext
 	decoded, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeSystemError, "failed to decode ciphertext")
+		return "", ierr.WithError(err).
+			WithHint("Failed to decode ciphertext").
+			Mark(ierr.ErrSystem)
 	}
 
 	// Create a new AES cipher block
 	block, err := aes.NewCipher(s.key)
 	if err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeSystemError, "failed to create cipher block")
+		return "", ierr.WithError(err).
+			WithHint("Failed to create cipher block").
+			Mark(ierr.ErrSystem)
 	}
 
 	// Create a new GCM cipher mode
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeSystemError, "failed to create GCM")
+		return "", ierr.WithError(err).
+			WithHint("Failed to create GCM").
+			Mark(ierr.ErrSystem)
 	}
 
 	// Extract the nonce from the ciphertext
 	nonceSize := gcm.NonceSize()
 	if len(decoded) < nonceSize {
-		return "", errors.New(errors.ErrCodeSystemError, "ciphertext too short")
+		return "", ierr.NewError("ciphertext too short").
+			WithHint("Ciphertext is too short").
+			Mark(ierr.ErrSystem)
 	}
 
 	nonce, ciphertextBytes := decoded[:nonceSize], decoded[nonceSize:]
@@ -123,7 +138,9 @@ func (s *aesEncryptionService) Decrypt(ciphertext string) (string, error) {
 	// Decrypt and verify the ciphertext
 	plaintext, err := gcm.Open(nil, nonce, ciphertextBytes, nil)
 	if err != nil {
-		return "", errors.Wrap(err, errors.ErrCodeSystemError, "failed to decrypt ciphertext")
+		return "", ierr.WithError(err).
+			WithHint("Failed to decrypt ciphertext").
+			Mark(ierr.ErrSystem)
 	}
 
 	return string(plaintext), nil
@@ -143,13 +160,4 @@ func (s *aesEncryptionService) Hash(value string) string {
 
 	// Get the hash sum and convert to hex string
 	return hex.EncodeToString(hasher.Sum(nil))
-}
-
-// GenerateRandomKey generates a random 32-byte key for AES-256
-func GenerateRandomKey() (string, error) {
-	key := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, key); err != nil {
-		return "", fmt.Errorf("failed to generate random key: %w", err)
-	}
-	return hex.EncodeToString(key), nil
 }

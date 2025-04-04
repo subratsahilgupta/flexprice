@@ -3,12 +3,12 @@ package kafka
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"go.uber.org/zap"
 )
@@ -30,7 +30,9 @@ func NewEventPublisher(producer *Producer, cfg *config.Configuration, logger *lo
 func (p *EventPublisher) Publish(ctx context.Context, event *events.Event) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("failed to marshal event: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to marshal event").
+			Mark(ierr.ErrValidation)
 	}
 
 	p.logger.With(
@@ -46,7 +48,9 @@ func (p *EventPublisher) Publish(ctx context.Context, event *events.Event) error
 	msg := message.NewMessage(event.ID, payload)
 
 	if err := p.producer.Publish(p.config.Topic, msg); err != nil {
-		return fmt.Errorf("failed to publish event: %w", err)
+		return ierr.WithError(err).
+			WithHint("Failed to publish event").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }

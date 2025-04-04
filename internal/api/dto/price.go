@@ -2,12 +2,12 @@ package dto
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/flexprice/flexprice/internal/domain/price"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/shopspring/decimal"
 )
 
@@ -46,19 +46,26 @@ func (r *CreatePriceRequest) Validate() error {
 	if r.Amount != "" {
 		amount, err = decimal.NewFromString(r.Amount)
 		if err != nil {
-			return fmt.Errorf("invalid amount format: %w", err)
+			return ierr.NewError("invalid amount format").
+				WithHint("Amount must be a valid decimal number").
+				WithReportableDetails(map[string]interface{}{
+					"amount": r.Amount,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 	}
 
 	if amount.LessThan(decimal.Zero) {
-		return fmt.Errorf("amount must be greater than 0")
+		return ierr.NewError("amount must be greater than 0").
+			WithHint("Amount cannot be negative").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Ensure currency is lowercase
 	r.Currency = strings.ToLower(r.Currency)
 
 	// Billing model validations
-	err = validator.New().Struct(r)
+	err = validator.ValidateRequest(r)
 	if err != nil {
 		return err
 	}
@@ -93,10 +100,14 @@ func (r *CreatePriceRequest) Validate() error {
 	switch r.BillingModel {
 	case types.BILLING_MODEL_TIERED:
 		if len(r.Tiers) == 0 {
-			return fmt.Errorf("tiers are required when billing model is TIERED")
+			return ierr.NewError("tiers are required when billing model is TIERED").
+				WithHint("Price Tiers are required to set up tiered pricing").
+				Mark(ierr.ErrValidation)
 		}
 		if r.TierMode == "" {
-			return fmt.Errorf("tier_mode is required when billing model is TIERED")
+			return ierr.NewError("tier_mode is required when billing model is TIERED").
+				WithHint("Price Tier mode is required to set up tiered pricing").
+				Mark(ierr.ErrValidation)
 		}
 		err = r.TierMode.Validate()
 		if err != nil {
@@ -105,48 +116,76 @@ func (r *CreatePriceRequest) Validate() error {
 
 	case types.BILLING_MODEL_PACKAGE:
 		if r.TransformQuantity == nil {
-			return fmt.Errorf("transform_quantity is required when billing model is PACKAGE")
+			return ierr.NewError("transform_quantity is required when billing model is PACKAGE").
+				WithHint("Please provide the number of units to set up package pricing").
+				Mark(ierr.ErrValidation)
 		}
 
 		if r.TransformQuantity.DivideBy <= 0 {
-			return fmt.Errorf("transform_quantity.divide_by must be greater than 0 when billing model is PACKAGE")
+			return ierr.NewError("transform_quantity.divide_by must be greater than 0 when billing model is PACKAGE").
+				WithHint("Please provide a valid number of units to set up package pricing").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
 	switch r.Type {
 	case types.PRICE_TYPE_USAGE:
 		if r.MeterID == "" {
-			return fmt.Errorf("meter_id is required when type is USAGE")
+			return ierr.NewError("meter_id is required when type is USAGE").
+				WithHint("Please select a metered feature to set up usage pricing").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
 	switch r.BillingCadence {
 	case types.BILLING_CADENCE_RECURRING:
 		if r.BillingPeriod == "" {
-			return fmt.Errorf("billing_period is required when billing_cadence is RECURRING")
+			return ierr.NewError("billing_period is required when billing_cadence is RECURRING").
+				WithHint("Please select a billing period to set up recurring pricing").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
 	// Validate tiers if present
 	if len(r.Tiers) > 0 && r.BillingModel == types.BILLING_MODEL_TIERED {
-		for i, tier := range r.Tiers {
+		for _, tier := range r.Tiers {
 			tierAmount, err := decimal.NewFromString(tier.UnitAmount)
 			if err != nil {
-				return fmt.Errorf("invalid unit amount in tier %d: %w", i+1, err)
+				return ierr.WithError(err).
+					WithHint("Unit amount must be a valid decimal number").
+					WithReportableDetails(map[string]interface{}{
+						"unit_amount": tier.UnitAmount,
+					}).
+					Mark(ierr.ErrValidation)
 			}
 
 			if tierAmount.LessThan(decimal.Zero) {
-				return fmt.Errorf("tier %d: unit amount must be greater than 0", i+1)
+				return ierr.WithError(err).
+					WithHint("Unit amount must be greater than 0").
+					WithReportableDetails(map[string]interface{}{
+						"unit_amount": tier.UnitAmount,
+					}).
+					Mark(ierr.ErrValidation)
 			}
 
 			if tier.FlatAmount != nil {
 				flatAmount, err := decimal.NewFromString(*tier.FlatAmount)
 				if err != nil {
-					return fmt.Errorf("invalid flat amount in tier %d: %w", i+1, err)
+					return ierr.WithError(err).
+						WithHint("Flat amount must be a valid decimal number").
+						WithReportableDetails(map[string]interface{}{
+							"flat_amount": tier.FlatAmount,
+						}).
+						Mark(ierr.ErrValidation)
 				}
 
 				if flatAmount.LessThan(decimal.Zero) {
-					return fmt.Errorf("tier %d: flat amount must be greater than 0", i+1)
+					return ierr.WithError(err).
+						WithHint("Flat amount must be greater than 0").
+						WithReportableDetails(map[string]interface{}{
+							"flat_amount": tier.FlatAmount,
+						}).
+						Mark(ierr.ErrValidation)
 				}
 			}
 		}
@@ -155,14 +194,18 @@ func (r *CreatePriceRequest) Validate() error {
 	// trial period validations
 	// Trial period should be non-negative
 	if r.TrialPeriod < 0 {
-		return fmt.Errorf("trial period must be non-negative")
+		return ierr.NewError("trial period must be non-negative").
+			WithHint("Please provide a non-negative trial period").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Trial period should only be set for recurring fixed prices
 	if r.TrialPeriod > 0 &&
 		r.BillingCadence != types.BILLING_CADENCE_RECURRING &&
 		r.Type != types.PRICE_TYPE_FIXED {
-		return fmt.Errorf("trial period can only be set for recurring fixed prices")
+		return ierr.NewError("trial period can only be set for recurring fixed prices").
+			WithHint("Trial period can only be set for recurring fixed prices").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -174,7 +217,12 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*price.Price, error) 
 		var err error
 		amount, err = decimal.NewFromString(r.Amount)
 		if err != nil {
-			return nil, fmt.Errorf("invalid amount format: %w", err)
+			return nil, ierr.WithError(err).
+				WithHint("Amount must be a valid decimal number").
+				WithReportableDetails(map[string]interface{}{
+					"amount": r.Amount,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 	}
 
@@ -200,14 +248,24 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*price.Price, error) 
 		for i, tier := range r.Tiers {
 			unitAmount, err := decimal.NewFromString(tier.UnitAmount)
 			if err != nil {
-				return nil, fmt.Errorf("invalid unit amount in tier %d: %w", i, err)
+				return nil, ierr.WithError(err).
+					WithHint("Unit amount must be a valid decimal number").
+					WithReportableDetails(map[string]interface{}{
+						"unit_amount": tier.UnitAmount,
+					}).
+					Mark(ierr.ErrValidation)
 			}
 
 			var flatAmount *decimal.Decimal
 			if tier.FlatAmount != nil {
 				parsed, err := decimal.NewFromString(*tier.FlatAmount)
 				if err != nil {
-					return nil, fmt.Errorf("invalid flat amount in tier %d: %w", i, err)
+					return nil, ierr.WithError(err).
+						WithHint("Unit amount must be a valid decimal number").
+						WithReportableDetails(map[string]interface{}{
+							"flat_amount": tier.FlatAmount,
+						}).
+						Mark(ierr.ErrValidation)
 				}
 				flatAmount = &parsed
 			}

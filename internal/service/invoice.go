@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
+	pdf "github.com/flexprice/flexprice/internal/domain/pdf"
+	"github.com/flexprice/flexprice/internal/domain/tenant"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
@@ -22,11 +27,14 @@ type InvoiceService interface {
 	ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error)
 	FinalizeInvoice(ctx context.Context, id string) error
 	VoidInvoice(ctx context.Context, id string) error
+	ProcessDraftInvoice(ctx context.Context, id string) error
 	UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
 	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetCustomerInvoiceSummary(ctx context.Context, customerID string, currency string) (*dto.CustomerInvoiceSummary, error)
 	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
+	AttemptPayment(ctx context.Context, id string) error
+	GetInvoicePDF(ctx context.Context, id string) ([]byte, error)
 }
 
 type invoiceService struct {
@@ -58,6 +66,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 				"customer_id":  req.CustomerID,
 				"period_start": req.PeriodStart,
 				"period_end":   req.PeriodEnd,
+				"timestamp":    time.Now().UTC(), // TODO: rethink this
 			}
 			scope := idempotency.ScopeOneOffInvoice
 			if req.SubscriptionID != nil {
@@ -92,7 +101,11 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 				return err
 			}
 			if exists {
-				return ierr.NewError("invoice already exists").WithHint("invoice already exists for the given period").Mark(ierr.ErrAlreadyExists)
+				s.Logger.Infow("another invoice for same subscription period exists",
+					"subscription_id", *req.SubscriptionID,
+					"period_start", *req.PeriodStart,
+					"period_end", *req.PeriodEnd)
+				// do nothing, just log and continue
 			}
 
 			// Get billing sequence
@@ -196,7 +209,7 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 	if inv.InvoiceType == types.InvoiceTypeSubscription {
 		subscription, err := subscriptionService.GetSubscription(ctx, *inv.SubscriptionID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get subscription: %w", err)
+			return nil, err
 		}
 		response.WithSubscription(subscription)
 		if subscription.Customer != nil {
@@ -208,7 +221,7 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 	if response.Customer == nil {
 		customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get customer: %w", err)
+			return nil, err
 		}
 		response.WithCustomer(&dto.CustomerResponse{Customer: customer})
 	}
@@ -238,7 +251,7 @@ func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.Invoice
 	customerFilter.CustomerIDs = lo.Keys(customerMap)
 	customers, err := s.CustomerRepo.List(ctx, customerFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list customers: %w", err)
+		return nil, err
 	}
 
 	for _, cust := range customers {
@@ -270,6 +283,10 @@ func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
 		return err
 	}
 
+	return s.performFinalizeInvoiceActions(ctx, inv)
+}
+
+func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv *invoice.Invoice) error {
 	if inv.InvoiceStatus != types.InvoiceStatusDraft {
 		return ierr.NewError("invoice is not in draft status").WithHint("invoice must be in draft status to be finalized").Mark(ierr.ErrValidation)
 	}
@@ -327,6 +344,32 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 	}
 
 	s.publishWebhookEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
+	return nil
+}
+
+func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string) error {
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if inv.InvoiceStatus != types.InvoiceStatusDraft {
+		return ierr.NewError("invoice is not in draft status").WithHint("invoice must be in draft status to be processed").Mark(ierr.ErrValidation)
+	}
+
+	// try to finalize the invoice
+	if err := s.performFinalizeInvoiceActions(ctx, inv); err != nil {
+		return err
+	}
+
+	// try to process payment for the invoice and log any errors
+	// this is not a blocker for the invoice to be processed
+	if err := s.performPaymentAttemptActions(ctx, inv); err != nil {
+		s.Logger.Errorw("failed to process payment for invoice",
+			"error", err.Error(),
+			"invoice_id", inv.ID)
+	}
+
 	return nil
 }
 
@@ -398,24 +441,44 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	s.Logger.Infow("creating subscription invoice",
 		"subscription_id", req.SubscriptionID,
 		"period_start", req.PeriodStart,
-		"period_end", req.PeriodEnd)
+		"period_end", req.PeriodEnd,
+		"reference_point", req.ReferencePoint)
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
 
 	billingService := NewBillingService(s.ServiceParams)
 
 	// Get subscription with line items
 	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get subscription with line items: %w", err)
+		return nil, err
 	}
 
 	// Prepare invoice request using billing service
-	invoiceReq, err := billingService.PrepareSubscriptionInvoiceRequest(ctx, subscription, req.PeriodStart, req.PeriodEnd, req.IsPreview)
+	invoiceReq, err := billingService.PrepareSubscriptionInvoiceRequest(ctx,
+		subscription,
+		req.PeriodStart,
+		req.PeriodEnd,
+		req.ReferencePoint,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare invoice request: %w", err)
+		return nil, err
 	}
 
 	// Create the invoice
-	return s.CreateInvoice(ctx, *invoiceReq)
+	inv, err := s.CreateInvoice(ctx, *invoiceReq)
+	if err != nil {
+		return nil, err
+	}
+
+	// Process the invoice
+	if err := s.ProcessDraftInvoice(ctx, inv.ID); err != nil {
+		return nil, err
+	}
+
+	return inv, nil
 }
 
 func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error) {
@@ -423,7 +486,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 
 	sub, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get subscription: %w", err)
+		return nil, err
 	}
 
 	if req.PeriodStart == nil {
@@ -434,11 +497,11 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		req.PeriodEnd = &sub.CurrentPeriodEnd
 	}
 
-	// Prepare invoice request using billing service
+	// Prepare invoice request using billing service with the preview reference point
 	invReq, err := billingService.PrepareSubscriptionInvoiceRequest(
-		ctx, sub, *req.PeriodStart, *req.PeriodEnd, true)
+		ctx, sub, *req.PeriodStart, *req.PeriodEnd, types.ReferencePointPreview)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare invoice request: %w", err)
+		return nil, err
 	}
 
 	// Create a draft invoice object for preview
@@ -453,7 +516,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 	// Get customer information
 	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get customer: %w", err)
+		return nil, err
 	}
 	response.WithCustomer(&dto.CustomerResponse{Customer: customer})
 
@@ -550,7 +613,7 @@ func (s *invoiceService) GetCustomerMultiCurrencyInvoiceSummary(ctx context.Cont
 
 	subs, err := s.SubRepo.List(ctx, subscriptionFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
+		return nil, err
 	}
 
 	currencies := make([]string, 0, len(subs))
@@ -652,4 +715,280 @@ func (s *invoiceService) publishWebhookEvent(ctx context.Context, eventName stri
 	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
 		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
 	}
+}
+
+// AttemptPayment attempts to pay an invoice using available wallets
+func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
+	s.Logger.Infow("attempting payment for invoice", "invoice_id", id)
+
+	// Get invoice
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	return s.performPaymentAttemptActions(ctx, inv)
+}
+
+func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *invoice.Invoice) error {
+	// Validate invoice status
+	if inv.InvoiceStatus != types.InvoiceStatusFinalized {
+		return ierr.NewError("invoice must be finalized").
+			WithHint("Invoice must be finalized before attempting payment").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate payment status
+	if inv.PaymentStatus == types.PaymentStatusSucceeded {
+		return ierr.NewError("invoice is already paid by payment status").
+			WithHint("Invoice is already paid").
+			WithReportableDetails(map[string]any{
+				"invoice_id":     inv.ID,
+				"payment_status": inv.PaymentStatus,
+			}).
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	// Check if there's any amount remaining to pay
+	if inv.AmountRemaining.LessThanOrEqual(decimal.Zero) {
+		return ierr.NewError("invoice has no remaining amount to pay").
+			WithHint("Invoice has no remaining amount to pay").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Use the wallet payment service to process the payment
+	walletPaymentService := NewWalletPaymentService(s.ServiceParams)
+
+	// Use default options (promotional wallets first, then prepaid)
+	options := DefaultWalletPaymentOptions()
+
+	// Add any additional metadata specific to this payment attempt
+	options.AdditionalMetadata = types.Metadata{
+		"payment_source": "automatic_attempt",
+	}
+
+	amountPaid, err := walletPaymentService.ProcessInvoicePaymentWithWallets(ctx, inv, options)
+	if err != nil {
+		return err
+	}
+
+	if amountPaid.IsZero() {
+		s.Logger.Infow("no payments processed for invoice",
+			"invoice_id", inv.ID,
+			"amount_remaining", inv.AmountRemaining)
+	} else if amountPaid.Equal(inv.AmountRemaining) {
+		s.Logger.Infow("invoice fully paid with wallets",
+			"invoice_id", inv.ID,
+			"amount_paid", amountPaid)
+	} else {
+		s.Logger.Infow("invoice partially paid with wallets",
+			"invoice_id", inv.ID,
+			"amount_paid", amountPaid,
+			"amount_remaining", inv.AmountRemaining.Sub(amountPaid))
+	}
+
+	return nil
+}
+
+// GetInvoicePDF implements InvoiceService.
+func (s *invoiceService) GetInvoicePDF(ctx context.Context, id string) ([]byte, error) {
+	// get invoice by id
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// fetch customer info
+	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// fetch biller info - tenant info from tenant id
+	tenant, err := s.TenantRepo.GetByID(ctx, inv.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	invoiceData, err := s.getInvoiceDataForPDFGen(ctx, inv, customer, tenant)
+	if err != nil {
+		return nil, err
+	}
+
+	// generate pdf
+	return s.PDFGenerator.RenderInvoicePdf(ctx, invoiceData)
+
+}
+
+func (s *invoiceService) getInvoiceDataForPDFGen(
+	ctx context.Context,
+	inv *invoice.Invoice,
+	customer *customer.Customer,
+	tenant *tenant.Tenant,
+) (*pdf.InvoiceData, error) {
+	invoiceNum := ""
+	if inv.InvoiceNumber != nil {
+		invoiceNum = *inv.InvoiceNumber
+	}
+
+	amountDue, _ := inv.AmountDue.Float64()
+	// Convert to InvoiceData
+	data := &pdf.InvoiceData{
+		ID:            inv.ID,
+		InvoiceNumber: invoiceNum,
+		InvoiceStatus: string(inv.InvoiceStatus),
+		Currency:      types.GetCurrencySymbol(inv.Currency),
+		AmountDue:     amountDue,
+		BillingReason: inv.BillingReason,
+		Notes:         "",  // resolved from invoice metadata
+		VAT:           0.0, // resolved from invoice metadata
+		Biller:        s.getBillerInfo(tenant),
+		Recipient:     s.getRecipientInfo(customer),
+	}
+
+	// Convert dates
+	if inv.DueDate != nil {
+		data.DueDate = pdf.CustomTime{Time: *inv.DueDate}
+	}
+
+	if inv.FinalizedAt != nil {
+		data.IssuingDate = pdf.CustomTime{Time: *inv.FinalizedAt}
+	}
+
+	// Parse metadata if available
+	if inv.Metadata != nil {
+		// Try to extract notes from metadata
+		if notes, ok := inv.Metadata["notes"]; ok {
+			data.Notes = notes
+		}
+
+		// Try to extract VAT from metadata
+		if vat, ok := inv.Metadata["vat"]; ok {
+			vatValue, err := strconv.ParseFloat(vat, 64)
+			if err != nil {
+				return nil, ierr.WithError(err).WithHintf("failed to parse VAT %s", vat).Mark(ierr.ErrDatabase)
+			}
+			data.VAT = vatValue
+		}
+	}
+
+	data.LineItems = make([]pdf.LineItemData, len(inv.LineItems))
+
+	for i, item := range inv.LineItems {
+		planDisplayName := ""
+		if item.PlanDisplayName != nil {
+			planDisplayName = *item.PlanDisplayName
+		}
+		displayName := ""
+		if item.DisplayName != nil {
+			displayName = *item.DisplayName
+		}
+
+		amount, _ := item.Amount.Float64()
+		quantity, _ := item.Quantity.Float64()
+
+		description := ""
+		if item.Metadata != nil {
+			if desc, ok := item.Metadata["description"]; ok {
+				description = desc
+			}
+		}
+
+		lineItem := pdf.LineItemData{
+			PlanDisplayName: planDisplayName,
+			DisplayName:     displayName,
+			Description:     description,
+			Amount:          amount,
+			Quantity:        quantity,
+			Currency:        types.GetCurrencySymbol(item.Currency),
+		}
+
+		if item.PeriodStart != nil {
+			lineItem.PeriodStart = pdf.CustomTime{Time: *item.PeriodStart}
+		}
+		if item.PeriodEnd != nil {
+			lineItem.PeriodEnd = pdf.CustomTime{Time: *item.PeriodEnd}
+		}
+
+		data.LineItems[i] = lineItem
+	}
+
+	return data, nil
+}
+
+func (s *invoiceService) getRecipientInfo(c *customer.Customer) *pdf.RecipientInfo {
+	if c == nil {
+		return nil
+	}
+
+	name := fmt.Sprintf("Customer %s", c.ID)
+	if c.Name != "" {
+		name = c.Name
+	}
+
+	result := &pdf.RecipientInfo{
+		Name: name,
+		Address: pdf.AddressInfo{
+			Street:     "--",
+			City:       "--",
+			PostalCode: "--",
+		},
+	}
+
+	if c.Email != "" {
+		result.Email = c.Email
+	}
+
+	if c.AddressLine1 != "" {
+		result.Address.Street = c.AddressLine1
+	}
+	if c.AddressLine2 != "" {
+		result.Address.Street += "\n" + c.AddressLine2
+	}
+	if c.AddressCity != "" {
+		result.Address.City = c.AddressCity
+	}
+	if c.AddressState != "" {
+		result.Address.State = c.AddressState
+	}
+	if c.AddressPostalCode != "" {
+		result.Address.PostalCode = c.AddressPostalCode
+	}
+	if c.AddressCountry != "" {
+		result.Address.Country = c.AddressCountry
+	}
+
+	return result
+}
+
+func (s *invoiceService) getBillerInfo(t *tenant.Tenant) *pdf.BillerInfo {
+	if t == nil {
+		return nil
+	}
+
+	billerInfo := pdf.BillerInfo{
+		Name: t.Name,
+		Address: pdf.AddressInfo{
+			Street:     "--",
+			City:       "--",
+			PostalCode: "--",
+		},
+	}
+
+	if t.BillingDetails != (tenant.TenantBillingDetails{}) {
+		billingDetails := t.BillingDetails
+		billerInfo.Email = billingDetails.Email
+		// billerInfo.Website = billingDetails.Website //TODO: Add this
+		billerInfo.HelpEmail = billingDetails.HelpEmail
+		// billerInfo.PaymentInstructions = billingDetails.PaymentInstructions //TODO: Add this
+		billerInfo.Address = pdf.AddressInfo{
+			Street:     strings.Join([]string{billingDetails.Address.Line1, billingDetails.Address.Line2}, "\n"),
+			City:       billingDetails.Address.City,
+			PostalCode: billingDetails.Address.PostalCode,
+			Country:    billingDetails.Address.Country,
+			State:      billingDetails.Address.State,
+		}
+	}
+
+	return &billerInfo
 }

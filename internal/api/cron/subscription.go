@@ -3,6 +3,7 @@ package cron
 import (
 	"net/http"
 
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/temporal"
@@ -37,7 +38,7 @@ func (h *SubscriptionHandler) UpdateBillingPeriods(c *gin.Context) {
 		h.logger.Errorw("failed to update billing periods",
 			"error", err)
 
-		c.Status(http.StatusInternalServerError)
+		c.Error(err)
 		return
 	}
 
@@ -50,7 +51,9 @@ func (h *SubscriptionHandler) GenerateInvoice(c *gin.Context) {
 	// Get subscription ID from query params
 	subscriptionID := c.Query("subscription_id")
 	if subscriptionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "subscription_id is required"})
+		c.Error(ierr.NewError("subscription_id is required").
+			WithHint("Please provide a subscription_id").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
@@ -60,7 +63,7 @@ func (h *SubscriptionHandler) GenerateInvoice(c *gin.Context) {
 		h.logger.Errorw("failed to get subscription",
 			"error", err,
 			"subscription_id", subscriptionID)
-		c.Status(http.StatusInternalServerError)
+		c.Error(err)
 		return
 	}
 
@@ -78,7 +81,7 @@ func (h *SubscriptionHandler) GenerateInvoice(c *gin.Context) {
 		h.logger.Errorw("failed to start billing workflow",
 			"error", err,
 			"subscription_id", subscriptionID)
-		c.Status(http.StatusInternalServerError)
+		c.Error(err)
 		return
 	}
 

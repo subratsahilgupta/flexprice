@@ -1,12 +1,13 @@
 package dto
 
 import (
+	"context"
 	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 )
 
 type IngestEventRequest struct {
@@ -20,16 +21,41 @@ type IngestEventRequest struct {
 	Properties         map[string]interface{} `json:"properties" swaggertype:"object,string,number" example:"{\"request_size\":100,\"response_status\":200}" csv:"-"` // Handled separately for dynamic columns
 }
 
+func (r *IngestEventRequest) Validate() error {
+	return validator.ValidateRequest(r)
+}
+
+type BulkIngestEventRequest struct {
+	Events []*IngestEventRequest `json:"events" validate:"required,min=1,max=1000"`
+}
+
+func (r *BulkIngestEventRequest) Validate() error {
+	return validator.ValidateRequest(r)
+}
+
+func (r *IngestEventRequest) ToEvent(ctx context.Context) *events.Event {
+	return events.NewEvent(
+		r.EventName,
+		types.GetTenantID(ctx),
+		r.ExternalCustomerID,
+		r.Properties,
+		r.Timestamp,
+		r.EventID,
+		r.CustomerID,
+		r.Source,
+	)
+}
+
 type GetUsageRequest struct {
-	ExternalCustomerID string              `form:"external_customer_id" json:"external_customer_id" example:"customer456"`
-	CustomerID         string              `form:"customer_id" json:"customer_id" example:"customer456"`
-	EventName          string              `form:"event_name" json:"event_name" binding:"required" required:"true" example:"api_request"`
-	PropertyName       string              `form:"property_name" json:"property_name" example:"request_size"` // will be empty/ignored in case of COUNT
-	AggregationType    string              `form:"aggregation_type" json:"aggregation_type" binding:"required" example:"COUNT"`
-	StartTime          time.Time           `form:"start_time" json:"start_time" example:"2024-03-13T00:00:00Z"`
-	EndTime            time.Time           `form:"end_time" json:"end_time" example:"2024-03-20T00:00:00Z"`
-	WindowSize         types.WindowSize    `form:"window_size" json:"window_size" example:"HOUR"`
-	Filters            map[string][]string `form:"filters,omitempty" json:"filters,omitempty"`
+	ExternalCustomerID string                `form:"external_customer_id" json:"external_customer_id" example:"customer456"`
+	CustomerID         string                `form:"customer_id" json:"customer_id" example:"customer456"`
+	EventName          string                `form:"event_name" json:"event_name" binding:"required" required:"true" example:"api_request"`
+	PropertyName       string                `form:"property_name" json:"property_name" example:"request_size"` // will be empty/ignored in case of COUNT
+	AggregationType    types.AggregationType `form:"aggregation_type" json:"aggregation_type" binding:"required"`
+	StartTime          time.Time             `form:"start_time" json:"start_time" example:"2024-03-13T00:00:00Z"`
+	EndTime            time.Time             `form:"end_time" json:"end_time" example:"2024-03-20T00:00:00Z"`
+	WindowSize         types.WindowSize      `form:"window_size" json:"window_size"`
+	Filters            map[string][]string   `form:"filters,omitempty" json:"filters,omitempty"`
 }
 
 type GetUsageByMeterRequest struct {
@@ -38,7 +64,7 @@ type GetUsageByMeterRequest struct {
 	CustomerID         string              `form:"customer_id" json:"customer_id" example:"customer456"`
 	StartTime          time.Time           `form:"start_time" json:"start_time" example:"2024-11-09T00:00:00Z"`
 	EndTime            time.Time           `form:"end_time" json:"end_time" example:"2024-12-09T00:00:00Z"`
-	WindowSize         types.WindowSize    `form:"window_size" json:"window_size" example:"HOUR"`
+	WindowSize         types.WindowSize    `form:"window_size" json:"window_size"`
 	Filters            map[string][]string `form:"filters,omitempty" json:"filters,omitempty"`
 }
 
@@ -106,17 +132,13 @@ func FromAggregationResult(result *events.AggregationResult) *GetUsageResponse {
 	return response
 }
 
-func (r *IngestEventRequest) Validate() error {
-	return validator.New().Struct(r)
-}
-
 func (r *GetUsageRequest) Validate() error {
-	return validator.New().Struct(r)
+	return validator.ValidateRequest(r)
 }
 
 func (r *GetUsageRequest) ToUsageParams() *events.UsageParams {
 	if r.AggregationType == "" || r.PropertyName == "" {
-		r.AggregationType = string(types.AggregationCount)
+		r.AggregationType = types.AggregationCount
 	}
 
 	return &events.UsageParams{
@@ -124,7 +146,7 @@ func (r *GetUsageRequest) ToUsageParams() *events.UsageParams {
 		CustomerID:         r.CustomerID,
 		EventName:          r.EventName,
 		PropertyName:       r.PropertyName,
-		AggregationType:    types.AggregationType(strings.ToUpper(r.AggregationType)),
+		AggregationType:    types.AggregationType(strings.ToUpper(string(r.AggregationType))),
 		StartTime:          r.StartTime,
 		EndTime:            r.EndTime,
 		WindowSize:         r.WindowSize,
@@ -133,7 +155,7 @@ func (r *GetUsageRequest) ToUsageParams() *events.UsageParams {
 }
 
 func (r *GetUsageByMeterRequest) Validate() error {
-	err := validator.New().Struct(r)
+	err := validator.ValidateRequest(r)
 	if err != nil {
 		return err
 	}
@@ -146,5 +168,5 @@ func (r *GetUsageByMeterRequest) Validate() error {
 }
 
 func (r *GetEventsRequest) Validate() error {
-	return validator.New().Struct(r)
+	return validator.ValidateRequest(r)
 }

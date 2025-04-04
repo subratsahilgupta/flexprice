@@ -7,7 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/auth"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/golang-jwt/jwt"
 	"golang.org/x/crypto/bcrypt"
@@ -29,20 +29,26 @@ func (f *flexpriceAuth) GetProvider() types.AuthProvider {
 
 func (f *flexpriceAuth) SignUp(ctx context.Context, req AuthRequest) (*AuthResponse, error) {
 	if req.Password == "" {
-		return nil, errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "password is required")
+		return nil, ierr.NewError("password is required").
+			WithHint("Password is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to hash password").
+			Mark(ierr.ErrSystem)
 	}
 
 	userID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER)
 
 	authToken, err := f.generateToken(userID, req.TenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to generate token").
+			Mark(ierr.ErrSystem)
 	}
 
 	response := &AuthResponse{
@@ -58,18 +64,23 @@ func (f *flexpriceAuth) Login(ctx context.Context, req AuthRequest, userAuthInfo
 	// Validate the user provided hashed password with the saved hashed password
 	err := bcrypt.CompareHashAndPassword([]byte(userAuthInfo.Token), []byte(req.Password))
 	if err != nil {
-		return nil, fmt.Errorf("invalid password")
+		return nil, ierr.NewError("invalid password").
+			WithHint("Invalid password").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validated then generate a JWT token
 	authToken, err := f.generateToken(userAuthInfo.UserID, req.TenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to generate token").
+			Mark(ierr.ErrValidation)
 	}
 
 	response := &AuthResponse{
 		ProviderToken: userAuthInfo.Token,
 		AuthToken:     authToken,
+		ID:            userAuthInfo.UserID,
 	}
 
 	return response, nil
@@ -78,24 +89,32 @@ func (f *flexpriceAuth) Login(ctx context.Context, req AuthRequest, userAuthInfo
 func (f *flexpriceAuth) ValidateToken(ctx context.Context, token string) (*auth.Claims, error) {
 	parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, ierr.NewError("unexpected signing method").
+				WithHint(fmt.Sprintf("unexpected signing method: %v", token.Header["alg"])).
+				Mark(ierr.ErrPermissionDenied)
 		}
 		secret := f.AuthConfig.Secret
 		return []byte(secret), nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("token parse error: %w", err)
+		return nil, ierr.WithError(err).
+			WithHint("Token parse error").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
 	if !ok || !parsedToken.Valid {
-		return nil, fmt.Errorf("invalid token claims")
+		return nil, ierr.NewError("invalid token claims").
+			WithHint("Invalid token claims").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	userID, userOk := claims["user_id"].(string)
 	if !userOk {
-		return nil, fmt.Errorf("token missing user ID")
+		return nil, ierr.NewError("token missing user ID").
+			WithHint("Token missing user ID").
+			Mark(ierr.ErrPermissionDenied)
 	}
 
 	tenantID, tenantOk := claims["tenant_id"].(string)

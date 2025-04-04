@@ -26,6 +26,7 @@ go.work.sum
 
 # secrets file
 .secrets
+.secrets.git
 
 # macOS-specific files
 .DS_Store
@@ -51,3 +52,26 @@ scripts/hacks/*
 # continue / cursor rules
 .continue/*
 .cursorrules
+
+# build directory
+build/
+
+# Generated SDK code (exclude test files)
+api/*/*
+# custom scripts
+!api/scripts/*
+# skip examples and README.md modifications
+!api/*/examples
+!api/*/README.md
+!api/*/.openapi-generator-ignore
+# /spacific package files
+!api/*/go.mod
+!api/*/go.sum
+!api/*/package.json
+!api/*/package-lock.json
+!api/*/pyproject.toml
+!api/*/setup.py
+!api/*/requirements.txt
+!api/*/tsconfig.json
+!api/*/tsconfig.node.json
+!api/*/tsconfig.app.json

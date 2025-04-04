@@ -33,6 +33,8 @@ type Handlers struct {
 	Payment           *v1.PaymentHandler
 	Task              *v1.TaskHandler
 	Secret            *v1.SecretHandler
+	// Portal handlers
+	Onboarding *v1.OnboardingHandler
 	// Cron jobs : TODO: move crons out of API based architecture
 	CronSubscription *cron.SubscriptionHandler
 	CronWallet       *cron.WalletCronHandler
@@ -66,17 +68,18 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	public := router.Group("/", middleware.GuestAuthenticateMiddleware)
 
 	v1Public := public.Group("/v1")
+	v1Public.Use(middleware.ErrorHandler())
 
 	{
 		// Auth routes
 		v1Public.POST("/auth/signup", handlers.Auth.SignUp)
 		v1Public.POST("/auth/login", handlers.Auth.Login)
-		v1Public.POST("/events/ingest", handlers.Events.IngestEvent)
 	}
 
 	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, logger))
 
 	v1Private := private.Group("/v1")
+	v1Private.Use(middleware.ErrorHandler())
 	{
 		user := v1Private.Group("/users")
 		{
@@ -95,6 +98,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		events := v1Private.Group("/events")
 		{
 			events.POST("", handlers.Events.IngestEvent)
+			events.POST("/bulk", handlers.Events.BulkIngestEvent)
 			events.GET("", handlers.Events.GetEvents)
 			events.POST("/usage", handlers.Events.GetUsage)
 			events.POST("/usage/meter", handlers.Events.GetUsageByMeter)
@@ -127,6 +131,10 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.PUT("/:id", handlers.Customer.UpdateCustomer)
 			customer.DELETE("/:id", handlers.Customer.DeleteCustomer)
 			customer.GET("/lookup/:lookup_key", handlers.Customer.GetCustomerByLookupKey)
+
+			// New endpoints for entitlements and usage
+			customer.GET("/:id/entitlements", handlers.Customer.GetCustomerEntitlements)
+			customer.GET("/:id/usage", handlers.Customer.GetCustomerUsageSummary)
 
 			// other routes for customer
 			customer.GET("/:id/wallets", handlers.Wallet.GetWalletsByCustomerID)
@@ -172,25 +180,28 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		tenantRoutes := v1Private.Group("/tenants")
 		{
 			tenantRoutes.POST("", handlers.Tenant.CreateTenant)
+			tenantRoutes.PUT("/update", handlers.Tenant.UpdateTenant)
 			tenantRoutes.GET("/:id", handlers.Tenant.GetTenantByID)
+			tenantRoutes.GET("/billing", handlers.Tenant.GetTenantBillingUsage)
 		}
 
 		invoices := v1Private.Group("/invoices")
-		invoices.Use(middleware.ErrorHandler())
 		{
 			invoices.POST("", handlers.Invoice.CreateInvoice)
 			invoices.GET("", handlers.Invoice.ListInvoices)
 			invoices.GET("/:id", handlers.Invoice.GetInvoice)
 			invoices.POST("/:id/finalize", handlers.Invoice.FinalizeInvoice)
 			invoices.POST("/:id/void", handlers.Invoice.VoidInvoice)
-			invoices.PUT("/:id/payment", handlers.Invoice.UpdatePaymentStatus)
 			invoices.POST("/preview", handlers.Invoice.GetPreviewInvoice)
+			invoices.PUT("/:id/payment", handlers.Invoice.UpdatePaymentStatus)
+			invoices.POST("/:id/payment/attempt", handlers.Invoice.AttemptPayment)
+			invoices.GET("/:id/pdf", handlers.Invoice.GetInvoicePDF)
 		}
 
 		feature := v1Private.Group("/features")
 		{
 			feature.POST("", handlers.Feature.CreateFeature)
-			feature.GET("", handlers.Feature.GetFeatures)
+			feature.GET("", handlers.Feature.ListFeatures)
 			feature.GET("/:id", handlers.Feature.GetFeature)
 			feature.PUT("/:id", handlers.Feature.UpdateFeature)
 			feature.DELETE("/:id", handlers.Feature.DeleteFeature)
@@ -250,6 +261,16 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, secretService, logger))
 		{
 			// All admin routes to go here
+		}
+
+		// Portal routes (UI-specific endpoints)
+		portalRoutes := v1Private.Group("/portal")
+		{
+			onboarding := portalRoutes.Group("/onboarding")
+			{
+				onboarding.POST("/events", handlers.Onboarding.GenerateEvents)
+				onboarding.POST("/setup", handlers.Onboarding.SetupDemo)
+			}
 		}
 	}
 

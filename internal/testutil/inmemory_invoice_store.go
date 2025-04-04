@@ -86,7 +86,9 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 
 func (s *InMemoryInvoiceStore) Create(ctx context.Context, inv *invoice.Invoice) error {
 	if inv == nil {
-		return fmt.Errorf("invoice cannot be nil")
+		return ierr.NewError("invoice cannot be nil").
+			WithHint("Invoice cannot be nil").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Set environment ID from context if not already set
@@ -277,6 +279,16 @@ func invoiceFilterFn(ctx context.Context, inv *invoice.Invoice, filter interface
 
 	// Filter by payment status
 	if len(f.PaymentStatus) > 0 && !lo.Contains(f.PaymentStatus, inv.PaymentStatus) {
+		return false
+	}
+
+	// Filter by due amount
+	if f.AmountDueGt != nil && inv.AmountDue.LessThanOrEqual(*f.AmountDueGt) {
+		return false
+	}
+
+	// Filter by amount remaining
+	if f.AmountRemainingGt != nil && inv.AmountRemaining.LessThanOrEqual(*f.AmountRemainingGt) {
 		return false
 	}
 

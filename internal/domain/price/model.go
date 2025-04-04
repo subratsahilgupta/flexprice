@@ -8,15 +8,23 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/schema"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
 // JSONB types for complex fields
+// JSONBTiers are the tiers for the price when BillingModel is TIERED
 type JSONBTiers []PriceTier
+
+// JSONBTransformQuantity is the quantity transformation in case of PACKAGE billing model
 type JSONBTransformQuantity TransformQuantity
+
+// JSONBMetadata is a jsonb field for additional information
 type JSONBMetadata map[string]string
+
+// JSONBFilters are the filter values for the price in case of usage based pricing
 type JSONBFilters map[string][]string
 
 // Price model with JSONB tags
@@ -38,33 +46,26 @@ type Price struct {
 	// PlanID is the id of the plan for plan based pricing
 	PlanID string `db:"plan_id" json:"plan_id"`
 
-	// Type is the type of the price ex USAGE, FIXED
 	Type types.PriceType `db:"type" json:"type"`
 
-	// BillingPeriod is the billing period for the price ex month, year
 	BillingPeriod types.BillingPeriod `db:"billing_period" json:"billing_period"`
 
 	// BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12
 	BillingPeriodCount int `db:"billing_period_count" json:"billing_period_count"`
 
-	// BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED
 	BillingModel types.BillingModel `db:"billing_model" json:"billing_model"`
 
-	// BillingCadence is the billing cadence for the price ex RECURRING, ONETIME
 	BillingCadence types.BillingCadence `db:"billing_cadence" json:"billing_cadence"`
 
-	// InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE
 	InvoiceCadence types.InvoiceCadence `db:"invoice_cadence" json:"invoice_cadence"`
 
 	// TrialPeriod is the number of days for the trial period
 	// Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
 	TrialPeriod int `db:"trial_period" json:"trial_period"`
 
-	// Tiered pricing fields when BillingModel is TIERED
 	TierMode types.BillingTier `db:"tier_mode" json:"tier_mode"`
 
-	// Tiers are the tiers for the price when BillingModel is TIERED
-	Tiers JSONBTiers `db:"tiers,jsonb" json:"tiers"` // JSONB field
+	Tiers JSONBTiers `db:"tiers,jsonb" json:"tiers"`
 
 	// MeterID is the id of the meter for usage based pricing
 	MeterID string `db:"meter_id" json:"meter_id"`
@@ -75,14 +76,11 @@ type Price struct {
 	// Description of the price
 	Description string `db:"description" json:"description"`
 
-	// FilterValues are the filter values for the price in case of usage based pricing
 	FilterValues JSONBFilters `db:"filter_values,jsonb" json:"filter_values"`
 
-	// Transform is the quantity transformation in case of PACKAGE billing model
-	TransformQuantity JSONBTransformQuantity `db:"transform_quantity,jsonb" json:"transform_quantity"` // JSONB field
+	TransformQuantity JSONBTransformQuantity `db:"transform_quantity,jsonb" json:"transform_quantity"`
 
-	// Metadata is a jsonb field for additional information
-	Metadata JSONBMetadata `db:"metadata,jsonb" json:"metadata"` // JSONB field
+	Metadata JSONBMetadata `db:"metadata,jsonb" json:"metadata"`
 
 	// EnvironmentID is the environment identifier for the price
 	EnvironmentID string `db:"environment_id" json:"environment_id"`
@@ -98,7 +96,12 @@ func (p *Price) GetCurrencySymbol() string {
 // ValidateAmount checks if amount is within valid range for price definition
 func (p *Price) ValidateAmount() error {
 	if p.Amount.LessThan(decimal.Zero) {
-		return fmt.Errorf("amount must be greater than 0")
+		return ierr.NewError("amount must be greater than 0").
+			WithHint("Please provide a positive amount value").
+			WithReportableDetails(map[string]interface{}{
+				"amount": p.Amount.String(),
+			}).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
@@ -196,7 +199,9 @@ func (j *JSONBTiers) Scan(value interface{}) error {
 	}
 	bytes, ok := value.([]byte)
 	if !ok {
-		return fmt.Errorf("invalid type for jsonb tiers")
+		return ierr.NewError("invalid type for jsonb tiers").
+			WithHint("Invalid type for JSONB tiers").
+			Mark(ierr.ErrValidation)
 	}
 	return json.Unmarshal(bytes, j)
 }
@@ -224,7 +229,9 @@ func (j *JSONBTransformQuantity) Scan(value interface{}) error {
 	}
 	bytes, ok := value.([]byte)
 	if !ok {
-		return fmt.Errorf("invalid type for jsonb transform")
+		return ierr.NewError("invalid type for jsonb transform").
+			WithHint("Invalid type for JSONB transform").
+			Mark(ierr.ErrValidation)
 	}
 	return json.Unmarshal(bytes, j)
 }
@@ -243,7 +250,9 @@ func (j *JSONBMetadata) Scan(value interface{}) error {
 	}
 	bytes, ok := value.([]byte)
 	if !ok {
-		return fmt.Errorf("invalid type for jsonb metadata")
+		return ierr.NewError("invalid type for jsonb metadata").
+			WithHint("Invalid type for JSONB metadata").
+			Mark(ierr.ErrValidation)
 	}
 	return json.Unmarshal(bytes, &j)
 }
@@ -261,7 +270,9 @@ func (j *JSONBFilters) Scan(value interface{}) error {
 	}
 	bytes, ok := value.([]byte)
 	if !ok {
-		return fmt.Errorf("invalid type for jsonb filters")
+		return ierr.NewError("invalid type for jsonb filters").
+			WithHint("Invalid type for JSONB filters").
+			Mark(ierr.ErrValidation)
 	}
 	return json.Unmarshal(bytes, j)
 }
@@ -363,14 +374,18 @@ func (p *Price) ToEntTiers() []schema.PriceTier {
 func (p *Price) ValidateTrialPeriod() error {
 	// Trial period should be non-negative
 	if p.TrialPeriod < 0 {
-		return fmt.Errorf("trial period must be non-negative")
+		return ierr.NewError("trial period must be non-negative").
+			WithHint("Trial period must be non-negative").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Trial period should only be set for recurring fixed prices
 	if p.TrialPeriod > 0 &&
 		p.BillingCadence != types.BILLING_CADENCE_RECURRING &&
 		p.Type != types.PRICE_TYPE_FIXED {
-		return fmt.Errorf("trial period can only be set for recurring fixed prices")
+		return ierr.NewError("trial period can only be set for recurring fixed prices").
+			WithHint("Trial period can only be set for recurring fixed prices").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil

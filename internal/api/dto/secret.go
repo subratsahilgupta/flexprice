@@ -4,33 +4,35 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/secret"
-	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/samber/lo"
 )
 
 // CreateAPIKeyRequest represents the request to create a new API key
 type CreateAPIKeyRequest struct {
 	Name        string           `json:"name" binding:"required" validate:"required"`
-	Type        types.SecretType `json:"type" binding:"required,oneof=private_key publishable_key" validate:"required,oneof=private_key publishable_key"`
+	Type        types.SecretType `json:"type" binding:"required" validate:"required"`
 	Permissions []string         `json:"permissions"`
 	ExpiresAt   *time.Time       `json:"expires_at,omitempty"`
 }
 
 func (r *CreateAPIKeyRequest) Validate() error {
-	err := validator.New().Struct(r)
+	err := validator.ValidateRequest(r)
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeValidation, "failed to validate create api key request")
+		return err
 	}
 
 	if err := r.Type.Validate(); err != nil {
-		return errors.Wrap(err, errors.ErrCodeValidation, "invalid secret type")
+		return err
 	}
 
 	allowedSecretTypes := []types.SecretType{types.SecretTypePrivateKey, types.SecretTypePublishableKey}
 	if !lo.Contains(allowedSecretTypes, r.Type) {
-		return errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "invalid secret type")
+		return ierr.NewError("invalid secret type").
+			WithHint("Invalid secret type").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -44,13 +46,15 @@ type CreateIntegrationRequest struct {
 }
 
 func (r *CreateIntegrationRequest) Validate() error {
-	err := validator.New().Struct(r)
+	err := validator.ValidateRequest(r)
 	if err != nil {
-		return errors.Wrap(err, errors.ErrCodeValidation, "failed to validate create integration request")
+		return err
 	}
 
 	if r.Provider == types.SecretProviderFlexPrice {
-		return errors.Wrap(errors.ErrValidation, errors.ErrCodeValidation, "flexprice provider is not allowed to be used for integrations")
+		return ierr.NewError("flexprice provider is not allowed to be used for integrations").
+			WithHint("Flexprice provider is not allowed to be used for integrations").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil

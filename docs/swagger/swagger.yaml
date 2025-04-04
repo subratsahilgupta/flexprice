@@ -1,5 +1,52 @@
 basePath: /v1
 definitions:
+  dto.Address:
+    properties:
+      address_city:
+        maxLength: 100
+        type: string
+      address_country:
+        type: string
+      address_line1:
+        maxLength: 255
+        type: string
+      address_line2:
+        maxLength: 255
+        type: string
+      address_postal_code:
+        maxLength: 20
+        type: string
+      address_state:
+        maxLength: 100
+        type: string
+    type: object
+  dto.AggregatedEntitlement:
+    properties:
+      is_enabled:
+        type: boolean
+      is_soft_limit:
+        type: boolean
+      static_values:
+        description: For static/SLA features
+        items:
+          type: string
+        type: array
+      usage_limit:
+        type: integer
+      usage_reset_period:
+        $ref: '#/definitions/types.BillingPeriod'
+    type: object
+  dto.AggregatedFeature:
+    properties:
+      entitlement:
+        $ref: '#/definitions/dto.AggregatedEntitlement'
+      feature:
+        $ref: '#/definitions/dto.FeatureResponse'
+      sources:
+        items:
+          $ref: '#/definitions/dto.EntitlementSource'
+        type: array
+    type: object
   dto.AuthResponse:
     properties:
       tenant_id:
@@ -8,6 +55,27 @@ definitions:
         type: string
       user_id:
         type: string
+    type: object
+  dto.BillingPeriodInfo:
+    properties:
+      end_time:
+        type: string
+      period:
+        description: e.g., "monthly", "yearly"
+        type: string
+      start_time:
+        type: string
+    type: object
+  dto.BulkIngestEventRequest:
+    properties:
+      events:
+        items:
+          $ref: '#/definitions/dto.IngestEventRequest'
+        maxItems: 1000
+        minItems: 1
+        type: array
+    required:
+    - events
     type: object
   dto.CreateAPIKeyRequest:
     properties:
@@ -20,11 +88,7 @@ definitions:
           type: string
         type: array
       type:
-        allOf:
-        - $ref: '#/definitions/types.SecretType'
-        enum:
-        - private_key
-        - publishable_key
+        $ref: '#/definitions/types.SecretType'
     required:
     - name
     - type
@@ -186,17 +250,14 @@ definitions:
         type: string
       due_date:
         type: string
+      environment_id:
+        type: string
       idempotency_key:
         type: string
       invoice_status:
         $ref: '#/definitions/types.InvoiceStatus'
       invoice_type:
-        allOf:
-        - $ref: '#/definitions/types.InvoiceType'
-        enum:
-        - SUBSCRIPTION
-        - ONE_OFF
-        - CREDIT
+        $ref: '#/definitions/types.InvoiceType'
       line_items:
         items:
           $ref: '#/definitions/dto.CreateInvoiceLineItemRequest'
@@ -231,13 +292,12 @@ definitions:
         example: API Usage Meter
         type: string
       reset_usage:
-        allOf:
-        - $ref: '#/definitions/types.ResetUsage'
-        example: BILLING_PERIOD
+        $ref: '#/definitions/types.ResetUsage'
     required:
     - aggregation
     - event_name
     - name
+    - reset_usage
     type: object
   dto.CreatePaymentRequest:
     properties:
@@ -492,6 +552,8 @@ definitions:
     type: object
   dto.CreateTenantRequest:
     properties:
+      billing_details:
+        $ref: '#/definitions/dto.TenantBillingDetails'
       name:
         type: string
     required:
@@ -521,12 +583,19 @@ definitions:
       name:
         type: string
       wallet_type:
-        allOf:
-        - $ref: '#/definitions/types.WalletType'
-        default: PRE_PAID
+        $ref: '#/definitions/types.WalletType'
     required:
     - currency
     - customer_id
+    type: object
+  dto.CustomerEntitlementsResponse:
+    properties:
+      customer_id:
+        type: string
+      features:
+        items:
+          $ref: '#/definitions/dto.AggregatedFeature'
+        type: array
     type: object
   dto.CustomerInvoiceSummary:
     properties:
@@ -616,6 +685,19 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.CustomerUsageSummaryResponse:
+    properties:
+      customer_id:
+        type: string
+      features:
+        items:
+          $ref: '#/definitions/dto.FeatureUsageSummary'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+      period:
+        $ref: '#/definitions/dto.BillingPeriodInfo'
+    type: object
   dto.EntitlementResponse:
     properties:
       created_at:
@@ -654,6 +736,25 @@ definitions:
         type: integer
       usage_reset_period:
         $ref: '#/definitions/types.BillingPeriod'
+    type: object
+  dto.EntitlementSource:
+    properties:
+      entitlement_id:
+        type: string
+      is_enabled:
+        type: boolean
+      plan_id:
+        type: string
+      plan_name:
+        type: string
+      quantity:
+        type: integer
+      static_value:
+        type: string
+      subscription_id:
+        type: string
+      usage_limit:
+        type: integer
     type: object
   dto.EnvironmentResponse:
     properties:
@@ -723,6 +824,25 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.FeatureUsageSummary:
+    properties:
+      current_usage:
+        type: number
+      feature:
+        $ref: '#/definitions/dto.FeatureResponse'
+      is_enabled:
+        type: boolean
+      is_soft_limit:
+        type: boolean
+      sources:
+        items:
+          $ref: '#/definitions/dto.EntitlementSource'
+        type: array
+      total_limit:
+        type: integer
+      usage_percent:
+        type: number
+    type: object
   dto.GetEventsResponse:
     properties:
       events:
@@ -771,9 +891,7 @@ definitions:
         example: "2024-11-09T00:00:00Z"
         type: string
       window_size:
-        allOf:
-        - $ref: '#/definitions/types.WindowSize'
-        example: HOUR
+        $ref: '#/definitions/types.WindowSize'
     required:
     - meter_id
     type: object
@@ -814,8 +932,7 @@ definitions:
   dto.GetUsageRequest:
     properties:
       aggregation_type:
-        example: COUNT
-        type: string
+        $ref: '#/definitions/types.AggregationType'
       customer_id:
         example: customer456
         type: string
@@ -842,9 +959,7 @@ definitions:
         example: "2024-03-13T00:00:00Z"
         type: string
       window_size:
-        allOf:
-        - $ref: '#/definitions/types.WindowSize'
-        example: HOUR
+        $ref: '#/definitions/types.WindowSize'
     required:
     - aggregation_type
     - event_name
@@ -1003,9 +1118,7 @@ definitions:
       status:
         type: string
       subscription:
-        allOf:
-        - $ref: '#/definitions/dto.SubscriptionResponse'
-        description: Edges
+        $ref: '#/definitions/dto.SubscriptionResponse'
       subscription_id:
         type: string
       tenant_id:
@@ -1325,19 +1438,11 @@ definitions:
           For USD: 12.50 means $12.50
         type: number
       billing_cadence:
-        allOf:
-        - $ref: '#/definitions/types.BillingCadence'
-        description: BillingCadence is the billing cadence for the price ex RECURRING,
-          ONETIME
+        $ref: '#/definitions/types.BillingCadence'
       billing_model:
-        allOf:
-        - $ref: '#/definitions/types.BillingModel'
-        description: BillingModel is the billing model for the price ex FLAT_FEE,
-          PACKAGE, TIERED
+        $ref: '#/definitions/types.BillingModel'
       billing_period:
-        allOf:
-        - $ref: '#/definitions/types.BillingPeriod'
-        description: BillingPeriod is the billing period for the price ex month, year
+        $ref: '#/definitions/types.BillingPeriod'
       billing_period_count:
         description: BillingPeriodCount is the count of the billing period ex 1, 3,
           6, 12
@@ -1362,24 +1467,17 @@ definitions:
         description: EnvironmentID is the environment identifier for the price
         type: string
       filter_values:
-        allOf:
-        - $ref: '#/definitions/price.JSONBFilters'
-        description: FilterValues are the filter values for the price in case of usage
-          based pricing
+        $ref: '#/definitions/price.JSONBFilters'
       id:
         description: ID uuid identifier for the price
         type: string
       invoice_cadence:
-        allOf:
-        - $ref: '#/definitions/types.InvoiceCadence'
-        description: InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE
+        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         description: LookupKey used for looking up the price in the database
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/price.JSONBMetadata'
-        description: Metadata is a jsonb field for additional information
+        $ref: '#/definitions/price.JSONBMetadata'
       meter:
         $ref: '#/definitions/dto.MeterResponse'
       meter_id:
@@ -1393,28 +1491,20 @@ definitions:
       tenant_id:
         type: string
       tier_mode:
-        allOf:
-        - $ref: '#/definitions/types.BillingTier'
-        description: Tiered pricing fields when BillingModel is TIERED
+        $ref: '#/definitions/types.BillingTier'
       tiers:
-        description: Tiers are the tiers for the price when BillingModel is TIERED
         items:
           $ref: '#/definitions/price.PriceTier'
         type: array
       transform_quantity:
-        allOf:
-        - $ref: '#/definitions/price.JSONBTransformQuantity'
-        description: Transform is the quantity transformation in case of PACKAGE billing
-          model
+        $ref: '#/definitions/price.JSONBTransformQuantity'
       trial_period:
         description: |-
           TrialPeriod is the number of days for the trial period
           Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
         type: integer
       type:
-        allOf:
-        - $ref: '#/definitions/types.PriceType'
-        description: Type is the type of the price ex USAGE, FIXED
+        $ref: '#/definitions/types.PriceType'
       updated_at:
         type: string
       updated_by:
@@ -1487,10 +1577,7 @@ definitions:
         description: ID is the unique identifier for the subscription pause
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/types.Metadata'
-        description: Metadata is a map of key-value pairs that can be attached to
-          the pause
+        $ref: '#/definitions/types.Metadata'
       original_period_end:
         description: OriginalPeriodEnd is the end of the billing period when the pause
           was created
@@ -1503,23 +1590,17 @@ definitions:
         description: PauseEnd is when the pause will end (null for indefinite)
         type: string
       pause_mode:
-        allOf:
-        - $ref: '#/definitions/types.PauseMode'
-        description: PauseMode indicates how the pause was applied
+        $ref: '#/definitions/types.PauseMode'
       pause_start:
         description: PauseStart is when the pause actually started
         type: string
       pause_status:
-        allOf:
-        - $ref: '#/definitions/types.PauseStatus'
-        description: PauseStatus is the status of the pause
+        $ref: '#/definitions/types.PauseStatus'
       reason:
         description: Reason is the reason for pausing
         type: string
       resume_mode:
-        allOf:
-        - $ref: '#/definitions/types.ResumeMode'
-        description: ResumeMode indicates how the resume will be applied
+        $ref: '#/definitions/types.ResumeMode'
       resumed_at:
         description: ResumedAt is when the pause was actually ended (if manually resumed)
         type: string
@@ -1549,13 +1630,9 @@ definitions:
           and the month of year for year intervals. The timestamp is in UTC format.
         type: string
       billing_cadence:
-        allOf:
-        - $ref: '#/definitions/types.BillingCadence'
-        description: BillingCadence is the cadence of the billing cycle.
+        $ref: '#/definitions/types.BillingCadence'
       billing_period:
-        allOf:
-        - $ref: '#/definitions/types.BillingPeriod'
-        description: BillingPeriod is the period of the billing cycle.
+        $ref: '#/definitions/types.BillingPeriod'
       billing_period_count:
         description: BillingPeriodCount is the total number units of the billing period.
         type: integer
@@ -1609,14 +1686,9 @@ definitions:
         description: LookupKey is the key used to lookup the subscription in our system
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/types.Metadata'
-        description: Metadata is a map of key-value pairs that can be attached to
-          the subscription
+        $ref: '#/definitions/types.Metadata'
       pause_status:
-        allOf:
-        - $ref: '#/definitions/types.PauseStatus'
-        description: PauseStatus tracks the current pause state
+        $ref: '#/definitions/types.PauseStatus'
       pauses:
         items:
           $ref: '#/definitions/subscription.SubscriptionPause'
@@ -1632,9 +1704,7 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
       subscription_status:
-        allOf:
-        - $ref: '#/definitions/types.SubscriptionStatus'
-        description: Status is the status of the subscription
+        $ref: '#/definitions/types.SubscriptionStatus'
       tenant_id:
         type: string
       trial_end:
@@ -1662,6 +1732,8 @@ definitions:
       filter_values:
         $ref: '#/definitions/price.JSONBFilters'
       meter_display_name:
+        type: string
+      meter_id:
         type: string
       price:
         $ref: '#/definitions/price.Price'
@@ -1716,8 +1788,30 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.TenantBillingDetails:
+    properties:
+      address:
+        $ref: '#/definitions/dto.Address'
+      email:
+        type: string
+      help_email:
+        type: string
+      phone:
+        type: string
+    type: object
+  dto.TenantBillingUsage:
+    properties:
+      subscriptions:
+        items:
+          $ref: '#/definitions/dto.SubscriptionResponse'
+        type: array
+      usage:
+        $ref: '#/definitions/dto.CustomerUsageSummaryResponse'
+    type: object
   dto.TenantResponse:
     properties:
+      billing_details:
+        $ref: '#/definitions/dto.TenantBillingDetails'
       created_at:
         type: string
       id:
@@ -1748,9 +1842,7 @@ definitions:
           the transaction
         type: boolean
       metadata:
-        allOf:
-        - $ref: '#/definitions/types.Metadata'
-        description: metadata to add any additional information about the transaction
+        $ref: '#/definitions/types.Metadata'
       purchased_credits:
         description: purchased_credits when true, the credits are added as purchased
           credits
@@ -1973,6 +2065,11 @@ definitions:
     required:
     - task_status
     type: object
+  dto.UpdateTenantRequest:
+    properties:
+      billing_details:
+        $ref: '#/definitions/dto.TenantBillingDetails'
+    type: object
   dto.UpdateWalletRequest:
     properties:
       auto_topup_amount:
@@ -1980,9 +2077,7 @@ definitions:
       auto_topup_min_balance:
         type: number
       auto_topup_trigger:
-        allOf:
-        - $ref: '#/definitions/types.AutoTopupTrigger'
-        default: disabled
+        $ref: '#/definitions/types.AutoTopupTrigger'
       config:
         $ref: '#/definitions/types.WalletConfig'
       description:
@@ -2142,6 +2237,8 @@ definitions:
       details:
         additionalProperties: {}
         type: object
+      internal_error:
+        type: string
       message:
         type: string
     type: object
@@ -2163,11 +2260,7 @@ definitions:
           For ex if the aggregation type is sum for API usage, the field could be "duration_ms"
         type: string
       type:
-        allOf:
-        - $ref: '#/definitions/types.AggregationType'
-        description: |-
-          Type is the type of aggregation to be applied on the events
-          For ex sum, count, avg, max, min etc
+        $ref: '#/definitions/types.AggregationType'
     type: object
   meter.Filter:
     properties:
@@ -2211,19 +2304,11 @@ definitions:
           For USD: 12.50 means $12.50
         type: number
       billing_cadence:
-        allOf:
-        - $ref: '#/definitions/types.BillingCadence'
-        description: BillingCadence is the billing cadence for the price ex RECURRING,
-          ONETIME
+        $ref: '#/definitions/types.BillingCadence'
       billing_model:
-        allOf:
-        - $ref: '#/definitions/types.BillingModel'
-        description: BillingModel is the billing model for the price ex FLAT_FEE,
-          PACKAGE, TIERED
+        $ref: '#/definitions/types.BillingModel'
       billing_period:
-        allOf:
-        - $ref: '#/definitions/types.BillingPeriod'
-        description: BillingPeriod is the billing period for the price ex month, year
+        $ref: '#/definitions/types.BillingPeriod'
       billing_period_count:
         description: BillingPeriodCount is the count of the billing period ex 1, 3,
           6, 12
@@ -2248,24 +2333,17 @@ definitions:
         description: EnvironmentID is the environment identifier for the price
         type: string
       filter_values:
-        allOf:
-        - $ref: '#/definitions/price.JSONBFilters'
-        description: FilterValues are the filter values for the price in case of usage
-          based pricing
+        $ref: '#/definitions/price.JSONBFilters'
       id:
         description: ID uuid identifier for the price
         type: string
       invoice_cadence:
-        allOf:
-        - $ref: '#/definitions/types.InvoiceCadence'
-        description: InvoiceCadence is the cadence of the invoice ex ARREAR, ADVANCE
+        $ref: '#/definitions/types.InvoiceCadence'
       lookup_key:
         description: LookupKey used for looking up the price in the database
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/price.JSONBMetadata'
-        description: Metadata is a jsonb field for additional information
+        $ref: '#/definitions/price.JSONBMetadata'
       meter_id:
         description: MeterID is the id of the meter for usage based pricing
         type: string
@@ -2277,28 +2355,20 @@ definitions:
       tenant_id:
         type: string
       tier_mode:
-        allOf:
-        - $ref: '#/definitions/types.BillingTier'
-        description: Tiered pricing fields when BillingModel is TIERED
+        $ref: '#/definitions/types.BillingTier'
       tiers:
-        description: Tiers are the tiers for the price when BillingModel is TIERED
         items:
           $ref: '#/definitions/price.PriceTier'
         type: array
       transform_quantity:
-        allOf:
-        - $ref: '#/definitions/price.JSONBTransformQuantity'
-        description: Transform is the quantity transformation in case of PACKAGE billing
-          model
+        $ref: '#/definitions/price.JSONBTransformQuantity'
       trial_period:
         description: |-
           TrialPeriod is the number of days for the trial period
           Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
         type: integer
       type:
-        allOf:
-        - $ref: '#/definitions/types.PriceType'
-        description: Type is the type of the price ex USAGE, FIXED
+        $ref: '#/definitions/types.PriceType'
       updated_at:
         type: string
       updated_by:
@@ -2396,10 +2466,7 @@ definitions:
         description: ID is the unique identifier for the subscription pause
         type: string
       metadata:
-        allOf:
-        - $ref: '#/definitions/types.Metadata'
-        description: Metadata is a map of key-value pairs that can be attached to
-          the pause
+        $ref: '#/definitions/types.Metadata'
       original_period_end:
         description: OriginalPeriodEnd is the end of the billing period when the pause
           was created
@@ -2412,23 +2479,17 @@ definitions:
         description: PauseEnd is when the pause will end (null for indefinite)
         type: string
       pause_mode:
-        allOf:
-        - $ref: '#/definitions/types.PauseMode'
-        description: PauseMode indicates how the pause was applied
+        $ref: '#/definitions/types.PauseMode'
       pause_start:
         description: PauseStart is when the pause actually started
         type: string
       pause_status:
-        allOf:
-        - $ref: '#/definitions/types.PauseStatus'
-        description: PauseStatus is the status of the pause
+        $ref: '#/definitions/types.PauseStatus'
       reason:
         description: Reason is the reason for pausing
         type: string
       resume_mode:
-        allOf:
-        - $ref: '#/definitions/types.ResumeMode'
-        description: ResumeMode indicates how the resume will be applied
+        $ref: '#/definitions/types.ResumeMode'
       resumed_at:
         description: ResumedAt is when the pause was actually ended (if manually resumed)
         type: string
@@ -2510,10 +2571,12 @@ definitions:
     enum:
     - EVENTS
     - PRICES
+    - CUSTOMERS
     type: string
     x-enum-varnames:
     - EntityTypeEvents
     - EntityTypePrices
+    - EntityTypeCustomers
   types.FeatureType:
     enum:
     - metered
@@ -2837,15 +2900,6 @@ definitions:
     - WindowSizeMinute
     - WindowSizeHour
     - WindowSizeDay
-  v1.ErrorResponse:
-    properties:
-      detail:
-        example: Invalid request payload
-        type: string
-      error:
-        example: Invalid request payload
-        type: string
-    type: object
 info:
   contact: {}
   description: FlexPrice API Service
@@ -2874,7 +2928,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Login
       tags:
       - Auth
@@ -2900,7 +2954,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Sign up
       tags:
       - Auth
@@ -2970,11 +3024,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get customers
@@ -3001,11 +3055,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a customer
@@ -3030,11 +3084,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete a customer
@@ -3060,11 +3114,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a customer
@@ -3096,14 +3150,57 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update a customer
+      tags:
+      - Customers
+  /customers/{id}/entitlements:
+    get:
+      consumes:
+      - application/json
+      description: Get customer entitlements
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: feature_ids
+        type: array
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: subscription_ids
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CustomerEntitlementsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get customer entitlements
       tags:
       - Customers
   /customers/{id}/invoices/summary:
@@ -3127,16 +3224,59 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a customer invoice summary
       tags:
       - Invoices
+  /customers/{id}/usage:
+    get:
+      consumes:
+      - application/json
+      description: Get customer usage summary
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: feature_ids
+        type: array
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: subscription_ids
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CustomerUsageSummaryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get customer usage summary
+      tags:
+      - Customers
   /customers/{id}/wallets:
     get:
       consumes:
@@ -3160,11 +3300,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get wallets by customer ID
@@ -3191,15 +3331,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a customer by lookup key
@@ -3286,11 +3426,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get entitlements
@@ -3317,11 +3457,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new entitlement
@@ -3348,11 +3488,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete an entitlement
@@ -3378,11 +3518,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get an entitlement by ID
@@ -3414,11 +3554,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update an entitlement
@@ -3466,11 +3606,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get environments
@@ -3497,11 +3637,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create an environment
@@ -3528,15 +3668,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get an environment
@@ -3568,15 +3708,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update an environment
@@ -3624,11 +3764,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get raw events
@@ -3657,14 +3797,48 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Ingest event
+      tags:
+      - Events
+  /events/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Ingest bulk events into the system
+      parameters:
+      - description: Event data
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/dto.BulkIngestEventRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: message:Event accepted for processing
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Bulk Ingest events
       tags:
       - Events
   /events/usage:
@@ -3687,11 +3861,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get usage statistics
@@ -3717,15 +3891,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get usage by meter
@@ -3735,7 +3909,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get features with the specified filter
+      description: List features with optional filtering
       parameters:
       - in: query
         name: end_time
@@ -3758,6 +3932,12 @@ paths:
       - in: query
         name: lookup_key
         type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: meter_ids
+        type: array
       - in: query
         minimum: 0
         name: offset
@@ -3795,22 +3975,22 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Get features
+      summary: List features
       tags:
       - Features
     post:
       consumes:
       - application/json
-      description: Create a new feature with the specified configuration
+      description: Create a new feature
       parameters:
-      - description: Feature configuration
+      - description: Feature to create
         in: body
         name: feature
         required: true
@@ -3826,11 +4006,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new feature
@@ -3840,7 +4020,7 @@ paths:
     delete:
       consumes:
       - application/json
-      description: Delete a feature
+      description: Delete a feature by ID
       parameters:
       - description: Feature ID
         in: path
@@ -3857,11 +4037,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete a feature
@@ -3887,11 +4071,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a feature by ID
@@ -3900,14 +4088,14 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update a feature with the specified configuration
+      description: Update a feature by ID
       parameters:
       - description: Feature ID
         in: path
         name: id
         required: true
         type: string
-      - description: Feature configuration
+      - description: Feature update data
         in: body
         name: feature
         required: true
@@ -3923,11 +4111,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update a feature
@@ -3939,6 +4131,12 @@ paths:
       - application/json
       description: List invoices with optional filtering
       parameters:
+      - in: query
+        name: amount_due_gt
+        type: number
+      - in: query
+        name: amount_remaining_gt
+        type: number
       - in: query
         name: customer_id
         type: string
@@ -4027,11 +4225,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: List invoices
       tags:
       - Invoices
@@ -4056,11 +4254,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Create a new invoice
       tags:
       - Invoices
@@ -4085,11 +4283,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Get an invoice by ID
       tags:
       - Invoices
@@ -4114,11 +4312,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Finalize an invoice
       tags:
       - Invoices
@@ -4149,18 +4347,80 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update invoice payment status
+      tags:
+      - Invoices
+  /invoices/{id}/payment/attempt:
+    post:
+      consumes:
+      - application/json
+      description: Attempt to pay an invoice using customer's available wallets
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Attempt payment for an invoice
+      tags:
+      - Invoices
+  /invoices/{id}/pdf:
+    get:
+      description: Retrieve the PDF document for a specific invoice by its ID
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Get PDF for an invoice
       tags:
       - Invoices
   /invoices/{id}/void:
@@ -4184,11 +4444,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Void an invoice
       tags:
       - Invoices
@@ -4214,11 +4474,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Get a preview invoice
       tags:
       - Invoices
@@ -4285,7 +4545,7 @@ paths:
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: List meters
@@ -4312,11 +4572,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create meter
@@ -4343,11 +4603,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete meter
@@ -4371,11 +4631,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get meter
@@ -4407,15 +4667,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update meter
@@ -4442,11 +4702,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: 'Disable meter [TODO: Deprecate]'
@@ -4530,11 +4790,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: List payments
@@ -4561,11 +4821,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new payment
@@ -4592,11 +4852,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete a payment
@@ -4622,11 +4882,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a payment by ID
@@ -4658,11 +4918,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update a payment
@@ -4689,11 +4949,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Process a payment
@@ -4703,7 +4963,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get plans with the specified filter
+      description: Get plans with optional filtering
       parameters:
       - in: query
         name: end_time
@@ -4759,11 +5019,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get plans
@@ -4790,11 +5050,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new plan
@@ -4821,14 +5081,18 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Delete a plan by ID
+      summary: Delete a plan
       tags:
       - Plans
     get:
@@ -4851,14 +5115,18 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Get a plan by ID
+      summary: Get a plan
       tags:
       - Plans
     put:
@@ -4871,7 +5139,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Plan configuration
+      - description: Plan update
         in: body
         name: plan
         required: true
@@ -4887,14 +5155,18 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Update a plan by ID
+      summary: Update a plan
       tags:
       - Plans
   /plans/{id}/entitlements:
@@ -4918,11 +5190,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get plan entitlements
@@ -4994,11 +5270,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get prices
@@ -5025,11 +5301,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new price
@@ -5056,11 +5332,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Delete a price
@@ -5086,11 +5362,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get a price by ID
@@ -5122,11 +5398,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Update a price
@@ -5160,11 +5436,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: List API keys
       tags:
       - secrets
@@ -5189,11 +5465,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Create a new API key
       tags:
       - secrets
@@ -5216,11 +5492,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Delete an API key
       tags:
       - secrets
@@ -5243,14 +5519,14 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Delete an integration
       tags:
-      - secrets
+      - Integrations
   /secrets/integrations/{provider}:
     get:
       consumes:
@@ -5272,14 +5548,14 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Get integration details
       tags:
-      - secrets
+      - Integrations
     post:
       consumes:
       - application/json
@@ -5306,14 +5582,14 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Create or update an integration
       tags:
-      - secrets
+      - Integrations
   /secrets/integrations/linked:
     get:
       consumes:
@@ -5330,10 +5606,10 @@ paths:
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: List linked integrations
       tags:
-      - secrets
+      - Integrations
   /subscriptions:
     get:
       description: Get subscriptions with optional filtering
@@ -5432,6 +5708,10 @@ paths:
           type: string
         name: subscription_status
         type: array
+      - description: WithLineItems includes line items in the response
+        in: query
+        name: with_line_items
+        type: boolean
       produces:
       - application/json
       responses:
@@ -5442,11 +5722,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: List subscriptions
@@ -5473,11 +5753,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create subscription
@@ -5502,11 +5782,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get subscription
@@ -5537,11 +5817,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Cancel subscription
@@ -5660,9 +5940,11 @@ paths:
       - Subscriptions
   /subscriptions/usage:
     post:
-      description: Get usage by subscription
+      consumes:
+      - application/json
+      description: Get usage for a subscription
       parameters:
-      - description: Request
+      - description: Usage request
         in: body
         name: request
         required: true
@@ -5678,11 +5960,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get usage by subscription
@@ -5703,12 +5985,14 @@ paths:
       - enum:
         - EVENTS
         - PRICES
+        - CUSTOMERS
         in: query
         name: entity_type
         type: string
         x-enum-varnames:
         - EntityTypeEvents
         - EntityTypePrices
+        - EntityTypeCustomers
       - in: query
         name: expand
         type: string
@@ -5776,11 +6060,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: List tasks
       tags:
       - Tasks
@@ -5805,11 +6089,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Create a new task
       tags:
       - Tasks
@@ -5834,11 +6118,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Get a task by ID
       tags:
       - Tasks
@@ -5863,15 +6147,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Process a task
       tags:
       - Tasks
@@ -5902,18 +6186,47 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Update task status
       tags:
       - Tasks
+  /tenant/billing:
+    get:
+      consumes:
+      - application/json
+      description: Get the subscription and usage details for the current tenant
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TenantBillingUsage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get billing usage for the current tenant
+      tags:
+      - Tenants
   /tenants:
     post:
       consumes:
@@ -5936,11 +6249,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new tenant
@@ -5967,14 +6280,50 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get tenant by ID
+      tags:
+      - Tenants
+  /tenants/update:
+    put:
+      consumes:
+      - application/json
+      description: Update a tenant's details including name and billing information
+      parameters:
+      - description: Update tenant request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateTenantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TenantResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update a tenant
       tags:
       - Tenants
   /users/me:
@@ -5992,11 +6341,11 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get user info
@@ -6024,11 +6373,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a new wallet
@@ -6055,15 +6404,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get wallet by ID
@@ -6095,15 +6444,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Update a wallet
       tags:
       - Wallets
@@ -6128,15 +6477,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get wallet balance
@@ -6163,15 +6512,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       summary: Terminate a wallet
       tags:
       - Wallets
@@ -6202,15 +6551,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Top up wallet
@@ -6334,15 +6683,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/v1.ErrorResponse'
+            $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get wallet transactions

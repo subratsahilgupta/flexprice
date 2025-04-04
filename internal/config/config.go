@@ -10,7 +10,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/Shopify/sarama"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/go-playground/validator/v10"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
@@ -27,8 +27,9 @@ type Configuration struct {
 	Event      EventConfig      `validate:"required"`
 	DynamoDB   DynamoDBConfig   `validate:"required"`
 	Temporal   TemporalConfig   `validate:"required"`
-	Webhook    Webhook
-	Secrets    SecretsConfig `validate:"required"`
+	Webhook    Webhook          `validate:"omitempty"`
+	Secrets    SecretsConfig    `validate:"required"`
+	Billing    BillingConfig    `validate:"omitempty"`
 }
 
 type DeploymentConfig struct {
@@ -112,10 +113,16 @@ type TemporalConfig struct {
 	Namespace  string `mapstructure:"namespace" validate:"required"`
 	APIKey     string `mapstructure:"api_key"`
 	APIKeyName string `mapstructure:"api_key_name"`
+	TLS        bool   `mapstructure:"tls"`
 }
 
 type SecretsConfig struct {
 	EncryptionKey string `mapstructure:"encryption_key" validate:"required"`
+}
+
+type BillingConfig struct {
+	TenantID      string `mapstructure:"tenant_id" validate:"omitempty"`
+	EnvironmentID string `mapstructure:"environment_id" validate:"omitempty"`
 }
 
 func NewConfig() (*Configuration, error) {
@@ -137,7 +144,6 @@ func NewConfig() (*Configuration, error) {
 	// Step 4: Environment variable key mapping (e.g., FLEXPRICE_KAFKA_CONSUMER_GROUP)
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	// Step 5: Read the YAML file
 	// Step 5: Read the YAML file
 	if err := v.ReadInConfig(); err != nil {
 		fmt.Printf("Error reading config file: %v\n", err)
@@ -175,8 +181,7 @@ func NewConfig() (*Configuration, error) {
 }
 
 func (c Configuration) Validate() error {
-	validate := validator.New()
-	return validate.Struct(c)
+	return validator.ValidateRequest(c)
 }
 
 // GetDefaultConfig returns a default configuration for local development

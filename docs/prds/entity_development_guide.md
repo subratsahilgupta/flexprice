@@ -62,6 +62,12 @@ func (Entity) Indexes() []ent.Index {
 
 ### 2. Generate Ent Code
 Run the ent code generation command:
+```bash 
+make generate-ent
+```
+
+Or directly run:
+
 ```bash
 go run -mod=mod entgo.io/ent/cmd/ent generate --feature sql/execquery ./ent/schema
 ```
@@ -192,21 +198,30 @@ FlexPrice uses a centralized error handling approach with proper error wrapping 
 All error codes and common errors are defined in `internal/errors/errors.go`:
 
 ```go
-// Common error codes
-const (
-    ErrCodeNotFound         = "not_found"
-    ErrCodeValidation       = "validation_error"
-    ErrCodeInvalidOperation = "invalid_operation"
-    ErrCodePermissionDenied = "permission_denied"
-    ErrCodeSystemError      = "system_error"
-)
-
-// Common errors that can be reused across the application
+// Common error types that can be used across the application
 var (
     ErrNotFound         = New(ErrCodeNotFound, "resource not found")
+    ErrAlreadyExists    = New(ErrCodeAlreadyExists, "resource already exists")
+    ErrVersionConflict  = New(ErrCodeVersionConflict, "version conflict")
     ErrValidation       = New(ErrCodeValidation, "validation error")
     ErrInvalidOperation = New(ErrCodeInvalidOperation, "invalid operation")
     ErrPermissionDenied = New(ErrCodePermissionDenied, "permission denied")
+    ErrHTTPClient       = New(ErrCodeHTTPClient, "http client error")
+    ErrDatabase         = New(ErrCodeDatabase, "database error")
+    ErrSystem           = New(ErrCodeSystemError, "system error")
+)
+
+// Common error codes
+const (
+    ErrCodeHTTPClient       = "http_client_error"
+    ErrCodeSystemError      = "system_error"
+    ErrCodeNotFound         = "not_found"
+    ErrCodeAlreadyExists    = "already_exists"
+    ErrCodeVersionConflict  = "version_conflict"
+    ErrCodeValidation       = "validation_error"
+    ErrCodeInvalidOperation = "invalid_operation"
+    ErrCodePermissionDenied = "permission_denied"
+    ErrCodeDatabase         = "database_error"
 )
 
 // Error checking helpers
@@ -219,7 +234,49 @@ func IsValidation(err error) bool {
 }
 ```
 
-#### b. Error Handling in Repository Layer
+#### b. Error Builder Pattern
+FlexPrice uses a fluent error builder pattern for creating and enriching errors. The builder is defined in `internal/errors/builder.go`:
+
+```go
+// Create a new error
+ierr.NewError("entity not found").
+    WithHint("The requested entity could not be found").
+    Mark(ierr.ErrNotFound)
+
+// here WithHint message will be shown directly to the user
+// vs the NewError message which is more for developers and wont
+// be shown on the UI and will only be part of the API response
+
+// Wrap an existing error
+ierr.WithError(err).
+    WithHint("Failed to create entity").
+    Mark(ierr.ErrDatabase)
+
+// Add formatted hint
+ierr.WithError(err).
+    WithHintf("Entity with ID %s not found", id).
+    Mark(ierr.ErrNotFound)
+
+// notice how Mark here is used to categorize the error
+// and we can use the category of error to compare everywhere
+// in the code and handle them accordingly rather than using
+// the error message which is more vague and not actionable
+
+// Add reportable details for structured error information
+// this we will use rarely and focus more with direct errors
+ierr.NewError("invalid status transition").
+    WithHint("The requested status transition is not allowed").
+    WithReportableDetails(map[string]any{
+        "current_status": currentStatus,
+        "requested_status": requestedStatus,
+        "allowed_transitions": allowedTransitions,
+    }).
+    Mark(ierr.ErrValidation)
+```
+
+**Important**: The `Mark()` method should always be the last call in the builder chain as it returns the final error.
+
+#### c. Error Handling in Repository Layer
 Map database errors to appropriate error types:
 
 ```go
@@ -230,42 +287,55 @@ func (r *entityRepository) Get(ctx context.Context, id string) (*Entity, error) 
     
     if err != nil {
         if ent.IsNotFound(err) {
-            return nil, errors.New(errors.ErrCodeNotFound, "entity not found")
+            return nil, ierr.WithError(err).
+                WithHintf("entity %s not found", id).
+                Mark(ierr.ErrNotFound)
         }
-        return nil, fmt.Errorf("failed to get entity: %w", err)
+        return nil, ierr.WithError(err).
+            WithHint("database query failed").
+            Mark(ierr.ErrDatabase)
     }
     
     return FromEnt(e), nil
 }
 ```
 
-#### c. Error Handling in Service Layer
+#### d. Error Handling in Service Layer
 Add context and operation information to errors:
 
 ```go
 func (s *entityService) ProcessEntity(ctx context.Context, id string) error {
     // Input validation
     if id == "" {
-        return errors.New(errors.ErrCodeValidation, "id is required")
+        return ierr.NewError("id is required").
+            WithHint("The entity ID is required").
+            Mark(ierr.ErrValidation)
     }
     
     // Get entity with proper error handling
     entity, err := s.entityRepo.Get(ctx, id)
     if err != nil {
-        return errors.WithOp(err, "getting entity")
+        // Repository errors are already properly formatted, just return them
+        return err
     }
     
     // Business logic validation with specific error message
     if entity.Status != types.StatusActive {
-        return errors.New(errors.ErrCodeInvalidOperation, 
-            "cannot process inactive entity")
+        return ierr.NewError("entity must be active").
+            WithHintf("entity with status %s cannot be processed", entity.Status).
+            // These re helpful when we want to report the value of multiple fields and it doesn't make sense to have a single string with all the details
+            WithReportableDetails(map[string]any{
+                "current_status": entity.Status,
+                "required_status": types.StatusActive,
+            }).Mark(ierr.ErrInvalidOperation)
     }
     
     // Process with transaction and wrap errors with context
     err = s.db.WithTx(ctx, func(tx *ent.Tx) error {
         if err := s.processEntityTx(ctx, tx, entity); err != nil {
-            return errors.Wrap(err, errors.ErrCodeSystemError, 
-                "failed to process entity")
+            return ierr.WithError(err).
+                WithHint("entity processing failed").
+                Mark(ierr.ErrSystem)
         }
         return nil
     })
@@ -274,109 +344,60 @@ func (s *entityService) ProcessEntity(ctx context.Context, id string) error {
 }
 ```
 
-#### d. Common API Error Handling
-Create a common error handling middleware/helper in `internal/api/errors.go`:
+#### e. Error Handling in API Layer
+Handle errors in API handlers:
 
-```go
-// ErrorResponse represents a standardized error response
-type ErrorResponse struct {
-    Code    string `json:"code"`
-    Message string `json:"message"`
-}
-
-// Common HTTP status code mapping
-var errorStatusCodes = map[string]int{
-    errors.ErrCodeNotFound:         http.StatusNotFound,
-    errors.ErrCodeValidation:       http.StatusBadRequest,
-    errors.ErrCodeInvalidOperation: http.StatusBadRequest,
-    errors.ErrCodePermissionDenied: http.StatusForbidden,
-}
-
-// HandleError handles common error cases and returns appropriate responses
-func HandleError(c *gin.Context, err error, logger *logger.Logger) {
-    // Extract the internal error if wrapped
-    var ierr *errors.InternalError
-    if !errors.As(err, &ierr) {
-        // Unknown error type, return 500
-        c.JSON(http.StatusInternalServerError, ErrorResponse{
-            Code:    "internal_error",
-            Message: "an unexpected error occurred",
-        })
-        return
-    }
-    
-    // Log error with context
-    logger.Errorw("operation failed",
-        "error", err,
-        "code", ierr.Code,
-        "operation", ierr.Op,
-    )
-    
-    // Get status code from mapping or default to 500
-    status := errorStatusCodes[ierr.Code]
-    if status == 0 {
-        status = http.StatusInternalServerError
-    }
-    
-    c.JSON(status, ErrorResponse{
-        Code:    ierr.Code,
-        Message: ierr.Message,
-    })
-}
-```
-
-#### e. Using Common Error Handling in API Handlers
-
-```go
-func (h *EntityHandler) ProcessEntity(c *gin.Context) {
+```go   
+func (h *entityHandler) GetEntity(c *gin.Context) {
     id := c.Param("id")
-    
-    err := h.service.ProcessEntity(c.Request.Context(), id)
+    entity, err := h.entityService.GetEntity(c.Request.Context(), id)
     if err != nil {
-        HandleError(c, err, h.logger)
+        c.Error(err)
         return
     }
-    
-    c.JSON(http.StatusOK, gin.H{"message": "entity processed successfully"})
 }
 ```
+These errors will be handled by the error handling middleware
+and will return a proper error response to the client  refer `internal/rest/middleware/errhandler.go`
 
-#### f. Error Handling Best Practices
+#### g. Error Handling Best Practices
 
-1. **Use Centralized Error Definitions**
-   - Use error codes from `internal/errors/errors.go`
-   - Create new error codes only when truly needed
-   - Keep error messages consistent and user-friendly
+1. **Use the Error Builder Pattern**
+   - Use `ierr.NewError()` to create new errors
+   - Use `ierr.WithError()` to wrap existing errors
+   - Always end builder chains with `Mark()` to categorize the error
+   - Use `WithHint()` for user-friendly messages which can be shown to the user
+   - Use `WithReportableDetails()` for highlingting any specific parameters or values which are relevant to the error and we rarely need to use this only when super important
 
-2. **Error Context**
-   - Use `errors.Wrap` to add context to errors
-   - Use `errors.WithOp` to track operation flow
-   - Include relevant details in error messages
+2. **Error Context and Details**
+   - Use `WithHintf()` to add formatted context to errors
+   - Include relevant IDs and parameters in error messages
+   - Use `WithReportableDetails()` to add structured data for API responses
+   - Keep error messages clear and actionable
 
-3. **Logging**
+3. **Error Categorization**
+   - Use appropriate error markers from `internal/errors/errors.go`
+   - Be consistent with error codes across similar operations
+
+4. **Logging**
    - Log errors at the API layer
    - Include operation context and error details
-   - Don't log sensitive information
+   - Don't log sensitive information like email_id, phone_number, etc
    - Use appropriate log levels (error, warn, info)
 
-4. **API Responses**
+5. **API Responses**
    - Use the common error handling middleware
    - Return consistent error structures
-   - Map internal errors to appropriate HTTP status codes
+   - Include structured details when available
    - Provide clear, actionable error messages
-
-5. **Validation**
-   - Return validation errors early
-   - Use clear validation messages
-   - Include field-specific error details when possible
 
 Example Error Flow:
 ```
 API Layer (HandleError)
     ↓
-Service Layer (errors.Wrap/WithOp)
+Service Layer (ierr.NewError/WithError → WithHint → Mark)
     ↓
-Repository Layer (errors.New)
+Repository Layer (ierr.WithError → WithHint → Mark)
     ↓
 Database Error
 ```
@@ -390,6 +411,110 @@ Database Error
 - Create unit tests for all layers
 - Use in-memory store for service tests
 - Implement integration tests for critical paths
+
+### 5. Swagger Documentation Best Practices
+
+To ensure clean and consistent Swagger API documentation, follow these guidelines when defining DTO structs:
+
+#### a. Type Field Tagging
+
+When using custom types (from the `types` package) in DTO structs, avoid using these tags:
+
+- **Don't use `example` tags on custom type fields**:
+  ```go
+  // INCORRECT:
+  AggregationType types.AggregationType `json:"aggregation_type" example:"COUNT"`
+  
+  // CORRECT:
+  AggregationType types.AggregationType `json:"aggregation_type"`
+  ```
+
+- **Don't use `default` tags on custom type fields**:
+  ```go
+  // INCORRECT:
+  WalletType types.WalletType `json:"wallet_type" default:"PRE_PAID"`
+  
+  // CORRECT:
+  WalletType types.WalletType `json:"wallet_type"`
+  ```
+  
+- **Don't use `oneof` validation on custom type fields**:
+  ```go
+  // INCORRECT:
+  InvoiceType types.InvoiceType `json:"invoice_type" validate:"oneof=SUBSCRIPTION ONE_OFF CREDIT"`
+  
+  // CORRECT:
+  InvoiceType types.InvoiceType `json:"invoice_type"`
+  ```
+
+#### b. Handle Defaults in Validate() Methods
+
+Instead of using `default` tags in struct fields, handle default values in the `Validate()` method:
+
+```go
+// Instead of:
+PageSize int `json:"page_size" default:"50"`
+
+// Do this:
+PageSize int `json:"page_size"`
+
+// And handle the default in Validate():
+func (r *MyRequest) Validate() error {
+    if r.PageSize <= 0 {
+        r.PageSize = 50 // Set default page size
+    }
+    return validator.ValidateRequest(r)
+}
+```
+
+#### c. Handle Validation in Type Validate() Methods
+
+For custom types, implement and use the `Validate()` method in the type definition:
+
+```go
+// In types/your_type.go:
+func (t YourType) Validate() error {
+    allowedValues := []YourType{Value1, Value2, Value3}
+    if !lo.Contains(allowedValues, t) {
+        return ierr.NewError("invalid value").
+            WithHint("Invalid value provided").
+            WithReportableDetails(map[string]any{
+                "allowed_values": allowedValues,
+                "provided_value": t,
+            }).
+            Mark(ierr.ErrValidation)
+    }
+    return nil
+}
+
+// In your DTO:
+func (r *YourRequest) Validate() error {
+    if err := validator.ValidateRequest(r); err != nil {
+        return err
+    }
+    
+    // Call the type's Validate method
+    if err := r.YourType.Validate(); err != nil {
+        return err
+    }
+    
+    return nil
+}
+```
+
+#### d. Keep Examples on Primitive Types
+
+You can still use `example` tags on primitive types (string, int, etc.) as they don't cause issues in Swagger:
+
+```go
+// ACCEPTABLE:
+EventName string `json:"event_name" example:"api_request"`
+PageSize  int    `json:"page_size" example:"50"`
+```
+
+#### e. Why This Matters
+
+Following these guidelines prevents Swagger from generating `allOf`, `oneOf`, or `enum` constructs in the generated documentation, which leads to cleaner, more consistent API documentation and a better developer experience for API consumers.
 
 ## Implementation Checklist
 

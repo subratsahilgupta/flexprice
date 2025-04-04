@@ -190,11 +190,14 @@ type TimeRangeFilter struct {
 // Validate validates the time range filter
 func (f TimeRangeFilter) Validate() error {
 	if f.StartTime != nil && f.EndTime != nil && f.EndTime.Before(*f.StartTime) {
-		return ierr.NewError("end_time must be after start_time").WithReportableDetails(
-			map[string]any{
-				"end_time": "must be after start_time",
-			},
-		).Mark(ierr.ErrValidation)
+		return ierr.NewError("end_time must be after start_time").
+			WithHint("Please provide a valid time range").
+			WithReportableDetails(
+				map[string]any{
+					"end_time": "must be after start_time",
+				},
+			).
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
