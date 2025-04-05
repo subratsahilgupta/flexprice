@@ -105,7 +105,7 @@ func (s *billingService) CalculateFixedCharges(
 		fixedCostLineItems = append(fixedCostLineItems, dto.CreateInvoiceLineItemRequest{
 			PlanID:          lo.ToPtr(item.PlanID),
 			PlanDisplayName: lo.ToPtr(item.PlanDisplayName),
-			PriceID:         item.PriceID,
+			PriceID:         lo.ToPtr(item.PriceID),
 			PriceType:       lo.ToPtr(string(item.PriceType)),
 			DisplayName:     lo.ToPtr(item.DisplayName),
 			Amount:          amount,
@@ -216,17 +216,11 @@ func (s *billingService) CalculateUsageCharges(
 			"line_item_id", item.ID,
 			"price_id", item.PriceID)
 
-		// TODO: for now we skip line items with no usage charges
-		// but this needs to be behind a feature flag as per tenant config
-		if lineItemAmount.Equal(decimal.Zero) {
-			continue
-		}
-
 		usageCharges = append(usageCharges, dto.CreateInvoiceLineItemRequest{
 			PlanID:           lo.ToPtr(item.PlanID),
 			PlanDisplayName:  lo.ToPtr(item.PlanDisplayName),
 			PriceType:        lo.ToPtr(string(item.PriceType)),
-			PriceID:          item.PriceID,
+			PriceID:          lo.ToPtr(item.PriceID),
 			MeterID:          lo.ToPtr(item.MeterID),
 			MeterDisplayName: lo.ToPtr(item.MeterDisplayName),
 			DisplayName:      lo.ToPtr(item.DisplayName),
@@ -461,7 +455,7 @@ func (s *billingService) checkIfChargeInvoiced(
 ) bool {
 	for _, item := range invoice.LineItems {
 		// match the price id
-		if item.PriceID == charge.PriceID {
+		if lo.FromPtr(item.PriceID) == charge.PriceID {
 			// match the period start and end
 			if item.PeriodStart.Equal(periodStart) &&
 				item.PeriodEnd.Equal(periodEnd) {
@@ -816,16 +810,18 @@ func (s *billingService) GetCustomerEntitlements(ctx context.Context, customerID
 		return nil, err
 	}
 
-	// Filter by feature IDs if provided
-	if len(req.FeatureIDs) > 0 {
-		filteredEntitlements := make([]*entitlement.Entitlement, 0)
-		for _, e := range entitlements {
-			if lo.Contains(req.FeatureIDs, e.FeatureID) {
-				filteredEntitlements = append(filteredEntitlements, e)
-			}
+	filteredEntitlements := make([]*entitlement.Entitlement, 0)
+	for _, e := range entitlements {
+		if len(req.FeatureIDs) > 0 && !lo.Contains(req.FeatureIDs, e.FeatureID) {
+			continue
 		}
-		entitlements = filteredEntitlements
+		// skip not enabled entitlements
+		if !e.IsEnabled || e.Status != types.StatusPublished {
+			continue
+		}
+		filteredEntitlements = append(filteredEntitlements, e)
 	}
+	entitlements = filteredEntitlements
 
 	if len(entitlements) == 0 {
 		return resp, nil
