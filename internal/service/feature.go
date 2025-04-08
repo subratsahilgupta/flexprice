@@ -246,13 +246,22 @@ func (s *featureService) DeleteFeature(ctx context.Context, id string) error {
 			Mark(ierr.ErrValidation)
 	}
 
-	feature, err := s.repo.Get(ctx, id)
-	filter := types.NewDefaultEntitlementFilter()
-	filter.QueryFilter.Limit = lo.ToPtr(1)
-	filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
-	filter.FeatureIDs = []string{id}
-	entitlements, err := s.entitlementRepo.List(ctx, filter)
+	entitlementFilter := types.NewDefaultEntitlementFilter()
+	entitlementFilter.QueryFilter.Limit = lo.ToPtr(1)
+	entitlementFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+	entitlementFilter.FeatureIDs = []string{id}
+	entitlements, err := s.entitlementRepo.List(ctx, entitlementFilter)
 
+	if err != nil {
+		return err
+	}
+	if len(entitlements) > 0 {
+		return ierr.NewError("feature is linked to some plans").
+			WithHint("Feature is linked to some plans, please remove the feature from the plans first").
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	feature, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -261,11 +270,6 @@ func (s *featureService) DeleteFeature(ctx context.Context, id string) error {
 		if err := s.meterRepo.DisableMeter(ctx, feature.MeterID); err != nil {
 			return err
 		}
-	}
-	if len(entitlements) > 0 {
-		return ierr.NewError("feature is linked to some plans").
-			WithHint("Feature is linked to some plans, please remove the feature from the plans first").
-			Mark(ierr.ErrInvalidOperation)
 	}
 
 	if err := s.repo.Delete(ctx, id); err != nil {

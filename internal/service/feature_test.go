@@ -16,11 +16,11 @@ import (
 
 type FeatureServiceSuite struct {
 	testutil.BaseServiceTestSuite
-	service     FeatureService
-	featureRepo *testutil.InMemoryFeatureStore
-	meterRepo   *testutil.InMemoryMeterStore
+	service         FeatureService
+	featureRepo     *testutil.InMemoryFeatureStore
+	meterRepo       *testutil.InMemoryMeterStore
 	entitlementRepo *testutil.InMemoryEntitlementStore
-	testData    struct {
+	testData        struct {
 		meters struct {
 			apiCalls *meter.Meter
 			storage  *meter.Meter
@@ -52,7 +52,7 @@ func (s *FeatureServiceSuite) TearDownTest() {
 func (s *FeatureServiceSuite) setupService() {
 	s.featureRepo = testutil.NewInMemoryFeatureStore()
 	s.meterRepo = testutil.NewInMemoryMeterStore()
-	s.entitlementRepo = testutil.NewInMemoryEntitlementStore()
+
 	s.service = NewFeatureService(
 		s.featureRepo,
 		s.meterRepo,
