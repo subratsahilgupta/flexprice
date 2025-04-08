@@ -21,16 +21,18 @@ type FeatureService interface {
 }
 
 type featureService struct {
-	repo      feature.Repository
-	meterRepo meter.Repository
-	logger    *logger.Logger
+	repo         feature.Repository
+	meterRepo    meter.Repository
+	logger       *logger.Logger
+	meterService MeterService
 }
 
-func NewFeatureService(repo feature.Repository, meterRepo meter.Repository, logger *logger.Logger) FeatureService {
+func NewFeatureService(repo feature.Repository, meterRepo meter.Repository, logger *logger.Logger, meterService MeterService) FeatureService {
 	return &featureService{
-		repo:      repo,
-		meterRepo: meterRepo,
-		logger:    logger,
+		repo:         repo,
+		meterRepo:    meterRepo,
+		logger:       logger,
+		meterService: meterService,
 	}
 }
 
@@ -41,15 +43,34 @@ func (s *featureService) CreateFeature(ctx context.Context, req dto.CreateFeatur
 
 	// Validate meter existence and status for metered features
 	if req.Type == types.FeatureTypeMetered {
-		meter, err := s.meterRepo.GetMeter(ctx, req.MeterID)
-		if err != nil {
-			return nil, err
+		var newMeter *meter.Meter
+
+		// Create meter only if MeterID is not provided
+		if req.MeterID == "" {
+			meter, err := s.meterService.CreateMeter(ctx, req.Meter)
+
+			if err != nil {
+				return nil, err
+			}
+			newMeter = meter
 		}
-		if meter.Status != types.StatusPublished {
+
+		// If not already fetched above, get meter from repo
+		if newMeter == nil {
+			meter, err := s.meterRepo.GetMeter(ctx, req.MeterID)
+			if err != nil {
+				return nil, err
+			}
+			newMeter = meter
+		}
+
+		// Validate meter status
+		if newMeter.Status != types.StatusPublished {
 			return nil, ierr.NewError("invalid meter status").
 				WithHint("The metered feature must be associated with an active meter").
 				Mark(ierr.ErrValidation)
 		}
+		req.MeterID = newMeter.ID
 	}
 
 	featureModel, err := req.ToFeature(ctx)
@@ -174,7 +195,6 @@ func (s *featureService) UpdateFeature(ctx context.Context, id string, req dto.U
 	if err != nil {
 		return nil, err
 	}
-
 	if req.Description != nil {
 		feature.Description = *req.Description
 	}
@@ -190,6 +210,15 @@ func (s *featureService) UpdateFeature(ctx context.Context, id string, req dto.U
 	}
 	if req.UnitPlural != nil {
 		feature.UnitPlural = *req.UnitPlural
+	}
+
+	if feature.Type == types.FeatureTypeMetered && feature.MeterID != "" {
+		// update meter filters if provided
+		if req.Filters != nil {
+			if _, err := s.meterService.UpdateMeter(ctx, feature.MeterID, *req.Filters); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Validate units are set together
@@ -213,8 +242,20 @@ func (s *featureService) DeleteFeature(ctx context.Context, id string) error {
 			Mark(ierr.ErrValidation)
 	}
 
+	feature, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if feature.Type == types.FeatureTypeMetered {
+		if err := s.meterRepo.DisableMeter(ctx, feature.MeterID); err != nil {
+			return err
+		}
+	}
+
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
+
 	return nil
 }

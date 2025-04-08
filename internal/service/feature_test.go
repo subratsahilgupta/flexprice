@@ -52,10 +52,13 @@ func (s *FeatureServiceSuite) setupService() {
 	s.featureRepo = testutil.NewInMemoryFeatureStore()
 	s.meterRepo = testutil.NewInMemoryMeterStore()
 
+	meterService := NewMeterService(s.meterRepo)
+
 	s.service = NewFeatureService(
 		s.featureRepo,
 		s.meterRepo,
 		s.GetLogger(),
+		meterService,
 	)
 }
 
