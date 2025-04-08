@@ -52,13 +52,10 @@ func (s *FeatureServiceSuite) setupService() {
 	s.featureRepo = testutil.NewInMemoryFeatureStore()
 	s.meterRepo = testutil.NewInMemoryMeterStore()
 
-	meterService := NewMeterService(s.meterRepo)
-
 	s.service = NewFeatureService(
 		s.featureRepo,
 		s.meterRepo,
 		s.GetLogger(),
-		meterService,
 	)
 }
 
@@ -178,7 +175,18 @@ func (s *FeatureServiceSuite) TestCreateFeature() {
 				Type:        types.FeatureTypeMetered,
 			},
 			wantErr:   true,
-			errString: "meter_id is required for metered features",
+			errString: "either meter_id or meter must be provided",
+		},
+		{
+			name: "error - missing meter ID and  for metered feature",
+			req: dto.CreateFeatureRequest{
+				Name:        "Test Feature",
+				Description: "Test Description",
+				LookupKey:   "test_key",
+				Type:        types.FeatureTypeMetered,
+			},
+			wantErr:   true,
+			errString: "either meter_id or meter must be provided",
 		},
 		{
 			name: "error - missing name",

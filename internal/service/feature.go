@@ -21,18 +21,16 @@ type FeatureService interface {
 }
 
 type featureService struct {
-	repo         feature.Repository
-	meterRepo    meter.Repository
-	logger       *logger.Logger
-	meterService MeterService
+	repo      feature.Repository
+	meterRepo meter.Repository
+	logger    *logger.Logger
 }
 
-func NewFeatureService(repo feature.Repository, meterRepo meter.Repository, logger *logger.Logger, meterService MeterService) FeatureService {
+func NewFeatureService(repo feature.Repository, meterRepo meter.Repository, logger *logger.Logger) FeatureService {
 	return &featureService{
-		repo:         repo,
-		meterRepo:    meterRepo,
-		logger:       logger,
-		meterService: meterService,
+		repo:      repo,
+		meterRepo: meterRepo,
+		logger:    logger,
 	}
 }
 
@@ -45,9 +43,11 @@ func (s *featureService) CreateFeature(ctx context.Context, req dto.CreateFeatur
 	if req.Type == types.FeatureTypeMetered {
 		var newMeter *meter.Meter
 
+		meterService := NewMeterService(s.meterRepo)
+
 		// Create meter only if MeterID is not provided
 		if req.MeterID == "" {
-			meter, err := s.meterService.CreateMeter(ctx, req.Meter)
+			meter, err := meterService.CreateMeter(ctx, req.Meter)
 
 			if err != nil {
 				return nil, err
@@ -214,8 +214,9 @@ func (s *featureService) UpdateFeature(ctx context.Context, id string, req dto.U
 
 	if feature.Type == types.FeatureTypeMetered && feature.MeterID != "" {
 		// update meter filters if provided
+		meterService := NewMeterService(s.meterRepo)
 		if req.Filters != nil {
-			if _, err := s.meterService.UpdateMeter(ctx, feature.MeterID, *req.Filters); err != nil {
+			if _, err := meterService.UpdateMeter(ctx, feature.MeterID, *req.Filters); err != nil {
 				return nil, err
 			}
 		}

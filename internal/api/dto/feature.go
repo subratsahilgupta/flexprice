@@ -35,7 +35,7 @@ func (r *CreateFeatureRequest) Validate() error {
 	if r.Type == types.FeatureTypeMetered {
 		if r.MeterID == "" && r.Meter == nil {
 			return ierr.NewError("either meter_id or meter must be provided").
-				WithHint("Please provide any one of meter_id or meter").
+				WithHint("Please provide meter details to setup a metered feature").
 				Mark(ierr.ErrValidation)
 		}
 		if r.Meter != nil {
