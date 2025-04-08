@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
@@ -246,6 +247,13 @@ func (s *featureService) DeleteFeature(ctx context.Context, id string) error {
 			Mark(ierr.ErrValidation)
 	}
 
+	feature, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return ierr.NewError(fmt.Sprintf("Feature with ID %s was not found", id)).
+			WithHint("The specified feature does not exist").
+			Mark(ierr.ErrNotFound)
+	}
+
 	entitlementFilter := types.NewDefaultEntitlementFilter()
 	entitlementFilter.QueryFilter.Limit = lo.ToPtr(1)
 	entitlementFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
@@ -259,11 +267,6 @@ func (s *featureService) DeleteFeature(ctx context.Context, id string) error {
 		return ierr.NewError("feature is linked to some plans").
 			WithHint("Feature is linked to some plans, please remove the feature from the plans first").
 			Mark(ierr.ErrInvalidOperation)
-	}
-
-	feature, err := s.repo.Get(ctx, id)
-	if err != nil {
-		return err
 	}
 
 	if feature.Type == types.FeatureTypeMetered {

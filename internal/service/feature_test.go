@@ -47,11 +47,13 @@ func (s *FeatureServiceSuite) TearDownTest() {
 	s.BaseServiceTestSuite.TearDownTest()
 	s.featureRepo.Clear()
 	s.meterRepo.Clear()
+	s.entitlementRepo.Clear()
 }
 
 func (s *FeatureServiceSuite) setupService() {
 	s.featureRepo = testutil.NewInMemoryFeatureStore()
 	s.meterRepo = testutil.NewInMemoryMeterStore()
+	s.entitlementRepo = testutil.NewInMemoryEntitlementStore()
 
 	s.service = NewFeatureService(
 		s.featureRepo,
@@ -492,7 +494,13 @@ func (s *FeatureServiceSuite) TestDeleteFeature() {
 			name:      "error - feature not found",
 			id:        "nonexistent-id",
 			wantErr:   true,
-			errString: "not found",
+			errString: "Feature with ID nonexistent-id was not found",
+		},
+		{
+			name:      "error - empty feature ID",
+			id:        "",
+			wantErr:   true,
+			errString: "feature ID is required",
 		},
 	}
 
