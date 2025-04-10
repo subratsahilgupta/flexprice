@@ -21,6 +21,10 @@ const (
 	defaultPresignExpiryDuration = 30 * time.Minute
 )
 
+var (
+	validDocumentTypes = []DocumentType{DocumentTypeInvoice}
+)
+
 type Service interface {
 	UploadDocument(ctx context.Context, document *Document) error
 	GetPresignedUrl(ctx context.Context, id string, docType DocumentType) (string, error)
@@ -34,6 +38,10 @@ type s3ServiceImpl struct {
 }
 
 func NewService(config *config.Configuration) (Service, error) {
+	if !config.S3.Enabled {
+		return nil, nil
+	}
+
 	awsCfg, err := awsConfig.LoadDefaultConfig(context.Background(),
 		awsConfig.WithRegion(config.S3.Region),
 	)
@@ -54,7 +62,7 @@ func (s *s3ServiceImpl) getObjectKey(id string, docType DocumentType) (string, e
 		return fmt.Sprintf("%s/%s.pdf", s.config.InvoiceBucketConfig.KeyPrefix, id), nil
 	default:
 		return "", ierr.NewErrorf("invalid doc type: %s", docType).
-			WithHintf("valid doc types are: %v", []DocumentType{DocumentTypeInvoice}).
+			WithHintf("valid doc types are: %v", validDocumentTypes).
 			Mark(ierr.ErrSystem)
 	}
 }

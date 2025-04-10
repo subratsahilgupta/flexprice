@@ -769,6 +769,12 @@ func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *
 }
 
 func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string) (string, error) {
+	if s.S3 == nil {
+		return "", ierr.NewError("s3 is not initialized").
+			WithHint("s3 is not initialzed but is required to generate invoice pdf url").
+			Mark(ierr.ErrSystem)
+	}
+
 	exists, err := s.S3.Exists(ctx, id, s3.DocumentTypeInvoice)
 	if err != nil {
 		return "", err

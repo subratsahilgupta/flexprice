@@ -34,6 +34,7 @@ type Configuration struct {
 }
 
 type S3Config struct {
+	Enabled             bool                `mapstructure:"enabled" validate:"required"`
 	Region              string              `mapstructure:"region" validate:"required"`
 	InvoiceBucketConfig InvoiceBucketConfig `mapstructure:"invoice" validate:"required"`
 }

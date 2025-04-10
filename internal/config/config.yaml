@@ -116,6 +116,7 @@ billing:
   environment_id: ""
 
 s3:
+  enabled: false
   region: "us-east-1"
   invoice:
     bucket: "flexprice-invoices"
