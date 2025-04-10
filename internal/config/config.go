@@ -34,15 +34,15 @@ type Configuration struct {
 }
 
 type S3Config struct {
-	Enabled             bool                `mapstructure:"enabled" validate:"required"`
-	Region              string              `mapstructure:"region" validate:"required"`
-	InvoiceBucketConfig InvoiceBucketConfig `mapstructure:"invoice" validate:"required"`
+	Enabled             bool         `mapstructure:"enabled" validate:"required"`
+	Region              string       `mapstructure:"region" validate:"required"`
+	InvoiceBucketConfig BucketConfig `mapstructure:"invoice" validate:"required"`
 }
 
-type InvoiceBucketConfig struct {
+type BucketConfig struct {
 	Bucket                string `mapstructure:"bucket" validate:"required"`
 	PresignExpiryDuration string `mapstructure:"presign_expiry_duration" validate:"required"`
-	KeyPrefix             string `mapstructure:"key_prefix" validate:"required"`
+	KeyPrefix             string `mapstructure:"key_prefix" validate:"omitempty"`
 }
 
 type DeploymentConfig struct {

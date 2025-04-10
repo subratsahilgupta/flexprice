@@ -35,7 +35,7 @@ type InvoiceService interface {
 	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
 	AttemptPayment(ctx context.Context, id string) error
 	GetInvoicePDF(ctx context.Context, id string) ([]byte, error)
-	GetInvoicePDFUrl(ctx context.Context, id string) (string, error)
+	GetInvoicePDFUrl(ctx context.Context, tenantId, id string) (string, error)
 }
 
 type invoiceService struct {
@@ -768,14 +768,16 @@ func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *
 	return nil
 }
 
-func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string) (string, error) {
+func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, tenantId, id string) (string, error) {
 	if s.S3 == nil {
 		return "", ierr.NewError("s3 is not initialized").
 			WithHint("s3 is not initialzed but is required to generate invoice pdf url").
 			Mark(ierr.ErrSystem)
 	}
 
-	exists, err := s.S3.Exists(ctx, id, s3.DocumentTypeInvoice)
+	key := fmt.Sprintf("%s/%s", tenantId, id)
+
+	exists, err := s.S3.Exists(ctx, key, s3.DocumentTypeInvoice)
 	if err != nil {
 		return "", err
 	}
@@ -786,13 +788,13 @@ func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string) (strin
 			return "", err
 		}
 
-		err = s.S3.UploadDocument(ctx, s3.NewPdfDocument(id, data, s3.DocumentTypeInvoice))
+		err = s.S3.UploadDocument(ctx, s3.NewPdfDocument(key, data, s3.DocumentTypeInvoice))
 		if err != nil {
 			return "", err
 		}
 	}
 
-	url, err := s.S3.GetPresignedUrl(ctx, id, s3.DocumentTypeInvoice)
+	url, err := s.S3.GetPresignedUrl(ctx, key, s3.DocumentTypeInvoice)
 	if err != nil {
 		return "", err
 	}

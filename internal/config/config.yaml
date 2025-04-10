@@ -116,12 +116,12 @@ billing:
   environment_id: ""
 
 s3:
-  enabled: false
-  region: "us-east-1"
+  enabled: true
+  region: "ap-south-1"
   invoice:
     bucket: "flexprice-invoices"
     presign_expiry_duration: "1h"
-    key_prefix: "invoices"
+    key_prefix: ""
   # can have multiple buckets like invoice, cdn, etc.
   cdn:
     bucket: "flexprice-cdn"

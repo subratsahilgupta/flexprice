@@ -359,8 +359,9 @@ func (h *InvoiceHandler) GetInvoicePDF(c *gin.Context) {
 		return
 	}
 
+	tenantId := types.GetTenantID(c.Request.Context())
 	if c.Query("url") == "true" {
-		url, err := h.invoiceService.GetInvoicePDFUrl(c.Request.Context(), id)
+		url, err := h.invoiceService.GetInvoicePDFUrl(c.Request.Context(), tenantId, id)
 		if err != nil {
 			h.logger.Errorw("failed to get invoice pdf url", "error", err, "invoice_id", id)
 			c.Error(err)

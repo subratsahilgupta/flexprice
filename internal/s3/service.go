@@ -59,7 +59,10 @@ func NewService(config *config.Configuration) (Service, error) {
 func (s *s3ServiceImpl) getObjectKey(id string, docType DocumentType) (string, error) {
 	switch docType {
 	case DocumentTypeInvoice:
-		return fmt.Sprintf("%s/%s.pdf", s.config.InvoiceBucketConfig.KeyPrefix, id), nil
+		if s.config.InvoiceBucketConfig.KeyPrefix != "" {
+			return fmt.Sprintf("%s/%s.pdf", s.config.InvoiceBucketConfig.KeyPrefix, id), nil
+		}
+		return fmt.Sprintf("%s.pdf", id), nil
 	default:
 		return "", ierr.NewErrorf("invalid doc type: %s", docType).
 			WithHintf("valid doc types are: %v", validDocumentTypes).
