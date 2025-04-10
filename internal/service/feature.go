@@ -52,15 +52,11 @@ func (s *featureService) CreateFeature(ctx context.Context, req dto.CreateFeatur
 		// Create meter only if MeterID is not provided
 		if req.MeterID == "" {
 			meter, err := meterService.CreateMeter(ctx, req.Meter)
-
 			if err != nil {
 				return nil, err
 			}
 			newMeter = meter
-		}
-
-		// If not already fetched above, get meter from repo
-		if newMeter == nil {
+		} else {
 			meter, err := s.meterRepo.GetMeter(ctx, req.MeterID)
 			if err != nil {
 				return nil, err
