@@ -82,6 +82,7 @@ func NewServiceParams(
 	environmentRepo environment.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
+	s3Service s3.Service,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:           logger,
@@ -106,5 +107,6 @@ func NewServiceParams(
 		EnvironmentRepo:  environmentRepo,
 		EventPublisher:   eventPublisher,
 		WebhookPublisher: webhookPublisher,
+		S3:               s3Service,
 	}
 }
