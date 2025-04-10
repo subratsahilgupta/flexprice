@@ -1,4 +1,4 @@
-package storage
+package s3
 
 type Document struct {
 	ID   string       `json:"id"`

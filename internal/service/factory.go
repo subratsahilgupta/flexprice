@@ -22,6 +22,7 @@ import (
 	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
+	"github.com/flexprice/flexprice/internal/s3"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 )
 
@@ -32,6 +33,7 @@ type ServiceParams struct {
 	Config       *config.Configuration
 	DB           postgres.IClient
 	PDFGenerator pdf.Generator
+	S3           s3.Service
 
 	// Repositories
 	AuthRepo        auth.Repository

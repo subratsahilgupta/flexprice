@@ -1,4 +1,4 @@
-package storage
+package s3
 
 import (
 	"bytes"
@@ -20,7 +20,7 @@ const (
 	defaultPresignExpiryDuration = 30 * time.Minute
 )
 
-type S3Service interface {
+type Service interface {
 	UploadDocument(ctx context.Context, document *Document) error
 	GetPresignedUrl(ctx context.Context, id string, docType DocumentType) (string, error)
 	GetDocument(ctx context.Context, id string, docType DocumentType) ([]byte, error)
@@ -32,7 +32,7 @@ type s3ServiceImpl struct {
 	config *config.S3Config
 }
 
-func NewS3Service(client *s3.Client, config *config.S3Config) S3Service {
+func NewService(client *s3.Client, config *config.S3Config) Service {
 	return &s3ServiceImpl{
 		config: config,
 		client: client,
