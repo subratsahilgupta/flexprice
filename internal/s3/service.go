@@ -100,7 +100,7 @@ func (s *s3ServiceImpl) Exists(ctx context.Context, id string, docType DocumentT
 	if err != nil {
 		var nsk *types.NoSuchKey
 		var nske *types.NotFound
-		if errors.Is(err, nsk) || errors.Is(err, nske) {
+		if errors.As(err, &nsk) || errors.As(err, &nske) {
 			return false, nil
 		}
 		return false, ierr.NewErrorf("failed to check if document exists: %w", err).
