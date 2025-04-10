@@ -122,3 +122,7 @@ s3:
     bucket: "flexprice-invoices"
     presign_expiry_duration: "1h"
     key_prefix: "invoices"
+  # can have multiple buckets like invoice, cdn, etc.
+  cdn:
+    bucket: "flexprice-cdn"
+    key_prefix: "cdn"
