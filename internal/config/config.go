@@ -30,6 +30,18 @@ type Configuration struct {
 	Webhook    Webhook          `validate:"omitempty"`
 	Secrets    SecretsConfig    `validate:"required"`
 	Billing    BillingConfig    `validate:"omitempty"`
+	S3         S3Config         `validate:"required"`
+}
+
+type S3Config struct {
+	Region              string              `mapstructure:"region" validate:"required"`
+	InvoiceBucketConfig InvoiceBucketConfig `mapstructure:"invoice" validate:"required"`
+}
+
+type InvoiceBucketConfig struct {
+	Bucket                string `mapstructure:"bucket" validate:"required"`
+	PresignExpiryDuration string `mapstructure:"presign_expiry_duration" validate:"required"`
+	KeyPrefix             string `mapstructure:"key_prefix" validate:"required"`
 }
 
 type DeploymentConfig struct {

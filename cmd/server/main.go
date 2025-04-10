@@ -23,6 +23,7 @@ import (
 	"github.com/flexprice/flexprice/internal/repository"
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/temporal"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/typst"
@@ -68,6 +69,13 @@ func main() {
 
 			// Logger
 			logger.NewLogger,
+
+			// aws
+			config.LoadAwsConfig,
+			config.NewS3Client,
+
+			// storage
+			storage.NewS3Service,
 
 			// Monitoring
 			sentry.NewSentryService,
