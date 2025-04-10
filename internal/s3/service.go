@@ -10,6 +10,7 @@ import (
 	"github.com/cockroachdb/errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/flexprice/flexprice/internal/config"
@@ -32,11 +33,19 @@ type s3ServiceImpl struct {
 	config *config.S3Config
 }
 
-func NewService(client *s3.Client, config *config.S3Config) Service {
-	return &s3ServiceImpl{
-		config: config,
-		client: client,
+func NewService(config *config.Configuration) (Service, error) {
+	awsCfg, err := awsConfig.LoadDefaultConfig(context.Background(),
+		awsConfig.WithRegion(config.S3.Region),
+	)
+	if err != nil {
+		return nil, ierr.WithError(err).WithHint("failed to load aws config").
+			Mark(ierr.ErrHTTPClient)
 	}
+
+	return &s3ServiceImpl{
+		config: &config.S3,
+		client: s3.NewFromConfig(awsCfg),
+	}, nil
 }
 
 func (s *s3ServiceImpl) getObjectKey(id string, docType DocumentType) (string, error) {

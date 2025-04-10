@@ -70,10 +70,6 @@ func main() {
 			// Logger
 			logger.NewLogger,
 
-			// aws
-			config.LoadAwsConfig,
-			config.NewS3Client,
-
 			// storage
 			s3.NewService,
 
