@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
+	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -247,6 +250,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	}
 
 	response := &dto.SubscriptionResponse{Subscription: sub}
+	s.publishWebhookEvent(ctx, types.WebhookEventSubscriptionCreated, sub.ID)
 	return response, nil
 }
 
@@ -316,6 +320,7 @@ func (s *subscriptionService) CancelSubscription(ctx context.Context, id string,
 		return err
 	}
 
+	s.publishWebhookEvent(ctx, types.WebhookEventSubscriptionCancelled, subscription.ID)
 	return nil
 }
 
@@ -1013,6 +1018,7 @@ func (s *subscriptionService) PauseSubscription(
 	response.BillingImpact = impact
 
 	// Return the response
+	s.publishWebhookEvent(ctx, types.WebhookEventSubscriptionPaused, subscriptionID)
 	return response, nil
 }
 
@@ -1155,6 +1161,9 @@ func (s *subscriptionService) ResumeSubscription(
 	if err != nil {
 		return nil, err
 	}
+
+	// Publish the webhook event
+	s.publishWebhookEvent(ctx, types.WebhookEventSubscriptionResumed, subscriptionID)
 
 	// Return the response
 	return &dto.ResumeSubscriptionResponse{
@@ -1503,4 +1512,30 @@ func (s *subscriptionService) calculateBillingImpact(
 	}
 
 	return impact, nil
+}
+
+func (s *subscriptionService) publishWebhookEvent(ctx context.Context, eventName string, subscriptionID string) {
+
+	eventPayload := webhookDto.InternalSubscriptionEvent{
+		SubscriptionID: subscriptionID,
+		TenantID:       types.GetTenantID(ctx),
+	}
+
+	webhookPayload, err := json.Marshal(eventPayload)
+
+	if err != nil {
+		s.Logger.Errorw("failed to marshal webhook payload", "error", err)
+		return
+	}
+
+	webhookEvent := &types.WebhookEvent{
+		ID:        uuid.New().String(),
+		EventName: eventName,
+		TenantID:  types.GetTenantID(ctx),
+		Timestamp: time.Now().UTC(),
+		Payload:   json.RawMessage(webhookPayload),
+	}
+	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
+		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
+	}
 }
