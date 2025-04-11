@@ -171,17 +171,6 @@ func (s *FeatureServiceSuite) TestCreateFeature() {
 			},
 		},
 		{
-			name: "error - missing meter ID for metered feature",
-			req: dto.CreateFeatureRequest{
-				Name:        "Test Feature",
-				Description: "Test Description",
-				LookupKey:   "test_key",
-				Type:        types.FeatureTypeMetered,
-			},
-			wantErr:   true,
-			errString: "either meter_id or meter must be provided",
-		},
-		{
 			name: "error - missing meter ID and  for metered feature",
 			req: dto.CreateFeatureRequest{
 				Name:        "Test Feature",
