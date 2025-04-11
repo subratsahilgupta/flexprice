@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	webhook "github.com/flexprice/flexprice/internal/webhook/dto"
+	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 )
 
 type SubscriptionPayloadBuilder struct {
@@ -20,9 +20,7 @@ func NewSubscriptionPayloadBuilder(services *Services) PayloadBuilder {
 
 func (b SubscriptionPayloadBuilder) BuildPayload(ctx context.Context, eventType string, data json.RawMessage) (json.RawMessage, error) {
 	// Validate input data
-	parsedPayload := struct {
-		SubscriptionID string `json:"subscription_id"`
-	}{}
+	var parsedPayload webhookDto.InternalSubscriptionEvent
 
 	err := json.Unmarshal(data, &parsedPayload)
 	if err != nil {
@@ -37,7 +35,7 @@ func (b SubscriptionPayloadBuilder) BuildPayload(ctx context.Context, eventType 
 		return nil, err
 	}
 
-	payload := webhook.NewSubscriptionWebhookPayload(subscriptionData)
+	payload := webhookDto.NewSubscriptionWebhookPayload(subscriptionData)
 
 	// Marshal payload
 	return json.Marshal(payload)

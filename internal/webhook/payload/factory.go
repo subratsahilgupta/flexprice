@@ -24,33 +24,33 @@ func NewPayloadBuilderFactory(services *Services) PayloadBuilderFactory {
 	}
 
 	// Register invoice builders
-	f.builders[string(types.WebhookEventInvoiceCreateDraft)] = func() PayloadBuilder {
+	f.builders[types.WebhookEventInvoiceCreateDraft] = func() PayloadBuilder {
 		return NewInvoicePayloadBuilder(f.services)
 	}
-	f.builders[string(types.WebhookEventInvoiceUpdateFinalized)] = func() PayloadBuilder {
+	f.builders[types.WebhookEventInvoiceUpdateFinalized] = func() PayloadBuilder {
 		return NewInvoicePayloadBuilder(f.services)
 	}
-	f.builders[string(types.WebhookEventInvoiceUpdateVoided)] = func() PayloadBuilder {
+	f.builders[types.WebhookEventInvoiceUpdateVoided] = func() PayloadBuilder {
 		return NewInvoicePayloadBuilder(f.services)
 	}
-	f.builders[string(types.WebhookEventInvoiceUpdatePayment)] = func() PayloadBuilder {
+	f.builders[types.WebhookEventInvoiceUpdatePayment] = func() PayloadBuilder {
 		return NewInvoicePayloadBuilder(f.services)
 	}
 
 	// Register subscription builders
-	f.builders[string(types.WebhookEventSubscriptionCreated)] = func() PayloadBuilder {
+	f.builders[types.WebhookEventSubscriptionCreated] = func() PayloadBuilder {
 		return NewSubscriptionPayloadBuilder(f.services)
 	}
-	f.builders[string(types.WebhookEventSubscriptionPaused)] = func() PayloadBuilder {
+	f.builders[types.WebhookEventSubscriptionPaused] = func() PayloadBuilder {
 		return NewSubscriptionPayloadBuilder(f.services)
 	}
-	f.builders[string(types.WebhookEventSubscriptionCancelled)] = func() PayloadBuilder {
+	f.builders[types.WebhookEventSubscriptionCancelled] = func() PayloadBuilder {
 		return NewSubscriptionPayloadBuilder(f.services)
 	}
-	f.builders[string(types.WebhookEventSubscriptionResumed)] = func() PayloadBuilder {
+	f.builders[types.WebhookEventSubscriptionResumed] = func() PayloadBuilder {
 		return NewSubscriptionPayloadBuilder(f.services)
 	}
-	f.builders[string(types.WebhookEventSubscriptionExpired)] = func() PayloadBuilder {
+	f.builders[types.WebhookEventSubscriptionExpired] = func() PayloadBuilder {
 		return NewSubscriptionPayloadBuilder(f.services)
 	}
 	return f

@@ -14,7 +14,6 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
-	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -1529,7 +1528,7 @@ func (s *subscriptionService) publishWebhookEvent(ctx context.Context, eventName
 	}
 
 	webhookEvent := &types.WebhookEvent{
-		ID:        uuid.New().String(),
+		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WEBHOOK_EVENT),
 		EventName: eventName,
 		TenantID:  types.GetTenantID(ctx),
 		Timestamp: time.Now().UTC(),

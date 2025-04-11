@@ -16,7 +16,6 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -694,31 +693,6 @@ func (s *invoiceService) validatePaymentStatusTransition(from, to types.PaymentS
 		Mark(ierr.ErrValidation)
 }
 
-func (s *invoiceService) publishWebhookEvent(ctx context.Context, eventName string, invoiceID string) {
-	webhookPayload, err := json.Marshal(struct {
-		InvoiceID string `json:"invoice_id"`
-		TenantID  string `json:"tenant_id"`
-	}{
-		InvoiceID: invoiceID,
-		TenantID:  types.GetTenantID(ctx),
-	})
-	if err != nil {
-		s.Logger.Errorw("failed to marshal webhook payload", "error", err)
-		return
-	}
-
-	webhookEvent := &types.WebhookEvent{
-		ID:        uuid.New().String(),
-		EventName: eventName,
-		TenantID:  types.GetTenantID(ctx),
-		Timestamp: time.Now().UTC(),
-		Payload:   json.RawMessage(webhookPayload),
-	}
-	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
-		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
-	}
-}
-
 // AttemptPayment attempts to pay an invoice using available wallets
 func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
 	s.Logger.Infow("attempting payment for invoice", "invoice_id", id)
@@ -993,4 +967,29 @@ func (s *invoiceService) getBillerInfo(t *tenant.Tenant) *pdf.BillerInfo {
 	}
 
 	return &billerInfo
+}
+
+func (s *invoiceService) publishWebhookEvent(ctx context.Context, eventName string, invoiceID string) {
+	webhookPayload, err := json.Marshal(struct {
+		InvoiceID string `json:"invoice_id"`
+		TenantID  string `json:"tenant_id"`
+	}{
+		InvoiceID: invoiceID,
+		TenantID:  types.GetTenantID(ctx),
+	})
+	if err != nil {
+		s.Logger.Errorw("failed to marshal webhook payload", "error", err)
+		return
+	}
+
+	webhookEvent := &types.WebhookEvent{
+		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WEBHOOK_EVENT),
+		EventName: eventName,
+		TenantID:  types.GetTenantID(ctx),
+		Timestamp: time.Now().UTC(),
+		Payload:   json.RawMessage(webhookPayload),
+	}
+	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
+		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
+	}
 }
