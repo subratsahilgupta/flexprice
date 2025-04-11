@@ -39,38 +39,34 @@ func NewFeatureService(repo feature.Repository, meterRepo meter.Repository, enti
 }
 
 func (s *featureService) CreateFeature(ctx context.Context, req dto.CreateFeatureRequest) (*dto.FeatureResponse, error) {
-	if err := req.Validate(); err != nil {
+	meterService := NewMeterService(s.meterRepo)
+	err := req.Validate()
+	if err != nil {
 		return nil, err // Validation errors are already properly formatted in the DTO
 	}
 
 	// Validate meter existence and status for metered features
 	if req.Type == types.FeatureTypeMetered {
-		var newMeter *meter.Meter
-
-		meterService := NewMeterService(s.meterRepo)
-
-		// Create meter only if MeterID is not provided
-		if req.MeterID == "" {
-			meter, err := meterService.CreateMeter(ctx, req.Meter)
+		var meter *meter.Meter
+		if req.MeterID != "" {
+			meter, err = meterService.GetMeter(ctx, req.MeterID)
 			if err != nil {
 				return nil, err
 			}
-			newMeter = meter
 		} else {
-			meter, err := s.meterRepo.GetMeter(ctx, req.MeterID)
+			meter, err = meterService.CreateMeter(ctx, req.Meter)
 			if err != nil {
 				return nil, err
 			}
-			newMeter = meter
+			req.MeterID = meter.ID
 		}
 
 		// Validate meter status
-		if newMeter.Status != types.StatusPublished {
+		if meter.Status != types.StatusPublished {
 			return nil, ierr.NewError("invalid meter status").
 				WithHint("The metered feature must be associated with an active meter").
 				Mark(ierr.ErrValidation)
 		}
-		req.MeterID = newMeter.ID
 	}
 
 	featureModel, err := req.ToFeature(ctx)
