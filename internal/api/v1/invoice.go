@@ -347,6 +347,7 @@ func (h *InvoiceHandler) AttemptPayment(c *gin.Context) {
 // @Description Retrieve the PDF document for a specific invoice by its ID
 // @Tags Invoices
 // @Param id path string true "Invoice ID"
+// @Param url query bool false "Return presigned URL from s3 instead of PDF"
 // @Success 200 {file} application/pdf
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
@@ -359,9 +360,8 @@ func (h *InvoiceHandler) GetInvoicePDF(c *gin.Context) {
 		return
 	}
 
-	tenantId := types.GetTenantID(c.Request.Context())
 	if c.Query("url") == "true" {
-		url, err := h.invoiceService.GetInvoicePDFUrl(c.Request.Context(), tenantId, id)
+		url, err := h.invoiceService.GetInvoicePDFUrl(c.Request.Context(), id)
 		if err != nil {
 			h.logger.Errorw("failed to get invoice pdf url", "error", err, "invoice_id", id)
 			c.Error(err)

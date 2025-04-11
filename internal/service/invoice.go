@@ -35,7 +35,7 @@ type InvoiceService interface {
 	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
 	AttemptPayment(ctx context.Context, id string) error
 	GetInvoicePDF(ctx context.Context, id string) ([]byte, error)
-	GetInvoicePDFUrl(ctx context.Context, tenantId, id string) (string, error)
+	GetInvoicePDFUrl(ctx context.Context, id string) (string, error)
 }
 
 type invoiceService struct {
@@ -768,12 +768,14 @@ func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *
 	return nil
 }
 
-func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, tenantId, id string) (string, error) {
+func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string) (string, error) {
 	if s.S3 == nil {
-		return "", ierr.NewError("s3 is not initialized").
-			WithHint("s3 is not initialzed but is required to generate invoice pdf url").
+		return "", ierr.NewError("s3 is not enabled").
+			WithHint("s3 is not enabled but is required to generate invoice pdf url.").
 			Mark(ierr.ErrSystem)
 	}
+
+	tenantId := types.GetTenantID(ctx)
 
 	key := fmt.Sprintf("%s/%s", tenantId, id)
 
