@@ -16,11 +16,11 @@ import (
 
 type FeatureServiceSuite struct {
 	testutil.BaseServiceTestSuite
-	service     FeatureService
-	featureRepo *testutil.InMemoryFeatureStore
-	meterRepo   *testutil.InMemoryMeterStore
+	service         FeatureService
+	featureRepo     *testutil.InMemoryFeatureStore
+	meterRepo       *testutil.InMemoryMeterStore
 	entitlementRepo *testutil.InMemoryEntitlementStore
-	testData    struct {
+	testData        struct {
 		meters struct {
 			apiCalls *meter.Meter
 			storage  *meter.Meter
@@ -47,12 +47,14 @@ func (s *FeatureServiceSuite) TearDownTest() {
 	s.BaseServiceTestSuite.TearDownTest()
 	s.featureRepo.Clear()
 	s.meterRepo.Clear()
+	s.entitlementRepo.Clear()
 }
 
 func (s *FeatureServiceSuite) setupService() {
 	s.featureRepo = testutil.NewInMemoryFeatureStore()
 	s.meterRepo = testutil.NewInMemoryMeterStore()
 	s.entitlementRepo = testutil.NewInMemoryEntitlementStore()
+
 	s.service = NewFeatureService(
 		s.featureRepo,
 		s.meterRepo,
@@ -169,7 +171,7 @@ func (s *FeatureServiceSuite) TestCreateFeature() {
 			},
 		},
 		{
-			name: "error - missing meter ID for metered feature",
+			name: "error - missing meter ID and  for metered feature",
 			req: dto.CreateFeatureRequest{
 				Name:        "Test Feature",
 				Description: "Test Description",
@@ -177,7 +179,7 @@ func (s *FeatureServiceSuite) TestCreateFeature() {
 				Type:        types.FeatureTypeMetered,
 			},
 			wantErr:   true,
-			errString: "meter_id is required for metered features",
+			errString: "either meter_id or meter must be provided",
 		},
 		{
 			name: "error - missing name",
@@ -481,7 +483,13 @@ func (s *FeatureServiceSuite) TestDeleteFeature() {
 			name:      "error - feature not found",
 			id:        "nonexistent-id",
 			wantErr:   true,
-			errString: "not found",
+			errString: "Feature with ID nonexistent-id was not found",
+		},
+		{
+			name:      "error - empty feature ID",
+			id:        "",
+			wantErr:   true,
+			errString: "feature ID is required",
 		},
 	}
 
