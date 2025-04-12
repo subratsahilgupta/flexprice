@@ -2363,6 +2363,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Return presigned URL from s3 instead of PDF",
+                        "name": "url",
+                        "in": "query"
                     }
                 ],
                 "responses": {

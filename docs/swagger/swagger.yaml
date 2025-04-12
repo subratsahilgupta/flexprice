@@ -4423,6 +4423,10 @@ paths:
         name: id
         required: true
         type: string
+      - description: Return presigned URL from s3 instead of PDF
+        in: query
+        name: url
+        type: boolean
       responses:
         "200":
           description: OK
