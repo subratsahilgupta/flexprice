@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/clickhouse"
@@ -42,9 +43,9 @@ func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) 
 
 	query := `
 		INSERT INTO events (
-			id, external_customer_id, customer_id, tenant_id, event_name, timestamp, source, properties
+			id, external_customer_id, customer_id, tenant_id, event_name, timestamp, source, properties, environment_id
 		) VALUES (
-			?, ?, ?, ?, ?, ?, ?, ?
+			?, ?, ?, ?, ?, ?, ?, ?, ?
 		)
 	`
 
@@ -57,6 +58,7 @@ func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) 
 		event.Timestamp,
 		event.Source,
 		string(propertiesJSON),
+		event.EnvironmentID,
 	)
 
 	if err != nil {
@@ -85,7 +87,7 @@ func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events
 		// Prepare batch statement
 		batch, err := r.store.GetConn().PrepareBatch(ctx, `
 		INSERT INTO events (
-			id, external_customer_id, customer_id, tenant_id, event_name, timestamp, source, properties
+			id, external_customer_id, customer_id, tenant_id, event_name, timestamp, source, properties, environment_id
 		)
 	`)
 		if err != nil {
@@ -119,6 +121,7 @@ func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events
 				event.Timestamp,
 				event.Source,
 				string(propertiesJSON),
+				event.EnvironmentID,
 			)
 
 			if err != nil {
@@ -359,7 +362,9 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 	return results, nil
 }
 
-func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, error) {
+func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, uint64, error) {
+	var totalCount uint64
+
 	baseQuery := `
 		SELECT 
 			id,
@@ -369,12 +374,20 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 			event_name,
 			timestamp,
 			source,
-			properties
-		FROM events
+			properties,
+			environment_id
+		FROM events FINAL
 		WHERE tenant_id = ?
 	`
 	args := make([]interface{}, 0)
 	args = append(args, types.GetTenantID(ctx))
+
+	// Add environment_id filter if present in context
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		baseQuery += " AND environment_id = ?"
+		args = append(args, environmentID)
+	}
 
 	// Apply filters
 	if params.EventID != "" {
@@ -398,6 +411,29 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 		args = append(args, params.EndTime)
 	}
 
+	// Apply property filters
+	if params.PropertyFilters != nil && len(params.PropertyFilters) > 0 {
+		for property, values := range params.PropertyFilters {
+			if len(values) > 0 {
+				if len(values) == 1 {
+					baseQuery += " AND JSONExtractString(properties, ?) = ?"
+					args = append(args, property, values[0])
+				} else {
+					placeholders := make([]string, len(values))
+					for i := range values {
+						placeholders[i] = "?"
+					}
+					baseQuery += " AND JSONExtractString(properties, ?) IN (" + strings.Join(placeholders, ",") + ")"
+					args = append(args, property)
+					// Now append all values after the property
+					for _, v := range values {
+						args = append(args, v)
+					}
+				}
+			}
+		}
+	}
+
 	// Handle pagination and real-time refresh using composite keys
 	if params.IterFirst != nil {
 		baseQuery += " AND (timestamp, id) > (?, ?)"
@@ -407,15 +443,42 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 		args = append(args, params.IterLast.Timestamp, params.IterLast.ID)
 	}
 
+	// Count total if requested
+	if params.CountTotal {
+		countQuery := "SELECT COUNT(*) FROM (" + baseQuery + ") AS filtered_events"
+		err := r.store.GetConn().QueryRow(ctx, countQuery, args...).Scan(&totalCount)
+		if err != nil {
+			return nil, 0, ierr.WithError(err).
+				WithHint("Failed to count events").
+				WithReportableDetails(map[string]interface{}{
+					"event_name": params.EventName,
+				}).
+				Mark(ierr.ErrDatabase)
+		}
+	}
+
 	// Order by timestamp and ID
 	baseQuery += " ORDER BY timestamp DESC, id DESC"
-	baseQuery += " LIMIT ?"
-	args = append(args, params.PageSize+1)
+
+	// Apply limit and offset for pagination if using offset-based pagination
+	if params.PageSize > 0 {
+		baseQuery += " LIMIT ?"
+		args = append(args, params.PageSize)
+
+		if params.Offset > 0 {
+			baseQuery += " OFFSET ?"
+			args = append(args, params.Offset)
+		}
+	}
+
+	r.logger.Debugw("executing get events query",
+		"query", baseQuery,
+		"args", args)
 
 	// Execute query
 	rows, err := r.store.GetConn().Query(ctx, baseQuery, args...)
 	if err != nil {
-		return nil, ierr.WithError(err).
+		return nil, 0, ierr.WithError(err).
 			WithHint("Failed to query events").
 			WithReportableDetails(map[string]interface{}{
 				"event_name": params.EventName,
@@ -438,9 +501,10 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 			&event.Timestamp,
 			&event.Source,
 			&propertiesJSON,
+			&event.EnvironmentID,
 		)
 		if err != nil {
-			return nil, ierr.WithError(err).
+			return nil, 0, ierr.WithError(err).
 				WithHint("Failed to scan event").
 				WithReportableDetails(map[string]interface{}{
 					"event_id": event.ID,
@@ -449,7 +513,7 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 		}
 
 		if err := json.Unmarshal([]byte(propertiesJSON), &event.Properties); err != nil {
-			return nil, ierr.WithError(err).
+			return nil, 0, ierr.WithError(err).
 				WithHint("Failed to unmarshal event properties").
 				WithReportableDetails(map[string]interface{}{
 					"event_id":   event.ID,
@@ -461,5 +525,5 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 		eventsList = append(eventsList, &event)
 	}
 
-	return eventsList, nil
+	return eventsList, totalCount, nil
 }

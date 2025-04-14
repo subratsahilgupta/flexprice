@@ -1286,85 +1286,6 @@
             }
         },
         "/events": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Retrieve raw events with pagination and filtering",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Events"
-                ],
-                "summary": "Get raw events",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "External Customer ID",
-                        "name": "external_customer_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Event Name",
-                        "name": "event_name",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Start Time (RFC3339)",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "End Time (RFC3339)",
-                        "name": "end_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Iter First Key (unix_timestamp_nanoseconds::event_id)",
-                        "name": "iter_first_key",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Iter Last Key (unix_timestamp_nanoseconds::event_id)",
-                        "name": "iter_last_key",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Page Size (1-50)",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.GetEventsResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            },
             "post": {
                 "security": [
                     {
@@ -1455,6 +1376,54 @@
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/query": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieve raw events with pagination and filtering",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "List raw events",
+                "parameters": [
+                    {
+                        "description": "Request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetEventsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetEventsResponse"
                         }
                     },
                     "400": {
@@ -1958,6 +1927,15 @@
                     {
                         "type": "array",
                         "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "invoice_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
                             "enum": [
                                 "DRAFT",
                                 "FINALIZED",
@@ -2382,6 +2360,12 @@
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Return presigned URL from s3 instead of PDF",
+                        "name": "url",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2443,366 +2427,6 @@
                     },
                     "400": {
                         "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/meters": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Get all meters",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meters"
-                ],
-                "summary": "List meters",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "name": "end_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "event_name",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "expand",
-                        "in": "query"
-                    },
-                    {
-                        "maximum": 1000,
-                        "minimum": 1,
-                        "type": "integer",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "collectionFormat": "csv",
-                        "name": "meter_ids",
-                        "in": "query"
-                    },
-                    {
-                        "minimum": 0,
-                        "type": "integer",
-                        "name": "offset",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "asc",
-                            "desc"
-                        ],
-                        "type": "string",
-                        "name": "order",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "sort",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "published",
-                            "deleted",
-                            "archived"
-                        ],
-                        "type": "string",
-                        "x-enum-varnames": [
-                            "StatusPublished",
-                            "StatusDeleted",
-                            "StatusArchived"
-                        ],
-                        "name": "status",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/dto.MeterResponse"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Create a new meter with the specified configuration",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meters"
-                ],
-                "summary": "Create meter",
-                "parameters": [
-                    {
-                        "description": "Meter configuration",
-                        "name": "meter",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.CreateMeterRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/dto.MeterResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/meters/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Get a specific meter by ID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meters"
-                ],
-                "summary": "Get meter",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Meter ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.MeterResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Update an existing meter",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meters"
-                ],
-                "summary": "Update meter",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Meter ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Meter configuration",
-                        "name": "meter",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.UpdateMeterRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.MeterResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Delete an existing meter",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meters"
-                ],
-                "summary": "Delete meter",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Meter ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "message:Meter deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/meters/{id}/disable": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Disable an existing meter",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meters"
-                ],
-                "summary": "Disable meter [TODO: Deprecate]",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Meter ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "message:Meter disabled successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -4277,12 +3901,6 @@
                     {
                         "type": "string",
                         "name": "expand",
-                        "in": "query"
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "IncludeCanceled includes canceled subscriptions if true",
-                        "name": "include_canceled",
                         "in": "query"
                     },
                     {
@@ -6128,6 +5746,9 @@
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
+                "meter": {
+                    "$ref": "#/definitions/dto.CreateMeterRequest"
+                },
                 "meter_id": {
                     "type": "string"
                 },
@@ -6171,7 +5792,6 @@
             "type": "object",
             "required": [
                 "amount",
-                "price_id",
                 "quantity"
             ],
             "properties": {
@@ -7113,6 +6733,52 @@
                 }
             }
         },
+        "dto.GetEventsRequest": {
+            "type": "object",
+            "properties": {
+                "count_total": {
+                    "type": "boolean"
+                },
+                "end_time": {
+                    "type": "string",
+                    "example": "2024-12-09T00:00:00Z"
+                },
+                "event_id": {
+                    "type": "string"
+                },
+                "event_name": {
+                    "type": "string"
+                },
+                "external_customer_id": {
+                    "type": "string"
+                },
+                "iter_first_key": {
+                    "type": "string"
+                },
+                "iter_last_key": {
+                    "type": "string"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "property_filters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "start_time": {
+                    "type": "string",
+                    "example": "2024-11-09T00:00:00Z"
+                }
+            }
+        },
         "dto.GetEventsResponse": {
             "type": "object",
             "properties": {
@@ -7130,6 +6796,12 @@
                 },
                 "iter_last_key": {
                     "type": "string"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total_count": {
+                    "type": "integer"
                 }
             }
         },
@@ -7908,6 +7580,9 @@
                 "idempotency_key": {
                     "type": "string"
                 },
+                "invoice_number": {
+                    "type": "string"
+                },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
@@ -8652,6 +8327,12 @@
                 "description": {
                     "type": "string"
                 },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meter.Filter"
+                    }
+                },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
@@ -8663,17 +8344,6 @@
                 },
                 "unit_singular": {
                     "type": "string"
-                }
-            }
-        },
-        "dto.UpdateMeterRequest": {
-            "type": "object",
-            "properties": {
-                "filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/meter.Filter"
-                    }
                 }
             }
         },

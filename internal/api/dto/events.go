@@ -43,6 +43,7 @@ func (r *IngestEventRequest) ToEvent(ctx context.Context) *events.Event {
 		r.EventID,
 		r.CustomerID,
 		r.Source,
+		types.GetEnvironmentID(ctx),
 	)
 }
 
@@ -69,14 +70,17 @@ type GetUsageByMeterRequest struct {
 }
 
 type GetEventsRequest struct {
-	ExternalCustomerID string    `json:"external_customer_id"`
-	EventName          string    `json:"event_name" binding:"required"`
-	EventID            string    `json:"event_id"`
-	StartTime          time.Time `json:"start_time" example:"2024-11-09T00:00:00Z"`
-	EndTime            time.Time `json:"end_time" example:"2024-12-09T00:00:00Z"`
-	IterFirstKey       string    `json:"iter_first_key"`
-	IterLastKey        string    `json:"iter_last_key"`
-	PageSize           int       `json:"page_size" default:"50"`
+	ExternalCustomerID string              `json:"external_customer_id"`
+	EventName          string              `json:"event_name"`
+	EventID            string              `json:"event_id"`
+	StartTime          time.Time           `json:"start_time" example:"2024-11-09T00:00:00Z"`
+	EndTime            time.Time           `json:"end_time" example:"2024-12-09T00:00:00Z"`
+	IterFirstKey       string              `json:"iter_first_key"`
+	IterLastKey        string              `json:"iter_last_key"`
+	PropertyFilters    map[string][]string `json:"property_filters,omitempty"`
+	PageSize           int                 `json:"page_size"`
+	Offset             int                 `json:"offset"`
+	CountTotal         bool                `json:"count_total"`
 }
 
 type GetEventsResponse struct {
@@ -84,6 +88,8 @@ type GetEventsResponse struct {
 	HasMore      bool    `json:"has_more"`
 	IterFirstKey string  `json:"iter_first_key,omitempty"`
 	IterLastKey  string  `json:"iter_last_key,omitempty"`
+	TotalCount   uint64  `json:"total_count,omitempty"`
+	Offset       int     `json:"offset,omitempty"`
 }
 
 type Event struct {
@@ -94,6 +100,7 @@ type Event struct {
 	Timestamp          time.Time              `json:"timestamp"`
 	Properties         map[string]interface{} `json:"properties"`
 	Source             string                 `json:"source"`
+	EnvironmentID      string                 `json:"environment_id"`
 }
 
 type GetUsageResponse struct {

@@ -172,6 +172,8 @@ definitions:
         type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
+      meter:
+        $ref: '#/definitions/dto.CreateMeterRequest'
       meter_id:
         type: string
       name:
@@ -229,7 +231,6 @@ definitions:
         type: number
     required:
     - amount
-    - price_id
     - quantity
     type: object
   dto.CreateInvoiceRequest:
@@ -843,6 +844,37 @@ definitions:
       usage_percent:
         type: number
     type: object
+  dto.GetEventsRequest:
+    properties:
+      count_total:
+        type: boolean
+      end_time:
+        example: "2024-12-09T00:00:00Z"
+        type: string
+      event_id:
+        type: string
+      event_name:
+        type: string
+      external_customer_id:
+        type: string
+      iter_first_key:
+        type: string
+      iter_last_key:
+        type: string
+      offset:
+        type: integer
+      page_size:
+        type: integer
+      property_filters:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        type: object
+      start_time:
+        example: "2024-11-09T00:00:00Z"
+        type: string
+    type: object
   dto.GetEventsResponse:
     properties:
       events:
@@ -855,6 +887,10 @@ definitions:
         type: string
       iter_last_key:
         type: string
+      offset:
+        type: integer
+      total_count:
+        type: integer
     type: object
   dto.GetPreviewInvoiceRequest:
     properties:
@@ -1375,6 +1411,8 @@ definitions:
       id:
         type: string
       idempotency_key:
+        type: string
+      invoice_number:
         type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
@@ -1912,6 +1950,10 @@ definitions:
     properties:
       description:
         type: string
+      filters:
+        items:
+          $ref: '#/definitions/meter.Filter'
+        type: array
       metadata:
         $ref: '#/definitions/types.Metadata'
       name:
@@ -1920,13 +1962,6 @@ definitions:
         type: string
       unit_singular:
         type: string
-    type: object
-  dto.UpdateMeterRequest:
-    properties:
-      filters:
-        items:
-          $ref: '#/definitions/meter.Filter'
-        type: array
     type: object
   dto.UpdatePaymentRequest:
     properties:
@@ -3723,57 +3758,6 @@ paths:
       tags:
       - Environments
   /events:
-    get:
-      description: Retrieve raw events with pagination and filtering
-      parameters:
-      - description: External Customer ID
-        in: query
-        name: external_customer_id
-        type: string
-      - description: Event Name
-        in: query
-        name: event_name
-        type: string
-      - description: Start Time (RFC3339)
-        in: query
-        name: start_time
-        type: string
-      - description: End Time (RFC3339)
-        in: query
-        name: end_time
-        type: string
-      - description: Iter First Key (unix_timestamp_nanoseconds::event_id)
-        in: query
-        name: iter_first_key
-        type: string
-      - description: Iter Last Key (unix_timestamp_nanoseconds::event_id)
-        in: query
-        name: iter_last_key
-        type: string
-      - description: Page Size (1-50)
-        in: query
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.GetEventsResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Get raw events
-      tags:
-      - Events
     post:
       consumes:
       - application/json
@@ -3839,6 +3823,36 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Bulk Ingest events
+      tags:
+      - Events
+  /events/query:
+    post:
+      description: Retrieve raw events with pagination and filtering
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.GetEventsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GetEventsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List raw events
       tags:
       - Events
   /events/usage:
@@ -4149,6 +4163,12 @@ paths:
       - collectionFormat: csv
         in: query
         items:
+          type: string
+        name: invoice_ids
+        type: array
+      - collectionFormat: csv
+        in: query
+        items:
           enum:
           - DRAFT
           - FINALIZED
@@ -4403,6 +4423,10 @@ paths:
         name: id
         required: true
         type: string
+      - description: Return presigned URL from s3 instead of PDF
+        in: query
+        name: url
+        type: boolean
       responses:
         "200":
           description: OK
@@ -4482,236 +4506,6 @@ paths:
       summary: Get a preview invoice
       tags:
       - Invoices
-  /meters:
-    get:
-      description: Get all meters
-      parameters:
-      - in: query
-        name: end_time
-        type: string
-      - in: query
-        name: event_name
-        type: string
-      - in: query
-        name: expand
-        type: string
-      - in: query
-        maximum: 1000
-        minimum: 1
-        name: limit
-        type: integer
-      - collectionFormat: csv
-        in: query
-        items:
-          type: string
-        name: meter_ids
-        type: array
-      - in: query
-        minimum: 0
-        name: offset
-        type: integer
-      - enum:
-        - asc
-        - desc
-        in: query
-        name: order
-        type: string
-      - in: query
-        name: sort
-        type: string
-      - in: query
-        name: start_time
-        type: string
-      - enum:
-        - published
-        - deleted
-        - archived
-        in: query
-        name: status
-        type: string
-        x-enum-varnames:
-        - StatusPublished
-        - StatusDeleted
-        - StatusArchived
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/dto.MeterResponse'
-            type: array
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: List meters
-      tags:
-      - Meters
-    post:
-      consumes:
-      - application/json
-      description: Create a new meter with the specified configuration
-      parameters:
-      - description: Meter configuration
-        in: body
-        name: meter
-        required: true
-        schema:
-          $ref: '#/definitions/dto.CreateMeterRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/dto.MeterResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Create meter
-      tags:
-      - Meters
-  /meters/{id}:
-    delete:
-      description: Delete an existing meter
-      parameters:
-      - description: Meter ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: message:Meter deleted successfully
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Delete meter
-      tags:
-      - Meters
-    get:
-      description: Get a specific meter by ID
-      parameters:
-      - description: Meter ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.MeterResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Get meter
-      tags:
-      - Meters
-    put:
-      consumes:
-      - application/json
-      description: Update an existing meter
-      parameters:
-      - description: Meter ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Meter configuration
-        in: body
-        name: meter
-        required: true
-        schema:
-          $ref: '#/definitions/dto.UpdateMeterRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.MeterResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Update meter
-      tags:
-      - Meters
-  /meters/{id}/disable:
-    post:
-      description: Disable an existing meter
-      parameters:
-      - description: Meter ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: message:Meter disabled successfully
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: 'Disable meter [TODO: Deprecate]'
-      tags:
-      - Meters
   /payments:
     get:
       consumes:
@@ -5652,10 +5446,6 @@ paths:
       - in: query
         name: expand
         type: string
-      - description: IncludeCanceled includes canceled subscriptions if true
-        in: query
-        name: include_canceled
-        type: boolean
       - in: query
         maximum: 1000
         minimum: 1

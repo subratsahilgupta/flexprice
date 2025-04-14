@@ -52,7 +52,7 @@ func NewOnboardingService(
 func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.OnboardingEventsRequest) (*dto.OnboardingEventsResponse, error) {
 	var customerID string
 	meters := make([]types.MeterInfo, 0)
-	featureService := NewFeatureService(s.FeatureRepo, s.MeterRepo, s.Logger)
+	featureService := NewFeatureService(s.FeatureRepo, s.MeterRepo, s.EntitlementRepo, s.Logger)
 	featureFilter := types.NewNoLimitFeatureFilter()
 	featureFilter.Expand = lo.ToPtr(string(types.ExpandMeters))
 
@@ -118,6 +118,8 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 		Duration:         req.Duration,
 		Meters:           meters,
 		TenantID:         types.GetTenantID(ctx),
+		EnvironmentID:    types.GetEnvironmentID(ctx),
+		UserID:           types.GetUserID(ctx),
 		RequestTimestamp: time.Now(),
 		SubscriptionID:   req.SubscriptionID,
 	}
@@ -133,6 +135,8 @@ func (s *onboardingService) GenerateEvents(ctx context.Context, req *dto.Onboard
 
 	watermillMsg := message.NewMessage(messageID, payload)
 	watermillMsg.Metadata.Set("tenant_id", types.GetTenantID(ctx))
+	watermillMsg.Metadata.Set("environment_id", types.GetEnvironmentID(ctx))
+	watermillMsg.Metadata.Set("user_id", types.GetUserID(ctx))
 
 	s.Logger.Infow("publishing onboarding events message",
 		"message_id", messageID,
@@ -220,6 +224,8 @@ func (s *onboardingService) processMessage(msg *message.Message) error {
 
 	// Copy tenant ID from original context to background context
 	bgCtx = context.WithValue(bgCtx, types.CtxTenantID, eventMsg.TenantID)
+	bgCtx = context.WithValue(bgCtx, types.CtxEnvironmentID, eventMsg.EnvironmentID)
+	bgCtx = context.WithValue(bgCtx, types.CtxUserID, eventMsg.UserID)
 
 	// Start a goroutine to generate events at a rate of 1 per second
 	go s.generateEvents(bgCtx, &eventMsg)
@@ -571,7 +577,7 @@ func (s *onboardingService) createDefaultFeatures(ctx context.Context, meters []
 	}
 
 	// Create a feature service instance
-	featureService := NewFeatureService(s.FeatureRepo, s.MeterRepo, s.Logger)
+	featureService := NewFeatureService(s.FeatureRepo, s.MeterRepo, s.EntitlementRepo, s.Logger)
 
 	// Define features based on Cursor pricing
 	features := []dto.CreateFeatureRequest{
@@ -648,6 +654,7 @@ func (s *onboardingService) createDefaultPlans(ctx context.Context, features []*
 		s.DB,
 		s.PlanRepo,
 		s.PriceRepo,
+		s.SubRepo,
 		s.MeterRepo,
 		s.EntitlementRepo,
 		s.FeatureRepo,
@@ -903,7 +910,7 @@ func (s *onboardingService) createDefaultCustomers(ctx context.Context) ([]*dto.
 	s.Logger.Infow("creating default customers for Cursor pricing model")
 
 	// Create a customer service instance
-	customerService := NewCustomerService(s.CustomerRepo)
+	customerService := NewCustomerService(s.CustomerRepo, s.SubRepo, s.InvoiceRepo, s.WalletRepo)
 
 	// Create a default customer
 	customer := dto.CreateCustomerRequest{

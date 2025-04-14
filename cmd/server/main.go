@@ -21,6 +21,7 @@ import (
 	"github.com/flexprice/flexprice/internal/publisher"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/repository"
+	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/temporal"
@@ -68,6 +69,9 @@ func main() {
 
 			// Logger
 			logger.NewLogger,
+
+			// storage
+			s3.NewService,
 
 			// Monitoring
 			sentry.NewSentryService,
@@ -430,6 +434,7 @@ func handleEventConsumption(cfg *config.Configuration, log *logger.Logger, event
 			"", // Customer ID will be looked up by external ID
 			"", // Generate new ID
 			"system",
+			cfg.Billing.EnvironmentID,
 		)
 		eventsToInsert = append(eventsToInsert, billingEvent)
 	}
