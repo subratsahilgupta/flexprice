@@ -11,7 +11,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
-	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/pubsub"
@@ -348,18 +347,17 @@ func (s *onboardingService) OnboardNewUserWithTenant(ctx context.Context, userID
 		tenantName = "Flexprice"
 	}
 
-	// Create tenant
-	newTenant := &tenant.Tenant{
-		ID:        tenantID,
-		Name:      tenantName,
-		Status:    types.StatusPublished,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
+	tenantService := NewTenantService(s.ServiceParams)
 
-	if err := s.TenantRepo.Create(ctx, newTenant); err != nil {
+	resp, err := tenantService.CreateTenant(ctx, dto.CreateTenantRequest{
+		Name: tenantName,
+		ID:   tenantID,
+	})
+	if err != nil {
 		return err
 	}
+
+	tenantID = resp.ID
 
 	// Create a new user without a tenant ID initially
 	newUser := &user.User{
@@ -392,7 +390,7 @@ func (s *onboardingService) OnboardNewUserWithTenant(ctx context.Context, userID
 			Name: envType.DisplayTitle(),
 			Type: envType,
 			BaseModel: types.BaseModel{
-				TenantID:  newTenant.ID,
+				TenantID:  tenantID,
 				Status:    types.StatusPublished,
 				CreatedBy: userID,
 				UpdatedBy: userID,
@@ -410,7 +408,7 @@ func (s *onboardingService) OnboardNewUserWithTenant(ctx context.Context, userID
 		}
 	}
 
-	err := s.SetupSandboxEnvironment(ctx, tenantID, userID, sandboxEnvironmentID)
+	err = s.SetupSandboxEnvironment(ctx, tenantID, userID, sandboxEnvironmentID)
 	if err != nil {
 		return err
 	}

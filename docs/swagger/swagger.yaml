@@ -1224,6 +1224,15 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
+  dto.ListMetersResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.MeterResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
   dto.ListPaymentsResponse:
     properties:
       items:

@@ -7300,6 +7300,20 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.ListMetersResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.MeterResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
         "dto.ListPaymentsResponse": {
             "type": "object",
             "properties": {

@@ -7,8 +7,10 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/auth"
 	"github.com/flexprice/flexprice/internal/config"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
 
 type TenantService interface {
@@ -18,6 +20,7 @@ type TenantService interface {
 	GetAllTenants(ctx context.Context) ([]*dto.TenantResponse, error)
 	UpdateTenant(ctx context.Context, id string, req dto.UpdateTenantRequest) (*dto.TenantResponse, error)
 	GetBillingUsage(ctx context.Context) (*dto.TenantBillingUsage, error)
+	CreateTenantAsBillingCustomer(ctx context.Context, t *tenant.Tenant) error
 }
 
 type tenantService struct {
@@ -44,7 +47,7 @@ func (s *tenantService) CreateTenant(ctx context.Context, req dto.CreateTenantRe
 	}
 
 	// Create a customer in the billing tenant for this new tenant
-	if err := s.createTenantAsBillingCustomer(ctx, newTenant); err != nil {
+	if err := s.CreateTenantAsBillingCustomer(ctx, newTenant); err != nil {
 		// Log error but don't fail tenant creation
 		s.Logger.Errorw("Failed to create billing customer for tenant",
 			"tenant_id", newTenant.ID,
@@ -54,9 +57,11 @@ func (s *tenantService) CreateTenant(ctx context.Context, req dto.CreateTenantRe
 	return dto.NewTenantResponse(newTenant), nil
 }
 
-// createTenantAsBillingCustomer creates a customer in the billing tenant using the tenant details
-func (s *tenantService) createTenantAsBillingCustomer(ctx context.Context, t *tenant.Tenant) error {
+// CreateTenantAsBillingCustomer creates a customer in the billing tenant using the tenant details
+func (s *tenantService) CreateTenantAsBillingCustomer(ctx context.Context, t *tenant.Tenant) error {
 	if s.Config.Billing.TenantID == "" {
+		s.Logger.Warnw("Billing tenant ID is not set, skipping customer creation",
+			"tenant_id", t.ID)
 		return nil
 	}
 
@@ -82,8 +87,76 @@ func (s *tenantService) createTenantAsBillingCustomer(ctx context.Context, t *te
 
 	// Create customer in billing tenant
 	customerService := NewCustomerService(s.CustomerRepo, s.SubRepo, s.InvoiceRepo, s.WalletRepo)
-	_, err := customerService.CreateCustomer(billingCtx, createCustomerReq)
-	return err
+	customer, err := customerService.CreateCustomer(billingCtx, createCustomerReq)
+	if err != nil {
+		return err
+	}
+
+	// Onboard the tenant on the free plan
+	return s.onboardTenantOnFreePlan(ctx, t, customer.Customer)
+}
+
+func (s *tenantService) onboardTenantOnFreePlan(ctx context.Context, t *tenant.Tenant, customer *customer.Customer) error {
+	// Create a context with the billing tenant ID
+	billingCtx := getBillingContext(ctx, s.Config)
+	flexpriceTenantID := billingCtx.Value(types.CtxTenantID)
+	flexpriceEnvironmentID := billingCtx.Value(types.CtxEnvironmentID)
+
+	// inject the tenant id into the context
+	ctx = context.WithValue(ctx, types.CtxTenantID, flexpriceTenantID)
+	ctx = context.WithValue(ctx, types.CtxEnvironmentID, flexpriceEnvironmentID)
+
+	planService := NewPlanService(s.DB, s.PlanRepo, s.PriceRepo, s.SubRepo, s.MeterRepo, s.EntitlementRepo, s.FeatureRepo, s.Logger)
+	// List plans
+	planFilter := types.NewNoLimitPlanFilter()
+	planFilter.Expand = lo.ToPtr(string(types.ExpandPrices))
+	plans, err := planService.GetPlans(ctx, planFilter)
+	if err != nil {
+		return err
+	}
+
+	// Find the free plan
+	var freePlan *dto.PlanResponse
+	var freePrice *dto.PriceResponse
+	for _, p := range plans.Items {
+		for _, price := range p.Prices {
+			if price.Type == types.PRICE_TYPE_FIXED &&
+				price.BillingCadence == types.BILLING_CADENCE_RECURRING &&
+				price.Amount.IsZero() {
+				freePlan = p
+				freePrice = price
+				break
+			}
+		}
+
+	}
+
+	if freePlan == nil || freePrice == nil {
+		s.Logger.Warnw("No free plan found, skipping onboarding",
+			"tenant_id", t.ID)
+		return nil
+	}
+
+	// Create a subscription for the tenant
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
+
+	_, err = subscriptionService.CreateSubscription(ctx, dto.CreateSubscriptionRequest{
+		CustomerID:         customer.ID,
+		PlanID:             freePlan.ID,
+		Currency:           freePrice.Currency,
+		BillingCadence:     freePrice.BillingCadence,
+		BillingPeriod:      freePrice.BillingPeriod,
+		BillingPeriodCount: freePrice.BillingPeriodCount,
+		StartDate:          time.Now(),
+	})
+	if err != nil {
+		s.Logger.Errorw("Failed to create subscription",
+			"tenant_id", t.ID,
+			"error", err)
+		return err
+	}
+
+	return nil
 }
 
 func (s *tenantService) GetTenantByID(ctx context.Context, id string) (*dto.TenantResponse, error) {
