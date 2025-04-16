@@ -53,6 +53,43 @@ func NewPayloadBuilderFactory(services *Services) PayloadBuilderFactory {
 	f.builders[types.WebhookEventSubscriptionExpired] = func() PayloadBuilder {
 		return NewSubscriptionPayloadBuilder(f.services)
 	}
+
+	// wallet builders
+	f.builders[types.WebhookEventWalletCreated] = func() PayloadBuilder {
+		return NewWalletPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventWalletUpdated] = func() PayloadBuilder {
+		return NewWalletPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventWalletTerminated] = func() PayloadBuilder {
+		return NewWalletPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventWalletDepletedOngoingBalance] = func() PayloadBuilder {
+		return NewWalletPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventWalletTransactionCreated] = func() PayloadBuilder {
+		return NewTransactionPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventWalletTransactionUpdated] = func() PayloadBuilder {
+		return NewTransactionPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventWalletTransactionPaymentFailure] = func() PayloadBuilder {
+		return NewTransactionPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventWalletTransactionPaymentSuccess] = func() PayloadBuilder {
+		return NewTransactionPayloadBuilder(f.services)
+	}
+
+	// customer builders
+	f.builders[types.WebhookEventCustomerCreated] = func() PayloadBuilder {
+		return NewCustomerPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventCustomerUpdated] = func() PayloadBuilder {
+		return NewCustomerPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventCustomerDeleted] = func() PayloadBuilder {
+		return NewCustomerPayloadBuilder(f.services)
+	}
 	return f
 }
 

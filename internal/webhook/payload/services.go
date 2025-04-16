@@ -10,6 +10,8 @@ type Services struct {
 	EntitlementService  service.EntitlementService
 	FeatureService      service.FeatureService
 	SubscriptionService service.SubscriptionService
+	WalletService       service.WalletService
+	CustomerService     service.CustomerService
 }
 
 // NewServices creates a new Services container
@@ -20,6 +22,8 @@ func NewServices(
 	entitlementService service.EntitlementService,
 	featureService service.FeatureService,
 	subscriptionService service.SubscriptionService,
+	walletService service.WalletService,
+	customerService service.CustomerService,
 ) *Services {
 	return &Services{
 		InvoiceService:      invoiceService,
@@ -28,5 +32,7 @@ func NewServices(
 		EntitlementService:  entitlementService,
 		FeatureService:      featureService,
 		SubscriptionService: subscriptionService,
+		WalletService:       walletService,
+		CustomerService:     customerService,
 	}
 }
