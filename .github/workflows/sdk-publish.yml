@@ -154,7 +154,7 @@ jobs:
           git tag -a "v${{ env.VERSION }}" -m "Version ${{ env.VERSION }}" || echo "Tag creation failed"
           
           # Use GitHub token for authentication
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/flexprice/go-sdk.git || true
+          git remote set-url origin https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/go-sdk.git || true
           git push -f origin main || echo "Push failed but continuing"
           git push --tags || echo "Tag push failed but continuing"
           echo "Go SDK publishing steps completed"
@@ -190,7 +190,7 @@ jobs:
           git tag -a "v${{ env.VERSION }}" -m "Version ${{ env.VERSION }}" || echo "Tag creation failed"
           
           # Use GitHub token for authentication
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/flexprice/javascript-sdk.git || true
+          git remote set-url origin https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/javascript-sdk.git || true
           git push -f origin main || echo "Push failed but continuing"
           git push --tags || echo "Tag push failed but continuing"
           echo "JavaScript SDK publishing steps completed"
@@ -225,7 +225,7 @@ jobs:
           git tag -a "v${{ env.VERSION }}" -m "Version ${{ env.VERSION }}" || echo "Tag creation failed"
           
           # Use GitHub token for authentication
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/flexprice/python-sdk.git || true
+          git remote set-url origin https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/python-sdk.git || true
           git push -f origin main || echo "Push failed but continuing"
           git push --tags || echo "Tag push failed but continuing"
           echo "Python SDK publishing steps completed"

@@ -6745,9 +6745,6 @@ const docTemplate = `{
         "dto.GetEventsRequest": {
             "type": "object",
             "properties": {
-                "count_total": {
-                    "type": "boolean"
-                },
                 "end_time": {
                     "description": "End time of the events to be fetched in ISO 8601 format\nDefaults to now if not provided",
                     "type": "string",
@@ -6790,6 +6787,10 @@ const docTemplate = `{
                             "type": "string"
                         }
                     }
+                },
+                "source": {
+                    "description": "Source to filter the events by the source",
+                    "type": "string"
                 },
                 "start_time": {
                     "description": "Start time of the events to be fetched in ISO 8601 format\nDefaults to last 7 days from now if not provided",
@@ -7725,9 +7726,6 @@ const docTemplate = `{
                 "environment_id": {
                     "description": "EnvironmentID is the environment identifier for the price",
                     "type": "string"
-                },
-                "filter_values": {
-                    "$ref": "#/definitions/price.JSONBFilters"
                 },
                 "id": {
                     "description": "ID uuid identifier for the price",
@@ -8948,9 +8946,6 @@ const docTemplate = `{
                 "environment_id": {
                     "description": "EnvironmentID is the environment identifier for the price",
                     "type": "string"
-                },
-                "filter_values": {
-                    "$ref": "#/definitions/price.JSONBFilters"
                 },
                 "id": {
                     "description": "ID uuid identifier for the price",

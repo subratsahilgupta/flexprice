@@ -850,8 +850,6 @@ definitions:
     type: object
   dto.GetEventsRequest:
     properties:
-      count_total:
-        type: boolean
       end_time:
         description: |-
           End time of the events to be fetched in ISO 8601 format
@@ -887,6 +885,9 @@ definitions:
         description: Property filters to filter the events by the keys in `properties`
           field of the event
         type: object
+      source:
+        description: Source to filter the events by the source
+        type: string
       start_time:
         description: |-
           Start time of the events to be fetched in ISO 8601 format
@@ -1523,8 +1524,6 @@ definitions:
       environment_id:
         description: EnvironmentID is the environment identifier for the price
         type: string
-      filter_values:
-        $ref: '#/definitions/price.JSONBFilters'
       id:
         description: ID uuid identifier for the price
         type: string
@@ -2386,8 +2385,6 @@ definitions:
       environment_id:
         description: EnvironmentID is the environment identifier for the price
         type: string
-      filter_values:
-        $ref: '#/definitions/price.JSONBFilters'
       id:
         description: ID uuid identifier for the price
         type: string
