@@ -589,7 +589,7 @@ func (s *invoiceService) GetCustomerInvoiceSummary(ctx context.Context, customer
 
 		// Split charges by type
 		for _, item := range inv.LineItems {
-			if *item.PriceType == string(types.PRICE_TYPE_USAGE) {
+			if lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE) {
 				summary.UnpaidUsageCharges = summary.UnpaidUsageCharges.Add(item.Amount)
 			} else {
 				summary.UnpaidFixedCharges = summary.UnpaidFixedCharges.Add(item.Amount)
