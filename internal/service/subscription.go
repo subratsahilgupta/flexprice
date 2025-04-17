@@ -130,22 +130,29 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		sub.StartDate = sub.StartDate.UTC()
 	}
 
-	// Set billing anchor and ensure it's in UTC
-	if sub.BillingAnchor.IsZero() {
-		sub.BillingAnchor = sub.StartDate
+	if sub.BillingCycle == types.BillingCycleCalendar {
+		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod)
 	} else {
-		sub.BillingAnchor = sub.BillingAnchor.UTC()
-		// Validate that billing anchor is not before start date
-		if sub.BillingAnchor.Before(sub.StartDate) {
-			return nil, ierr.NewError("billing anchor cannot be before start date").
-				WithHint("The billing anchor must be on or after the start date").
-				WithReportableDetails(map[string]interface{}{
-					"start_date":     sub.StartDate,
-					"billing_anchor": sub.BillingAnchor,
-				}).
-				Mark(ierr.ErrValidation)
-		}
+		// default to start date for anniversary billing
+		sub.BillingAnchor = sub.StartDate
 	}
+
+	// // Set billing anchor and ensure it's in UTC
+	// if sub.BillingAnchor.IsZero() {
+	// 	sub.BillingAnchor = sub.StartDate
+	// } else {
+	// 	sub.BillingAnchor = sub.BillingAnchor.UTC()
+	// 	// Validate that billing anchor is not before start date
+	// 	if sub.BillingAnchor.Before(sub.StartDate) {
+	// 		return nil, ierr.NewError("billing anchor cannot be before start date").
+	// 			WithHint("The billing anchor must be on or after the start date").
+	// 			WithReportableDetails(map[string]interface{}{
+	// 				"start_date":     sub.StartDate,
+	// 				"billing_anchor": sub.BillingAnchor,
+	// 			}).
+	// 			Mark(ierr.ErrValidation)
+	// 	}
+	// }
 
 	if sub.BillingPeriodCount == 0 {
 		sub.BillingPeriodCount = 1

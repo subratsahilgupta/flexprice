@@ -26,6 +26,7 @@ type CreateSubscriptionRequest struct {
 	BillingPeriod      types.BillingPeriod  `json:"billing_period" validate:"required"`
 	BillingPeriodCount int                  `json:"billing_period_count" validate:"required,min=1"`
 	Metadata           map[string]string    `json:"metadata,omitempty"`
+	BillingCycle       types.BillingCycle   `json:"billing_cycle" validate:"required,oneof=anniversary calendar"`
 }
 
 type UpdateSubscriptionRequest struct {
@@ -59,6 +60,10 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	}
 
 	if err := r.BillingPeriod.Validate(); err != nil {
+		return err
+	}
+
+	if err := r.BillingCycle.Validate(); err != nil {
 		return err
 	}
 
@@ -143,6 +148,7 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		Metadata:           r.Metadata,
 		EnvironmentID:      types.GetEnvironmentID(ctx),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
+		BillingCycle:       r.BillingCycle,
 	}
 }
 
