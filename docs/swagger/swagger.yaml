@@ -575,10 +575,10 @@ definitions:
       conversion_rate:
         default: 1
         description: |-
-          conversion_rate is the conversion rate of the currency to credits
-          amount in the currency = conversion_rate * number of credits
+          amount in the currency =  number of credits * conversion_rate
           ex if conversion_rate is 1, then 1 USD = 1 credit
-          ex if conversion_rate is 10, then 1 USD = 10 credits
+          ex if conversion_rate is 2, then 1 USD = 0.5 credits
+          ex if conversion_rate is 0.5, then 1 USD = 2 credits
         type: number
       currency:
         type: string
@@ -1900,7 +1900,16 @@ definitions:
   dto.TopUpWalletRequest:
     properties:
       amount:
-        description: amount is the number of credits to add to the wallet
+        description: |-
+          amount is the amount in the currency of the wallet to be added
+          NOTE: this is not the number of credits to add, but the amount in the currency
+          amount = credits_to_add * conversion_rate
+          if both amount and credits_to_add are provided, amount will be ignored
+          ex if the wallet has a conversion_rate of 2 then adding an amount of
+          10 USD in the wallet wil add 5 credits in the wallet
+        type: number
+      credits_to_add:
+        description: credits_to_add is the number of credits to add to the wallet
         type: number
       description:
         description: description to add any specific details about the transaction
@@ -1911,26 +1920,19 @@ definitions:
           for ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC
           hence they will be available for use until 2024-12-31 23:59:59 UTC
         type: integer
-      generate_invoice:
-        description: generate_invoice when true, an invoice will be generated for
-          the transaction
-        type: boolean
+      idempotency_key:
+        description: idempotency_key is a unique key for the transaction
+        type: string
       metadata:
-        $ref: '#/definitions/types.Metadata'
-      purchased_credits:
-        description: purchased_credits when true, the credits are added as purchased
-          credits
-        type: boolean
-      reference_id:
-        description: reference_id is the ID of the reference ex payment ID, invoice
-          ID, request ID
-        type: string
-      reference_type:
-        description: reference_type is the type of the reference ex payment, invoice,
-          request
-        type: string
+        allOf:
+        - $ref: '#/definitions/types.Metadata'
+        description: metadata is a map of key-value pairs to store any additional
+          information about the transaction
+      transaction_reason:
+        $ref: '#/definitions/types.TransactionReason'
     required:
-    - amount
+    - idempotency_key
+    - transaction_reason
     type: object
   dto.UpdateCustomerRequest:
     properties:
@@ -2941,13 +2943,11 @@ definitions:
     - WalletStatusClosed
   types.WalletTxReferenceType:
     enum:
-    - INVOICE
     - PAYMENT
     - EXTERNAL
     - REQUEST
     type: string
     x-enum-varnames:
-    - WalletTxReferenceTypeInvoice
     - WalletTxReferenceTypePayment
     - WalletTxReferenceTypeExternal
     - WalletTxReferenceTypeRequest

@@ -368,6 +368,9 @@ func (wtu *WalletTransactionUpdate) sqlSave(ctx context.Context) (n int, err err
 	if value, ok := wtu.mutation.CreditsAvailable(); ok {
 		_spec.SetField(wallettransaction.FieldCreditsAvailable, field.TypeOther, value)
 	}
+	if wtu.mutation.IdempotencyKeyCleared() {
+		_spec.ClearField(wallettransaction.FieldIdempotencyKey, field.TypeString)
+	}
 	if n, err = sqlgraph.UpdateNodes(ctx, wtu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{wallettransaction.Label}
@@ -756,6 +759,9 @@ func (wtuo *WalletTransactionUpdateOne) sqlSave(ctx context.Context) (_node *Wal
 	}
 	if value, ok := wtuo.mutation.CreditsAvailable(); ok {
 		_spec.SetField(wallettransaction.FieldCreditsAvailable, field.TypeOther, value)
+	}
+	if wtuo.mutation.IdempotencyKeyCleared() {
+		_spec.ClearField(wallettransaction.FieldIdempotencyKey, field.TypeString)
 	}
 	_node = &WalletTransaction{config: wtuo.config}
 	_spec.Assign = _node.assignValues

@@ -86,11 +86,9 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 			return ierr.WithError(err).WithHint("failed to check idempotency").Mark(ierr.ErrDatabase)
 		}
 		if existing != nil {
-			s.Logger.Infow("returning existing invoice for idempotency key",
-				"idempotency_key", idempKey,
-				"invoice_id", existing.ID)
-			resp = dto.NewInvoiceResponse(existing)
-			return nil
+			s.Logger.Infof("invoice already exists, returning existing invoice")
+			err = ierr.NewError("invoice already exists").WithHint("invoice already exists").Mark(ierr.ErrAlreadyExists)
+			return err
 		}
 
 		// 3. For subscription invoices, validate period uniqueness and get billing sequence
@@ -140,7 +138,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		inv.BillingSequence = billingSeq
 
 		// Setting default values
-		if req.InvoiceType == types.InvoiceTypeOneOff {
+		if req.InvoiceType == types.InvoiceTypeOneOff || req.InvoiceType == types.InvoiceTypeCredit {
 			if req.InvoiceStatus == nil {
 				inv.InvoiceStatus = types.InvoiceStatusFinalized
 			}
@@ -702,7 +700,6 @@ func (s *invoiceService) validatePaymentStatusTransition(from, to types.PaymentS
 
 // AttemptPayment attempts to pay an invoice using available wallets
 func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
-	s.Logger.Infow("attempting payment for invoice", "invoice_id", id)
 
 	// Get invoice
 	inv, err := s.InvoiceRepo.Get(ctx, id)
