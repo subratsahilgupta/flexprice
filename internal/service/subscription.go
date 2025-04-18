@@ -137,6 +137,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		sub.BillingAnchor = sub.StartDate
 	}
 
+	// TODO: remove this after testing
 	// // Set billing anchor and ensure it's in UTC
 	// if sub.BillingAnchor.IsZero() {
 	// 	sub.BillingAnchor = sub.StartDate
