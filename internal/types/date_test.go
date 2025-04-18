@@ -189,6 +189,13 @@ func TestNextBillingDate_Monthly(t *testing.T) {
 			want:          time.Date(2025, time.June, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
+			name:          "calendar billing: current June 1 2025, anchor May 1 2025",
+			currentPeriod: time.Date(2025, time.June, 1, 0, 0, 0, 0, time.UTC),
+			billingAnchor: time.Date(2025, time.May, 1, 0, 0, 0, 0, time.UTC),
+			unit:          1,
+			want:          time.Date(2025, time.July, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
 			name:          "calendar billing: current Feb 1, anchor Mar 1, next billing Mar 1",
 			currentPeriod: time.Date(2024, time.February, 1, 0, 0, 0, 0, time.UTC),
 			billingAnchor: time.Date(2024, time.March, 1, 0, 0, 0, 0, time.UTC),
