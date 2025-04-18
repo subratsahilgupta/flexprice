@@ -137,24 +137,6 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		sub.BillingAnchor = sub.StartDate
 	}
 
-	// TODO: remove this after testing
-	// // Set billing anchor and ensure it's in UTC
-	// if sub.BillingAnchor.IsZero() {
-	// 	sub.BillingAnchor = sub.StartDate
-	// } else {
-	// 	sub.BillingAnchor = sub.BillingAnchor.UTC()
-	// 	// Validate that billing anchor is not before start date
-	// 	if sub.BillingAnchor.Before(sub.StartDate) {
-	// 		return nil, ierr.NewError("billing anchor cannot be before start date").
-	// 			WithHint("The billing anchor must be on or after the start date").
-	// 			WithReportableDetails(map[string]interface{}{
-	// 				"start_date":     sub.StartDate,
-	// 				"billing_anchor": sub.BillingAnchor,
-	// 			}).
-	// 			Mark(ierr.ErrValidation)
-	// 	}
-	// }
-
 	if sub.BillingPeriodCount == 0 {
 		sub.BillingPeriodCount = 1
 	}
@@ -810,6 +792,7 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		newPeriod := periods[len(periods)-1]
 		sub.CurrentPeriodStart = newPeriod.start
 		sub.CurrentPeriodEnd = newPeriod.end
+		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(newPeriod.start, sub.BillingPeriod)
 
 		// Final cancellation check
 		if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(newPeriod.end) {

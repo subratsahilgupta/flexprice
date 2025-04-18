@@ -79,6 +79,12 @@ func TestCalculateCalendarBillingAnchor(t *testing.T) {
 			want:          time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
+			name:          "1st may 2025",
+			startDate:     time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC),
+			billingPeriod: BILLING_PERIOD_MONTHLY,
+			want:          time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
 			name:          "Default (unknown period)",
 			startDate:     time.Date(2024, 5, 10, 0, 0, 0, 0, time.UTC),
 			billingPeriod: "UNKNOWN",
