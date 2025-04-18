@@ -6222,6 +6222,7 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "billing_cadence",
+                "billing_cycle",
                 "billing_period",
                 "billing_period_count",
                 "currency",
@@ -6232,6 +6233,17 @@ const docTemplate = `{
             "properties": {
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
+                },
+                "billing_cycle": {
+                    "enum": [
+                        "anniversary",
+                        "calendar"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingCycle"
+                        }
+                    ]
                 },
                 "billing_period": {
                     "$ref": "#/definitions/types.BillingPeriod"
@@ -7962,6 +7974,14 @@ const docTemplate = `{
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
                 },
+                "billing_cycle": {
+                    "description": "BillingCycle is the cycle of the billing anchor.\nThis is used to determine the billing anchor for the subscription.\nIt can be either anniversary or calendar.\nIf it's anniversary, the billing anchor will be the start date of the subscription.\nIf it's calendar, the billing anchor will be the appropriate date based on the billing period.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.BillingCycle"
+                        }
+                    ]
+                },
                 "billing_period": {
                     "$ref": "#/definitions/types.BillingPeriod"
                 },
@@ -9232,6 +9252,17 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "BILLING_CADENCE_RECURRING",
                 "BILLING_CADENCE_ONETIME"
+            ]
+        },
+        "types.BillingCycle": {
+            "type": "string",
+            "enum": [
+                "anniversary",
+                "calendar"
+            ],
+            "x-enum-varnames": [
+                "BillingCycleAnniversary",
+                "BillingCycleCalendar"
             ]
         },
         "types.BillingModel": {
