@@ -792,7 +792,6 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		newPeriod := periods[len(periods)-1]
 		sub.CurrentPeriodStart = newPeriod.start
 		sub.CurrentPeriodEnd = newPeriod.end
-		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(newPeriod.start, sub.BillingPeriod)
 
 		// Final cancellation check
 		if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(newPeriod.end) {
