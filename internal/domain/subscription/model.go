@@ -31,10 +31,12 @@ type Subscription struct {
 	BillingAnchor time.Time `db:"billing_anchor" json:"billing_anchor"`
 
 	// BillingCycle is the cycle of the billing anchor.
-	// This is used to determine the billing anchor for the subscription.
-	// It can be either anniversary or calendar.
-	// If it's anniversary, the billing anchor will be the start date of the subscription.
-	// If it's calendar, the billing anchor will be the appropriate date based on the billing period.
+	// This is used to determine the billing date for the subscription (i.e set the billing anchor)
+	// If not set, the default value is anniversary. Possible values are anniversary and calendar.
+	// Anniversary billing means the billing anchor will be the start date of the subscription.
+	// Calendar billing means the billing anchor will be the appropriate date based on the billing period.
+	// For example, if the billing period is month and the start date is 2025-04-15 then in case of
+	// calendar billing the billing anchor will be 2025-05-01 vs 2025-04-15 for anniversary billing.
 	BillingCycle types.BillingCycle `db:"billing_cycle" json:"billing_cycle"`
 
 	// StartDate is the start date of the subscription
@@ -128,6 +130,7 @@ func GetSubscriptionFromEnt(sub *ent.Subscription) *Subscription {
 		BillingCadence:     types.BillingCadence(sub.BillingCadence),
 		BillingPeriod:      types.BillingPeriod(sub.BillingPeriod),
 		BillingPeriodCount: sub.BillingPeriodCount,
+		BillingCycle:       types.BillingCycle(sub.BillingCycle),
 		Version:            sub.Version,
 		Metadata:           sub.Metadata,
 		EnvironmentID:      sub.EnvironmentID,

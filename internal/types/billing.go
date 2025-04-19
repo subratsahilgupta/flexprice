@@ -72,6 +72,11 @@ func (r InvoiceReferencePoint) Validate() error {
 	return nil
 }
 
+// BillingCycle is the cycle of the billing anchor.
+// This is used to determine the billing anchor for the subscription.
+// It can be either anniversary or calendar.
+// If it's anniversary, the billing anchor will be the start date of the subscription.
+// If it's calendar, the billing anchor will be the appropriate date based on the billing period.
 type BillingCycle string
 
 const (

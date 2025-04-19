@@ -6222,7 +6222,6 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "billing_cadence",
-                "billing_cycle",
                 "billing_period",
                 "billing_period_count",
                 "currency",
@@ -6235,10 +6234,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.BillingCadence"
                 },
                 "billing_cycle": {
-                    "enum": [
-                        "anniversary",
-                        "calendar"
-                    ],
+                    "description": "BillingCycle is the cycle of the billing anchor.\nThis is used to determine the billing date for the subscription (i.e set the billing anchor)\nIf not set, the default value is anniversary. Possible values are anniversary and calendar.\nAnniversary billing means the billing anchor will be the start date of the subscription.\nCalendar billing means the billing anchor will be the appropriate date based on the billing period.\nFor example, if the billing period is month and the start date is 2025-04-15 then in case of\ncalendar billing the billing anchor will be 2025-05-01 vs 2025-04-15 for anniversary billing.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.BillingCycle"
@@ -7975,7 +7971,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.BillingCadence"
                 },
                 "billing_cycle": {
-                    "description": "BillingCycle is the cycle of the billing anchor.\nThis is used to determine the billing anchor for the subscription.\nIt can be either anniversary or calendar.\nIf it's anniversary, the billing anchor will be the start date of the subscription.\nIf it's calendar, the billing anchor will be the appropriate date based on the billing period.",
+                    "description": "BillingCycle is the cycle of the billing anchor.\nThis is used to determine the billing date for the subscription (i.e set the billing anchor)\nIf not set, the default value is anniversary. Possible values are anniversary and calendar.\nAnniversary billing means the billing anchor will be the start date of the subscription.\nCalendar billing means the billing anchor will be the appropriate date based on the billing period.\nFor example, if the billing period is month and the start date is 2025-04-15 then in case of\ncalendar billing the billing anchor will be 2025-05-01 vs 2025-04-15 for anniversary billing.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.BillingCycle"

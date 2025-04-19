@@ -42,6 +42,11 @@ func NewSubscriptionService(params ServiceParams) SubscriptionService {
 	}
 }
 func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.CreateSubscriptionRequest) (*dto.SubscriptionResponse, error) {
+	// Handle default values
+	if req.BillingCycle == "" {
+		req.BillingCycle = types.BillingCycleAnniversary
+	}
+
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -124,6 +129,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	now := time.Now().UTC()
 
 	// Set start date and ensure it's in UTC
+	// TODO: handle when start date is in the past and there are
+	// multiple billing periods in the past so in this case we need to keep 
+	// the current period start as now only and handle past periods in proration
 	if sub.StartDate.IsZero() {
 		sub.StartDate = now
 	} else {
