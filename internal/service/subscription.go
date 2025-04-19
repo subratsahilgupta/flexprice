@@ -130,7 +130,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 	// Set start date and ensure it's in UTC
 	// TODO: handle when start date is in the past and there are
-	// multiple billing periods in the past so in this case we need to keep 
+	// multiple billing periods in the past so in this case we need to keep
 	// the current period start as now only and handle past periods in proration
 	if sub.StartDate.IsZero() {
 		sub.StartDate = now
@@ -458,6 +458,10 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 		price := priceMap[lineItem.PriceID]
 		meter := meterMap[lineItem.MeterID]
+		if meter == nil {
+			continue
+		}
+
 		meterID := lineItem.MeterID
 		meterDisplayName := ""
 		if meter, ok := meterDisplayNames[meterID]; ok {
