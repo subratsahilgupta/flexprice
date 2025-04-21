@@ -19,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/suite"
 )
 
 type WalletServiceSuite struct {
@@ -45,7 +46,7 @@ type WalletServiceSuite struct {
 }
 
 func TestWalletService(t *testing.T) {
-	// suite.Run(t, new(WalletServiceSuite))
+	suite.Run(t, new(WalletServiceSuite))
 }
 
 func (s *WalletServiceSuite) SetupTest() {
@@ -483,7 +484,9 @@ func (s *WalletServiceSuite) TestGetWalletsByCustomerID() {
 
 func (s *WalletServiceSuite) TestTopUpWallet() {
 	topUpReq := &dto.TopUpWalletRequest{
-		Amount: decimal.NewFromInt(500),
+		CreditsToAdd:      decimal.NewFromInt(500),
+		IdempotencyKey:    lo.ToPtr("test_topup_1"),
+		TransactionReason: types.TransactionReasonFreeCredit,
 	}
 	resp, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, topUpReq)
 	s.NoError(err)
@@ -710,7 +713,9 @@ func (s *WalletServiceSuite) TestWalletConversionRateHandling() {
 
 			// Top up wallet
 			topUpReq := &dto.TopUpWalletRequest{
-				Amount: tc.creditAmount,
+				CreditsToAdd:      tc.creditAmount,
+				IdempotencyKey:    lo.ToPtr("test_topup_1"),
+				TransactionReason: types.TransactionReasonFreeCredit,
 			}
 			resp, err := s.service.TopUpWallet(s.GetContext(), wallet.ID, topUpReq)
 			s.NoError(err)
@@ -1035,9 +1040,11 @@ func (s *WalletServiceSuite) TestDebitWithMultipleCredits() {
 	// Add all credits
 	for _, credit := range credits {
 		op := &dto.TopUpWalletRequest{
-			Amount:      credit.amount,
-			Description: "Test credit",
-			ExpiryDate:  credit.expiry,
+			CreditsToAdd:      credit.amount,
+			Description:       "Test credit",
+			ExpiryDate:        credit.expiry,
+			IdempotencyKey:    lo.ToPtr("test_topup_1"),
+			TransactionReason: types.TransactionReasonFreeCredit,
 		}
 		_, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, op)
 		s.NoError(err)

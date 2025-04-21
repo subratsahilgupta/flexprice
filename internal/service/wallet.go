@@ -11,6 +11,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -51,6 +52,10 @@ type WalletService interface {
 
 	// ExpireCredits expires credits for a given transaction
 	ExpireCredits(ctx context.Context, transactionID string) error
+
+	// conversion rate operations
+	GetCurrencyAmountFromCredits(credits decimal.Decimal, conversionRate decimal.Decimal) decimal.Decimal
+	GetCreditsFromCurrencyAmount(amount decimal.Decimal, conversionRate decimal.Decimal) decimal.Decimal
 }
 
 type walletService struct {
@@ -106,26 +111,26 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 		if err := s.WalletRepo.CreateWallet(ctx, w); err != nil {
 			return err // Repository already using ierr
 		}
-
 		response = dto.FromWallet(w)
 
 		s.Logger.Debugw("created wallet",
 			"wallet_id", w.ID,
 			"customer_id", w.CustomerID,
 			"currency", w.Currency,
+			"conversion_rate", w.ConversionRate,
 		)
 
 		// Load initial credits to wallet
 		if req.InitialCreditsToLoad.GreaterThan(decimal.Zero) {
 			topUpResp, err := s.TopUpWallet(ctx, w.ID, &dto.TopUpWalletRequest{
-				Amount:     req.InitialCreditsToLoad,
-				ExpiryDate: req.InitialCreditsToLoadExpiryDate,
+				CreditsToAdd:      req.InitialCreditsToLoad,
+				TransactionReason: types.TransactionReasonFreeCredit,
+				ExpiryDate:        req.InitialCreditsToLoadExpiryDate,
 			})
 
 			if err != nil {
 				return err
 			}
-
 			response = topUpResp
 		}
 
@@ -138,6 +143,7 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 
 	// Convert to response DTO
 	s.publishInternalWalletWebhookEvent(ctx, types.WebhookEventWalletCreated, w.ID)
+
 	return response, nil
 }
 
@@ -226,37 +232,129 @@ func (s *walletService) GetWalletTransactions(ctx context.Context, walletID stri
 
 // Update the TopUpWallet method to use the new processWalletOperation
 func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *dto.TopUpWalletRequest) (*dto.WalletResponse, error) {
+	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
+	if err != nil {
+		return nil, ierr.NewError("Wallet not found").
+			WithHint("Wallet not found").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// If Credits to Add is not provided then convert the currency amount to credits
+	// If both provided we give priority to Credits to add
+	if req.CreditsToAdd.IsZero() && !req.Amount.IsZero() {
+		req.CreditsToAdd = s.GetCreditsFromCurrencyAmount(req.Amount, w.ConversionRate)
+	}
+
 	// Create a credit operation
+	if err := req.Validate(); err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Invalid top up wallet request").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Generate or use provided idempotency key
+	var idempotencyKey string
+	if lo.FromPtr(req.IdempotencyKey) != "" {
+		idempotencyKey = lo.FromPtr(req.IdempotencyKey)
+	} else {
+		idempotencyKey = types.GenerateUUID()
+	}
+
+	// Prepare credit operation details
+	referenceType := types.WalletTxReferenceTypeExternal
+	referenceID := idempotencyKey
+
+	// Handle special case for purchased credits with invoice
+	if req.TransactionReason == types.TransactionReasonPurchasedCreditInvoiced {
+		paymentID, err := s.handlePurchasedCreditInvoicedTransaction(
+			ctx,
+			walletID,
+			lo.ToPtr(idempotencyKey),
+			req,
+		)
+		if err != nil {
+			return nil, err
+		}
+		referenceID = paymentID
+		referenceType = types.WalletTxReferenceTypePayment
+	}
+
+	// Create wallet credit operation
 	creditReq := &wallet.WalletOperation{
 		WalletID:          walletID,
 		Type:              types.TransactionTypeCredit,
-		CreditAmount:      req.Amount,
+		CreditAmount:      req.CreditsToAdd,
 		Description:       req.Description,
 		Metadata:          req.Metadata,
-		TransactionReason: types.TransactionReasonFreeCredit,
-		ReferenceType:     types.WalletTxReferenceTypeRequest,
-		ReferenceID:       types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
+		TransactionReason: req.TransactionReason,
+		ReferenceType:     referenceType,
+		ReferenceID:       referenceID,
 		ExpiryDate:        req.ExpiryDate,
+		IdempotencyKey:    idempotencyKey,
 	}
 
-	if req.PurchasedCredits {
-		if req.GenerateInvoice {
-			creditReq.TransactionReason = types.TransactionReasonPurchasedCreditInvoiced
-		} else {
-			creditReq.TransactionReason = types.TransactionReasonPurchasedCreditDirect
-		}
-	}
-
-	if creditReq.ReferenceID == "" || creditReq.ReferenceType == "" {
-		creditReq.ReferenceID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION)
-		creditReq.ReferenceType = types.WalletTxReferenceTypeRequest
-	}
-
+	// Process wallet credit
 	if err := s.CreditWallet(ctx, creditReq); err != nil {
 		return nil, err
 	}
 
 	return s.GetWalletByID(ctx, walletID)
+}
+
+func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Context, walletID string, idempotencyKey *string, req *dto.TopUpWalletRequest) (string, error) {
+	// Initialize required services
+	invoiceService := NewInvoiceService(s.ServiceParams)
+	paymentService := NewPaymentService(s.ServiceParams)
+
+	// Retrieve wallet and customer details
+	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
+	if err != nil {
+		return "", err
+	}
+
+	var paymentID string
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// Create invoice for credit purchase
+		invoice, err := invoiceService.CreateInvoice(ctx, dto.CreateInvoiceRequest{
+			CustomerID:     w.CustomerID,
+			AmountDue:      s.GetCurrencyAmountFromCredits(req.CreditsToAdd, w.ConversionRate),
+			Currency:       w.Currency,
+			InvoiceType:    types.InvoiceTypeCredit,
+			DueDate:        lo.ToPtr(time.Now().UTC()),
+			IdempotencyKey: idempotencyKey,
+			InvoiceStatus:  lo.ToPtr(types.InvoiceStatusFinalized),
+			LineItems: []dto.CreateInvoiceLineItemRequest{
+				{
+					Amount:      s.GetCurrencyAmountFromCredits(req.CreditsToAdd, w.ConversionRate),
+					Quantity:    decimal.NewFromInt(1),
+					DisplayName: lo.ToPtr("Purchased Credits"),
+				},
+			},
+			PaymentStatus: lo.ToPtr(types.PaymentStatusPending),
+		})
+		if err != nil {
+			return err
+		}
+
+		// Create payment for the invoice
+		// Process : true will process the payment and update the invoice payment status
+		payment, err := paymentService.CreatePayment(ctx, &dto.CreatePaymentRequest{
+			IdempotencyKey:    lo.FromPtr(idempotencyKey),
+			DestinationType:   types.PaymentDestinationTypeInvoice,
+			DestinationID:     invoice.ID,
+			PaymentMethodType: types.PaymentMethodTypeOffline,
+			Amount:            s.GetCurrencyAmountFromCredits(req.CreditsToAdd, w.ConversionRate),
+			Currency:          w.Currency,
+			ProcessPayment:    true,
+		})
+		if err != nil {
+			return err
+		}
+		paymentID = payment.ID
+		return nil
+	})
+
+	return paymentID, err
 }
 
 func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error) {
@@ -347,7 +445,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	return &dto.WalletBalanceResponse{
 		Wallet:                w,
 		RealTimeBalance:       realTimeBalance,
-		RealTimeCreditBalance: realTimeBalance.Div(w.ConversionRate),
+		RealTimeCreditBalance: s.GetCreditsFromCurrencyAmount(realTimeBalance, w.ConversionRate),
 		BalanceUpdatedAt:      time.Now().UTC(),
 		UnpaidInvoiceAmount:   invoiceSummary.TotalUnpaidAmount,
 		CurrentPeriodUsage:    currentPeriodUsage,
@@ -378,6 +476,7 @@ func (s *walletService) TerminateWallet(ctx context.Context, walletID string) er
 				Description:       "Wallet termination - remaining balance debit",
 				TransactionReason: types.TransactionReasonWalletTermination,
 				ReferenceType:     types.WalletTxReferenceTypeRequest,
+				IdempotencyKey:    walletID,
 				ReferenceID:       types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
 			}
 
@@ -501,9 +600,9 @@ func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.Wa
 
 	// Convert amount to credit amount if provided and perform credit operation
 	if req.Amount.GreaterThan(decimal.Zero) {
-		req.CreditAmount = req.Amount.Div(w.ConversionRate)
+		req.CreditAmount = s.GetCreditsFromCurrencyAmount(req.Amount, w.ConversionRate)
 	} else if req.CreditAmount.GreaterThan(decimal.Zero) {
-		req.Amount = req.CreditAmount.Mul(w.ConversionRate)
+		req.Amount = s.GetCurrencyAmountFromCredits(req.CreditAmount, w.ConversionRate)
 	} else {
 		return ierr.NewError("amount or credit amount is required").
 			WithHint("Amount or credit amount is required").
@@ -584,7 +683,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			newCreditBalance = w.CreditBalance.Add(req.CreditAmount)
 		}
 
-		finalBalance := newCreditBalance.Mul(w.ConversionRate)
+		finalBalance := s.GetCurrencyAmountFromCredits(newCreditBalance, w.ConversionRate)
 
 		// Create transaction record
 		tx := &wallet.Transaction{
@@ -603,6 +702,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			CreditBalanceBefore: w.CreditBalance,
 			CreditBalanceAfter:  newCreditBalance,
 			EnvironmentID:       types.GetEnvironmentID(ctx),
+			IdempotencyKey:      req.IdempotencyKey,
 			BaseModel:           types.GetDefaultBaseModel(ctx),
 		}
 
@@ -687,6 +787,7 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 		TransactionReason: types.TransactionReasonCreditExpired,
 		ReferenceType:     types.WalletTxReferenceTypeRequest,
 		ReferenceID:       tx.ID,
+		IdempotencyKey:    tx.ID,
 		Metadata: types.Metadata{
 			"expired_transaction_id": tx.ID,
 			"expiry_date":            tx.ExpiryDate.Format(time.RFC3339),
@@ -767,4 +868,13 @@ func (s *walletService) publishInternalTransactionWebhookEvent(ctx context.Conte
 	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
 		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
 	}
+}
+
+// conversion rate operations
+func (s *walletService) GetCurrencyAmountFromCredits(credits decimal.Decimal, conversionRate decimal.Decimal) decimal.Decimal {
+	return credits.Mul(conversionRate)
+}
+
+func (s *walletService) GetCreditsFromCurrencyAmount(amount decimal.Decimal, conversionRate decimal.Decimal) decimal.Decimal {
+	return amount.Div(conversionRate)
 }
