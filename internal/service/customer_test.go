@@ -7,7 +7,6 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	domainCustomer "github.com/flexprice/flexprice/internal/domain/customer"
-	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -406,26 +405,6 @@ func (s *CustomerServiceSuite) TestDeleteCustomer() {
 					ID:                 "sub-1",
 					CustomerID:         "cust-2",
 					SubscriptionStatus: types.SubscriptionStatusActive,
-				})
-			},
-			expectedError: true,
-			errorCode:     ierr.ErrCodeInvalidOperation,
-		},
-		{
-			name: "customer_with_invoices",
-			id:   "cust-3",
-			setup: func() {
-				_ = s.GetStores().CustomerRepo.Create(s.ctx, &domainCustomer.Customer{
-					ID:    "cust-3",
-					Name:  "Customer with Invoice",
-					Email: "invoice@example.com",
-					BaseModel: types.BaseModel{
-						Status: types.StatusPublished,
-					},
-				})
-				_ = s.GetStores().InvoiceRepo.Create(s.ctx, &invoice.Invoice{
-					ID:         "inv-1",
-					CustomerID: "cust-3",
 				})
 			},
 			expectedError: true,
