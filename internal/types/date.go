@@ -24,11 +24,6 @@ func NextBillingDate(currentPeriodStart, billingAnchor time.Time, unit int, peri
 			Mark(ierr.ErrValidation)
 	}
 
-	// Before the billing anchor hits, the billing anchor is the next billing date
-	if currentPeriodStart.Before(billingAnchor) {
-		return billingAnchor, nil
-	}
-
 	// For daily and weekly periods, we can use simple addition
 	switch period {
 	case BILLING_PERIOD_DAILY:
@@ -76,7 +71,7 @@ func NextBillingDate(currentPeriodStart, billingAnchor time.Time, unit int, peri
 
 	// Get the current year and month
 	y, m, _ := currentPeriodStart.Date()
-	h, min, sec := currentPeriodStart.Clock()
+	h, min, sec := billingAnchor.Clock()
 
 	// Calculate the target year and month
 	targetY := y + years
