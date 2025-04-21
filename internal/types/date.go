@@ -29,7 +29,24 @@ func NextBillingDate(currentPeriodStart, billingAnchor time.Time, unit int, peri
 	case BILLING_PERIOD_DAILY:
 		return currentPeriodStart.AddDate(0, 0, unit), nil
 	case BILLING_PERIOD_WEEKLY:
-		return currentPeriodStart.AddDate(0, 0, 7*unit), nil
+		anchorWeekday := billingAnchor.Weekday()
+		currentWeekday := currentPeriodStart.Weekday()
+
+		daysToAdd := int(anchorWeekday - currentWeekday)
+		if daysToAdd < 0 {
+			daysToAdd += 7
+		}
+		daysToAdd += (unit - 1) * 7
+		if anchorWeekday == currentWeekday {
+			daysToAdd = unit * 7
+		}
+
+		// will be 00:00:00 for calendar-aligned billing
+		// otherwise it will be the start time of the first billing period
+		anchorHour, anchorMin, anchorSec := billingAnchor.Clock()
+		return time.Date(currentPeriodStart.Year(), currentPeriodStart.Month(),
+			currentPeriodStart.Day()+daysToAdd,
+			anchorHour, anchorMin, anchorSec, 0, currentPeriodStart.Location()), nil
 	}
 
 	// For monthly and annual periods, calculate the target year and month
@@ -56,7 +73,10 @@ func NextBillingDate(currentPeriodStart, billingAnchor time.Time, unit int, peri
 
 	// Get the current year and month
 	y, m, _ := currentPeriodStart.Date()
-	h, min, sec := currentPeriodStart.Clock()
+	// get the time always from anchor because
+	// it's either 00:00:00 for calendar-aligned billing
+	// or the start time of the first billing period
+	h, min, sec := billingAnchor.Clock()
 
 	// Calculate the target year and month
 	targetY := y + years
