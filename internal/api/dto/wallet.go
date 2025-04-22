@@ -218,6 +218,17 @@ func FromWallet(w *wallet.Wallet) *WalletResponse {
 	}
 }
 
+func ToWalletBalanceResponse(w *wallet.Wallet) *WalletBalanceResponse {
+	return &WalletBalanceResponse{
+		Wallet:                w,
+		RealTimeBalance:       w.Balance,
+		RealTimeCreditBalance: w.CreditBalance,
+		BalanceUpdatedAt:      w.UpdatedAt,
+		UnpaidInvoiceAmount:   decimal.Zero,
+		CurrentPeriodUsage:    decimal.Zero,
+	}
+}
+
 // WalletTransactionResponse represents a wallet transaction in API responses
 type WalletTransactionResponse struct {
 	ID                  string                      `json:"id"`
@@ -336,4 +347,26 @@ type ExpiredCreditsResponse struct {
 	Total   int                           `json:"total"`
 	Success int                           `json:"success"`
 	Failed  int                           `json:"failed"`
+}
+
+type GetCustomerWalletsRequest struct {
+	CustomerID          string `form:"id"`
+	CustomerLookupKey   string `form:"lookup_key"`
+	IncludeRealTimeData bool   `form:"include_real_time_data" default:"false"`
+}
+
+func (r *GetCustomerWalletsRequest) Validate() error {
+	if r.CustomerID == "" && r.CustomerLookupKey == "" {
+		return ierr.NewError("customer_id or customer_lookup_key is required").
+			WithHint("Please provide either id or lookup_key").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.CustomerID != "" && r.CustomerLookupKey != "" {
+		return ierr.NewError("only one of customer_id or customer_lookup_key is required").
+			WithHint("Please provide either 'id' or 'lookup_key', but not both.").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }

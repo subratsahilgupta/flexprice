@@ -317,6 +317,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/customers/wallets": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get all wallets for a customer by lookup key or id",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallets"
+                ],
+                "summary": "Get Customer Wallets",
+                "parameters": [
+                    {
+                        "description": "Get customer wallets request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetCustomerWalletsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.WalletResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/customers/{id}": {
             "get": {
                 "security": [
@@ -6757,6 +6817,21 @@ const docTemplate = `{
                 },
                 "usage_percent": {
                     "type": "number"
+                }
+            }
+        },
+        "dto.GetCustomerWalletsRequest": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "include_real_time_data": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "lookup_key": {
+                    "type": "string"
                 }
             }
         },

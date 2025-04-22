@@ -56,6 +56,9 @@ type WalletService interface {
 	// conversion rate operations
 	GetCurrencyAmountFromCredits(credits decimal.Decimal, conversionRate decimal.Decimal) decimal.Decimal
 	GetCreditsFromCurrencyAmount(amount decimal.Decimal, conversionRate decimal.Decimal) decimal.Decimal
+
+	// GetCustomerWallets retrieves all wallets for a customer
+	GetCustomerWallets(ctx context.Context, req *dto.GetCustomerWalletsRequest) ([]*dto.WalletBalanceResponse, error)
 }
 
 type walletService struct {
@@ -877,4 +880,52 @@ func (s *walletService) GetCurrencyAmountFromCredits(credits decimal.Decimal, co
 
 func (s *walletService) GetCreditsFromCurrencyAmount(amount decimal.Decimal, conversionRate decimal.Decimal) decimal.Decimal {
 	return amount.Div(conversionRate)
+}
+
+func (s *walletService) GetCustomerWallets(ctx context.Context, req *dto.GetCustomerWalletsRequest) ([]*dto.WalletBalanceResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	var customerID string
+	if req.CustomerID != "" {
+		customerID = req.CustomerID
+		_, err := s.CustomerRepo.Get(ctx, customerID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		customer, err := s.CustomerRepo.GetByLookupKey(ctx, req.CustomerLookupKey)
+		if err != nil {
+			return nil, err
+		}
+		customerID = customer.ID
+	}
+
+	wallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, customerID)
+	if err != nil {
+		return nil, err // Repository already using ierr
+	}
+
+	// if no wallets found, return empty slice
+	if len(wallets) == 0 {
+		return []*dto.WalletBalanceResponse{}, nil
+	}
+
+	response := make([]*dto.WalletBalanceResponse, len(wallets))
+
+	if req.IncludeRealTimeData {
+		for i, w := range wallets {
+			balance, err := s.GetWalletBalance(ctx, w.ID)
+			if err != nil {
+				return nil, err
+			}
+			response[i] = balance
+		}
+	} else {
+		for i, w := range wallets {
+			response[i] = dto.ToWalletBalanceResponse(w)
+		}
+	}
+	return response, nil
 }

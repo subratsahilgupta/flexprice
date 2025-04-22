@@ -877,6 +877,16 @@ definitions:
       usage_percent:
         type: number
     type: object
+  dto.GetCustomerWalletsRequest:
+    properties:
+      id:
+        type: string
+      include_real_time_data:
+        default: false
+        type: boolean
+      lookup_key:
+        type: string
+    type: object
   dto.GetEventsRequest:
     properties:
       end_time:
@@ -3444,6 +3454,44 @@ paths:
       summary: Get a customer by lookup key
       tags:
       - Customers
+  /customers/wallets:
+    get:
+      consumes:
+      - application/json
+      description: Get all wallets for a customer by lookup key or id
+      parameters:
+      - description: Get customer wallets request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.GetCustomerWalletsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.WalletResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get Customer Wallets
+      tags:
+      - Wallets
   /entitlements:
     get:
       consumes:
