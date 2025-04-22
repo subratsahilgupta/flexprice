@@ -233,6 +233,11 @@ func (s *tenantService) UpdateTenant(ctx context.Context, id string, req dto.Upd
 	}
 	existingTenant.BillingDetails = billingDetails
 
+	// Update the name if it is provided
+	if req.Name != "" {
+		existingTenant.Name = req.Name
+	}
+
 	// Update the timestamp
 	existingTenant.UpdatedAt = time.Now()
 
