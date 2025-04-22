@@ -106,7 +106,7 @@ func (h *WalletHandler) GetCustomerWallets(c *gin.Context) {
 	var req dto.GetCustomerWalletsRequest
 	// All data is present in the query params
 	if err := c.ShouldBindQuery(&req); err != nil {
-		h.logger.Error("Failed to bind JSON", "error", err)
+		h.logger.Error("Failed to bind query parameters", "error", err)
 		c.Error(ierr.WithError(err).
 			WithHint("Invalid request format").
 			Mark(ierr.ErrValidation))
