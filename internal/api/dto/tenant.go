@@ -113,6 +113,7 @@ func NewTenantResponse(t *tenant.Tenant) *TenantResponse {
 }
 
 type UpdateTenantRequest struct {
+	Name           string                `json:"name,omitempty"`
 	BillingDetails *TenantBillingDetails `json:"billing_details,omitempty"`
 }
 
