@@ -179,15 +179,6 @@ jobs:
           git remote set-url origin https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/go-sdk.git || true
           git push -f origin main || echo "Push failed but continuing"
           git push --tags || echo "Tag push failed but continuing"
-          
-          # Create GitHub Release
-          gh auth login --with-token <<< "${{ secrets.SDK_DEPLOY_GIT_TOKEN }}"
-          gh release create "v${{ env.VERSION }}" \
-            --repo="flexprice/go-sdk" \
-            --title="v${{ env.VERSION }}" \
-            --notes="Release version ${{ env.VERSION }}" \
-            --target main \
-            || echo "Release creation failed but continuing"
             
           echo "Go SDK publishing steps completed"
         env:
@@ -233,14 +224,8 @@ jobs:
           git push -f origin main || echo "Push failed but continuing"
           git push --tags || echo "Tag push failed but continuing"
           
-          # Create GitHub Release
-          gh auth login --with-token <<< "${{ secrets.SDK_DEPLOY_GIT_TOKEN }}"
-          gh release create "v${{ env.VERSION }}" \
-            --repo="flexprice/javascript-sdk" \
-            --title="v${{ env.VERSION }}" \
-            --notes="Release version ${{ env.VERSION }}" \
-            --target main \
-            || echo "Release creation failed but continuing"
+          # Create .npmrc file with auth token to avoid browser authentication
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
           
           # Publish to npm
           npm publish --access public || echo "npm publish failed but continuing"
@@ -288,15 +273,6 @@ jobs:
           git remote set-url origin https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/python-sdk.git || true
           git push -f origin main || echo "Push failed but continuing"
           git push --tags || echo "Tag push failed but continuing"
-          
-          # Create GitHub Release
-          gh auth login --with-token <<< "${{ secrets.SDK_DEPLOY_GIT_TOKEN }}"
-          gh release create "v${{ env.VERSION }}" \
-            --repo="flexprice/python-sdk" \
-            --title="v${{ env.VERSION }}" \
-            --notes="Release version ${{ env.VERSION }}" \
-            --target main \
-            || echo "Release creation failed but continuing"
           
           # Build and publish to PyPI
           # Clean dist directory
