@@ -2,6 +2,7 @@ package v1
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -82,6 +83,40 @@ func (h *WalletHandler) GetWalletsByCustomerID(c *gin.Context) {
 	wallets, err := h.walletService.GetWalletsByCustomerID(c.Request.Context(), customerID)
 	if err != nil {
 		h.logger.Error("Failed to get wallets", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, wallets)
+}
+
+// GetCustomerWallets godoc
+// @Summary Get Customer Wallets
+// @Description Get all wallets for a customer by lookup key or id
+// @Tags Wallets
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request query dto.GetCustomerWalletsRequest true "Get customer wallets request"
+// @Success 200 {array} dto.WalletResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /customers/wallets [get]
+func (h *WalletHandler) GetCustomerWallets(c *gin.Context) {
+	var req dto.GetCustomerWalletsRequest
+	// All data is present in the query params
+	if err := c.ShouldBindQuery(&req); err != nil {
+		h.logger.Error("Failed to bind query parameters", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	wallets, err := h.walletService.GetCustomerWallets(c.Request.Context(), &req)
+	if err != nil {
+		h.logger.Error("Failed to get customer wallets", "error", err)
 		c.Error(err)
 		return
 	}
@@ -197,6 +232,20 @@ func (h *WalletHandler) TopUpWallet(c *gin.Context) {
 			WithHint("Invalid request format").
 			Mark(ierr.ErrValidation))
 		return
+	}
+
+	// If ExpiryDateUTC is provided, convert it to YYYYMMDD format
+	if req.ExpiryDateUTC != nil {
+		expiryDate := req.ExpiryDateUTC.UTC()
+		parsedDate, err := strconv.Atoi(expiryDate.Format("20060102"))
+		if err != nil {
+			h.logger.Error("Failed to convert date to integer", "error", err)
+			c.Error(ierr.WithError(err).
+				WithHint("Invalid expiry date").
+				Mark(ierr.ErrValidation))
+			return
+		}
+		req.ExpiryDate = &parsedDate
 	}
 
 	wallet, err := h.walletService.TopUpWallet(c.Request.Context(), walletID, &req)

@@ -218,6 +218,12 @@ func FromWallet(w *wallet.Wallet) *WalletResponse {
 	}
 }
 
+func ToWalletBalanceResponse(w *wallet.Wallet) *WalletBalanceResponse {
+	return &WalletBalanceResponse{
+		Wallet: w,
+	}
+}
+
 // WalletTransactionResponse represents a wallet transaction in API responses
 type WalletTransactionResponse struct {
 	ID                  string                      `json:"id"`
@@ -278,7 +284,10 @@ type TopUpWalletRequest struct {
 	// expiry_date YYYYMMDD format in UTC timezone (optional to set nil means no expiry)
 	// for ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC
 	// hence they will be available for use until 2024-12-31 23:59:59 UTC
-	ExpiryDate *int `json:"expiry_date,omitempty"`
+	ExpiryDate *int `json:"-"`
+	// expiry_date_utc is the expiry date in UTC timezone
+	// ex 2025-01-01 00:00:00 UTC
+	ExpiryDateUTC *time.Time `json:"expiry_date_utc,omitempty"`
 	// idempotency_key is a unique key for the transaction
 	IdempotencyKey *string `json:"idempotency_key" binding:"required"`
 	// description to add any specific details about the transaction
@@ -313,17 +322,26 @@ func (r *TopUpWalletRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
+	if r.ExpiryDateUTC != nil {
+		// check if the expiry date is in the past
+		if r.ExpiryDateUTC.Before(time.Now().UTC()) {
+			return ierr.NewError("expiry_date_utc cannot be in the past").
+				WithHint("Expiry date must be in the future").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	return nil
 }
 
 // WalletBalanceResponse represents the response for getting wallet balance
 type WalletBalanceResponse struct {
 	*wallet.Wallet
-	RealTimeBalance       decimal.Decimal `json:"real_time_balance"`
-	RealTimeCreditBalance decimal.Decimal `json:"real_time_credit_balance"`
-	BalanceUpdatedAt      time.Time       `json:"balance_updated_at"`
-	UnpaidInvoiceAmount   decimal.Decimal `json:"unpaid_invoice_amount"`
-	CurrentPeriodUsage    decimal.Decimal `json:"current_period_usage"`
+	RealTimeBalance       *decimal.Decimal `json:"real_time_balance,omitempty"`
+	RealTimeCreditBalance *decimal.Decimal `json:"real_time_credit_balance,omitempty"`
+	BalanceUpdatedAt      *time.Time       `json:"balance_updated_at,omitempty"`
+	UnpaidInvoiceAmount   *decimal.Decimal `json:"unpaid_invoice_amount,omitempty"`
+	CurrentPeriodUsage    *decimal.Decimal `json:"current_period_usage,omitempty"`
 }
 
 type ExpiredCreditsResponseItem struct {
@@ -336,4 +354,26 @@ type ExpiredCreditsResponse struct {
 	Total   int                           `json:"total"`
 	Success int                           `json:"success"`
 	Failed  int                           `json:"failed"`
+}
+
+type GetCustomerWalletsRequest struct {
+	ID                     string `form:"id"`
+	LookupKey              string `form:"lookup_key"`
+	IncludeRealTimeBalance bool   `form:"include_real_time_balance" default:"false"`
+}
+
+func (r *GetCustomerWalletsRequest) Validate() error {
+	if r.ID == "" && r.LookupKey == "" {
+		return ierr.NewError("id or lookup_key is required").
+			WithHint("Please provide either id or lookup_key").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.ID != "" && r.LookupKey != "" {
+		return ierr.NewError("only one of id or lookup_key is required").
+			WithHint("Please provide either 'id' or 'lookup_key', but not both.").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }

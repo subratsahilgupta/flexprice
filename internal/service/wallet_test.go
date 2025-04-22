@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -636,15 +637,15 @@ func (s *WalletServiceSuite) TestGetWalletBalance() {
 
 			s.NoError(err)
 			s.NotNil(resp)
-			s.True(tc.expectedRealTimeBalance.Equal(resp.RealTimeBalance),
+			s.True(tc.expectedRealTimeBalance.Equal(lo.FromPtr(resp.RealTimeBalance)),
 				"RealTimeBalance mismatch: expected %s, got %s",
 				tc.expectedRealTimeBalance, resp.RealTimeBalance)
-			s.True(tc.expectedUnpaidAmount.Equal(resp.UnpaidInvoiceAmount),
+			s.True(tc.expectedUnpaidAmount.Equal(lo.FromPtr(resp.UnpaidInvoiceAmount)),
 				"UnpaidInvoiceAmount mismatch: expected %s, got %s",
-				tc.expectedUnpaidAmount, resp.UnpaidInvoiceAmount)
-			s.True(tc.expectedCurrentUsage.Equal(resp.CurrentPeriodUsage),
+				tc.expectedUnpaidAmount, lo.FromPtr(resp.UnpaidInvoiceAmount))
+			s.True(tc.expectedCurrentUsage.Equal(lo.FromPtr(resp.CurrentPeriodUsage)),
 				"CurrentPeriodUsage mismatch: expected %s, got %s",
-				tc.expectedCurrentUsage, resp.CurrentPeriodUsage)
+				tc.expectedCurrentUsage, lo.FromPtr(resp.CurrentPeriodUsage))
 			s.NotZero(resp.BalanceUpdatedAt)
 			s.NotNil(resp.Wallet)
 		})
@@ -1129,4 +1130,96 @@ func (s *WalletServiceSuite) TestDebitWithMultipleCredits() {
 		totalRemaining = totalRemaining.Add(c.CreditsAvailable)
 	}
 	s.True(expectedBalance.Equal(totalRemaining))
+}
+
+func (s *WalletServiceSuite) TestGetCustomerWallets() {
+	// Prepare test customer and wallet
+	customer1 := &customer.Customer{
+		ID:         "cust_get_wallets_1",
+		ExternalID: "ext_get_wallets_1",
+		Name:       "Get Wallets Test Customer",
+		Email:      "get_wallets@example.com",
+		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(s.GetContext(), customer1))
+
+	wallet1 := &wallet.Wallet{
+		ID:         "wallet_1",
+		CustomerID: customer1.ID,
+		Currency:   "USD",
+		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), wallet1))
+
+	testCases := []struct {
+		name                   string
+		customerID             string
+		lookupKey              string
+		includeRealTimeBalance bool
+		setup                  func()
+		expectedError          bool
+		expectedErrorCode      string
+		expectedWalletsCount   int
+	}{
+		{
+			name:              "no_id_or_lookup_key",
+			expectedError:     true,
+			expectedErrorCode: ierr.ErrCodeValidation,
+		},
+		{
+			name:              "both_id_and_lookup_key",
+			customerID:        customer1.ID,
+			lookupKey:         customer1.ExternalID,
+			expectedError:     true,
+			expectedErrorCode: ierr.ErrCodeValidation,
+		},
+		{
+			name:              "invalid_id",
+			customerID:        "non_existent_id",
+			expectedError:     true,
+			expectedErrorCode: ierr.ErrCodeNotFound,
+		},
+		{
+			name:              "invalid_lookup_key",
+			lookupKey:         "non_existent_lookup_key",
+			expectedError:     true,
+			expectedErrorCode: ierr.ErrCodeNotFound,
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Reset repositories for each test case
+			s.SetupTest()
+
+			if tc.setup != nil {
+				tc.setup()
+			}
+
+			// Prepare request
+			req := &dto.GetCustomerWalletsRequest{
+				ID:                     tc.customerID,
+				LookupKey:              tc.lookupKey,
+				IncludeRealTimeBalance: tc.includeRealTimeBalance,
+			}
+
+			// Call the method
+			resp, err := s.service.GetCustomerWallets(s.GetContext(), req)
+
+			if tc.expectedError {
+				s.Error(err)
+				s.Nil(resp)
+
+				if tc.expectedErrorCode == ierr.ErrCodeValidation {
+					s.True(ierr.IsValidation(err), "Expected validation error")
+				} else if tc.expectedErrorCode == ierr.ErrCodeNotFound {
+					s.True(ierr.IsNotFound(err), "Expected not found error")
+				}
+			} else {
+				s.NoError(err)
+				s.NotNil(resp)
+				s.Equal(tc.expectedWalletsCount, len(resp))
+			}
+		})
+	}
 }
