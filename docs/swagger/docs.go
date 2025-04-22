@@ -317,6 +317,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/customers/wallets": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get all wallets for a customer by lookup key or id",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Wallets"
+                ],
+                "summary": "Get Customer Wallets",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "name": "id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "name": "include_real_time_balance",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "lookup_key",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.WalletResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/customers/{id}": {
             "get": {
                 "security": [
@@ -8597,6 +8664,9 @@ const docTemplate = `{
             "properties": {
                 "billing_details": {
                     "$ref": "#/definitions/dto.TenantBillingDetails"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

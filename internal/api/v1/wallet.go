@@ -90,6 +90,40 @@ func (h *WalletHandler) GetWalletsByCustomerID(c *gin.Context) {
 	c.JSON(http.StatusOK, wallets)
 }
 
+// GetCustomerWallets godoc
+// @Summary Get Customer Wallets
+// @Description Get all wallets for a customer by lookup key or id
+// @Tags Wallets
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request query dto.GetCustomerWalletsRequest true "Get customer wallets request"
+// @Success 200 {array} dto.WalletResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /customers/wallets [get]
+func (h *WalletHandler) GetCustomerWallets(c *gin.Context) {
+	var req dto.GetCustomerWalletsRequest
+	// All data is present in the query params
+	if err := c.ShouldBindQuery(&req); err != nil {
+		h.logger.Error("Failed to bind query parameters", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	wallets, err := h.walletService.GetCustomerWallets(c.Request.Context(), &req)
+	if err != nil {
+		h.logger.Error("Failed to get customer wallets", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, wallets)
+}
+
 // GetWalletByID godoc
 // @Summary Get wallet by ID
 // @Description Get a wallet by its ID

@@ -2163,6 +2163,8 @@ definitions:
     properties:
       billing_details:
         $ref: '#/definitions/dto.TenantBillingDetails'
+      name:
+        type: string
     type: object
   dto.UpdateWalletRequest:
     properties:
@@ -3443,6 +3445,48 @@ paths:
       summary: Get a customer by lookup key
       tags:
       - Customers
+  /customers/wallets:
+    get:
+      consumes:
+      - application/json
+      description: Get all wallets for a customer by lookup key or id
+      parameters:
+      - in: query
+        name: id
+        type: string
+      - default: false
+        in: query
+        name: include_real_time_balance
+        type: boolean
+      - in: query
+        name: lookup_key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.WalletResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get Customer Wallets
+      tags:
+      - Wallets
   /entitlements:
     get:
       consumes:

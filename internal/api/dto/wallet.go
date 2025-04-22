@@ -218,6 +218,12 @@ func FromWallet(w *wallet.Wallet) *WalletResponse {
 	}
 }
 
+func ToWalletBalanceResponse(w *wallet.Wallet) *WalletBalanceResponse {
+	return &WalletBalanceResponse{
+		Wallet: w,
+	}
+}
+
 // WalletTransactionResponse represents a wallet transaction in API responses
 type WalletTransactionResponse struct {
 	ID                  string                      `json:"id"`
@@ -331,11 +337,11 @@ func (r *TopUpWalletRequest) Validate() error {
 // WalletBalanceResponse represents the response for getting wallet balance
 type WalletBalanceResponse struct {
 	*wallet.Wallet
-	RealTimeBalance       decimal.Decimal `json:"real_time_balance"`
-	RealTimeCreditBalance decimal.Decimal `json:"real_time_credit_balance"`
-	BalanceUpdatedAt      time.Time       `json:"balance_updated_at"`
-	UnpaidInvoiceAmount   decimal.Decimal `json:"unpaid_invoice_amount"`
-	CurrentPeriodUsage    decimal.Decimal `json:"current_period_usage"`
+	RealTimeBalance       *decimal.Decimal `json:"real_time_balance,omitempty"`
+	RealTimeCreditBalance *decimal.Decimal `json:"real_time_credit_balance,omitempty"`
+	BalanceUpdatedAt      *time.Time       `json:"balance_updated_at,omitempty"`
+	UnpaidInvoiceAmount   *decimal.Decimal `json:"unpaid_invoice_amount,omitempty"`
+	CurrentPeriodUsage    *decimal.Decimal `json:"current_period_usage,omitempty"`
 }
 
 type ExpiredCreditsResponseItem struct {
@@ -348,4 +354,26 @@ type ExpiredCreditsResponse struct {
 	Total   int                           `json:"total"`
 	Success int                           `json:"success"`
 	Failed  int                           `json:"failed"`
+}
+
+type GetCustomerWalletsRequest struct {
+	ID                     string `form:"id"`
+	LookupKey              string `form:"lookup_key"`
+	IncludeRealTimeBalance bool   `form:"include_real_time_balance" default:"false"`
+}
+
+func (r *GetCustomerWalletsRequest) Validate() error {
+	if r.ID == "" && r.LookupKey == "" {
+		return ierr.NewError("id or lookup_key is required").
+			WithHint("Please provide either id or lookup_key").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.ID != "" && r.LookupKey != "" {
+		return ierr.NewError("only one of id or lookup_key is required").
+			WithHint("Please provide either 'id' or 'lookup_key', but not both.").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }
