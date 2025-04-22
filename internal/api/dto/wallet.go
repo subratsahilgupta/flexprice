@@ -316,6 +316,15 @@ func (r *TopUpWalletRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
+	if r.ExpiryDateUTC != nil {
+		// check if the expiry date is in the past
+		if r.ExpiryDateUTC.Before(time.Now().UTC()) {
+			return ierr.NewError("expiry_date_utc cannot be in the past").
+				WithHint("Expiry date must be in the future").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	return nil
 }
 
