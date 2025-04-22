@@ -278,9 +278,9 @@ type TopUpWalletRequest struct {
 	// expiry_date YYYYMMDD format in UTC timezone (optional to set nil means no expiry)
 	// for ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC
 	// hence they will be available for use until 2024-12-31 23:59:59 UTC
-	ExpiryDate *int `json:"expiry_date,omitempty"`
+	ExpiryDate *int `json:"-"`
 	// expiry_date_utc is the expiry date in UTC timezone
-	// NOTE: This is not required if expiry_date is provided
+	// ex 2025-01-01 00:00:00 UTC
 	ExpiryDateUTC *time.Time `json:"expiry_date_utc,omitempty"`
 	// idempotency_key is a unique key for the transaction
 	IdempotencyKey *string `json:"idempotency_key" binding:"required"`
