@@ -22,6 +22,7 @@ swagger-2-0: install-swag
 		--instanceName swagger \
 		--parseVendor \
 		--outputTypes go,json,yaml
+	@make swagger-fix-refs
 
 .PHONY: swagger-3-0
 swagger-3-0: install-swag
@@ -32,6 +33,10 @@ swagger-3-0: install-swag
 		-H 'Content-Type: application/json' \
 		-d @docs/swagger/swagger.json > docs/swagger/swagger-3-0.json
 	@echo "Conversion complete. Output saved to docs/swagger/swagger-3-0.json"
+
+.PHONY: swagger-fix-refs
+swagger-fix-refs:
+	@./scripts/fix_swagger_refs.sh
 
 .PHONY: up
 up:
