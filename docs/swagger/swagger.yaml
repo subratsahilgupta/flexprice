@@ -1936,12 +1936,11 @@ definitions:
       description:
         description: description to add any specific details about the transaction
         type: string
-      expiry_date:
+      expiry_date_utc:
         description: |-
-          expiry_date YYYYMMDD format in UTC timezone (optional to set nil means no expiry)
-          for ex 20250101 means the credits will expire on 2025-01-01 00:00:00 UTC
-          hence they will be available for use until 2024-12-31 23:59:59 UTC
-        type: integer
+          expiry_date_utc is the expiry date in UTC timezone
+          ex 2025-01-01 00:00:00 UTC
+        type: string
       idempotency_key:
         description: idempotency_key is a unique key for the transaction
         type: string
