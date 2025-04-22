@@ -6826,7 +6826,7 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
-                "include_real_time_data": {
+                "include_real_time_balance": {
                     "type": "boolean",
                     "default": false
                 },

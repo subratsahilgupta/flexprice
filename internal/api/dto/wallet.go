@@ -350,9 +350,9 @@ type ExpiredCreditsResponse struct {
 }
 
 type GetCustomerWalletsRequest struct {
-	CustomerID          string `form:"id"`
-	CustomerLookupKey   string `form:"lookup_key"`
-	IncludeRealTimeData bool   `form:"include_real_time_data" default:"false"`
+	CustomerID             string `form:"id"`
+	CustomerLookupKey      string `form:"lookup_key"`
+	IncludeRealTimeBalance bool   `form:"include_real_time_balance" default:"false"`
 }
 
 func (r *GetCustomerWalletsRequest) Validate() error {

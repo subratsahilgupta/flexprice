@@ -881,7 +881,7 @@ definitions:
     properties:
       id:
         type: string
-      include_real_time_data:
+      include_real_time_balance:
         default: false
         type: boolean
       lookup_key:
