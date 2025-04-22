@@ -877,16 +877,6 @@ definitions:
       usage_percent:
         type: number
     type: object
-  dto.GetCustomerWalletsRequest:
-    properties:
-      id:
-        type: string
-      include_real_time_balance:
-        default: false
-        type: boolean
-      lookup_key:
-        type: string
-    type: object
   dto.GetEventsRequest:
     properties:
       end_time:
@@ -2173,6 +2163,8 @@ definitions:
     properties:
       billing_details:
         $ref: '#/definitions/dto.TenantBillingDetails'
+      name:
+        type: string
     type: object
   dto.UpdateWalletRequest:
     properties:
@@ -3459,12 +3451,16 @@ paths:
       - application/json
       description: Get all wallets for a customer by lookup key or id
       parameters:
-      - description: Get customer wallets request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/dto.GetCustomerWalletsRequest'
+      - in: query
+        name: id
+        type: string
+      - default: false
+        in: query
+        name: include_real_time_balance
+        type: boolean
+      - in: query
+        name: lookup_key
+        type: string
       produces:
       - application/json
       responses:

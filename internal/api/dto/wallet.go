@@ -220,12 +220,7 @@ func FromWallet(w *wallet.Wallet) *WalletResponse {
 
 func ToWalletBalanceResponse(w *wallet.Wallet) *WalletBalanceResponse {
 	return &WalletBalanceResponse{
-		Wallet:                w,
-		RealTimeBalance:       w.Balance,
-		RealTimeCreditBalance: w.CreditBalance,
-		BalanceUpdatedAt:      w.UpdatedAt,
-		UnpaidInvoiceAmount:   decimal.Zero,
-		CurrentPeriodUsage:    decimal.Zero,
+		Wallet: w,
 	}
 }
 
@@ -342,11 +337,11 @@ func (r *TopUpWalletRequest) Validate() error {
 // WalletBalanceResponse represents the response for getting wallet balance
 type WalletBalanceResponse struct {
 	*wallet.Wallet
-	RealTimeBalance       decimal.Decimal `json:"real_time_balance"`
-	RealTimeCreditBalance decimal.Decimal `json:"real_time_credit_balance"`
-	BalanceUpdatedAt      time.Time       `json:"balance_updated_at"`
-	UnpaidInvoiceAmount   decimal.Decimal `json:"unpaid_invoice_amount"`
-	CurrentPeriodUsage    decimal.Decimal `json:"current_period_usage"`
+	RealTimeBalance       *decimal.Decimal `json:"real_time_balance,omitempty"`
+	RealTimeCreditBalance *decimal.Decimal `json:"real_time_credit_balance,omitempty"`
+	BalanceUpdatedAt      *time.Time       `json:"balance_updated_at,omitempty"`
+	UnpaidInvoiceAmount   *decimal.Decimal `json:"unpaid_invoice_amount,omitempty"`
+	CurrentPeriodUsage    *decimal.Decimal `json:"current_period_usage,omitempty"`
 }
 
 type ExpiredCreditsResponseItem struct {
@@ -362,20 +357,20 @@ type ExpiredCreditsResponse struct {
 }
 
 type GetCustomerWalletsRequest struct {
-	CustomerID             string `form:"id"`
-	CustomerLookupKey      string `form:"lookup_key"`
+	ID                     string `form:"id"`
+	LookupKey              string `form:"lookup_key"`
 	IncludeRealTimeBalance bool   `form:"include_real_time_balance" default:"false"`
 }
 
 func (r *GetCustomerWalletsRequest) Validate() error {
-	if r.CustomerID == "" && r.CustomerLookupKey == "" {
-		return ierr.NewError("customer_id or customer_lookup_key is required").
+	if r.ID == "" && r.LookupKey == "" {
+		return ierr.NewError("id or lookup_key is required").
 			WithHint("Please provide either id or lookup_key").
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.CustomerID != "" && r.CustomerLookupKey != "" {
-		return ierr.NewError("only one of customer_id or customer_lookup_key is required").
+	if r.ID != "" && r.LookupKey != "" {
+		return ierr.NewError("only one of id or lookup_key is required").
 			WithHint("Please provide either 'id' or 'lookup_key', but not both.").
 			Mark(ierr.ErrValidation)
 	}

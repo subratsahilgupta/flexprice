@@ -637,15 +637,15 @@ func (s *WalletServiceSuite) TestGetWalletBalance() {
 
 			s.NoError(err)
 			s.NotNil(resp)
-			s.True(tc.expectedRealTimeBalance.Equal(resp.RealTimeBalance),
+			s.True(tc.expectedRealTimeBalance.Equal(lo.FromPtr(resp.RealTimeBalance)),
 				"RealTimeBalance mismatch: expected %s, got %s",
 				tc.expectedRealTimeBalance, resp.RealTimeBalance)
-			s.True(tc.expectedUnpaidAmount.Equal(resp.UnpaidInvoiceAmount),
+			s.True(tc.expectedUnpaidAmount.Equal(lo.FromPtr(resp.UnpaidInvoiceAmount)),
 				"UnpaidInvoiceAmount mismatch: expected %s, got %s",
-				tc.expectedUnpaidAmount, resp.UnpaidInvoiceAmount)
-			s.True(tc.expectedCurrentUsage.Equal(resp.CurrentPeriodUsage),
+				tc.expectedUnpaidAmount, lo.FromPtr(resp.UnpaidInvoiceAmount))
+			s.True(tc.expectedCurrentUsage.Equal(lo.FromPtr(resp.CurrentPeriodUsage)),
 				"CurrentPeriodUsage mismatch: expected %s, got %s",
-				tc.expectedCurrentUsage, resp.CurrentPeriodUsage)
+				tc.expectedCurrentUsage, lo.FromPtr(resp.CurrentPeriodUsage))
 			s.NotZero(resp.BalanceUpdatedAt)
 			s.NotNil(resp.Wallet)
 		})
@@ -1152,14 +1152,14 @@ func (s *WalletServiceSuite) TestGetCustomerWallets() {
 	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), wallet1))
 
 	testCases := []struct {
-		name                 string
-		customerID           string
-		lookupKey            string
-		includeRealTimeData  bool
-		setup                func()
-		expectedError        bool
-		expectedErrorCode    string
-		expectedWalletsCount int
+		name                   string
+		customerID             string
+		lookupKey              string
+		includeRealTimeBalance bool
+		setup                  func()
+		expectedError          bool
+		expectedErrorCode      string
+		expectedWalletsCount   int
 	}{
 		{
 			name:              "no_id_or_lookup_key",
@@ -1198,9 +1198,9 @@ func (s *WalletServiceSuite) TestGetCustomerWallets() {
 
 			// Prepare request
 			req := &dto.GetCustomerWalletsRequest{
-				CustomerID:          tc.customerID,
-				CustomerLookupKey:   tc.lookupKey,
-				IncludeRealTimeData: tc.includeRealTimeData,
+				ID:                     tc.customerID,
+				LookupKey:              tc.lookupKey,
+				IncludeRealTimeBalance: tc.includeRealTimeBalance,
 			}
 
 			// Call the method

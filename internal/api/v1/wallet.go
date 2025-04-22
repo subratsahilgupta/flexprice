@@ -97,7 +97,7 @@ func (h *WalletHandler) GetWalletsByCustomerID(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body dto.GetCustomerWalletsRequest true "Get customer wallets request"
+// @Param request query dto.GetCustomerWalletsRequest true "Get customer wallets request"
 // @Success 200 {array} dto.WalletResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse

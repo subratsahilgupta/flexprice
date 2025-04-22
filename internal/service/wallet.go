@@ -362,7 +362,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 
 func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error) {
 	response := &dto.WalletBalanceResponse{
-		RealTimeBalance: decimal.Zero,
+		RealTimeBalance: lo.ToPtr(decimal.Zero),
 	}
 
 	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
@@ -372,9 +372,9 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 
 	if w.WalletStatus != types.WalletStatusActive {
 		response.Wallet = w
-		response.RealTimeBalance = decimal.Zero
-		response.RealTimeCreditBalance = decimal.Zero
-		response.BalanceUpdatedAt = w.UpdatedAt
+		response.RealTimeBalance = lo.ToPtr(decimal.Zero)
+		response.RealTimeCreditBalance = lo.ToPtr(decimal.Zero)
+		response.BalanceUpdatedAt = lo.ToPtr(w.UpdatedAt)
 		return response, nil
 	}
 
@@ -447,11 +447,11 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 
 	return &dto.WalletBalanceResponse{
 		Wallet:                w,
-		RealTimeBalance:       realTimeBalance,
-		RealTimeCreditBalance: s.GetCreditsFromCurrencyAmount(realTimeBalance, w.ConversionRate),
-		BalanceUpdatedAt:      time.Now().UTC(),
-		UnpaidInvoiceAmount:   invoiceSummary.TotalUnpaidAmount,
-		CurrentPeriodUsage:    currentPeriodUsage,
+		RealTimeBalance:       lo.ToPtr(realTimeBalance),
+		RealTimeCreditBalance: lo.ToPtr(s.GetCreditsFromCurrencyAmount(realTimeBalance, w.ConversionRate)),
+		BalanceUpdatedAt:      lo.ToPtr(time.Now().UTC()),
+		UnpaidInvoiceAmount:   lo.ToPtr(invoiceSummary.TotalUnpaidAmount),
+		CurrentPeriodUsage:    lo.ToPtr(currentPeriodUsage),
 	}, nil
 }
 
@@ -888,14 +888,14 @@ func (s *walletService) GetCustomerWallets(ctx context.Context, req *dto.GetCust
 	}
 
 	var customerID string
-	if req.CustomerID != "" {
-		customerID = req.CustomerID
+	if req.ID != "" {
+		customerID = req.ID
 		_, err := s.CustomerRepo.Get(ctx, customerID)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		customer, err := s.CustomerRepo.GetByLookupKey(ctx, req.CustomerLookupKey)
+		customer, err := s.CustomerRepo.GetByLookupKey(ctx, req.LookupKey)
 		if err != nil {
 			return nil, err
 		}

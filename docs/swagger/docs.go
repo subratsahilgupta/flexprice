@@ -337,13 +337,20 @@ const docTemplate = `{
                 "summary": "Get Customer Wallets",
                 "parameters": [
                     {
-                        "description": "Get customer wallets request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.GetCustomerWalletsRequest"
-                        }
+                        "type": "string",
+                        "name": "id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": false,
+                        "name": "include_real_time_balance",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "lookup_key",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -6820,21 +6827,6 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.GetCustomerWalletsRequest": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "include_real_time_balance": {
-                    "type": "boolean",
-                    "default": false
-                },
-                "lookup_key": {
-                    "type": "string"
-                }
-            }
-        },
         "dto.GetEventsRequest": {
             "type": "object",
             "properties": {
@@ -8672,6 +8664,9 @@ const docTemplate = `{
             "properties": {
                 "billing_details": {
                     "$ref": "#/definitions/dto.TenantBillingDetails"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
