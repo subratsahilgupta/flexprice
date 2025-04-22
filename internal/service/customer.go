@@ -219,20 +219,6 @@ func (s *customerService) DeleteCustomer(ctx context.Context, id string) error {
 			Mark(ierr.ErrInvalidOperation)
 	}
 
-	invoiceFilter := types.NewInvoiceFilter()
-	invoiceFilter.CustomerID = id
-	invoiceFilter.Limit = lo.ToPtr(1)
-	invoices, err := s.InvoiceRepo.List(ctx, invoiceFilter)
-	if err != nil {
-		return err
-	}
-
-	if len(invoices) > 0 {
-		return ierr.NewError("customer cannot be deleted due to active invoices").
-			WithHint("Customer cannot be deleted due to active invoices").
-			Mark(ierr.ErrInvalidOperation)
-	}
-
 	wallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, id)
 	if err != nil {
 		return err

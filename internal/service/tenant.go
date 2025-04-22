@@ -148,6 +148,7 @@ func (s *tenantService) onboardTenantOnFreePlan(ctx context.Context, t *tenant.T
 		BillingPeriod:      freePrice.BillingPeriod,
 		BillingPeriodCount: freePrice.BillingPeriodCount,
 		StartDate:          time.Now(),
+		BillingCycle:       types.BillingCycleAnniversary,
 	})
 	if err != nil {
 		s.Logger.Errorw("Failed to create subscription",
@@ -231,6 +232,11 @@ func (s *tenantService) UpdateTenant(ctx context.Context, id string, req dto.Upd
 		}
 	}
 	existingTenant.BillingDetails = billingDetails
+
+	// Update the name if it is provided
+	if req.Name != "" {
+		existingTenant.Name = req.Name
+	}
 
 	// Update the timestamp
 	existingTenant.UpdatedAt = time.Now()
