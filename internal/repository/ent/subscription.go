@@ -599,6 +599,7 @@ func (r *subscriptionRepository) GetWithLineItems(ctx context.Context, id string
 	sub, err := client.Subscription.Query().
 		Where(
 			subscription.ID(id),
+			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
 			subscription.TenantID(types.GetTenantID(ctx)),
 			subscription.Status(string(types.StatusPublished)),
 		).
