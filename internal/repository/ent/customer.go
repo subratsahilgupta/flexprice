@@ -180,17 +180,17 @@ func (r *customerRepository) ListByFilter(ctx context.Context, filter *types.Cus
 	query := client.Customer.Query()
 
 	// Apply OR condition if both CustomerID and ExternalID are provided
-	if filter.CustomerID != nil && filter.ExternalID != nil {
+	if filter.Name != nil && filter.ExternalID != nil {
 		query = query.Where(
 			customer.Or(
-				customer.IDContainsFold(lo.FromPtr(filter.CustomerID)),
+				customer.NameContainsFold(lo.FromPtr(filter.Name)),
 				customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)),
 			),
 		)
 	} else {
 		// Existing individual conditions if only one is provided
-		if filter.CustomerID != nil {
-			query = query.Where(customer.IDContainsFold(lo.FromPtr(filter.CustomerID)))
+		if filter.Name != nil {
+			query = query.Where(customer.NameContainsFold(lo.FromPtr(filter.Name)))
 		}
 
 		if filter.ExternalID != nil {
@@ -226,17 +226,17 @@ func (r *customerRepository) CountByFilter(ctx context.Context, filter *types.Cu
 	query := client.Customer.Query()
 
 	// Apply OR condition if both CustomerID and ExternalID are provided
-	if filter.CustomerID != nil && filter.ExternalID != nil {
+	if filter.Name != nil && filter.ExternalID != nil {
 		query = query.Where(
 			customer.Or(
-				customer.IDContainsFold(lo.FromPtr(filter.CustomerID)),
+				customer.NameContainsFold(lo.FromPtr(filter.Name)),
 				customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)),
 			),
 		)
 	} else {
 		// Existing individual conditions if only one is provided
-		if filter.CustomerID != nil {
-			query = query.Where(customer.IDContainsFold(lo.FromPtr(filter.CustomerID)))
+		if filter.Name != nil {
+			query = query.Where(customer.NameContainsFold(lo.FromPtr(filter.Name)))
 		}
 
 		if filter.ExternalID != nil {

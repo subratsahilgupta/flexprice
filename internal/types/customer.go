@@ -104,7 +104,7 @@ func (f *CustomerFilter) IsUnlimited() bool {
 }
 
 type CustomerSearchFilter struct {
-	CustomerID *string `form:"customer_id,omitempty"`
+	Name       *string `form:"name,omitempty"`
 	ExternalID *string `form:"external_id,omitempty"`
 	Limit      *int    `form:"limit,default=10,omitempty"`
 	Offset     *int    `form:"offset,default=0,omitempty"`

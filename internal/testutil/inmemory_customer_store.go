@@ -196,11 +196,11 @@ func (s *InMemoryCustomerStore) CountByFilter(ctx context.Context, filter *types
 		}
 
 		// Filter by customer ID (partial match)
-		if filter != nil && filter.CustomerID != nil {
-			customerIDStr := *filter.CustomerID
-			if !strings.Contains(strings.ToLower(c.ID), strings.ToLower(customerIDStr)) {
+		if filter != nil && filter.Name != nil {
+			nameStr := *filter.Name
+			if !strings.Contains(strings.ToLower(c.Name), strings.ToLower(nameStr)) {
 				return false
-			}
+			}	
 		}
 
 		// Filter by external ID (case-insensitive partial match)
@@ -239,7 +239,7 @@ func (s *InMemoryCustomerStore) ListByFilter(ctx context.Context, filter *types.
 		}
 
 		// Filter by customer ID
-		if filter.CustomerID != nil && !strings.Contains(strings.ToLower(c.ID), strings.ToLower(*filter.CustomerID)) {
+		if filter.Name != nil && !strings.Contains(strings.ToLower(c.Name), strings.ToLower(*filter.Name)) {
 			return false
 		}
 

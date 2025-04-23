@@ -571,9 +571,9 @@ func (s *CustomerServiceSuite) TestListCustomersByFilter() {
 		expectedCount int
 	}{
 		{
-			name: "search_by_customer_id",
+			name: "search_by_name",
 			filter: &types.CustomerSearchFilter{
-				CustomerID: lo.ToPtr("cust-1"),
+				Name: lo.ToPtr("John Doe"),
 			},
 			expectedError: false,
 			expectedCount: 1,
