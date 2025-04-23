@@ -262,6 +262,7 @@ func startServer(
 	router *pubsubRouter.Router,
 	onboardingService service.OnboardingService,
 	log *logger.Logger,
+	sentryService *sentry.Service,
 ) {
 	mode := cfg.Deployment.Mode
 	if mode == "" {
@@ -274,7 +275,7 @@ func startServer(
 			log.Fatal("Kafka consumer required for local mode")
 		}
 		startAPIServer(lc, r, cfg, log)
-		startConsumer(lc, consumer, eventRepo, cfg, log)
+		startConsumer(lc, consumer, eventRepo, cfg, log, sentryService)
 		startMessageRouter(lc, router, webhookService, onboardingService, log)
 		startTemporalWorker(lc, temporalClient, &cfg.Temporal, log)
 	case types.ModeAPI:
@@ -287,12 +288,12 @@ func startServer(
 		if consumer == nil {
 			log.Fatal("Kafka consumer required for consumer mode")
 		}
-		startConsumer(lc, consumer, eventRepo, cfg, log)
+		startConsumer(lc, consumer, eventRepo, cfg, log, sentryService)
 	case types.ModeAWSLambdaAPI:
 		startAWSLambdaAPI(r)
 		startMessageRouter(lc, router, webhookService, onboardingService, log)
 	case types.ModeAWSLambdaConsumer:
-		startAWSLambdaConsumer(eventRepo, cfg, log)
+		startAWSLambdaConsumer(eventRepo, cfg, log, sentryService)
 	default:
 		log.Fatalf("Unknown deployment mode: %s", mode)
 	}
@@ -338,10 +339,11 @@ func startConsumer(
 	eventRepo events.Repository,
 	cfg *config.Configuration,
 	log *logger.Logger,
+	sentryService *sentry.Service,
 ) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			go consumeMessages(consumer, eventRepo, cfg, log)
+			go consumeMessages(consumer, eventRepo, cfg, log, sentryService)
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
@@ -356,7 +358,7 @@ func startAWSLambdaAPI(r *gin.Engine) {
 	lambda.Start(ginLambda.ProxyWithContext)
 }
 
-func startAWSLambdaConsumer(eventRepo events.Repository, cfg *config.Configuration, log *logger.Logger) {
+func startAWSLambdaConsumer(eventRepo events.Repository, cfg *config.Configuration, log *logger.Logger, sentryService *sentry.Service) {
 	handler := func(ctx context.Context, kafkaEvent lambdaEvents.KafkaEvent) error {
 		log.Debugf("Received Kafka event: %+v", kafkaEvent)
 
@@ -375,7 +377,7 @@ func startAWSLambdaConsumer(eventRepo events.Repository, cfg *config.Configurati
 					continue
 				}
 
-				if err := handleEventConsumption(cfg, log, eventRepo, decodedPayload); err != nil {
+				if err := handleEventConsumption(ctx, cfg, log, eventRepo, decodedPayload, sentryService); err != nil {
 					log.Errorf("Failed to process event: %v, payload: %s", err, string(decodedPayload))
 					continue
 				}
@@ -390,14 +392,15 @@ func startAWSLambdaConsumer(eventRepo events.Repository, cfg *config.Configurati
 	lambda.Start(handler)
 }
 
-func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository, cfg *config.Configuration, log *logger.Logger) {
+func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository, cfg *config.Configuration, log *logger.Logger, sentryService *sentry.Service) {
 	messages, err := consumer.Subscribe(cfg.Kafka.Topic)
 	if err != nil {
 		log.Fatalf("Failed to subscribe to topic %s: %v", cfg.Kafka.Topic, err)
 	}
 
 	for msg := range messages {
-		if err := handleEventConsumption(cfg, log, eventRepo, msg.Payload); err != nil {
+		ctx := context.Background()
+		if err := handleEventConsumption(ctx, cfg, log, eventRepo, msg.Payload, sentryService); err != nil {
 			log.Errorf("Failed to process event: %v, payload: %s", err, string(msg.Payload))
 			msg.Nack()
 			continue
@@ -406,14 +409,43 @@ func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository
 	}
 }
 
-func handleEventConsumption(cfg *config.Configuration, log *logger.Logger, eventRepo events.Repository, payload []byte) error {
+func handleEventConsumption(ctx context.Context, cfg *config.Configuration, log *logger.Logger, eventRepo events.Repository, payload []byte, sentryService *sentry.Service) error {
+	// Start a transaction for this event processing
+	transaction, ctx := sentryService.StartTransaction(ctx, "event.process")
+	if transaction != nil {
+		defer transaction.Finish()
+	}
+
+	// Start a Kafka consumer span
+	kafkaSpan, ctx := sentryService.StartKafkaConsumerSpan(ctx, cfg.Kafka.Topic)
+	if kafkaSpan != nil {
+		defer kafkaSpan.Finish()
+	}
+
 	var event events.Event
 	if err := json.Unmarshal(payload, &event); err != nil {
 		log.Errorf("Failed to unmarshal event: %v, payload: %s", err, string(payload))
+		sentryService.CaptureException(err)
 		return err
 	}
 
 	log.Debugf("Starting to process event: %+v", event)
+
+	// Start an event processing span
+	eventSpan, ctx := sentryService.MonitorEventProcessing(
+		ctx,
+		event.EventName,
+		event.Timestamp,
+		map[string]interface{}{
+			"event_id":       event.ID,
+			"tenant_id":      event.TenantID,
+			"source":         event.Source,
+			"environment_id": event.EnvironmentID,
+		},
+	)
+	if eventSpan != nil {
+		defer eventSpan.Finish()
+	}
 
 	eventsToInsert := []*events.Event{&event}
 
@@ -440,7 +472,7 @@ func handleEventConsumption(cfg *config.Configuration, log *logger.Logger, event
 	}
 
 	// Insert both events in a single operation
-	if err := eventRepo.BulkInsertEvents(context.Background(), eventsToInsert); err != nil {
+	if err := eventRepo.BulkInsertEvents(ctx, eventsToInsert); err != nil {
 		log.Errorf("Failed to insert events: %v, original event: %+v", err, event)
 		return err
 	}
