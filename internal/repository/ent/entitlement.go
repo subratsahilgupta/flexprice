@@ -30,6 +30,14 @@ func NewEntitlementRepository(client postgres.IClient, log *logger.Logger) domai
 func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement.Entitlement) (*domainEntitlement.Entitlement, error) {
 	client := r.client.Querier(ctx)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "create", map[string]interface{}{
+		"plan_id":    e.PlanID,
+		"feature_id": e.FeatureID,
+		"tenant_id":  e.TenantID,
+	})
+	defer FinishSpan(span)
+
 	// Set environment ID from context if not already set
 	if e.EnvironmentID == "" {
 		e.EnvironmentID = types.GetEnvironmentID(ctx)
@@ -55,6 +63,7 @@ func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsConstraintError(err) {
 			return nil, ierr.WithError(err).
 				WithHint("An entitlement with this plan and feature already exists").
@@ -84,6 +93,13 @@ func (r *entitlementRepository) Get(ctx context.Context, id string) (*domainEnti
 		"tenant_id", types.GetTenantID(ctx),
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "get", map[string]interface{}{
+		"entitlement_id": id,
+		"tenant_id":      types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	result, err := client.Entitlement.Query().
 		Where(
 			entitlement.ID(id),
@@ -92,6 +108,7 @@ func (r *entitlementRepository) Get(ctx context.Context, id string) (*domainEnti
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("Entitlement not found").
@@ -115,6 +132,16 @@ func (r *entitlementRepository) List(ctx context.Context, filter *types.Entitlem
 	}
 
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "list", map[string]interface{}{
+		"tenant_id":    types.GetTenantID(ctx),
+		"plan_ids":     filter.PlanIDs,
+		"feature_ids":  filter.FeatureIDs,
+		"feature_type": filter.FeatureType,
+	})
+	defer FinishSpan(span)
+
 	query := client.Entitlement.Query()
 
 	// Apply entity-specific filters
@@ -125,6 +152,7 @@ func (r *entitlementRepository) List(ctx context.Context, filter *types.Entitlem
 
 	results, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list entitlements").
 			WithReportableDetails(map[string]interface{}{
@@ -140,6 +168,16 @@ func (r *entitlementRepository) List(ctx context.Context, filter *types.Entitlem
 
 func (r *entitlementRepository) Count(ctx context.Context, filter *types.EntitlementFilter) (int, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "count", map[string]interface{}{
+		"tenant_id":    types.GetTenantID(ctx),
+		"plan_ids":     filter.PlanIDs,
+		"feature_ids":  filter.FeatureIDs,
+		"feature_type": filter.FeatureType,
+	})
+	defer FinishSpan(span)
+
 	query := client.Entitlement.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
@@ -147,6 +185,7 @@ func (r *entitlementRepository) Count(ctx context.Context, filter *types.Entitle
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count entitlements").
 			WithReportableDetails(map[string]interface{}{
@@ -193,6 +232,15 @@ func (r *entitlementRepository) Update(ctx context.Context, e *domainEntitlement
 		"tenant_id", e.TenantID,
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "update", map[string]interface{}{
+		"entitlement_id": e.ID,
+		"tenant_id":      e.TenantID,
+		"plan_id":        e.PlanID,
+		"feature_id":     e.FeatureID,
+	})
+	defer FinishSpan(span)
+
 	result, err := client.Entitlement.UpdateOneID(e.ID).
 		Where(entitlement.TenantID(e.TenantID)).
 		SetPlanID(e.PlanID).
@@ -225,6 +273,13 @@ func (r *entitlementRepository) Update(ctx context.Context, e *domainEntitlement
 }
 
 func (r *entitlementRepository) Delete(ctx context.Context, id string) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "delete", map[string]interface{}{
+		"entitlement_id": id,
+		"tenant_id":      types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("deleting entitlement",
@@ -259,6 +314,13 @@ func (r *entitlementRepository) Delete(ctx context.Context, id string) error {
 }
 
 func (r *entitlementRepository) CreateBulk(ctx context.Context, entitlements []*domainEntitlement.Entitlement) ([]*domainEntitlement.Entitlement, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "create_bulk", map[string]interface{}{
+		"count":     len(entitlements),
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	if len(entitlements) == 0 {
 		return []*domainEntitlement.Entitlement{}, nil
 	}
@@ -308,6 +370,13 @@ func (r *entitlementRepository) CreateBulk(ctx context.Context, entitlements []*
 }
 
 func (r *entitlementRepository) DeleteBulk(ctx context.Context, ids []string) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "delete_bulk", map[string]interface{}{
+		"count":     len(ids),
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	if len(ids) == 0 {
 		return nil
 	}
@@ -338,6 +407,13 @@ func (r *entitlementRepository) DeleteBulk(ctx context.Context, ids []string) er
 
 // ListByPlanIDs retrieves all entitlements for the given plan IDs
 func (r *entitlementRepository) ListByPlanIDs(ctx context.Context, planIDs []string) ([]*domainEntitlement.Entitlement, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "list_by_plan_ids", map[string]interface{}{
+		"plan_ids":  planIDs,
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	if len(planIDs) == 0 {
 		return []*domainEntitlement.Entitlement{}, nil
 	}
@@ -356,6 +432,13 @@ func (r *entitlementRepository) ListByPlanIDs(ctx context.Context, planIDs []str
 
 // ListByFeatureIDs retrieves all entitlements for the given feature IDs
 func (r *entitlementRepository) ListByFeatureIDs(ctx context.Context, featureIDs []string) ([]*domainEntitlement.Entitlement, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "list_by_feature_ids", map[string]interface{}{
+		"feature_ids": featureIDs,
+		"tenant_id":   types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	if len(featureIDs) == 0 {
 		return []*domainEntitlement.Entitlement{}, nil
 	}

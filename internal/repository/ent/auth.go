@@ -2,6 +2,7 @@ package ent
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/flexprice/flexprice/ent"
 	entAuth "github.com/flexprice/flexprice/ent/auth"
@@ -27,7 +28,18 @@ func NewAuthRepository(client postgres.IClient, logger *logger.Logger) domainAut
 
 // CreateAuth creates a new auth record
 func (r *authRepository) CreateAuth(ctx context.Context, auth *domainAuth.Auth) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "auth", "create_auth", map[string]interface{}{
+		"user_id":  auth.UserID,
+		"provider": string(auth.Provider),
+	})
+	defer FinishSpan(span)
+
 	if !r.ValidateProvider(auth.Provider) {
+		// Create an error to pass to SetSpanError instead of using ErrorBuilder directly
+		validationErr := fmt.Errorf("invalid provider: %s", auth.Provider)
+		SetSpanError(span, validationErr)
+
 		return ierr.NewError("invalid provider").
 			WithHint("Only supported authentication providers are allowed").
 			WithReportableDetails(map[string]interface{}{
@@ -50,6 +62,7 @@ func (r *authRepository) CreateAuth(ctx context.Context, auth *domainAuth.Auth) 
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to create authentication record").
 			WithReportableDetails(map[string]interface{}{
@@ -64,6 +77,12 @@ func (r *authRepository) CreateAuth(ctx context.Context, auth *domainAuth.Auth) 
 
 // GetAuthByUserID retrieves an auth record by user ID
 func (r *authRepository) GetAuthByUserID(ctx context.Context, userID string) (*domainAuth.Auth, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "auth", "get_auth_by_user_id", map[string]interface{}{
+		"user_id": userID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	auth, err := client.Auth.
 		Query().
@@ -73,6 +92,7 @@ func (r *authRepository) GetAuthByUserID(ctx context.Context, userID string) (*d
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("Authentication record not found").
@@ -94,7 +114,18 @@ func (r *authRepository) GetAuthByUserID(ctx context.Context, userID string) (*d
 
 // UpdateAuth updates an auth record
 func (r *authRepository) UpdateAuth(ctx context.Context, auth *domainAuth.Auth) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "auth", "update_auth", map[string]interface{}{
+		"user_id":  auth.UserID,
+		"provider": string(auth.Provider),
+	})
+	defer FinishSpan(span)
+
 	if !r.ValidateProvider(auth.Provider) {
+		// Create an error to pass to SetSpanError instead of using ErrorBuilder directly
+		validationErr := fmt.Errorf("invalid provider: %s", auth.Provider)
+		SetSpanError(span, validationErr)
+
 		return ierr.NewError("invalid provider").
 			WithHint("Only supported authentication providers are allowed").
 			WithReportableDetails(map[string]interface{}{
@@ -116,6 +147,7 @@ func (r *authRepository) UpdateAuth(ctx context.Context, auth *domainAuth.Auth) 
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHint("Authentication record not found").
@@ -138,6 +170,12 @@ func (r *authRepository) UpdateAuth(ctx context.Context, auth *domainAuth.Auth) 
 
 // DeleteAuth deletes an auth record
 func (r *authRepository) DeleteAuth(ctx context.Context, userID string) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "auth", "delete_auth", map[string]interface{}{
+		"user_id": userID,
+	})
+	defer FinishSpan(span)
+
 	r.logger.Debugw("deleting auth", "user_id", userID)
 
 	client := r.client.Querier(ctx)
@@ -147,6 +185,7 @@ func (r *authRepository) DeleteAuth(ctx context.Context, userID string) error {
 		Exec(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to delete authentication record").
 			WithReportableDetails(map[string]interface{}{

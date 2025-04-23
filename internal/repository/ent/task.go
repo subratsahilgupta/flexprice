@@ -28,6 +28,14 @@ func NewTaskRepository(client postgres.IClient, logger *logger.Logger) domainTas
 }
 
 func (r *taskRepository) Create(ctx context.Context, t *domainTask.Task) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "task", "create", map[string]interface{}{
+		"task_id":     t.ID,
+		"task_type":   t.TaskType,
+		"entity_type": t.EntityType,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	// Set environment ID from context if not already set
@@ -62,6 +70,7 @@ func (r *taskRepository) Create(ctx context.Context, t *domainTask.Task) error {
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		r.logger.Error("failed to create task", "error", err)
 		return ierr.WithError(err).
 			WithHint("Failed to create task").
@@ -73,11 +82,18 @@ func (r *taskRepository) Create(ctx context.Context, t *domainTask.Task) error {
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	*t = *domainTask.FromEnt(task)
 	return nil
 }
 
 func (r *taskRepository) Get(ctx context.Context, id string) (*domainTask.Task, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "task", "get", map[string]interface{}{
+		"task_id": id,
+	})
+	defer FinishSpan(span)
+
 	task, err := r.client.Querier(ctx).Task.Query().
 		Where(
 			task.ID(id),
@@ -85,6 +101,7 @@ func (r *taskRepository) Get(ctx context.Context, id string) (*domainTask.Task, 
 		).
 		Only(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("Task not found").
@@ -101,10 +118,17 @@ func (r *taskRepository) Get(ctx context.Context, id string) (*domainTask.Task, 
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainTask.FromEnt(task), nil
 }
 
 func (r *taskRepository) List(ctx context.Context, filter *types.TaskFilter) ([]*domainTask.Task, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "task", "list", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	query := r.client.Querier(ctx).Task.Query()
 
 	// Apply entity-specific filters
@@ -115,15 +139,23 @@ func (r *taskRepository) List(ctx context.Context, filter *types.TaskFilter) ([]
 
 	tasks, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list tasks").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainTask.FromEntList(tasks), nil
 }
 
 func (r *taskRepository) Count(ctx context.Context, filter *types.TaskFilter) (int, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "task", "count", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	query := r.client.Querier(ctx).Task.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
@@ -131,14 +163,23 @@ func (r *taskRepository) Count(ctx context.Context, filter *types.TaskFilter) (i
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count tasks").
 			Mark(ierr.ErrDatabase)
 	}
+
+	SetSpanSuccess(span)
 	return count, nil
 }
 
 func (r *taskRepository) Update(ctx context.Context, t *domainTask.Task) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "task", "update", map[string]interface{}{
+		"task_id": t.ID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	// Use predicate-based update for optimistic locking
@@ -172,6 +213,7 @@ func (r *taskRepository) Update(ctx context.Context, t *domainTask.Task) error {
 	// Execute update
 	n, err := query.Save(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to update task").
 			WithReportableDetails(map[string]interface{}{
@@ -180,18 +222,27 @@ func (r *taskRepository) Update(ctx context.Context, t *domainTask.Task) error {
 			Mark(ierr.ErrDatabase)
 	}
 	if n == 0 {
-		return ierr.NewError("task not found").
+		err := ierr.NewError("task not found").
 			WithHint("The task may not exist or may have been deleted").
 			WithReportableDetails(map[string]interface{}{
 				"task_id": t.ID,
 			}).
 			Mark(ierr.ErrNotFound)
+		SetSpanError(span, err)
+		return err
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
 func (r *taskRepository) Delete(ctx context.Context, id string) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "task", "delete", map[string]interface{}{
+		"task_id": id,
+	})
+	defer FinishSpan(span)
+
 	_, err := r.client.Querier(ctx).Task.Update().
 		Where(
 			task.ID(id),
@@ -204,6 +255,7 @@ func (r *taskRepository) Delete(ctx context.Context, id string) error {
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to delete task").
 			WithReportableDetails(map[string]interface{}{
@@ -212,6 +264,7 @@ func (r *taskRepository) Delete(ctx context.Context, id string) error {
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 

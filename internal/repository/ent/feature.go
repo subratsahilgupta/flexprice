@@ -37,6 +37,14 @@ func (r *featureRepository) Create(ctx context.Context, f *domainFeature.Feature
 		"lookup_key", f.LookupKey,
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "feature", "create", map[string]interface{}{
+		"feature_id": f.ID,
+		"name":       f.Name,
+		"lookup_key": f.LookupKey,
+	})
+	defer FinishSpan(span)
+
 	// Set environment ID from context if not already set
 	if f.EnvironmentID == "" {
 		f.EnvironmentID = types.GetEnvironmentID(ctx)
@@ -62,6 +70,8 @@ func (r *featureRepository) Create(ctx context.Context, f *domainFeature.Feature
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsConstraintError(err) {
 			return ierr.WithError(err).
 				WithHint("A feature with this lookup key already exists").
@@ -75,6 +85,7 @@ func (r *featureRepository) Create(ctx context.Context, f *domainFeature.Feature
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	*f = *domainFeature.FromEnt(feature)
 	return nil
 }
@@ -87,6 +98,12 @@ func (r *featureRepository) Get(ctx context.Context, id string) (*domainFeature.
 		"tenant_id", types.GetTenantID(ctx),
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "feature", "get", map[string]interface{}{
+		"feature_id": id,
+	})
+	defer FinishSpan(span)
+
 	f, err := client.Feature.Query().
 		Where(
 			feature.ID(id),
@@ -95,6 +112,8 @@ func (r *featureRepository) Get(ctx context.Context, id string) (*domainFeature.
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHintf("Feature with ID %s was not found", id).
@@ -108,6 +127,7 @@ func (r *featureRepository) Get(ctx context.Context, id string) (*domainFeature.
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainFeature.FromEnt(f), nil
 }
 
@@ -117,6 +137,12 @@ func (r *featureRepository) List(ctx context.Context, filter *types.FeatureFilte
 			QueryFilter: types.NewDefaultQueryFilter(),
 		}
 	}
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "feature", "list", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
 
 	client := r.client.Querier(ctx)
 	query := client.Feature.Query()
@@ -129,6 +155,7 @@ func (r *featureRepository) List(ctx context.Context, filter *types.FeatureFilte
 
 	features, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list features").
 			WithReportableDetails(map[string]any{
@@ -137,11 +164,19 @@ func (r *featureRepository) List(ctx context.Context, filter *types.FeatureFilte
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainFeature.FromEntList(features), nil
 }
 
 func (r *featureRepository) Count(ctx context.Context, filter *types.FeatureFilter) (int, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "feature", "count", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	query := client.Feature.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
@@ -149,6 +184,7 @@ func (r *featureRepository) Count(ctx context.Context, filter *types.FeatureFilt
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count features").
 			WithReportableDetails(map[string]any{
@@ -157,6 +193,7 @@ func (r *featureRepository) Count(ctx context.Context, filter *types.FeatureFilt
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return count, nil
 }
 
@@ -190,6 +227,12 @@ func (r *featureRepository) Update(ctx context.Context, f *domainFeature.Feature
 		"tenant_id", f.TenantID,
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "feature", "update", map[string]interface{}{
+		"feature_id": f.ID,
+	})
+	defer FinishSpan(span)
+
 	_, err := client.Feature.Update().
 		Where(
 			feature.ID(f.ID),
@@ -207,6 +250,8 @@ func (r *featureRepository) Update(ctx context.Context, f *domainFeature.Feature
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHintf("Feature with ID %s was not found", f.ID).
@@ -216,10 +261,11 @@ func (r *featureRepository) Update(ctx context.Context, f *domainFeature.Feature
 				Mark(ierr.ErrNotFound)
 		}
 		return ierr.WithError(err).
-			WithHintf("Failed to update feature with ID %s", f.ID).
+			WithHint("Failed to update feature").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
@@ -230,6 +276,12 @@ func (r *featureRepository) Delete(ctx context.Context, id string) error {
 		"feature_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "feature", "delete", map[string]interface{}{
+		"feature_id": id,
+	})
+	defer FinishSpan(span)
 
 	_, err := client.Feature.Update().
 		Where(
@@ -242,6 +294,8 @@ func (r *featureRepository) Delete(ctx context.Context, id string) error {
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHintf("Feature with ID %s was not found", id).
@@ -251,10 +305,14 @@ func (r *featureRepository) Delete(ctx context.Context, id string) error {
 				Mark(ierr.ErrNotFound)
 		}
 		return ierr.WithError(err).
-			WithHintf("Failed to delete feature with ID %s", id).
+			WithHint("Failed to delete feature").
+			WithReportableDetails(map[string]any{
+				"feature_id": id,
+			}).
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 

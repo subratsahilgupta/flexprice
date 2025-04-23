@@ -2,6 +2,7 @@ package ent
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
@@ -30,6 +31,14 @@ func NewWalletRepository(client postgres.IClient, logger *logger.Logger) walletd
 
 func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wallet) error {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "create_wallet", map[string]interface{}{
+		"wallet_id":   w.ID,
+		"customer_id": w.CustomerID,
+		"tenant_id":   w.TenantID,
+	})
+	defer FinishSpan(span)
 
 	// Set environment ID from context if not already set
 	if w.EnvironmentID == "" {
@@ -62,6 +71,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to create wallet").
 			WithReportableDetails(map[string]interface{}{
@@ -78,6 +88,14 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 
 func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walletdomain.Wallet, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "get_wallet_by_id", map[string]interface{}{
+		"wallet_id": id,
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	w, err := client.Wallet.Query().
 		Where(
 			wallet.ID(id),
@@ -87,6 +105,7 @@ func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walle
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("Wallet not found").
@@ -108,6 +127,14 @@ func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walle
 
 func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*walletdomain.Wallet, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "get_wallets_by_customer_id", map[string]interface{}{
+		"customer_id": customerID,
+		"tenant_id":   types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	wallets, err := client.Wallet.Query().
 		Where(
 			wallet.CustomerID(customerID),
@@ -118,6 +145,7 @@ func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerI
 		All(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to retrieve customer wallets").
 			WithReportableDetails(map[string]interface{}{
@@ -135,6 +163,15 @@ func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerI
 
 func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, status types.WalletStatus) error {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "update_wallet_status", map[string]interface{}{
+		"wallet_id": id,
+		"status":    status,
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	count, err := client.Wallet.Update().
 		Where(
 			wallet.ID(id),
@@ -147,6 +184,7 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to update wallet status").
 			WithReportableDetails(map[string]interface{}{
@@ -157,6 +195,10 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 	}
 
 	if count == 0 {
+		// Create an error to pass to SetSpanError instead of using ErrorBuilder directly
+		notFoundErr := fmt.Errorf("wallet not found or already updated")
+		SetSpanError(span, notFoundErr)
+
 		return ierr.NewError("wallet not found or already updated").
 			WithHint("The wallet may not exist or has already been updated").
 			WithReportableDetails(map[string]interface{}{
@@ -174,6 +216,14 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 // this is to ensure that the oldest credits are used first and if there are
 // multiple credits with the same expiry date, the credits with the highest credit amount are used first
 func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int) ([]*walletdomain.Transaction, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "find_eligible_credits", map[string]interface{}{
+		"wallet_id":       walletID,
+		"required_amount": requiredAmount.String(),
+		"page_size":       pageSize,
+	})
+	defer FinishSpan(span)
+
 	var allCredits []*ent.WalletTransaction
 	offset := 0
 
@@ -196,6 +246,7 @@ func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID str
 			All(ctx)
 
 		if err != nil {
+			SetSpanError(span, err)
 			return nil, ierr.WithError(err).
 				WithHint("Failed to query eligible credits").
 				WithReportableDetails(map[string]interface{}{
@@ -232,6 +283,13 @@ func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID str
 
 // ConsumeCredits processes debit operation across multiple credits
 func (r *walletRepository) ConsumeCredits(ctx context.Context, credits []*walletdomain.Transaction, amount decimal.Decimal) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "consume_credits", map[string]interface{}{
+		"credits_count": len(credits),
+		"amount":        amount.String(),
+	})
+	defer FinishSpan(span)
+
 	remainingAmount := amount
 
 	for _, credit := range credits {
@@ -269,6 +327,15 @@ func (r *walletRepository) ConsumeCredits(ctx context.Context, credits []*wallet
 
 // CreateTransaction creates a new wallet transaction record
 func (r *walletRepository) CreateTransaction(ctx context.Context, tx *walletdomain.Transaction) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "create_transaction", map[string]interface{}{
+		"transaction_id": tx.ID,
+		"wallet_id":      tx.WalletID,
+		"type":           tx.Type,
+		"amount":         tx.Amount.String(),
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	// Set environment ID from context if not already set
@@ -319,6 +386,14 @@ func (r *walletRepository) CreateTransaction(ctx context.Context, tx *walletdoma
 
 // UpdateWalletBalance updates the wallet's balance and credit balance
 func (r *walletRepository) UpdateWalletBalance(ctx context.Context, walletID string, finalBalance, newCreditBalance decimal.Decimal) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "update_wallet_balance", map[string]interface{}{
+		"wallet_id":          walletID,
+		"final_balance":      finalBalance.String(),
+		"new_credit_balance": newCreditBalance.String(),
+	})
+	defer FinishSpan(span)
+
 	err := r.client.Querier(ctx).Wallet.Update().
 		Where(wallet.ID(walletID)).
 		SetBalance(finalBalance).
@@ -342,6 +417,12 @@ func (r *walletRepository) UpdateWalletBalance(ctx context.Context, walletID str
 }
 
 func (r *walletRepository) GetTransactionByID(ctx context.Context, id string) (*walletdomain.Transaction, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "get_transaction_by_id", map[string]interface{}{
+		"transaction_id": id,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	t, err := client.WalletTransaction.Query().
 		Where(
@@ -372,6 +453,12 @@ func (r *walletRepository) GetTransactionByID(ctx context.Context, id string) (*
 }
 
 func (r *walletRepository) ListWalletTransactions(ctx context.Context, f *types.WalletTransactionFilter) ([]*walletdomain.Transaction, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "list_wallet_transactions", map[string]interface{}{
+		"filter": f,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	query := client.WalletTransaction.Query()
 
@@ -395,6 +482,12 @@ func (r *walletRepository) ListWalletTransactions(ctx context.Context, f *types.
 }
 
 func (r *walletRepository) ListAllWalletTransactions(ctx context.Context, f *types.WalletTransactionFilter) ([]*walletdomain.Transaction, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "list_all_wallet_transactions", map[string]interface{}{
+		"filter": f,
+	})
+	defer FinishSpan(span)
+
 	if f == nil {
 		f = types.NewNoLimitWalletTransactionFilter()
 	}
@@ -420,6 +513,12 @@ func (r *walletRepository) ListAllWalletTransactions(ctx context.Context, f *typ
 }
 
 func (r *walletRepository) CountWalletTransactions(ctx context.Context, f *types.WalletTransactionFilter) (int, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "count_wallet_transactions", map[string]interface{}{
+		"filter": f,
+	})
+	defer FinishSpan(span)
+
 	if f == nil {
 		f = types.NewNoLimitWalletTransactionFilter()
 	}
@@ -445,6 +544,13 @@ func (r *walletRepository) CountWalletTransactions(ctx context.Context, f *types
 }
 
 func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id string, status types.TransactionStatus) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "update_transaction_status", map[string]interface{}{
+		"transaction_id": id,
+		"status":         status,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	count, err := client.WalletTransaction.Update().
 		Where(
@@ -587,6 +693,12 @@ func (o WalletTransactionQueryOptions) applyEntityQueryOptions(_ context.Context
 }
 
 func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walletdomain.Wallet) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "update_wallet", map[string]interface{}{
+		"wallet_id": id,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	update := client.Wallet.Update().
 		Where(

@@ -39,6 +39,15 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 		"amount", p.Amount,
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "create", map[string]interface{}{
+		"payment_id":       p.ID,
+		"tenant_id":        p.TenantID,
+		"destination_type": p.DestinationType,
+		"destination_id":   p.DestinationID,
+	})
+	defer FinishSpan(span)
+
 	// Set environment ID from context if not already set
 	if p.EnvironmentID == "" {
 		p.EnvironmentID = types.GetEnvironmentID(ctx)
@@ -71,6 +80,7 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to create payment").
 			WithReportableDetails(map[string]interface{}{
@@ -93,6 +103,13 @@ func (r *paymentRepository) Get(ctx context.Context, id string) (*domainPayment.
 		"tenant_id", types.GetTenantID(ctx),
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "get", map[string]interface{}{
+		"payment_id": id,
+		"tenant_id":  types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	p, err := client.Payment.Query().
 		Where(
 			payment.ID(id),
@@ -102,6 +119,7 @@ func (r *paymentRepository) Get(ctx context.Context, id string) (*domainPayment.
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("Payment not found").
@@ -129,6 +147,14 @@ func (r *paymentRepository) List(ctx context.Context, filter *types.PaymentFilte
 	}
 
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "list", map[string]interface{}{
+		"tenant_id": types.GetTenantID(ctx),
+		"filter":    filter,
+	})
+	defer FinishSpan(span)
+
 	query := client.Payment.Query().WithAttempts()
 
 	// Apply entity-specific filters
@@ -139,6 +165,7 @@ func (r *paymentRepository) List(ctx context.Context, filter *types.PaymentFilte
 
 	payments, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list payments").
 			WithReportableDetails(map[string]interface{}{
@@ -152,6 +179,14 @@ func (r *paymentRepository) List(ctx context.Context, filter *types.PaymentFilte
 
 func (r *paymentRepository) Count(ctx context.Context, filter *types.PaymentFilter) (int, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "count", map[string]interface{}{
+		"tenant_id": types.GetTenantID(ctx),
+		"filter":    filter,
+	})
+	defer FinishSpan(span)
+
 	query := client.Payment.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
@@ -159,6 +194,7 @@ func (r *paymentRepository) Count(ctx context.Context, filter *types.PaymentFilt
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count payments").
 			WithReportableDetails(map[string]interface{}{
@@ -178,6 +214,13 @@ func (r *paymentRepository) Update(ctx context.Context, p *domainPayment.Payment
 		"tenant_id", p.TenantID,
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "update", map[string]interface{}{
+		"payment_id": p.ID,
+		"tenant_id":  p.TenantID,
+	})
+	defer FinishSpan(span)
+
 	_, err := client.Payment.Update().
 		Where(
 			payment.ID(p.ID),
@@ -196,6 +239,7 @@ func (r *paymentRepository) Update(ctx context.Context, p *domainPayment.Payment
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHint("Payment not found").
@@ -216,6 +260,13 @@ func (r *paymentRepository) Update(ctx context.Context, p *domainPayment.Payment
 }
 
 func (r *paymentRepository) Delete(ctx context.Context, id string) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "delete", map[string]interface{}{
+		"payment_id": id,
+		"tenant_id":  types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("deleting payment",
@@ -252,6 +303,13 @@ func (r *paymentRepository) Delete(ctx context.Context, id string) error {
 }
 
 func (r *paymentRepository) GetByIdempotencyKey(ctx context.Context, key string) (*domainPayment.Payment, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "get_by_idempotency_key", map[string]interface{}{
+		"idempotency_key": key,
+		"tenant_id":       types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("getting payment by idempotency key",
@@ -268,6 +326,7 @@ func (r *paymentRepository) GetByIdempotencyKey(ctx context.Context, key string)
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("Payment not found").
@@ -290,6 +349,13 @@ func (r *paymentRepository) GetByIdempotencyKey(ctx context.Context, key string)
 // Payment attempt operations
 
 func (r *paymentRepository) CreateAttempt(ctx context.Context, a *domainPayment.PaymentAttempt) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "create_attempt", map[string]interface{}{
+		"attempt_id": a.ID,
+		"payment_id": a.PaymentID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("creating payment attempt",
@@ -322,6 +388,7 @@ func (r *paymentRepository) CreateAttempt(ctx context.Context, a *domainPayment.
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to create payment attempt").
 			WithReportableDetails(map[string]interface{}{
@@ -336,6 +403,12 @@ func (r *paymentRepository) CreateAttempt(ctx context.Context, a *domainPayment.
 }
 
 func (r *paymentRepository) GetAttempt(ctx context.Context, id string) (*domainPayment.PaymentAttempt, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "get_attempt", map[string]interface{}{
+		"attempt_id": id,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("getting payment attempt",
@@ -350,6 +423,7 @@ func (r *paymentRepository) GetAttempt(ctx context.Context, id string) (*domainP
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("Payment attempt not found").
@@ -370,6 +444,13 @@ func (r *paymentRepository) GetAttempt(ctx context.Context, id string) (*domainP
 }
 
 func (r *paymentRepository) UpdateAttempt(ctx context.Context, a *domainPayment.PaymentAttempt) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "update_attempt", map[string]interface{}{
+		"attempt_id": a.ID,
+		"payment_id": a.PaymentID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("updating payment attempt",
@@ -393,6 +474,7 @@ func (r *paymentRepository) UpdateAttempt(ctx context.Context, a *domainPayment.
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHint("Payment attempt not found").
@@ -414,6 +496,12 @@ func (r *paymentRepository) UpdateAttempt(ctx context.Context, a *domainPayment.
 }
 
 func (r *paymentRepository) ListAttempts(ctx context.Context, paymentID string) ([]*domainPayment.PaymentAttempt, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "list_attempts", map[string]interface{}{
+		"payment_id": paymentID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("listing payment attempts",
@@ -429,6 +517,7 @@ func (r *paymentRepository) ListAttempts(ctx context.Context, paymentID string) 
 		All(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list payment attempts").
 			WithReportableDetails(map[string]interface{}{
@@ -441,6 +530,12 @@ func (r *paymentRepository) ListAttempts(ctx context.Context, paymentID string) 
 }
 
 func (r *paymentRepository) GetLatestAttempt(ctx context.Context, paymentID string) (*domainPayment.PaymentAttempt, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "get_latest_attempt", map[string]interface{}{
+		"payment_id": paymentID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("getting latest payment attempt",
@@ -456,6 +551,7 @@ func (r *paymentRepository) GetLatestAttempt(ctx context.Context, paymentID stri
 		First(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("Payment attempt not found").

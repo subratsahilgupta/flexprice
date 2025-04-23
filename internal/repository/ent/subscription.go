@@ -32,6 +32,14 @@ func NewSubscriptionRepository(client postgres.IClient, logger *logger.Logger) d
 func (r *subscriptionRepository) Create(ctx context.Context, sub *domainSub.Subscription) error {
 	client := r.client.Querier(ctx)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "create", map[string]interface{}{
+		"subscription_id": sub.ID,
+		"customer_id":     sub.CustomerID,
+		"plan_id":         sub.PlanID,
+	})
+	defer FinishSpan(span)
+
 	// Set environment ID from context if not already set
 	if sub.EnvironmentID == "" {
 		sub.EnvironmentID = types.GetEnvironmentID(ctx)
@@ -67,16 +75,25 @@ func (r *subscriptionRepository) Create(ctx context.Context, sub *domainSub.Subs
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return fmt.Errorf("failed to create subscription: %w", err)
 	}
 
 	// Update the input subscription with created data
+	SetSpanSuccess(span)
 	*sub = *domainSub.GetSubscriptionFromEnt(subscription)
 	return nil
 }
 
 func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub.Subscription, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "get", map[string]interface{}{
+		"subscription_id": id,
+	})
+	defer FinishSpan(span)
+
 	sub, err := client.Subscription.Query().
 		Where(
 			subscription.ID(id),
@@ -86,6 +103,8 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return nil, ierr.NewError("subscription not found").
 				WithHint("Subscription not found").
@@ -96,12 +115,20 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainSub.GetSubscriptionFromEnt(sub), nil
 }
 
 func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subscription) error {
 	client := r.client.Querier(ctx)
 	now := time.Now().UTC()
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "update", map[string]interface{}{
+		"subscription_id": sub.ID,
+		"version":         sub.Version,
+	})
+	defer FinishSpan(span)
 
 	// Use predicate-based update for optimistic locking
 	query := client.Subscription.Update().
@@ -135,6 +162,7 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 	// Execute update
 	n, err := query.Save(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to update subscription").
 			Mark(ierr.ErrDatabase)
@@ -148,17 +176,20 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 			).
 			Exist(ctx)
 		if err != nil {
+			SetSpanError(span, err)
 			return ierr.WithError(err).
 				WithHint("Failed to check if subscription exists").
 				Mark(ierr.ErrDatabase)
 		}
 		if !exists {
-			return ierr.NewError("subscription not found").
+			notFoundErr := ierr.NewError("subscription not found").
 				WithHint("Subscription not found").
 				Mark(ierr.ErrNotFound)
+			SetSpanError(span, notFoundErr)
+			return notFoundErr
 		}
 		// Record exists but version mismatch
-		return ierr.NewError("version conflict").
+		versionErr := ierr.NewError("version conflict").
 			WithHint("Version conflict").
 			WithReportableDetails(
 				map[string]any{
@@ -168,13 +199,23 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 				},
 			).
 			Mark(ierr.ErrVersionConflict)
+		SetSpanError(span, versionErr)
+		return versionErr
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
 func (r *subscriptionRepository) Delete(ctx context.Context, id string) error {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "delete", map[string]interface{}{
+		"subscription_id": id,
+	})
+	defer FinishSpan(span)
+
 	err := client.Subscription.UpdateOneID(id).
 		Where(
 			subscription.TenantID(types.GetTenantID(ctx)),
@@ -186,6 +227,8 @@ func (r *subscriptionRepository) Delete(ctx context.Context, id string) error {
 		Exec(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return ierr.NewError("subscription not found").
 				WithHint("Subscription not found").
@@ -196,6 +239,7 @@ func (r *subscriptionRepository) Delete(ctx context.Context, id string) error {
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
@@ -209,7 +253,14 @@ func (r *subscriptionRepository) List(ctx context.Context, filter *types.Subscri
 		}
 	}
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "list", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	if err := filter.Validate(); err != nil {
+		SetSpanError(span, err)
 		return nil, fmt.Errorf("invalid filter: %w", err)
 	}
 
@@ -227,6 +278,7 @@ func (r *subscriptionRepository) List(ctx context.Context, filter *types.Subscri
 
 	subs, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		r.logger.Errorw("failed to list subscriptions", "error", err)
 		return nil, fmt.Errorf("listing subscriptions: %w", err)
 	}
@@ -237,6 +289,7 @@ func (r *subscriptionRepository) List(ctx context.Context, filter *types.Subscri
 		result[i] = domainSub.GetSubscriptionFromEnt(sub)
 	}
 
+	SetSpanSuccess(span)
 	return result, nil
 }
 
@@ -259,6 +312,12 @@ func (r *subscriptionRepository) ListAll(ctx context.Context, filter *types.Subs
 func (r *subscriptionRepository) ListAllTenant(ctx context.Context, filter *types.SubscriptionFilter) ([]*domainSub.Subscription, error) {
 	r.logger.Debugw("listing subscriptions for all tenants", "filter", filter)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "list_all_tenant", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	if filter == nil {
 		filter = &types.SubscriptionFilter{
 			QueryFilter: types.NewDefaultQueryFilter(),
@@ -266,6 +325,7 @@ func (r *subscriptionRepository) ListAllTenant(ctx context.Context, filter *type
 	}
 
 	if err := filter.Validate(); err != nil {
+		SetSpanError(span, err)
 		return nil, fmt.Errorf("invalid filter: %w", err)
 	}
 
@@ -282,6 +342,7 @@ func (r *subscriptionRepository) ListAllTenant(ctx context.Context, filter *type
 
 	subs, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		r.logger.Errorw("failed to list subscriptions", "error", err)
 		return nil, fmt.Errorf("listing subscriptions: %w", err)
 	}
@@ -292,11 +353,18 @@ func (r *subscriptionRepository) ListAllTenant(ctx context.Context, filter *type
 		result[i] = domainSub.GetSubscriptionFromEnt(sub)
 	}
 
+	SetSpanSuccess(span)
 	return result, nil
 }
 
 // Count returns the total number of subscriptions based on the provided filter
 func (r *subscriptionRepository) Count(ctx context.Context, filter *types.SubscriptionFilter) (int, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "count", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	query := client.Subscription.Query()
 
@@ -305,8 +373,11 @@ func (r *subscriptionRepository) Count(ctx context.Context, filter *types.Subscr
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return 0, fmt.Errorf("failed to count subscriptions: %w", err)
 	}
+
+	SetSpanSuccess(span)
 	return count, nil
 }
 
@@ -451,7 +522,14 @@ func (o *SubscriptionQueryOptions) applyEntityQueryOptions(_ context.Context, f 
 
 // Add new methods for line items
 func (r *subscriptionRepository) CreateWithLineItems(ctx context.Context, sub *domainSub.Subscription, items []*domainSub.SubscriptionLineItem) error {
-	return r.client.WithTx(ctx, func(ctx context.Context) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "create_with_line_items", map[string]interface{}{
+		"subscription_id": sub.ID,
+		"item_count":      len(items),
+	})
+	defer FinishSpan(span)
+
+	err := r.client.WithTx(ctx, func(ctx context.Context) error {
 		// Create subscription first
 		if err := r.Create(ctx, sub); err != nil {
 			return fmt.Errorf("failed to create subscription: %w", err)
@@ -500,13 +578,28 @@ func (r *subscriptionRepository) CreateWithLineItems(ctx context.Context, sub *d
 
 		return nil
 	})
+
+	if err != nil {
+		SetSpanError(span, err)
+		return err
+	}
+
+	SetSpanSuccess(span)
+	return nil
 }
 
 func (r *subscriptionRepository) GetWithLineItems(ctx context.Context, id string) (*domainSub.Subscription, []*domainSub.SubscriptionLineItem, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "get_with_line_items", map[string]interface{}{
+		"subscription_id": id,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	sub, err := client.Subscription.Query().
 		Where(
 			subscription.ID(id),
+			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
 			subscription.TenantID(types.GetTenantID(ctx)),
 			subscription.Status(string(types.StatusPublished)),
 		).
@@ -514,6 +607,7 @@ func (r *subscriptionRepository) GetWithLineItems(ctx context.Context, id string
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, nil, ierr.NewError("subscription not found").
 				WithHint("Subscription not found").
@@ -527,11 +621,19 @@ func (r *subscriptionRepository) GetWithLineItems(ctx context.Context, id string
 	s := domainSub.GetSubscriptionFromEnt(sub)
 	s.LineItems = domainSub.GetLineItemFromEntList(sub.Edges.LineItems)
 
+	SetSpanSuccess(span)
 	return s, s.LineItems, nil
 }
 
 // CreatePause creates a new subscription pause
 func (r *subscriptionRepository) CreatePause(ctx context.Context, pause *domainSub.SubscriptionPause) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "create_pause", map[string]interface{}{
+		"pause_id":        pause.ID,
+		"subscription_id": pause.SubscriptionID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	// Set environment ID from context if not already set
@@ -560,18 +662,26 @@ func (r *subscriptionRepository) CreatePause(ctx context.Context, pause *domainS
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to create subscription pause").
 			Mark(ierr.ErrDatabase)
 	}
 
 	// Update the input pause with created data
+	SetSpanSuccess(span)
 	*pause = *domainSub.SubscriptionPauseFromEnt(p)
 	return nil
 }
 
 // GetPause gets a subscription pause by ID
 func (r *subscriptionRepository) GetPause(ctx context.Context, id string) (*domainSub.SubscriptionPause, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "get_pause", map[string]interface{}{
+		"pause_id": id,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	p, err := client.SubscriptionPause.Query().
 		Where(
@@ -582,6 +692,7 @@ func (r *subscriptionRepository) GetPause(ctx context.Context, id string) (*doma
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHintf("Subscription pause %s not found", id).
@@ -592,11 +703,19 @@ func (r *subscriptionRepository) GetPause(ctx context.Context, id string) (*doma
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainSub.SubscriptionPauseFromEnt(p), nil
 }
 
 // UpdatePause updates a subscription pause
 func (r *subscriptionRepository) UpdatePause(ctx context.Context, pause *domainSub.SubscriptionPause) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "update_pause", map[string]interface{}{
+		"pause_id":        pause.ID,
+		"subscription_id": pause.SubscriptionID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	now := time.Now().UTC()
 
@@ -609,6 +728,7 @@ func (r *subscriptionRepository) UpdatePause(ctx context.Context, pause *domainS
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHintf("Subscription pause %s not found", pause.ID).
@@ -631,16 +751,24 @@ func (r *subscriptionRepository) UpdatePause(ctx context.Context, pause *domainS
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to update subscription pause").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
 // ListPauses lists all pauses for a subscription
 func (r *subscriptionRepository) ListPauses(ctx context.Context, subscriptionID string) ([]*domainSub.SubscriptionPause, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "list_pauses", map[string]interface{}{
+		"subscription_id": subscriptionID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	pauses, err := client.SubscriptionPause.Query().
 		Where(
@@ -653,16 +781,24 @@ func (r *subscriptionRepository) ListPauses(ctx context.Context, subscriptionID 
 		All(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list subscription pauses").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainSub.SubscriptionPauseListFromEnt(pauses), nil
 }
 
 // GetWithPauses gets a subscription with its pauses
 func (r *subscriptionRepository) GetWithPauses(ctx context.Context, id string) (*domainSub.Subscription, []*domainSub.SubscriptionPause, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "get_with_pauses", map[string]interface{}{
+		"subscription_id": id,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	sub, err := client.Subscription.Query().
 		Where(
@@ -678,6 +814,7 @@ func (r *subscriptionRepository) GetWithPauses(ctx context.Context, id string) (
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, nil, ierr.WithError(err).
 				WithHintf("Subscription %s not found", id).
@@ -694,6 +831,7 @@ func (r *subscriptionRepository) GetWithPauses(ctx context.Context, id string) (
 		pauses = domainSub.SubscriptionPauseListFromEnt(sub.Edges.Pauses)
 	}
 
+	SetSpanSuccess(span)
 	return subscription, pauses, nil
 }
 
@@ -725,6 +863,12 @@ func (r *subscriptionRepository) ListByIDs(ctx context.Context, subscriptionIDs 
 
 	r.logger.Debugw("listing subscriptions by IDs", "subscription_ids", subscriptionIDs)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription", "list_by_ids", map[string]interface{}{
+		"subscription_ids": subscriptionIDs,
+	})
+	defer FinishSpan(span)
+
 	// Since SubscriptionFilter doesn't have a SubscriptionIDs field,
 	// we need to use a direct query instead of the List method
 	client := r.client.Querier(ctx)
@@ -742,6 +886,7 @@ func (r *subscriptionRepository) ListByIDs(ctx context.Context, subscriptionIDs 
 
 	subs, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list subscriptions by IDs").
 			WithReportableDetails(map[string]interface{}{
@@ -756,5 +901,6 @@ func (r *subscriptionRepository) ListByIDs(ctx context.Context, subscriptionIDs 
 		result[i] = domainSub.GetSubscriptionFromEnt(sub)
 	}
 
+	SetSpanSuccess(span)
 	return result, nil
 }
