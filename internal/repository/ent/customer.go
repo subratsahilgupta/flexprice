@@ -211,6 +211,12 @@ func (r *customerRepository) List(ctx context.Context, filter *types.CustomerFil
 }
 
 func (r *customerRepository) ListByFilter(ctx context.Context, filter *types.CustomerSearchFilter) ([]*domainCustomer.Customer, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "list_by_filter", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	query := client.Customer.Query()
@@ -245,18 +251,29 @@ func (r *customerRepository) ListByFilter(ctx context.Context, filter *types.Cus
 		customer.EnvironmentID(types.GetEnvironmentID(ctx)),
 		customer.TenantID(types.GetTenantID(ctx)),
 		customer.StatusNotIn(string(types.StatusDeleted)),
+	).Order(
+		ent.Desc(r.queryOpts.GetFieldName("created_at")),
 	)
 
 	customers, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list customers").
 			Mark(ierr.ErrDatabase)
 	}
+
+	SetSpanSuccess(span)
 	return domainCustomer.FromEntList(customers), nil
 }
 
 func (r *customerRepository) CountByFilter(ctx context.Context, filter *types.CustomerSearchFilter) (int, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "count_by_filter", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	query := client.Customer.Query()
@@ -284,15 +301,19 @@ func (r *customerRepository) CountByFilter(ctx context.Context, filter *types.Cu
 		customer.EnvironmentID(types.GetEnvironmentID(ctx)),
 		customer.TenantID(types.GetTenantID(ctx)),
 		customer.StatusNotIn(string(types.StatusDeleted)),
+	).Order(
+		ent.Desc(r.queryOpts.GetFieldName("created_at")),
 	)
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count customers").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return count, nil
 }
 
