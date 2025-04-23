@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/lib/pq"
+	"github.com/samber/lo"
 )
 
 type customerRepository struct {
@@ -171,6 +172,59 @@ func (r *customerRepository) List(ctx context.Context, filter *types.CustomerFil
 	}
 
 	return domainCustomer.FromEntList(customers), nil
+}
+
+func (r *customerRepository) ListByFilter(ctx context.Context, filter *types.CustomerSearchFilter) ([]*domainCustomer.Customer, error) {
+	client := r.client.Querier(ctx)
+
+	query := client.Customer.Query()
+
+	if filter.CustomerID != nil {
+		query = query.Where(customer.IDContainsFold(lo.FromPtr(filter.CustomerID)))
+	}
+
+	if filter.ExternalID != nil {
+		query = query.Where(customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)))
+	}
+
+	if limit := lo.FromPtr(filter.Limit); limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	if offset := lo.FromPtr(filter.Offset); offset > 0 {
+		query = query.Offset(offset)
+	}
+
+	customers, err := query.All(ctx)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list customers").
+			Mark(ierr.ErrDatabase)
+	}
+	return domainCustomer.FromEntList(customers), nil
+}
+
+func (r *customerRepository) CountByFilter(ctx context.Context, filter *types.CustomerSearchFilter) (int, error) {
+	client := r.client.Querier(ctx)
+
+	query := client.Customer.Query()
+
+	if filter.CustomerID != nil {
+		query = query.Where(customer.IDContainsFold(lo.FromPtr(filter.CustomerID)))
+	}
+
+	if filter.ExternalID != nil {
+		query = query.Where(customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)))
+	}
+
+	count, err := query.Count(ctx)
+	if err != nil {
+		return 0, ierr.WithError(err).
+			WithHint("Failed to count customers").
+			Mark(ierr.ErrDatabase)
+	}
+
+	return count, nil
 }
 
 func (r *customerRepository) Count(ctx context.Context, filter *types.CustomerFilter) (int, error) {

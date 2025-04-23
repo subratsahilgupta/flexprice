@@ -23,6 +23,10 @@ func NewInMemoryInvoiceStore() *InMemoryInvoiceStore {
 	}
 }
 
+func (s *InMemoryInvoiceStore) CountByFilter(ctx context.Context, filter *types.InvoiceFilter) (int, error) {
+	return s.InMemoryStore.Count(ctx, filter, invoiceFilterFn)
+}
+
 // Helper to copy invoice
 func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 	if inv == nil {
