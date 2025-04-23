@@ -27,8 +27,16 @@ func NewEventRepository(store *clickhouse.ClickHouseStore, logger *logger.Logger
 }
 
 func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "event", "insert", map[string]interface{}{
+		"event_id":   event.ID,
+		"event_name": event.EventName,
+	})
+	defer FinishSpan(span)
+
 	propertiesJSON, err := json.Marshal(event.Properties)
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to marshal event properties").
 			WithReportableDetails(map[string]interface{}{
@@ -38,6 +46,7 @@ func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) 
 	}
 
 	if err := event.Validate(); err != nil {
+		SetSpanError(span, err)
 		return err
 	}
 
@@ -62,6 +71,7 @@ func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) 
 	)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to insert event").
 			WithReportableDetails(map[string]interface{}{
@@ -71,6 +81,7 @@ func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) 
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
@@ -79,6 +90,12 @@ func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events
 	if len(events) == 0 {
 		return nil
 	}
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "event", "bulk_insert", map[string]interface{}{
+		"event_count": len(events),
+	})
+	defer FinishSpan(span)
 
 	// split events in batches of 100
 	eventsBatches := lo.Chunk(events, 100)
@@ -91,6 +108,7 @@ func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events
 		)
 	`)
 		if err != nil {
+			SetSpanError(span, err)
 			return ierr.WithError(err).
 				WithHint("Failed to prepare batch for events").
 				Mark(ierr.ErrDatabase)
@@ -99,11 +117,13 @@ func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events
 		// Validate all events before inserting
 		for _, event := range eventsBatch {
 			if err := event.Validate(); err != nil {
+				SetSpanError(span, err)
 				return err
 			}
 
 			propertiesJSON, err := json.Marshal(event.Properties)
 			if err != nil {
+				SetSpanError(span, err)
 				return ierr.WithError(err).
 					WithHint("Failed to marshal event properties").
 					WithReportableDetails(map[string]interface{}{
@@ -125,6 +145,7 @@ func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events
 			)
 
 			if err != nil {
+				SetSpanError(span, err)
 				return ierr.WithError(err).
 					WithHint("Failed to append event to batch").
 					WithReportableDetails(map[string]interface{}{
@@ -137,6 +158,7 @@ func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events
 
 		// Execute the batch
 		if err := batch.Send(); err != nil {
+			SetSpanError(span, err)
 			return ierr.WithError(err).
 				WithHint("Failed to execute batch insert for events").
 				WithReportableDetails(map[string]interface{}{
@@ -146,6 +168,7 @@ func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events
 		}
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
@@ -155,21 +178,35 @@ type UsageResult struct {
 }
 
 func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsageParams) (*events.AggregationResult, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "event", "get_usage", map[string]interface{}{
+		"event_name":       params.EventName,
+		"aggregation_type": params.AggregationType,
+		"window_size":      params.WindowSize,
+	})
+	defer FinishSpan(span)
+
 	aggregator := GetAggregator(params.AggregationType)
 	if aggregator == nil {
-		return nil, ierr.NewError("unsupported aggregation type").
+		err := ierr.NewError("unsupported aggregation type").
 			WithHint("The specified aggregation type is not supported").
 			WithReportableDetails(map[string]interface{}{
 				"aggregation_type": params.AggregationType,
 			}).
 			Mark(ierr.ErrValidation)
+		SetSpanError(span, err)
+		return nil, err
 	}
 
 	query := aggregator.GetQuery(ctx, params)
 	log.Printf("Executing query: %s", query)
 
+	// Add query to span for debugging
+	span.SetData("query", query)
+
 	rows, err := r.store.GetConn().Query(ctx, query)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to execute usage query").
 			WithReportableDetails(map[string]interface{}{
@@ -194,6 +231,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 			case types.AggregationCount, types.AggregationCountUnique:
 				var countValue uint64
 				if err := rows.Scan(&windowSize, &countValue); err != nil {
+					SetSpanError(span, err)
 					return nil, ierr.WithError(err).
 						WithHint("Failed to scan count result").
 						WithReportableDetails(map[string]interface{}{
@@ -206,6 +244,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 			case types.AggregationSum, types.AggregationAvg:
 				var floatValue float64
 				if err := rows.Scan(&windowSize, &floatValue); err != nil {
+					SetSpanError(span, err)
 					return nil, ierr.WithError(err).
 						WithHint("Failed to scan float result").
 						WithReportableDetails(map[string]interface{}{
@@ -216,12 +255,14 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 				}
 				value = decimal.NewFromFloat(floatValue)
 			default:
-				return nil, ierr.NewError("unsupported aggregation type for scanning").
+				err := ierr.NewError("unsupported aggregation type for scanning").
 					WithHint("The specified aggregation type is not supported for scanning").
 					WithReportableDetails(map[string]interface{}{
 						"aggregation_type": params.AggregationType,
 					}).
 					Mark(ierr.ErrValidation)
+				SetSpanError(span, err)
+				return nil, err
 			}
 
 			result.Results = append(result.Results, events.UsageResult{
@@ -235,6 +276,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 			case types.AggregationCount, types.AggregationCountUnique:
 				var value uint64
 				if err := rows.Scan(&value); err != nil {
+					SetSpanError(span, err)
 					return nil, ierr.WithError(err).
 						WithHint("Failed to scan count result").
 						WithReportableDetails(map[string]interface{}{
@@ -246,6 +288,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 			case types.AggregationSum, types.AggregationAvg:
 				var value float64
 				if err := rows.Scan(&value); err != nil {
+					SetSpanError(span, err)
 					return nil, ierr.WithError(err).
 						WithHint("Failed to scan float result").
 						WithReportableDetails(map[string]interface{}{
@@ -255,28 +298,47 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 				}
 				result.Value = decimal.NewFromFloat(value)
 			default:
-				return nil, ierr.NewError("unsupported aggregation type for scanning").
+				err := ierr.NewError("unsupported aggregation type for scanning").
 					WithHint("The specified aggregation type is not supported for scanning").
 					WithReportableDetails(map[string]interface{}{
 						"aggregation_type": params.AggregationType,
 					}).
 					Mark(ierr.ErrValidation)
+				SetSpanError(span, err)
+				return nil, err
 			}
 		}
 	}
 
+	// Add result count to span
+	if params.WindowSize != "" {
+		span.SetData("result_count", len(result.Results))
+	}
+
+	SetSpanSuccess(span)
 	return &result, nil
 }
 
 func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *events.UsageWithFiltersParams) ([]*events.AggregationResult, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "event", "get_usage_with_filters", map[string]interface{}{
+		"event_name":       params.UsageParams.EventName,
+		"aggregation_type": params.AggregationType,
+		"property_name":    params.PropertyName,
+		"filter_groups":    len(params.FilterGroups),
+	})
+	defer FinishSpan(span)
+
 	aggregator := GetAggregator(params.AggregationType)
 	if aggregator == nil {
-		return nil, ierr.NewError("unsupported aggregation type").
+		err := ierr.NewError("unsupported aggregation type").
 			WithHint("The specified aggregation type is not supported").
 			WithReportableDetails(map[string]interface{}{
 				"aggregation_type": params.AggregationType,
 			}).
 			Mark(ierr.ErrValidation)
+		SetSpanError(span, err)
+		return nil, err
 	}
 
 	// Build query using the new builder
@@ -287,6 +349,10 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 
 	query, queryParams := qb.Build()
 
+	// Add query to span for debugging
+	span.SetData("query", query)
+	span.SetData("query_params", queryParams)
+
 	r.logger.Debugw("executing filter groups query",
 		"aggregation_type", params.AggregationType,
 		"event_name", params.UsageParams.EventName,
@@ -296,6 +362,7 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 
 	rows, err := r.store.GetConn().Query(ctx, query, queryParams)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to execute usage query with filters").
 			WithReportableDetails(map[string]interface{}{
@@ -319,6 +386,7 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 		case types.AggregationCount, types.AggregationCountUnique:
 			var value uint64
 			if err := rows.Scan(&filterGroupID, &value); err != nil {
+				SetSpanError(span, err)
 				return nil, ierr.WithError(err).
 					WithHint("Failed to scan count row").
 					WithReportableDetails(map[string]interface{}{
@@ -330,6 +398,7 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 		case types.AggregationSum, types.AggregationAvg:
 			var value float64
 			if err := rows.Scan(&filterGroupID, &value); err != nil {
+				SetSpanError(span, err)
 				return nil, ierr.WithError(err).
 					WithHint("Failed to scan float row").
 					WithReportableDetails(map[string]interface{}{
@@ -339,12 +408,14 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 			}
 			result.Value = decimal.NewFromFloat(value)
 		default:
-			return nil, ierr.NewError("unsupported aggregation type").
+			err := ierr.NewError("unsupported aggregation type").
 				WithHint("The specified aggregation type is not supported").
 				WithReportableDetails(map[string]interface{}{
 					"aggregation_type": params.AggregationType,
 				}).
 				Mark(ierr.ErrValidation)
+			SetSpanError(span, err)
+			return nil, err
 		}
 
 		result.Metadata = map[string]string{
@@ -354,14 +425,29 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 	}
 
 	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Error iterating rows").
 			Mark(ierr.ErrDatabase)
 	}
+
+	// Add result count to span
+	span.SetData("result_count", len(results))
+
+	SetSpanSuccess(span)
 	return results, nil
 }
 
 func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, uint64, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "event", "get_events", map[string]interface{}{
+		"event_name":           params.EventName,
+		"external_customer_id": params.ExternalCustomerID,
+		"count_total":          params.CountTotal,
+		"page_size":            params.PageSize,
+	})
+	defer FinishSpan(span)
+
 	var totalCount uint64
 
 	baseQuery := `
@@ -446,11 +532,16 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 		args = append(args, params.IterLast.Timestamp, params.IterLast.ID)
 	}
 
+	// Add query to span for debugging
+	span.SetData("query_base", baseQuery)
+	span.SetData("args_count", len(args))
+
 	// Count total if requested
 	if params.CountTotal {
 		countQuery := "SELECT COUNT(*) FROM (" + baseQuery + ") AS filtered_events"
 		err := r.store.GetConn().QueryRow(ctx, countQuery, args...).Scan(&totalCount)
 		if err != nil {
+			SetSpanError(span, err)
 			return nil, 0, ierr.WithError(err).
 				WithHint("Failed to count events").
 				WithReportableDetails(map[string]interface{}{
@@ -458,6 +549,7 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 				}).
 				Mark(ierr.ErrDatabase)
 		}
+		span.SetData("total_count", totalCount)
 	}
 
 	// Order by timestamp and ID
@@ -481,6 +573,7 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 	// Execute query
 	rows, err := r.store.GetConn().Query(ctx, baseQuery, args...)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, 0, ierr.WithError(err).
 			WithHint("Failed to query events").
 			WithReportableDetails(map[string]interface{}{
@@ -507,6 +600,7 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 			&event.EnvironmentID,
 		)
 		if err != nil {
+			SetSpanError(span, err)
 			return nil, 0, ierr.WithError(err).
 				WithHint("Failed to scan event").
 				WithReportableDetails(map[string]interface{}{
@@ -516,6 +610,7 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 		}
 
 		if err := json.Unmarshal([]byte(propertiesJSON), &event.Properties); err != nil {
+			SetSpanError(span, err)
 			return nil, 0, ierr.WithError(err).
 				WithHint("Failed to unmarshal event properties").
 				WithReportableDetails(map[string]interface{}{
@@ -528,5 +623,9 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 		eventsList = append(eventsList, &event)
 	}
 
+	// Add result count to span
+	span.SetData("result_count", len(eventsList))
+
+	SetSpanSuccess(span)
 	return eventsList, totalCount, nil
 }
