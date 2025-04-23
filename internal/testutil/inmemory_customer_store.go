@@ -239,7 +239,7 @@ func (s *InMemoryCustomerStore) ListByFilter(ctx context.Context, filter *types.
 		}
 
 		// Filter by customer ID
-		if filter.CustomerID != nil && c.ID != *filter.CustomerID {
+		if filter.CustomerID != nil && !strings.Contains(strings.ToLower(c.ID), strings.ToLower(*filter.CustomerID)) {
 			return false
 		}
 
