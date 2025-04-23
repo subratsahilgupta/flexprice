@@ -40,6 +40,13 @@ func (r *customerRepository) Create(ctx context.Context, c *domainCustomer.Custo
 		"external_id", c.ExternalID,
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "create", map[string]interface{}{
+		"customer_id": c.ID,
+		"external_id": c.ExternalID,
+	})
+	defer FinishSpan(span)
+
 	// Set environment ID from context if not already set
 	if c.EnvironmentID == "" {
 		c.EnvironmentID = types.GetEnvironmentID(ctx)
@@ -67,6 +74,8 @@ func (r *customerRepository) Create(ctx context.Context, c *domainCustomer.Custo
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsConstraintError(err) {
 
 			var pqErr *pq.Error
@@ -93,6 +102,7 @@ func (r *customerRepository) Create(ctx context.Context, c *domainCustomer.Custo
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	*c = *domainCustomer.FromEnt(customer)
 	return nil
 }
@@ -102,6 +112,12 @@ func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustome
 
 	r.log.Debugw("getting customer", "customer_id", id)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "get", map[string]interface{}{
+		"customer_id": id,
+	})
+	defer FinishSpan(span)
+
 	c, err := client.Customer.Query().
 		Where(
 			customer.ID(id),
@@ -110,6 +126,8 @@ func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustome
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHintf("Customer with ID %s was not found", id).
@@ -123,6 +141,7 @@ func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustome
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainCustomer.FromEnt(c), nil
 }
 
@@ -130,6 +149,12 @@ func (r *customerRepository) GetByLookupKey(ctx context.Context, lookupKey strin
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("getting customer by lookup key", "lookup_key", lookupKey)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "get_by_lookup_key", map[string]interface{}{
+		"lookup_key": lookupKey,
+	})
+	defer FinishSpan(span)
 
 	c, err := client.Customer.Query().
 		Where(
@@ -141,6 +166,8 @@ func (r *customerRepository) GetByLookupKey(ctx context.Context, lookupKey strin
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHintf("Customer with lookup key %s was not found", lookupKey).
@@ -154,11 +181,18 @@ func (r *customerRepository) GetByLookupKey(ctx context.Context, lookupKey strin
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainCustomer.FromEnt(c), nil
 }
 
 func (r *customerRepository) List(ctx context.Context, filter *types.CustomerFilter) ([]*domainCustomer.Customer, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "list", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
 
 	query := client.Customer.Query()
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
@@ -166,11 +200,13 @@ func (r *customerRepository) List(ctx context.Context, filter *types.CustomerFil
 
 	customers, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list customers").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainCustomer.FromEntList(customers), nil
 }
 
@@ -262,6 +298,13 @@ func (r *customerRepository) CountByFilter(ctx context.Context, filter *types.Cu
 
 func (r *customerRepository) Count(ctx context.Context, filter *types.CustomerFilter) (int, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "count", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	query := client.Customer.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
@@ -269,16 +312,24 @@ func (r *customerRepository) Count(ctx context.Context, filter *types.CustomerFi
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count customers").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return count, nil
 }
 
 func (r *customerRepository) ListAll(ctx context.Context, filter *types.CustomerFilter) ([]*domainCustomer.Customer, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "list_all", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
 
 	query := client.Customer.Query()
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
@@ -286,11 +337,13 @@ func (r *customerRepository) ListAll(ctx context.Context, filter *types.Customer
 
 	customers, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list customers").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainCustomer.FromEntList(customers), nil
 }
 
@@ -302,6 +355,13 @@ func (r *customerRepository) Update(ctx context.Context, c *domainCustomer.Custo
 		"tenant_id", c.TenantID,
 		"external_id", c.ExternalID,
 	)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "update", map[string]interface{}{
+		"customer_id": c.ID,
+		"external_id": c.ExternalID,
+	})
+	defer FinishSpan(span)
 
 	_, err := client.Customer.Update().
 		Where(
@@ -323,6 +383,8 @@ func (r *customerRepository) Update(ctx context.Context, c *domainCustomer.Custo
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHintf("Customer with ID %s was not found", c.ID).
@@ -345,6 +407,7 @@ func (r *customerRepository) Update(ctx context.Context, c *domainCustomer.Custo
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
@@ -355,6 +418,12 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 		"customer_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "delete", map[string]interface{}{
+		"customer_id": id,
+	})
+	defer FinishSpan(span)
 
 	_, err := client.Customer.Update().
 		Where(
@@ -367,6 +436,8 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHintf("Customer with ID %s was not found", id).
@@ -380,6 +451,7 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 

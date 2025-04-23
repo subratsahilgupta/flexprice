@@ -39,6 +39,15 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		"lookup_key", p.LookupKey,
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "price", "create", map[string]interface{}{
+		"price_id":   p.ID,
+		"tenant_id":  p.TenantID,
+		"plan_id":    p.PlanID,
+		"lookup_key": p.LookupKey,
+	})
+	defer FinishSpan(span)
+
 	// Set environment ID from context if not already set
 	if p.EnvironmentID == "" {
 		p.EnvironmentID = types.GetEnvironmentID(ctx)
@@ -75,6 +84,8 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsConstraintError(err) {
 			return ierr.WithError(err).
 				WithHint("A price with this identifier already exists").
@@ -101,6 +112,13 @@ func (r *priceRepository) Get(ctx context.Context, id string) (*domainPrice.Pric
 		"tenant_id", types.GetTenantID(ctx),
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "price", "get", map[string]interface{}{
+		"price_id":  id,
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	p, err := client.Price.Query().
 		Where(
 			price.ID(id),
@@ -109,6 +127,8 @@ func (r *priceRepository) Get(ctx context.Context, id string) (*domainPrice.Pric
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHintf("Price with ID %s was not found", id).
@@ -133,6 +153,14 @@ func (r *priceRepository) List(ctx context.Context, filter *types.PriceFilter) (
 	}
 
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "price", "list", map[string]interface{}{
+		"tenant_id": types.GetTenantID(ctx),
+		"filter":    filter,
+	})
+	defer FinishSpan(span)
+
 	query := client.Price.Query()
 
 	// Apply entity-specific filters
@@ -143,6 +171,8 @@ func (r *priceRepository) List(ctx context.Context, filter *types.PriceFilter) (
 
 	prices, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
+
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list prices").
 			Mark(ierr.ErrDatabase)
@@ -153,6 +183,14 @@ func (r *priceRepository) List(ctx context.Context, filter *types.PriceFilter) (
 
 func (r *priceRepository) Count(ctx context.Context, filter *types.PriceFilter) (int, error) {
 	client := r.client.Querier(ctx)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "price", "count", map[string]interface{}{
+		"tenant_id": types.GetTenantID(ctx),
+		"filter":    filter,
+	})
+	defer FinishSpan(span)
+
 	query := client.Price.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
@@ -160,6 +198,8 @@ func (r *priceRepository) Count(ctx context.Context, filter *types.PriceFilter) 
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
+
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count prices").
 			Mark(ierr.ErrDatabase)
@@ -194,6 +234,13 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price) erro
 		"tenant_id", p.TenantID,
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "price", "update", map[string]interface{}{
+		"price_id":  p.ID,
+		"tenant_id": p.TenantID,
+	})
+	defer FinishSpan(span)
+
 	_, err := client.Price.Update().
 		Where(
 			price.ID(p.ID),
@@ -218,6 +265,8 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price) erro
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHintf("Price with ID %s was not found", p.ID).
@@ -241,6 +290,13 @@ func (r *priceRepository) Delete(ctx context.Context, id string) error {
 		"price_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "price", "delete", map[string]interface{}{
+		"price_id":  id,
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
 
 	_, err := client.Price.Update().
 		Where(
@@ -270,11 +326,23 @@ func (r *priceRepository) Delete(ctx context.Context, id string) error {
 }
 
 func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.Price) error {
+	client := r.client.Querier(ctx)
+
+	r.log.Debugw("bulk creating prices",
+		"count", len(prices),
+		"tenant_id", types.GetTenantID(ctx),
+	)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "price", "create_bulk", map[string]interface{}{
+		"count":     len(prices),
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	if len(prices) == 0 {
 		return nil
 	}
-
-	r.log.Debugw("creating prices in bulk", "count", len(prices))
 
 	builders := make([]*ent.PriceCreate, len(prices))
 	for i, p := range prices {
@@ -284,7 +352,7 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 			p.EnvironmentID = types.GetEnvironmentID(ctx)
 		}
 
-		builders[i] = r.client.Querier(ctx).Price.Create().
+		builders[i] = client.Price.Create().
 			SetID(p.ID).
 			SetTenantID(p.TenantID).
 			SetAmount(p.Amount.InexactFloat64()).
@@ -313,8 +381,9 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 			SetUpdatedBy(p.UpdatedBy)
 	}
 
-	_, err := r.client.Querier(ctx).Price.CreateBulk(builders...).Save(ctx)
+	_, err := client.Price.CreateBulk(builders...).Save(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to create prices in bulk").
 			Mark(ierr.ErrDatabase)
@@ -324,13 +393,25 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 }
 
 func (r *priceRepository) DeleteBulk(ctx context.Context, ids []string) error {
+	client := r.client.Querier(ctx)
+
+	r.log.Debugw("bulk deleting prices",
+		"count", len(ids),
+		"tenant_id", types.GetTenantID(ctx),
+	)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "price", "delete_bulk", map[string]interface{}{
+		"count":     len(ids),
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	if len(ids) == 0 {
 		return nil
 	}
 
-	r.log.Debugw("deleting prices in bulk", "count", len(ids))
-
-	_, err := r.client.Querier(ctx).Price.Update().
+	_, err := client.Price.Update().
 		Where(
 			price.IDIn(ids...),
 			price.TenantID(types.GetTenantID(ctx)),

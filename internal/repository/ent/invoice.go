@@ -37,6 +37,14 @@ func NewInvoiceRepository(client postgres.IClient, logger *logger.Logger) domain
 func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoice) error {
 	client := r.client.Querier(ctx)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "create", map[string]interface{}{
+		"invoice_id":  inv.ID,
+		"customer_id": inv.CustomerID,
+		"tenant_id":   inv.TenantID,
+	})
+	defer FinishSpan(span)
+
 	// Set environment ID from context if not already set
 	if inv.EnvironmentID == "" {
 		inv.EnvironmentID = types.GetEnvironmentID(ctx)
@@ -78,6 +86,8 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		r.logger.Error("failed to create invoice", "error", err)
 		if ent.IsConstraintError(err) {
 			var pqErr *pq.Error
@@ -121,6 +131,14 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 	r.logger.Debugw("creating invoice with line items",
 		"id", inv.ID,
 		"line_items_count", len(inv.LineItems))
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "create_with_line_items", map[string]interface{}{
+		"invoice_id":       inv.ID,
+		"customer_id":      inv.CustomerID,
+		"line_items_count": len(inv.LineItems),
+	})
+	defer FinishSpan(span)
 
 	// Set environment ID from context if not already set
 	if inv.EnvironmentID == "" {
@@ -242,6 +260,13 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 
 // AddLineItems adds line items to an existing invoice
 func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, items []*domainInvoice.InvoiceLineItem) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "add_line_items", map[string]interface{}{
+		"invoice_id":  invoiceID,
+		"items_count": len(items),
+	})
+	defer FinishSpan(span)
+
 	r.logger.Debugw("adding line items", "invoice_id", invoiceID, "count", len(items))
 
 	return r.client.WithTx(ctx, func(ctx context.Context) error {
@@ -294,6 +319,13 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 
 // RemoveLineItems removes line items from an invoice
 func (r *invoiceRepository) RemoveLineItems(ctx context.Context, invoiceID string, itemIDs []string) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "remove_line_items", map[string]interface{}{
+		"invoice_id":  invoiceID,
+		"items_count": len(itemIDs),
+	})
+	defer FinishSpan(span)
+
 	r.logger.Debugw("removing line items", "invoice_id", invoiceID, "count", len(itemIDs))
 
 	return r.client.WithTx(ctx, func(ctx context.Context) error {
@@ -324,6 +356,12 @@ func (r *invoiceRepository) RemoveLineItems(ctx context.Context, invoiceID strin
 }
 
 func (r *invoiceRepository) Get(ctx context.Context, id string) (*domainInvoice.Invoice, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "get", map[string]interface{}{
+		"invoice_id": id,
+	})
+	defer FinishSpan(span)
+
 	r.logger.Debugw("getting invoice", "id", id)
 
 	invoice, err := r.client.Querier(ctx).Invoice.Query().
@@ -346,6 +384,12 @@ func (r *invoiceRepository) Get(ctx context.Context, id string) (*domainInvoice.
 }
 
 func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoice) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "update", map[string]interface{}{
+		"invoice_id": inv.ID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	// Use predicate-based update for optimistic locking
@@ -409,6 +453,12 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 }
 
 func (r *invoiceRepository) Delete(ctx context.Context, id string) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "delete", map[string]interface{}{
+		"invoice_id": id,
+	})
+	defer FinishSpan(span)
+
 	r.logger.Info("deleting invoice", "id", id)
 
 	return r.client.WithTx(ctx, func(ctx context.Context) error {
@@ -447,6 +497,12 @@ func (r *invoiceRepository) Delete(ctx context.Context, id string) error {
 
 // List returns a paginated list of invoices based on the filter
 func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilter) ([]*domainInvoice.Invoice, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "list", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	query := client.Invoice.Query().
 		WithLineItems()
@@ -476,6 +532,12 @@ func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilte
 
 // Count returns the total number of invoices based on the filter
 func (r *invoiceRepository) Count(ctx context.Context, filter *types.InvoiceFilter) (int, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "count", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	query := client.Invoice.Query()
 
@@ -490,6 +552,12 @@ func (r *invoiceRepository) Count(ctx context.Context, filter *types.InvoiceFilt
 }
 
 func (r *invoiceRepository) GetByIdempotencyKey(ctx context.Context, key string) (*domainInvoice.Invoice, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "get_by_idempotency_key", map[string]interface{}{
+		"idempotency_key": key,
+	})
+	defer FinishSpan(span)
+
 	inv, err := r.client.Querier(ctx).Invoice.Query().
 		Where(
 			invoice.IdempotencyKeyEQ(key),
@@ -509,6 +577,14 @@ func (r *invoiceRepository) GetByIdempotencyKey(ctx context.Context, key string)
 }
 
 func (r *invoiceRepository) ExistsForPeriod(ctx context.Context, subscriptionID string, periodStart, periodEnd time.Time) (bool, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "exists_for_period", map[string]interface{}{
+		"subscription_id": subscriptionID,
+		"period_start":    periodStart,
+		"period_end":      periodEnd,
+	})
+	defer FinishSpan(span)
+
 	exists, err := r.client.Querier(ctx).Invoice.Query().
 		Where(
 			invoice.And(
@@ -533,6 +609,10 @@ func (r *invoiceRepository) ExistsForPeriod(ctx context.Context, subscriptionID 
 }
 
 func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context) (string, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "get_next_invoice_number", map[string]interface{}{})
+	defer FinishSpan(span)
+
 	yearMonth := time.Now().Format("200601") // YYYYMM
 	tenantID := types.GetTenantID(ctx)
 
@@ -569,6 +649,12 @@ func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context) (string, e
 }
 
 func (r *invoiceRepository) GetNextBillingSequence(ctx context.Context, subscriptionID string) (int, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "invoice", "get_next_billing_sequence", map[string]interface{}{
+		"subscription_id": subscriptionID,
+	})
+	defer FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	// Use raw SQL for atomic increment since ent doesn't support RETURNING with OnConflict
 	query := `

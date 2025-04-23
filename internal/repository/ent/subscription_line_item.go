@@ -27,6 +27,13 @@ func NewSubscriptionLineItemRepository(client postgres.IClient) subscription.Lin
 func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subscription.SubscriptionLineItem) error {
 	client := r.client.Querier(ctx)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "create", map[string]interface{}{
+		"subscription_id": item.SubscriptionID,
+		"price_id":        item.PriceID,
+	})
+	defer FinishSpan(span)
+
 	// Set environment ID from context if not already set
 	if item.EnvironmentID == "" {
 		item.EnvironmentID = types.GetEnvironmentID(ctx)
@@ -61,6 +68,7 @@ func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subsc
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to create subscription line item").
 			WithReportableDetails(map[string]interface{}{
@@ -70,16 +78,25 @@ func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subsc
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
 // Get retrieves a subscription line item by ID
 func (r *subscriptionLineItemRepository) Get(ctx context.Context, id string) (*subscription.SubscriptionLineItem, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "get", map[string]interface{}{
+		"line_item_id": id,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	if client == nil {
-		return nil, ierr.NewError("failed to get database client").
+		err := ierr.NewError("failed to get database client").
 			WithHint("Database client is not available").
 			Mark(ierr.ErrDatabase)
+		SetSpanError(span, err)
+		return nil, err
 	}
 
 	item, err := client.SubscriptionLineItem.Query().
@@ -90,6 +107,7 @@ func (r *subscriptionLineItemRepository) Get(ctx context.Context, id string) (*s
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("Subscription line item not found").
@@ -106,11 +124,18 @@ func (r *subscriptionLineItemRepository) Get(ctx context.Context, id string) (*s
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return subscription.SubscriptionLineItemFromEnt(item), nil
 }
 
 // Update updates a subscription line item
 func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subscription.SubscriptionLineItem) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "update", map[string]interface{}{
+		"line_item_id": item.ID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	_, err := client.SubscriptionLineItem.UpdateOneID(item.ID).
 		SetNillablePlanID(types.ToNillableString(item.PlanID)).
@@ -132,6 +157,7 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHint("Subscription line item not found").
@@ -148,11 +174,18 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
 // Delete deletes a subscription line item
 func (r *subscriptionLineItemRepository) Delete(ctx context.Context, id string) error {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "delete", map[string]interface{}{
+		"line_item_id": id,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	_, err := client.SubscriptionLineItem.Delete().
 		Where(
@@ -162,6 +195,7 @@ func (r *subscriptionLineItemRepository) Delete(ctx context.Context, id string) 
 		Exec(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to delete subscription line item").
 			WithReportableDetails(map[string]interface{}{
@@ -170,6 +204,7 @@ func (r *subscriptionLineItemRepository) Delete(ctx context.Context, id string) 
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
@@ -178,6 +213,12 @@ func (r *subscriptionLineItemRepository) CreateBulk(ctx context.Context, items [
 	if len(items) == 0 {
 		return nil
 	}
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "create_bulk", map[string]interface{}{
+		"item_count": len(items),
+	})
+	defer FinishSpan(span)
 
 	client := r.client.Querier(ctx)
 
@@ -219,6 +260,7 @@ func (r *subscriptionLineItemRepository) CreateBulk(ctx context.Context, items [
 	// Execute bulk create
 	_, err := client.SubscriptionLineItem.CreateBulk(bulk...).Save(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to create subscription line items in bulk").
 			WithReportableDetails(map[string]interface{}{
@@ -227,11 +269,18 @@ func (r *subscriptionLineItemRepository) CreateBulk(ctx context.Context, items [
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
 // ListBySubscription retrieves all line items for a subscription
 func (r *subscriptionLineItemRepository) ListBySubscription(ctx context.Context, subscriptionID string) ([]*subscription.SubscriptionLineItem, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "list_by_subscription", map[string]interface{}{
+		"subscription_id": subscriptionID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	items, err := client.SubscriptionLineItem.Query().
@@ -242,6 +291,7 @@ func (r *subscriptionLineItemRepository) ListBySubscription(ctx context.Context,
 		All(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list subscription line items").
 			WithReportableDetails(map[string]interface{}{
@@ -250,11 +300,18 @@ func (r *subscriptionLineItemRepository) ListBySubscription(ctx context.Context,
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return subscription.GetLineItemFromEntList(items), nil
 }
 
 // ListByCustomer retrieves all line items for a customer
 func (r *subscriptionLineItemRepository) ListByCustomer(ctx context.Context, customerID string) ([]*subscription.SubscriptionLineItem, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "list_by_customer", map[string]interface{}{
+		"customer_id": customerID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	items, err := client.SubscriptionLineItem.Query().
@@ -265,6 +322,7 @@ func (r *subscriptionLineItemRepository) ListByCustomer(ctx context.Context, cus
 		All(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list customer subscription line items").
 			WithReportableDetails(map[string]interface{}{
@@ -273,16 +331,25 @@ func (r *subscriptionLineItemRepository) ListByCustomer(ctx context.Context, cus
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return subscription.GetLineItemFromEntList(items), nil
 }
 
 // List retrieves subscription line items based on filter
 func (r *subscriptionLineItemRepository) List(ctx context.Context, filter *types.SubscriptionLineItemFilter) ([]*subscription.SubscriptionLineItem, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "list", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	if client == nil {
-		return nil, ierr.NewError("failed to get database client").
+		err := ierr.NewError("failed to get database client").
 			WithHint("Database client is not available").
 			Mark(ierr.ErrDatabase)
+		SetSpanError(span, err)
+		return nil, err
 	}
 
 	query := client.SubscriptionLineItem.Query().
@@ -323,17 +390,32 @@ func (r *subscriptionLineItemRepository) List(ctx context.Context, filter *types
 
 	items, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list subscription line items").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return subscription.GetLineItemFromEntList(items), nil
 }
 
 // Count counts subscription line items based on filter
 func (r *subscriptionLineItemRepository) Count(ctx context.Context, filter *types.SubscriptionLineItemFilter) (int, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "count", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
+	if client == nil {
+		err := ierr.NewError("failed to get database client").
+			WithHint("Database client is not available").
+			Mark(ierr.ErrDatabase)
+		SetSpanError(span, err)
+		return 0, err
+	}
 
 	query := client.SubscriptionLineItem.Query().
 		Where(subscriptionlineitem.TenantID(types.GetTenantID(ctx)))
@@ -365,16 +447,24 @@ func (r *subscriptionLineItemRepository) Count(ctx context.Context, filter *type
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count subscription line items").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return count, nil
 }
 
 // GetByPriceID retrieves all line items for a price
 func (r *subscriptionLineItemRepository) GetByPriceID(ctx context.Context, priceID string) ([]*subscription.SubscriptionLineItem, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "get_by_price_id", map[string]interface{}{
+		"price_id": priceID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	items, err := client.SubscriptionLineItem.Query().
@@ -385,6 +475,7 @@ func (r *subscriptionLineItemRepository) GetByPriceID(ctx context.Context, price
 		All(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to get subscription line items by price").
 			WithReportableDetails(map[string]interface{}{
@@ -393,16 +484,25 @@ func (r *subscriptionLineItemRepository) GetByPriceID(ctx context.Context, price
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return subscription.GetLineItemFromEntList(items), nil
 }
 
 // GetByPlanID retrieves all line items for a plan
 func (r *subscriptionLineItemRepository) GetByPlanID(ctx context.Context, planID string) ([]*subscription.SubscriptionLineItem, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "subscription_line_item", "get_by_plan_id", map[string]interface{}{
+		"plan_id": planID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	if client == nil {
-		return nil, ierr.NewError("failed to get database client").
+		err := ierr.NewError("failed to get database client").
 			WithHint("Database client is not available").
 			Mark(ierr.ErrDatabase)
+		SetSpanError(span, err)
+		return nil, err
 	}
 
 	items, err := client.SubscriptionLineItem.Query().
@@ -413,6 +513,7 @@ func (r *subscriptionLineItemRepository) GetByPlanID(ctx context.Context, planID
 		All(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to get subscription line items by plan").
 			WithReportableDetails(map[string]interface{}{
@@ -421,5 +522,6 @@ func (r *subscriptionLineItemRepository) GetByPlanID(ctx context.Context, planID
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return subscription.GetLineItemFromEntList(items), nil
 }

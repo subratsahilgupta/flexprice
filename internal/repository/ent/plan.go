@@ -37,6 +37,13 @@ func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 		"lookup_key", p.LookupKey,
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "plan", "create", map[string]interface{}{
+		"plan_id": p.ID,
+		"name":    p.Name,
+	})
+	defer FinishSpan(span)
+
 	// Set environment ID from context if not already set
 	if p.EnvironmentID == "" {
 		p.EnvironmentID = types.GetEnvironmentID(ctx)
@@ -57,6 +64,8 @@ func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsConstraintError(err) {
 			return ierr.WithError(err).
 				WithHint("Plan with this name already exists").
@@ -75,6 +84,7 @@ func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	*p = *domainPlan.FromEnt(plan)
 	return nil
 }
@@ -84,6 +94,12 @@ func (r *planRepository) Get(ctx context.Context, id string) (*domainPlan.Plan, 
 
 	r.log.Debugw("getting plan", "plan_id", id)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "plan", "get", map[string]interface{}{
+		"plan_id": id,
+	})
+	defer FinishSpan(span)
+
 	plan, err := client.Plan.Query().
 		Where(
 			plan.ID(id),
@@ -92,6 +108,8 @@ func (r *planRepository) Get(ctx context.Context, id string) (*domainPlan.Plan, 
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHintf("Plan with ID %s was not found", id).
@@ -108,6 +126,7 @@ func (r *planRepository) Get(ctx context.Context, id string) (*domainPlan.Plan, 
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainPlan.FromEnt(plan), nil
 }
 
@@ -119,17 +138,25 @@ func (r *planRepository) List(ctx context.Context, filter *types.PlanFilter) ([]
 		"offset", filter.GetOffset(),
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "plan", "list", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	query := client.Plan.Query()
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
 	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 
 	plans, err := query.All(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list plans").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainPlan.FromEntList(plans), nil
 }
 
@@ -142,7 +169,11 @@ func (r *planRepository) ListAll(ctx context.Context, filter *types.PlanFilter) 
 		filter.QueryFilter = types.NewNoLimitQueryFilter()
 	}
 
-	return r.List(ctx, filter)
+	plans, err := r.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return plans, nil
 }
 
 func (r *planRepository) Count(ctx context.Context, filter *types.PlanFilter) (int, error) {
@@ -152,22 +183,36 @@ func (r *planRepository) Count(ctx context.Context, filter *types.PlanFilter) (i
 		"tenant_id", types.GetTenantID(ctx),
 	)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "plan", "count", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
 	query := client.Plan.Query()
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
 	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 
 	count, err := query.Count(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count plans").
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return count, nil
 }
 
 func (r *planRepository) GetByLookupKey(ctx context.Context, lookupKey string) (*domainPlan.Plan, error) {
 	r.log.Debugw("getting plan by lookup key", "lookup_key", lookupKey)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "plan", "get_by_lookup_key", map[string]interface{}{
+		"lookup_key": lookupKey,
+	})
+	defer FinishSpan(span)
 
 	plan, err := r.client.Querier(ctx).Plan.Query().
 		Where(
@@ -177,6 +222,8 @@ func (r *planRepository) GetByLookupKey(ctx context.Context, lookupKey string) (
 		).
 		Only(ctx)
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHintf("Plan with lookup key %s was not found", lookupKey).
@@ -193,6 +240,7 @@ func (r *planRepository) GetByLookupKey(ctx context.Context, lookupKey string) (
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainPlan.FromEnt(plan), nil
 }
 
@@ -202,7 +250,15 @@ func (r *planRepository) Update(ctx context.Context, p *domainPlan.Plan) error {
 	r.log.Debugw("updating plan",
 		"plan_id", p.ID,
 		"tenant_id", p.TenantID,
+		"name", p.Name,
 	)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "plan", "update", map[string]interface{}{
+		"plan_id": p.ID,
+		"name":    p.Name,
+	})
+	defer FinishSpan(span)
 
 	_, err := client.Plan.Update().
 		Where(
@@ -217,6 +273,8 @@ func (r *planRepository) Update(ctx context.Context, p *domainPlan.Plan) error {
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHintf("Plan with ID %s was not found", p.ID).
@@ -224,6 +282,15 @@ func (r *planRepository) Update(ctx context.Context, p *domainPlan.Plan) error {
 					"plan_id": p.ID,
 				}).
 				Mark(ierr.ErrNotFound)
+		}
+		if ent.IsConstraintError(err) {
+			return ierr.WithError(err).
+				WithHint("Plan with this name already exists").
+				WithReportableDetails(map[string]any{
+					"plan_id":   p.ID,
+					"plan_name": p.Name,
+				}).
+				Mark(ierr.ErrAlreadyExists)
 		}
 		return ierr.WithError(err).
 			WithHint("Failed to update plan").
@@ -233,6 +300,7 @@ func (r *planRepository) Update(ctx context.Context, p *domainPlan.Plan) error {
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
@@ -243,6 +311,12 @@ func (r *planRepository) Delete(ctx context.Context, id string) error {
 		"plan_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "plan", "delete", map[string]interface{}{
+		"plan_id": id,
+	})
+	defer FinishSpan(span)
 
 	_, err := client.Plan.Update().
 		Where(
@@ -255,6 +329,8 @@ func (r *planRepository) Delete(ctx context.Context, id string) error {
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
+
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
 				WithHintf("Plan with ID %s was not found", id).
@@ -271,6 +347,7 @@ func (r *planRepository) Delete(ctx context.Context, id string) error {
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 

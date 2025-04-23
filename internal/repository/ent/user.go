@@ -29,6 +29,14 @@ func NewUserRepository(client postgres.IClient, logger *logger.Logger) domainUse
 func (r *userRepository) Create(ctx context.Context, user *domainUser.User) error {
 	r.logger.Debugw("creating user", "user_id", user.ID, "email", user.Email, "tenant_id", user.TenantID)
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "user", "create", map[string]interface{}{
+		"user_id":   user.ID,
+		"email":     user.Email,
+		"tenant_id": user.TenantID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	_, err := client.User.
 		Create().
@@ -43,6 +51,7 @@ func (r *userRepository) Create(ctx context.Context, user *domainUser.User) erro
 		Save(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to create user").
 			WithReportableDetails(map[string]interface{}{
@@ -53,6 +62,7 @@ func (r *userRepository) Create(ctx context.Context, user *domainUser.User) erro
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return nil
 }
 
@@ -65,6 +75,13 @@ func (r *userRepository) GetByID(ctx context.Context, id string) (*domainUser.Us
 			Mark(ierr.ErrValidation)
 	}
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "user", "get_by_id", map[string]interface{}{
+		"user_id":   id,
+		"tenant_id": tenantID,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 	user, err := client.User.
 		Query().
@@ -75,6 +92,7 @@ func (r *userRepository) GetByID(ctx context.Context, id string) (*domainUser.Us
 		Only(ctx)
 
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("User not found").
@@ -93,11 +111,18 @@ func (r *userRepository) GetByID(ctx context.Context, id string) (*domainUser.Us
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainUser.FromEnt(user), nil
 }
 
 // GetByEmail retrieves a user by email
 func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domainUser.User, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "user", "get_by_email", map[string]interface{}{
+		"email": email,
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	// For login, we don't have tenant ID in context, so we just search by email
@@ -114,6 +139,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domainU
 
 	user, err := query.Only(ctx)
 	if err != nil {
+		SetSpanError(span, err)
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
 				WithHint("User not found with the provided email").
@@ -130,5 +156,6 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domainU
 			Mark(ierr.ErrDatabase)
 	}
 
+	SetSpanSuccess(span)
 	return domainUser.FromEnt(user), nil
 }

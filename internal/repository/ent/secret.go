@@ -29,6 +29,14 @@ func NewSecretRepository(client postgres.IClient, log *logger.Logger) domainSecr
 }
 
 func (r *secretRepository) Create(ctx context.Context, s *domainSecret.Secret) error {
+	span := StartRepositorySpan(ctx, "Secret", "Create", map[string]interface{}{
+		"secret_id": s.ID,
+		"tenant_id": s.TenantID,
+		"type":      string(s.Type),
+		"provider":  string(s.Provider),
+	})
+	defer FinishSpan(span)
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("creating secret",
@@ -74,7 +82,7 @@ func (r *secretRepository) Create(ctx context.Context, s *domainSecret.Secret) e
 
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return ierr.WithError(err).
+			wrappedErr := ierr.WithError(err).
 				WithHint("Api key with same name already exists").
 				WithReportableDetails(map[string]interface{}{
 					"secret_id": s.ID,
@@ -82,15 +90,20 @@ func (r *secretRepository) Create(ctx context.Context, s *domainSecret.Secret) e
 					"provider":  s.Provider,
 				}).
 				Mark(ierr.ErrAlreadyExists)
+			SetSpanError(span, wrappedErr)
+			return wrappedErr
 		}
-		return ierr.WithError(err).
+		wrappedErr := ierr.WithError(err).
 			WithHint("Failed to create secret").
 			WithReportableDetails(map[string]interface{}{
 				"secret_id": s.ID,
 			}).
 			Mark(ierr.ErrDatabase)
+		SetSpanError(span, wrappedErr)
+		return wrappedErr
 	}
 	*s = *domainSecret.FromEnt(secret)
+	SetSpanSuccess(span)
 	return nil
 }
 
