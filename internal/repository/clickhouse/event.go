@@ -201,9 +201,6 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 	query := aggregator.GetQuery(ctx, params)
 	log.Printf("Executing query: %s", query)
 
-	// Add query to span for debugging
-	span.SetData("query", query)
-
 	rows, err := r.store.GetConn().Query(ctx, query)
 	if err != nil {
 		SetSpanError(span, err)
@@ -310,11 +307,6 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 		}
 	}
 
-	// Add result count to span
-	if params.WindowSize != "" {
-		span.SetData("result_count", len(result.Results))
-	}
-
 	SetSpanSuccess(span)
 	return &result, nil
 }
@@ -348,10 +340,6 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 		WithFilterGroups(ctx, params.FilterGroups)
 
 	query, queryParams := qb.Build()
-
-	// Add query to span for debugging
-	span.SetData("query", query)
-	span.SetData("query_params", queryParams)
 
 	r.logger.Debugw("executing filter groups query",
 		"aggregation_type", params.AggregationType,
@@ -430,9 +418,6 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 			WithHint("Error iterating rows").
 			Mark(ierr.ErrDatabase)
 	}
-
-	// Add result count to span
-	span.SetData("result_count", len(results))
 
 	SetSpanSuccess(span)
 	return results, nil
@@ -532,10 +517,6 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 		args = append(args, params.IterLast.Timestamp, params.IterLast.ID)
 	}
 
-	// Add query to span for debugging
-	span.SetData("query_base", baseQuery)
-	span.SetData("args_count", len(args))
-
 	// Count total if requested
 	if params.CountTotal {
 		countQuery := "SELECT COUNT(*) FROM (" + baseQuery + ") AS filtered_events"
@@ -549,7 +530,6 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 				}).
 				Mark(ierr.ErrDatabase)
 		}
-		span.SetData("total_count", totalCount)
 	}
 
 	// Order by timestamp and ID
@@ -622,9 +602,6 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 
 		eventsList = append(eventsList, &event)
 	}
-
-	// Add result count to span
-	span.SetData("result_count", len(eventsList))
 
 	SetSpanSuccess(span)
 	return eventsList, totalCount, nil
