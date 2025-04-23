@@ -126,6 +126,10 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		customer := v1Private.Group("/customers")
 		{
+
+			// list customers by filter
+			customer.GET("/search", handlers.Customer.ListCustomersByFilter)
+
 			customer.POST("", handlers.Customer.CreateCustomer)
 			customer.GET("", handlers.Customer.GetCustomers)
 			customer.GET("/:id", handlers.Customer.GetCustomer)
@@ -141,6 +145,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.GET("/:id/wallets", handlers.Wallet.GetWalletsByCustomerID)
 			customer.GET("/:id/invoices/summary", handlers.Invoice.GetCustomerInvoiceSummary)
 			customer.GET("/wallets", handlers.Wallet.GetCustomerWallets)
+
 		}
 
 		plan := v1Private.Group("/plans")

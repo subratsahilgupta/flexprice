@@ -16,4 +16,6 @@ type Repository interface {
 	Update(ctx context.Context, customer *Customer) error
 	Delete(ctx context.Context, id string) error
 	GetByLookupKey(ctx context.Context, lookupKey string) (*Customer, error)
+	ListByFilter(ctx context.Context, filter *types.CustomerSearchFilter) ([]*Customer, error)
+	CountByFilter(ctx context.Context, filter *types.CustomerSearchFilter) (int, error)
 }

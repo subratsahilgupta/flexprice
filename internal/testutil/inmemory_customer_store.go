@@ -179,3 +179,97 @@ func customerSortFn(i, j *customer.Customer) bool {
 	// Default sort by created_at desc
 	return i.CreatedAt.After(j.CreatedAt)
 }
+
+func (s *InMemoryCustomerStore) CountByFilter(ctx context.Context, filter *types.CustomerSearchFilter) (int, error) {
+	// Create a custom filter function for CustomerSearchFilter
+	filterFn := func(ctx context.Context, c *customer.Customer, _ interface{}) bool {
+		// Check tenant ID
+		if tenantID, ok := ctx.Value(types.CtxTenantID).(string); ok {
+			if c.TenantID != tenantID {
+				return false
+			}
+		}
+
+		// Apply environment filter
+		if !CheckEnvironmentFilter(ctx, c.EnvironmentID) {
+			return false
+		}
+
+		// Filter by customer ID (partial match)
+		if filter != nil && filter.Name != nil {
+			nameStr := *filter.Name
+			if !strings.Contains(strings.ToLower(c.Name), strings.ToLower(nameStr)) {
+				return false
+			}	
+		}
+
+		// Filter by external ID (case-insensitive partial match)
+		if filter != nil && filter.ExternalID != nil {
+			externalIDStr := *filter.ExternalID
+			if !strings.Contains(strings.ToLower(c.ExternalID), strings.ToLower(externalIDStr)) {
+				return false
+			}
+		}
+
+		return true
+	}
+
+	// Use the custom filter function for counting
+	return s.InMemoryStore.Count(ctx, filter, filterFn)
+}
+
+func (s *InMemoryCustomerStore) ListByFilter(ctx context.Context, filter *types.CustomerSearchFilter) ([]*customer.Customer, error) {
+	// Use the existing List method with a custom filter function
+	filterFn := func(ctx context.Context, c *customer.Customer, _ interface{}) bool {
+		// Apply search filter logic
+		if filter == nil {
+			return true
+		}
+
+		// Check tenant ID
+		if tenantID, ok := ctx.Value(types.CtxTenantID).(string); ok {
+			if c.TenantID != tenantID {
+				return false
+			}
+		}
+
+		// Apply environment filter
+		if !CheckEnvironmentFilter(ctx, c.EnvironmentID) {
+			return false
+		}
+
+		// Filter by customer ID
+		if filter.Name != nil && !strings.Contains(strings.ToLower(c.Name), strings.ToLower(*filter.Name)) {
+			return false
+		}
+
+		// Filter by external ID
+		if filter.ExternalID != nil && !strings.Contains(strings.ToLower(c.ExternalID), strings.ToLower(*filter.ExternalID)) {
+			return false
+		}
+
+		return true
+	}
+
+	// Prepare the query filter
+	queryFilter := types.NewDefaultQueryFilter()
+	if filter != nil {
+		if filter.Limit != nil {
+			queryFilter.Limit = filter.Limit
+		}
+		if filter.Offset != nil {
+			queryFilter.Offset = filter.Offset
+		}
+	}
+
+	// Use the InMemoryStore's List method with our custom filter
+	customers, err := s.InMemoryStore.List(ctx, queryFilter, filterFn, customerSortFn)
+	if err != nil {
+		return nil, err
+	}
+
+	// Deep copy customers to prevent modification
+	return lo.Map(customers, func(c *customer.Customer, _ int) *customer.Customer {
+		return c
+	}), nil
+}
