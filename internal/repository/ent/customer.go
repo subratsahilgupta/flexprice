@@ -321,6 +321,7 @@ func (r *customerRepository) Update(ctx context.Context, c *domainCustomer.Custo
 		Where(
 			customer.ID(c.ID),
 			customer.TenantID(c.TenantID),
+			customer.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetExternalID(c.ExternalID).
 		SetName(c.Name).
@@ -372,6 +373,7 @@ func (r *customerRepository) Delete(ctx context.Context, domainCustomer *domainC
 	r.log.Debugw("deleting customer",
 		"customer_id", domainCustomer.ID,
 		"tenant_id", types.GetTenantID(ctx),
+		"environment_id", types.GetEnvironmentID(ctx),
 	)
 
 	// Start a span for this repository operation
@@ -384,6 +386,7 @@ func (r *customerRepository) Delete(ctx context.Context, domainCustomer *domainC
 		Where(
 			customer.ID(domainCustomer.ID),
 			customer.TenantID(types.GetTenantID(ctx)),
+			customer.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).

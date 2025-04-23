@@ -373,7 +373,10 @@ func (r *invoiceRepository) Get(ctx context.Context, id string) (*domainInvoice.
 	r.logger.Debugw("getting invoice", "id", id)
 
 	invoice, err := r.client.Querier(ctx).Invoice.Query().
-		Where(invoice.ID(id)).
+		Where(invoice.ID(id),
+			invoice.TenantID(types.GetTenantID(ctx)),
+			invoice.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
 		WithLineItems().
 		Only(ctx)
 	if err != nil {
