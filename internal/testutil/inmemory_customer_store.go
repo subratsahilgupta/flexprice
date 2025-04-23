@@ -270,6 +270,6 @@ func (s *InMemoryCustomerStore) ListByFilter(ctx context.Context, filter *types.
 
 	// Deep copy customers to prevent modification
 	return lo.Map(customers, func(c *customer.Customer, _ int) *customer.Customer {
-		return copyCustomer(c)
+		return c
 	}), nil
 }

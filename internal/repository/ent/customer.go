@@ -179,12 +179,23 @@ func (r *customerRepository) ListByFilter(ctx context.Context, filter *types.Cus
 
 	query := client.Customer.Query()
 
-	if filter.CustomerID != nil {
-		query = query.Where(customer.IDContainsFold(lo.FromPtr(filter.CustomerID)))
-	}
+	// Apply OR condition if both CustomerID and ExternalID are provided
+	if filter.CustomerID != nil && filter.ExternalID != nil {
+		query = query.Where(
+			customer.Or(
+				customer.IDContainsFold(lo.FromPtr(filter.CustomerID)),
+				customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)),
+			),
+		)
+	} else {
+		// Existing individual conditions if only one is provided
+		if filter.CustomerID != nil {
+			query = query.Where(customer.IDContainsFold(lo.FromPtr(filter.CustomerID)))
+		}
 
-	if filter.ExternalID != nil {
-		query = query.Where(customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)))
+		if filter.ExternalID != nil {
+			query = query.Where(customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)))
+		}
 	}
 
 	if limit := lo.FromPtr(filter.Limit); limit > 0 {
@@ -197,6 +208,7 @@ func (r *customerRepository) ListByFilter(ctx context.Context, filter *types.Cus
 	query = query.Where(
 		customer.EnvironmentID(types.GetEnvironmentID(ctx)),
 		customer.TenantID(types.GetTenantID(ctx)),
+		customer.StatusNotIn(string(types.StatusDeleted)),
 	)
 
 	customers, err := query.All(ctx)
@@ -213,17 +225,29 @@ func (r *customerRepository) CountByFilter(ctx context.Context, filter *types.Cu
 
 	query := client.Customer.Query()
 
-	if filter.CustomerID != nil {
-		query = query.Where(customer.IDContainsFold(lo.FromPtr(filter.CustomerID)))
-	}
+	// Apply OR condition if both CustomerID and ExternalID are provided
+	if filter.CustomerID != nil && filter.ExternalID != nil {
+		query = query.Where(
+			customer.Or(
+				customer.IDContainsFold(lo.FromPtr(filter.CustomerID)),
+				customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)),
+			),
+		)
+	} else {
+		// Existing individual conditions if only one is provided
+		if filter.CustomerID != nil {
+			query = query.Where(customer.IDContainsFold(lo.FromPtr(filter.CustomerID)))
+		}
 
-	if filter.ExternalID != nil {
-		query = query.Where(customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)))
+		if filter.ExternalID != nil {
+			query = query.Where(customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)))
+		}
 	}
 
 	query = query.Where(
 		customer.EnvironmentID(types.GetEnvironmentID(ctx)),
 		customer.TenantID(types.GetTenantID(ctx)),
+		customer.StatusNotIn(string(types.StatusDeleted)),
 	)
 
 	count, err := query.Count(ctx)
