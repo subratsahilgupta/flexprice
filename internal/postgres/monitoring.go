@@ -41,26 +41,9 @@ func (c *SentryClient) TxFromContext(ctx context.Context) *ent.Tx {
 }
 
 // Querier returns the current transaction client if in a transaction, or the regular client
-// This method wraps the client with span tracking
+// This method wraps the client without any span tracking for now as there
+// is no value in just getting postgress query client getting called
+// we have added a repository layer that will add the span tracking
 func (c *SentryClient) Querier(ctx context.Context) *ent.Client {
-	// Start a span for this database operation
-	operation := getOperationNameFromStack()
-	span, spanCtx := c.sentry.StartDBSpan(ctx, operation, map[string]interface{}{
-		"client_type": "ent",
-	})
-
-	// For most operations, the span will be short-lived as we're just getting the client
-	// Transaction-level spans are handled in WithTx
-	// Repository operations should ideally create their own spans for complex operations
-	span.Finish()
-
-	// Return the client from the original implementation
-	return c.client.Querier(spanCtx)
-}
-
-// getOperationNameFromStack attempts to extract a meaningful operation name from the stack
-// This is a best-effort function that tries to determine what repository operation is being performed
-func getOperationNameFromStack() string {
-	// Default operation name
-	return "postgres.query"
+	return c.client.Querier(ctx)
 }
