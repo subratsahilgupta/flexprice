@@ -181,7 +181,41 @@ func customerSortFn(i, j *customer.Customer) bool {
 }
 
 func (s *InMemoryCustomerStore) CountByFilter(ctx context.Context, filter *types.CustomerSearchFilter) (int, error) {
-	return s.InMemoryStore.Count(ctx, filter, customerFilterFn)
+	// Create a custom filter function for CustomerSearchFilter
+	filterFn := func(ctx context.Context, c *customer.Customer, _ interface{}) bool {
+		// Check tenant ID
+		if tenantID, ok := ctx.Value(types.CtxTenantID).(string); ok {
+			if c.TenantID != tenantID {
+				return false
+			}
+		}
+
+		// Apply environment filter
+		if !CheckEnvironmentFilter(ctx, c.EnvironmentID) {
+			return false
+		}
+
+		// Filter by customer ID (partial match)
+		if filter != nil && filter.CustomerID != nil {
+			customerIDStr := *filter.CustomerID
+			if !strings.Contains(strings.ToLower(c.ID), strings.ToLower(customerIDStr)) {
+				return false
+			}
+		}
+
+		// Filter by external ID (case-insensitive partial match)
+		if filter != nil && filter.ExternalID != nil {
+			externalIDStr := *filter.ExternalID
+			if !strings.Contains(strings.ToLower(c.ExternalID), strings.ToLower(externalIDStr)) {
+				return false
+			}
+		}
+
+		return true
+	}
+
+	// Use the custom filter function for counting
+	return s.InMemoryStore.Count(ctx, filter, filterFn)
 }
 
 func (s *InMemoryCustomerStore) ListByFilter(ctx context.Context, filter *types.CustomerSearchFilter) ([]*customer.Customer, error) {
