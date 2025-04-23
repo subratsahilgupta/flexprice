@@ -267,3 +267,21 @@ func (h *CustomerHandler) GetCustomerUsageSummary(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response)
 }
+
+func (h *CustomerHandler) ListCustomersByFilter(c *gin.Context) {
+	var filter types.CustomerSearchFilter
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid filter parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.ListCustomersByFilter(c.Request.Context(), &filter)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}

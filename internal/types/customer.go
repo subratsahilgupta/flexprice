@@ -102,3 +102,26 @@ func (f *CustomerFilter) IsUnlimited() bool {
 	}
 	return f.QueryFilter.IsUnlimited()
 }
+
+type CustomerSearchFilter struct {
+	Name       *string `form:"name,omitempty"`
+	ExternalID *string `form:"external_id,omitempty"`
+	Limit      *int    `form:"limit,default=10,omitempty"`
+	Offset     *int    `form:"offset,default=0,omitempty"`
+}
+
+func (f *CustomerSearchFilter) Validate() error {
+	if f.Limit != nil && (*f.Limit < 1 || *f.Limit > 1000) {
+		return ierr.NewError("invalid limit").
+			WithHint("Limit must be between 1 and 1000").
+			Mark(ierr.ErrValidation)
+	}
+
+	if f.Offset != nil && *f.Offset < 0 {
+		return ierr.NewError("invalid offset").
+			WithHint("Offset must be greater than or equal to 0").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}

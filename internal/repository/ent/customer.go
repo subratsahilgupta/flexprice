@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/lib/pq"
+	"github.com/samber/lo"
 )
 
 type customerRepository struct {
@@ -171,6 +172,92 @@ func (r *customerRepository) List(ctx context.Context, filter *types.CustomerFil
 	}
 
 	return domainCustomer.FromEntList(customers), nil
+}
+
+func (r *customerRepository) ListByFilter(ctx context.Context, filter *types.CustomerSearchFilter) ([]*domainCustomer.Customer, error) {
+	client := r.client.Querier(ctx)
+
+	query := client.Customer.Query()
+
+	// Apply OR condition if both CustomerID and ExternalID are provided
+	if filter.Name != nil && filter.ExternalID != nil {
+		query = query.Where(
+			customer.Or(
+				customer.NameContainsFold(lo.FromPtr(filter.Name)),
+				customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)),
+			),
+		)
+	} else {
+		// Existing individual conditions if only one is provided
+		if filter.Name != nil {
+			query = query.Where(customer.NameContainsFold(lo.FromPtr(filter.Name)))
+		}
+
+		if filter.ExternalID != nil {
+			query = query.Where(customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)))
+		}
+	}
+
+	if limit := lo.FromPtr(filter.Limit); limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	if offset := lo.FromPtr(filter.Offset); offset > 0 {
+		query = query.Offset(offset)
+	}
+	query = query.Where(
+		customer.EnvironmentID(types.GetEnvironmentID(ctx)),
+		customer.TenantID(types.GetTenantID(ctx)),
+		customer.StatusNotIn(string(types.StatusDeleted)),
+	)
+
+	customers, err := query.All(ctx)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list customers").
+			Mark(ierr.ErrDatabase)
+	}
+	return domainCustomer.FromEntList(customers), nil
+}
+
+func (r *customerRepository) CountByFilter(ctx context.Context, filter *types.CustomerSearchFilter) (int, error) {
+	client := r.client.Querier(ctx)
+
+	query := client.Customer.Query()
+
+	// Apply OR condition if both CustomerID and ExternalID are provided
+	if filter.Name != nil && filter.ExternalID != nil {
+		query = query.Where(
+			customer.Or(
+				customer.NameContainsFold(lo.FromPtr(filter.Name)),
+				customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)),
+			),
+		)
+	} else {
+		// Existing individual conditions if only one is provided
+		if filter.Name != nil {
+			query = query.Where(customer.NameContainsFold(lo.FromPtr(filter.Name)))
+		}
+
+		if filter.ExternalID != nil {
+			query = query.Where(customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)))
+		}
+	}
+
+	query = query.Where(
+		customer.EnvironmentID(types.GetEnvironmentID(ctx)),
+		customer.TenantID(types.GetTenantID(ctx)),
+		customer.StatusNotIn(string(types.StatusDeleted)),
+	)
+
+	count, err := query.Count(ctx)
+	if err != nil {
+		return 0, ierr.WithError(err).
+			WithHint("Failed to count customers").
+			Mark(ierr.ErrDatabase)
+	}
+
+	return count, nil
 }
 
 func (r *customerRepository) Count(ctx context.Context, filter *types.CustomerFilter) (int, error) {
