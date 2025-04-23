@@ -231,3 +231,28 @@ func (f *SpanFinisher) Finish() {
 		f.Span.Finish()
 	}
 }
+
+// StartRepositorySpan creates a span for a repository operation
+func (s *Service) StartRepositorySpan(ctx context.Context, repository, operation string, params map[string]interface{}) (*sentry.Span, context.Context) {
+	if !s.cfg.Sentry.Enabled {
+		return nil, ctx
+	}
+
+	operationName := fmt.Sprintf("repository.%s.%s", repository, operation)
+	span := sentry.StartSpan(ctx, operationName)
+	if span != nil {
+		span.Description = operationName
+		span.Op = "db.repository"
+
+		// Add common repository data
+		span.SetData("repository", repository)
+		span.SetData("operation", operation)
+
+		// Add additional parameters
+		for k, v := range params {
+			span.SetData(k, v)
+		}
+	}
+
+	return span, span.Context()
+}

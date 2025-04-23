@@ -11,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/types"
 	_ "github.com/lib/pq"
 	"go.uber.org/fx"
@@ -32,6 +33,7 @@ type IClient interface {
 type Client struct {
 	entClient *ent.Client
 	logger    *logger.Logger
+	sentry    *sentry.Service
 }
 
 // Module provides an fx.Option to integrate Ent client with the application
@@ -88,11 +90,18 @@ func NewEntClient(config *config.Configuration, logger *logger.Logger) (*ent.Cli
 }
 
 // NewClient creates a new ent client wrapper with transaction management
-func NewClient(client *ent.Client, logger *logger.Logger) IClient {
-	return &Client{
+func NewClient(client *ent.Client, logger *logger.Logger, sentry *sentry.Service) IClient {
+	postgresClient := &Client{
 		entClient: client,
 		logger:    logger,
+		sentry:    sentry,
 	}
+
+	if sentry != nil {
+		return NewSentryClient(postgresClient, sentry, logger)
+	}
+
+	return postgresClient
 }
 
 // WithTx wraps the given function in a transaction
