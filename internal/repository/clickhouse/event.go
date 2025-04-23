@@ -27,6 +27,12 @@ func NewEventRepository(store *clickhouse.ClickHouseStore, logger *logger.Logger
 }
 
 func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) error {
+	ctx, finisher := r.store.WithSpan(ctx, "clickhouse.insert_event", map[string]interface{}{
+		"event_id":   event.ID,
+		"event_name": event.EventName,
+	})
+	defer finisher.Finish()
+
 	propertiesJSON, err := json.Marshal(event.Properties)
 	if err != nil {
 		return ierr.WithError(err).
@@ -79,6 +85,11 @@ func (r *EventRepository) BulkInsertEvents(ctx context.Context, events []*events
 	if len(events) == 0 {
 		return nil
 	}
+
+	ctx, finisher := r.store.WithSpan(ctx, "clickhouse.bulk_insert_events", map[string]interface{}{
+		"event_count": len(events),
+	})
+	defer finisher.Finish()
 
 	// split events in batches of 100
 	eventsBatches := lo.Chunk(events, 100)
@@ -155,6 +166,13 @@ type UsageResult struct {
 }
 
 func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsageParams) (*events.AggregationResult, error) {
+	ctx, finisher := r.store.WithSpan(ctx, "clickhouse.get_usage", map[string]interface{}{
+		"event_name":       params.EventName,
+		"aggregation_type": params.AggregationType,
+		"property_name":    params.PropertyName,
+	})
+	defer finisher.Finish()
+
 	aggregator := GetAggregator(params.AggregationType)
 	if aggregator == nil {
 		return nil, ierr.NewError("unsupported aggregation type").
@@ -269,6 +287,13 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 }
 
 func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *events.UsageWithFiltersParams) ([]*events.AggregationResult, error) {
+	ctx, finisher := r.store.WithSpan(ctx, "clickhouse.get_usage_with_filters", map[string]interface{}{
+		"event_name":       params.UsageParams.EventName,
+		"aggregation_type": params.AggregationType,
+		"filter_groups":    len(params.FilterGroups),
+	})
+	defer finisher.Finish()
+
 	aggregator := GetAggregator(params.AggregationType)
 	if aggregator == nil {
 		return nil, ierr.NewError("unsupported aggregation type").
@@ -289,7 +314,7 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 
 	r.logger.Debugw("executing filter groups query",
 		"aggregation_type", params.AggregationType,
-		"event_name", params.EventName,
+		"event_name", params.UsageParams.EventName,
 		"filter_groups", len(params.FilterGroups),
 		"query", query,
 		"params", queryParams)
@@ -306,7 +331,6 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 	}
 	defer rows.Close()
 
-	// Process results
 	var results []*events.AggregationResult
 	for rows.Next() {
 		var filterGroupID string
@@ -363,6 +387,14 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 }
 
 func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEventsParams) ([]*events.Event, uint64, error) {
+	ctx, finisher := r.store.WithSpan(ctx, "clickhouse.get_events", map[string]interface{}{
+		"event_name":           params.EventName,
+		"page_size":            params.PageSize,
+		"offset":               params.Offset,
+		"external_customer_id": params.ExternalCustomerID,
+	})
+	defer finisher.Finish()
+
 	var totalCount uint64
 
 	baseQuery := `

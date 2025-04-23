@@ -1,25 +1,31 @@
 package clickhouse
 
 import (
+	"context"
 	"fmt"
 
 	clickhouse_go "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/flexprice/flexprice/internal/config"
+	"github.com/flexprice/flexprice/internal/sentry"
 )
 
 type ClickHouseStore struct {
-	conn driver.Conn
+	conn   driver.Conn
+	sentry *sentry.Service
 }
 
-func NewClickHouseStore(config *config.Configuration) (*ClickHouseStore, error) {
+func NewClickHouseStore(config *config.Configuration, sentryService *sentry.Service) (*ClickHouseStore, error) {
 	options := config.ClickHouse.GetClientOptions()
 	conn, err := clickhouse_go.Open(options)
 	if err != nil {
 		return nil, fmt.Errorf("init clickhouse client: %w", err)
 	}
 
-	return &ClickHouseStore{conn: conn}, nil
+	return &ClickHouseStore{
+		conn:   conn,
+		sentry: sentryService,
+	}, nil
 }
 
 func (s *ClickHouseStore) GetConn() driver.Conn {
@@ -28,4 +34,14 @@ func (s *ClickHouseStore) GetConn() driver.Conn {
 
 func (s *ClickHouseStore) Close() error {
 	return s.conn.Close()
+}
+
+// WithSpan creates a new context with a ClickHouse span for monitoring database operations
+func (s *ClickHouseStore) WithSpan(ctx context.Context, operation string, params map[string]interface{}) (context.Context, *sentry.SpanFinisher) {
+	if s.sentry == nil {
+		return ctx, &sentry.SpanFinisher{}
+	}
+
+	span, newCtx := s.sentry.StartClickHouseSpan(ctx, operation, params)
+	return newCtx, &sentry.SpanFinisher{Span: span}
 }

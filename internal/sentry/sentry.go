@@ -219,3 +219,15 @@ func (s *Service) StartTransaction(ctx context.Context, name string, options ...
 	transaction := sentry.StartTransaction(ctx, name, opts...)
 	return transaction, transaction.Context()
 }
+
+// SpanFinisher is a helper that finishes a span when calling Finish()
+type SpanFinisher struct {
+	Span *sentry.Span
+}
+
+// Finish completes the span if it exists
+func (f *SpanFinisher) Finish() {
+	if f.Span != nil {
+		f.Span.Finish()
+	}
+}

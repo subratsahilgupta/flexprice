@@ -84,7 +84,9 @@ func main() {
 			postgres.NewClient,
 
 			// Clickhouse
-			clickhouse.NewClickHouseStore,
+			func(cfg *config.Configuration, sentryService *sentry.Service) (*clickhouse.ClickHouseStore, error) {
+				return clickhouse.NewClickHouseStore(cfg, sentryService)
+			},
 
 			// Typst
 			typst.DefaultCompiler,
