@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/schema"
+	"github.com/flexprice/flexprice/internal/cache"
 	domainCustomer "github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/dsl"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -22,13 +23,15 @@ type customerRepository struct {
 	client    postgres.IClient
 	log       *logger.Logger
 	queryOpts CustomerQueryOptions
+	cache     cache.Cache
 }
 
-func NewCustomerRepository(client postgres.IClient, log *logger.Logger) domainCustomer.Repository {
+func NewCustomerRepository(client postgres.IClient, log *logger.Logger, cache cache.Cache) domainCustomer.Repository {
 	return &customerRepository{
 		client:    client,
 		log:       log,
 		queryOpts: CustomerQueryOptions{},
+		cache:     cache,
 	}
 }
 
@@ -109,6 +112,12 @@ func (r *customerRepository) Create(ctx context.Context, c *domainCustomer.Custo
 }
 
 func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustomer.Customer, error) {
+
+	// Try to get from cache first
+	if cachedCustomer := r.GetCache(ctx, id); cachedCustomer != nil {
+		return cachedCustomer, nil
+	}
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("getting customer", "customer_id", id)
@@ -143,10 +152,20 @@ func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustome
 	}
 
 	SetSpanSuccess(span)
-	return domainCustomer.FromEnt(c), nil
+	customer := domainCustomer.FromEnt(c)
+
+	// Set cache
+	r.SetCache(ctx, customer)
+	return customer, nil
 }
 
 func (r *customerRepository) GetByLookupKey(ctx context.Context, lookupKey string) (*domainCustomer.Customer, error) {
+
+	// Try to get from cache first
+	if cachedCustomer := r.GetCache(ctx, lookupKey); cachedCustomer != nil {
+		return cachedCustomer, nil
+	}
+
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("getting customer by lookup key", "lookup_key", lookupKey)
@@ -344,6 +363,7 @@ func (r *customerRepository) Update(ctx context.Context, c *domainCustomer.Custo
 	}
 
 	SetSpanSuccess(span)
+	r.DeleteCache(ctx, c.ID)
 	return nil
 }
 
@@ -388,6 +408,7 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 	}
 
 	SetSpanSuccess(span)
+	r.DeleteCache(ctx, id)
 	return nil
 }
 
@@ -510,4 +531,53 @@ func (o CustomerQueryOptions) applyEntityQueryOptions(_ context.Context, f *type
 	}
 
 	return query, nil
+}
+
+func (r *customerRepository) SetCache(ctx context.Context, customer *domainCustomer.Customer) {
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	// Set both ID and external ID based cache entries
+	custIdKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customer.ID)
+	extIDKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customer.ExternalID)
+
+	r.cache.Set(ctx, custIdKey, customer, cache.ExpiryDefaultInMemory)
+	r.cache.Set(ctx, extIDKey, customer, cache.ExpiryDefaultInMemory)
+
+	r.log.Debugw("cache set", "id_key", custIdKey, "ext_key", extIDKey)
+}
+
+func (r *customerRepository) GetCache(ctx context.Context, key string) *domainCustomer.Customer {
+
+	cacheKey := cache.GenerateKey(cache.PrefixCustomer, types.GetTenantID(ctx), types.GetEnvironmentID(ctx), key)
+	if value, found := r.cache.Get(ctx, cacheKey); found {
+		if customer, ok := value.(*domainCustomer.Customer); ok {
+			r.log.Debugw("cache hit", "key", cacheKey)
+			return customer
+		}
+	}
+	return nil
+}
+
+func (r *customerRepository) DeleteCache(ctx context.Context, customerID string) {
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	// Delete ID-based cache first
+	custIdKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customerID)
+	r.cache.Delete(ctx, custIdKey)
+
+	// Get customer to delete external ID cache
+	customer, err := r.Get(ctx, customerID)
+
+	if err != nil {
+		r.log.Errorw("failed to get customer", "error", err)
+		return
+	}
+
+	extIDKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customer.ExternalID)
+	r.cache.Delete(ctx, extIDKey)
+	r.log.Debugw("cache deleted", "ext_key", extIDKey)
 }

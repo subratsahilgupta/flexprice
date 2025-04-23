@@ -80,6 +80,7 @@ func main() {
 
 			// Cache
 			cache.Initialize,
+			cache.NewInMemoryCache,
 
 			// Postgres
 			postgres.NewEntClient,
