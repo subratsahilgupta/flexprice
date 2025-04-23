@@ -244,7 +244,7 @@ func (s *InMemoryCustomerStore) ListByFilter(ctx context.Context, filter *types.
 		}
 
 		// Filter by external ID
-		if filter.ExternalID != nil && c.ExternalID != *filter.ExternalID {
+		if filter.ExternalID != nil && !strings.Contains(strings.ToLower(c.ExternalID), strings.ToLower(*filter.ExternalID)) {
 			return false
 		}
 
