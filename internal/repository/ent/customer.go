@@ -194,6 +194,10 @@ func (r *customerRepository) ListByFilter(ctx context.Context, filter *types.Cus
 	if offset := lo.FromPtr(filter.Offset); offset > 0 {
 		query = query.Offset(offset)
 	}
+	query = query.Where(
+		customer.EnvironmentID(types.GetEnvironmentID(ctx)),
+		customer.TenantID(types.GetTenantID(ctx)),
+	)
 
 	customers, err := query.All(ctx)
 	if err != nil {
@@ -216,6 +220,11 @@ func (r *customerRepository) CountByFilter(ctx context.Context, filter *types.Cu
 	if filter.ExternalID != nil {
 		query = query.Where(customer.ExternalIDContainsFold(lo.FromPtr(filter.ExternalID)))
 	}
+
+	query = query.Where(
+		customer.EnvironmentID(types.GetEnvironmentID(ctx)),
+		customer.TenantID(types.GetTenantID(ctx)),
+	)
 
 	count, err := query.Count(ctx)
 	if err != nil {
