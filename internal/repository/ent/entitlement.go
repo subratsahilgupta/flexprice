@@ -402,6 +402,7 @@ func (r *entitlementRepository) DeleteBulk(ctx context.Context, ids []string) er
 		Where(
 			entitlement.IDIn(ids...),
 			entitlement.TenantID(types.GetTenantID(ctx)),
+			entitlement.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetStatus(string(types.StatusDeleted)).
 		SetUpdatedAt(time.Now().UTC()).

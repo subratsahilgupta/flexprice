@@ -107,6 +107,7 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 			subscription.ID(id),
 			subscription.TenantID(types.GetTenantID(ctx)),
 			subscription.Status(string(types.StatusPublished)),
+			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Only(ctx)
 
@@ -146,6 +147,7 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 			subscription.ID(sub.ID),
 			subscription.TenantID(types.GetTenantID(ctx)),
 			subscription.Status(string(types.StatusPublished)),
+			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
 			subscription.Version(sub.Version), // Version check for optimistic locking
 		)
 
@@ -231,6 +233,7 @@ func (r *subscriptionRepository) Delete(ctx context.Context, id string) error {
 		Where(
 			subscription.TenantID(types.GetTenantID(ctx)),
 			subscription.Status(string(types.StatusPublished)),
+			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
@@ -277,7 +280,11 @@ func (r *subscriptionRepository) List(ctx context.Context, filter *types.Subscri
 	}
 
 	client := r.client.Querier(ctx)
-	query := client.Subscription.Query()
+	query := client.Subscription.Query().
+		Where(
+			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
+			subscription.Status(string(types.StatusPublished)),
+		)
 	if filter.WithLineItems {
 		query = query.WithLineItems()
 	}

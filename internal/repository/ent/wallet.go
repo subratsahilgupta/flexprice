@@ -245,6 +245,7 @@ func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID str
 		credits, err := r.client.Querier(ctx).WalletTransaction.Query().
 			Where(
 				wallettransaction.WalletID(walletID),
+				wallettransaction.EnvironmentID(types.GetEnvironmentID(ctx)),
 				wallettransaction.Type(string(types.TransactionTypeCredit)),
 				wallettransaction.CreditsAvailableGT(decimal.Zero),
 				wallettransaction.Or(

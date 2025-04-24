@@ -118,6 +118,7 @@ func (r *secretRepository) Get(ctx context.Context, id string) (*domainSecret.Se
 		Where(
 			secret.ID(id),
 			secret.TenantID(types.GetTenantID(ctx)),
+			secret.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Only(ctx)
 

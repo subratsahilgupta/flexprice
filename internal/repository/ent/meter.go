@@ -224,6 +224,7 @@ func (r *meterRepository) DisableMeter(ctx context.Context, id string) error {
 		Where(
 			meter.ID(id),
 			meter.TenantID(types.GetTenantID(ctx)),
+			meter.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
@@ -275,6 +276,7 @@ func (r *meterRepository) UpdateMeter(ctx context.Context, id string, filters []
 		Where(
 			meter.ID(id),
 			meter.TenantID(types.GetTenantID(ctx)),
+			meter.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetFilters(m.ToEntFilters()).
 		SetUpdatedAt(time.Now().UTC()).

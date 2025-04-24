@@ -121,6 +121,7 @@ func (r *paymentRepository) Get(ctx context.Context, id string) (*domainPayment.
 	p, err := client.Payment.Query().
 		Where(
 			payment.ID(id),
+			payment.EnvironmentID(types.GetEnvironmentID(ctx)),
 			payment.TenantID(types.GetTenantID(ctx)),
 		).
 		WithAttempts().
@@ -233,6 +234,7 @@ func (r *paymentRepository) Update(ctx context.Context, p *domainPayment.Payment
 
 	_, err := client.Payment.Update().
 		Where(
+			payment.EnvironmentID(types.GetEnvironmentID(ctx)),
 			payment.ID(p.ID),
 			payment.TenantID(p.TenantID),
 		).
@@ -287,6 +289,7 @@ func (r *paymentRepository) Delete(ctx context.Context, id string) error {
 
 	_, err := client.Payment.Update().
 		Where(
+			payment.EnvironmentID(types.GetEnvironmentID(ctx)),
 			payment.ID(id),
 			payment.TenantID(types.GetTenantID(ctx)),
 		).
@@ -332,6 +335,7 @@ func (r *paymentRepository) GetByIdempotencyKey(ctx context.Context, key string)
 	p, err := client.Payment.Query().
 		Where(
 			payment.IdempotencyKey(key),
+			payment.EnvironmentID(types.GetEnvironmentID(ctx)),
 			payment.TenantID(types.GetTenantID(ctx)),
 		).
 		WithAttempts().
@@ -431,6 +435,7 @@ func (r *paymentRepository) GetAttempt(ctx context.Context, id string) (*domainP
 		Where(
 			paymentattempt.ID(id),
 			paymentattempt.TenantID(types.GetTenantID(ctx)),
+			paymentattempt.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Only(ctx)
 
@@ -474,6 +479,7 @@ func (r *paymentRepository) UpdateAttempt(ctx context.Context, a *domainPayment.
 
 	_, err := client.PaymentAttempt.Update().
 		Where(
+			paymentattempt.EnvironmentID(types.GetEnvironmentID(ctx)),
 			paymentattempt.ID(a.ID),
 			paymentattempt.TenantID(a.TenantID),
 		).
@@ -525,6 +531,7 @@ func (r *paymentRepository) ListAttempts(ctx context.Context, paymentID string) 
 		Where(
 			paymentattempt.PaymentID(paymentID),
 			paymentattempt.TenantID(types.GetTenantID(ctx)),
+			paymentattempt.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Order(ent.Asc(paymentattempt.FieldAttemptNumber)).
 		All(ctx)
@@ -557,6 +564,7 @@ func (r *paymentRepository) GetLatestAttempt(ctx context.Context, paymentID stri
 
 	a, err := client.PaymentAttempt.Query().
 		Where(
+			paymentattempt.EnvironmentID(types.GetEnvironmentID(ctx)),
 			paymentattempt.PaymentID(paymentID),
 			paymentattempt.TenantID(types.GetTenantID(ctx)),
 		).

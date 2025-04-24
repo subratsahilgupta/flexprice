@@ -131,6 +131,7 @@ func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustome
 		Where(
 			customer.ID(id),
 			customer.TenantID(types.GetTenantID(ctx)),
+			customer.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Only(ctx)
 

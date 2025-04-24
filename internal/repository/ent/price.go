@@ -131,6 +131,7 @@ func (r *priceRepository) Get(ctx context.Context, id string) (*domainPrice.Pric
 		Where(
 			price.ID(id),
 			price.TenantID(types.GetTenantID(ctx)),
+			price.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Only(ctx)
 
@@ -255,6 +256,7 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price) erro
 		Where(
 			price.ID(p.ID),
 			price.TenantID(p.TenantID),
+			price.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetAmount(p.Amount.InexactFloat64()).
 		SetDisplayAmount(p.DisplayAmount).
@@ -313,6 +315,7 @@ func (r *priceRepository) Delete(ctx context.Context, id string) error {
 		Where(
 			price.ID(id),
 			price.TenantID(types.GetTenantID(ctx)),
+			price.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
@@ -427,6 +430,7 @@ func (r *priceRepository) DeleteBulk(ctx context.Context, ids []string) error {
 		Where(
 			price.IDIn(ids...),
 			price.TenantID(types.GetTenantID(ctx)),
+			price.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
