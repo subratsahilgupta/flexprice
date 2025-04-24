@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
-	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
 	"github.com/flexprice/flexprice/internal/cache"
@@ -43,19 +42,6 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		"tenant_id":   w.TenantID,
 	})
 	defer FinishSpan(span)
-	// check if customer exists
-	customer, err := r.client.Querier(ctx).Customer.Query().
-		Where(customer.ID(w.CustomerID)).
-		Only(ctx)
-	if err != nil {
-		return ierr.WithError(err).Mark(ierr.ErrDatabase)
-	}
-
-	if customer == nil {
-		return ierr.NewError("customer not found").
-			WithHintf("Customer with ID %s not found", w.CustomerID).
-			Mark(ierr.ErrNotFound)
-	}
 
 	// Set environment ID from context if not already set
 	if w.EnvironmentID == "" {
