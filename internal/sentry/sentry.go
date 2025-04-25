@@ -76,9 +76,13 @@ func NewSentryService(cfg *config.Configuration, logger *logger.Logger) *Service
 	}
 }
 
+func (s *Service) IsEnabled() bool {
+	return s.cfg.Sentry.Enabled
+}
+
 // CaptureException captures an error in Sentry
 func (s *Service) CaptureException(err error) {
-	if !s.cfg.Sentry.Enabled {
+	if !s.IsEnabled() {
 		return
 	}
 	sentry.CaptureException(err)
@@ -86,7 +90,7 @@ func (s *Service) CaptureException(err error) {
 
 // AddBreadcrumb adds a breadcrumb to the current scope
 func (s *Service) AddBreadcrumb(category, message string, data map[string]interface{}) {
-	if !s.cfg.Sentry.Enabled {
+	if !s.IsEnabled() {
 		return
 	}
 	sentry.AddBreadcrumb(&sentry.Breadcrumb{
@@ -99,7 +103,7 @@ func (s *Service) AddBreadcrumb(category, message string, data map[string]interf
 
 // Flush waits for queued events to be sent
 func (s *Service) Flush(timeout uint) bool {
-	if !s.cfg.Sentry.Enabled {
+	if !s.IsEnabled() {
 		return true
 	}
 	return sentry.Flush(time.Duration(timeout) * time.Second)
@@ -107,7 +111,7 @@ func (s *Service) Flush(timeout uint) bool {
 
 // StartDBSpan starts a new database span in the current transaction
 func (s *Service) StartDBSpan(ctx context.Context, operation string, params map[string]interface{}) (*sentry.Span, context.Context) {
-	if !s.cfg.Sentry.Enabled {
+	if !s.IsEnabled() {
 		return nil, ctx
 	}
 

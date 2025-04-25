@@ -373,7 +373,7 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *dto.GetUsageBySubscriptionRequest) (*dto.GetUsageBySubscriptionResponse, error) {
 	response := &dto.GetUsageBySubscriptionResponse{}
 
-	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger)
+	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
 	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
 
 	// Get subscription with line items
@@ -447,6 +447,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		"end_time", usageEndTime,
 		"metered_line_items", len(priceIDs))
 
+	meterUsageRequests := make([]*dto.GetUsageByMeterRequest, 0, len(lineItems))
 	for _, lineItem := range lineItems {
 		if lineItem.PriceType != types.PRICE_TYPE_USAGE {
 			continue
@@ -456,20 +457,16 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			continue
 		}
 
-		price := priceMap[lineItem.PriceID]
 		meter := meterMap[lineItem.MeterID]
 		if meter == nil {
 			continue
 		}
 
 		meterID := lineItem.MeterID
-		meterDisplayName := ""
-		if meter, ok := meterDisplayNames[meterID]; ok {
-			meterDisplayName = meter
-		}
-
 		usageRequest := &dto.GetUsageByMeterRequest{
 			MeterID:            meterID,
+			PriceID:            lineItem.PriceID,
+			Meter:              meter.ToMeter(),
 			ExternalCustomerID: customer.ExternalID,
 			StartTime:          usageStartTime,
 			EndTime:            usageEndTime,
@@ -479,15 +476,47 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		for _, filter := range meter.Filters {
 			usageRequest.Filters[filter.Key] = filter.Values
 		}
+		meterUsageRequests = append(meterUsageRequests, usageRequest)
+	}
 
-		// TODO: make this a bulk call
-		usage, err := eventService.GetUsageByMeter(ctx, usageRequest)
-		if err != nil {
-			return nil, err
+	usageMap, err := eventService.BulkGetUsageByMeter(ctx, meterUsageRequests)
+	if err != nil {
+		return nil, err
+	}
+
+	s.Logger.Debugw("fetched usage for meters",
+		"meter_ids", lo.Keys(usageMap),
+		"total_usage_count", len(usageMap),
+		"subscription_id", req.SubscriptionID)
+
+	// Note: we are iterating over the meterUsageRequests and not the usageMap
+	// This is because the usageMap is a map of meterID to usage and we want to iterate over the meterUsageRequests
+	// as there can be multiple requests for the same meterID with different priceIDs
+	// Ideally this will not be the case and we will have a single request per meterID
+	// TODO: should add validation to ensure that same subscription does not have multiple line items with the same meterID
+	for _, request := range meterUsageRequests {
+		meterID := request.MeterID
+		usage, ok := usageMap[meterID]
+		if !ok {
+			continue
 		}
 
-		if usage == nil {
-			continue
+		// Get price by price ID and check if it exists
+		price, priceExists := priceMap[usage.PriceID]
+		if !priceExists || price == nil {
+			return nil, ierr.NewError("price not found").
+				WithHint("The price for the meter was not found").
+				WithReportableDetails(map[string]interface{}{
+					"meter_id":        meterID,
+					"price_id":        usage.PriceID,
+					"subscription_id": req.SubscriptionID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+
+		meterDisplayName := ""
+		if meter, ok := meterDisplayNames[meterID]; ok {
+			meterDisplayName = meter
 		}
 
 		quantity := usage.Value
@@ -839,6 +868,10 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 }
 
 func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost decimal.Decimal, meterDisplayName string) *dto.SubscriptionUsageByMetersResponse {
+	if priceObj == nil {
+		return nil
+	}
+
 	finalAmount := price.FormatAmountToFloat64WithPrecision(cost, priceObj.Currency)
 
 	return &dto.SubscriptionUsageByMetersResponse{
