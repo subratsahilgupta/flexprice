@@ -280,11 +280,7 @@ func (r *subscriptionRepository) List(ctx context.Context, filter *types.Subscri
 	}
 
 	client := r.client.Querier(ctx)
-	query := client.Subscription.Query().
-		Where(
-			subscription.EnvironmentID(types.GetEnvironmentID(ctx)),
-			subscription.Status(string(types.StatusPublished)),
-		)
+	query := client.Subscription.Query()
 	if filter.WithLineItems {
 		query = query.WithLineItems()
 	}
