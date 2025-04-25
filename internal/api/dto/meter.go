@@ -36,6 +36,23 @@ type MeterResponse struct {
 	Status      string            `json:"status" example:"published"`
 }
 
+func (r *MeterResponse) ToMeter() *meter.Meter {
+	return &meter.Meter{
+		ID:          r.ID,
+		Name:        r.Name,
+		EventName:   r.EventName,
+		Aggregation: r.Aggregation,
+		Filters:     r.Filters,
+		ResetUsage:  r.ResetUsage,
+		BaseModel: types.BaseModel{
+			Status:    types.Status(r.Status),
+			CreatedAt: r.CreatedAt,
+			UpdatedAt: r.UpdatedAt,
+			TenantID:  r.TenantID,
+		},
+	}
+}
+
 // Convert domain Meter to MeterResponse
 func ToMeterResponse(m *meter.Meter) *MeterResponse {
 	return &MeterResponse{

@@ -54,6 +54,8 @@ type AggregationResult struct {
 	EventName string                `json:"event_name"`
 	Type      types.AggregationType `json:"type"`
 	Metadata  map[string]string     `json:"metadata,omitempty"`
+	MeterID   string                `json:"meter_id"`
+	PriceID   string                `json:"price_id"`
 }
 
 type EventIterator struct {

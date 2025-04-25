@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -22,6 +23,7 @@ type EventServiceSuite struct {
 	eventRepo *testutil.InMemoryEventStore
 	publisher *testutil.InMemoryPublisherService
 	logger    *logger.Logger
+	config    *config.Configuration
 }
 
 func TestEventService(t *testing.T) {
@@ -33,12 +35,14 @@ func (s *EventServiceSuite) SetupTest() {
 	s.eventRepo = testutil.NewInMemoryEventStore()
 	s.publisher = testutil.NewInMemoryEventPublisher(s.eventRepo).(*testutil.InMemoryPublisherService)
 	s.logger = logger.GetLogger()
+	s.config = config.GetDefaultConfig()
 
 	s.service = NewEventService(
 		s.eventRepo,
 		nil, // meter repo not needed for these tests
 		s.publisher,
 		s.logger,
+		s.config,
 	)
 }
 
@@ -294,6 +298,7 @@ func (s *EventServiceSuite) TestGetUsageByMeter() {
 		mockedMeterRepo,
 		s.publisher,
 		s.logger,
+		s.config,
 	)
 
 	// Setup test events
