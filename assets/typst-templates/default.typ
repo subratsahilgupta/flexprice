@@ -197,7 +197,10 @@
       (
         item.at("plan_display_name", default: "Plan"),
         item.at("description", default: "Recurring"),
-        if item.at("period_start", default: none) != none and item.at("period_end", default: none) != none {
+       if item.at("period_start", default: none) != none and 
+         item.at("period_end", default: none) != none and
+         item.at("period_start") != "" and 
+         item.at("period_end") != "" {
           [#format-date(parse-date(item.at("period_start"))) - #format-date(parse-date(item.at("period_end")))]
         } else {
           "-"
