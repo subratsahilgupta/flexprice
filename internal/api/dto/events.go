@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 )
@@ -61,12 +62,14 @@ type GetUsageRequest struct {
 
 type GetUsageByMeterRequest struct {
 	MeterID            string              `form:"meter_id" json:"meter_id" binding:"required" example:"123"`
+	Meter              *meter.Meter        `form:"-" json:"-"` // caller can set this in case already fetched from db to avoid extra db call
 	ExternalCustomerID string              `form:"external_customer_id" json:"external_customer_id" example:"user_5"`
 	CustomerID         string              `form:"customer_id" json:"customer_id" example:"customer456"`
 	StartTime          time.Time           `form:"start_time" json:"start_time" example:"2024-11-09T00:00:00Z"`
 	EndTime            time.Time           `form:"end_time" json:"end_time" example:"2024-12-09T00:00:00Z"`
 	WindowSize         types.WindowSize    `form:"window_size" json:"window_size"`
 	Filters            map[string][]string `form:"filters,omitempty" json:"filters,omitempty"`
+	PriceID            string              `form:"-" json:"-"` // this is just for internal use to store the price id
 }
 
 type GetEventsRequest struct {

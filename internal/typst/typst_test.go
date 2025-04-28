@@ -201,3 +201,60 @@ func (s *TypstCompilerSuite) TestInvoiceCompilation() {
 	// Ensure invoice compilation does not fail
 	s.NoError(err)
 }
+
+func (s *TypstCompilerSuite) TestOneTimeInvoiceCompilation() {
+	// Create a JSON input for a one-time invoice (e.g., purchased credits)
+	invoiceJSON := []byte(`{
+		"currency": "USD",
+		"invoice_status": "paid",
+		"invoice_number": "CRED-123",
+		"issuing_date": "2023-01-01",
+		"due_date": "2023-01-10",
+		"vat": 0.00,
+		"amount_due": 25.00,
+		"notes": "One-time credit purchase",
+		"biller": {
+			"name": "Company Inc.",
+			"email": "contact@company.com",
+			"help_email": "help@company.com",
+			"address": {
+				"street": "123 Business Rd.",
+				"city": "Business City",
+				"postal_code": "12345",
+				"state": "CA",
+				"country": "USA"
+			}
+		},
+		"recipient": {
+			"name": "John Doe",
+			"email": "john.doe@example.com",
+			"address": {
+				"street": "456 Customer St.",
+				"city": "Customer City",
+				"postal_code": "67890",
+				"state": "NY",
+				"country": "USA"
+			}
+		},
+		"line_items": [
+			{
+				"display_name": "Purchased Credits",
+				"amount": 25.00,
+				"quantity": 1,
+				"currency": "USD",
+				"period_start": "",
+				"period_end": ""
+			}
+		],
+		"styling": {
+			"font": "Inter",
+			"secondary_color": "#919191"
+		}
+	}`)
+
+	// Compile the invoice template
+	_, err := s.compiler.CompileTemplate("invoice.typ", invoiceJSON)
+
+	// Ensure one-time invoice compilation does not fail
+	s.NoError(err)
+}

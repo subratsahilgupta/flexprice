@@ -472,6 +472,7 @@ func (s *taskService) processEvents(ctx context.Context, t *task.Task, tracker t
 			s.MeterRepo,
 			s.EventPublisher,
 			s.Logger,
+			s.Config,
 		)
 		err := eventSvc.CreateEvent(ctx, eventReq)
 		if err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	entRepo "github.com/flexprice/flexprice/internal/repository/ent"
+	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -45,7 +46,7 @@ func newMigrationScript() (*migrationScript, error) {
 	}
 
 	// Create postgres client
-	pgClient := postgres.NewClient(entClient, log)
+	pgClient := postgres.NewClient(entClient, log, sentry.NewSentryService(cfg, log))
 
 	// Initialize repositories
 	tenantRepo := entRepo.NewTenantRepository(pgClient, log)

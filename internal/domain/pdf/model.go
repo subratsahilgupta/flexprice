@@ -70,5 +70,8 @@ type CustomTime struct {
 }
 
 func (ct CustomTime) MarshalJSON() ([]byte, error) {
+	if ct.IsZero() {
+		return json.Marshal("")
+	}
 	return json.Marshal(ct.Format("2006-01-02")) // Format to YYYY-MM-DD
 }

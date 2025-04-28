@@ -75,3 +75,5 @@ api/*/*
 !api/*/tsconfig.json
 !api/*/tsconfig.node.json
 !api/*/tsconfig.app.json
+
+CLAUDE.m
