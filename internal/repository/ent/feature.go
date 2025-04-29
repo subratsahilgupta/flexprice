@@ -4,8 +4,10 @@ import (
 	"context"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/feature"
+	"github.com/flexprice/flexprice/ent/predicate"
 	domainFeature "github.com/flexprice/flexprice/internal/domain/feature"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -337,8 +339,26 @@ func (r *featureRepository) ListByIDs(ctx context.Context, featureIDs []string) 
 // FeatureQuery type alias for better readability
 type FeatureQuery = *ent.FeatureQuery
 
-// FeatureQueryOptions implements BaseQueryOptions for feature queries
+// FeatureQueryOptions implements query options for feature filtering and sorting
 type FeatureQueryOptions struct{}
+
+// FieldPredicates defines the available predicates for each field type
+type FieldPredicates struct {
+	// String predicates
+	Eq       func(string) predicate.Feature
+	Neq      func(string) predicate.Feature
+	Contains func(string) predicate.Feature
+	Prefix   func(string) predicate.Feature
+	Suffix   func(string) predicate.Feature
+	In       func(...string) predicate.Feature
+	NotIn    func(...string) predicate.Feature
+
+	// Date predicates
+	DateEq  func(time.Time) predicate.Feature
+	DateNeq func(time.Time) predicate.Feature
+	DateGt  func(time.Time) predicate.Feature
+	DateLt  func(time.Time) predicate.Feature
+}
 
 func (o FeatureQueryOptions) ApplyTenantFilter(ctx context.Context, query FeatureQuery) FeatureQuery {
 	return query.Where(feature.TenantID(types.GetTenantID(ctx)))
@@ -385,12 +405,16 @@ func (o FeatureQueryOptions) GetFieldName(field string) string {
 		return feature.FieldName
 	case "lookup_key":
 		return feature.FieldLookupKey
+	case "type":
+		return feature.FieldType
+	case "status":
+		return feature.FieldStatus
 	default:
 		return field
 	}
 }
 
-func (o FeatureQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.FeatureFilter, query FeatureQuery) FeatureQuery {
+func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.FeatureFilter, query FeatureQuery) FeatureQuery {
 	if f == nil {
 		return query
 	}
@@ -422,6 +446,104 @@ func (o FeatureQueryOptions) applyEntityQueryOptions(_ context.Context, f *types
 		if f.EndTime != nil {
 			query = query.Where(feature.CreatedAtLTE(*f.EndTime))
 		}
+	}
+
+	// apply filters
+	if f.Filters != nil {
+		query = o.applyFilterConditions(ctx, query, f.Filters)
+	}
+
+	// apply sort
+	if f.Sort != nil {
+		query = o.applySortConditions(ctx, query, f.Sort)
+	}
+
+	return query
+}
+
+// applyFilterConditions applies filter conditions to the query
+func (o FeatureQueryOptions) applyFilterConditions(_ context.Context, query FeatureQuery, filters []*types.FilterCondition) FeatureQuery {
+	if len(filters) == 0 {
+		return query
+	}
+
+	for _, filter := range filters {
+		if filter == nil {
+			continue
+		}
+
+		fieldName := o.GetFieldName(filter.Field)
+		if fieldName == "" {
+			continue
+		}
+
+		// Convert value to appropriate type
+		var value interface{}
+		switch filter.DataType {
+		case types.DataTypeString:
+			value = filter.ValueString
+		case types.DataTypeDate:
+			value = filter.ValueDate
+		case types.DataTypeArray:
+			value = filter.ValueArray
+		}
+
+		// Apply the appropriate predicate based on operator
+		switch filter.Operator {
+		case types.EQUAL:
+			query = query.Where(predicate.Feature(sql.FieldEQ(fieldName, value)))
+		case types.CONTAINS:
+			if strValue, ok := value.(string); ok {
+				query = query.Where(predicate.Feature(sql.FieldContains(fieldName, strValue)))
+			}
+		case types.GREATER_THAN:
+			query = query.Where(predicate.Feature(sql.FieldGT(fieldName, value)))
+		case types.LESS_THAN:
+			query = query.Where(predicate.Feature(sql.FieldLT(fieldName, value)))
+		case types.IS_ANY_OF:
+			if arrValue, ok := value.([]interface{}); ok {
+				query = query.Where(predicate.Feature(sql.FieldIn(fieldName, arrValue...)))
+			}
+		case types.IS_NOT_ANY_OF:
+			if arrValue, ok := value.([]interface{}); ok {
+				query = query.Where(predicate.Feature(sql.FieldNotIn(fieldName, arrValue...)))
+			}
+		case types.BEFORE:
+			if dateValue, ok := value.(time.Time); ok {
+				query = query.Where(predicate.Feature(sql.FieldLT(fieldName, dateValue)))
+			}
+		case types.AFTER:
+			if dateValue, ok := value.(time.Time); ok {
+				query = query.Where(predicate.Feature(sql.FieldGT(fieldName, dateValue)))
+			}
+		}
+	}
+
+	return query
+}
+
+// applySortConditions applies sort conditions to the query
+func (o FeatureQueryOptions) applySortConditions(_ context.Context, query FeatureQuery, sort []*types.SortCondition) FeatureQuery {
+	if len(sort) == 0 {
+		return query
+	}
+
+	for _, s := range sort {
+		if s == nil {
+			continue
+		}
+
+		fieldName := o.GetFieldName(s.Field)
+		if fieldName == "" {
+			continue
+		}
+
+		orderFunc := ent.Desc
+		if s.Direction == types.SortDirectionAsc {
+			orderFunc = ent.Asc
+		}
+
+		query = query.Order(orderFunc(fieldName))
 	}
 
 	return query

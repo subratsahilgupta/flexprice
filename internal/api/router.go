@@ -207,6 +207,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		feature := v1Private.Group("/features")
 		{
+			feature.POST("/search", handlers.Feature.ListFeaturesByFilter)
+
 			feature.POST("", handlers.Feature.CreateFeature)
 			feature.GET("", handlers.Feature.ListFeatures)
 			feature.GET("/:id", handlers.Feature.GetFeature)
