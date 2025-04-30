@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api"
@@ -398,14 +400,61 @@ func consumeMessages(consumer kafka.MessageConsumer, eventRepo events.Repository
 		log.Fatalf("Failed to subscribe to topic %s: %v", cfg.Kafka.Topic, err)
 	}
 
+	log.Infof("Successfully subscribed to topic %s", cfg.Kafka.Topic)
+
 	for msg := range messages {
 		ctx := context.Background()
 		if err := handleEventConsumption(ctx, cfg, log, eventRepo, msg.Payload, sentryService); err != nil {
 			log.Errorf("Failed to process event: %v, payload: %s", err, string(msg.Payload))
-			msg.Nack()
+
+			// Don't immediately Nack, retry processing a few times before giving up
+			if shouldRetry(err) {
+				// Only Nack (negative acknowledge) if it's a retriable error
+				// This will cause the message to be redelivered
+				log.Warnf("Nacking message to retry later")
+				msg.Nack()
+			} else {
+				// For non-retriable errors, we acknowledge the message to avoid
+				// endless reprocessing of problematic messages
+				log.Warnf("Error not retriable, acknowledging message to avoid blocking: %v", err)
+				msg.Ack()
+
+				// Record this message as a dead letter for later inspection
+				recordDeadLetterMessage(ctx, msg.Payload, err, log, sentryService)
+			}
 			continue
 		}
+
+		// Successfully processed the message
+		log.Debugf("Successfully processed message, acknowledging it")
 		msg.Ack()
+	}
+}
+
+// shouldRetry determines if an error should trigger a message retry
+func shouldRetry(err error) bool {
+	// Add logic to determine if this error is transient and worth retrying
+	// Examples: database connection issues, temporary unavailability, etc.
+
+	// For now, retry all errors except parsing errors which are not likely to succeed on retry
+	if strings.Contains(err.Error(), "unmarshal") ||
+		strings.Contains(err.Error(), "parse") {
+		return false
+	}
+	return true
+}
+
+// recordDeadLetterMessage records problematic messages for later inspection
+func recordDeadLetterMessage(_ context.Context, payload []byte, processingErr error, log *logger.Logger, sentryService *sentry.Service) {
+	// In a production system, you would send this to a dead letter queue
+	// or record it in a database table for later inspection
+
+	// For now, just log it with a special tag for monitoring
+	log.Errorf("DEAD_LETTER_MESSAGE: %v, payload: %s", processingErr, string(payload))
+
+	// Capture the error in Sentry for monitoring
+	if sentryService != nil {
+		sentryService.CaptureException(fmt.Errorf("dead letter message: %w", processingErr))
 	}
 }
 
