@@ -196,7 +196,11 @@
     ..items.map((item) => {
       (
         item.at("plan_display_name", default: "Plan"),
-        item.at("description", default: "Recurring"),
+        if item.at("description", default: "Recurring") != "" {
+          item.at("description", default: "Recurring")
+        } else {
+          "-"
+        },
         if item.at("period_start", default: "") != "" and 
          item.at("period_end", default: "") != "" {
           [#format-date(parse-date(item.at("period_start"))) - #format-date(parse-date(item.at("period_end")))]

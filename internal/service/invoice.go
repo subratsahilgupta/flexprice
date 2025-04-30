@@ -919,6 +919,10 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 			Currency:        types.GetCurrencySymbol(item.Currency),
 		}
 
+		if lineItem.PlanDisplayName == "" {
+			lineItem.PlanDisplayName = lineItem.DisplayName
+		}
+
 		if item.PeriodStart != nil {
 			lineItem.PeriodStart = pdf.CustomTime{Time: *item.PeriodStart}
 		}
