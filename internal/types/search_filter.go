@@ -80,9 +80,15 @@ func (f *FilterCondition) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if f.Value != nil || (f.Value.String == nil && f.Value.Number == nil && f.Value.Date == nil && f.Value.Array == nil) {
+	if f.Value == nil {
 		return ierr.NewError("value is required").
 			WithHint("Value is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if f.Value.String == nil && f.Value.Number == nil && f.Value.Date == nil && f.Value.Array == nil {
+		return ierr.NewError("At least one of the value fields must be provided").
+			WithHint("At least one of the value fields must be provided").
 			Mark(ierr.ErrValidation)
 	}
 
