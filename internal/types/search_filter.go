@@ -149,9 +149,3 @@ func (s *SortCondition) Validate() error {
 
 	return nil
 }
-
-// wrapper used in every LIST endpoint
-type ListQuery struct {
-	Filters []*FilterCondition `json:"filters,omitempty"`
-	Sort    []*SortCondition   `json:"sort,omitempty"`
-}
