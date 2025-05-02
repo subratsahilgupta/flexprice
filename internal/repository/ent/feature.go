@@ -2,13 +2,14 @@ package ent
 
 import (
 	"context"
+	"log"
 	"time"
 
-	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/predicate"
 	domainFeature "github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/dsl"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -150,7 +151,10 @@ func (r *featureRepository) List(ctx context.Context, filter *types.FeatureFilte
 	query := client.Feature.Query()
 
 	// Apply entity-specific filters
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		return nil, err
+	}
 
 	// Apply common query options
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
@@ -182,7 +186,10 @@ func (r *featureRepository) Count(ctx context.Context, filter *types.FeatureFilt
 	query := client.Feature.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		return 0, err
+	}
 
 	count, err := query.Count(ctx)
 	if err != nil {
@@ -342,24 +349,6 @@ type FeatureQuery = *ent.FeatureQuery
 // FeatureQueryOptions implements query options for feature filtering and sorting
 type FeatureQueryOptions struct{}
 
-// FieldPredicates defines the available predicates for each field type
-type FieldPredicates struct {
-	// String predicates
-	Eq       func(string) predicate.Feature
-	Neq      func(string) predicate.Feature
-	Contains func(string) predicate.Feature
-	Prefix   func(string) predicate.Feature
-	Suffix   func(string) predicate.Feature
-	In       func(...string) predicate.Feature
-	NotIn    func(...string) predicate.Feature
-
-	// Date predicates
-	DateEq  func(time.Time) predicate.Feature
-	DateNeq func(time.Time) predicate.Feature
-	DateGt  func(time.Time) predicate.Feature
-	DateLt  func(time.Time) predicate.Feature
-}
-
 func (o FeatureQueryOptions) ApplyTenantFilter(ctx context.Context, query FeatureQuery) FeatureQuery {
 	return query.Where(feature.TenantID(types.GetTenantID(ctx)))
 }
@@ -414,9 +403,10 @@ func (o FeatureQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.FeatureFilter, query FeatureQuery) FeatureQuery {
+func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.FeatureFilter, query FeatureQuery) (FeatureQuery, error) {
+	var err error
 	if f == nil {
-		return query
+		return query, nil
 	}
 
 	// Apply feature IDs filter if specified
@@ -450,101 +440,108 @@ func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *typ
 
 	// apply filters
 	if f.Filters != nil {
-		query = o.applyFilterConditions(ctx, query, f.Filters)
+		query, err = o.applyFilterConditions(ctx, query, f.Filters)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// apply sort
 	if f.Sort != nil {
-		query = o.applySortConditions(ctx, query, f.Sort)
+		query, err = o.applySortConditions(ctx, query, f.Sort)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return query
+	return query, nil
+}
+
+func fieldResolver(logical string) (*dsl.FieldInfo, error) {
+	switch logical {
+	case "name":
+		return &dsl.FieldInfo{ColumnName: feature.FieldName}, nil
+	case "type":
+		return &dsl.FieldInfo{ColumnName: feature.FieldType}, nil
+	case "status":
+		return &dsl.FieldInfo{ColumnName: feature.FieldStatus}, nil
+	case "lookup_key":
+		return &dsl.FieldInfo{ColumnName: feature.FieldLookupKey}, nil
+	case "meter_id":
+		return &dsl.FieldInfo{ColumnName: feature.FieldMeterID}, nil
+	case "created_at":
+		return &dsl.FieldInfo{ColumnName: feature.FieldCreatedAt}, nil
+	case "updated_at":
+		return &dsl.FieldInfo{ColumnName: feature.FieldUpdatedAt}, nil
+	case "tenant_id":
+		return &dsl.FieldInfo{ColumnName: feature.FieldTenantID}, nil
+	case "environment_id":
+		return &dsl.FieldInfo{ColumnName: feature.FieldEnvironmentID}, nil
+	case "unit_singular":
+		return &dsl.FieldInfo{ColumnName: feature.FieldUnitSingular}, nil
+	case "unit_plural":
+		return &dsl.FieldInfo{ColumnName: feature.FieldUnitPlural}, nil
+	case "metadata":
+		return &dsl.FieldInfo{ColumnName: feature.FieldMetadata}, nil
+	case "description":
+		return &dsl.FieldInfo{ColumnName: feature.FieldDescription}, nil
+	case "created_by":
+		return &dsl.FieldInfo{ColumnName: feature.FieldCreatedBy}, nil
+	case "updated_by":
+		return &dsl.FieldInfo{ColumnName: feature.FieldUpdatedBy}, nil
+	default:
+		// Log the unknown field name for debugging purposes
+		log.Printf("warning: unknown field name '%s' in feature query", logical)
+		return nil, ierr.NewErrorf("unknown field name '%s' in feature query", logical).
+			WithHintf("Unknown field name '%s' in feature query", logical).
+			Mark(ierr.ErrValidation)
+	}
 }
 
 // applyFilterConditions applies filter conditions to the query
-func (o FeatureQueryOptions) applyFilterConditions(_ context.Context, query FeatureQuery, filters []*types.FilterCondition) FeatureQuery {
+func (o FeatureQueryOptions) applyFilterConditions(_ context.Context, query FeatureQuery, filters []*types.FilterCondition) (FeatureQuery, error) {
 	if len(filters) == 0 {
-		return query
+		return query, nil
 	}
 
-	for _, filter := range filters {
-		if filter == nil {
-			continue
-		}
-
-		fieldName := o.GetFieldName(filter.Field)
-		if fieldName == "" {
-			continue
-		}
-
-		// Convert value to appropriate type
-		var value interface{}
-		switch filter.DataType {
-		case types.DataTypeString:
-			value = filter.ValueString
-		case types.DataTypeDate:
-			value = filter.ValueDate
-		case types.DataTypeArray:
-			value = filter.ValueArray
-		}
-
-		// Apply the appropriate predicate based on operator
-		switch filter.Operator {
-		case types.EQUAL:
-			query = query.Where(predicate.Feature(sql.FieldEQ(fieldName, value)))
-		case types.CONTAINS:
-			if strValue, ok := value.(string); ok {
-				query = query.Where(predicate.Feature(sql.FieldContains(fieldName, strValue)))
-			}
-		case types.GREATER_THAN:
-			query = query.Where(predicate.Feature(sql.FieldGT(fieldName, value)))
-		case types.LESS_THAN:
-			query = query.Where(predicate.Feature(sql.FieldLT(fieldName, value)))
-		case types.IS_ANY_OF:
-			if arrValue, ok := value.([]interface{}); ok {
-				query = query.Where(predicate.Feature(sql.FieldIn(fieldName, arrValue...)))
-			}
-		case types.IS_NOT_ANY_OF:
-			if arrValue, ok := value.([]interface{}); ok {
-				query = query.Where(predicate.Feature(sql.FieldNotIn(fieldName, arrValue...)))
-			}
-		case types.BEFORE:
-			if dateValue, ok := value.(time.Time); ok {
-				query = query.Where(predicate.Feature(sql.FieldLT(fieldName, dateValue)))
-			}
-		case types.AFTER:
-			if dateValue, ok := value.(time.Time); ok {
-				query = query.Where(predicate.Feature(sql.FieldGT(fieldName, dateValue)))
-			}
-		}
+	// Build predicates using DSL
+	predicates, err := dsl.BuildPredicates(filters, fieldResolver)
+	if err != nil {
+		return nil, err
 	}
 
-	return query
+	if len(predicates) > 0 {
+		// Convert DSL predicates to Ent predicates
+		entPredicates := make([]predicate.Feature, len(predicates))
+		for i, p := range predicates {
+			entPredicates[i] = predicate.Feature(p)
+		}
+		query = query.Where(entPredicates...)
+	}
+
+	return query, nil
 }
 
 // applySortConditions applies sort conditions to the query
-func (o FeatureQueryOptions) applySortConditions(_ context.Context, query FeatureQuery, sort []*types.SortCondition) FeatureQuery {
+func (o FeatureQueryOptions) applySortConditions(_ context.Context, query FeatureQuery, sort []*types.SortCondition) (FeatureQuery, error) {
 	if len(sort) == 0 {
-		return query
+		return query, nil
 	}
 
-	for _, s := range sort {
-		if s == nil {
-			continue
-		}
-
-		fieldName := o.GetFieldName(s.Field)
-		if fieldName == "" {
-			continue
-		}
-
-		orderFunc := ent.Desc
-		if s.Direction == types.SortDirectionAsc {
-			orderFunc = ent.Asc
-		}
-
-		query = query.Order(orderFunc(fieldName))
+	// Build order functions using DSL
+	orders, err := dsl.BuildOrders(sort, fieldResolver)
+	if err != nil {
+		return nil, err
 	}
 
-	return query
+	if len(orders) > 0 {
+		// Convert DSL order functions to Ent order options
+		entOrders := make([]feature.OrderOption, len(orders))
+		for i, o := range orders {
+			entOrders[i] = feature.OrderOption(o)
+		}
+		query = query.Order(entOrders...)
+	}
+
+	return query, nil
 }
