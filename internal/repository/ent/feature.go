@@ -2,7 +2,6 @@ package ent
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
@@ -457,7 +456,7 @@ func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *typ
 	return query, nil
 }
 
-func fieldResolver(logical string) (*dsl.FieldInfo, error) {
+func (o FeatureQueryOptions) fieldResolver(logical string) (*dsl.FieldInfo, error) {
 	switch logical {
 	case "name":
 		return &dsl.FieldInfo{ColumnName: feature.FieldName}, nil
@@ -491,7 +490,6 @@ func fieldResolver(logical string) (*dsl.FieldInfo, error) {
 		return &dsl.FieldInfo{ColumnName: feature.FieldUpdatedBy}, nil
 	default:
 		// Log the unknown field name for debugging purposes
-		log.Printf("warning: unknown field name '%s' in feature query", logical)
 		return nil, ierr.NewErrorf("unknown field name '%s' in feature query", logical).
 			WithHintf("Unknown field name '%s' in feature query", logical).
 			Mark(ierr.ErrValidation)
@@ -505,7 +503,7 @@ func (o FeatureQueryOptions) applyFilterConditions(_ context.Context, query Feat
 	}
 
 	// Build predicates using DSL
-	predicates, err := dsl.BuildPredicates(filters, fieldResolver)
+	predicates, err := dsl.BuildPredicates(filters, o.fieldResolver)
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +527,7 @@ func (o FeatureQueryOptions) applySortConditions(_ context.Context, query Featur
 	}
 
 	// Build order functions using DSL
-	orders, err := dsl.BuildOrders(sort, fieldResolver)
+	orders, err := dsl.BuildOrders(sort, o.fieldResolver)
 	if err != nil {
 		return nil, err
 	}
