@@ -398,7 +398,8 @@ func (o FeatureQueryOptions) GetFieldName(field string) string {
 	case "status":
 		return feature.FieldStatus
 	default:
-		return field
+		// unknown field
+		return ""
 	}
 }
 
@@ -437,17 +438,27 @@ func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *typ
 		}
 	}
 
-	// apply filters
+	// Apply filters using the generic function
 	if f.Filters != nil {
-		query, err = o.applyFilterConditions(ctx, query, f.Filters)
+		query, err = dsl.ApplyFilters[FeatureQuery, predicate.Feature](
+			query,
+			f.Filters,
+			o.GetFieldResolver,
+			func(p dsl.Predicate) predicate.Feature { return predicate.Feature(p) },
+		)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// apply sort
+	// Apply sorts using the generic function
 	if f.Sort != nil {
-		query, err = o.applySortConditions(ctx, query, f.Sort)
+		query, err = dsl.ApplySorts[FeatureQuery, feature.OrderOption](
+			query,
+			f.Sort,
+			o.GetFieldResolver,
+			func(o dsl.OrderFunc) feature.OrderOption { return feature.OrderOption(o) },
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -456,90 +467,12 @@ func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *typ
 	return query, nil
 }
 
-func (o FeatureQueryOptions) fieldResolver(logical string) (*dsl.FieldInfo, error) {
-	switch logical {
-	case "name":
-		return &dsl.FieldInfo{ColumnName: feature.FieldName}, nil
-	case "type":
-		return &dsl.FieldInfo{ColumnName: feature.FieldType}, nil
-	case "status":
-		return &dsl.FieldInfo{ColumnName: feature.FieldStatus}, nil
-	case "lookup_key":
-		return &dsl.FieldInfo{ColumnName: feature.FieldLookupKey}, nil
-	case "meter_id":
-		return &dsl.FieldInfo{ColumnName: feature.FieldMeterID}, nil
-	case "created_at":
-		return &dsl.FieldInfo{ColumnName: feature.FieldCreatedAt}, nil
-	case "updated_at":
-		return &dsl.FieldInfo{ColumnName: feature.FieldUpdatedAt}, nil
-	case "tenant_id":
-		return &dsl.FieldInfo{ColumnName: feature.FieldTenantID}, nil
-	case "environment_id":
-		return &dsl.FieldInfo{ColumnName: feature.FieldEnvironmentID}, nil
-	case "unit_singular":
-		return &dsl.FieldInfo{ColumnName: feature.FieldUnitSingular}, nil
-	case "unit_plural":
-		return &dsl.FieldInfo{ColumnName: feature.FieldUnitPlural}, nil
-	case "metadata":
-		return &dsl.FieldInfo{ColumnName: feature.FieldMetadata}, nil
-	case "description":
-		return &dsl.FieldInfo{ColumnName: feature.FieldDescription}, nil
-	case "created_by":
-		return &dsl.FieldInfo{ColumnName: feature.FieldCreatedBy}, nil
-	case "updated_by":
-		return &dsl.FieldInfo{ColumnName: feature.FieldUpdatedBy}, nil
-	default:
-		// Log the unknown field name for debugging purposes
-		return nil, ierr.NewErrorf("unknown field name '%s' in feature query", logical).
-			WithHintf("Unknown field name '%s' in feature query", logical).
+func (o FeatureQueryOptions) GetFieldResolver(st string) (string, error) {
+	fieldName := o.GetFieldName(st)
+	if fieldName == "" {
+		return "", ierr.NewErrorf("unknown field name '%s' in feature query", st).
+			WithHintf("Unknown field name '%s' in feature query", st).
 			Mark(ierr.ErrValidation)
 	}
-}
-
-// applyFilterConditions applies filter conditions to the query
-func (o FeatureQueryOptions) applyFilterConditions(_ context.Context, query FeatureQuery, filters []*types.FilterCondition) (FeatureQuery, error) {
-	if len(filters) == 0 {
-		return query, nil
-	}
-
-	// Build predicates using DSL
-	predicates, err := dsl.BuildPredicates(filters, o.fieldResolver)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(predicates) > 0 {
-		// Convert DSL predicates to Ent predicates
-		entPredicates := make([]predicate.Feature, len(predicates))
-		for i, p := range predicates {
-			entPredicates[i] = predicate.Feature(p)
-		}
-		query = query.Where(entPredicates...)
-	}
-
-	return query, nil
-}
-
-// applySortConditions applies sort conditions to the query
-func (o FeatureQueryOptions) applySortConditions(_ context.Context, query FeatureQuery, sort []*types.SortCondition) (FeatureQuery, error) {
-	if len(sort) == 0 {
-		return query, nil
-	}
-
-	// Build order functions using DSL
-	orders, err := dsl.BuildOrders(sort, o.fieldResolver)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(orders) > 0 {
-		// Convert DSL order functions to Ent order options
-		entOrders := make([]feature.OrderOption, len(orders))
-		for i, o := range orders {
-			entOrders[i] = feature.OrderOption(o)
-		}
-		query = query.Order(entOrders...)
-	}
-
-	return query, nil
+	return fieldName, nil
 }

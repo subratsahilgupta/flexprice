@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"reflect"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -11,11 +12,91 @@ import (
 type Predicate = func(*sql.Selector) // Ent aliases these under predicate.<Entity>
 type OrderFunc = func(*sql.Selector) // Ent aliases these under ent.<Entity>.Asc/Desc
 
-type FieldInfo struct {
-	ColumnName string // real DB/Ent column name
+type FieldResolver func(logical string) (string, error)
+
+// QueryBuilder is a generic interface for Ent query builders
+type QueryBuilder interface {
+	Where(...interface{}) interface{}
+	Order(...interface{}) interface{}
 }
 
-type FieldResolver func(logical string) (*FieldInfo, error)
+// ApplyFilters applies filter conditions to a query
+// T is the query builder type (e.g., *ent.FeatureQuery)
+// P is the predicate type (e.g., predicate.Feature)
+func ApplyFilters[T any, P any](
+	query T,
+	filters []*types.FilterCondition,
+	resolve FieldResolver,
+	predicateConverter func(Predicate) P,
+) (T, error) {
+	if len(filters) == 0 {
+		return query, nil
+	}
+
+	// Build predicates using DSL
+	predicates, err := BuildPredicates(filters, resolve)
+	if err != nil {
+		return query, err
+	}
+
+	if len(predicates) > 0 {
+		// Convert DSL predicates to entity-specific predicates
+		entPredicates := make([]P, len(predicates))
+		for i, p := range predicates {
+			entPredicates[i] = predicateConverter(p)
+		}
+		// Use reflection to call Where method with individual predicates
+		args := make([]reflect.Value, len(entPredicates))
+		for i, p := range entPredicates {
+			args[i] = reflect.ValueOf(p)
+		}
+		result := reflect.ValueOf(query).MethodByName("Where").Call(args)
+		if len(result) > 0 {
+			query = result[0].Interface().(T)
+		}
+	}
+
+	return query, nil
+}
+
+// ApplySorts applies sort conditions to a query
+// T is the query builder type (e.g., *ent.FeatureQuery)
+// O is the order option type (e.g., feature.OrderOption)
+func ApplySorts[T any, O any](
+	query T,
+	sort []*types.SortCondition,
+	resolve FieldResolver,
+	orderConverter func(OrderFunc) O,
+) (T, error) {
+	if len(sort) == 0 {
+		return query, nil
+	}
+
+	// Build order functions using DSL
+	orders, err := BuildOrders(sort, resolve)
+	if err != nil {
+		return query, err
+	}
+
+	if len(orders) > 0 {
+		// Convert DSL order functions to entity-specific order options
+		entOrders := make([]O, len(orders))
+		for i, o := range orders {
+			entOrders[i] = orderConverter(o)
+		}
+		// Use reflection to call Order method with individual order options
+		args := make([]reflect.Value, len(entOrders))
+		for i, o := range entOrders {
+			args[i] = reflect.ValueOf(o)
+		}
+		result := reflect.ValueOf(query).MethodByName("Order").Call(args)
+		if len(result) > 0 {
+			query = result[0].Interface().(T)
+		}
+	}
+
+	return query, nil
+}
 
 func BuildPredicates(filters []*types.FilterCondition, resolve FieldResolver) ([]Predicate, error) {
 	out := make([]Predicate, 0, len(filters))
@@ -50,9 +131,9 @@ func BuildOrders(sort []*types.SortCondition, resolve FieldResolver) ([]OrderFun
 		var of OrderFunc
 		switch s.Direction {
 		case types.SortDirectionAsc:
-			of = func(sel *sql.Selector) { sel.OrderBy(sql.Asc(fi.ColumnName)) }
+			of = func(sel *sql.Selector) { sel.OrderBy(sql.Asc(fi)) }
 		case types.SortDirectionDesc:
-			of = func(sel *sql.Selector) { sel.OrderBy(sql.Desc(fi.ColumnName)) }
+			of = func(sel *sql.Selector) { sel.OrderBy(sql.Desc(fi)) }
 		}
 		if of != nil {
 			out = append(out, of)
@@ -61,48 +142,48 @@ func BuildOrders(sort []*types.SortCondition, resolve FieldResolver) ([]OrderFun
 	return out, nil
 }
 
-func predicateFromFilter(f *types.FilterCondition, fi *FieldInfo) Predicate {
+func predicateFromFilter(f *types.FilterCondition, fi string) Predicate {
 	if f.Operator == nil {
 		return nil
 	}
 
 	switch lo.FromPtr(f.Operator) {
 	case types.EQUAL:
-		return func(sel *sql.Selector) { sel.Where(sql.EQ(fi.ColumnName, valueAny(f))) }
+		return func(sel *sql.Selector) { sel.Where(sql.EQ(fi, valueAny(f))) }
 
 	// string operators
 	case types.CONTAINS:
 		if v := valueString(f); v != nil {
-			return func(sel *sql.Selector) { sel.Where(sql.Contains(fi.ColumnName, *v)) }
+			return func(sel *sql.Selector) { sel.Where(sql.ContainsFold(fi, *v)) }
 		}
 	case types.GREATER_THAN:
 		if num := valueNumber(f); num != nil {
-			return func(sel *sql.Selector) { sel.Where(sql.GT(fi.ColumnName, *num)) }
+			return func(sel *sql.Selector) { sel.Where(sql.GT(fi, *num)) }
 		}
 
 	case types.LESS_THAN:
 		if num := valueNumber(f); num != nil {
-			return func(sel *sql.Selector) { sel.Where(sql.LT(fi.ColumnName, *num)) }
+			return func(sel *sql.Selector) { sel.Where(sql.LT(fi, *num)) }
 		}
 
 	case types.IN:
 		if arr := valueArray(f); len(arr) > 0 {
-			return func(sel *sql.Selector) { sel.Where(sql.In(fi.ColumnName, toAny(arr)...)) }
+			return func(sel *sql.Selector) { sel.Where(sql.In(fi, toAny(arr)...)) }
 		}
 
 	case types.NOT_IN:
 		if arr := valueArray(f); len(arr) > 0 {
-			return func(sel *sql.Selector) { sel.Where(sql.NotIn(fi.ColumnName, toAny(arr)...)) }
+			return func(sel *sql.Selector) { sel.Where(sql.NotIn(fi, toAny(arr)...)) }
 		}
 
 	case types.BEFORE:
 		if t := valueDate(f); t != nil {
-			return func(sel *sql.Selector) { sel.Where(sql.LT(fi.ColumnName, *t)) }
+			return func(sel *sql.Selector) { sel.Where(sql.LT(fi, *t)) }
 		}
 
 	case types.AFTER:
 		if t := valueDate(f); t != nil {
-			return func(sel *sql.Selector) { sel.Where(sql.GT(fi.ColumnName, *t)) }
+			return func(sel *sql.Selector) { sel.Where(sql.GT(fi, *t)) }
 		}
 	}
 	return nil // fell through → invalid combi
