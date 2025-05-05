@@ -128,7 +128,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 
 			// list customers by filter
-			customer.GET("/search", handlers.Customer.ListCustomersByFilter)
+			customer.POST("/search", handlers.Customer.ListCustomersByFilter)
 
 			customer.POST("", handlers.Customer.CreateCustomer)
 			customer.GET("", handlers.Customer.GetCustomers)
@@ -207,11 +207,13 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		feature := v1Private.Group("/features")
 		{
+
 			feature.POST("", handlers.Feature.CreateFeature)
 			feature.GET("", handlers.Feature.ListFeatures)
 			feature.GET("/:id", handlers.Feature.GetFeature)
 			feature.PUT("/:id", handlers.Feature.UpdateFeature)
 			feature.DELETE("/:id", handlers.Feature.DeleteFeature)
+			feature.POST("/search", handlers.Feature.ListFeaturesByFilter)
 		}
 
 		entitlement := v1Private.Group("/entitlements")

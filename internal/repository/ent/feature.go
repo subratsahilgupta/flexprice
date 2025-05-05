@@ -6,7 +6,9 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/feature"
+	"github.com/flexprice/flexprice/ent/predicate"
 	domainFeature "github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/dsl"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -148,7 +150,10 @@ func (r *featureRepository) List(ctx context.Context, filter *types.FeatureFilte
 	query := client.Feature.Query()
 
 	// Apply entity-specific filters
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		return nil, err
+	}
 
 	// Apply common query options
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
@@ -180,7 +185,10 @@ func (r *featureRepository) Count(ctx context.Context, filter *types.FeatureFilt
 	query := client.Feature.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		return 0, err
+	}
 
 	count, err := query.Count(ctx)
 	if err != nil {
@@ -337,7 +345,7 @@ func (r *featureRepository) ListByIDs(ctx context.Context, featureIDs []string) 
 // FeatureQuery type alias for better readability
 type FeatureQuery = *ent.FeatureQuery
 
-// FeatureQueryOptions implements BaseQueryOptions for feature queries
+// FeatureQueryOptions implements query options for feature filtering and sorting
 type FeatureQueryOptions struct{}
 
 func (o FeatureQueryOptions) ApplyTenantFilter(ctx context.Context, query FeatureQuery) FeatureQuery {
@@ -385,14 +393,20 @@ func (o FeatureQueryOptions) GetFieldName(field string) string {
 		return feature.FieldName
 	case "lookup_key":
 		return feature.FieldLookupKey
+	case "type":
+		return feature.FieldType
+	case "status":
+		return feature.FieldStatus
 	default:
-		return field
+		// unknown field
+		return ""
 	}
 }
 
-func (o FeatureQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.FeatureFilter, query FeatureQuery) FeatureQuery {
+func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.FeatureFilter, query FeatureQuery) (FeatureQuery, error) {
+	var err error
 	if f == nil {
-		return query
+		return query, nil
 	}
 
 	// Apply feature IDs filter if specified
@@ -424,5 +438,41 @@ func (o FeatureQueryOptions) applyEntityQueryOptions(_ context.Context, f *types
 		}
 	}
 
-	return query
+	// Apply filters using the generic function
+	if f.Filters != nil {
+		query, err = dsl.ApplyFilters[FeatureQuery, predicate.Feature](
+			query,
+			f.Filters,
+			o.GetFieldResolver,
+			func(p dsl.Predicate) predicate.Feature { return predicate.Feature(p) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply sorts using the generic function
+	if f.Sort != nil {
+		query, err = dsl.ApplySorts[FeatureQuery, feature.OrderOption](
+			query,
+			f.Sort,
+			o.GetFieldResolver,
+			func(o dsl.OrderFunc) feature.OrderOption { return feature.OrderOption(o) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return query, nil
+}
+
+func (o FeatureQueryOptions) GetFieldResolver(st string) (string, error) {
+	fieldName := o.GetFieldName(st)
+	if fieldName == "" {
+		return "", ierr.NewErrorf("unknown field name '%s' in feature query", st).
+			WithHintf("Unknown field name '%s' in feature query", st).
+			Mark(ierr.ErrValidation)
+	}
+	return fieldName, nil
 }
