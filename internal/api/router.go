@@ -128,7 +128,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 
 			// list customers by filter
-			customer.GET("/search", handlers.Customer.ListCustomersByFilter)
+			customer.POST("/search", handlers.Customer.ListCustomersByFilter)
 
 			customer.POST("", handlers.Customer.CreateCustomer)
 			customer.GET("", handlers.Customer.GetCustomers)
