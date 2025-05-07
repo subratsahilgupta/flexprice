@@ -230,7 +230,7 @@ func (s *customerService) DeleteCustomer(ctx context.Context, id string) error {
 			Mark(ierr.ErrInvalidOperation)
 	}
 
-	if err := s.CustomerRepo.Delete(ctx, id); err != nil {
+	if err := s.CustomerRepo.Delete(ctx, customer); err != nil {
 		return err
 	}
 

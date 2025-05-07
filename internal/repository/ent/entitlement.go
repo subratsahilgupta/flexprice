@@ -89,24 +89,23 @@ func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement
 }
 
 func (r *entitlementRepository) Get(ctx context.Context, id string) (*domainEntitlement.Entitlement, error) {
-	// Try to get from cache first
-	if cachedEntitlement := r.GetCache(ctx, id); cachedEntitlement != nil {
-		return cachedEntitlement, nil
-	}
-
-	client := r.client.Querier(ctx)
-
-	r.log.Debugw("getting entitlement",
-		"entitlement_id", id,
-		"tenant_id", types.GetTenantID(ctx),
-	)
-
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "entitlement", "get", map[string]interface{}{
 		"entitlement_id": id,
 		"tenant_id":      types.GetTenantID(ctx),
 	})
 	defer FinishSpan(span)
+
+	// Try to get from cache first
+	if cachedEntitlement := r.GetCache(ctx, id); cachedEntitlement != nil {
+		return cachedEntitlement, nil
+	}
+
+	client := r.client.Querier(ctx)
+	r.log.Debugw("getting entitlement",
+		"entitlement_id", id,
+		"tenant_id", types.GetTenantID(ctx),
+	)
 
 	result, err := client.Entitlement.Query().
 		Where(
@@ -557,6 +556,11 @@ func (o EntitlementQueryOptions) applyEntityQueryOptions(_ context.Context, f *t
 }
 
 func (r *entitlementRepository) SetCache(ctx context.Context, entitlement *domainEntitlement.Entitlement) {
+	span := cache.StartCacheSpan(ctx, "entitlement", "set", map[string]interface{}{
+		"entitlement_id": entitlement.ID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixEntitlement, tenantID, environmentID, entitlement.ID)
@@ -564,6 +568,11 @@ func (r *entitlementRepository) SetCache(ctx context.Context, entitlement *domai
 }
 
 func (r *entitlementRepository) GetCache(ctx context.Context, key string) *domainEntitlement.Entitlement {
+	span := cache.StartCacheSpan(ctx, "entitlement", "get", map[string]interface{}{
+		"entitlement_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixEntitlement, tenantID, environmentID, key)
@@ -574,6 +583,11 @@ func (r *entitlementRepository) GetCache(ctx context.Context, key string) *domai
 }
 
 func (r *entitlementRepository) DeleteCache(ctx context.Context, entitlementID string) {
+	span := cache.StartCacheSpan(ctx, "entitlement", "delete", map[string]interface{}{
+		"entitlement_id": entitlementID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixEntitlement, tenantID, environmentID, entitlementID)

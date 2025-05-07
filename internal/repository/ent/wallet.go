@@ -90,19 +90,19 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 }
 
 func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walletdomain.Wallet, error) {
-	// Try to get from cache first
-	if cachedWallet := r.GetCache(ctx, id); cachedWallet != nil {
-		return cachedWallet, nil
-	}
-
-	client := r.client.Querier(ctx)
-
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "wallet", "get_wallet_by_id", map[string]interface{}{
 		"wallet_id": id,
 		"tenant_id": types.GetTenantID(ctx),
 	})
 	defer FinishSpan(span)
+
+	// Try to get from cache first
+	if cachedWallet := r.GetCache(ctx, id); cachedWallet != nil {
+		return cachedWallet, nil
+	}
+
+	client := r.client.Querier(ctx)
 
 	w, err := client.Wallet.Query().
 		Where(
@@ -759,6 +759,11 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 }
 
 func (r *walletRepository) SetCache(ctx context.Context, wallet *walletdomain.Wallet) {
+	span := cache.StartCacheSpan(ctx, "wallet", "set", map[string]interface{}{
+		"wallet_id": wallet.ID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixWallet, tenantID, environmentID, wallet.ID)
@@ -766,6 +771,11 @@ func (r *walletRepository) SetCache(ctx context.Context, wallet *walletdomain.Wa
 }
 
 func (r *walletRepository) GetCache(ctx context.Context, key string) *walletdomain.Wallet {
+	span := cache.StartCacheSpan(ctx, "wallet", "get", map[string]interface{}{
+		"wallet_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixWallet, tenantID, environmentID, key)
@@ -776,6 +786,11 @@ func (r *walletRepository) GetCache(ctx context.Context, key string) *walletdoma
 }
 
 func (r *walletRepository) DeleteCache(ctx context.Context, walletID string) {
+	span := cache.StartCacheSpan(ctx, "wallet", "delete", map[string]interface{}{
+		"wallet_id": walletID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixWallet, tenantID, environmentID, walletID)

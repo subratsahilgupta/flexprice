@@ -99,6 +99,13 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 }
 
 func (r *paymentRepository) Get(ctx context.Context, id string) (*domainPayment.Payment, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "payment", "get", map[string]interface{}{
+		"payment_id": id,
+		"tenant_id":  types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
 	// Try to get from cache first
 	if cachedPayment := r.GetCache(ctx, id); cachedPayment != nil {
 		return cachedPayment, nil
@@ -110,13 +117,6 @@ func (r *paymentRepository) Get(ctx context.Context, id string) (*domainPayment.
 		"payment_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)
-
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "payment", "get", map[string]interface{}{
-		"payment_id": id,
-		"tenant_id":  types.GetTenantID(ctx),
-	})
-	defer FinishSpan(span)
 
 	p, err := client.Payment.Query().
 		Where(
@@ -694,6 +694,11 @@ func (o PaymentQueryOptions) applyEntityQueryOptions(_ context.Context, f *types
 }
 
 func (r *paymentRepository) SetCache(ctx context.Context, payment *domainPayment.Payment) {
+	span := cache.StartCacheSpan(ctx, "payment", "set", map[string]interface{}{
+		"payment_id": payment.ID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixPayment, tenantID, environmentID, payment.ID)
@@ -701,6 +706,11 @@ func (r *paymentRepository) SetCache(ctx context.Context, payment *domainPayment
 }
 
 func (r *paymentRepository) GetCache(ctx context.Context, key string) *domainPayment.Payment {
+	span := cache.StartCacheSpan(ctx, "payment", "get", map[string]interface{}{
+		"payment_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixPayment, tenantID, environmentID, key)
@@ -711,6 +721,11 @@ func (r *paymentRepository) GetCache(ctx context.Context, key string) *domainPay
 }
 
 func (r *paymentRepository) DeleteCache(ctx context.Context, paymentID string) {
+	span := cache.StartCacheSpan(ctx, "payment", "delete", map[string]interface{}{
+		"payment_id": paymentID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixPayment, tenantID, environmentID, paymentID)

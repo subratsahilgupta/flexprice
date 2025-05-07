@@ -79,13 +79,14 @@ func (r *meterRepository) CreateMeter(ctx context.Context, m *domainMeter.Meter)
 }
 
 func (r *meterRepository) GetMeter(ctx context.Context, id string) (*domainMeter.Meter, error) {
-	client := r.client.Querier(ctx)
-
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "meter", "get", map[string]interface{}{
 		"meter_id": id,
 	})
 	defer FinishSpan(span)
+
+	client := r.client.Querier(ctx)
+
 	// Try to get from cache first
 	if cachedMeter := r.GetCache(ctx, id); cachedMeter != nil {
 		return cachedMeter, nil
@@ -386,6 +387,11 @@ func (o MeterQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.M
 }
 
 func (r *meterRepository) SetCache(ctx context.Context, meter *domainMeter.Meter) {
+	span := cache.StartCacheSpan(ctx, "meter", "set", map[string]interface{}{
+		"meter_id": meter.ID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixMeter, tenantID, environmentID, meter.ID)
@@ -393,6 +399,11 @@ func (r *meterRepository) SetCache(ctx context.Context, meter *domainMeter.Meter
 }
 
 func (r *meterRepository) GetCache(ctx context.Context, key string) *domainMeter.Meter {
+	span := cache.StartCacheSpan(ctx, "meter", "get", map[string]interface{}{
+		"meter_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixMeter, tenantID, environmentID, key)
@@ -403,6 +414,11 @@ func (r *meterRepository) GetCache(ctx context.Context, key string) *domainMeter
 }
 
 func (r *meterRepository) DeleteCache(ctx context.Context, meterID string) {
+	span := cache.StartCacheSpan(ctx, "meter", "delete", map[string]interface{}{
+		"meter_id": meterID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixMeter, tenantID, environmentID, meterID)

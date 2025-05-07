@@ -96,6 +96,12 @@ func (r *featureRepository) Create(ctx context.Context, f *domainFeature.Feature
 }
 
 func (r *featureRepository) Get(ctx context.Context, id string) (*domainFeature.Feature, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "feature", "get", map[string]interface{}{
+		"feature_id": id,
+	})
+	defer FinishSpan(span)
+
 	// Try to get from cache first
 	if cachedFeature := r.GetCache(ctx, id); cachedFeature != nil {
 		return cachedFeature, nil
@@ -107,12 +113,6 @@ func (r *featureRepository) Get(ctx context.Context, id string) (*domainFeature.
 		"feature_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)
-
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "feature", "get", map[string]interface{}{
-		"feature_id": id,
-	})
-	defer FinishSpan(span)
 
 	f, err := client.Feature.Query().
 		Where(
@@ -490,6 +490,11 @@ func (o FeatureQueryOptions) GetFieldResolver(st string) (string, error) {
 }
 
 func (r *featureRepository) SetCache(ctx context.Context, feature *domainFeature.Feature) {
+	span := cache.StartCacheSpan(ctx, "feature", "set", map[string]interface{}{
+		"feature_id": feature.ID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixFeature, tenantID, environmentID, feature.ID)
@@ -497,6 +502,11 @@ func (r *featureRepository) SetCache(ctx context.Context, feature *domainFeature
 }
 
 func (r *featureRepository) GetCache(ctx context.Context, key string) *domainFeature.Feature {
+	span := cache.StartCacheSpan(ctx, "feature", "get", map[string]interface{}{
+		"feature_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixFeature, tenantID, environmentID, key)
@@ -507,6 +517,11 @@ func (r *featureRepository) GetCache(ctx context.Context, key string) *domainFea
 }
 
 func (r *featureRepository) DeleteCache(ctx context.Context, featureID string) {
+	span := cache.StartCacheSpan(ctx, "feature", "delete", map[string]interface{}{
+		"feature_id": featureID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixFeature, tenantID, environmentID, featureID)

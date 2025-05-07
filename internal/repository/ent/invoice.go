@@ -811,6 +811,11 @@ func (o InvoiceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types
 }
 
 func (r *invoiceRepository) SetCache(ctx context.Context, inv *domainInvoice.Invoice) {
+	span := cache.StartCacheSpan(ctx, "invoice", "set", map[string]interface{}{
+		"invoice_id": inv.ID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixInvoice, tenantID, environmentID, inv.ID)
@@ -823,6 +828,11 @@ func (r *invoiceRepository) SetCache(ctx context.Context, inv *domainInvoice.Inv
 }
 
 func (r *invoiceRepository) GetCache(ctx context.Context, key string) *domainInvoice.Invoice {
+	span := cache.StartCacheSpan(ctx, "invoice", "get", map[string]interface{}{
+		"invoice_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixInvoice, tenantID, environmentID, key)
@@ -833,6 +843,11 @@ func (r *invoiceRepository) GetCache(ctx context.Context, key string) *domainInv
 }
 
 func (r *invoiceRepository) DeleteCache(ctx context.Context, key string) {
+	span := cache.StartCacheSpan(ctx, "invoice", "delete", map[string]interface{}{
+		"invoice_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixInvoice, tenantID, environmentID, key)

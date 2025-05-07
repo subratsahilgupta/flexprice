@@ -124,8 +124,8 @@ func (s *InMemoryCustomerStore) Update(ctx context.Context, c *customer.Customer
 	return s.InMemoryStore.Update(ctx, c.ID, copyCustomer(c))
 }
 
-func (s *InMemoryCustomerStore) Delete(ctx context.Context, id string) error {
-	return s.InMemoryStore.Delete(ctx, id)
+func (s *InMemoryCustomerStore) Delete(ctx context.Context, customer *customer.Customer) error {
+	return s.InMemoryStore.Delete(ctx, customer.ID)
 }
 
 // customerFilterFn implements filtering logic for customers

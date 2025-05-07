@@ -108,6 +108,12 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 }
 
 func (r *priceRepository) Get(ctx context.Context, id string) (*domainPrice.Price, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "price", "get", map[string]interface{}{
+		"price_id":  id,
+		"tenant_id": types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
 
 	// Try to get from cache first
 	if cachedPrice := r.GetCache(ctx, id); cachedPrice != nil {
@@ -120,13 +126,6 @@ func (r *priceRepository) Get(ctx context.Context, id string) (*domainPrice.Pric
 		"price_id", id,
 		"tenant_id", types.GetTenantID(ctx),
 	)
-
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "price", "get", map[string]interface{}{
-		"price_id":  id,
-		"tenant_id": types.GetTenantID(ctx),
-	})
-	defer FinishSpan(span)
 
 	p, err := client.Price.Query().
 		Where(
@@ -528,6 +527,11 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 }
 
 func (r *priceRepository) SetCache(ctx context.Context, price *domainPrice.Price) {
+	span := cache.StartCacheSpan(ctx, "price", "set", map[string]interface{}{
+		"price_id": price.ID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixPrice, tenantID, environmentID, price.ID)
@@ -535,6 +539,11 @@ func (r *priceRepository) SetCache(ctx context.Context, price *domainPrice.Price
 }
 
 func (r *priceRepository) GetCache(ctx context.Context, key string) *domainPrice.Price {
+	span := cache.StartCacheSpan(ctx, "price", "get", map[string]interface{}{
+		"price_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixPrice, tenantID, environmentID, key)
@@ -545,6 +554,11 @@ func (r *priceRepository) GetCache(ctx context.Context, key string) *domainPrice
 }
 
 func (r *priceRepository) DeleteCache(ctx context.Context, priceID string) {
+	span := cache.StartCacheSpan(ctx, "price", "delete", map[string]interface{}{
+		"price_id": priceID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	cacheKey := cache.GenerateKey(cache.PrefixPrice, tenantID, environmentID, priceID)

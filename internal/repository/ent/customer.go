@@ -113,20 +113,19 @@ func (r *customerRepository) Create(ctx context.Context, c *domainCustomer.Custo
 
 func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustomer.Customer, error) {
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "get", map[string]interface{}{
+		"customer_id": id,
+	})
+	defer FinishSpan(span)
+
 	// Try to get from cache first
 	if cachedCustomer := r.GetCache(ctx, id); cachedCustomer != nil {
 		return cachedCustomer, nil
 	}
 
 	client := r.client.Querier(ctx)
-
 	r.log.Debugw("getting customer", "customer_id", id)
-
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "customer", "get", map[string]interface{}{
-		"customer_id": id,
-	})
-	defer FinishSpan(span)
 
 	c, err := client.Customer.Query().
 		Where(
@@ -161,6 +160,12 @@ func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustome
 
 func (r *customerRepository) GetByLookupKey(ctx context.Context, lookupKey string) (*domainCustomer.Customer, error) {
 
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "customer", "get_by_lookup_key", map[string]interface{}{
+		"lookup_key": lookupKey,
+	})
+	defer FinishSpan(span)
+
 	// Try to get from cache first
 	if cachedCustomer := r.GetCache(ctx, lookupKey); cachedCustomer != nil {
 		return cachedCustomer, nil
@@ -169,12 +174,6 @@ func (r *customerRepository) GetByLookupKey(ctx context.Context, lookupKey strin
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("getting customer by lookup key", "lookup_key", lookupKey)
-
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "customer", "get_by_lookup_key", map[string]interface{}{
-		"lookup_key": lookupKey,
-	})
-	defer FinishSpan(span)
 
 	c, err := client.Customer.Query().
 		Where(
@@ -363,27 +362,27 @@ func (r *customerRepository) Update(ctx context.Context, c *domainCustomer.Custo
 	}
 
 	SetSpanSuccess(span)
-	r.DeleteCache(ctx, c.ID)
+	r.DeleteCache(ctx, c)
 	return nil
 }
 
-func (r *customerRepository) Delete(ctx context.Context, id string) error {
+func (r *customerRepository) Delete(ctx context.Context, domainCustomer *domainCustomer.Customer) error {
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("deleting customer",
-		"customer_id", id,
+		"customer_id", domainCustomer.ID,
 		"tenant_id", types.GetTenantID(ctx),
 	)
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "customer", "delete", map[string]interface{}{
-		"customer_id": id,
+		"customer_id": domainCustomer.ID,
 	})
 	defer FinishSpan(span)
 
 	_, err := client.Customer.Update().
 		Where(
-			customer.ID(id),
+			customer.ID(domainCustomer.ID),
 			customer.TenantID(types.GetTenantID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).
@@ -396,9 +395,9 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
-				WithHintf("Customer with ID %s was not found", id).
+				WithHintf("Customer with ID %s was not found", domainCustomer.ID).
 				WithReportableDetails(map[string]any{
-					"customer_id": id,
+					"customer_id": domainCustomer.ID,
 				}).
 				Mark(ierr.ErrNotFound)
 		}
@@ -408,7 +407,7 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 	}
 
 	SetSpanSuccess(span)
-	r.DeleteCache(ctx, id)
+	r.DeleteCache(ctx, domainCustomer)
 	return nil
 }
 
@@ -535,6 +534,11 @@ func (o CustomerQueryOptions) applyEntityQueryOptions(_ context.Context, f *type
 
 func (r *customerRepository) SetCache(ctx context.Context, customer *domainCustomer.Customer) {
 
+	span := cache.StartCacheSpan(ctx, "customer", "set", map[string]interface{}{
+		"customer_id": customer.ID,
+	})
+	defer cache.FinishSpan(span)
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
@@ -550,6 +554,11 @@ func (r *customerRepository) SetCache(ctx context.Context, customer *domainCusto
 
 func (r *customerRepository) GetCache(ctx context.Context, key string) *domainCustomer.Customer {
 
+	span := cache.StartCacheSpan(ctx, "customer", "get", map[string]interface{}{
+		"customer_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	cacheKey := cache.GenerateKey(cache.PrefixCustomer, types.GetTenantID(ctx), types.GetEnvironmentID(ctx), key)
 	if value, found := r.cache.Get(ctx, cacheKey); found {
 		if customer, ok := value.(*domainCustomer.Customer); ok {
@@ -560,24 +569,19 @@ func (r *customerRepository) GetCache(ctx context.Context, key string) *domainCu
 	return nil
 }
 
-func (r *customerRepository) DeleteCache(ctx context.Context, customerID string) {
+func (r *customerRepository) DeleteCache(ctx context.Context, customer *domainCustomer.Customer) {
+	span := cache.StartCacheSpan(ctx, "customer", "delete", map[string]interface{}{
+		"customer_id": customer.ID,
+	})
+	defer cache.FinishSpan(span)
 
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
 	// Delete ID-based cache first
-	custIdKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customerID)
-	r.cache.Delete(ctx, custIdKey)
-
-	// Get customer to delete external ID cache
-	customer, err := r.Get(ctx, customerID)
-
-	if err != nil {
-		r.log.Errorw("failed to get customer", "error", err)
-		return
-	}
-
+	custIdKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customer.ID)
 	extIDKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customer.ExternalID)
+	r.cache.Delete(ctx, custIdKey)
 	r.cache.Delete(ctx, extIDKey)
 	r.log.Debugw("cache deleted", "ext_key", extIDKey)
 }
