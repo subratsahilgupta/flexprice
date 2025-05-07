@@ -96,6 +96,7 @@ func (r *meterRepository) GetMeter(ctx context.Context, id string) (*domainMeter
 		Where(
 			meter.ID(id),
 			meter.TenantID(types.GetTenantID(ctx)),
+			meter.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Only(ctx)
 

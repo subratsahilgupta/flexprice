@@ -354,7 +354,12 @@ func (r *subscriptionLineItemRepository) List(ctx context.Context, filter *types
 		return nil, err
 	}
 
-	query := client.SubscriptionLineItem.Query()
+	query := client.SubscriptionLineItem.Query().
+		Where(
+			subscriptionlineitem.TenantID(types.GetTenantID(ctx)),
+			subscriptionlineitem.EnvironmentID(types.GetEnvironmentID(ctx)),
+		)
+
 	// Apply filters
 	if filter != nil {
 		if len(filter.SubscriptionIDs) > 0 {
