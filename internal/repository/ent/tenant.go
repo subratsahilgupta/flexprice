@@ -161,11 +161,20 @@ func (r *tenantRepository) Update(ctx context.Context, tenant *domainTenant.Tena
 }
 
 func (r *tenantRepository) SetCache(ctx context.Context, tenant *domainTenant.Tenant) {
+	span := cache.StartCacheSpan(ctx, "tenant", "set", map[string]interface{}{
+		"tenant_id": tenant.ID,
+	})
+	defer cache.FinishSpan(span)
 	cacheKey := cache.GenerateKey(cache.PrefixTenant, tenant.ID)
 	r.cache.Set(ctx, cacheKey, tenant, cache.ExpiryDefaultInMemory)
 }
 
 func (r *tenantRepository) GetCache(ctx context.Context, key string) *domainTenant.Tenant {
+	span := cache.StartCacheSpan(ctx, "tenant", "get", map[string]interface{}{
+		"tenant_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	cacheKey := cache.GenerateKey(cache.PrefixTenant, key)
 	if value, found := r.cache.Get(ctx, cacheKey); found {
 		return value.(*domainTenant.Tenant)
@@ -174,6 +183,11 @@ func (r *tenantRepository) GetCache(ctx context.Context, key string) *domainTena
 }
 
 func (r *tenantRepository) DeleteCache(ctx context.Context, key string) {
+	span := cache.StartCacheSpan(ctx, "tenant", "delete", map[string]interface{}{
+		"tenant_id": key,
+	})
+	defer cache.FinishSpan(span)
+
 	cacheKey := cache.GenerateKey(cache.PrefixTenant, key)
 	r.cache.Delete(ctx, cacheKey)
 }
