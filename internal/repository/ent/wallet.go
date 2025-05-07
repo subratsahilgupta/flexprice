@@ -109,6 +109,7 @@ func (r *walletRepository) GetWalletByID(ctx context.Context, id string) (*walle
 			wallet.ID(id),
 			wallet.TenantID(types.GetTenantID(ctx)),
 			wallet.StatusEQ(string(types.StatusPublished)),
+			wallet.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Only(ctx)
 
@@ -151,6 +152,7 @@ func (r *walletRepository) GetWalletsByCustomerID(ctx context.Context, customerI
 			wallet.TenantID(types.GetTenantID(ctx)),
 			wallet.StatusEQ(string(types.StatusPublished)),
 			wallet.WalletStatusEQ(string(types.WalletStatusActive)),
+			wallet.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		All(ctx)
 
@@ -187,6 +189,7 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 			wallet.ID(id),
 			wallet.TenantID(types.GetTenantID(ctx)),
 			wallet.StatusEQ(string(types.StatusPublished)),
+			wallet.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetWalletStatus(string(status)).
 		SetUpdatedBy(types.GetUserID(ctx)).
@@ -242,6 +245,7 @@ func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID str
 		credits, err := r.client.Querier(ctx).WalletTransaction.Query().
 			Where(
 				wallettransaction.WalletID(walletID),
+				wallettransaction.EnvironmentID(types.GetEnvironmentID(ctx)),
 				wallettransaction.Type(string(types.TransactionTypeCredit)),
 				wallettransaction.CreditsAvailableGT(decimal.Zero),
 				wallettransaction.Or(
@@ -440,6 +444,7 @@ func (r *walletRepository) GetTransactionByID(ctx context.Context, id string) (*
 			wallettransaction.ID(id),
 			wallettransaction.TenantID(types.GetTenantID(ctx)),
 			wallettransaction.StatusEQ(string(types.StatusPublished)),
+			wallettransaction.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Only(ctx)
 
@@ -568,6 +573,7 @@ func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id strin
 			wallettransaction.ID(id),
 			wallettransaction.TenantID(types.GetTenantID(ctx)),
 			wallettransaction.StatusEQ(string(types.StatusPublished)),
+			wallettransaction.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetTransactionStatus(string(status)).
 		SetUpdatedBy(types.GetUserID(ctx)).
@@ -716,6 +722,7 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 			wallet.ID(id),
 			wallet.TenantID(types.GetTenantID(ctx)),
 			wallet.StatusEQ(string(types.StatusPublished)),
+			wallet.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetName(w.Name).
 		SetDescription(w.Description).

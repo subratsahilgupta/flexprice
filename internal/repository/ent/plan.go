@@ -111,6 +111,7 @@ func (r *planRepository) Get(ctx context.Context, id string) (*domainPlan.Plan, 
 	plan, err := client.Plan.Query().
 		Where(
 			plan.ID(id),
+			plan.EnvironmentID(types.GetEnvironmentID(ctx)),
 			plan.TenantID(types.GetTenantID(ctx)),
 		).
 		Only(ctx)
@@ -231,6 +232,7 @@ func (r *planRepository) GetByLookupKey(ctx context.Context, lookupKey string) (
 	plan, err := r.client.Querier(ctx).Plan.Query().
 		Where(
 			plan.LookupKey(lookupKey),
+			plan.EnvironmentID(types.GetEnvironmentID(ctx)),
 			plan.TenantID(types.GetTenantID(ctx)),
 			plan.Status(string(types.StatusPublished)),
 		).
@@ -338,6 +340,7 @@ func (r *planRepository) Delete(ctx context.Context, p *domainPlan.Plan) error {
 	_, err := client.Plan.Update().
 		Where(
 			plan.ID(p.ID),
+			plan.EnvironmentID(types.GetEnvironmentID(ctx)),
 			plan.TenantID(types.GetTenantID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).

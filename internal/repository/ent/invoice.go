@@ -373,7 +373,10 @@ func (r *invoiceRepository) Get(ctx context.Context, id string) (*domainInvoice.
 	r.logger.Debugw("getting invoice", "id", id)
 
 	invoice, err := r.client.Querier(ctx).Invoice.Query().
-		Where(invoice.ID(id)).
+		Where(invoice.ID(id),
+			invoice.TenantID(types.GetTenantID(ctx)),
+			invoice.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
 		WithLineItems().
 		Only(ctx)
 	if err != nil {
@@ -408,6 +411,7 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 			invoice.ID(inv.ID),
 			invoice.TenantID(types.GetTenantID(ctx)),
 			invoice.Status(string(types.StatusPublished)),
+			invoice.EnvironmentID(types.GetEnvironmentID(ctx)),
 			invoice.Version(inv.Version), // Version check for optimistic locking
 		)
 
@@ -575,6 +579,7 @@ func (r *invoiceRepository) GetByIdempotencyKey(ctx context.Context, key string)
 	inv, err := r.client.Querier(ctx).Invoice.Query().
 		Where(
 			invoice.IdempotencyKeyEQ(key),
+			invoice.EnvironmentID(types.GetEnvironmentID(ctx)),
 			invoice.TenantID(types.GetTenantID(ctx)),
 			invoice.StatusEQ(string(types.StatusPublished)),
 			invoice.InvoiceStatusNEQ(string(types.InvoiceStatusVoided)),
@@ -605,6 +610,7 @@ func (r *invoiceRepository) ExistsForPeriod(ctx context.Context, subscriptionID 
 		Where(
 			invoice.And(
 				invoice.TenantID(types.GetTenantID(ctx)),
+				invoice.EnvironmentID(types.GetEnvironmentID(ctx)),
 				invoice.SubscriptionIDEQ(subscriptionID),
 				invoice.PeriodStartEQ(periodStart),
 				invoice.PeriodEndEQ(periodEnd),

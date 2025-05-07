@@ -111,6 +111,7 @@ func (r *entitlementRepository) Get(ctx context.Context, id string) (*domainEnti
 		Where(
 			entitlement.ID(id),
 			entitlement.TenantID(types.GetTenantID(ctx)),
+			entitlement.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		Only(ctx)
 
@@ -251,7 +252,10 @@ func (r *entitlementRepository) Update(ctx context.Context, e *domainEntitlement
 	defer FinishSpan(span)
 
 	result, err := client.Entitlement.UpdateOneID(e.ID).
-		Where(entitlement.TenantID(e.TenantID)).
+		Where(
+			entitlement.TenantID(e.TenantID),
+			entitlement.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
 		SetPlanID(e.PlanID).
 		SetFeatureID(e.FeatureID).
 		SetFeatureType(string(e.FeatureType)).
@@ -300,6 +304,7 @@ func (r *entitlementRepository) Delete(ctx context.Context, id string) error {
 		Where(
 			entitlement.ID(id),
 			entitlement.TenantID(types.GetTenantID(ctx)),
+			entitlement.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
@@ -397,6 +402,7 @@ func (r *entitlementRepository) DeleteBulk(ctx context.Context, ids []string) er
 		Where(
 			entitlement.IDIn(ids...),
 			entitlement.TenantID(types.GetTenantID(ctx)),
+			entitlement.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetStatus(string(types.StatusDeleted)).
 		SetUpdatedAt(time.Now().UTC()).
