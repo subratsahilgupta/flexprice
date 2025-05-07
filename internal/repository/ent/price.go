@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/schema"
+	"github.com/flexprice/flexprice/internal/cache"
 	domainPrice "github.com/flexprice/flexprice/internal/domain/price"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -19,13 +20,15 @@ type priceRepository struct {
 	client    postgres.IClient
 	log       *logger.Logger
 	queryOpts PriceQueryOptions
+	cache     cache.Cache
 }
 
-func NewPriceRepository(client postgres.IClient, log *logger.Logger) domainPrice.Repository {
+func NewPriceRepository(client postgres.IClient, log *logger.Logger, cache cache.Cache) domainPrice.Repository {
 	return &priceRepository{
 		client:    client,
 		log:       log,
 		queryOpts: PriceQueryOptions{},
+		cache:     cache,
 	}
 }
 
@@ -105,19 +108,24 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 }
 
 func (r *priceRepository) Get(ctx context.Context, id string) (*domainPrice.Price, error) {
-	client := r.client.Querier(ctx)
-
-	r.log.Debugw("getting price",
-		"price_id", id,
-		"tenant_id", types.GetTenantID(ctx),
-	)
-
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "price", "get", map[string]interface{}{
 		"price_id":  id,
 		"tenant_id": types.GetTenantID(ctx),
 	})
 	defer FinishSpan(span)
+
+	// Try to get from cache first
+	if cachedPrice := r.GetCache(ctx, id); cachedPrice != nil {
+		return cachedPrice, nil
+	}
+
+	client := r.client.Querier(ctx)
+
+	r.log.Debugw("getting price",
+		"price_id", id,
+		"tenant_id", types.GetTenantID(ctx),
+	)
 
 	p, err := client.Price.Query().
 		Where(
@@ -142,7 +150,9 @@ func (r *priceRepository) Get(ctx context.Context, id string) (*domainPrice.Pric
 			Mark(ierr.ErrDatabase)
 	}
 
-	return domainPrice.FromEnt(p), nil
+	price := domainPrice.FromEnt(p)
+	r.SetCache(ctx, price)
+	return price, nil
 }
 
 func (r *priceRepository) List(ctx context.Context, filter *types.PriceFilter) ([]*domainPrice.Price, error) {
@@ -280,6 +290,7 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price) erro
 			Mark(ierr.ErrDatabase)
 	}
 
+	r.DeleteCache(ctx, p.ID)
 	return nil
 }
 
@@ -322,6 +333,7 @@ func (r *priceRepository) Delete(ctx context.Context, id string) error {
 			Mark(ierr.ErrDatabase)
 	}
 
+	r.DeleteCache(ctx, id)
 	return nil
 }
 
@@ -512,4 +524,43 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 	}
 
 	return query
+}
+
+func (r *priceRepository) SetCache(ctx context.Context, price *domainPrice.Price) {
+	span := cache.StartCacheSpan(ctx, "price", "set", map[string]interface{}{
+		"price_id": price.ID,
+	})
+	defer cache.FinishSpan(span)
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	cacheKey := cache.GenerateKey(cache.PrefixPrice, tenantID, environmentID, price.ID)
+	r.cache.Set(ctx, cacheKey, price, cache.ExpiryDefaultInMemory)
+}
+
+func (r *priceRepository) GetCache(ctx context.Context, key string) *domainPrice.Price {
+	span := cache.StartCacheSpan(ctx, "price", "get", map[string]interface{}{
+		"price_id": key,
+	})
+	defer cache.FinishSpan(span)
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	cacheKey := cache.GenerateKey(cache.PrefixPrice, tenantID, environmentID, key)
+	if value, found := r.cache.Get(ctx, cacheKey); found {
+		return value.(*domainPrice.Price)
+	}
+	return nil
+}
+
+func (r *priceRepository) DeleteCache(ctx context.Context, priceID string) {
+	span := cache.StartCacheSpan(ctx, "price", "delete", map[string]interface{}{
+		"price_id": priceID,
+	})
+	defer cache.FinishSpan(span)
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	cacheKey := cache.GenerateKey(cache.PrefixPrice, tenantID, environmentID, priceID)
+	r.cache.Delete(ctx, cacheKey)
 }

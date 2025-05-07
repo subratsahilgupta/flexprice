@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/schema"
+	"github.com/flexprice/flexprice/internal/cache"
 	domainCustomer "github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/dsl"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -22,13 +23,15 @@ type customerRepository struct {
 	client    postgres.IClient
 	log       *logger.Logger
 	queryOpts CustomerQueryOptions
+	cache     cache.Cache
 }
 
-func NewCustomerRepository(client postgres.IClient, log *logger.Logger) domainCustomer.Repository {
+func NewCustomerRepository(client postgres.IClient, log *logger.Logger, cache cache.Cache) domainCustomer.Repository {
 	return &customerRepository{
 		client:    client,
 		log:       log,
 		queryOpts: CustomerQueryOptions{},
+		cache:     cache,
 	}
 }
 
@@ -109,15 +112,20 @@ func (r *customerRepository) Create(ctx context.Context, c *domainCustomer.Custo
 }
 
 func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustomer.Customer, error) {
-	client := r.client.Querier(ctx)
-
-	r.log.Debugw("getting customer", "customer_id", id)
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "customer", "get", map[string]interface{}{
 		"customer_id": id,
 	})
 	defer FinishSpan(span)
+
+	// Try to get from cache first
+	if cachedCustomer := r.GetCache(ctx, id); cachedCustomer != nil {
+		return cachedCustomer, nil
+	}
+
+	client := r.client.Querier(ctx)
+	r.log.Debugw("getting customer", "customer_id", id)
 
 	c, err := client.Customer.Query().
 		Where(
@@ -143,19 +151,29 @@ func (r *customerRepository) Get(ctx context.Context, id string) (*domainCustome
 	}
 
 	SetSpanSuccess(span)
-	return domainCustomer.FromEnt(c), nil
+	customer := domainCustomer.FromEnt(c)
+
+	// Set cache
+	r.SetCache(ctx, customer)
+	return customer, nil
 }
 
 func (r *customerRepository) GetByLookupKey(ctx context.Context, lookupKey string) (*domainCustomer.Customer, error) {
-	client := r.client.Querier(ctx)
-
-	r.log.Debugw("getting customer by lookup key", "lookup_key", lookupKey)
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "customer", "get_by_lookup_key", map[string]interface{}{
 		"lookup_key": lookupKey,
 	})
 	defer FinishSpan(span)
+
+	// Try to get from cache first
+	if cachedCustomer := r.GetCache(ctx, lookupKey); cachedCustomer != nil {
+		return cachedCustomer, nil
+	}
+
+	client := r.client.Querier(ctx)
+
+	r.log.Debugw("getting customer by lookup key", "lookup_key", lookupKey)
 
 	c, err := client.Customer.Query().
 		Where(
@@ -344,26 +362,27 @@ func (r *customerRepository) Update(ctx context.Context, c *domainCustomer.Custo
 	}
 
 	SetSpanSuccess(span)
+	r.DeleteCache(ctx, c)
 	return nil
 }
 
-func (r *customerRepository) Delete(ctx context.Context, id string) error {
+func (r *customerRepository) Delete(ctx context.Context, domainCustomer *domainCustomer.Customer) error {
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("deleting customer",
-		"customer_id", id,
+		"customer_id", domainCustomer.ID,
 		"tenant_id", types.GetTenantID(ctx),
 	)
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "customer", "delete", map[string]interface{}{
-		"customer_id": id,
+		"customer_id": domainCustomer.ID,
 	})
 	defer FinishSpan(span)
 
 	_, err := client.Customer.Update().
 		Where(
-			customer.ID(id),
+			customer.ID(domainCustomer.ID),
 			customer.TenantID(types.GetTenantID(ctx)),
 		).
 		SetStatus(string(types.StatusArchived)).
@@ -376,9 +395,9 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
-				WithHintf("Customer with ID %s was not found", id).
+				WithHintf("Customer with ID %s was not found", domainCustomer.ID).
 				WithReportableDetails(map[string]any{
-					"customer_id": id,
+					"customer_id": domainCustomer.ID,
 				}).
 				Mark(ierr.ErrNotFound)
 		}
@@ -388,6 +407,7 @@ func (r *customerRepository) Delete(ctx context.Context, id string) error {
 	}
 
 	SetSpanSuccess(span)
+	r.DeleteCache(ctx, domainCustomer)
 	return nil
 }
 
@@ -510,4 +530,58 @@ func (o CustomerQueryOptions) applyEntityQueryOptions(_ context.Context, f *type
 	}
 
 	return query, nil
+}
+
+func (r *customerRepository) SetCache(ctx context.Context, customer *domainCustomer.Customer) {
+
+	span := cache.StartCacheSpan(ctx, "customer", "set", map[string]interface{}{
+		"customer_id": customer.ID,
+	})
+	defer cache.FinishSpan(span)
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	// Set both ID and external ID based cache entries
+	custIdKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customer.ID)
+	extIDKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customer.ExternalID)
+
+	r.cache.Set(ctx, custIdKey, customer, cache.ExpiryDefaultInMemory)
+	r.cache.Set(ctx, extIDKey, customer, cache.ExpiryDefaultInMemory)
+
+	r.log.Debugw("cache set", "id_key", custIdKey, "ext_key", extIDKey)
+}
+
+func (r *customerRepository) GetCache(ctx context.Context, key string) *domainCustomer.Customer {
+
+	span := cache.StartCacheSpan(ctx, "customer", "get", map[string]interface{}{
+		"customer_id": key,
+	})
+	defer cache.FinishSpan(span)
+
+	cacheKey := cache.GenerateKey(cache.PrefixCustomer, types.GetTenantID(ctx), types.GetEnvironmentID(ctx), key)
+	if value, found := r.cache.Get(ctx, cacheKey); found {
+		if customer, ok := value.(*domainCustomer.Customer); ok {
+			r.log.Debugw("cache hit", "key", cacheKey)
+			return customer
+		}
+	}
+	return nil
+}
+
+func (r *customerRepository) DeleteCache(ctx context.Context, customer *domainCustomer.Customer) {
+	span := cache.StartCacheSpan(ctx, "customer", "delete", map[string]interface{}{
+		"customer_id": customer.ID,
+	})
+	defer cache.FinishSpan(span)
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	// Delete ID-based cache first
+	custIdKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customer.ID)
+	extIDKey := cache.GenerateKey(cache.PrefixCustomer, tenantID, environmentID, customer.ExternalID)
+	r.cache.Delete(ctx, custIdKey)
+	r.cache.Delete(ctx, extIDKey)
+	r.log.Debugw("cache deleted", "ext_key", extIDKey)
 }
