@@ -86,6 +86,11 @@ type Price struct {
 	types.BaseModel
 }
 
+// IsUsage returns true if the price is a usage based price
+func (p *Price) IsUsage() bool {
+	return p.Type == types.PRICE_TYPE_USAGE && p.MeterID != ""
+}
+
 // GetCurrencySymbol returns the currency symbol for the price
 func (p *Price) GetCurrencySymbol() string {
 	return types.GetCurrencySymbol(p.Currency)
@@ -143,12 +148,15 @@ func (p *Price) CalculateAmount(quantity decimal.Decimal) decimal.Decimal {
 
 // CalculateTierAmount performs calculation for tier price with flat and fixed ampunt
 func (pt *PriceTier) CalculateTierAmount(quantity decimal.Decimal, currency string) decimal.Decimal {
-	// Calculate tier cost with proper rounding
 	tierCost := pt.UnitAmount.Mul(quantity)
 	if pt.FlatAmount != nil {
 		tierCost = tierCost.Add(*pt.FlatAmount)
 	}
 	return tierCost
+}
+
+func (pt *PriceTier) GetPerUnitCost() decimal.Decimal {
+	return pt.UnitAmount
 }
 
 // GetDisplayAmount returns the amount in the currency ex $12.00
