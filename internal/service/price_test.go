@@ -19,8 +19,10 @@ import (
 type PriceServiceSuite struct {
 	suite.Suite
 	ctx          context.Context
-	priceService *priceService
+	priceService PriceService
 	priceRepo    *testutil.InMemoryPriceStore
+	meterRepo    *testutil.InMemoryMeterStore
+	logger       *logger.Logger
 }
 
 func TestPriceService(t *testing.T) {
@@ -30,11 +32,9 @@ func TestPriceService(t *testing.T) {
 func (s *PriceServiceSuite) SetupTest() {
 	s.ctx = testutil.SetupContext()
 	s.priceRepo = testutil.NewInMemoryPriceStore()
-
-	s.priceService = &priceService{
-		repo:   s.priceRepo,
-		logger: logger.GetLogger(),
-	}
+	s.meterRepo = testutil.NewInMemoryMeterStore()
+	s.logger = logger.GetLogger()
+	s.priceService = NewPriceService(s.priceRepo, s.meterRepo, s.logger)
 }
 
 func (s *PriceServiceSuite) TestCreatePrice() {
@@ -182,13 +182,13 @@ func (s *PriceServiceSuite) TestDeletePrice() {
 func (s *PriceServiceSuite) TestCalculateCostWithBreakup_FlatFee() {
 	price := &price.Price{
 		ID:           "price-1",
-		Amount:       decimal.NewFromInt(100),
+		Amount:       decimal.NewFromInt(500),
 		Currency:     "usd",
 		BillingModel: types.BILLING_MODEL_FLAT_FEE,
 	}
 
 	quantity := decimal.NewFromInt(5)
-	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity)
+	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 
 	s.Equal(decimal.NewFromInt(500).Equal(result.FinalCost), true)
 	s.Equal(decimal.NewFromInt(100).Equal(result.EffectiveUnitCost), true)
@@ -209,7 +209,7 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_Package() {
 	}
 
 	quantity := decimal.NewFromInt(25)
-	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity)
+	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 
 	s.Equal(decimal.NewFromInt(150).Equal(result.FinalCost), true) // 25/10 = 2.5, rounded up to 3, 3*50 = 150
 	s.Equal(decimal.NewFromInt(50).Equal(result.EffectiveUnitCost), true)
@@ -243,7 +243,7 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredVolume() {
 
 	// Test within first tier
 	quantity := decimal.NewFromInt(5)
-	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity)
+	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 	s.Equal(decimal.NewFromInt(250).Equal(result.FinalCost), true) // 5 * 50 = 250
 	s.Equal(decimal.NewFromInt(50).Equal(result.EffectiveUnitCost), true)
 	s.Equal(decimal.NewFromInt(50).Equal(result.TierUnitAmount), true)
@@ -251,7 +251,7 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredVolume() {
 
 	// Test within second tier
 	quantity = decimal.NewFromInt(15)
-	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity)
+	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 	s.Equal(decimal.NewFromInt(600).Equal(result.FinalCost), true) // 15 * 40 = 600
 	s.Equal(decimal.NewFromInt(40).Equal(result.EffectiveUnitCost), true)
 	s.Equal(decimal.NewFromInt(40).Equal(result.TierUnitAmount), true)
@@ -259,7 +259,7 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredVolume() {
 
 	// Test within third tier (unlimited)
 	quantity = decimal.NewFromInt(25)
-	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity)
+	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 	s.Equal(decimal.NewFromInt(750).Equal(result.FinalCost), true) // 25 * 30 = 750
 	s.Equal(decimal.NewFromInt(30).Equal(result.EffectiveUnitCost), true)
 	s.Equal(decimal.NewFromInt(30).Equal(result.TierUnitAmount), true)
@@ -292,14 +292,14 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlab() {
 
 	// Test within first tier
 	quantity := decimal.NewFromInt(5)
-	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity)
+	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 	s.Equal(decimal.NewFromInt(250).Equal(result.FinalCost), true) // 5 * 50 = 250
 	s.Equal(decimal.NewFromInt(50).Equal(result.TierUnitAmount), true)
 	s.Equal(0, result.SelectedTierIndex)
 
 	// Test spanning first and second tiers
 	quantity = decimal.NewFromInt(15)
-	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity)
+	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 
 	// The implementation calculates: (10 * 50) + (5 * 40) = 500 + 200 = 700
 	expectedFinalCost := decimal.NewFromInt(700)
@@ -312,7 +312,7 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlab() {
 
 	// Test spanning all three tiers
 	quantity = decimal.NewFromInt(25)
-	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity)
+	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 
 	// From the debug logs, the calculation is:
 	// (10 * 50) = 500 (first tier)
@@ -337,7 +337,7 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_ZeroQuantity() {
 	}
 
 	quantity := decimal.Zero
-	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity)
+	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 
 	s.Equal(decimal.Zero, result.FinalCost)
 	s.Equal(decimal.Zero, result.EffectiveUnitCost)

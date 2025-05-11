@@ -148,7 +148,6 @@ func (p *Price) CalculateAmount(quantity decimal.Decimal) decimal.Decimal {
 
 // CalculateTierAmount performs calculation for tier price with flat and fixed ampunt
 func (pt *PriceTier) CalculateTierAmount(quantity decimal.Decimal, currency string) decimal.Decimal {
-	// Calculate tier cost with proper rounding
 	tierCost := pt.UnitAmount.Mul(quantity)
 	if pt.FlatAmount != nil {
 		tierCost = tierCost.Add(*pt.FlatAmount)
