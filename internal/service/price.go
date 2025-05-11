@@ -24,7 +24,7 @@ type PriceService interface {
 
 	// CalculateCostWithBreakup calculates the cost for a given price and quantity
 	// and returns detailed information about the calculation
-	CalculateCostWithBreakup(ctx context.Context, price *price.Price, quantity decimal.Decimal) dto.CostBreakup
+	CalculateCostWithBreakup(ctx context.Context, price *price.Price, quantity decimal.Decimal, round bool) dto.CostBreakup
 }
 
 type priceService struct {
@@ -245,7 +245,7 @@ func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Pri
 
 		selectedTier := price.Tiers[selectedTierIndex]
 
-		// Calculate tier cost with proper rounding and handling of flat amount
+		// Calculate tier cost with full precision and handling of flat amount
 		tierCost := selectedTier.CalculateTierAmount(quantity, price.Currency)
 
 		s.logger.WithContext(ctx).Debugf(
@@ -269,7 +269,7 @@ func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Pri
 				}
 			}
 
-			// Calculate tier cost with proper rounding and handling of flat amount
+			// Calculate tier cost with full precision and handling of flat amount
 			tierCost := tier.CalculateTierAmount(tierQuantity, price.Currency)
 			cost = cost.Add(tierCost)
 			remainingQuantity = remainingQuantity.Sub(tierQuantity)
@@ -295,7 +295,7 @@ func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Pri
 }
 
 // CalculateCostWithBreakup calculates the cost with detailed breakdown information
-func (s *priceService) CalculateCostWithBreakup(ctx context.Context, price *price.Price, quantity decimal.Decimal) dto.CostBreakup {
+func (s *priceService) CalculateCostWithBreakup(ctx context.Context, price *price.Price, quantity decimal.Decimal, round bool) dto.CostBreakup {
 	result := dto.CostBreakup{
 		EffectiveUnitCost: decimal.Zero,
 		SelectedTierIndex: -1,
@@ -334,7 +334,10 @@ func (s *priceService) CalculateCostWithBreakup(ctx context.Context, price *pric
 		result = s.calculateTieredCostWithBreakup(ctx, price, quantity)
 	}
 
-	result.FinalCost = result.FinalCost.Round(types.GetCurrencyPrecision(price.Currency))
+	if round {
+		result.FinalCost = result.FinalCost.Round(types.GetCurrencyPrecision(price.Currency))
+	}
+
 	return result
 }
 
@@ -376,7 +379,7 @@ func (s *priceService) calculateTieredCostWithBreakup(ctx context.Context, price
 		result.SelectedTierIndex = selectedTierIndex
 		result.TierUnitAmount = selectedTier.UnitAmount
 
-		// Calculate tier cost with proper rounding and handling of flat amount
+		// Calculate tier cost with full precision and handling of flat amount
 		result.FinalCost = selectedTier.CalculateTierAmount(quantity, price.Currency)
 
 		// Calculate effective unit cost (handle zero quantity case)
@@ -405,7 +408,7 @@ func (s *priceService) calculateTieredCostWithBreakup(ctx context.Context, price
 				}
 			}
 
-			// Calculate tier cost with proper rounding and handling of flat amount
+			// Calculate tier cost with full precision and handling of flat amount
 			tierCost := tier.CalculateTierAmount(tierQuantity, price.Currency)
 			result.FinalCost = result.FinalCost.Add(tierCost)
 
