@@ -32,7 +32,7 @@ type Configuration struct {
 	Billing             BillingConfig             `validate:"omitempty"`
 	S3                  S3Config                  `validate:"required"`
 	Cache               CacheConfig               `validate:"required"`
-	EventPostProcessing EventPostProcessingConfig `validate:"required"`
+	EventPostProcessing EventPostProcessingConfig `mapstructure:"event_post_processing" validate:"required"`
 }
 
 type CacheConfig struct {

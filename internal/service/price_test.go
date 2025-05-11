@@ -182,7 +182,7 @@ func (s *PriceServiceSuite) TestDeletePrice() {
 func (s *PriceServiceSuite) TestCalculateCostWithBreakup_FlatFee() {
 	price := &price.Price{
 		ID:           "price-1",
-		Amount:       decimal.NewFromInt(500),
+		Amount:       decimal.NewFromInt(100),
 		Currency:     "usd",
 		BillingModel: types.BILLING_MODEL_FLAT_FEE,
 	}
@@ -190,7 +190,7 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_FlatFee() {
 	quantity := decimal.NewFromInt(5)
 	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 
-	s.Equal(decimal.NewFromInt(500).Equal(result.FinalCost), true)
+	s.Equal(decimal.NewFromInt(500).Equal(result.FinalCost), true, "Final cost is %v", result.FinalCost)
 	s.Equal(decimal.NewFromInt(100).Equal(result.EffectiveUnitCost), true)
 	s.Equal(decimal.NewFromInt(100).Equal(result.TierUnitAmount), true)
 	s.Equal(-1, result.SelectedTierIndex)
