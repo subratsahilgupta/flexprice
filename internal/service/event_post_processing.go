@@ -488,24 +488,7 @@ func (s *eventPostProcessingService) prepareProcessedEvents(ctx context.Context,
 			// Create a unique hash for deduplication
 			uniqueHash := s.generateUniqueHash(event, match.Meter)
 
-			// Check for duplicate events
-			// TODO: review if this is correct and also maybe just call for COUNT_UNIQUE and not all cases
-			isDuplicate, err := s.processedEventRepo.IsDuplicate(ctx, sub.ID, match.Meter.ID, periodID, uniqueHash)
-			if err != nil {
-				s.Logger.Errorw("failed to check for duplicate event",
-					"event_id", event.ID,
-					"error", err,
-				)
-				continue
-			}
-
-			if isDuplicate {
-				s.Logger.Debugw("duplicate event detected, skipping",
-					"event_id", event.ID,
-					"unique_hash", uniqueHash,
-				)
-				continue
-			}
+			// TODO: Check for duplicate events also maybe just call for COUNT_UNIQUE and not all cases
 
 			// Create a new processed event for each match
 			processedEventCopy := &events.ProcessedEvent{
