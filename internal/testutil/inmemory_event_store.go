@@ -403,3 +403,9 @@ func (s *InMemoryEventStore) Clear() {
 	defer s.mu.Unlock()
 	s.events = make(map[string]*events.Event)
 }
+
+func (s *InMemoryEventStore) FindUnprocessedEvents(ctx context.Context, params *events.FindUnprocessedEventsParams) ([]*events.Event, error) {
+	return nil, ierr.NewError("not implemented").
+		WithHint("not implemented").
+		Mark(ierr.ErrSystem)
+}

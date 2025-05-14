@@ -1,9 +1,12 @@
 package types
 
-// PubSubType represents the type of pubsub system
+// PubSubType defines the type of pubsub implementation
 type PubSubType string
 
 const (
+	// MemoryPubSub uses in-memory implementation
 	MemoryPubSub PubSubType = "memory"
-	KafkaPubSub  PubSubType = "kafka"
+
+	// KafkaPubSub uses Kafka implementation
+	KafkaPubSub PubSubType = "kafka"
 )
