@@ -68,6 +68,11 @@ var commands = []Command{
 		Description: "Synchronize plan prices to all active subscriptions",
 		Run:         internal.SyncPlanPrices,
 	},
+	{
+		Name:        "reprocess-events",
+		Description: "Reprocess events",
+		Run:         internal.ReprocessEvents,
+	},
 }
 
 func main() {

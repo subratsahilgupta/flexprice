@@ -146,8 +146,12 @@ type BillingConfig struct {
 
 type EventPostProcessingConfig struct {
 	// Rate limit in messages consumed per second
-	Topic     string `mapstructure:"topic" validate:"required"`
-	RateLimit int64  `mapstructure:"rate_limit" validate:"required"`
+	Topic                 string `mapstructure:"topic" default:"events_post_processing"`
+	RateLimit             int64  `mapstructure:"rate_limit" default:"1"`
+	ConsumerGroup         string `mapstructure:"consumer_group" default:"v1_events_post_processing"`
+	TopicBackfill         string `mapstructure:"topic_backfill" default:"v1_events_post_processing_backfill"`
+	RateLimitBackfill     int64  `mapstructure:"rate_limit_backfill" default:"1"`
+	ConsumerGroupBackfill string `mapstructure:"consumer_group_backfill" default:"v1_events_post_processing_backfill"`
 }
 
 func NewConfig() (*Configuration, error) {

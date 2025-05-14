@@ -10,8 +10,8 @@ import (
 )
 
 type PubSub struct {
-	producer Producer
-	consumer Consumer
+	producer *Producer
+	consumer *Consumer
 	config   *config.Configuration
 	logger   *logger.Logger
 }
@@ -20,8 +20,8 @@ type PubSub struct {
 func NewPubSub(
 	config *config.Configuration,
 	logger *logger.Logger,
-	producer Producer,
-	consumer Consumer,
+	producer *Producer,
+	consumer *Consumer,
 ) pubsub.PubSub {
 	return &PubSub{
 		producer: producer,
@@ -29,6 +29,26 @@ func NewPubSub(
 		config:   config,
 		logger:   logger,
 	}
+}
+
+func NewPubSubFromConfig(
+	config *config.Configuration,
+	logger *logger.Logger,
+	consumerGroupID string,
+) (pubsub.PubSub, error) {
+	producer, err := NewProducer(config)
+	if err != nil {
+		logger.Fatalw("failed to create producer", "error", err)
+		return nil, err
+	}
+
+	consumer, err := NewConsumer(config, consumerGroupID)
+	if err != nil {
+		logger.Fatalw("failed to create consumer", "error", err)
+		return nil, err
+	}
+
+	return NewPubSub(config, logger, producer, consumer), nil
 }
 
 // Publish publishes a webhook event

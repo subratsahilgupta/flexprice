@@ -21,7 +21,7 @@ type Consumer struct {
 	cfg        *config.Configuration
 }
 
-func NewConsumer(cfg *config.Configuration) (MessageConsumer, error) {
+func NewConsumer(cfg *config.Configuration, consumerGroupID string) (*Consumer, error) {
 	enableDebugLogs := cfg.Logging.Level == types.LogLevelDebug
 
 	saramaConfig := GetSaramaConfig(cfg)
@@ -39,7 +39,7 @@ func NewConsumer(cfg *config.Configuration) (MessageConsumer, error) {
 	subscriber, err := kafka.NewSubscriber(
 		kafka.SubscriberConfig{
 			Brokers:               cfg.Kafka.Brokers,
-			ConsumerGroup:         cfg.Kafka.ConsumerGroup,
+			ConsumerGroup:         consumerGroupID,
 			Unmarshaler:           kafka.DefaultMarshaler{},
 			OverwriteSaramaConfig: saramaConfig,
 			ReconnectRetrySleep:   time.Second,

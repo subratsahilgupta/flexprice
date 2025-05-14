@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sort"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/pubsub"
+	"github.com/flexprice/flexprice/internal/pubsub/kafka"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -35,7 +37,7 @@ type PriceMatch struct {
 // EventPostProcessingService handles post-processing operations for metered events
 type EventPostProcessingService interface {
 	// Publish an event for post-processing
-	PublishEvent(ctx context.Context, event *events.Event) error
+	PublishEvent(ctx context.Context, event *events.Event, isBackfill bool) error
 
 	// Register message handler with the router
 	RegisterHandler(router *pubsubRouter.Router, cfg *config.Configuration)
@@ -52,13 +54,14 @@ type EventPostProcessingService interface {
 	// Get detailed usage analytics with filtering, grouping, and time-series data
 	GetDetailedUsageAnalytics(ctx context.Context, req *dto.GetUsageAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error)
 
-	// Reprocess events for a specific customer or subscription
-	ReprocessEvents(ctx context.Context, customerID, subscriptionID string) error
+	// Reprocess events for a specific customer or with other filters
+	ReprocessEvents(ctx context.Context, params *events.ReprocessEventsParams) error
 }
 
 type eventPostProcessingService struct {
 	ServiceParams
-	pubSub             pubsub.PubSub
+	pubSub             pubsub.PubSub // Regular PubSub for normal processing
+	backfillPubSub     pubsub.PubSub // Dedicated Kafka PubSub for backfill processing
 	eventRepo          events.Repository
 	processedEventRepo events.ProcessedEventRepository
 }
@@ -66,20 +69,42 @@ type eventPostProcessingService struct {
 // NewEventPostProcessingService creates a new event post-processing service
 func NewEventPostProcessingService(
 	params ServiceParams,
-	pubSub pubsub.PubSub,
 	eventRepo events.Repository,
 	processedEventRepo events.ProcessedEventRepository,
 ) EventPostProcessingService {
-	return &eventPostProcessingService{
+	ev := &eventPostProcessingService{
 		ServiceParams:      params,
-		pubSub:             pubSub,
 		eventRepo:          eventRepo,
 		processedEventRepo: processedEventRepo,
 	}
+
+	pubSub, err := kafka.NewPubSubFromConfig(
+		params.Config,
+		params.Logger,
+		params.Config.EventPostProcessing.ConsumerGroup,
+	)
+
+	if err != nil {
+		params.Logger.Fatalw("failed to create pubsub", "error", err)
+		return nil
+	}
+	ev.pubSub = pubSub
+
+	backfillPubSub, err := kafka.NewPubSubFromConfig(
+		params.Config,
+		params.Logger,
+		params.Config.EventPostProcessing.ConsumerGroupBackfill,
+	)
+	if err != nil {
+		params.Logger.Fatalw("failed to create backfill pubsub", "error", err)
+		return nil
+	}
+	ev.backfillPubSub = backfillPubSub
+	return ev
 }
 
 // PublishEvent publishes an event to the post-processing topic
-func (s *eventPostProcessingService) PublishEvent(ctx context.Context, event *events.Event) error {
+func (s *eventPostProcessingService) PublishEvent(ctx context.Context, event *events.Event, isBackfill bool) error {
 	// Create message payload
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -95,44 +120,50 @@ func (s *eventPostProcessingService) PublishEvent(ctx context.Context, event *ev
 		partitionKey = fmt.Sprintf("%s:%s", event.TenantID, event.ExternalCustomerID)
 	}
 
-	partitionKeyHash := sha256.Sum256([]byte(partitionKey))
-	partitionKeyHashStr := hex.EncodeToString(partitionKeyHash[:])
+	// Make UUID truly unique by adding nanosecond precision timestamp and random bytes
+	uniqueID := fmt.Sprintf("%s-%d-%d", event.ID, time.Now().UnixNano(), rand.Int63())
 
 	// Use the partition key as the message ID to ensure consistent partitioning
-	msg := message.NewMessage(partitionKeyHashStr, payload)
+	msg := message.NewMessage(uniqueID, payload)
 
 	// Set metadata for additional context
 	msg.Metadata.Set("tenant_id", event.TenantID)
 	msg.Metadata.Set("environment_id", event.EnvironmentID)
 	msg.Metadata.Set("partition_key", partitionKey)
 
+	// TODO: use partition key in the producer
+
+	pubSub := s.pubSub
+	topic := s.Config.EventPostProcessing.Topic
+	if isBackfill {
+		pubSub = s.backfillPubSub
+		topic = s.Config.EventPostProcessing.TopicBackfill
+	}
+
+	if pubSub == nil {
+		return ierr.NewError("pubsub not initialized").
+			WithHint("Please check the config").
+			Mark(ierr.ErrSystem)
+	}
+
 	s.Logger.Debugw("publishing event for post-processing",
 		"event_id", event.ID,
 		"event_name", event.EventName,
 		"partition_key", partitionKey,
+		"topic", topic,
 	)
 
-	// Publish to post-processing topic
-	if err := s.pubSub.Publish(ctx, s.Config.EventPostProcessing.Topic, msg); err != nil {
+	// Publish to post-processing topic using the backfill PubSub (Kafka)
+	if err := pubSub.Publish(ctx, topic, msg); err != nil {
 		return ierr.WithError(err).
 			WithHint("Failed to publish event for post-processing").
 			Mark(ierr.ErrSystem)
 	}
-
 	return nil
 }
 
 // RegisterHandler registers a handler for the post-processing topic with rate limiting
 func (s *eventPostProcessingService) RegisterHandler(router *pubsubRouter.Router, cfg *config.Configuration) {
-	// handle config defaults
-	if cfg.EventPostProcessing.RateLimit == 0 {
-		cfg.EventPostProcessing.RateLimit = 1
-	}
-
-	if cfg.EventPostProcessing.Topic == "" {
-		cfg.EventPostProcessing.Topic = "events_post_processing"
-	}
-
 	// Add throttle middleware to this specific handler
 	throttle := middleware.NewThrottle(cfg.EventPostProcessing.RateLimit, time.Second)
 
@@ -148,6 +179,27 @@ func (s *eventPostProcessingService) RegisterHandler(router *pubsubRouter.Router
 	s.Logger.Infow("registered event post-processing handler",
 		"topic", cfg.EventPostProcessing.Topic,
 		"rate_limit", cfg.EventPostProcessing.RateLimit,
+	)
+
+	// Add backfill handler
+	if cfg.EventPostProcessing.TopicBackfill == "" {
+		s.Logger.Warnw("backfill topic not set, skipping backfill handler")
+		return
+	}
+
+	backfillThrottle := middleware.NewThrottle(cfg.EventPostProcessing.RateLimitBackfill, time.Second)
+	router.AddNoPublishHandler(
+		"events_post_processing_backfill_handler",
+		cfg.EventPostProcessing.TopicBackfill,
+		s.backfillPubSub, // Use the dedicated Kafka backfill PubSub
+		s.processMessage,
+		backfillThrottle.Middleware,
+	)
+
+	s.Logger.Infow("registered event post-processing backfill handler",
+		"topic", cfg.EventPostProcessing.TopicBackfill,
+		"rate_limit", cfg.EventPostProcessing.RateLimitBackfill,
+		"pubsub_type", "kafka",
 	)
 }
 
@@ -185,26 +237,37 @@ func (s *eventPostProcessingService) processMessage(msg *message.Message) error 
 		return nil // Don't retry on unmarshal errors
 	}
 
-	events, _, err := s.eventRepo.GetEvents(ctx, &events.GetEventsParams{
-		EventID:            event.ID,
-		ExternalCustomerID: event.ExternalCustomerID,
-	})
-	if err != nil {
-		s.Logger.Errorw("failed to update event with ingested_at",
-			"error", err,
-		)
-		return err
+	// TODO: this is a hack to get the ingested_at for events that were ingested in the
+	// post processing pipeline directly from the event ingestion service and hence
+	// don't have an ingested_at value as it gets defaulted to now in the CH DB
+	// However this is not required in case of backfill events as they are ingested
+	// from the event ingestion service and hence have an ingested_at value
+	var foundEvent *events.Event
+	if event.IngestedAt.IsZero() {
+		events, _, err := s.eventRepo.GetEvents(ctx, &events.GetEventsParams{
+			EventID:            event.ID,
+			ExternalCustomerID: event.ExternalCustomerID,
+		})
+		if err != nil {
+			s.Logger.Errorw("failed to update event with ingested_at",
+				"error", err,
+			)
+			return err
+		}
+
+		if len(events) == 0 {
+			s.Logger.Errorw("event not found",
+				"event_id", event.ID,
+				"external_customer_id", event.ExternalCustomerID,
+			)
+			return nil // Don't retry on event not found
+		}
+
+		foundEvent = events[0]
+	} else {
+		foundEvent = &event
 	}
 
-	if len(events) == 0 {
-		s.Logger.Errorw("event not found",
-			"event_id", event.ID,
-			"external_customer_id", event.ExternalCustomerID,
-		)
-		return nil // Don't retry on event not found
-	}
-
-	foundEvent := events[0]
 	// validate tenant id
 	if foundEvent.TenantID != tenantID {
 		s.Logger.Errorw("invalid tenant id",
@@ -413,6 +476,26 @@ func (s *eventPostProcessingService) prepareProcessedEvents(ctx context.Context,
 	processedEventsPerSub := make([]*events.ProcessedEvent, 0)
 
 	for _, sub := range subscriptions {
+		// Calculate the period ID for this subscription (epoch-ms of period start)
+		periodID, err := types.CalculatePeriodID(
+			event.Timestamp,
+			sub.StartDate,
+			sub.CurrentPeriodStart,
+			sub.CurrentPeriodEnd,
+			sub.BillingAnchor,
+			sub.BillingPeriodCount,
+			sub.BillingPeriod,
+		)
+		if err != nil {
+			s.Logger.Errorw("failed to calculate period id",
+				"event_id", event.ID,
+				"subscription_id", sub.ID,
+				"error", err,
+			)
+			// TODO: add sentry span for failed to calculate period id
+			continue
+		}
+
 		// Get active usage-based line items
 		subscriptionLineItems := lo.Filter(sub.LineItems, func(item *subscription.SubscriptionLineItem, _ int) bool {
 			return item.IsUsage() && item.IsActive()
@@ -453,24 +536,6 @@ func (s *eventPostProcessingService) prepareProcessedEvents(ctx context.Context,
 				"event_name", event.EventName,
 			)
 			continue
-		}
-
-		// Calculate the period ID for this subscription (epoch-ms of period start)
-		periodID, err := types.CalculatePeriodID(
-			event.Timestamp,
-			sub.StartDate,
-			sub.CurrentPeriodStart,
-			sub.CurrentPeriodEnd,
-			sub.BillingAnchor,
-			sub.BillingPeriodCount,
-			sub.BillingPeriod,
-		)
-		if err != nil {
-			s.Logger.Errorw("failed to calculate period id",
-				"event_id", event.ID,
-				"subscription_id", sub.ID,
-				"error", err,
-			)
 		}
 
 		for _, match := range matches {
@@ -1018,24 +1083,115 @@ func (s *eventPostProcessingService) enrichAnalyticsWithFeatureAndMeterData(ctx 
 	return nil
 }
 
-// ReprocessEvents triggers reprocessing of events for a customer or subscription
-func (s *eventPostProcessingService) ReprocessEvents(ctx context.Context, customerID, subscriptionID string) error {
-	if customerID == "" && subscriptionID == "" {
-		return ierr.NewError("either customer_id or subscription_id is required").
-			WithHint("Either customer ID or subscription ID is required").
-			Mark(ierr.ErrValidation)
-	}
-
-	// For v2, the reprocessing logic will be implemented differently
-	// We'll need to find matching raw events, then reprocess them
-	s.Logger.Infow("event reprocessing is not yet implemented in v2",
-		"customer_id", customerID,
-		"subscription_id", subscriptionID,
+// ReprocessEvents triggers reprocessing of events for a customer or with other filters
+func (s *eventPostProcessingService) ReprocessEvents(ctx context.Context, params *events.ReprocessEventsParams) error {
+	s.Logger.Infow("starting event reprocessing",
+		"external_customer_id", params.ExternalCustomerID,
+		"event_name", params.EventName,
+		"start_time", params.StartTime,
+		"end_time", params.EndTime,
 	)
 
-	return ierr.NewError("event reprocessing is not yet implemented in v2").
-		WithHint("This feature will be available in a future update").
-		Mark(ierr.ErrValidation)
+	// Set default batch size if not provided
+	batchSize := params.BatchSize
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+
+	// Create find params from reprocess params
+	findParams := &events.FindUnprocessedEventsParams{
+		ExternalCustomerID: params.ExternalCustomerID,
+		EventName:          params.EventName,
+		StartTime:          params.StartTime,
+		EndTime:            params.EndTime,
+		BatchSize:          batchSize,
+	}
+
+	// We'll process in batches to avoid memory issues with large datasets
+	processedBatches := 0
+	totalEventsFound := 0
+	totalEventsPublished := 0
+	var lastID string
+	var lastTimestamp time.Time
+
+	// Keep processing batches until we're done
+	for {
+		// Update keyset pagination parameters for next batch
+		if lastID != "" && !lastTimestamp.IsZero() {
+			findParams.LastID = lastID
+			findParams.LastTimestamp = lastTimestamp
+		}
+
+		// Find unprocessed events
+		unprocessedEvents, err := s.eventRepo.FindUnprocessedEvents(ctx, findParams)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to find unprocessed events").
+				WithReportableDetails(map[string]interface{}{
+					"external_customer_id": params.ExternalCustomerID,
+					"event_name":           params.EventName,
+					"batch":                processedBatches,
+				}).
+				Mark(ierr.ErrDatabase)
+		}
+
+		eventsCount := len(unprocessedEvents)
+		totalEventsFound += eventsCount
+		s.Logger.Infow("found unprocessed events",
+			"batch", processedBatches,
+			"count", eventsCount,
+			"total_found", totalEventsFound,
+		)
+
+		// If no more events, we're done
+		if eventsCount == 0 {
+			break
+		}
+
+		// Publish each event to the post-processing topic
+		for _, event := range unprocessedEvents {
+			// hardcoded delay to avoid rate limiting
+			// TODO: remove this to make it configurable
+			time.Sleep(100 * time.Millisecond)
+			if err := s.PublishEvent(ctx, event, true); err != nil {
+				s.Logger.Errorw("failed to publish event for reprocessing",
+					"event_id", event.ID,
+					"error", err,
+				)
+				// Continue with other events instead of failing the whole batch
+				continue
+			}
+			totalEventsPublished++
+
+			// Update the last seen ID and timestamp for next batch
+			lastID = event.ID
+			lastTimestamp = event.Timestamp
+		}
+
+		s.Logger.Infow("published events for reprocessing",
+			"batch", processedBatches,
+			"count", eventsCount,
+			"total_published", totalEventsPublished,
+		)
+
+		// Update for next batch
+		processedBatches++
+
+		// If we didn't get a full batch, we're done
+		if eventsCount < batchSize {
+			break
+		}
+	}
+
+	s.Logger.Infow("completed event reprocessing",
+		"external_customer_id", params.ExternalCustomerID,
+		"event_name", params.EventName,
+		"batches_processed", processedBatches,
+		"total_events_found", totalEventsFound,
+		"total_events_published", totalEventsPublished,
+	)
+
+	return nil
 }
 
 func (s *eventPostProcessingService) ToGetUsageAnalyticsResponseDTO(ctx context.Context, analytics []*events.DetailedUsageAnalytic) (*dto.GetUsageAnalyticsResponse, error) {
