@@ -237,26 +237,37 @@ func (s *eventPostProcessingService) processMessage(msg *message.Message) error 
 		return nil // Don't retry on unmarshal errors
 	}
 
-	events, _, err := s.eventRepo.GetEvents(ctx, &events.GetEventsParams{
-		EventID:            event.ID,
-		ExternalCustomerID: event.ExternalCustomerID,
-	})
-	if err != nil {
-		s.Logger.Errorw("failed to update event with ingested_at",
-			"error", err,
-		)
-		return err
+	// TODO: this is a hack to get the ingested_at for events that were ingested in the
+	// post processing pipeline directly from the event ingestion service and hence
+	// don't have an ingested_at value as it gets defaulted to now in the CH DB
+	// However this is not required in case of backfill events as they are ingested
+	// from the event ingestion service and hence have an ingested_at value
+	var foundEvent *events.Event
+	if event.IngestedAt.IsZero() {
+		events, _, err := s.eventRepo.GetEvents(ctx, &events.GetEventsParams{
+			EventID:            event.ID,
+			ExternalCustomerID: event.ExternalCustomerID,
+		})
+		if err != nil {
+			s.Logger.Errorw("failed to update event with ingested_at",
+				"error", err,
+			)
+			return err
+		}
+
+		if len(events) == 0 {
+			s.Logger.Errorw("event not found",
+				"event_id", event.ID,
+				"external_customer_id", event.ExternalCustomerID,
+			)
+			return nil // Don't retry on event not found
+		}
+
+		foundEvent = events[0]
+	} else {
+		foundEvent = &event
 	}
 
-	if len(events) == 0 {
-		s.Logger.Errorw("event not found",
-			"event_id", event.ID,
-			"external_customer_id", event.ExternalCustomerID,
-		)
-		return nil // Don't retry on event not found
-	}
-
-	foundEvent := events[0]
 	// validate tenant id
 	if foundEvent.TenantID != tenantID {
 		s.Logger.Errorw("invalid tenant id",
