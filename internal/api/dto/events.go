@@ -197,13 +197,13 @@ func (r *GetEventsRequest) Validate() error {
 }
 
 type GetUsageAnalyticsRequest struct {
-	ExternalCustomerID string    `json:"external_customer_id" binding:"required"`
-	FeatureIDs         []string  `json:"feature_ids,omitempty"`
-	Sources            []string  `json:"sources,omitempty"`
-	StartTime          time.Time `json:"start_time,omitempty"`
-	EndTime            time.Time `json:"end_time,omitempty"`
-	GroupBy            []string  `json:"group_by,omitempty"`    // allowed values: "source", "feature_id"
-	WindowSize         string    `json:"window_size,omitempty"` // e.g., "MINUTE", "HOUR", "DAY"
+	ExternalCustomerID string           `json:"external_customer_id" binding:"required"`
+	FeatureIDs         []string         `json:"feature_ids,omitempty"`
+	Sources            []string         `json:"sources,omitempty"`
+	StartTime          time.Time        `json:"start_time,omitempty"`
+	EndTime            time.Time        `json:"end_time,omitempty"`
+	GroupBy            []string         `json:"group_by,omitempty"` // allowed values: "source", "feature_id"
+	WindowSize         types.WindowSize `json:"window_size,omitempty"`
 }
 
 // GetUsageAnalyticsResponse represents the response for the usage analytics API

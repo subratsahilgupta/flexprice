@@ -838,7 +838,7 @@ func (s *eventPostProcessingService) GetDetailedUsageAnalytics(ctx context.Conte
 	}
 
 	// Set default window size if needed
-	windowSize := types.WindowSize(req.WindowSize)
+	windowSize := req.WindowSize
 	if windowSize != "" {
 		if err := windowSize.Validate(); err != nil {
 			return nil, err
