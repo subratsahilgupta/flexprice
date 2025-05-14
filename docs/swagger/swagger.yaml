@@ -974,8 +974,7 @@ definitions:
       start_time:
         type: string
       window_size:
-        description: e.g., "MINUTE", "HOUR", "DAY"
-        type: string
+        $ref: '#/definitions/types.WindowSize'
     required:
     - external_customer_id
     type: object
@@ -3225,13 +3224,25 @@ definitions:
   types.WindowSize:
     enum:
     - MINUTE
+    - 15MIN
+    - 30MIN
     - HOUR
+    - 3HOUR
+    - 6HOUR
+    - 12HOUR
     - DAY
+    - WEEK
     type: string
     x-enum-varnames:
     - WindowSizeMinute
+    - WindowSize15Min
+    - WindowSize30Min
     - WindowSizeHour
+    - WindowSize3Hour
+    - WindowSize6Hour
+    - WindowSize12Hour
     - WindowSizeDay
+    - WindowSizeWeek
 info:
   contact: {}
   description: FlexPrice API Service

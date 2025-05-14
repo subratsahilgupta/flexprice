@@ -7107,8 +7107,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "window_size": {
-                    "description": "e.g., \"MINUTE\", \"HOUR\", \"DAY\"",
-                    "type": "string"
+                    "$ref": "#/definitions/types.WindowSize"
                 }
             }
         },
@@ -10272,13 +10271,25 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "MINUTE",
+                "15MIN",
+                "30MIN",
                 "HOUR",
-                "DAY"
+                "3HOUR",
+                "6HOUR",
+                "12HOUR",
+                "DAY",
+                "WEEK"
             ],
             "x-enum-varnames": [
                 "WindowSizeMinute",
+                "WindowSize15Min",
+                "WindowSize30Min",
                 "WindowSizeHour",
-                "WindowSizeDay"
+                "WindowSize3Hour",
+                "WindowSize6Hour",
+                "WindowSize12Hour",
+                "WindowSizeDay",
+                "WindowSizeWeek"
             ]
         }
     },

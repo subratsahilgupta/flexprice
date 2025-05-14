@@ -40,6 +40,18 @@ func formatWindowSize(windowSize types.WindowSize) string {
 		return "toStartOfHour(timestamp)"
 	case types.WindowSizeDay:
 		return "toStartOfDay(timestamp)"
+	case types.WindowSizeWeek:
+		return "toStartOfWeek(timestamp)"
+	case types.WindowSize15Min:
+		return "toStartOfInterval(timestamp, INTERVAL 15 MINUTE)"
+	case types.WindowSize30Min:
+		return "toStartOfInterval(timestamp, INTERVAL 30 MINUTE)"
+	case types.WindowSize3Hour:
+		return "toStartOfInterval(timestamp, INTERVAL 3 HOUR)"
+	case types.WindowSize6Hour:
+		return "toStartOfInterval(timestamp, INTERVAL 6 HOUR)"
+	case types.WindowSize12Hour:
+		return "toStartOfInterval(timestamp, INTERVAL 12 HOUR)"
 	default:
 		return ""
 	}
