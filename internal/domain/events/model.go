@@ -75,6 +75,26 @@ type ProcessedEvent struct {
 	FinalLagMs  uint32    `json:"final_lag_ms" ch:"final_lag_ms"`
 }
 
+// FindUnprocessedEventsParams contains parameters for finding events that haven't been processed
+type FindUnprocessedEventsParams struct {
+	ExternalCustomerID string    // Optional filter by external customer ID
+	EventName          string    // Optional filter by event name
+	StartTime          time.Time // Optional filter by start time
+	EndTime            time.Time // Optional filter by end time
+	BatchSize          int       // Number of events to return per batch
+	LastID             string    // Last event ID for keyset pagination (more efficient than offset)
+	LastTimestamp      time.Time // Last event timestamp for keyset pagination
+}
+
+// ReprocessEventsParams contains parameters for event reprocessing
+type ReprocessEventsParams struct {
+	ExternalCustomerID string    // Filter by external customer ID (optional)
+	EventName          string    // Filter by event name (optional)
+	StartTime          time.Time // Filter by start time (optional)
+	EndTime            time.Time // Filter by end time (optional)
+	BatchSize          int       // Number of events to process per batch (default 100)
+}
+
 // NewEvent creates a new event with defaults
 func NewEvent(
 	eventName, tenantID, externalCustomerID string, // primary keys

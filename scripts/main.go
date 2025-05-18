@@ -58,6 +58,21 @@ var commands = []Command{
 		Description: "Sync billing customers",
 		Run:         internal.SyncBillingCustomers,
 	},
+	{
+		Name:        "import-pricing",
+		Description: "Import pricing",
+		Run:         internal.ImportPricing,
+	},
+	{
+		Name:        "sync-plan-prices",
+		Description: "Synchronize plan prices to all active subscriptions",
+		Run:         internal.SyncPlanPrices,
+	},
+	{
+		Name:        "reprocess-events",
+		Description: "Reprocess events",
+		Run:         internal.ReprocessEvents,
+	},
 }
 
 func main() {
@@ -73,6 +88,8 @@ func main() {
 		userID        string
 		password      string
 		environmentID string
+		filePath      string
+		planID        string
 	)
 
 	flag.BoolVar(&listCommands, "list", false, "List all available commands")
@@ -85,7 +102,8 @@ func main() {
 	flag.StringVar(&userID, "user-id", "", "User ID for operations")
 	flag.StringVar(&password, "user-password", "", "password for setting up new user")
 	flag.StringVar(&environmentID, "environment-id", "", "Environment ID for operations")
-
+	flag.StringVar(&filePath, "file-path", "", "File path for operations")
+	flag.StringVar(&planID, "plan-id", "", "Plan ID for operations")
 	flag.Parse()
 
 	if listCommands {
@@ -124,6 +142,12 @@ func main() {
 	}
 	if environmentID != "" {
 		os.Setenv("ENVIRONMENT_ID", environmentID)
+	}
+	if filePath != "" {
+		os.Setenv("FILE_PATH", filePath)
+	}
+	if planID != "" {
+		os.Setenv("PLAN_ID", planID)
 	}
 
 	// Find and run the command

@@ -535,7 +535,7 @@ func handleEventConsumption(ctx context.Context, cfg *config.Configuration, log 
 	}
 
 	// Publish event to post-processing service
-	if err := eventPostProcessingSvc.PublishEvent(ctx, &event); err != nil {
+	if err := eventPostProcessingSvc.PublishEvent(ctx, &event, false); err != nil {
 		log.Errorf("Failed to publish event to post-processing service: %v, original event: %+v", err, event)
 		return err
 	}
