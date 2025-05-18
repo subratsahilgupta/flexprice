@@ -168,6 +168,8 @@ Whether you're a newbie coder or a wizard 🧙‍♀️, your perspective is gol
 
 ❤️ [Code of Conduct](CODE_OF_CONDUCT.md)
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/flexprice/flexprice)
+
 ## Contributors
 
 <a href="https://github.com/flexprice/flexprice/graphs/contributors">
