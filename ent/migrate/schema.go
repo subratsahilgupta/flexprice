@@ -72,6 +72,66 @@ var (
 			},
 		},
 	}
+	// CreditGrantsColumns holds the columns for the "credit_grants" table.
+	CreditGrantsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "scope", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(3)"}},
+		{Name: "cadence", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "period", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "period_count", Type: field.TypeInt, Nullable: true},
+		{Name: "expire_in_days", Type: field.TypeInt, Nullable: true},
+		{Name: "priority", Type: field.TypeInt, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "plan_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "subscription_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+	}
+	// CreditGrantsTable holds the schema information for the "credit_grants" table.
+	CreditGrantsTable = &schema.Table{
+		Name:       "credit_grants",
+		Columns:    CreditGrantsColumns,
+		PrimaryKey: []*schema.Column{CreditGrantsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "credit_grants_plans_credit_grants",
+				Columns:    []*schema.Column{CreditGrantsColumns[18]},
+				RefColumns: []*schema.Column{PlansColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "credit_grants_subscriptions_credit_grants",
+				Columns:    []*schema.Column{CreditGrantsColumns[19]},
+				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "creditgrant_tenant_id_environment_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[2]},
+			},
+			{
+				Name:    "creditgrant_tenant_id_environment_id_scope_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[9], CreditGrantsColumns[18]},
+			},
+			{
+				Name:    "creditgrant_tenant_id_environment_id_scope_subscription_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[9], CreditGrantsColumns[19]},
+			},
+		},
+	}
 	// CustomersColumns holds the columns for the "customers" table.
 	CustomersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -1130,6 +1190,7 @@ var (
 	Tables = []*schema.Table{
 		AuthsTable,
 		BillingSequencesTable,
+		CreditGrantsTable,
 		CustomersTable,
 		EntitlementsTable,
 		EnvironmentsTable,
@@ -1155,6 +1216,8 @@ var (
 )
 
 func init() {
+	CreditGrantsTable.ForeignKeys[0].RefTable = PlansTable
+	CreditGrantsTable.ForeignKeys[1].RefTable = SubscriptionsTable
 	EntitlementsTable.ForeignKeys[0].RefTable = PlansTable
 	InvoiceLineItemsTable.ForeignKeys[0].RefTable = InvoicesTable
 	PaymentAttemptsTable.ForeignKeys[0].RefTable = PaymentsTable

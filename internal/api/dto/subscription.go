@@ -2,6 +2,7 @@ package dto
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -34,6 +35,8 @@ type CreateSubscriptionRequest struct {
 	// For example, if the billing period is month and the start date is 2025-04-15 then in case of
 	// calendar billing the billing anchor will be 2025-05-01 vs 2025-04-15 for anniversary billing.
 	BillingCycle types.BillingCycle `json:"billing_cycle"`
+	// Credit grants to be applied when subscription is created
+	CreditGrants []CreateCreditGrantRequest `json:"credit_grants,omitempty"`
 }
 
 type UpdateSubscriptionRequest struct {
@@ -126,6 +129,42 @@ func (r *CreateSubscriptionRequest) Validate() error {
 				"trial_end":  *r.TrialEnd,
 			}).
 			Mark(ierr.ErrValidation)
+	}
+
+	// Validate credit grants if provided
+	if len(r.CreditGrants) > 0 {
+		for i, grant := range r.CreditGrants {
+			// Validate each credit grant
+			if err := grant.Validate(); err != nil {
+				return ierr.WithError(err).
+					WithHint(fmt.Sprintf("Invalid credit grant at index %d", i)).
+					Mark(ierr.ErrValidation)
+			}
+
+			// Ensure currency matches subscription currency
+			if grant.Currency != r.Currency {
+				return ierr.NewError("credit grant currency mismatch").
+					WithHintf(fmt.Sprintf("Credit grant currency '%s' must match subscription currency '%s'",
+						grant.Currency, r.Currency)).
+					WithReportableDetails(map[string]interface{}{
+						"grant_currency":        grant.Currency,
+						"subscription_currency": r.Currency,
+						"grant_index":           i,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+
+			// Force scope to SUBSCRIPTION for all grants added this way
+			if grant.Scope != types.CreditGrantScopeSubscription {
+				return ierr.NewError("invalid credit grant scope").
+					WithHint("Credit grants created with a subscription must have SUBSCRIPTION scope").
+					WithReportableDetails(map[string]interface{}{
+						"grant_scope": grant.Scope,
+						"grant_index": i,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
 	}
 
 	return nil

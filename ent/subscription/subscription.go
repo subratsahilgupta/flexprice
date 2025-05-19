@@ -78,6 +78,8 @@ const (
 	EdgeLineItems = "line_items"
 	// EdgePauses holds the string denoting the pauses edge name in mutations.
 	EdgePauses = "pauses"
+	// EdgeCreditGrants holds the string denoting the credit_grants edge name in mutations.
+	EdgeCreditGrants = "credit_grants"
 	// Table holds the table name of the subscription in the database.
 	Table = "subscriptions"
 	// LineItemsTable is the table that holds the line_items relation/edge.
@@ -94,6 +96,13 @@ const (
 	PausesInverseTable = "subscription_pauses"
 	// PausesColumn is the table column denoting the pauses relation/edge.
 	PausesColumn = "subscription_id"
+	// CreditGrantsTable is the table that holds the credit_grants relation/edge.
+	CreditGrantsTable = "credit_grants"
+	// CreditGrantsInverseTable is the table name for the CreditGrant entity.
+	// It exists in this package in order to avoid circular dependency with the "creditgrant" package.
+	CreditGrantsInverseTable = "credit_grants"
+	// CreditGrantsColumn is the table column denoting the credit_grants relation/edge.
+	CreditGrantsColumn = "subscription_id"
 )
 
 // Columns holds all SQL columns for subscription fields.
@@ -368,6 +377,20 @@ func ByPauses(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newPausesStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByCreditGrantsCount orders the results by credit_grants count.
+func ByCreditGrantsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCreditGrantsStep(), opts...)
+	}
+}
+
+// ByCreditGrants orders the results by credit_grants terms.
+func ByCreditGrants(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCreditGrantsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newLineItemsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -380,5 +403,12 @@ func newPausesStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PausesInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, PausesTable, PausesColumn),
+	)
+}
+func newCreditGrantsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CreditGrantsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CreditGrantsTable, CreditGrantsColumn),
 	)
 }

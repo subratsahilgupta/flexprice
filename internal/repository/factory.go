@@ -4,6 +4,7 @@ import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/auth"
+	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/environment"
@@ -107,4 +108,8 @@ func NewTaskRepository(p RepositoryParams) task.Repository {
 
 func NewSecretRepository(p RepositoryParams) secret.Repository {
 	return entRepo.NewSecretRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewCreditGrantRepository(p RepositoryParams) creditgrant.Repository {
+	return entRepo.NewCreditGrantRepository(p.EntClient, p.Logger, p.Cache)
 }
