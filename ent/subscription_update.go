@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/creditgrant"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
@@ -343,6 +344,21 @@ func (su *SubscriptionUpdate) AddPauses(s ...*SubscriptionPause) *SubscriptionUp
 	return su.AddPauseIDs(ids...)
 }
 
+// AddCreditGrantIDs adds the "credit_grants" edge to the CreditGrant entity by IDs.
+func (su *SubscriptionUpdate) AddCreditGrantIDs(ids ...string) *SubscriptionUpdate {
+	su.mutation.AddCreditGrantIDs(ids...)
+	return su
+}
+
+// AddCreditGrants adds the "credit_grants" edges to the CreditGrant entity.
+func (su *SubscriptionUpdate) AddCreditGrants(c ...*CreditGrant) *SubscriptionUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.AddCreditGrantIDs(ids...)
+}
+
 // Mutation returns the SubscriptionMutation object of the builder.
 func (su *SubscriptionUpdate) Mutation() *SubscriptionMutation {
 	return su.mutation
@@ -388,6 +404,27 @@ func (su *SubscriptionUpdate) RemovePauses(s ...*SubscriptionPause) *Subscriptio
 		ids[i] = s[i].ID
 	}
 	return su.RemovePauseIDs(ids...)
+}
+
+// ClearCreditGrants clears all "credit_grants" edges to the CreditGrant entity.
+func (su *SubscriptionUpdate) ClearCreditGrants() *SubscriptionUpdate {
+	su.mutation.ClearCreditGrants()
+	return su
+}
+
+// RemoveCreditGrantIDs removes the "credit_grants" edge to CreditGrant entities by IDs.
+func (su *SubscriptionUpdate) RemoveCreditGrantIDs(ids ...string) *SubscriptionUpdate {
+	su.mutation.RemoveCreditGrantIDs(ids...)
+	return su
+}
+
+// RemoveCreditGrants removes "credit_grants" edges to CreditGrant entities.
+func (su *SubscriptionUpdate) RemoveCreditGrants(c ...*CreditGrant) *SubscriptionUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.RemoveCreditGrantIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -605,6 +642,51 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.CreditGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CreditGrantsTable,
+			Columns: []string{subscription.CreditGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creditgrant.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedCreditGrantsIDs(); len(nodes) > 0 && !su.mutation.CreditGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CreditGrantsTable,
+			Columns: []string{subscription.CreditGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creditgrant.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.CreditGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CreditGrantsTable,
+			Columns: []string{subscription.CreditGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creditgrant.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
@@ -945,6 +1027,21 @@ func (suo *SubscriptionUpdateOne) AddPauses(s ...*SubscriptionPause) *Subscripti
 	return suo.AddPauseIDs(ids...)
 }
 
+// AddCreditGrantIDs adds the "credit_grants" edge to the CreditGrant entity by IDs.
+func (suo *SubscriptionUpdateOne) AddCreditGrantIDs(ids ...string) *SubscriptionUpdateOne {
+	suo.mutation.AddCreditGrantIDs(ids...)
+	return suo
+}
+
+// AddCreditGrants adds the "credit_grants" edges to the CreditGrant entity.
+func (suo *SubscriptionUpdateOne) AddCreditGrants(c ...*CreditGrant) *SubscriptionUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.AddCreditGrantIDs(ids...)
+}
+
 // Mutation returns the SubscriptionMutation object of the builder.
 func (suo *SubscriptionUpdateOne) Mutation() *SubscriptionMutation {
 	return suo.mutation
@@ -990,6 +1087,27 @@ func (suo *SubscriptionUpdateOne) RemovePauses(s ...*SubscriptionPause) *Subscri
 		ids[i] = s[i].ID
 	}
 	return suo.RemovePauseIDs(ids...)
+}
+
+// ClearCreditGrants clears all "credit_grants" edges to the CreditGrant entity.
+func (suo *SubscriptionUpdateOne) ClearCreditGrants() *SubscriptionUpdateOne {
+	suo.mutation.ClearCreditGrants()
+	return suo
+}
+
+// RemoveCreditGrantIDs removes the "credit_grants" edge to CreditGrant entities by IDs.
+func (suo *SubscriptionUpdateOne) RemoveCreditGrantIDs(ids ...string) *SubscriptionUpdateOne {
+	suo.mutation.RemoveCreditGrantIDs(ids...)
+	return suo
+}
+
+// RemoveCreditGrants removes "credit_grants" edges to CreditGrant entities.
+func (suo *SubscriptionUpdateOne) RemoveCreditGrants(c ...*CreditGrant) *SubscriptionUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.RemoveCreditGrantIDs(ids...)
 }
 
 // Where appends a list predicates to the SubscriptionUpdate builder.
@@ -1237,6 +1355,51 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.CreditGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CreditGrantsTable,
+			Columns: []string{subscription.CreditGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creditgrant.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedCreditGrantsIDs(); len(nodes) > 0 && !suo.mutation.CreditGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CreditGrantsTable,
+			Columns: []string{subscription.CreditGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creditgrant.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.CreditGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CreditGrantsTable,
+			Columns: []string{subscription.CreditGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creditgrant.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

@@ -12,6 +12,9 @@ type Auth func(*sql.Selector)
 // BillingSequence is the predicate function for billingsequence builders.
 type BillingSequence func(*sql.Selector)
 
+// CreditGrant is the predicate function for creditgrant builders.
+type CreditGrant func(*sql.Selector)
+
 // Customer is the predicate function for customer builders.
 type Customer func(*sql.Selector)
 

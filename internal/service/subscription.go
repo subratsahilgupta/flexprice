@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -41,6 +42,7 @@ func NewSubscriptionService(params ServiceParams) SubscriptionService {
 		ServiceParams: params,
 	}
 }
+
 func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.CreateSubscriptionRequest) (*dto.SubscriptionResponse, error) {
 	// Handle default values
 	if req.BillingCycle == "" {
@@ -230,6 +232,12 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			return err
 		}
 
+		// Create credit grants
+		err = s.handleCreditGrants(ctx, sub, req.CreditGrants)
+		if err != nil {
+			return err
+		}
+
 		// Create invoice for the subscription (in case it has advance charges)
 		_, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 			SubscriptionID: sub.ID,
@@ -246,6 +254,128 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	response := &dto.SubscriptionResponse{Subscription: sub}
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionCreated, sub.ID)
 	return response, nil
+}
+
+// handleCreditGrants processes credit grants for a subscription and creates wallet top-ups
+func (s *subscriptionService) handleCreditGrants(
+	ctx context.Context,
+	subscription *subscription.Subscription,
+	creditGrantRequests []dto.CreateCreditGrantRequest,
+) error {
+	if len(creditGrantRequests) == 0 {
+		return nil
+	}
+
+	creditGrantService := NewCreditGrantService(s.CreditGrantRepo, s.PlanRepo, s.SubRepo, s.Logger)
+
+	s.Logger.Infow("processing credit grants for subscription",
+		"subscription_id", subscription.ID,
+		"credit_grants_count", len(creditGrantRequests))
+
+	// Create credit grants
+	creditGrants := make([]*dto.CreditGrantResponse, 0, len(creditGrantRequests))
+	for _, grantReq := range creditGrantRequests {
+		// Ensure subscription ID is set and scope is SUBSCRIPTION
+		grantReq.SubscriptionID = &subscription.ID
+		grantReq.Scope = types.CreditGrantScopeSubscription
+
+		// Use same plan ID as subscription
+		grantReq.PlanID = &subscription.PlanID
+
+		// Save credit grant in DB
+		createdGrant, err := creditGrantService.CreateCreditGrant(ctx, grantReq)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to create credit grant for subscription").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": subscription.ID,
+					"grant_name":      createdGrant.Name,
+				}).
+				Mark(ierr.ErrDatabase)
+		}
+
+		creditGrants = append(creditGrants, createdGrant)
+	}
+
+	if len(creditGrants) == 0 {
+		return nil
+	}
+
+	walletService := NewWalletService(s.ServiceParams)
+	// find the matching wallet for top up
+	wallets, err := walletService.GetWalletsByCustomerID(ctx, subscription.CustomerID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to get wallet for top up").
+			Mark(ierr.ErrDatabase)
+	}
+
+	sort.Slice(wallets, func(i, j int) bool {
+		return wallets[i].CreatedAt.After(wallets[j].CreatedAt)
+	})
+
+	var selectedWallet *dto.WalletResponse
+	for _, w := range wallets {
+		if types.IsMatchingCurrency(w.Currency, subscription.Currency) {
+			selectedWallet = w
+			break
+		}
+	}
+
+	if selectedWallet == nil {
+		// create a new wallet
+		walletReq := &dto.CreateWalletRequest{
+			Name:       "Subscription Wallet",
+			CustomerID: subscription.CustomerID,
+			Currency:   subscription.Currency,
+		}
+		selectedWallet, err = walletService.CreateWallet(ctx, walletReq)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to create wallet for top up").
+				Mark(ierr.ErrDatabase)
+		}
+	}
+
+	if selectedWallet == nil {
+		return ierr.NewError("no wallet found for top up").
+			WithHint("No wallet found for the subscription currency").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Now create wallet top-ups for each credit grant
+	for _, grant := range creditGrants {
+		// Calculate expiry date if needed
+		var expiryDate *time.Time
+		if grant.ExpireInDays != nil && *grant.ExpireInDays > 0 {
+			expiry := subscription.StartDate.AddDate(0, 0, *grant.ExpireInDays)
+			expiryDate = &expiry
+		}
+
+		// Create a wallet top-up
+		topupReq := &dto.TopUpWalletRequest{
+			Amount:            grant.Amount,
+			TransactionReason: types.TransactionReasonSubscriptionCredit,
+			ExpiryDateUTC:     expiryDate,
+			Priority:          grant.Priority,
+			IdempotencyKey:    lo.ToPtr(grant.ID),
+		}
+
+		// Create the wallet top-up
+		_, err := walletService.TopUpWallet(ctx, selectedWallet.ID, topupReq)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to create wallet top-up for credit grant").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": subscription.ID,
+					"grant_id":        grant.ID,
+					"grant_name":      grant.Name,
+				}).
+				Mark(ierr.ErrDatabase)
+		}
+	}
+
+	return nil
 }
 
 func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*dto.SubscriptionResponse, error) {

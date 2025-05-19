@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
+	"github.com/flexprice/flexprice/ent/creditgrant"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/entitlement"
 	"github.com/flexprice/flexprice/ent/environment"
@@ -84,6 +85,59 @@ func init() {
 	billingsequence.DefaultUpdatedAt = billingsequenceDescUpdatedAt.Default.(func() time.Time)
 	// billingsequence.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	billingsequence.UpdateDefaultUpdatedAt = billingsequenceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	creditgrantMixin := schema.CreditGrant{}.Mixin()
+	creditgrantMixinFields0 := creditgrantMixin[0].Fields()
+	_ = creditgrantMixinFields0
+	creditgrantMixinFields1 := creditgrantMixin[1].Fields()
+	_ = creditgrantMixinFields1
+	creditgrantFields := schema.CreditGrant{}.Fields()
+	_ = creditgrantFields
+	// creditgrantDescTenantID is the schema descriptor for tenant_id field.
+	creditgrantDescTenantID := creditgrantMixinFields0[0].Descriptor()
+	// creditgrant.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	creditgrant.TenantIDValidator = creditgrantDescTenantID.Validators[0].(func(string) error)
+	// creditgrantDescStatus is the schema descriptor for status field.
+	creditgrantDescStatus := creditgrantMixinFields0[1].Descriptor()
+	// creditgrant.DefaultStatus holds the default value on creation for the status field.
+	creditgrant.DefaultStatus = creditgrantDescStatus.Default.(string)
+	// creditgrantDescCreatedAt is the schema descriptor for created_at field.
+	creditgrantDescCreatedAt := creditgrantMixinFields0[2].Descriptor()
+	// creditgrant.DefaultCreatedAt holds the default value on creation for the created_at field.
+	creditgrant.DefaultCreatedAt = creditgrantDescCreatedAt.Default.(func() time.Time)
+	// creditgrantDescUpdatedAt is the schema descriptor for updated_at field.
+	creditgrantDescUpdatedAt := creditgrantMixinFields0[3].Descriptor()
+	// creditgrant.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	creditgrant.DefaultUpdatedAt = creditgrantDescUpdatedAt.Default.(func() time.Time)
+	// creditgrant.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	creditgrant.UpdateDefaultUpdatedAt = creditgrantDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// creditgrantDescEnvironmentID is the schema descriptor for environment_id field.
+	creditgrantDescEnvironmentID := creditgrantMixinFields1[0].Descriptor()
+	// creditgrant.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	creditgrant.DefaultEnvironmentID = creditgrantDescEnvironmentID.Default.(string)
+	// creditgrantDescName is the schema descriptor for name field.
+	creditgrantDescName := creditgrantFields[1].Descriptor()
+	// creditgrant.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	creditgrant.NameValidator = creditgrantDescName.Validators[0].(func(string) error)
+	// creditgrantDescScope is the schema descriptor for scope field.
+	creditgrantDescScope := creditgrantFields[2].Descriptor()
+	// creditgrant.ScopeValidator is a validator for the "scope" field. It is called by the builders before save.
+	creditgrant.ScopeValidator = creditgrantDescScope.Validators[0].(func(string) error)
+	// creditgrantDescAmount is the schema descriptor for amount field.
+	creditgrantDescAmount := creditgrantFields[5].Descriptor()
+	// creditgrant.DefaultAmount holds the default value on creation for the amount field.
+	creditgrant.DefaultAmount = creditgrantDescAmount.Default.(decimal.Decimal)
+	// creditgrantDescCurrency is the schema descriptor for currency field.
+	creditgrantDescCurrency := creditgrantFields[6].Descriptor()
+	// creditgrant.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	creditgrant.CurrencyValidator = creditgrantDescCurrency.Validators[0].(func(string) error)
+	// creditgrantDescCadence is the schema descriptor for cadence field.
+	creditgrantDescCadence := creditgrantFields[7].Descriptor()
+	// creditgrant.CadenceValidator is a validator for the "cadence" field. It is called by the builders before save.
+	creditgrant.CadenceValidator = creditgrantDescCadence.Validators[0].(func(string) error)
+	// creditgrantDescMetadata is the schema descriptor for metadata field.
+	creditgrantDescMetadata := creditgrantFields[12].Descriptor()
+	// creditgrant.DefaultMetadata holds the default value on creation for the metadata field.
+	creditgrant.DefaultMetadata = creditgrantDescMetadata.Default.(map[string]string)
 	customerMixin := schema.Customer{}.Mixin()
 	customerMixinFields0 := customerMixin[0].Fields()
 	_ = customerMixinFields0

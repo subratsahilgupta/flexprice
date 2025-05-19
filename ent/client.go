@@ -17,6 +17,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
+	"github.com/flexprice/flexprice/ent/creditgrant"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/entitlement"
 	"github.com/flexprice/flexprice/ent/environment"
@@ -51,6 +52,8 @@ type Client struct {
 	Auth *AuthClient
 	// BillingSequence is the client for interacting with the BillingSequence builders.
 	BillingSequence *BillingSequenceClient
+	// CreditGrant is the client for interacting with the CreditGrant builders.
+	CreditGrant *CreditGrantClient
 	// Customer is the client for interacting with the Customer builders.
 	Customer *CustomerClient
 	// Entitlement is the client for interacting with the Entitlement builders.
@@ -106,6 +109,7 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.Auth = NewAuthClient(c.config)
 	c.BillingSequence = NewBillingSequenceClient(c.config)
+	c.CreditGrant = NewCreditGrantClient(c.config)
 	c.Customer = NewCustomerClient(c.config)
 	c.Entitlement = NewEntitlementClient(c.config)
 	c.Environment = NewEnvironmentClient(c.config)
@@ -221,6 +225,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:               cfg,
 		Auth:                 NewAuthClient(cfg),
 		BillingSequence:      NewBillingSequenceClient(cfg),
+		CreditGrant:          NewCreditGrantClient(cfg),
 		Customer:             NewCustomerClient(cfg),
 		Entitlement:          NewEntitlementClient(cfg),
 		Environment:          NewEnvironmentClient(cfg),
@@ -263,6 +268,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:               cfg,
 		Auth:                 NewAuthClient(cfg),
 		BillingSequence:      NewBillingSequenceClient(cfg),
+		CreditGrant:          NewCreditGrantClient(cfg),
 		Customer:             NewCustomerClient(cfg),
 		Entitlement:          NewEntitlementClient(cfg),
 		Environment:          NewEnvironmentClient(cfg),
@@ -313,11 +319,11 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Auth, c.BillingSequence, c.Customer, c.Entitlement, c.Environment, c.Feature,
-		c.Invoice, c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment,
-		c.PaymentAttempt, c.Plan, c.Price, c.Secret, c.Subscription,
-		c.SubscriptionLineItem, c.SubscriptionPause, c.Task, c.Tenant, c.User,
-		c.Wallet, c.WalletTransaction,
+		c.Auth, c.BillingSequence, c.CreditGrant, c.Customer, c.Entitlement,
+		c.Environment, c.Feature, c.Invoice, c.InvoiceLineItem, c.InvoiceSequence,
+		c.Meter, c.Payment, c.PaymentAttempt, c.Plan, c.Price, c.Secret,
+		c.Subscription, c.SubscriptionLineItem, c.SubscriptionPause, c.Task, c.Tenant,
+		c.User, c.Wallet, c.WalletTransaction,
 	} {
 		n.Use(hooks...)
 	}
@@ -327,11 +333,11 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Auth, c.BillingSequence, c.Customer, c.Entitlement, c.Environment, c.Feature,
-		c.Invoice, c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment,
-		c.PaymentAttempt, c.Plan, c.Price, c.Secret, c.Subscription,
-		c.SubscriptionLineItem, c.SubscriptionPause, c.Task, c.Tenant, c.User,
-		c.Wallet, c.WalletTransaction,
+		c.Auth, c.BillingSequence, c.CreditGrant, c.Customer, c.Entitlement,
+		c.Environment, c.Feature, c.Invoice, c.InvoiceLineItem, c.InvoiceSequence,
+		c.Meter, c.Payment, c.PaymentAttempt, c.Plan, c.Price, c.Secret,
+		c.Subscription, c.SubscriptionLineItem, c.SubscriptionPause, c.Task, c.Tenant,
+		c.User, c.Wallet, c.WalletTransaction,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -344,6 +350,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Auth.mutate(ctx, m)
 	case *BillingSequenceMutation:
 		return c.BillingSequence.mutate(ctx, m)
+	case *CreditGrantMutation:
+		return c.CreditGrant.mutate(ctx, m)
 	case *CustomerMutation:
 		return c.Customer.mutate(ctx, m)
 	case *EntitlementMutation:
@@ -654,6 +662,171 @@ func (c *BillingSequenceClient) mutate(ctx context.Context, m *BillingSequenceMu
 		return (&BillingSequenceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown BillingSequence mutation op: %q", m.Op())
+	}
+}
+
+// CreditGrantClient is a client for the CreditGrant schema.
+type CreditGrantClient struct {
+	config
+}
+
+// NewCreditGrantClient returns a client for the CreditGrant from the given config.
+func NewCreditGrantClient(c config) *CreditGrantClient {
+	return &CreditGrantClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `creditgrant.Hooks(f(g(h())))`.
+func (c *CreditGrantClient) Use(hooks ...Hook) {
+	c.hooks.CreditGrant = append(c.hooks.CreditGrant, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `creditgrant.Intercept(f(g(h())))`.
+func (c *CreditGrantClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CreditGrant = append(c.inters.CreditGrant, interceptors...)
+}
+
+// Create returns a builder for creating a CreditGrant entity.
+func (c *CreditGrantClient) Create() *CreditGrantCreate {
+	mutation := newCreditGrantMutation(c.config, OpCreate)
+	return &CreditGrantCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CreditGrant entities.
+func (c *CreditGrantClient) CreateBulk(builders ...*CreditGrantCreate) *CreditGrantCreateBulk {
+	return &CreditGrantCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CreditGrantClient) MapCreateBulk(slice any, setFunc func(*CreditGrantCreate, int)) *CreditGrantCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CreditGrantCreateBulk{err: fmt.Errorf("calling to CreditGrantClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CreditGrantCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CreditGrantCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CreditGrant.
+func (c *CreditGrantClient) Update() *CreditGrantUpdate {
+	mutation := newCreditGrantMutation(c.config, OpUpdate)
+	return &CreditGrantUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CreditGrantClient) UpdateOne(cg *CreditGrant) *CreditGrantUpdateOne {
+	mutation := newCreditGrantMutation(c.config, OpUpdateOne, withCreditGrant(cg))
+	return &CreditGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CreditGrantClient) UpdateOneID(id string) *CreditGrantUpdateOne {
+	mutation := newCreditGrantMutation(c.config, OpUpdateOne, withCreditGrantID(id))
+	return &CreditGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CreditGrant.
+func (c *CreditGrantClient) Delete() *CreditGrantDelete {
+	mutation := newCreditGrantMutation(c.config, OpDelete)
+	return &CreditGrantDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CreditGrantClient) DeleteOne(cg *CreditGrant) *CreditGrantDeleteOne {
+	return c.DeleteOneID(cg.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CreditGrantClient) DeleteOneID(id string) *CreditGrantDeleteOne {
+	builder := c.Delete().Where(creditgrant.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CreditGrantDeleteOne{builder}
+}
+
+// Query returns a query builder for CreditGrant.
+func (c *CreditGrantClient) Query() *CreditGrantQuery {
+	return &CreditGrantQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCreditGrant},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CreditGrant entity by its id.
+func (c *CreditGrantClient) Get(ctx context.Context, id string) (*CreditGrant, error) {
+	return c.Query().Where(creditgrant.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CreditGrantClient) GetX(ctx context.Context, id string) *CreditGrant {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryPlan queries the plan edge of a CreditGrant.
+func (c *CreditGrantClient) QueryPlan(cg *CreditGrant) *PlanQuery {
+	query := (&PlanClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := cg.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creditgrant.Table, creditgrant.FieldID, id),
+			sqlgraph.To(plan.Table, plan.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, creditgrant.PlanTable, creditgrant.PlanColumn),
+		)
+		fromV = sqlgraph.Neighbors(cg.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySubscription queries the subscription edge of a CreditGrant.
+func (c *CreditGrantClient) QuerySubscription(cg *CreditGrant) *SubscriptionQuery {
+	query := (&SubscriptionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := cg.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creditgrant.Table, creditgrant.FieldID, id),
+			sqlgraph.To(subscription.Table, subscription.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, creditgrant.SubscriptionTable, creditgrant.SubscriptionColumn),
+		)
+		fromV = sqlgraph.Neighbors(cg.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CreditGrantClient) Hooks() []Hook {
+	return c.hooks.CreditGrant
+}
+
+// Interceptors returns the client interceptors.
+func (c *CreditGrantClient) Interceptors() []Interceptor {
+	return c.inters.CreditGrant
+}
+
+func (c *CreditGrantClient) mutate(ctx context.Context, m *CreditGrantMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CreditGrantCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CreditGrantUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CreditGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CreditGrantDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CreditGrant mutation op: %q", m.Op())
 	}
 }
 
@@ -2191,6 +2364,22 @@ func (c *PlanClient) QueryEntitlements(pl *Plan) *EntitlementQuery {
 	return query
 }
 
+// QueryCreditGrants queries the credit_grants edge of a Plan.
+func (c *PlanClient) QueryCreditGrants(pl *Plan) *CreditGrantQuery {
+	query := (&CreditGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := pl.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(plan.Table, plan.FieldID, id),
+			sqlgraph.To(creditgrant.Table, creditgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, plan.CreditGrantsTable, plan.CreditGrantsColumn),
+		)
+		fromV = sqlgraph.Neighbors(pl.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *PlanClient) Hooks() []Hook {
 	return c.hooks.Plan
@@ -2615,6 +2804,22 @@ func (c *SubscriptionClient) QueryPauses(s *Subscription) *SubscriptionPauseQuer
 			sqlgraph.From(subscription.Table, subscription.FieldID, id),
 			sqlgraph.To(subscriptionpause.Table, subscriptionpause.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, subscription.PausesTable, subscription.PausesColumn),
+		)
+		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCreditGrants queries the credit_grants edge of a Subscription.
+func (c *SubscriptionClient) QueryCreditGrants(s *Subscription) *CreditGrantQuery {
+	query := (&CreditGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := s.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(subscription.Table, subscription.FieldID, id),
+			sqlgraph.To(creditgrant.Table, creditgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, subscription.CreditGrantsTable, subscription.CreditGrantsColumn),
 		)
 		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
 		return fromV, nil
@@ -3613,16 +3818,16 @@ func (c *WalletTransactionClient) mutate(ctx context.Context, m *WalletTransacti
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Auth, BillingSequence, Customer, Entitlement, Environment, Feature, Invoice,
-		InvoiceLineItem, InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price,
-		Secret, Subscription, SubscriptionLineItem, SubscriptionPause, Task, Tenant,
-		User, Wallet, WalletTransaction []ent.Hook
+		Auth, BillingSequence, CreditGrant, Customer, Entitlement, Environment, Feature,
+		Invoice, InvoiceLineItem, InvoiceSequence, Meter, Payment, PaymentAttempt,
+		Plan, Price, Secret, Subscription, SubscriptionLineItem, SubscriptionPause,
+		Task, Tenant, User, Wallet, WalletTransaction []ent.Hook
 	}
 	inters struct {
-		Auth, BillingSequence, Customer, Entitlement, Environment, Feature, Invoice,
-		InvoiceLineItem, InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price,
-		Secret, Subscription, SubscriptionLineItem, SubscriptionPause, Task, Tenant,
-		User, Wallet, WalletTransaction []ent.Interceptor
+		Auth, BillingSequence, CreditGrant, Customer, Entitlement, Environment, Feature,
+		Invoice, InvoiceLineItem, InvoiceSequence, Meter, Payment, PaymentAttempt,
+		Plan, Price, Secret, Subscription, SubscriptionLineItem, SubscriptionPause,
+		Task, Tenant, User, Wallet, WalletTransaction []ent.Interceptor
 	}
 )
 

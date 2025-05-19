@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -246,6 +247,18 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 	// If both provided we give priority to Credits to add
 	if req.CreditsToAdd.IsZero() && !req.Amount.IsZero() {
 		req.CreditsToAdd = s.GetCreditsFromCurrencyAmount(req.Amount, w.ConversionRate)
+	}
+
+	// If ExpiryDateUTC is provided, convert it to YYYYMMDD format
+	if req.ExpiryDateUTC != nil && req.ExpiryDate == nil {
+		expiryDate := req.ExpiryDateUTC.UTC()
+		parsedDate, err := strconv.Atoi(expiryDate.Format("20060102"))
+		if err != nil {
+			return nil, ierr.WithError(err).
+				WithHint("Invalid expiry date").
+				Mark(ierr.ErrValidation)
+		}
+		req.ExpiryDate = &parsedDate
 	}
 
 	// Create a credit operation

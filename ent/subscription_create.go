@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/creditgrant"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/subscriptionpause"
@@ -422,6 +423,21 @@ func (sc *SubscriptionCreate) AddPauses(s ...*SubscriptionPause) *SubscriptionCr
 	return sc.AddPauseIDs(ids...)
 }
 
+// AddCreditGrantIDs adds the "credit_grants" edge to the CreditGrant entity by IDs.
+func (sc *SubscriptionCreate) AddCreditGrantIDs(ids ...string) *SubscriptionCreate {
+	sc.mutation.AddCreditGrantIDs(ids...)
+	return sc
+}
+
+// AddCreditGrants adds the "credit_grants" edges to the CreditGrant entity.
+func (sc *SubscriptionCreate) AddCreditGrants(c ...*CreditGrant) *SubscriptionCreate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return sc.AddCreditGrantIDs(ids...)
+}
+
 // Mutation returns the SubscriptionMutation object of the builder.
 func (sc *SubscriptionCreate) Mutation() *SubscriptionMutation {
 	return sc.mutation
@@ -789,6 +805,22 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionpause.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := sc.mutation.CreditGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CreditGrantsTable,
+			Columns: []string{subscription.CreditGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(creditgrant.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
