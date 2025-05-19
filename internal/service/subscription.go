@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -267,12 +266,14 @@ func (s *subscriptionService) handleCreditGrants(
 		return nil
 	}
 
+	creditGrantService := NewCreditGrantService(s.CreditGrantRepo, s.PlanRepo, s.SubRepo, s.Logger)
+
 	s.Logger.Infow("processing credit grants for subscription",
 		"subscription_id", subscription.ID,
 		"credit_grants_count", len(creditGrantRequests))
 
 	// Create credit grants
-	creditGrants := make([]*creditgrant.CreditGrant, 0, len(creditGrantRequests))
+	creditGrants := make([]*dto.CreditGrantResponse, 0, len(creditGrantRequests))
 	for _, grantReq := range creditGrantRequests {
 		// Ensure subscription ID is set and scope is SUBSCRIPTION
 		grantReq.SubscriptionID = &subscription.ID
@@ -281,17 +282,14 @@ func (s *subscriptionService) handleCreditGrants(
 		// Use same plan ID as subscription
 		grantReq.PlanID = &subscription.PlanID
 
-		// Create the credit grant
-		grant := grantReq.ToCreditGrant(ctx)
-
 		// Save credit grant in DB
-		createdGrant, err := s.CreditGrantRepo.Create(ctx, grant)
+		createdGrant, err := creditGrantService.CreateCreditGrant(ctx, grantReq)
 		if err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to create credit grant for subscription").
 				WithReportableDetails(map[string]interface{}{
 					"subscription_id": subscription.ID,
-					"grant_name":      grant.Name,
+					"grant_name":      createdGrant.Name,
 				}).
 				Mark(ierr.ErrDatabase)
 		}
@@ -318,7 +316,7 @@ func (s *subscriptionService) handleCreditGrants(
 
 	var selectedWallet *dto.WalletResponse
 	for _, w := range wallets {
-		if w.Currency == subscription.Currency {
+		if types.IsMatchingCurrency(w.Currency, subscription.Currency) {
 			selectedWallet = w
 			break
 		}

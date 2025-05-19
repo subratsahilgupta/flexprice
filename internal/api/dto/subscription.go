@@ -134,13 +134,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	// Validate credit grants if provided
 	if len(r.CreditGrants) > 0 {
 		for i, grant := range r.CreditGrants {
-			// Validate each credit grant
-			if err := grant.Validate(); err != nil {
-				return ierr.WithError(err).
-					WithHint(fmt.Sprintf("Invalid credit grant at index %d", i)).
-					Mark(ierr.ErrValidation)
-			}
-
 			// Ensure currency matches subscription currency
 			if grant.Currency != r.Currency {
 				return ierr.NewError("credit grant currency mismatch").
