@@ -16,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/subscriptionpause"
+	"github.com/shopspring/decimal"
 )
 
 // SubscriptionUpdate is the builder for updating Subscription entities.
@@ -314,6 +315,46 @@ func (su *SubscriptionUpdate) ClearActivePauseID() *SubscriptionUpdate {
 	return su
 }
 
+// SetCommitmentAmount sets the "commitment_amount" field.
+func (su *SubscriptionUpdate) SetCommitmentAmount(d decimal.Decimal) *SubscriptionUpdate {
+	su.mutation.SetCommitmentAmount(d)
+	return su
+}
+
+// SetNillableCommitmentAmount sets the "commitment_amount" field if the given value is not nil.
+func (su *SubscriptionUpdate) SetNillableCommitmentAmount(d *decimal.Decimal) *SubscriptionUpdate {
+	if d != nil {
+		su.SetCommitmentAmount(*d)
+	}
+	return su
+}
+
+// ClearCommitmentAmount clears the value of the "commitment_amount" field.
+func (su *SubscriptionUpdate) ClearCommitmentAmount() *SubscriptionUpdate {
+	su.mutation.ClearCommitmentAmount()
+	return su
+}
+
+// SetOverageFactor sets the "overage_factor" field.
+func (su *SubscriptionUpdate) SetOverageFactor(d decimal.Decimal) *SubscriptionUpdate {
+	su.mutation.SetOverageFactor(d)
+	return su
+}
+
+// SetNillableOverageFactor sets the "overage_factor" field if the given value is not nil.
+func (su *SubscriptionUpdate) SetNillableOverageFactor(d *decimal.Decimal) *SubscriptionUpdate {
+	if d != nil {
+		su.SetOverageFactor(*d)
+	}
+	return su
+}
+
+// ClearOverageFactor clears the value of the "overage_factor" field.
+func (su *SubscriptionUpdate) ClearOverageFactor() *SubscriptionUpdate {
+	su.mutation.ClearOverageFactor()
+	return su
+}
+
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by IDs.
 func (su *SubscriptionUpdate) AddLineItemIDs(ids ...string) *SubscriptionUpdate {
 	su.mutation.AddLineItemIDs(ids...)
@@ -558,6 +599,18 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if su.mutation.ActivePauseIDCleared() {
 		_spec.ClearField(subscription.FieldActivePauseID, field.TypeString)
+	}
+	if value, ok := su.mutation.CommitmentAmount(); ok {
+		_spec.SetField(subscription.FieldCommitmentAmount, field.TypeOther, value)
+	}
+	if su.mutation.CommitmentAmountCleared() {
+		_spec.ClearField(subscription.FieldCommitmentAmount, field.TypeOther)
+	}
+	if value, ok := su.mutation.OverageFactor(); ok {
+		_spec.SetField(subscription.FieldOverageFactor, field.TypeOther, value)
+	}
+	if su.mutation.OverageFactorCleared() {
+		_spec.ClearField(subscription.FieldOverageFactor, field.TypeOther)
 	}
 	if su.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -997,6 +1050,46 @@ func (suo *SubscriptionUpdateOne) ClearActivePauseID() *SubscriptionUpdateOne {
 	return suo
 }
 
+// SetCommitmentAmount sets the "commitment_amount" field.
+func (suo *SubscriptionUpdateOne) SetCommitmentAmount(d decimal.Decimal) *SubscriptionUpdateOne {
+	suo.mutation.SetCommitmentAmount(d)
+	return suo
+}
+
+// SetNillableCommitmentAmount sets the "commitment_amount" field if the given value is not nil.
+func (suo *SubscriptionUpdateOne) SetNillableCommitmentAmount(d *decimal.Decimal) *SubscriptionUpdateOne {
+	if d != nil {
+		suo.SetCommitmentAmount(*d)
+	}
+	return suo
+}
+
+// ClearCommitmentAmount clears the value of the "commitment_amount" field.
+func (suo *SubscriptionUpdateOne) ClearCommitmentAmount() *SubscriptionUpdateOne {
+	suo.mutation.ClearCommitmentAmount()
+	return suo
+}
+
+// SetOverageFactor sets the "overage_factor" field.
+func (suo *SubscriptionUpdateOne) SetOverageFactor(d decimal.Decimal) *SubscriptionUpdateOne {
+	suo.mutation.SetOverageFactor(d)
+	return suo
+}
+
+// SetNillableOverageFactor sets the "overage_factor" field if the given value is not nil.
+func (suo *SubscriptionUpdateOne) SetNillableOverageFactor(d *decimal.Decimal) *SubscriptionUpdateOne {
+	if d != nil {
+		suo.SetOverageFactor(*d)
+	}
+	return suo
+}
+
+// ClearOverageFactor clears the value of the "overage_factor" field.
+func (suo *SubscriptionUpdateOne) ClearOverageFactor() *SubscriptionUpdateOne {
+	suo.mutation.ClearOverageFactor()
+	return suo
+}
+
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by IDs.
 func (suo *SubscriptionUpdateOne) AddLineItemIDs(ids ...string) *SubscriptionUpdateOne {
 	suo.mutation.AddLineItemIDs(ids...)
@@ -1271,6 +1364,18 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 	}
 	if suo.mutation.ActivePauseIDCleared() {
 		_spec.ClearField(subscription.FieldActivePauseID, field.TypeString)
+	}
+	if value, ok := suo.mutation.CommitmentAmount(); ok {
+		_spec.SetField(subscription.FieldCommitmentAmount, field.TypeOther, value)
+	}
+	if suo.mutation.CommitmentAmountCleared() {
+		_spec.ClearField(subscription.FieldCommitmentAmount, field.TypeOther)
+	}
+	if value, ok := suo.mutation.OverageFactor(); ok {
+		_spec.SetField(subscription.FieldOverageFactor, field.TypeOther, value)
+	}
+	if suo.mutation.OverageFactorCleared() {
+		_spec.ClearField(subscription.FieldOverageFactor, field.TypeOther)
 	}
 	if suo.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{

@@ -21040,6 +21040,8 @@ type SubscriptionMutation struct {
 	pause_status            *string
 	active_pause_id         *string
 	billing_cycle           *string
+	commitment_amount       *decimal.Decimal
+	overage_factor          *decimal.Decimal
 	clearedFields           map[string]struct{}
 	line_items              map[string]struct{}
 	removedline_items       map[string]struct{}
@@ -22422,6 +22424,104 @@ func (m *SubscriptionMutation) ResetBillingCycle() {
 	m.billing_cycle = nil
 }
 
+// SetCommitmentAmount sets the "commitment_amount" field.
+func (m *SubscriptionMutation) SetCommitmentAmount(d decimal.Decimal) {
+	m.commitment_amount = &d
+}
+
+// CommitmentAmount returns the value of the "commitment_amount" field in the mutation.
+func (m *SubscriptionMutation) CommitmentAmount() (r decimal.Decimal, exists bool) {
+	v := m.commitment_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCommitmentAmount returns the old "commitment_amount" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldCommitmentAmount(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCommitmentAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCommitmentAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCommitmentAmount: %w", err)
+	}
+	return oldValue.CommitmentAmount, nil
+}
+
+// ClearCommitmentAmount clears the value of the "commitment_amount" field.
+func (m *SubscriptionMutation) ClearCommitmentAmount() {
+	m.commitment_amount = nil
+	m.clearedFields[subscription.FieldCommitmentAmount] = struct{}{}
+}
+
+// CommitmentAmountCleared returns if the "commitment_amount" field was cleared in this mutation.
+func (m *SubscriptionMutation) CommitmentAmountCleared() bool {
+	_, ok := m.clearedFields[subscription.FieldCommitmentAmount]
+	return ok
+}
+
+// ResetCommitmentAmount resets all changes to the "commitment_amount" field.
+func (m *SubscriptionMutation) ResetCommitmentAmount() {
+	m.commitment_amount = nil
+	delete(m.clearedFields, subscription.FieldCommitmentAmount)
+}
+
+// SetOverageFactor sets the "overage_factor" field.
+func (m *SubscriptionMutation) SetOverageFactor(d decimal.Decimal) {
+	m.overage_factor = &d
+}
+
+// OverageFactor returns the value of the "overage_factor" field in the mutation.
+func (m *SubscriptionMutation) OverageFactor() (r decimal.Decimal, exists bool) {
+	v := m.overage_factor
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOverageFactor returns the old "overage_factor" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldOverageFactor(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOverageFactor is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOverageFactor requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOverageFactor: %w", err)
+	}
+	return oldValue.OverageFactor, nil
+}
+
+// ClearOverageFactor clears the value of the "overage_factor" field.
+func (m *SubscriptionMutation) ClearOverageFactor() {
+	m.overage_factor = nil
+	m.clearedFields[subscription.FieldOverageFactor] = struct{}{}
+}
+
+// OverageFactorCleared returns if the "overage_factor" field was cleared in this mutation.
+func (m *SubscriptionMutation) OverageFactorCleared() bool {
+	_, ok := m.clearedFields[subscription.FieldOverageFactor]
+	return ok
+}
+
+// ResetOverageFactor resets all changes to the "overage_factor" field.
+func (m *SubscriptionMutation) ResetOverageFactor() {
+	m.overage_factor = nil
+	delete(m.clearedFields, subscription.FieldOverageFactor)
+}
+
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by ids.
 func (m *SubscriptionMutation) AddLineItemIDs(ids ...string) {
 	if m.line_items == nil {
@@ -22618,7 +22718,7 @@ func (m *SubscriptionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionMutation) Fields() []string {
-	fields := make([]string, 0, 30)
+	fields := make([]string, 0, 32)
 	if m.tenant_id != nil {
 		fields = append(fields, subscription.FieldTenantID)
 	}
@@ -22709,6 +22809,12 @@ func (m *SubscriptionMutation) Fields() []string {
 	if m.billing_cycle != nil {
 		fields = append(fields, subscription.FieldBillingCycle)
 	}
+	if m.commitment_amount != nil {
+		fields = append(fields, subscription.FieldCommitmentAmount)
+	}
+	if m.overage_factor != nil {
+		fields = append(fields, subscription.FieldOverageFactor)
+	}
 	return fields
 }
 
@@ -22777,6 +22883,10 @@ func (m *SubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.ActivePauseID()
 	case subscription.FieldBillingCycle:
 		return m.BillingCycle()
+	case subscription.FieldCommitmentAmount:
+		return m.CommitmentAmount()
+	case subscription.FieldOverageFactor:
+		return m.OverageFactor()
 	}
 	return nil, false
 }
@@ -22846,6 +22956,10 @@ func (m *SubscriptionMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldActivePauseID(ctx)
 	case subscription.FieldBillingCycle:
 		return m.OldBillingCycle(ctx)
+	case subscription.FieldCommitmentAmount:
+		return m.OldCommitmentAmount(ctx)
+	case subscription.FieldOverageFactor:
+		return m.OldOverageFactor(ctx)
 	}
 	return nil, fmt.Errorf("unknown Subscription field %s", name)
 }
@@ -23065,6 +23179,20 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetBillingCycle(v)
 		return nil
+	case subscription.FieldCommitmentAmount:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCommitmentAmount(v)
+		return nil
+	case subscription.FieldOverageFactor:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOverageFactor(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)
 }
@@ -23155,6 +23283,12 @@ func (m *SubscriptionMutation) ClearedFields() []string {
 	if m.FieldCleared(subscription.FieldActivePauseID) {
 		fields = append(fields, subscription.FieldActivePauseID)
 	}
+	if m.FieldCleared(subscription.FieldCommitmentAmount) {
+		fields = append(fields, subscription.FieldCommitmentAmount)
+	}
+	if m.FieldCleared(subscription.FieldOverageFactor) {
+		fields = append(fields, subscription.FieldOverageFactor)
+	}
 	return fields
 }
 
@@ -23201,6 +23335,12 @@ func (m *SubscriptionMutation) ClearField(name string) error {
 		return nil
 	case subscription.FieldActivePauseID:
 		m.ClearActivePauseID()
+		return nil
+	case subscription.FieldCommitmentAmount:
+		m.ClearCommitmentAmount()
+		return nil
+	case subscription.FieldOverageFactor:
+		m.ClearOverageFactor()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription nullable field %s", name)
@@ -23299,6 +23439,12 @@ func (m *SubscriptionMutation) ResetField(name string) error {
 		return nil
 	case subscription.FieldBillingCycle:
 		m.ResetBillingCycle()
+		return nil
+	case subscription.FieldCommitmentAmount:
+		m.ResetCommitmentAmount()
+		return nil
+	case subscription.FieldOverageFactor:
+		m.ResetOverageFactor()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)

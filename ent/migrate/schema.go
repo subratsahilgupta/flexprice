@@ -800,6 +800,8 @@ var (
 		{Name: "pause_status", Type: field.TypeString, Default: "none", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "active_pause_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "billing_cycle", Type: field.TypeString, Default: "anniversary"},
+		{Name: "commitment_amount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,6)"}},
+		{Name: "overage_factor", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,6)"}},
 	}
 	// SubscriptionsTable holds the schema information for the "subscriptions" table.
 	SubscriptionsTable = &schema.Table{

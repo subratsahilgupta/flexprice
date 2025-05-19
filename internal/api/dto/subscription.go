@@ -37,6 +37,10 @@ type CreateSubscriptionRequest struct {
 	BillingCycle types.BillingCycle `json:"billing_cycle"`
 	// Credit grants to be applied when subscription is created
 	CreditGrants []CreateCreditGrantRequest `json:"credit_grants,omitempty"`
+	// CommitmentAmount is the minimum amount a customer commits to paying for a billing period
+	CommitmentAmount *decimal.Decimal `json:"commitment_amount,omitempty"`
+	// OverageFactor is a multiplier applied to usage beyond the commitment amount
+	OverageFactor *decimal.Decimal `json:"overage_factor,omitempty"`
 }
 
 type UpdateSubscriptionRequest struct {
@@ -131,6 +135,25 @@ func (r *CreateSubscriptionRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
+	// Validate commitment amount and overage factor
+	if r.CommitmentAmount != nil && r.CommitmentAmount.LessThan(decimal.Zero) {
+		return ierr.NewError("commitment_amount must be non-negative").
+			WithHint("Commitment amount must be greater than or equal to 0").
+			WithReportableDetails(map[string]interface{}{
+				"commitment_amount": *r.CommitmentAmount,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.OverageFactor != nil && r.OverageFactor.LessThan(decimal.NewFromInt(1)) {
+		return ierr.NewError("overage_factor must be at least 1.0").
+			WithHint("Overage factor must be greater than or equal to 1.0").
+			WithReportableDetails(map[string]interface{}{
+				"overage_factor": *r.OverageFactor,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Validate credit grants if provided
 	if len(r.CreditGrants) > 0 {
 		for i, grant := range r.CreditGrants {
@@ -169,7 +192,7 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		r.StartDate = now
 	}
 
-	return &subscription.Subscription{
+	sub := &subscription.Subscription{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
 		CustomerID:         r.CustomerID,
 		PlanID:             r.PlanID,
@@ -189,6 +212,19 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 		BillingCycle:       r.BillingCycle,
 	}
+
+	// Set commitment amount and overage factor if provided
+	if r.CommitmentAmount != nil {
+		sub.CommitmentAmount = *r.CommitmentAmount
+	}
+
+	if r.OverageFactor != nil {
+		sub.OverageFactor = *r.OverageFactor
+	} else {
+		sub.OverageFactor = decimal.NewFromInt(1) // Default value
+	}
+
+	return sub
 }
 
 // SubscriptionLineItemRequest represents the request to create a subscription line item
@@ -225,12 +261,17 @@ type GetUsageBySubscriptionRequest struct {
 }
 
 type GetUsageBySubscriptionResponse struct {
-	Amount        float64                              `json:"amount"`
-	Currency      string                               `json:"currency"`
-	DisplayAmount string                               `json:"display_amount"`
-	StartTime     time.Time                            `json:"start_time"`
-	EndTime       time.Time                            `json:"end_time"`
-	Charges       []*SubscriptionUsageByMetersResponse `json:"charges"`
+	Amount             float64                              `json:"amount"`
+	Currency           string                               `json:"currency"`
+	DisplayAmount      string                               `json:"display_amount"`
+	StartTime          time.Time                            `json:"start_time"`
+	EndTime            time.Time                            `json:"end_time"`
+	Charges            []*SubscriptionUsageByMetersResponse `json:"charges"`
+	CommitmentAmount   float64                              `json:"commitment_amount,omitempty"`
+	OverageFactor      float64                              `json:"overage_factor,omitempty"`
+	CommitmentUtilized float64                              `json:"commitment_utilized,omitempty"` // Amount of commitment used
+	OverageAmount      float64                              `json:"overage_amount,omitempty"`      // Amount charged at overage rate
+	HasOverage         bool                                 `json:"has_overage"`                   // Whether any usage exceeded commitment
 }
 
 type SubscriptionUsageByMetersResponse struct {
@@ -242,6 +283,8 @@ type SubscriptionUsageByMetersResponse struct {
 	MeterID          string             `json:"meter_id"`
 	MeterDisplayName string             `json:"meter_display_name"`
 	Price            *price.Price       `json:"price"`
+	IsOverage        bool               `json:"is_overage"`               // Whether this charge is at overage rate
+	OverageFactor    float64            `json:"overage_factor,omitempty"` // Factor applied to this charge if in overage
 }
 
 type SubscriptionUpdatePeriodResponse struct {

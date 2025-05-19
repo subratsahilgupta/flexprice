@@ -630,6 +630,10 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		"total_usage_count", len(usageMap),
 		"subscription_id", req.SubscriptionID)
 
+	// Store usage charges for later sorting and processing
+	var usageCharges []*dto.SubscriptionUsageByMetersResponse
+
+	// First pass: calculate normal costs and build initial charge objects
 	// Note: we are iterating over the meterUsageRequests and not the usageMap
 	// This is because the usageMap is a map of meterID to usage and we want to iterate over the meterUsageRequests
 	// as there can be multiple requests for the same meterID with different priceIDs
@@ -643,8 +647,8 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		}
 
 		// Get price by price ID and check if it exists
-		price, priceExists := priceMap[usage.PriceID]
-		if !priceExists || price == nil {
+		priceObj, priceExists := priceMap[usage.PriceID]
+		if !priceExists || priceObj == nil {
 			return nil, ierr.NewError("price not found").
 				WithHint("The price for the meter was not found").
 				WithReportableDetails(map[string]interface{}{
@@ -661,31 +665,134 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		}
 
 		quantity := usage.Value
-		cost := priceService.CalculateCost(ctx, price, quantity)
-		totalCost = totalCost.Add(cost)
+		cost := priceService.CalculateCost(ctx, priceObj, quantity)
 
 		s.Logger.Debugw("calculated usage for meter",
 			"meter_id", meterID,
 			"quantity", quantity,
 			"cost", cost,
-			"total_cost", totalCost,
 			"meter_display_name", meterDisplayName,
 			"subscription_id", req.SubscriptionID,
 			"usage", usage,
-			"price", price,
+			"price", priceObj,
 		)
 
-		filteredUsageCharge := createChargeResponse(
-			price,
+		charge := createChargeResponse(
+			priceObj,
 			quantity,
 			cost,
 			meterDisplayName,
 		)
 
-		if filteredUsageCharge == nil {
+		if charge == nil {
 			continue
 		}
-		response.Charges = append(response.Charges, filteredUsageCharge)
+
+		usageCharges = append(usageCharges, charge)
+		totalCost = totalCost.Add(cost)
+	}
+
+	// Apply commitment logic if set on the subscription
+	hasCommitment := false
+
+	// Check if commitment amount is greater than zero
+	if subscription.CommitmentAmount.GreaterThan(decimal.Zero) {
+		// Check if overage factor is greater than 1.0
+		oneDecimal := decimal.NewFromInt(1)
+		hasCommitment = subscription.OverageFactor.GreaterThan(oneDecimal)
+	}
+
+	// Default values assuming no commitment/overage
+	commitmentFloat, _ := subscription.CommitmentAmount.Float64()
+	overageFactorFloat, _ := subscription.OverageFactor.Float64()
+	response.CommitmentAmount = commitmentFloat
+	response.OverageFactor = overageFactorFloat
+	response.HasOverage = false
+
+	// Initialize charges list with enough capacity
+	response.Charges = make([]*dto.SubscriptionUsageByMetersResponse, 0, len(usageCharges)*2)
+
+	// If using commitment-based pricing, process charges with overage logic
+	if hasCommitment {
+		// Sort usage charges by time or any other criteria defined in requirements
+		// For now, we'll use the current order of charges
+
+		// Track remaining commitment and process each charge
+		remainingCommitment := subscription.CommitmentAmount
+		totalOverageAmount := decimal.Zero
+
+		for _, charge := range usageCharges {
+			// Get charge amount as decimal for precise calculations
+			chargeAmount := decimal.NewFromFloat(charge.Amount)
+
+			// Normal price covers all of this charge
+			if remainingCommitment.GreaterThanOrEqual(chargeAmount) {
+				charge.IsOverage = false
+				remainingCommitment = remainingCommitment.Sub(chargeAmount)
+				response.Charges = append(response.Charges, charge)
+				continue
+			}
+
+			// Charge needs to be split between normal and overage
+			if remainingCommitment.GreaterThan(decimal.Zero) {
+				// Calculate what portion of the charge is at normal price
+				normalRatio := remainingCommitment.Div(chargeAmount)
+				normalQuantityDecimal := decimal.NewFromFloat(charge.Quantity).Mul(normalRatio)
+
+				// Create normal charge
+				normalQuantity, _ := normalQuantityDecimal.Float64()
+
+				normalCharge := *charge // Create a copy
+				normalCharge.Quantity = normalQuantity
+				normalCharge.Amount = price.FormatAmountToFloat64WithPrecision(remainingCommitment, subscription.Currency)
+				normalCharge.DisplayAmount = remainingCommitment.StringFixed(6)
+				normalCharge.IsOverage = false
+				response.Charges = append(response.Charges, &normalCharge)
+
+				// Create overage charge for remainder
+				overageQuantityDecimal := decimal.NewFromFloat(charge.Quantity).Sub(normalQuantityDecimal)
+				overageQuantity, _ := overageQuantityDecimal.Float64()
+
+				overageAmountDecimal := chargeAmount.Sub(remainingCommitment).Mul(subscription.OverageFactor)
+				totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
+
+				overageCharge := *charge // Create a copy
+				overageCharge.Quantity = overageQuantity
+				overageCharge.Amount = price.FormatAmountToFloat64WithPrecision(overageAmountDecimal, subscription.Currency)
+				overageCharge.DisplayAmount = overageAmountDecimal.StringFixed(6)
+				overageCharge.IsOverage = true
+				overageCharge.OverageFactor = overageFactorFloat
+				response.Charges = append(response.Charges, &overageCharge)
+
+				response.HasOverage = true
+				remainingCommitment = decimal.Zero
+				continue
+			}
+
+			// Charge is entirely in overage
+			overageAmountDecimal := chargeAmount.Mul(subscription.OverageFactor)
+			totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
+
+			charge.Amount = price.FormatAmountToFloat64WithPrecision(overageAmountDecimal, subscription.Currency)
+			charge.DisplayAmount = overageAmountDecimal.StringFixed(6)
+			charge.IsOverage = true
+			charge.OverageFactor = overageFactorFloat
+			response.Charges = append(response.Charges, charge)
+			response.HasOverage = true
+		}
+
+		// Calculate final amounts for response
+		commitmentUtilized := subscription.CommitmentAmount.Sub(remainingCommitment)
+		commitmentUtilizedFloat, _ := commitmentUtilized.Float64()
+		overageAmountFloat, _ := totalOverageAmount.Float64()
+		response.CommitmentUtilized = commitmentUtilizedFloat
+		response.OverageAmount = overageAmountFloat
+
+		// Update total cost with commitment + overage calculation
+		totalCost = commitmentUtilized.Add(totalOverageAmount)
+	} else {
+		// Without commitment, just use the original charges
+		response.Charges = usageCharges
 	}
 
 	response.StartTime = usageStartTime
