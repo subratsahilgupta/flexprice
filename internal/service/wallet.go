@@ -294,6 +294,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		ReferenceID:       referenceID,
 		ExpiryDate:        req.ExpiryDate,
 		IdempotencyKey:    idempotencyKey,
+		Priority:          req.Priority,
 	}
 
 	// Process wallet credit
@@ -702,6 +703,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			TxStatus:            types.TransactionStatusCompleted,
 			TransactionReason:   req.TransactionReason,
 			ExpiryDate:          types.ParseYYYYMMDDToDate(req.ExpiryDate),
+			Priority:            req.Priority,
 			CreditBalanceBefore: w.CreditBalance,
 			CreditBalanceAfter:  newCreditBalance,
 			EnvironmentID:       types.GetEnvironmentID(ctx),

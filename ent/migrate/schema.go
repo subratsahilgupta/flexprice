@@ -313,25 +313,16 @@ var (
 				Name:    "idx_tenant_subscription_status",
 				Unique:  false,
 				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[9], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
-				Annotation: &entsql.IndexAnnotation{
-					Where: "status = 'published'",
-				},
 			},
 			{
 				Name:    "idx_tenant_type_status",
 				Unique:  false,
 				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[10], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
-				Annotation: &entsql.IndexAnnotation{
-					Where: "status = 'published'",
-				},
 			},
 			{
 				Name:    "idx_tenant_due_date_status",
 				Unique:  false,
 				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[18], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
-				Annotation: &entsql.IndexAnnotation{
-					Where: "status = 'published'",
-				},
 			},
 			{
 				Name:    "idx_tenant_environment_invoice_number_unique",
@@ -1094,6 +1085,7 @@ var (
 		{Name: "credits_available", Type: field.TypeOther, Default: "0", SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "idempotency_key", Type: field.TypeString, Nullable: true},
 		{Name: "transaction_reason", Type: field.TypeString, Default: "FREE_CREDIT_GRANT", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "priority", Type: field.TypeInt, Nullable: true},
 	}
 	// WalletTransactionsTable holds the schema information for the "wallet_transactions" table.
 	WalletTransactionsTable = &schema.Table{

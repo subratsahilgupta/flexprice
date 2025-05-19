@@ -29638,6 +29638,8 @@ type WalletTransactionMutation struct {
 	credits_available     *decimal.Decimal
 	idempotency_key       *string
 	transaction_reason    *string
+	priority              *int
+	addpriority           *int
 	clearedFields         map[string]struct{}
 	done                  bool
 	oldValue              func(context.Context) (*WalletTransaction, error)
@@ -30657,6 +30659,76 @@ func (m *WalletTransactionMutation) ResetTransactionReason() {
 	m.transaction_reason = nil
 }
 
+// SetPriority sets the "priority" field.
+func (m *WalletTransactionMutation) SetPriority(i int) {
+	m.priority = &i
+	m.addpriority = nil
+}
+
+// Priority returns the value of the "priority" field in the mutation.
+func (m *WalletTransactionMutation) Priority() (r int, exists bool) {
+	v := m.priority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriority returns the old "priority" field's value of the WalletTransaction entity.
+// If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WalletTransactionMutation) OldPriority(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriority is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriority requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriority: %w", err)
+	}
+	return oldValue.Priority, nil
+}
+
+// AddPriority adds i to the "priority" field.
+func (m *WalletTransactionMutation) AddPriority(i int) {
+	if m.addpriority != nil {
+		*m.addpriority += i
+	} else {
+		m.addpriority = &i
+	}
+}
+
+// AddedPriority returns the value that was added to the "priority" field in this mutation.
+func (m *WalletTransactionMutation) AddedPriority() (r int, exists bool) {
+	v := m.addpriority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPriority clears the value of the "priority" field.
+func (m *WalletTransactionMutation) ClearPriority() {
+	m.priority = nil
+	m.addpriority = nil
+	m.clearedFields[wallettransaction.FieldPriority] = struct{}{}
+}
+
+// PriorityCleared returns if the "priority" field was cleared in this mutation.
+func (m *WalletTransactionMutation) PriorityCleared() bool {
+	_, ok := m.clearedFields[wallettransaction.FieldPriority]
+	return ok
+}
+
+// ResetPriority resets all changes to the "priority" field.
+func (m *WalletTransactionMutation) ResetPriority() {
+	m.priority = nil
+	m.addpriority = nil
+	delete(m.clearedFields, wallettransaction.FieldPriority)
+}
+
 // Where appends a list predicates to the WalletTransactionMutation builder.
 func (m *WalletTransactionMutation) Where(ps ...predicate.WalletTransaction) {
 	m.predicates = append(m.predicates, ps...)
@@ -30691,7 +30763,7 @@ func (m *WalletTransactionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WalletTransactionMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 23)
 	if m.tenant_id != nil {
 		fields = append(fields, wallettransaction.FieldTenantID)
 	}
@@ -30758,6 +30830,9 @@ func (m *WalletTransactionMutation) Fields() []string {
 	if m.transaction_reason != nil {
 		fields = append(fields, wallettransaction.FieldTransactionReason)
 	}
+	if m.priority != nil {
+		fields = append(fields, wallettransaction.FieldPriority)
+	}
 	return fields
 }
 
@@ -30810,6 +30885,8 @@ func (m *WalletTransactionMutation) Field(name string) (ent.Value, bool) {
 		return m.IdempotencyKey()
 	case wallettransaction.FieldTransactionReason:
 		return m.TransactionReason()
+	case wallettransaction.FieldPriority:
+		return m.Priority()
 	}
 	return nil, false
 }
@@ -30863,6 +30940,8 @@ func (m *WalletTransactionMutation) OldField(ctx context.Context, name string) (
 		return m.OldIdempotencyKey(ctx)
 	case wallettransaction.FieldTransactionReason:
 		return m.OldTransactionReason(ctx)
+	case wallettransaction.FieldPriority:
+		return m.OldPriority(ctx)
 	}
 	return nil, fmt.Errorf("unknown WalletTransaction field %s", name)
 }
@@ -31026,6 +31105,13 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetTransactionReason(v)
 		return nil
+	case wallettransaction.FieldPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriority(v)
+		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction field %s", name)
 }
@@ -31033,13 +31119,21 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *WalletTransactionMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addpriority != nil {
+		fields = append(fields, wallettransaction.FieldPriority)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *WalletTransactionMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case wallettransaction.FieldPriority:
+		return m.AddedPriority()
+	}
 	return nil, false
 }
 
@@ -31048,6 +31142,13 @@ func (m *WalletTransactionMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *WalletTransactionMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case wallettransaction.FieldPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPriority(v)
+		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction numeric field %s", name)
 }
@@ -31082,6 +31183,9 @@ func (m *WalletTransactionMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(wallettransaction.FieldIdempotencyKey) {
 		fields = append(fields, wallettransaction.FieldIdempotencyKey)
+	}
+	if m.FieldCleared(wallettransaction.FieldPriority) {
+		fields = append(fields, wallettransaction.FieldPriority)
 	}
 	return fields
 }
@@ -31123,6 +31227,9 @@ func (m *WalletTransactionMutation) ClearField(name string) error {
 		return nil
 	case wallettransaction.FieldIdempotencyKey:
 		m.ClearIdempotencyKey()
+		return nil
+	case wallettransaction.FieldPriority:
+		m.ClearPriority()
 		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction nullable field %s", name)
@@ -31197,6 +31304,9 @@ func (m *WalletTransactionMutation) ResetField(name string) error {
 		return nil
 	case wallettransaction.FieldTransactionReason:
 		m.ResetTransactionReason()
+		return nil
+	case wallettransaction.FieldPriority:
+		m.ResetPriority()
 		return nil
 	}
 	return fmt.Errorf("unknown WalletTransaction field %s", name)
