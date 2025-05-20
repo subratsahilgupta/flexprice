@@ -37,6 +37,8 @@ type SubscriptionService interface {
 	GetSubscriptionSchedule(ctx context.Context, id string) (*dto.SubscriptionScheduleResponse, error)
 	GetScheduleBySubscriptionID(ctx context.Context, subscriptionID string) (*dto.SubscriptionScheduleResponse, error)
 	UpdateSubscriptionSchedule(ctx context.Context, id string, req *dto.UpdateSubscriptionScheduleRequest) (*dto.SubscriptionScheduleResponse, error)
+	AddSchedulePhase(ctx context.Context, scheduleID string, req *dto.AddSchedulePhaseRequest) (*dto.SubscriptionScheduleResponse, error)
+	AddSubscriptionPhase(ctx context.Context, subscriptionID string, req *dto.AddSchedulePhaseRequest) (*dto.SubscriptionScheduleResponse, error)
 }
 
 type subscriptionService struct {
@@ -2097,4 +2099,283 @@ func (s *subscriptionService) createScheduleFromPhases(ctx context.Context, sub 
 	// Set the phases to the schedule before returning
 	schedule.Phases = phases
 	return schedule, nil
+}
+
+// AddSchedulePhase adds a new phase to an existing subscription schedule
+func (s *subscriptionService) AddSchedulePhase(ctx context.Context, scheduleID string, req *dto.AddSchedulePhaseRequest) (*dto.SubscriptionScheduleResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	if s.SubscriptionScheduleRepo == nil {
+		return nil, ierr.NewError("subscription repository does not support schedules").
+			WithHint("Schedule functionality is not supported").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Get the existing schedule with its phases
+	schedule, err := s.SubscriptionScheduleRepo.Get(ctx, scheduleID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the subscription to validate against its dates
+	existingSubscription, _, err := s.SubRepo.GetWithLineItems(ctx, schedule.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load existing phases
+	existingPhases, err := s.SubscriptionScheduleRepo.ListPhases(ctx, scheduleID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list existing phases").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Validate that the new phase's start date is not before subscription start date
+	if req.Phase.StartDate.Before(existingSubscription.StartDate) {
+		return nil, ierr.NewError("phase start date cannot be before subscription start date").
+			WithHint("The phase must start on or after the subscription start date").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_start_date": existingSubscription.StartDate,
+				"phase_start_date":        req.Phase.StartDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// If subscription has an end date, validate the phase doesn't extend beyond it
+	if existingSubscription.EndDate != nil && req.Phase.EndDate != nil && req.Phase.EndDate.After(*existingSubscription.EndDate) {
+		return nil, ierr.NewError("phase end date cannot be after subscription end date").
+			WithHint("The phase must end on or before the subscription end date").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_end_date": existingSubscription.EndDate,
+				"phase_end_date":        req.Phase.EndDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Sort phases by start date
+	sort.Slice(existingPhases, func(i, j int) bool {
+		return existingPhases[i].StartDate.Before(existingPhases[j].StartDate)
+	})
+
+	// SIMPLIFIED APPROACH: Only allow adding phases at the end of existing phases
+	if len(existingPhases) > 0 {
+		lastPhase := existingPhases[len(existingPhases)-1]
+
+		// Check if the last phase has an end date
+		if lastPhase.EndDate == nil {
+			return nil, ierr.NewError("cannot add phase after an open-ended phase").
+				WithHint("The last phase must have an end date to add a new phase").
+				Mark(ierr.ErrValidation)
+		}
+
+		// Verify the new phase starts after the last existing phase ends
+		if !req.Phase.StartDate.After(*lastPhase.EndDate) {
+			return nil, ierr.NewError("new phase must start after the end of the last phase").
+				WithHint("Phase cannot overlap with existing phases. Add phases only at the end of the schedule").
+				WithReportableDetails(map[string]interface{}{
+					"last_phase_end_date":  lastPhase.EndDate,
+					"new_phase_start_date": req.Phase.StartDate,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	// Create the new phase
+	newPhase := &subscription.SchedulePhase{
+		ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_SCHEDULE_PHASE),
+		ScheduleID:       scheduleID,
+		PhaseIndex:       len(existingPhases), // Add as the next phase
+		StartDate:        req.Phase.StartDate,
+		EndDate:          req.Phase.EndDate,
+		CommitmentAmount: &req.Phase.CommitmentAmount,
+		OverageFactor:    &req.Phase.OverageFactor,
+		Metadata:         req.Phase.Metadata,
+		EnvironmentID:    types.GetEnvironmentID(ctx),
+		BaseModel:        types.GetDefaultBaseModel(ctx),
+	}
+
+	// Convert line items
+	if len(req.Phase.LineItems) > 0 {
+		lineItems := make([]types.SchedulePhaseLineItem, 0, len(req.Phase.LineItems))
+		for _, item := range req.Phase.LineItems {
+			lineItems = append(lineItems, types.SchedulePhaseLineItem{
+				PriceID:     item.PriceID,
+				Quantity:    item.Quantity,
+				DisplayName: item.DisplayName,
+				Metadata:    types.Metadata(item.Metadata),
+			})
+		}
+		newPhase.LineItems = lineItems
+	}
+
+	// Convert credit grants
+	if len(req.Phase.CreditGrants) > 0 {
+		creditGrants := make([]types.SchedulePhaseCreditGrant, 0, len(req.Phase.CreditGrants))
+		for _, grant := range req.Phase.CreditGrants {
+			creditGrants = append(creditGrants, types.SchedulePhaseCreditGrant{
+				Name:         grant.Name,
+				Scope:        grant.Scope,
+				PlanID:       grant.PlanID,
+				Amount:       grant.Amount,
+				Currency:     grant.Currency,
+				Cadence:      grant.Cadence,
+				Period:       grant.Period,
+				PeriodCount:  grant.PeriodCount,
+				ExpireInDays: grant.ExpireInDays,
+				Priority:     grant.Priority,
+				Metadata:     grant.Metadata,
+			})
+		}
+		newPhase.CreditGrants = creditGrants
+	}
+
+	// Create the new phase
+	err = s.SubscriptionScheduleRepo.CreatePhase(ctx, newPhase)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to add phase to subscription schedule").
+			WithReportableDetails(map[string]interface{}{
+				"schedule_id": scheduleID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Update the schedule with the latest phase count
+	schedule.UpdatedAt = time.Now()
+	schedule.UpdatedBy = types.GetUserID(ctx)
+	err = s.SubscriptionScheduleRepo.Update(ctx, schedule)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to update subscription schedule").
+			WithReportableDetails(map[string]interface{}{
+				"schedule_id": scheduleID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Get the updated schedule to return in the response
+	updatedSchedule, err := s.SubscriptionScheduleRepo.Get(ctx, scheduleID)
+	if err != nil {
+		return nil, err
+	}
+
+	return dto.SubscriptionScheduleResponseFromDomain(updatedSchedule), nil
+}
+
+// AddSubscriptionPhase adds a new phase to a subscription, creating a schedule if needed
+// This is more user-friendly than AddSchedulePhase as it works directly with subscription IDs
+func (s *subscriptionService) AddSubscriptionPhase(ctx context.Context, subscriptionID string, req *dto.AddSchedulePhaseRequest) (*dto.SubscriptionScheduleResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	if s.SubscriptionScheduleRepo == nil {
+		return nil, ierr.NewError("subscription repository does not support schedules").
+			WithHint("Schedule functionality is not supported").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Get the subscription
+	existingSubscription, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get subscription").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": subscriptionID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Validate that the new phase's start date is not before subscription start date
+	if req.Phase.StartDate.Before(existingSubscription.StartDate) {
+		return nil, ierr.NewError("phase start date cannot be before subscription start date").
+			WithHint("The phase must start on or after the subscription start date").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_start_date": existingSubscription.StartDate,
+				"phase_start_date":        req.Phase.StartDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if req.Phase.EndDate != nil && existingSubscription.EndDate != nil && req.Phase.StartDate.After(*existingSubscription.EndDate) {
+		return nil, ierr.NewError("phase start date cannot be after subscription end date").
+			WithHint("The phase must start before the subscription end date").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_end_date": existingSubscription.EndDate,
+				"phase_start_date":      req.Phase.StartDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if existingSubscription.EndDate != nil && req.Phase.EndDate != nil && req.Phase.EndDate.After(*existingSubscription.EndDate) {
+		return nil, ierr.NewError("phase end date cannot be after subscription end date").
+			WithHint("The phase must end on or before the subscription end date").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_end_date": existingSubscription.EndDate,
+				"phase_end_date":        req.Phase.EndDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Check for existing schedule
+	schedule, err := s.SubscriptionScheduleRepo.GetBySubscriptionID(ctx, subscriptionID)
+	if err != nil && !ierr.IsNotFound(err) {
+		// Error other than "not found"
+		return nil, ierr.WithError(err).
+			WithHint("Failed to check for existing schedule").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// No schedule exists, we need to create one
+	if schedule == nil || err != nil {
+		s.Logger.Infow("creating new schedule for subscription",
+			"subscription_id", subscriptionID)
+
+		// Create a schedule with initial phase from subscription start to new phase start
+		initialPhases := []dto.SubscriptionSchedulePhaseInput{}
+
+		// Only add initial phase if new phase doesn't start exactly at subscription start
+		if !req.Phase.StartDate.Equal(existingSubscription.StartDate) {
+			// Build a default initial phase based on subscription's current values
+			initialPhase := dto.SubscriptionSchedulePhaseInput{
+				BillingCycle:     existingSubscription.BillingCycle,
+				StartDate:        existingSubscription.StartDate,
+				EndDate:          &req.Phase.StartDate,
+				CommitmentAmount: lo.FromPtr(existingSubscription.CommitmentAmount),
+				OverageFactor:    lo.FromPtr(existingSubscription.OverageFactor),
+				Metadata:         map[string]string{"created_by": "system", "reason": "auto-created-initial-phase"},
+			}
+
+			// Add line items from subscription
+			for _, item := range lineItems {
+				initialPhase.LineItems = append(initialPhase.LineItems, dto.SubscriptionLineItemRequest{
+					PriceID:     item.PriceID,
+					Quantity:    item.Quantity,
+					DisplayName: item.DisplayName,
+					Metadata:    item.Metadata,
+				})
+			}
+
+			initialPhases = append(initialPhases, initialPhase)
+		}
+
+		// Add the new phase
+		initialPhases = append(initialPhases, req.Phase)
+
+		// Create the schedule with both phases
+		createReq := &dto.CreateSubscriptionScheduleRequest{
+			SubscriptionID: subscriptionID,
+			EndBehavior:    types.EndBehaviorRelease,
+			Phases:         initialPhases,
+		}
+
+		// Create the schedule
+		return s.CreateSubscriptionSchedule(ctx, createReq)
+	}
+
+	// Schedule exists, add the phase to it
+	return s.AddSchedulePhase(ctx, schedule.ID, req)
 }

@@ -23,6 +23,11 @@ type SubscriptionSchedulePhaseInput struct {
 	Metadata         map[string]string             `json:"metadata,omitempty"`
 }
 
+// AddSchedulePhaseRequest represents the input for adding a new phase to an existing subscription schedule
+type AddSchedulePhaseRequest struct {
+	Phase SubscriptionSchedulePhaseInput `json:"phase" validate:"required"`
+}
+
 // SubscriptionScheduleResponse represents the response for a subscription schedule
 type SubscriptionScheduleResponse struct {
 	ID                string                               `json:"id"`
@@ -147,6 +152,16 @@ func (r *CreateSubscriptionScheduleRequest) Validate() error {
 	}
 
 	return nil
+}
+
+// Validate validates the add schedule phase request
+func (r *AddSchedulePhaseRequest) Validate() error {
+	err := validator.ValidateRequest(r)
+	if err != nil {
+		return err
+	}
+
+	return r.Phase.Validate()
 }
 
 // FromDomain converts a domain subscription schedule to a DTO response

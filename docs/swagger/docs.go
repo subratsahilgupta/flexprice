@@ -4904,6 +4904,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/subscriptions/{id}/phases": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Add a new phase to a subscription schedule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Add new phase to subscription schedule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Add schedule phase request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AddSchedulePhaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SubscriptionScheduleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/subscriptions/{id}/resume": {
             "post": {
                 "description": "Resume a paused subscription with the specified parameters",
@@ -6081,6 +6139,17 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dto.AddSchedulePhaseRequest": {
+            "type": "object",
+            "required": [
+                "phase"
+            ],
+            "properties": {
+                "phase": {
+                    "$ref": "#/definitions/dto.SubscriptionSchedulePhaseInput"
+                }
+            }
+        },
         "dto.Address": {
             "type": "object",
             "properties": {
