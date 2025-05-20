@@ -1027,8 +1027,8 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscriptionWithCommitment() {
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,
 		SubscriptionStatus: types.SubscriptionStatusActive,
-		CommitmentAmount:   decimal.NewFromFloat(50),
-		OverageFactor:      decimal.NewFromFloat(1.5),
+		CommitmentAmount:   lo.ToPtr(decimal.NewFromFloat(50)),
+		OverageFactor:      lo.ToPtr(decimal.NewFromFloat(1.5)),
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 	}
 
@@ -1070,8 +1070,8 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscriptionWithCommitment() {
 	// Test case 1: Usage below commitment amount
 	s.Run("usage_below_commitment", func() {
 		// Set commitment to a high value to ensure usage is below it
-		commitmentSub.CommitmentAmount = decimal.NewFromFloat(100)
-		commitmentSub.OverageFactor = decimal.NewFromFloat(1.5)
+		commitmentSub.CommitmentAmount = lo.ToPtr(decimal.NewFromFloat(100))
+		commitmentSub.OverageFactor = lo.ToPtr(decimal.NewFromFloat(1.5))
 		s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), commitmentSub))
 
 		req := &dto.GetUsageBySubscriptionRequest{
@@ -1097,8 +1097,8 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscriptionWithCommitment() {
 	// Test case 2: Usage exceeds commitment amount
 	s.Run("usage_exceeds_commitment", func() {
 		// Set commitment to a low value to ensure usage exceeds it
-		commitmentSub.CommitmentAmount = decimal.NewFromFloat(10)
-		commitmentSub.OverageFactor = decimal.NewFromFloat(1.5)
+		commitmentSub.CommitmentAmount = lo.ToPtr(decimal.NewFromFloat(10))
+		commitmentSub.OverageFactor = lo.ToPtr(decimal.NewFromFloat(1.5))
 		s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), commitmentSub))
 
 		req := &dto.GetUsageBySubscriptionRequest{
@@ -1125,8 +1125,8 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscriptionWithCommitment() {
 		// Temporarily remove commitment to get base amount
 		origCommitment := commitmentSub.CommitmentAmount
 		origFactor := commitmentSub.OverageFactor
-		commitmentSub.CommitmentAmount = decimal.Zero
-		commitmentSub.OverageFactor = decimal.NewFromInt(1)
+		commitmentSub.CommitmentAmount = lo.ToPtr(decimal.Zero)
+		commitmentSub.OverageFactor = lo.ToPtr(decimal.NewFromInt(1))
 		s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), commitmentSub))
 
 		baseResp, err := s.service.GetUsageBySubscription(s.GetContext(), baseReq)

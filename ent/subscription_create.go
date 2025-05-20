@@ -815,11 +815,11 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 	}
 	if value, ok := sc.mutation.CommitmentAmount(); ok {
 		_spec.SetField(subscription.FieldCommitmentAmount, field.TypeOther, value)
-		_node.CommitmentAmount = value
+		_node.CommitmentAmount = &value
 	}
 	if value, ok := sc.mutation.OverageFactor(); ok {
 		_spec.SetField(subscription.FieldOverageFactor, field.TypeOther, value)
-		_node.OverageFactor = value
+		_node.OverageFactor = &value
 	}
 	if nodes := sc.mutation.LineItemsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

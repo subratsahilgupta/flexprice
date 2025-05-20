@@ -80,9 +80,9 @@ type Subscription struct {
 	// BillingCycle holds the value of the "billing_cycle" field.
 	BillingCycle string `json:"billing_cycle,omitempty"`
 	// CommitmentAmount holds the value of the "commitment_amount" field.
-	CommitmentAmount decimal.Decimal `json:"commitment_amount,omitempty"`
+	CommitmentAmount *decimal.Decimal `json:"commitment_amount,omitempty"`
 	// OverageFactor holds the value of the "overage_factor" field.
-	OverageFactor decimal.Decimal `json:"overage_factor,omitempty"`
+	OverageFactor *decimal.Decimal `json:"overage_factor,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the SubscriptionQuery when eager-loading is set.
 	Edges        SubscriptionEdges `json:"edges"`
@@ -134,10 +134,10 @@ func (*Subscription) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case subscription.FieldCommitmentAmount, subscription.FieldOverageFactor:
+			values[i] = &sql.NullScanner{S: new(decimal.Decimal)}
 		case subscription.FieldMetadata:
 			values[i] = new([]byte)
-		case subscription.FieldCommitmentAmount, subscription.FieldOverageFactor:
-			values[i] = new(decimal.Decimal)
 		case subscription.FieldCancelAtPeriodEnd:
 			values[i] = new(sql.NullBool)
 		case subscription.FieldBillingPeriodCount, subscription.FieldVersion:
@@ -356,16 +356,18 @@ func (s *Subscription) assignValues(columns []string, values []any) error {
 				s.BillingCycle = value.String
 			}
 		case subscription.FieldCommitmentAmount:
-			if value, ok := values[i].(*decimal.Decimal); !ok {
+			if value, ok := values[i].(*sql.NullScanner); !ok {
 				return fmt.Errorf("unexpected type %T for field commitment_amount", values[i])
-			} else if value != nil {
-				s.CommitmentAmount = *value
+			} else if value.Valid {
+				s.CommitmentAmount = new(decimal.Decimal)
+				*s.CommitmentAmount = *value.S.(*decimal.Decimal)
 			}
 		case subscription.FieldOverageFactor:
-			if value, ok := values[i].(*decimal.Decimal); !ok {
+			if value, ok := values[i].(*sql.NullScanner); !ok {
 				return fmt.Errorf("unexpected type %T for field overage_factor", values[i])
-			} else if value != nil {
-				s.OverageFactor = *value
+			} else if value.Valid {
+				s.OverageFactor = new(decimal.Decimal)
+				*s.OverageFactor = *value.S.(*decimal.Decimal)
 			}
 		default:
 			s.selectValues.Set(columns[i], values[i])
@@ -520,11 +522,15 @@ func (s *Subscription) String() string {
 	builder.WriteString("billing_cycle=")
 	builder.WriteString(s.BillingCycle)
 	builder.WriteString(", ")
-	builder.WriteString("commitment_amount=")
-	builder.WriteString(fmt.Sprintf("%v", s.CommitmentAmount))
+	if v := s.CommitmentAmount; v != nil {
+		builder.WriteString("commitment_amount=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
-	builder.WriteString("overage_factor=")
-	builder.WriteString(fmt.Sprintf("%v", s.OverageFactor))
+	if v := s.OverageFactor; v != nil {
+		builder.WriteString("overage_factor=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

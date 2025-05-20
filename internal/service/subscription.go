@@ -695,16 +695,19 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	// Apply commitment logic if set on the subscription
 	hasCommitment := false
 
+	commitmentAmount := lo.FromPtr(subscription.CommitmentAmount)
+	overageFactor := lo.FromPtr(subscription.OverageFactor)
+
 	// Check if commitment amount is greater than zero
-	if subscription.CommitmentAmount.GreaterThan(decimal.Zero) {
+	if commitmentAmount.GreaterThan(decimal.Zero) {
 		// Check if overage factor is greater than 1.0
 		oneDecimal := decimal.NewFromInt(1)
-		hasCommitment = subscription.OverageFactor.GreaterThan(oneDecimal)
+		hasCommitment = overageFactor.GreaterThan(oneDecimal)
 	}
 
 	// Default values assuming no commitment/overage
-	commitmentFloat, _ := subscription.CommitmentAmount.Float64()
-	overageFactorFloat, _ := subscription.OverageFactor.Float64()
+	commitmentFloat, _ := commitmentAmount.Float64()
+	overageFactorFloat, _ := overageFactor.Float64()
 	response.CommitmentAmount = commitmentFloat
 	response.OverageFactor = overageFactorFloat
 	response.HasOverage = false
@@ -718,7 +721,8 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		// For now, we'll use the current order of charges
 
 		// Track remaining commitment and process each charge
-		remainingCommitment := subscription.CommitmentAmount
+		remainingCommitment := commitmentAmount
+		overageFactor := overageFactor
 		totalOverageAmount := decimal.Zero
 
 		for _, charge := range usageCharges {
@@ -753,7 +757,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 				overageQuantityDecimal := decimal.NewFromFloat(charge.Quantity).Sub(normalQuantityDecimal)
 				overageQuantity, _ := overageQuantityDecimal.Float64()
 
-				overageAmountDecimal := chargeAmount.Sub(remainingCommitment).Mul(subscription.OverageFactor)
+				overageAmountDecimal := chargeAmount.Sub(remainingCommitment).Mul(overageFactor)
 				totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
 
 				overageCharge := *charge // Create a copy
@@ -770,7 +774,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			}
 
 			// Charge is entirely in overage
-			overageAmountDecimal := chargeAmount.Mul(subscription.OverageFactor)
+			overageAmountDecimal := chargeAmount.Mul(overageFactor)
 			totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
 
 			charge.Amount = price.FormatAmountToFloat64WithPrecision(overageAmountDecimal, subscription.Currency)
@@ -800,7 +804,6 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	response.Amount = price.FormatAmountToFloat64WithPrecision(totalCost, subscription.Currency)
 	response.Currency = subscription.Currency
 	response.DisplayAmount = price.GetDisplayAmountWithPrecision(totalCost, subscription.Currency)
-
 	return response, nil
 }
 

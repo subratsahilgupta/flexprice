@@ -11,6 +11,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -215,13 +216,13 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 
 	// Set commitment amount and overage factor if provided
 	if r.CommitmentAmount != nil {
-		sub.CommitmentAmount = *r.CommitmentAmount
+		sub.CommitmentAmount = r.CommitmentAmount
 	}
 
 	if r.OverageFactor != nil {
-		sub.OverageFactor = *r.OverageFactor
+		sub.OverageFactor = r.OverageFactor
 	} else {
-		sub.OverageFactor = decimal.NewFromInt(1) // Default value
+		sub.OverageFactor = lo.ToPtr(decimal.NewFromInt(1)) // Default value
 	}
 
 	return sub

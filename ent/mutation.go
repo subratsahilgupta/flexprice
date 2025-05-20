@@ -22441,7 +22441,7 @@ func (m *SubscriptionMutation) CommitmentAmount() (r decimal.Decimal, exists boo
 // OldCommitmentAmount returns the old "commitment_amount" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldCommitmentAmount(ctx context.Context) (v decimal.Decimal, err error) {
+func (m *SubscriptionMutation) OldCommitmentAmount(ctx context.Context) (v *decimal.Decimal, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCommitmentAmount is only allowed on UpdateOne operations")
 	}
@@ -22490,7 +22490,7 @@ func (m *SubscriptionMutation) OverageFactor() (r decimal.Decimal, exists bool) 
 // OldOverageFactor returns the old "overage_factor" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldOverageFactor(ctx context.Context) (v decimal.Decimal, err error) {
+func (m *SubscriptionMutation) OldOverageFactor(ctx context.Context) (v *decimal.Decimal, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldOverageFactor is only allowed on UpdateOne operations")
 	}

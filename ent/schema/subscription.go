@@ -120,11 +120,13 @@ func (Subscription) Fields() []ent.Field {
 			Default(string(types.BillingCycleAnniversary)),
 		field.Other("commitment_amount", decimal.Decimal{}).
 			Optional().
+			Nillable().
 			SchemaType(map[string]string{
 				"postgres": "decimal(20,6)",
 			}),
 		field.Other("overage_factor", decimal.Decimal{}).
 			Optional().
+			Nillable().
 			Default(decimal.NewFromInt(1)).
 			SchemaType(map[string]string{
 				"postgres": "decimal(10,6)",
