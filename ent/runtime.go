@@ -817,6 +817,10 @@ func init() {
 	subscription.DefaultBillingCycle = subscriptionDescBillingCycle.Default.(string)
 	// subscription.BillingCycleValidator is a validator for the "billing_cycle" field. It is called by the builders before save.
 	subscription.BillingCycleValidator = subscriptionDescBillingCycle.Validators[0].(func(string) error)
+	// subscriptionDescOverageFactor is the schema descriptor for overage_factor field.
+	subscriptionDescOverageFactor := subscriptionFields[25].Descriptor()
+	// subscription.DefaultOverageFactor holds the default value on creation for the overage_factor field.
+	subscription.DefaultOverageFactor = subscriptionDescOverageFactor.Default.(decimal.Decimal)
 	subscriptionlineitemMixin := schema.SubscriptionLineItem{}.Mixin()
 	subscriptionlineitemMixinFields0 := subscriptionlineitemMixin[0].Fields()
 	_ = subscriptionlineitemMixinFields0

@@ -6887,6 +6887,10 @@ const docTemplate = `{
                     "type": "integer",
                     "minimum": 1
                 },
+                "commitment_amount": {
+                    "description": "CommitmentAmount is the minimum amount a customer commits to paying for a billing period",
+                    "type": "number"
+                },
                 "credit_grants": {
                     "description": "Credit grants to be applied when subscription is created",
                     "type": "array",
@@ -6911,6 +6915,10 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                },
+                "overage_factor": {
+                    "description": "OverageFactor is a multiplier applied to usage beyond the commitment amount",
+                    "type": "number"
                 },
                 "plan_id": {
                     "type": "string"
@@ -7596,6 +7604,16 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "property_filters": {
+                    "description": "Property filters to filter the events by the keys in ` + "`" + `properties` + "`" + ` field of the event",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
                 "sources": {
                     "type": "array",
                     "items": {
@@ -7703,6 +7721,13 @@ const docTemplate = `{
                         "$ref": "#/definitions/dto.SubscriptionUsageByMetersResponse"
                     }
                 },
+                "commitment_amount": {
+                    "type": "number"
+                },
+                "commitment_utilized": {
+                    "description": "Amount of commitment used",
+                    "type": "number"
+                },
                 "currency": {
                     "type": "string"
                 },
@@ -7711,6 +7736,17 @@ const docTemplate = `{
                 },
                 "end_time": {
                     "type": "string"
+                },
+                "has_overage": {
+                    "description": "Whether any usage exceeded commitment",
+                    "type": "boolean"
+                },
+                "overage_amount": {
+                    "description": "Amount charged at overage rate",
+                    "type": "number"
+                },
+                "overage_factor": {
+                    "type": "number"
                 },
                 "start_time": {
                     "type": "string"
@@ -8778,6 +8814,10 @@ const docTemplate = `{
                     "description": "CanceledAt is the date the subscription was canceled",
                     "type": "string"
                 },
+                "commitment_amount": {
+                    "description": "CommitmentAmount is the minimum amount a customer commits to paying for a billing period",
+                    "type": "number"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -8827,6 +8867,10 @@ const docTemplate = `{
                 },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
+                },
+                "overage_factor": {
+                    "description": "OverageFactor is a multiplier applied to usage beyond the commitment amount",
+                    "type": "number"
                 },
                 "pause_status": {
                     "$ref": "#/definitions/types.PauseStatus"
@@ -8892,11 +8936,19 @@ const docTemplate = `{
                 "filter_values": {
                     "$ref": "#/definitions/price.JSONBFilters"
                 },
+                "is_overage": {
+                    "description": "Whether this charge is at overage rate",
+                    "type": "boolean"
+                },
                 "meter_display_name": {
                     "type": "string"
                 },
                 "meter_id": {
                     "type": "string"
+                },
+                "overage_factor": {
+                    "description": "Factor applied to this charge if in overage",
+                    "type": "number"
                 },
                 "price": {
                     "$ref": "#/definitions/price.Price"

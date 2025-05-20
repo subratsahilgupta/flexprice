@@ -547,6 +547,10 @@ definitions:
       billing_period_count:
         minimum: 1
         type: integer
+      commitment_amount:
+        description: CommitmentAmount is the minimum amount a customer commits to
+          paying for a billing period
+        type: number
       credit_grants:
         description: Credit grants to be applied when subscription is created
         items:
@@ -564,6 +568,10 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      overage_factor:
+        description: OverageFactor is a multiplier applied to usage beyond the commitment
+          amount
+        type: number
       plan_id:
         type: string
       start_date:
@@ -1048,6 +1056,14 @@ definitions:
         items:
           type: string
         type: array
+      property_filters:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        description: Property filters to filter the events by the keys in `properties`
+          field of the event
+        type: object
       sources:
         items:
           type: string
@@ -1123,12 +1139,25 @@ definitions:
         items:
           $ref: '#/definitions/dto.SubscriptionUsageByMetersResponse'
         type: array
+      commitment_amount:
+        type: number
+      commitment_utilized:
+        description: Amount of commitment used
+        type: number
       currency:
         type: string
       display_amount:
         type: string
       end_time:
         type: string
+      has_overage:
+        description: Whether any usage exceeded commitment
+        type: boolean
+      overage_amount:
+        description: Amount charged at overage rate
+        type: number
+      overage_factor:
+        type: number
       start_time:
         type: string
     type: object
@@ -1869,6 +1898,10 @@ definitions:
       cancelled_at:
         description: CanceledAt is the date the subscription was canceled
         type: string
+      commitment_amount:
+        description: CommitmentAmount is the minimum amount a customer commits to
+          paying for a billing period
+        type: number
       created_at:
         type: string
       created_by:
@@ -1910,6 +1943,10 @@ definitions:
         type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
+      overage_factor:
+        description: OverageFactor is a multiplier applied to usage beyond the commitment
+          amount
+        type: number
       pause_status:
         $ref: '#/definitions/types.PauseStatus'
       pauses:
@@ -1954,10 +1991,16 @@ definitions:
         type: string
       filter_values:
         $ref: '#/definitions/price.JSONBFilters'
+      is_overage:
+        description: Whether this charge is at overage rate
+        type: boolean
       meter_display_name:
         type: string
       meter_id:
         type: string
+      overage_factor:
+        description: Factor applied to this charge if in overage
+        type: number
       price:
         $ref: '#/definitions/price.Price'
       quantity:

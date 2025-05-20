@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/subscriptionpause"
+	"github.com/shopspring/decimal"
 )
 
 // SubscriptionCreate is the builder for creating a Subscription entity.
@@ -387,6 +388,34 @@ func (sc *SubscriptionCreate) SetNillableBillingCycle(s *string) *SubscriptionCr
 	return sc
 }
 
+// SetCommitmentAmount sets the "commitment_amount" field.
+func (sc *SubscriptionCreate) SetCommitmentAmount(d decimal.Decimal) *SubscriptionCreate {
+	sc.mutation.SetCommitmentAmount(d)
+	return sc
+}
+
+// SetNillableCommitmentAmount sets the "commitment_amount" field if the given value is not nil.
+func (sc *SubscriptionCreate) SetNillableCommitmentAmount(d *decimal.Decimal) *SubscriptionCreate {
+	if d != nil {
+		sc.SetCommitmentAmount(*d)
+	}
+	return sc
+}
+
+// SetOverageFactor sets the "overage_factor" field.
+func (sc *SubscriptionCreate) SetOverageFactor(d decimal.Decimal) *SubscriptionCreate {
+	sc.mutation.SetOverageFactor(d)
+	return sc
+}
+
+// SetNillableOverageFactor sets the "overage_factor" field if the given value is not nil.
+func (sc *SubscriptionCreate) SetNillableOverageFactor(d *decimal.Decimal) *SubscriptionCreate {
+	if d != nil {
+		sc.SetOverageFactor(*d)
+	}
+	return sc
+}
+
 // SetID sets the "id" field.
 func (sc *SubscriptionCreate) SetID(s string) *SubscriptionCreate {
 	sc.mutation.SetID(s)
@@ -528,6 +557,10 @@ func (sc *SubscriptionCreate) defaults() {
 	if _, ok := sc.mutation.BillingCycle(); !ok {
 		v := subscription.DefaultBillingCycle
 		sc.mutation.SetBillingCycle(v)
+	}
+	if _, ok := sc.mutation.OverageFactor(); !ok {
+		v := subscription.DefaultOverageFactor
+		sc.mutation.SetOverageFactor(v)
 	}
 }
 
@@ -779,6 +812,14 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 	if value, ok := sc.mutation.BillingCycle(); ok {
 		_spec.SetField(subscription.FieldBillingCycle, field.TypeString, value)
 		_node.BillingCycle = value
+	}
+	if value, ok := sc.mutation.CommitmentAmount(); ok {
+		_spec.SetField(subscription.FieldCommitmentAmount, field.TypeOther, value)
+		_node.CommitmentAmount = &value
+	}
+	if value, ok := sc.mutation.OverageFactor(); ok {
+		_spec.SetField(subscription.FieldOverageFactor, field.TypeOther, value)
+		_node.OverageFactor = &value
 	}
 	if nodes := sc.mutation.LineItemsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
