@@ -784,16 +784,36 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 	// If using commitment-based pricing, process charges with overage logic
 	if hasCommitment {
-		// Sort usage charges by time or any other criteria defined in requirements
-		// For now, we'll use the current order of charges
+		// First, filter charges to only include usage-based charges for commitment calculations
+		// Fixed charges are not subject to commitment/overage
+		var usageOnlyCharges []*dto.SubscriptionUsageByMetersResponse
+		var fixedCharges []*dto.SubscriptionUsageByMetersResponse
 
-		// Track remaining commitment and process each charge
+		for _, charge := range usageCharges {
+			if charge.Price != nil && charge.Price.Type == types.PRICE_TYPE_USAGE {
+				usageOnlyCharges = append(usageOnlyCharges, charge)
+			} else {
+				// Add fixed charges directly to the response without overage calculation
+				fixedCharges = append(fixedCharges, charge)
+			}
+		}
+
+		// Add all fixed charges directly to the response
+		response.Charges = append(response.Charges, fixedCharges...)
+
+		// Track remaining commitment and process each usage charge
 		remainingCommitment := commitmentAmount
 		totalOverageAmount := decimal.Zero
 
-		for _, charge := range usageCharges {
+		for _, charge := range usageOnlyCharges {
 			// Get charge amount as decimal for precise calculations
 			chargeAmount := decimal.NewFromFloat(charge.Amount)
+			pricePerUnit := decimal.Zero
+			if charge.Price != nil && charge.Price.BillingModel == types.BILLING_MODEL_FLAT_FEE {
+				pricePerUnit = charge.Price.Amount
+			} else if charge.Quantity > 0 {
+				pricePerUnit = chargeAmount.Div(decimal.NewFromFloat(charge.Quantity))
+			}
 
 			// Normal price covers all of this charge
 			if remainingCommitment.GreaterThanOrEqual(chargeAmount) {
@@ -805,37 +825,49 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 			// Charge needs to be split between normal and overage
 			if remainingCommitment.GreaterThan(decimal.Zero) {
-				// Calculate what portion of the charge is at normal price
-				normalRatio := remainingCommitment.Div(chargeAmount)
-				normalQuantityDecimal := decimal.NewFromFloat(charge.Quantity).Mul(normalRatio)
+				// Calculate exact quantity that can be covered by remaining commitment
+				var normalQuantityDecimal decimal.Decimal
 
-				// Create normal charge
-				normalQuantity, _ := normalQuantityDecimal.Float64()
+				if !pricePerUnit.IsZero() {
+					normalQuantityDecimal = remainingCommitment.Div(pricePerUnit)
 
-				normalCharge := *charge // Create a copy
-				normalCharge.Quantity = normalQuantity
-				normalCharge.Amount = price.FormatAmountToFloat64WithPrecision(remainingCommitment, subscription.Currency)
-				normalCharge.DisplayAmount = remainingCommitment.StringFixed(6)
-				normalCharge.IsOverage = false
-				response.Charges = append(response.Charges, &normalCharge)
+					// Round down to ensure we don't exceed commitment
+					normalQuantityDecimal = normalQuantityDecimal.Floor()
+				}
 
-				// Create overage charge for remainder
+				// Calculate the normal amount based on the normal quantity
+				normalAmountDecimal := normalQuantityDecimal.Mul(pricePerUnit)
+
+				// Create the normal charge
+				if normalQuantityDecimal.GreaterThan(decimal.Zero) {
+					normalCharge := *charge // Create a copy
+					normalCharge.Quantity = normalQuantityDecimal.InexactFloat64()
+					normalCharge.Amount = price.FormatAmountToFloat64WithPrecision(normalAmountDecimal, subscription.Currency)
+					normalCharge.DisplayAmount = price.FormatAmountToStringWithPrecision(normalAmountDecimal, subscription.Currency)
+					normalCharge.IsOverage = false
+					response.Charges = append(response.Charges, &normalCharge)
+				}
+
+				// Calculate overage quantity and amount
 				overageQuantityDecimal := decimal.NewFromFloat(charge.Quantity).Sub(normalQuantityDecimal)
-				overageQuantity, _ := overageQuantityDecimal.Float64()
 
-				overageAmountDecimal := chargeAmount.Sub(remainingCommitment).Mul(overageFactor)
-				totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
+				// Create the overage charge only if there's actual overage
+				if overageQuantityDecimal.GreaterThan(decimal.Zero) {
+					overageAmountDecimal := overageQuantityDecimal.Mul(pricePerUnit).Mul(overageFactor)
+					totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
 
-				overageCharge := *charge // Create a copy
-				overageCharge.Quantity = overageQuantity
-				overageCharge.Amount = price.FormatAmountToFloat64WithPrecision(overageAmountDecimal, subscription.Currency)
-				overageCharge.DisplayAmount = overageAmountDecimal.StringFixed(6)
-				overageCharge.IsOverage = true
-				overageCharge.OverageFactor = overageFactorFloat
-				response.Charges = append(response.Charges, &overageCharge)
+					overageCharge := *charge // Create a copy
+					overageCharge.Quantity = overageQuantityDecimal.InexactFloat64()
+					overageCharge.Amount = price.FormatAmountToFloat64WithPrecision(overageAmountDecimal, subscription.Currency)
+					overageCharge.DisplayAmount = price.FormatAmountToStringWithPrecision(overageAmountDecimal, subscription.Currency)
+					overageCharge.IsOverage = true
+					overageCharge.OverageFactor = overageFactorFloat
+					response.Charges = append(response.Charges, &overageCharge)
+					response.HasOverage = true
+				}
 
-				response.HasOverage = true
-				remainingCommitment = decimal.Zero
+				// Update remaining commitment (should be zero or very close to it due to rounding)
+				remainingCommitment = remainingCommitment.Sub(normalAmountDecimal)
 				continue
 			}
 
@@ -852,7 +884,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		}
 
 		// Calculate final amounts for response
-		commitmentUtilized := subscription.CommitmentAmount.Sub(remainingCommitment)
+		commitmentUtilized := commitmentAmount.Sub(remainingCommitment)
 		commitmentUtilizedFloat, _ := commitmentUtilized.Float64()
 		overageAmountFloat, _ := totalOverageAmount.Float64()
 		response.CommitmentUtilized = commitmentUtilizedFloat
