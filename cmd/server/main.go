@@ -118,6 +118,7 @@ func main() {
 			repository.NewCustomerRepository,
 			repository.NewPlanRepository,
 			repository.NewSubscriptionRepository,
+			repository.NewSubscriptionScheduleRepository,
 			repository.NewWalletRepository,
 			repository.NewTenantRepository,
 			repository.NewEnvironmentRepository,

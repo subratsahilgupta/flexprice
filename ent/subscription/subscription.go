@@ -85,6 +85,8 @@ const (
 	EdgePauses = "pauses"
 	// EdgeCreditGrants holds the string denoting the credit_grants edge name in mutations.
 	EdgeCreditGrants = "credit_grants"
+	// EdgeSchedule holds the string denoting the schedule edge name in mutations.
+	EdgeSchedule = "schedule"
 	// Table holds the table name of the subscription in the database.
 	Table = "subscriptions"
 	// LineItemsTable is the table that holds the line_items relation/edge.
@@ -108,6 +110,13 @@ const (
 	CreditGrantsInverseTable = "credit_grants"
 	// CreditGrantsColumn is the table column denoting the credit_grants relation/edge.
 	CreditGrantsColumn = "subscription_id"
+	// ScheduleTable is the table that holds the schedule relation/edge.
+	ScheduleTable = "subscription_schedules"
+	// ScheduleInverseTable is the table name for the SubscriptionSchedule entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionschedule" package.
+	ScheduleInverseTable = "subscription_schedules"
+	// ScheduleColumn is the table column denoting the schedule relation/edge.
+	ScheduleColumn = "subscription_id"
 )
 
 // Columns holds all SQL columns for subscription fields.
@@ -410,6 +419,13 @@ func ByCreditGrants(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newCreditGrantsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByScheduleField orders the results by schedule field.
+func ByScheduleField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newScheduleStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newLineItemsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -429,5 +445,12 @@ func newCreditGrantsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(CreditGrantsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, CreditGrantsTable, CreditGrantsColumn),
+	)
+}
+func newScheduleStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ScheduleInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, ScheduleTable, ScheduleColumn),
 	)
 }

@@ -31,6 +31,12 @@ type SubscriptionService interface {
 	ListPauses(ctx context.Context, subscriptionID string) (*dto.ListSubscriptionPausesResponse, error)
 	CalculatePauseImpact(ctx context.Context, subscriptionID string, req *dto.PauseSubscriptionRequest) (*types.BillingImpactDetails, error)
 	CalculateResumeImpact(ctx context.Context, subscriptionID string, req *dto.ResumeSubscriptionRequest) (*types.BillingImpactDetails, error)
+
+	// Schedule-related methods
+	CreateSubscriptionSchedule(ctx context.Context, req *dto.CreateSubscriptionScheduleRequest) (*dto.SubscriptionScheduleResponse, error)
+	GetSubscriptionSchedule(ctx context.Context, id string) (*dto.SubscriptionScheduleResponse, error)
+	GetScheduleBySubscriptionID(ctx context.Context, subscriptionID string) (*dto.SubscriptionScheduleResponse, error)
+	UpdateSubscriptionSchedule(ctx context.Context, id string, req *dto.UpdateSubscriptionScheduleRequest) (*dto.SubscriptionScheduleResponse, error)
 }
 
 type subscriptionService struct {
@@ -223,7 +229,11 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		"current_period_start", sub.CurrentPeriodStart,
 		"current_period_end", sub.CurrentPeriodEnd,
 		"valid_prices", len(validPrices),
-		"num_line_items", len(sub.LineItems))
+		"num_line_items", len(sub.LineItems),
+		"has_phases", len(req.Phases) > 0)
+
+	// Create response object
+	response := &dto.SubscriptionResponse{Subscription: sub}
 
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Create subscription with line items
@@ -236,6 +246,19 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		err = s.handleCreditGrants(ctx, sub, req.CreditGrants)
 		if err != nil {
 			return err
+		}
+
+		// Create subscription schedule if phases are provided
+		if len(req.Phases) > 0 {
+			schedule, err := s.createScheduleFromPhases(ctx, sub, req.Phases)
+			if err != nil {
+				return err
+			}
+
+			// Include the schedule in the response
+			if schedule != nil {
+				response.Schedule = dto.SubscriptionScheduleResponseFromDomain(schedule)
+			}
 		}
 
 		// Create invoice for the subscription (in case it has advance charges)
@@ -251,7 +274,6 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		return nil, err
 	}
 
-	response := &dto.SubscriptionResponse{Subscription: sub}
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionCreated, sub.ID)
 	return response, nil
 }
@@ -412,6 +434,13 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 		return nil, err
 	}
 	response.Customer = customer
+
+	// Try to get schedule if exists
+	schedule, err := s.GetScheduleBySubscriptionID(ctx, id)
+	if err == nil && schedule != nil {
+		response.Schedule = schedule
+	}
+
 	return response, nil
 }
 
@@ -508,7 +537,45 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 		}
 	}
 
+	// Include schedules if requested in expand
+	if filter.Expand != nil && filter.GetExpand().Has(types.ExpandSchedule) {
+		s.addSchedulesToSubscriptionResponses(ctx, response.Items)
+	}
+
 	return response, nil
+}
+
+// addSchedulesToSubscriptionResponses adds schedule information to subscription responses if available
+func (s *subscriptionService) addSchedulesToSubscriptionResponses(ctx context.Context, items []*dto.SubscriptionResponse) {
+	// If repository doesn't support schedules, return early
+	if s.SubscriptionScheduleRepo == nil {
+		s.Logger.Debugw("subscription schedule repository is not configured, skipping schedule expansion")
+		return
+	}
+
+	// Group subscriptions by ID for faster lookup
+	subMap := make(map[string]*dto.SubscriptionResponse, len(items))
+	for _, sub := range items {
+		subMap[sub.ID] = sub
+	}
+
+	// Collect all subscription IDs
+	subscriptionIDs := lo.Keys(subMap)
+
+	// In a real implementation, we would get schedules in a single query
+	// For now, we'll do individual lookups
+	for _, subscriptionID := range subscriptionIDs {
+		sub := subMap[subscriptionID]
+
+		// Try to get schedule if exists
+		schedule, err := s.SubscriptionScheduleRepo.GetBySubscriptionID(ctx, subscriptionID)
+		if err != nil || schedule == nil {
+			continue
+		}
+
+		// Add schedule to subscription response
+		sub.Schedule = dto.SubscriptionScheduleResponseFromDomain(schedule)
+	}
 }
 
 func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *dto.GetUsageBySubscriptionRequest) (*dto.GetUsageBySubscriptionResponse, error) {
@@ -722,7 +789,6 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 		// Track remaining commitment and process each charge
 		remainingCommitment := commitmentAmount
-		overageFactor := overageFactor
 		totalOverageAmount := decimal.Zero
 
 		for _, charge := range usageCharges {
@@ -1729,4 +1795,274 @@ func (s *subscriptionService) publishInternalWebhookEvent(ctx context.Context, e
 	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
 		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
 	}
+}
+
+// CreateSubscriptionSchedule creates a subscription schedule
+func (s *subscriptionService) CreateSubscriptionSchedule(ctx context.Context, req *dto.CreateSubscriptionScheduleRequest) (*dto.SubscriptionScheduleResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Verify subscription exists
+	sub, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if a schedule already exists for the subscription
+	if s.SubscriptionScheduleRepo == nil {
+		return nil, ierr.NewError("subscription repository does not support schedules").
+			WithHint("Schedule functionality is not supported").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Check if a schedule already exists
+	existingSchedule, err := s.SubscriptionScheduleRepo.GetBySubscriptionID(ctx, req.SubscriptionID)
+	if err == nil && existingSchedule != nil {
+		return nil, ierr.NewError("subscription already has a schedule").
+			WithHint("A subscription can only have one schedule").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": req.SubscriptionID,
+				"schedule_id":     existingSchedule.ID,
+			}).
+			Mark(ierr.ErrAlreadyExists)
+	}
+
+	// Create the schedule
+	schedule := &subscription.SubscriptionSchedule{
+		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_SCHEDULE),
+		SubscriptionID:    req.SubscriptionID,
+		ScheduleStatus:    types.ScheduleStatusActive,
+		CurrentPhaseIndex: 0,
+		EndBehavior:       req.EndBehavior,
+		StartDate:         sub.StartDate,
+		Metadata:          types.Metadata{},
+		EnvironmentID:     types.GetEnvironmentID(ctx),
+		BaseModel:         types.GetDefaultBaseModel(ctx),
+	}
+
+	// Create phases
+	phases := make([]*subscription.SchedulePhase, 0, len(req.Phases))
+	for i, phaseInput := range req.Phases {
+		// Convert line items to the domain model type
+		lineItems := make([]types.SchedulePhaseLineItem, 0, len(phaseInput.LineItems))
+		for _, item := range phaseInput.LineItems {
+			lineItems = append(lineItems, types.SchedulePhaseLineItem{
+				PriceID:     item.PriceID,
+				Quantity:    item.Quantity,
+				DisplayName: item.DisplayName,
+				Metadata:    types.Metadata(item.Metadata),
+			})
+		}
+
+		// Convert credit grants to the domain model type
+		creditGrants := make([]types.SchedulePhaseCreditGrant, 0, len(phaseInput.CreditGrants))
+		for _, grant := range phaseInput.CreditGrants {
+			creditGrants = append(creditGrants, types.SchedulePhaseCreditGrant{
+				Name:         grant.Name,
+				Scope:        grant.Scope,
+				PlanID:       grant.PlanID,
+				Amount:       grant.Amount,
+				Currency:     grant.Currency,
+				Cadence:      grant.Cadence,
+				Period:       grant.Period,
+				PeriodCount:  grant.PeriodCount,
+				ExpireInDays: grant.ExpireInDays,
+				Priority:     grant.Priority,
+				Metadata:     grant.Metadata,
+			})
+		}
+
+		phase := &subscription.SchedulePhase{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_SCHEDULE_PHASE),
+			ScheduleID:       schedule.ID,
+			PhaseIndex:       i,
+			StartDate:        phaseInput.StartDate,
+			EndDate:          phaseInput.EndDate,
+			CommitmentAmount: &phaseInput.CommitmentAmount,
+			OverageFactor:    &phaseInput.OverageFactor,
+			LineItems:        lineItems,
+			CreditGrants:     creditGrants,
+			Metadata:         phaseInput.Metadata,
+			EnvironmentID:    types.GetEnvironmentID(ctx),
+			BaseModel:        types.GetDefaultBaseModel(ctx),
+		}
+		phases = append(phases, phase)
+	}
+
+	// Create the schedule with phases
+	err = s.SubscriptionScheduleRepo.CreateWithPhases(ctx, schedule, phases)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to create subscription schedule").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": req.SubscriptionID,
+				"phase_count":     len(phases),
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Set the phases to the schedule before returning
+	schedule.Phases = phases
+	return dto.SubscriptionScheduleResponseFromDomain(schedule), nil
+}
+
+// GetSubscriptionSchedule gets a subscription schedule by ID
+func (s *subscriptionService) GetSubscriptionSchedule(ctx context.Context, id string) (*dto.SubscriptionScheduleResponse, error) {
+	if s.SubscriptionScheduleRepo == nil {
+		return nil, ierr.NewError("subscription repository does not support schedules").
+			WithHint("Schedule functionality is not supported").
+			Mark(ierr.ErrInternal)
+	}
+
+	schedule, err := s.SubscriptionScheduleRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return dto.SubscriptionScheduleResponseFromDomain(schedule), nil
+}
+
+// GetScheduleBySubscriptionID gets a subscription schedule by subscription ID
+func (s *subscriptionService) GetScheduleBySubscriptionID(ctx context.Context, subscriptionID string) (*dto.SubscriptionScheduleResponse, error) {
+	// If repository doesn't support schedules, return nil instead of error
+	// This allows graceful fallback for backward compatibility
+	if s.SubscriptionScheduleRepo == nil {
+		s.Logger.Warnw("subscription schedule repository is not configured",
+			"subscription_id", subscriptionID)
+		return nil, nil
+	}
+
+	schedule, err := s.SubscriptionScheduleRepo.GetBySubscriptionID(ctx, subscriptionID)
+	if err != nil {
+		// Not found is a valid response - the subscription may not have a schedule
+		if ierr.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if schedule == nil {
+		return nil, nil
+	}
+
+	return dto.SubscriptionScheduleResponseFromDomain(schedule), nil
+}
+
+// UpdateSubscriptionSchedule updates a subscription schedule
+func (s *subscriptionService) UpdateSubscriptionSchedule(ctx context.Context, id string, req *dto.UpdateSubscriptionScheduleRequest) (*dto.SubscriptionScheduleResponse, error) {
+	if s.SubscriptionScheduleRepo == nil {
+		return nil, ierr.NewError("subscription repository does not support schedules").
+			WithHint("Schedule functionality is not supported").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Get the current schedule
+	schedule, err := s.SubscriptionScheduleRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update the fields
+	if req.Status != "" {
+		schedule.ScheduleStatus = req.Status
+	}
+
+	if req.EndBehavior != "" {
+		schedule.EndBehavior = req.EndBehavior
+	}
+
+	// Update in the database
+	if err := s.SubscriptionScheduleRepo.Update(ctx, schedule); err != nil {
+		return nil, err
+	}
+
+	// Get fresh data
+	updatedSchedule, err := s.SubscriptionScheduleRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return dto.SubscriptionScheduleResponseFromDomain(updatedSchedule), nil
+}
+
+// createScheduleFromPhases creates a schedule and its phases for a subscription
+func (s *subscriptionService) createScheduleFromPhases(ctx context.Context, sub *subscription.Subscription, phaseInputs []dto.SubscriptionSchedulePhaseInput) (*subscription.SubscriptionSchedule, error) {
+	// Create the schedule
+	schedule := &subscription.SubscriptionSchedule{
+		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_SCHEDULE),
+		SubscriptionID:    sub.ID,
+		ScheduleStatus:    types.ScheduleStatusActive,
+		CurrentPhaseIndex: 0,
+		EndBehavior:       types.EndBehaviorRelease,
+		StartDate:         sub.StartDate,
+		Metadata:          types.Metadata{},
+		EnvironmentID:     types.GetEnvironmentID(ctx),
+		BaseModel:         types.GetDefaultBaseModel(ctx),
+	}
+
+	// Create phases
+	phases := make([]*subscription.SchedulePhase, 0, len(phaseInputs))
+	for i, phaseInput := range phaseInputs {
+		// Convert line items to the domain model type
+		lineItems := make([]types.SchedulePhaseLineItem, 0, len(phaseInput.LineItems))
+		for _, item := range phaseInput.LineItems {
+			lineItems = append(lineItems, types.SchedulePhaseLineItem{
+				PriceID:     item.PriceID,
+				Quantity:    item.Quantity,
+				DisplayName: item.DisplayName,
+				Metadata:    item.Metadata,
+			})
+		}
+
+		// Convert credit grants to the domain model type
+		creditGrants := make([]types.SchedulePhaseCreditGrant, 0, len(phaseInput.CreditGrants))
+		for _, grant := range phaseInput.CreditGrants {
+			creditGrants = append(creditGrants, types.SchedulePhaseCreditGrant{
+				Name:         grant.Name,
+				Scope:        grant.Scope,
+				PlanID:       grant.PlanID,
+				Amount:       grant.Amount,
+				Currency:     grant.Currency,
+				Cadence:      grant.Cadence,
+				Period:       grant.Period,
+				PeriodCount:  grant.PeriodCount,
+				ExpireInDays: grant.ExpireInDays,
+				Priority:     grant.Priority,
+				Metadata:     grant.Metadata,
+			})
+		}
+
+		phase := &subscription.SchedulePhase{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_SCHEDULE_PHASE),
+			ScheduleID:       schedule.ID,
+			PhaseIndex:       i,
+			StartDate:        phaseInput.StartDate,
+			EndDate:          phaseInput.EndDate,
+			CommitmentAmount: &phaseInput.CommitmentAmount,
+			OverageFactor:    &phaseInput.OverageFactor,
+			LineItems:        lineItems,
+			CreditGrants:     creditGrants,
+			Metadata:         phaseInput.Metadata,
+			EnvironmentID:    types.GetEnvironmentID(ctx),
+			BaseModel:        types.GetDefaultBaseModel(ctx),
+		}
+		phases = append(phases, phase)
+	}
+
+	// Create the schedule with phases
+	err := s.SubscriptionScheduleRepo.CreateWithPhases(ctx, schedule, phases)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to create subscription schedule").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": sub.ID,
+				"phase_count":     len(phases),
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Set the phases to the schedule before returning
+	schedule.Phases = phases
+	return schedule, nil
 }
