@@ -1,5 +1,12 @@
 basePath: /v1
 definitions:
+  dto.AddSchedulePhaseRequest:
+    properties:
+      phase:
+        $ref: '#/definitions/dto.SubscriptionSchedulePhaseInput'
+    required:
+    - phase
+    type: object
   dto.Address:
     properties:
       address_city:
@@ -6728,6 +6735,43 @@ paths:
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
       summary: List all pauses for a subscription
+      tags:
+      - Subscriptions
+  /subscriptions/{id}/phases:
+    post:
+      consumes:
+      - application/json
+      description: Add a new phase to a subscription schedule
+      parameters:
+      - description: Subscription ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Add schedule phase request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.AddSchedulePhaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.SubscriptionScheduleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Add new phase to subscription schedule
       tags:
       - Subscriptions
   /subscriptions/{id}/resume:
