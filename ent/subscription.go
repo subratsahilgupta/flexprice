@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/subscription"
+	"github.com/flexprice/flexprice/ent/subscriptionschedule"
 	"github.com/shopspring/decimal"
 )
 
@@ -97,9 +98,11 @@ type SubscriptionEdges struct {
 	Pauses []*SubscriptionPause `json:"pauses,omitempty"`
 	// CreditGrants holds the value of the credit_grants edge.
 	CreditGrants []*CreditGrant `json:"credit_grants,omitempty"`
+	// Schedule holds the value of the schedule edge.
+	Schedule *SubscriptionSchedule `json:"schedule,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // LineItemsOrErr returns the LineItems value or an error if the edge
@@ -127,6 +130,17 @@ func (e SubscriptionEdges) CreditGrantsOrErr() ([]*CreditGrant, error) {
 		return e.CreditGrants, nil
 	}
 	return nil, &NotLoadedError{edge: "credit_grants"}
+}
+
+// ScheduleOrErr returns the Schedule value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e SubscriptionEdges) ScheduleOrErr() (*SubscriptionSchedule, error) {
+	if e.Schedule != nil {
+		return e.Schedule, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: subscriptionschedule.Label}
+	}
+	return nil, &NotLoadedError{edge: "schedule"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -395,6 +409,11 @@ func (s *Subscription) QueryPauses() *SubscriptionPauseQuery {
 // QueryCreditGrants queries the "credit_grants" edge of the Subscription entity.
 func (s *Subscription) QueryCreditGrants() *CreditGrantQuery {
 	return NewSubscriptionClient(s.config).QueryCreditGrants(s)
+}
+
+// QuerySchedule queries the "schedule" edge of the Subscription entity.
+func (s *Subscription) QuerySchedule() *SubscriptionScheduleQuery {
+	return NewSubscriptionClient(s.config).QuerySchedule(s)
 }
 
 // Update returns a builder for updating this Subscription.

@@ -6913,6 +6913,13 @@
                     "description": "OverageFactor is a multiplier applied to usage beyond the commitment amount",
                     "type": "number"
                 },
+                "phases": {
+                    "description": "Phases represents an optional timeline of subscription phases",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SubscriptionSchedulePhaseInput"
+                    }
+                },
                 "plan_id": {
                     "type": "string"
                 },
@@ -8695,6 +8702,113 @@
                 }
             }
         },
+        "dto.SubscriptionLineItemRequest": {
+            "type": "object",
+            "required": [
+                "price_id",
+                "quantity"
+            ],
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                }
+            }
+        },
+        "dto.SubscriptionLineItemResponse": {
+            "type": "object",
+            "properties": {
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "meter_display_name": {
+                    "type": "string"
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "plan_display_name": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "price_type": {
+                    "$ref": "#/definitions/types.PriceType"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "trial_period": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.SubscriptionPauseResponse": {
             "type": "object",
             "properties": {
@@ -8877,6 +8991,10 @@
                     "description": "PlanID is the identifier for the plan in our system",
                     "type": "string"
                 },
+                "schedule": {
+                    "description": "Schedule is included when the subscription has a schedule",
+                    "$ref": "#/definitions/dto.SubscriptionScheduleResponse"
+                },
                 "start_date": {
                     "description": "StartDate is the start date of the subscription",
                     "type": "string"
@@ -8907,6 +9025,126 @@
                 "version": {
                     "description": "Version is used for optimistic locking",
                     "type": "integer"
+                }
+            }
+        },
+        "dto.SubscriptionSchedulePhaseInput": {
+            "type": "object",
+            "required": [
+                "start_date"
+            ],
+            "properties": {
+                "billing_cycle": {
+                    "$ref": "#/definitions/types.BillingCycle"
+                },
+                "commitment_amount": {
+                    "type": "number"
+                },
+                "credit_grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreateCreditGrantRequest"
+                    }
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "line_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SubscriptionLineItemRequest"
+                    }
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "overage_factor": {
+                    "type": "number"
+                },
+                "start_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.SubscriptionSchedulePhaseResponse": {
+            "type": "object",
+            "properties": {
+                "commitment_amount": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "credit_grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreditGrantResponse"
+                    }
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "line_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SubscriptionLineItemResponse"
+                    }
+                },
+                "overage_factor": {
+                    "type": "number"
+                },
+                "phase_index": {
+                    "type": "integer"
+                },
+                "schedule_id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.SubscriptionScheduleResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "current_phase_index": {
+                    "type": "integer"
+                },
+                "end_behavior": {
+                    "$ref": "#/definitions/types.ScheduleEndBehavior"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "phases": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SubscriptionSchedulePhaseResponse"
+                    }
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.SubscriptionScheduleStatus"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -10660,6 +10898,17 @@
                 "ResumeModeAuto"
             ]
         },
+        "types.ScheduleEndBehavior": {
+            "type": "string",
+            "enum": [
+                "RELEASE",
+                "CANCEL"
+            ],
+            "x-enum-varnames": [
+                "EndBehaviorRelease",
+                "EndBehaviorCancel"
+            ]
+        },
         "types.SecretProvider": {
             "type": "string",
             "enum": [
@@ -10719,6 +10968,19 @@
                 "StatusPublished",
                 "StatusDeleted",
                 "StatusArchived"
+            ]
+        },
+        "types.SubscriptionScheduleStatus": {
+            "type": "string",
+            "enum": [
+                "ACTIVE",
+                "RELEASED",
+                "CANCELED"
+            ],
+            "x-enum-varnames": [
+                "ScheduleStatusActive",
+                "ScheduleStatusReleased",
+                "ScheduleStatusCanceled"
             ]
         },
         "types.SubscriptionStatus": {

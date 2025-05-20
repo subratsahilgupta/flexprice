@@ -140,6 +140,8 @@ func (Subscription) Edges() []ent.Edge {
 		edge.To("line_items", SubscriptionLineItem.Type),
 		edge.To("pauses", SubscriptionPause.Type),
 		edge.To("credit_grants", CreditGrant.Type),
+		edge.To("schedule", SubscriptionSchedule.Type).
+			Unique(),
 	}
 }
 

@@ -572,6 +572,11 @@ definitions:
         description: OverageFactor is a multiplier applied to usage beyond the commitment
           amount
         type: number
+      phases:
+        description: Phases represents an optional timeline of subscription phases
+        items:
+          $ref: '#/definitions/dto.SubscriptionSchedulePhaseInput'
+        type: array
       plan_id:
         type: string
       start_date:
@@ -1805,6 +1810,77 @@ definitions:
     required:
     - email
     type: object
+  dto.SubscriptionLineItemRequest:
+    properties:
+      display_name:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      price_id:
+        type: string
+      quantity:
+        type: number
+    required:
+    - price_id
+    - quantity
+    type: object
+  dto.SubscriptionLineItemResponse:
+    properties:
+      billing_period:
+        $ref: '#/definitions/types.BillingPeriod'
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      customer_id:
+        type: string
+      display_name:
+        type: string
+      end_date:
+        type: string
+      environment_id:
+        type: string
+      id:
+        type: string
+      invoice_cadence:
+        $ref: '#/definitions/types.InvoiceCadence'
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      meter_display_name:
+        type: string
+      meter_id:
+        type: string
+      plan_display_name:
+        type: string
+      plan_id:
+        type: string
+      price_id:
+        type: string
+      price_type:
+        $ref: '#/definitions/types.PriceType'
+      quantity:
+        type: number
+      start_date:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        type: string
+      tenant_id:
+        type: string
+      trial_period:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   dto.SubscriptionPauseResponse:
     properties:
       created_at:
@@ -1958,6 +2034,10 @@ definitions:
       plan_id:
         description: PlanID is the identifier for the plan in our system
         type: string
+      schedule:
+        allOf:
+        - $ref: '#/definitions/dto.SubscriptionScheduleResponse'
+        description: Schedule is included when the subscription has a schedule
       start_date:
         description: StartDate is the start date of the subscription
         type: string
@@ -1980,6 +2060,85 @@ definitions:
       version:
         description: Version is used for optimistic locking
         type: integer
+    type: object
+  dto.SubscriptionSchedulePhaseInput:
+    properties:
+      billing_cycle:
+        $ref: '#/definitions/types.BillingCycle'
+      commitment_amount:
+        type: number
+      credit_grants:
+        items:
+          $ref: '#/definitions/dto.CreateCreditGrantRequest'
+        type: array
+      end_date:
+        type: string
+      line_items:
+        items:
+          $ref: '#/definitions/dto.SubscriptionLineItemRequest'
+        type: array
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      overage_factor:
+        type: number
+      start_date:
+        type: string
+    required:
+    - start_date
+    type: object
+  dto.SubscriptionSchedulePhaseResponse:
+    properties:
+      commitment_amount:
+        type: number
+      created_at:
+        type: string
+      credit_grants:
+        items:
+          $ref: '#/definitions/dto.CreditGrantResponse'
+        type: array
+      end_date:
+        type: string
+      id:
+        type: string
+      line_items:
+        items:
+          $ref: '#/definitions/dto.SubscriptionLineItemResponse'
+        type: array
+      overage_factor:
+        type: number
+      phase_index:
+        type: integer
+      schedule_id:
+        type: string
+      start_date:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  dto.SubscriptionScheduleResponse:
+    properties:
+      created_at:
+        type: string
+      current_phase_index:
+        type: integer
+      end_behavior:
+        $ref: '#/definitions/types.ScheduleEndBehavior'
+      id:
+        type: string
+      phases:
+        items:
+          $ref: '#/definitions/dto.SubscriptionSchedulePhaseResponse'
+        type: array
+      start_date:
+        type: string
+      status:
+        $ref: '#/definitions/types.SubscriptionScheduleStatus'
+      subscription_id:
+        type: string
+      updated_at:
+        type: string
     type: object
   dto.SubscriptionUsageByMetersResponse:
     properties:
@@ -3232,6 +3391,14 @@ definitions:
     - ResumeModeImmediate
     - ResumeModeScheduled
     - ResumeModeAuto
+  types.ScheduleEndBehavior:
+    enum:
+    - RELEASE
+    - CANCEL
+    type: string
+    x-enum-varnames:
+    - EndBehaviorRelease
+    - EndBehaviorCancel
   types.SecretProvider:
     enum:
     - flexprice
@@ -3277,6 +3444,16 @@ definitions:
     - StatusPublished
     - StatusDeleted
     - StatusArchived
+  types.SubscriptionScheduleStatus:
+    enum:
+    - ACTIVE
+    - RELEASED
+    - CANCELED
+    type: string
+    x-enum-varnames:
+    - ScheduleStatusActive
+    - ScheduleStatusReleased
+    - ScheduleStatusCanceled
   types.SubscriptionStatus:
     enum:
     - active
