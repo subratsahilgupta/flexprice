@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -44,7 +45,9 @@ func (s *prorationService) CalculateProration(ctx context.Context, params prorat
 			zap.String("subscription_id", params.SubscriptionID),
 			zap.String("line_item_id", params.LineItemID),
 		)
-		return nil, fmt.Errorf("proration calculation failed: %w", err)
+		return nil, ierr.NewErrorf("proration calculation failed: %v", err).
+			WithHint("Check if the subscription and line item details are valid").
+			Mark(ierr.ErrSystem)
 	}
 
 	logger.Debug("proration calculation completed",
@@ -86,7 +89,9 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 				zap.Error(err),
 				zap.String("subscription_id", subscriptionID),
 			)
-			return fmt.Errorf("failed to check for existing invoice: %w", err)
+			return ierr.NewErrorf("failed to check for existing invoice: %v", err).
+				WithHint("Verify the subscription and date range are valid").
+				Mark(ierr.ErrDatabase)
 		}
 
 		var inv *invoice.Invoice
@@ -98,7 +103,9 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 					zap.Error(err),
 					zap.String("subscription_id", subscriptionID),
 				)
-				return fmt.Errorf("failed to get next invoice number: %w", err)
+				return ierr.NewErrorf("failed to get next invoice number: %v", err).
+					WithHint("Check if invoice number sequence is properly initialized").
+					Mark(ierr.ErrDatabase)
 			}
 
 			nextSeq, err := invoiceRepo.GetNextBillingSequence(ctx, subscriptionID)
@@ -107,7 +114,9 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 					zap.Error(err),
 					zap.String("subscription_id", subscriptionID),
 				)
-				return fmt.Errorf("failed to get next billing sequence: %w", err)
+				return ierr.NewErrorf("failed to get next billing sequence: %v", err).
+					WithHint("Verify the subscription billing sequence is valid").
+					Mark(ierr.ErrDatabase)
 			}
 
 			inv = &invoice.Invoice{
@@ -135,7 +144,9 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 					zap.Error(err),
 					zap.String("subscription_id", subscriptionID),
 				)
-				return fmt.Errorf("failed to create invoice for proration: %w", err)
+				return ierr.NewErrorf("failed to create invoice for proration: %v", err).
+					WithHint("Check if all required invoice fields are valid").
+					Mark(ierr.ErrDatabase)
 			}
 		} else {
 			// Find the existing invoice
@@ -158,10 +169,14 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 					zap.Error(err),
 					zap.String("subscription_id", subscriptionID),
 				)
-				return fmt.Errorf("failed to find existing invoice: %w", err)
+				return ierr.NewErrorf("failed to find existing invoice: %v", err).
+					WithHint("Verify the invoice filter parameters are correct").
+					Mark(ierr.ErrDatabase)
 			}
 			if len(invoices) == 0 {
-				return fmt.Errorf("no active invoice found for period")
+				return ierr.NewError("no active invoice found for period").
+					WithHint("Ensure an invoice exists for the specified period").
+					Mark(ierr.ErrNotFound)
 			}
 			inv = invoices[0]
 		}
@@ -216,7 +231,9 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 				zap.String("invoice_id", inv.ID),
 				zap.String("subscription_id", subscriptionID),
 			)
-			return fmt.Errorf("failed to add proration line items to invoice %s: %w", inv.ID, err)
+			return ierr.NewErrorf("failed to add proration line items to invoice %s: %v", inv.ID, err).
+				WithHint("Check if all line item details are valid").
+				Mark(ierr.ErrDatabase)
 		}
 
 		logger.Debug("successfully applied proration to invoice",
@@ -230,43 +247,65 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 	}
 
 	// Handle other behaviors if added in the future
-	return fmt.Errorf("unsupported proration behavior: %s", behavior)
+	return ierr.NewErrorf("unsupported proration behavior: %s", behavior).
+		WithHint("Only ProrationBehaviorCreateProrations is currently supported").
+		Mark(ierr.ErrInvalidOperation)
 }
 
 // validateSubscriptionProrationParams validates the parameters for subscription proration calculation
 func (s *prorationService) validateSubscriptionProrationParams(params proration.SubscriptionProrationParams) error {
 	if params.Subscription == nil {
-		return fmt.Errorf("subscription is required")
+		return ierr.NewError("subscription is required").
+			WithHint("Provide a valid subscription object").
+			Mark(ierr.ErrValidation)
 	}
 	if params.Subscription.ID == "" {
-		return fmt.Errorf("subscription ID is required")
+		return ierr.NewError("subscription ID is required").
+			WithHint("Provide a valid subscription ID").
+			Mark(ierr.ErrValidation)
 	}
 	if params.Subscription.StartDate.IsZero() {
-		return fmt.Errorf("subscription start date is required")
+		return ierr.NewError("subscription start date is required").
+			WithHint("Set a valid start date for the subscription").
+			Mark(ierr.ErrValidation)
 	}
 	if params.Subscription.BillingAnchor.IsZero() {
-		return fmt.Errorf("subscription billing anchor is required")
+		return ierr.NewError("subscription billing anchor is required").
+			WithHint("Set a valid billing anchor date").
+			Mark(ierr.ErrValidation)
 	}
 	if len(params.Subscription.LineItems) == 0 {
-		return fmt.Errorf("subscription must have at least one line item")
+		return ierr.NewError("subscription must have at least one line item").
+			WithHint("Add at least one line item to the subscription").
+			Mark(ierr.ErrValidation)
 	}
 	if params.Prices == nil {
-		return fmt.Errorf("prices map is required")
+		return ierr.NewError("prices map is required").
+			WithHint("Provide a valid prices map").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate each line item has a corresponding price
 	for _, item := range params.Subscription.LineItems {
 		if item.ID == "" {
-			return fmt.Errorf("line item ID is required")
+			return ierr.NewError("line item ID is required").
+				WithHint("Provide a valid ID for each line item").
+				Mark(ierr.ErrValidation)
 		}
 		if item.PriceID == "" {
-			return fmt.Errorf("price ID is required for line item %s", item.ID)
+			return ierr.NewErrorf("price ID is required for line item %s", item.ID).
+				WithHint("Set a valid price ID for each line item").
+				Mark(ierr.ErrValidation)
 		}
 		if _, exists := params.Prices[item.PriceID]; !exists {
-			return fmt.Errorf("price not found for line item %s with price ID %s", item.ID, item.PriceID)
+			return ierr.NewErrorf("price not found for line item %s with price ID %s", item.ID, item.PriceID).
+				WithHint("Ensure all referenced prices exist").
+				Mark(ierr.ErrNotFound)
 		}
 		if item.Quantity.IsZero() || item.Quantity.IsNegative() {
-			return fmt.Errorf("quantity must be positive for line item %s", item.ID)
+			return ierr.NewErrorf("quantity must be positive for line item %s", item.ID).
+				WithHint("Set a positive quantity for each line item").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
@@ -279,7 +318,9 @@ func (s *prorationService) CalculateAndApplySubscriptionProration(
 	params proration.SubscriptionProrationParams,
 ) (*proration.SubscriptionProrationResult, error) {
 	if err := s.validateSubscriptionProrationParams(params); err != nil {
-		return nil, fmt.Errorf("invalid subscription proration parameters: %w", err)
+		return nil, ierr.NewErrorf("invalid subscription proration parameters: %v", err).
+			WithHint("Check all required subscription parameters").
+			Mark(ierr.ErrValidation)
 	}
 
 	logger := s.serviceParams.Logger
@@ -344,7 +385,9 @@ func (s *prorationService) CalculateAndApplySubscriptionProration(
 				"error", err,
 				"subscription_id", params.Subscription.ID,
 				"line_item_id", item.ID)
-			errors = append(errors, fmt.Errorf("line item %s: %w", item.ID, err))
+			errors = append(errors, ierr.NewErrorf("line item %s: %v", item.ID, err).
+				WithHint("Check line item configuration").
+				Mark(ierr.ErrSystem))
 			continue // Skip this item but continue with others
 		}
 
@@ -365,7 +408,9 @@ func (s *prorationService) CalculateAndApplySubscriptionProration(
 	}
 
 	if len(errors) > 0 {
-		return nil, fmt.Errorf("failed to calculate proration for some line items: %v", errors)
+		return nil, ierr.NewErrorf("failed to calculate proration for some line items: %v", errors).
+			WithHint("Review errors for each failed line item").
+			Mark(ierr.ErrSystem)
 	}
 
 	logger.Infow("proration calculation completed",
@@ -384,7 +429,9 @@ func (s *prorationService) CalculateAndApplySubscriptionProration(
 				types.GetEnvironmentID(ctx),
 				params.Subscription.ID,
 			); err != nil {
-				return fmt.Errorf("failed to apply proration: %w", err)
+				return ierr.NewErrorf("failed to apply proration: %v", err).
+					WithHint("Check if all proration details are valid").
+					Mark(ierr.ErrSystem)
 			}
 		}
 		return nil
@@ -394,7 +441,9 @@ func (s *prorationService) CalculateAndApplySubscriptionProration(
 		s.serviceParams.Logger.Errorw("failed to apply prorations",
 			"error", err,
 			"subscription_id", params.Subscription.ID)
-		return nil, fmt.Errorf("failed to apply prorations: %w", err)
+		return nil, ierr.NewErrorf("failed to apply prorations: %v", err).
+			WithHint("Verify all proration calculations are valid").
+			Mark(ierr.ErrSystem)
 	}
 
 	s.serviceParams.Logger.Infow("successfully applied prorations",
