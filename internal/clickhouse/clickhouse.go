@@ -167,7 +167,7 @@ func (tc *tracedConn) Exec(ctx context.Context, query string, args ...any) error
 // AsyncInsert adds tracing and delegates to the underlying connection
 func (tc *tracedConn) AsyncInsert(ctx context.Context, query string, wait bool, args ...any) error {
 	if tc.sentry == nil {
-		return tc.conn.AsyncInsert(ctx, query, wait)
+		return tc.conn.AsyncInsert(ctx, query, wait, args...)
 	}
 
 	span, ctx := tc.sentry.StartClickHouseSpan(ctx, "clickhouse.async_insert", map[string]interface{}{
