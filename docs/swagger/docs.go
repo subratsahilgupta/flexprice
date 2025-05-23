@@ -7007,10 +7007,7 @@ const docTemplate = `{
                 "order": {
                     "description": "Order by condition. Allowed values (case sensitive): asc, desc (default: desc)",
                     "type": "string",
-                    "enum": [
-                        "asc",
-                        "desc"
-                    ]
+                    "example": "desc"
                 },
                 "page_size": {
                     "description": "Page size to fetch the events and is set to 50 by default",
@@ -7029,10 +7026,7 @@ const docTemplate = `{
                 "sort": {
                     "description": "Sort by the field. Allowed values (case sensitive): timestamp, event_name (default: timestamp)",
                     "type": "string",
-                    "enum": [
-                        "timestamp",
-                        "event_name"
-                    ]
+                    "example": "timestamp"
                 },
                 "source": {
                     "description": "Source to filter the events by the source",
