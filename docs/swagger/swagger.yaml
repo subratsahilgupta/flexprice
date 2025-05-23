@@ -1004,6 +1004,13 @@ definitions:
       offset:
         description: Offset to fetch the events and is set to 0 by default
         type: integer
+      order:
+        description: 'Order by condition. Allowed values (case sensitive): asc, desc
+          (default: desc)'
+        enum:
+        - asc
+        - desc
+        type: string
       page_size:
         description: Page size to fetch the events and is set to 50 by default
         type: integer
@@ -1015,6 +1022,13 @@ definitions:
         description: Property filters to filter the events by the keys in `properties`
           field of the event
         type: object
+      sort:
+        description: 'Sort by the field. Allowed values (case sensitive): timestamp,
+          event_name (default: timestamp)'
+        enum:
+        - timestamp
+        - event_name
+        type: string
       source:
         description: Source to filter the events by the source
         type: string
