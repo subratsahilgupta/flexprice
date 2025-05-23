@@ -416,6 +416,8 @@ func (s *eventService) GetEvents(ctx context.Context, req *dto.GetEventsRequest)
 		EndTime:            req.EndTime,
 		PropertyFilters:    req.PropertyFilters,
 		Source:             req.Source,
+		Sort:               req.Sort,
+		Order:              req.Order,
 		CountTotal:         true,
 	}
 
