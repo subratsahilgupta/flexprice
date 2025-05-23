@@ -101,9 +101,9 @@ type GetEventsRequest struct {
 	// Source to filter the events by the source
 	Source string `json:"source"`
 	// Sort by the field. Allowed values (case sensitive): timestamp, event_name (default: timestamp)
-	Sort *string `json:"sort,omitempty" form:"sort" validate:"omitempty,oneof=timestamp event_name"`
+	Sort *string `json:"sort,omitempty" form:"sort" example:"timestamp"`
 	// Order by condition. Allowed values (case sensitive): asc, desc (default: desc)
-	Order *string `json:"order,omitempty" form:"order" validate:"omitempty,oneof=asc desc"`
+	Order *string `json:"order,omitempty" form:"order" example:"desc"`
 	// Count of total number of events
 	CountTotal bool `json:"-"`
 }
@@ -208,7 +208,7 @@ func (r *GetEventsRequest) Validate() error {
 	allowedSortFields := []string{"timestamp", "event_name"}
 	if r.Sort != nil && !slices.Contains(allowedSortFields, *r.Sort) {
 		return ierr.NewErrorf("invalid sort field: %s", *r.Sort).
-			WithHint("Request validation failed").
+			WithHint("Request validation failed due to invalid sort field").
 			WithReportableDetails(map[string]any{
 				"sort":           *r.Sort,
 				"allowed_values": allowedSortFields,
@@ -219,7 +219,7 @@ func (r *GetEventsRequest) Validate() error {
 	allowedOrderValues := []string{types.OrderAsc, types.OrderDesc}
 	if r.Order != nil && !slices.Contains(allowedOrderValues, *r.Order) {
 		return ierr.NewErrorf("invalid order: %s", *r.Order).
-			WithHint("Request validation failed").
+			WithHint("Request validation failed due to invalid order by value").
 			WithReportableDetails(map[string]any{
 				"order":          *r.Order,
 				"allowed_values": allowedOrderValues,

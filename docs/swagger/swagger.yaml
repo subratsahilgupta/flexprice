@@ -1007,9 +1007,7 @@ definitions:
       order:
         description: 'Order by condition. Allowed values (case sensitive): asc, desc
           (default: desc)'
-        enum:
-        - asc
-        - desc
+        example: desc
         type: string
       page_size:
         description: Page size to fetch the events and is set to 50 by default
@@ -1025,9 +1023,7 @@ definitions:
       sort:
         description: 'Sort by the field. Allowed values (case sensitive): timestamp,
           event_name (default: timestamp)'
-        enum:
-        - timestamp
-        - event_name
+        example: timestamp
         type: string
       source:
         description: Source to filter the events by the source
