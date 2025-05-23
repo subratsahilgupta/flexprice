@@ -7004,6 +7004,11 @@ const docTemplate = `{
                     "description": "Offset to fetch the events and is set to 0 by default",
                     "type": "integer"
                 },
+                "order": {
+                    "description": "Order by condition. Allowed values (case sensitive): asc, desc (default: desc)",
+                    "type": "string",
+                    "example": "desc"
+                },
                 "page_size": {
                     "description": "Page size to fetch the events and is set to 50 by default",
                     "type": "integer"
@@ -7017,6 +7022,11 @@ const docTemplate = `{
                             "type": "string"
                         }
                     }
+                },
+                "sort": {
+                    "description": "Sort by the field. Allowed values (case sensitive): timestamp, event_name (default: timestamp)",
+                    "type": "string",
+                    "example": "timestamp"
                 },
                 "source": {
                     "description": "Source to filter the events by the source",
