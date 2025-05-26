@@ -147,6 +147,7 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 					Currency:       result.Currency,
 					AmountDue:      result.NetAmount,
 					BillingPeriod:  lo.ToPtr(string(result.BillingPeriod)),
+					InvoiceStatus:  lo.ToPtr(types.InvoiceStatusDraft),
 				})
 				if err != nil {
 					logger.Error("failed to create new invoice",
@@ -430,11 +431,27 @@ func (s *prorationService) createProrationParamsForLineItem(
 	action types.ProrationAction,
 	behavior types.ProrationBehavior,
 ) proration.ProrationParams {
+	periodStart, err := types.PreviousBillingDate(
+		subscription.BillingAnchor,
+		subscription.BillingPeriodCount,
+		subscription.BillingPeriod,
+	)
+	if err != nil {
+		// Fallback to current period start if calculation fails
+		s.serviceParams.Logger.Warnw("failed to calculate period start for proration, using fallback",
+			"error", err,
+			"subscription_id", subscription.ID,
+			"billing_anchor", subscription.BillingAnchor,
+			"billing_period", subscription.BillingPeriod,
+			"billing_period_count", subscription.BillingPeriodCount)
+		periodStart = subscription.CurrentPeriodStart
+	}
+
 	return proration.ProrationParams{
 		SubscriptionID:        subscription.ID,
 		LineItemID:            item.ID,
 		PlanPayInAdvance:      price.InvoiceCadence == types.InvoiceCadenceAdvance,
-		CurrentPeriodStart:    subscription.CurrentPeriodStart,
+		CurrentPeriodStart:    periodStart,
 		CurrentPeriodEnd:      subscription.CurrentPeriodEnd,
 		Action:                action,
 		NewPriceID:            item.PriceID,

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -22,12 +23,16 @@ import (
 // NewCalculator creates a proration calculator.
 // The calculator determines the proration logic (day-based, second-based)
 // based on the ProrationStrategy provided in ProrationParams.
-func NewCalculator() Calculator {
-	return &calculatorImpl{}
+func NewCalculator(logger *logger.Logger) Calculator {
+	return &calculatorImpl{
+		logger: logger,
+	}
 }
 
 // calculatorImpl implements proration logic, supporting multiple strategies.
-type calculatorImpl struct{}
+type calculatorImpl struct {
+	logger *logger.Logger
+}
 
 func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) (*ProrationResult, error) {
 	if params.ProrationBehavior == types.ProrationBehaviorNone {
@@ -70,9 +75,7 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 		}
 		prorationCoefficient = decimal.NewFromFloat(remainingSeconds).Div(decimal.NewFromFloat(totalSeconds))
 
-	case types.StrategyDayBased, "": // Default to day-based if strategy is empty
-		fallthrough
-	default:
+	case types.StrategyDayBased:
 		totalDays := daysInDurationWithDST(periodStartInTZ, periodEndInTZ, loc) + 1
 		if totalDays <= 0 {
 			return nil, ierr.NewError("invalid billing period").
@@ -91,6 +94,10 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 		if decimalTotalDays.GreaterThan(decimal.Zero) {
 			prorationCoefficient = decimalRemainingDays.Div(decimalTotalDays)
 		}
+	default:
+		return nil, ierr.NewError("invalid proration strategy").
+			WithHintf("invalid proration strategy: %s", params.ProrationStrategy).
+			Mark(ierr.ErrValidation)
 	}
 
 	result := &ProrationResult{
@@ -173,6 +180,8 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 
 	// Round the final net amount according to currency precision
 	result.NetAmount = result.NetAmount.Round(precision)
+
+	c.logger.Infof("proration net amount: %s", result.NetAmount)
 
 	return result, nil
 }
