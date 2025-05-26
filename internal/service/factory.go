@@ -102,6 +102,7 @@ func NewServiceParams(
 	s3Service s3.Service,
 	client httpclient.Client,
 	taskRepo task.Repository,
+	prorationCalculator proration.Calculator,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:                   logger,
@@ -132,5 +133,6 @@ func NewServiceParams(
 		S3:                       s3Service,
 		Client:                   client,
 		TaskRepo:                 taskRepo,
+		ProrationCalculator:      prorationCalculator,
 	}
 }

@@ -22,6 +22,7 @@ type Service interface {
 		tenantID string,
 		environmentID string,
 		subscriptionID string,
+		customerID string,
 	) error
 
 	// CalculateAndApplySubscriptionProration handles proration for an entire subscription.

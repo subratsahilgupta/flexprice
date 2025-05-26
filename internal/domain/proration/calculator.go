@@ -275,28 +275,28 @@ func validateParams(params ProrationParams) error {
 		if params.NewPriceID == "" {
 			return fmt.Errorf("new price ID is required for add_item action")
 		}
-		if params.NewQuantity.LessThanOrEqual(decimal.Zero) {
+		if params.NewQuantity.LessThan(decimal.Zero) {
 			return fmt.Errorf("new quantity must be positive for add_item action")
 		}
 	case types.ProrationActionRemoveItem, types.ProrationActionCancellation:
 		if params.OldPriceID == "" {
 			return fmt.Errorf("old price ID is required for remove_item/cancellation action")
 		}
-		if params.OldQuantity.LessThanOrEqual(decimal.Zero) {
+		if params.OldQuantity.LessThan(decimal.Zero) {
 			return fmt.Errorf("old quantity must be positive for remove_item/cancellation action")
 		}
 	case types.ProrationActionUpgrade, types.ProrationActionDowngrade:
 		if params.OldPriceID == "" || params.NewPriceID == "" {
 			return fmt.Errorf("both old and new price IDs are required for upgrade/downgrade action")
 		}
-		if params.OldQuantity.LessThanOrEqual(decimal.Zero) || params.NewQuantity.LessThanOrEqual(decimal.Zero) {
+		if params.OldQuantity.LessThan(decimal.Zero) || params.NewQuantity.LessThan(decimal.Zero) {
 			return fmt.Errorf("both old and new quantities must be positive for upgrade/downgrade action")
 		}
 	case types.ProrationActionQuantityChange:
 		if params.OldQuantity.Equal(params.NewQuantity) {
 			return fmt.Errorf("old and new quantities cannot be equal for quantity_change action")
 		}
-		if params.OldQuantity.LessThanOrEqual(decimal.Zero) || params.NewQuantity.LessThanOrEqual(decimal.Zero) {
+		if params.OldQuantity.LessThan(decimal.Zero) || params.NewQuantity.LessThan(decimal.Zero) {
 			return fmt.Errorf("both old and new quantities must be positive for quantity_change action")
 		}
 	default:

@@ -66,6 +66,7 @@ type ProrationResult struct {
 	IsPreview          bool                  // Indicates if this was calculated for a preview
 	CurrentPeriodStart time.Time             // Start of the current billing period
 	CurrentPeriodEnd   time.Time             // End of the current billing period
+	BillingPeriod      types.BillingPeriod   // Billing period of the proration
 }
 
 // SubscriptionProrationParams contains all necessary information for subscription-level proration
