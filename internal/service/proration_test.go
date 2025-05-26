@@ -410,6 +410,7 @@ func (s *ProrationServiceSuite) TestApplyProration() {
 				types.GetTenantID(s.GetContext()),
 				types.GetEnvironmentID(s.GetContext()),
 				s.testData.subscription.ID,
+				s.testData.subscription.CustomerID,
 			)
 
 			if tt.wantErr {
