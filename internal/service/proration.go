@@ -452,7 +452,7 @@ func (s *prorationService) createProrationParamsForLineItem(
 		LineItemID:            item.ID,
 		PlanPayInAdvance:      price.InvoiceCadence == types.InvoiceCadenceAdvance,
 		CurrentPeriodStart:    periodStart,
-		CurrentPeriodEnd:      subscription.CurrentPeriodEnd,
+		CurrentPeriodEnd:      subscription.CurrentPeriodEnd.Add(time.Second * -1),
 		Action:                action,
 		NewPriceID:            item.PriceID,
 		NewQuantity:           item.Quantity,
