@@ -440,7 +440,7 @@ func (s *WalletServiceSuite) setupWallet() {
 	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), s.testData.wallet))
 }
 func (s *WalletServiceSuite) TestCreateWallet() {
-	// 1. Test successful wallet creation with CustomerID
+	// Test successful wallet creation with CustomerID
 	req := &dto.CreateWalletRequest{
 		CustomerID: "customer-2",
 		Currency:   "usd",
@@ -453,11 +453,10 @@ func (s *WalletServiceSuite) TestCreateWallet() {
 	s.Equal(req.Currency, resp.Currency)
 	s.Equal(decimal.Zero, resp.Balance)
 
-	// 2. Test successful wallet creation with ExternalCustomerID
-	// First create a new customer with external ID
+	// Test successful wallet creation with ExternalCustomerID
 	newCustomer := &customer.Customer{
 		ID:         "cust_external_test",
-		ExternalID: "ext_cust_test_123", // This is the external ID we'll use
+		ExternalID: "ext_cust_test_123",
 		Name:       "Test External Customer",
 		Email:      "external@test.com",
 		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
@@ -474,7 +473,7 @@ func (s *WalletServiceSuite) TestCreateWallet() {
 	s.Equal(newCustomer.ID, resp.CustomerID) // Should map to internal ID
 	s.Equal(req.Currency, resp.Currency)
 
-	// 3. Test validation errors
+	// Test validation errors
 	testCases := []struct {
 		name   string
 		req    *dto.CreateWalletRequest
