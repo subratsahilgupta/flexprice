@@ -115,7 +115,7 @@ func (f *CustomerFilter) IsUnlimited() bool {
 func validateID(id string, idType string) error {
 
 	// Sample Constraints for customer id and external customer id
-	// 1. Cannot contain invalid characters %, space, dot, or dash
+	// 1. Cannot contain invalid characters % and space
 
 	invalidChars := []string{"%", " "}
 	for _, char := range invalidChars {
