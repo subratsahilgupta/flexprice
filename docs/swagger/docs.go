@@ -7057,8 +7057,7 @@ const docTemplate = `{
         "dto.CreateWalletRequest": {
             "type": "object",
             "required": [
-                "currency",
-                "customer_id"
+                "currency"
             ],
             "properties": {
                 "auto_topup_amount": {
@@ -7085,6 +7084,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "description": {
+                    "type": "string"
+                },
+                "external_customer_id": {
                     "type": "string"
                 },
                 "initial_credits_to_load": {
