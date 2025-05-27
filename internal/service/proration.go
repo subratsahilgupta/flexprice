@@ -104,6 +104,9 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 				InvoiceType:    types.InvoiceTypeSubscription,
 				Currency:       result.Currency,
 				AmountDue:      result.NetAmount,
+				InvoiceStatus:  lo.ToPtr(types.InvoiceStatusDraft),
+				PaymentStatus:  lo.ToPtr(types.PaymentStatusPending),
+				DueDate:        lo.ToPtr(result.CurrentPeriodEnd.Add(24 * time.Hour)),
 			})
 			if err != nil {
 				logger.Error("failed to create new invoice",
@@ -124,6 +127,7 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 					EndTime:   &result.CurrentPeriodEnd,
 				},
 				SubscriptionID: subscriptionID,
+				InvoiceStatus:  []types.InvoiceStatus{types.InvoiceStatusDraft},
 			})
 			if err != nil {
 				logger.Error("failed to find existing invoice",
@@ -148,6 +152,8 @@ func (s *prorationService) ApplyProration(ctx context.Context,
 					AmountDue:      result.NetAmount,
 					BillingPeriod:  lo.ToPtr(string(result.BillingPeriod)),
 					InvoiceStatus:  lo.ToPtr(types.InvoiceStatusDraft),
+					PaymentStatus:  lo.ToPtr(types.PaymentStatusPending),
+					DueDate:        lo.ToPtr(result.CurrentPeriodEnd.Add(24 * time.Hour)),
 				})
 				if err != nil {
 					logger.Error("failed to create new invoice",
@@ -464,5 +470,6 @@ func (s *prorationService) createProrationParamsForLineItem(
 		PreviousCreditsIssued: decimal.Zero,
 		ProrationStrategy:     types.StrategyDayBased,
 		Currency:              price.Currency,
+		PlanDisplayName:       item.PlanDisplayName,
 	}
 }

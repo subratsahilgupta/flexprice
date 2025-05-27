@@ -17,6 +17,7 @@ type ProrationParams struct {
 	PlanPayInAdvance   bool      // From the subscription's plan
 	CurrentPeriodStart time.Time // Start of the current billing period
 	CurrentPeriodEnd   time.Time // End of the current billing period
+	PlanDisplayName    string    // Display name of the plan
 
 	// Change Details
 	Action          types.ProrationAction // Type of change

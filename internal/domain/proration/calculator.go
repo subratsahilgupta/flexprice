@@ -251,6 +251,12 @@ func (c *calculatorImpl) generateCreditDescription(params ProrationParams) strin
 }
 
 func (c *calculatorImpl) generateChargeDescription(params ProrationParams) string {
+	// For subscription charges, use the plan name
+	if params.PlanDisplayName != "" {
+		return params.PlanDisplayName
+	}
+
+	// Fallback to generic descriptions if plan name is not available
 	switch params.Action {
 	case types.ProrationActionUpgrade:
 		return "Prorated charge for upgrade"

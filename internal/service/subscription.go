@@ -306,13 +306,19 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		// Create invoice for the subscription (in case it has advance charges)
-		_, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
-			SubscriptionID: sub.ID,
-			PeriodStart:    sub.CurrentPeriodStart,
-			PeriodEnd:      sub.CurrentPeriodEnd,
-			ReferencePoint: types.ReferencePointPeriodStart,
-		})
-		return err
+		if req.BillingCycle != types.BillingCycleCalendar || req.ProrationMode != types.ProrationModeActive {
+			_, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+				SubscriptionID: sub.ID,
+				PeriodStart:    sub.CurrentPeriodStart,
+				PeriodEnd:      sub.CurrentPeriodEnd,
+				ReferencePoint: types.ReferencePointPeriodStart,
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 	if err != nil {
 		return nil, err

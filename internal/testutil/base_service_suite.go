@@ -94,7 +94,7 @@ func (s *BaseServiceTestSuite) SetupSuite() {
 
 func (s *BaseServiceTestSuite) setupDependencies() {
 	s.now = time.Now().UTC()
-	s.prorationCalculator = proration.NewCalculator()
+	s.prorationCalculator = proration.NewCalculator(s.logger)
 	s.pdfGenerator = NewMockPDFGenerator(s.logger)
 	eventStore := s.stores.EventRepo.(*InMemoryEventStore)
 	s.publisher = NewInMemoryEventPublisher(eventStore)
