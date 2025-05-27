@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/config"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -272,9 +274,11 @@ func TestCalculator_Calculate(t *testing.T) {
 		},
 	}
 
+	logger, err := logger.NewLogger(config.GetDefaultConfig())
+	require.NoError(t, err)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := NewCalculator().Calculate(context.Background(), tt.params)
+			result, err := NewCalculator(logger).Calculate(context.Background(), tt.params)
 
 			if tt.expectedError != "" {
 				assert.Error(t, err)
@@ -480,7 +484,9 @@ func TestCalculator_CapCreditAmount(t *testing.T) {
 		},
 	}
 
-	calculator := NewCalculator()
+	logger, err := logger.NewLogger(config.GetDefaultConfig())
+	require.NoError(t, err)
+	calculator := NewCalculator(logger)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := calculator.(*calculatorImpl).capCreditAmount(
