@@ -1214,15 +1214,17 @@ func (s *eventPostProcessingService) ToGetUsageAnalyticsResponseDTO(ctx context.
 			TotalUsage:      analytic.TotalUsage,
 			TotalCost:       analytic.TotalCost,
 			Currency:        analytic.Currency,
+			EventCount:      analytic.EventCount,
 			Points:          make([]dto.UsageAnalyticPoint, 0, len(analytic.Points)),
 		}
 
 		// Map time-series points if available
 		for _, point := range analytic.Points {
 			item.Points = append(item.Points, dto.UsageAnalyticPoint{
-				Timestamp: point.Timestamp,
-				Usage:     point.Usage,
-				Cost:      point.Cost,
+				Timestamp:  point.Timestamp,
+				Usage:      point.Usage,
+				Cost:       point.Cost,
+				EventCount: point.EventCount,
 			})
 		}
 

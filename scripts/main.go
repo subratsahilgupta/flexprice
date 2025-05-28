@@ -73,6 +73,11 @@ var commands = []Command{
 		Description: "Reprocess events",
 		Run:         internal.ReprocessEvents,
 	},
+	{
+		Name:        "assign-plan",
+		Description: "Assign a specific plan to customers who don't already have it",
+		Run:         internal.AssignPlanToCustomers,
+	},
 }
 
 func main() {

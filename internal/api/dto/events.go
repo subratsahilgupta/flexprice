@@ -259,12 +259,14 @@ type UsageAnalyticItem struct {
 	TotalUsage      decimal.Decimal       `json:"total_usage"`
 	TotalCost       decimal.Decimal       `json:"total_cost"`
 	Currency        string                `json:"currency,omitempty"`
+	EventCount      uint64                `json:"event_count"` // Number of events that contributed to this aggregation
 	Points          []UsageAnalyticPoint  `json:"points,omitempty"`
 }
 
 // UsageAnalyticPoint represents a point in the time series data
 type UsageAnalyticPoint struct {
-	Timestamp time.Time       `json:"timestamp"`
-	Usage     decimal.Decimal `json:"usage"`
-	Cost      decimal.Decimal `json:"cost"`
+	Timestamp  time.Time       `json:"timestamp"`
+	Usage      decimal.Decimal `json:"usage"`
+	Cost       decimal.Decimal `json:"cost"`
+	EventCount uint64          `json:"event_count"` // Number of events in this time window
 }
