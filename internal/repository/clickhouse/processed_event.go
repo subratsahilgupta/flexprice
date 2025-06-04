@@ -573,7 +573,7 @@ func (r *ProcessedEventRepository) GetDetailedUsageAnalytics(ctx context.Context
 		strings.Join(groupByColumns, ", "), // group by columns
 		"SUM(qty_billable * sign) AS total_usage",
 		"SUM(cost * sign) AS total_cost",
-		"COUNT(*) AS event_count",
+		"COUNT(DISTINCT id) AS event_count", // Count distinct event IDs, not rows
 	}
 
 	aggregateQuery := fmt.Sprintf(`
@@ -735,7 +735,7 @@ func (r *ProcessedEventRepository) getAnalyticsPoints(
 		fmt.Sprintf("%s AS window_time", timeWindowExpr),
 		"SUM(qty_billable * sign) AS usage",
 		"SUM(cost * sign) AS cost",
-		"COUNT(*) AS event_count",
+		"COUNT(DISTINCT id) AS event_count", // Count distinct event IDs, not rows
 	}
 
 	// Build the query
