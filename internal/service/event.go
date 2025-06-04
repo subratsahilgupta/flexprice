@@ -101,6 +101,8 @@ func (s *eventService) GetUsage(ctx context.Context, getUsageRequest *dto.GetUsa
 		return nil, err
 	}
 
+	result.PriceID = getUsageRequest.PriceID
+	result.MeterID = getUsageRequest.MeterID
 	return result, nil
 }
 
@@ -126,15 +128,14 @@ func (s *eventService) GetUsageByMeter(ctx context.Context, req *dto.GetUsageByM
 		WindowSize:         req.WindowSize,
 		EndTime:            req.EndTime,
 		Filters:            req.Filters,
+		PriceID:            req.PriceID,
+		MeterID:            req.MeterID,
 	}
 
 	usage, err := s.GetUsage(ctx, &getUsageRequest)
 	if err != nil {
 		return nil, err
 	}
-
-	usage.PriceID = req.PriceID
-	usage.MeterID = req.MeterID
 
 	if m.ResetUsage == types.ResetUsageNever {
 		getHistoricUsageRequest := getUsageRequest
@@ -373,6 +374,8 @@ func (s *eventService) combineResults(historicUsage, currentUsage *events.Aggreg
 		Results:   currentUsage.Results,
 		EventName: m.EventName,
 		Type:      m.Aggregation.Type,
+		PriceID:   currentUsage.PriceID,
+		MeterID:   currentUsage.MeterID,
 	}
 }
 

@@ -61,6 +61,8 @@ type GetUsageRequest struct {
 	EndTime            time.Time             `form:"end_time" json:"end_time" example:"2024-03-20T00:00:00Z"`
 	WindowSize         types.WindowSize      `form:"window_size" json:"window_size"`
 	Filters            map[string][]string   `form:"filters,omitempty" json:"filters,omitempty"`
+	PriceID            string                `form:"-" json:"-"` // this is just for internal use to store the price id
+	MeterID            string                `form:"-" json:"-"` // this is just for internal use to store the meter id
 }
 
 type GetUsageByMeterRequest struct {
