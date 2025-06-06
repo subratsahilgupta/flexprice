@@ -460,7 +460,7 @@ func (s *planService) DeletePlan(ctx context.Context, id string) error {
 			WithReportableDetails(map[string]interface{}{
 				"plan_id": id,
 			}).
-			Mark(ierr.ErrPermissionDenied)
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	err = s.planRepo.Delete(ctx, plan)
