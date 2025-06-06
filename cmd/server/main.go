@@ -148,6 +148,7 @@ func main() {
 			service.NewTenantService,
 			service.NewAuthService,
 			service.NewUserService,
+			service.NewEnvAccessService,
 			service.NewEnvironmentService,
 
 			// Business services
@@ -240,8 +241,8 @@ func provideHandlers(
 	}
 }
 
-func provideRouter(handlers api.Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService) *gin.Engine {
-	return api.NewRouter(handlers, cfg, logger, secretService)
+func provideRouter(handlers api.Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService, envAccessService service.EnvAccessService) *gin.Engine {
+	return api.NewRouter(handlers, cfg, logger, secretService, envAccessService)
 }
 
 func provideTemporalConfig(cfg *config.Configuration) *config.TemporalConfig {

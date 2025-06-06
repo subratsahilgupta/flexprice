@@ -33,6 +33,7 @@ type Configuration struct {
 	S3                  S3Config                  `validate:"required"`
 	Cache               CacheConfig               `validate:"required"`
 	EventPostProcessing EventPostProcessingConfig `mapstructure:"event_post_processing" validate:"required"`
+	EnvAccess           EnvAccessConfig           `mapstructure:"env_access" json:"env_access" validate:"omitempty"`
 }
 
 type CacheConfig struct {
@@ -154,6 +155,10 @@ type EventPostProcessingConfig struct {
 	ConsumerGroupBackfill string `mapstructure:"consumer_group_backfill" default:"v1_events_post_processing_backfill"`
 }
 
+type EnvAccessConfig struct {
+	UserEnvMapping map[string]map[string][]string `mapstructure:"user_env_mapping" json:"user_env_mapping" validate:"omitempty"`
+}
+
 func NewConfig() (*Configuration, error) {
 	v := viper.New()
 
@@ -205,6 +210,17 @@ func NewConfig() (*Configuration, error) {
 		return nil, fmt.Errorf("failed to unmarshal webhook tenants config: %v", err)
 	}
 	cfg.Webhook.Tenants = tenantWebhookConfig
+
+	// Alternative: try to parse user_env_mapping directly
+	userEnvMappingJSON := v.GetString("user_env_mapping")
+	if userEnvMappingJSON != "" {
+		var userEnvMapping map[string]map[string][]string
+		if err := json.Unmarshal([]byte(userEnvMappingJSON), &userEnvMapping); err != nil {
+			return nil, fmt.Errorf("failed to parse FLEXPRICE_USER_ENV_MAPPING JSON: %v", err)
+		}
+		cfg.EnvAccess.UserEnvMapping = userEnvMapping
+	}
+
 
 	return &cfg, nil
 }
