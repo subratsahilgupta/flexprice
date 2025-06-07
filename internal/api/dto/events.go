@@ -61,6 +61,8 @@ type GetUsageRequest struct {
 	EndTime            time.Time             `form:"end_time" json:"end_time" example:"2024-03-20T00:00:00Z"`
 	WindowSize         types.WindowSize      `form:"window_size" json:"window_size"`
 	Filters            map[string][]string   `form:"filters,omitempty" json:"filters,omitempty"`
+	PriceID            string                `form:"-" json:"-"` // this is just for internal use to store the price id
+	MeterID            string                `form:"-" json:"-"` // this is just for internal use to store the meter id
 }
 
 type GetUsageByMeterRequest struct {
@@ -261,12 +263,14 @@ type UsageAnalyticItem struct {
 	TotalUsage      decimal.Decimal       `json:"total_usage"`
 	TotalCost       decimal.Decimal       `json:"total_cost"`
 	Currency        string                `json:"currency,omitempty"`
+	EventCount      uint64                `json:"event_count"` // Number of events that contributed to this aggregation
 	Points          []UsageAnalyticPoint  `json:"points,omitempty"`
 }
 
 // UsageAnalyticPoint represents a point in the time series data
 type UsageAnalyticPoint struct {
-	Timestamp time.Time       `json:"timestamp"`
-	Usage     decimal.Decimal `json:"usage"`
-	Cost      decimal.Decimal `json:"cost"`
+	Timestamp  time.Time       `json:"timestamp"`
+	Usage      decimal.Decimal `json:"usage"`
+	Cost       decimal.Decimal `json:"cost"`
+	EventCount uint64          `json:"event_count"` // Number of events in this time window
 }

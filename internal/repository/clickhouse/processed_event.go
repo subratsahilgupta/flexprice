@@ -558,21 +558,6 @@ func (r *ProcessedEventRepository) GetDetailedUsageAnalytics(ctx context.Context
 		params.EndTime,
 	}
 
-	// Base query for aggregates
-	aggregateQuery := `
-		SELECT 
-			??, -- group by columns
-			SUM(qty_billable * sign) AS total_usage,
-			SUM(cost * sign) AS total_cost
-		FROM events_processed
-		WHERE tenant_id = ?
-		AND environment_id = ?
-		AND customer_id = ?
-		AND timestamp >= ?
-		AND timestamp <= ?
-		AND sign != 0
-	`
-
 	// Add group by columns based on params.GroupBy
 	groupByColumns := []string{}
 	for _, groupBy := range params.GroupBy {
@@ -584,8 +569,25 @@ func (r *ProcessedEventRepository) GetDetailedUsageAnalytics(ctx context.Context
 		}
 	}
 
-	// Replace ?? with actual group by columns
-	aggregateQuery = strings.Replace(aggregateQuery, "??", strings.Join(groupByColumns, ", "), 1)
+	// Base query for aggregates - always include event count
+	selectColumns := []string{
+		strings.Join(groupByColumns, ", "), // group by columns
+		"SUM(qty_billable * sign) AS total_usage",
+		"SUM(cost * sign) AS total_cost",
+		"COUNT(DISTINCT id) AS event_count", // Count distinct event IDs, not rows
+	}
+
+	aggregateQuery := fmt.Sprintf(`
+		SELECT 
+			%s
+		FROM events_processed
+		WHERE tenant_id = ?
+		AND environment_id = ?
+		AND customer_id = ?
+		AND timestamp >= ?
+		AND timestamp <= ?
+		AND sign != 0
+	`, strings.Join(selectColumns, ",\n\t\t\t"))
 
 	// Add filters for feature_ids
 	filterParams := []interface{}{}
@@ -667,7 +669,8 @@ func (r *ProcessedEventRepository) GetDetailedUsageAnalytics(ctx context.Context
 		}
 
 		// Scan the row based on group by columns
-		scanArgs := make([]interface{}, len(groupByColumns)+2) // +2 for total_usage, total_cost
+		expectedColumns := len(groupByColumns) + 3 // +3 for total_usage, total_cost, event_count
+		scanArgs := make([]interface{}, expectedColumns)
 		for i, groupBy := range groupByColumns {
 			switch groupBy {
 			case "feature_id":
@@ -680,6 +683,7 @@ func (r *ProcessedEventRepository) GetDetailedUsageAnalytics(ctx context.Context
 		// Scan the aggregate values
 		scanArgs[len(groupByColumns)] = &analytics.TotalUsage
 		scanArgs[len(groupByColumns)+1] = &analytics.TotalCost
+		scanArgs[len(groupByColumns)+2] = &analytics.EventCount
 
 		if err := rows.Scan(scanArgs...); err != nil {
 			SetSpanError(span, err)
@@ -751,12 +755,18 @@ func (r *ProcessedEventRepository) getAnalyticsPoints(
 		timeWindowExpr = "toStartOfHour(timestamp)"
 	}
 
+	// Build the select columns for time-series query - always include event count
+	selectColumns := []string{
+		fmt.Sprintf("%s AS window_time", timeWindowExpr),
+		"SUM(qty_billable * sign) AS usage",
+		"SUM(cost * sign) AS cost",
+		"COUNT(DISTINCT id) AS event_count", // Count distinct event IDs, not rows
+	}
+
 	// Build the query
 	query := fmt.Sprintf(`
 		SELECT 
-			%s AS window_time,
-			SUM(qty_billable * sign) AS usage,
-			SUM(cost * sign) AS cost
+			%s
 		FROM events_processed
 		WHERE tenant_id = ?
 		AND environment_id = ?
@@ -764,7 +774,7 @@ func (r *ProcessedEventRepository) getAnalyticsPoints(
 		AND timestamp >= ?
 		AND timestamp <= ?
 		AND sign != 0
-	`, timeWindowExpr)
+	`, strings.Join(selectColumns, ",\n\t\t\t"))
 
 	// Add filters for the specific analytics item
 	queryParams := []interface{}{
@@ -842,11 +852,13 @@ func (r *ProcessedEventRepository) getAnalyticsPoints(
 
 	for rows.Next() {
 		var point events.UsageAnalyticPoint
-		if err := rows.Scan(&point.Timestamp, &point.Usage, &point.Cost); err != nil {
+
+		if err := rows.Scan(&point.Timestamp, &point.Usage, &point.Cost, &point.EventCount); err != nil {
 			return nil, ierr.WithError(err).
 				WithHint("Failed to scan time-series point").
 				Mark(ierr.ErrDatabase)
 		}
+
 		points = append(points, point)
 	}
 

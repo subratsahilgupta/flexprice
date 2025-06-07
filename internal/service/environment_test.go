@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -25,7 +26,19 @@ func TestEnvironmentService(t *testing.T) {
 func (s *EnvironmentServiceSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.environmentRepo = testutil.NewInMemoryEnvironmentStore()
-	s.environmentService = &environmentService{repo: s.environmentRepo}
+
+	// Create env access service that allows all access
+	cfg := &config.Configuration{
+		EnvAccess: config.EnvAccessConfig{
+			UserEnvMapping: nil, // nil means all users are super admin
+		},
+	}
+	envAccessService := NewEnvAccessService(cfg)
+
+	s.environmentService = &environmentService{
+		repo:             s.environmentRepo,
+		envAccessService: envAccessService,
+	}
 }
 
 func (s *EnvironmentServiceSuite) TestCreateEnvironment() {

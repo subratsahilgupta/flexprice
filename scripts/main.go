@@ -73,6 +73,11 @@ var commands = []Command{
 		Description: "Reprocess events",
 		Run:         internal.ReprocessEvents,
 	},
+	{
+		Name:        "assign-plan",
+		Description: "Assign a specific plan to customers who don't already have it",
+		Run:         internal.AssignPlanToCustomers,
+	},
 }
 
 func main() {
@@ -90,6 +95,7 @@ func main() {
 		environmentID string
 		filePath      string
 		planID        string
+		apiKey        string
 	)
 
 	flag.BoolVar(&listCommands, "list", false, "List all available commands")
@@ -104,6 +110,7 @@ func main() {
 	flag.StringVar(&environmentID, "environment-id", "", "Environment ID for operations")
 	flag.StringVar(&filePath, "file-path", "", "File path for operations")
 	flag.StringVar(&planID, "plan-id", "", "Plan ID for operations")
+	flag.StringVar(&apiKey, "api-key", "", "API key for operations")
 	flag.Parse()
 
 	if listCommands {
@@ -149,7 +156,9 @@ func main() {
 	if planID != "" {
 		os.Setenv("PLAN_ID", planID)
 	}
-
+	if apiKey != "" {
+		os.Setenv("SCRIPT_FLEXPRICE_API_KEY", apiKey)
+	}
 	// Find and run the command
 	for _, cmd := range commands {
 		if cmd.Name == cmdName {

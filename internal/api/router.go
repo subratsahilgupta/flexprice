@@ -41,7 +41,7 @@ type Handlers struct {
 	CronWallet       *cron.WalletCronHandler
 }
 
-func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService) *gin.Engine {
+func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService, envAccessService service.EnvAccessService) *gin.Engine {
 	// gin.SetMode(gin.ReleaseMode)
 
 	router := gin.Default()
@@ -78,6 +78,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	}
 
 	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, logger))
+	private.Use(middleware.EnvAccessMiddleware(envAccessService, logger))
 
 	v1Private := private.Group("/v1")
 	v1Private.Use(middleware.ErrorHandler())

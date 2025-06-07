@@ -35,12 +35,14 @@ type DetailedUsageAnalytic struct {
 	TotalUsage      decimal.Decimal
 	TotalCost       decimal.Decimal
 	Currency        string
+	EventCount      uint64 // Number of events that contributed to this aggregation
 	Points          []UsageAnalyticPoint
 }
 
 // UsageAnalyticPoint represents a data point in a time series
 type UsageAnalyticPoint struct {
-	Timestamp time.Time
-	Usage     decimal.Decimal
-	Cost      decimal.Decimal
+	Timestamp  time.Time
+	Usage      decimal.Decimal
+	Cost       decimal.Decimal
+	EventCount uint64 // Number of events in this time window
 }
