@@ -4,6 +4,10 @@ on:
   push:
     branches: [develop]
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
   ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
