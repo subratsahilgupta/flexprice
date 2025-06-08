@@ -9809,6 +9809,10 @@ const docTemplate = `{
                 "currency": {
                     "type": "string"
                 },
+                "event_count": {
+                    "description": "Number of events that contributed to this aggregation",
+                    "type": "integer"
+                },
                 "event_name": {
                     "type": "string"
                 },
@@ -9846,6 +9850,10 @@ const docTemplate = `{
             "properties": {
                 "cost": {
                     "type": "number"
+                },
+                "event_count": {
+                    "description": "Number of events in this time window",
+                    "type": "integer"
                 },
                 "timestamp": {
                     "type": "string"

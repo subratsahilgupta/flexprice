@@ -2549,6 +2549,9 @@ definitions:
         $ref: '#/definitions/types.AggregationType'
       currency:
         type: string
+      event_count:
+        description: Number of events that contributed to this aggregation
+        type: integer
       event_name:
         type: string
       feature_id:
@@ -2574,6 +2577,9 @@ definitions:
     properties:
       cost:
         type: number
+      event_count:
+        description: Number of events in this time window
+        type: integer
       timestamp:
         type: string
       usage:
