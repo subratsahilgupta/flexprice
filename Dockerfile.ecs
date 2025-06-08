@@ -10,47 +10,41 @@ ARG TARGETPLATFORM=linux/arm64
 FROM --platform=${TARGETPLATFORM} golang:1.23.3-alpine3.20 AS builder
 WORKDIR /app
 
-# copy module manifests
+# cache Go module downloads
 COPY go.mod go.sum ./
-
-# download deps, cached
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-# copy rest of code
+# copy source & cache-build binary
 COPY . .
-
-# build binary, using Go build cache
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 \
-    GOOS=linux \
-    GOARCH=arm64 \
-    go build \
-      -ldflags="-w -s" \
-      -trimpath \
-      -o server \
-      cmd/server/main.go
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+    go build -ldflags="-w -s" -trimpath \
+      -o server cmd/server/main.go
 
 #####################################
-# 2) Runtime stage
+# 2) Typst binary stage
 #####################################
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023
+FROM ghcr.io/typst/typst:v0.13.1 AS typst
+
+#####################################
+# 3) Runtime stage
+#####################################
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023 AS runtime
 WORKDIR /app
 
-# install only CA certs
 RUN dnf update -y && \
     dnf install -y ca-certificates && \
     dnf clean all
 
-# copy the built server
+# pull in our Go server
 COPY --from=builder /app/server /app/server
 
-# typst (if you still need it)
-FROM ghcr.io/typst/typst:v0.13.1 AS typst
+# pull in typst
 COPY --from=typst /bin/typst /usr/local/bin/
 
-# config & assets
+# configs & assets
 COPY internal/config ./config
 COPY assets/fonts ./assets/fonts
 COPY assets/typst-templates ./assets/typst-templates
