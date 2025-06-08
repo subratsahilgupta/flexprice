@@ -418,6 +418,11 @@ func (cgc *CreditGrantCreate) check() error {
 			return &ValidationError{Name: "expiration_type", err: fmt.Errorf(`ent: validator failed for field "CreditGrant.expiration_type": %w`, err)}
 		}
 	}
+	if v, ok := cgc.mutation.ExpirationDurationUnit(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "expiration_duration_unit", err: fmt.Errorf(`ent: validator failed for field "CreditGrant.expiration_duration_unit": %w`, err)}
+		}
+	}
 	return nil
 }
 

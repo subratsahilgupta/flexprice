@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/creditgrant"
+	"github.com/flexprice/flexprice/ent/creditgrantapplication"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/entitlement"
 	"github.com/flexprice/flexprice/ent/environment"
@@ -147,6 +148,55 @@ func init() {
 	creditgrantDescMetadata := creditgrantFields[14].Descriptor()
 	// creditgrant.DefaultMetadata holds the default value on creation for the metadata field.
 	creditgrant.DefaultMetadata = creditgrantDescMetadata.Default.(map[string]string)
+	creditgrantapplicationMixin := schema.CreditGrantApplication{}.Mixin()
+	creditgrantapplicationMixinFields0 := creditgrantapplicationMixin[0].Fields()
+	_ = creditgrantapplicationMixinFields0
+	creditgrantapplicationMixinFields1 := creditgrantapplicationMixin[1].Fields()
+	_ = creditgrantapplicationMixinFields1
+	creditgrantapplicationFields := schema.CreditGrantApplication{}.Fields()
+	_ = creditgrantapplicationFields
+	// creditgrantapplicationDescTenantID is the schema descriptor for tenant_id field.
+	creditgrantapplicationDescTenantID := creditgrantapplicationMixinFields0[0].Descriptor()
+	// creditgrantapplication.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	creditgrantapplication.TenantIDValidator = creditgrantapplicationDescTenantID.Validators[0].(func(string) error)
+	// creditgrantapplicationDescStatus is the schema descriptor for status field.
+	creditgrantapplicationDescStatus := creditgrantapplicationMixinFields0[1].Descriptor()
+	// creditgrantapplication.DefaultStatus holds the default value on creation for the status field.
+	creditgrantapplication.DefaultStatus = creditgrantapplicationDescStatus.Default.(string)
+	// creditgrantapplicationDescCreatedAt is the schema descriptor for created_at field.
+	creditgrantapplicationDescCreatedAt := creditgrantapplicationMixinFields0[2].Descriptor()
+	// creditgrantapplication.DefaultCreatedAt holds the default value on creation for the created_at field.
+	creditgrantapplication.DefaultCreatedAt = creditgrantapplicationDescCreatedAt.Default.(func() time.Time)
+	// creditgrantapplicationDescUpdatedAt is the schema descriptor for updated_at field.
+	creditgrantapplicationDescUpdatedAt := creditgrantapplicationMixinFields0[3].Descriptor()
+	// creditgrantapplication.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	creditgrantapplication.DefaultUpdatedAt = creditgrantapplicationDescUpdatedAt.Default.(func() time.Time)
+	// creditgrantapplication.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	creditgrantapplication.UpdateDefaultUpdatedAt = creditgrantapplicationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// creditgrantapplicationDescEnvironmentID is the schema descriptor for environment_id field.
+	creditgrantapplicationDescEnvironmentID := creditgrantapplicationMixinFields1[0].Descriptor()
+	// creditgrantapplication.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	creditgrantapplication.DefaultEnvironmentID = creditgrantapplicationDescEnvironmentID.Default.(string)
+	// creditgrantapplicationDescCreditGrantID is the schema descriptor for credit_grant_id field.
+	creditgrantapplicationDescCreditGrantID := creditgrantapplicationFields[1].Descriptor()
+	// creditgrantapplication.CreditGrantIDValidator is a validator for the "credit_grant_id" field. It is called by the builders before save.
+	creditgrantapplication.CreditGrantIDValidator = creditgrantapplicationDescCreditGrantID.Validators[0].(func(string) error)
+	// creditgrantapplicationDescSubscriptionID is the schema descriptor for subscription_id field.
+	creditgrantapplicationDescSubscriptionID := creditgrantapplicationFields[2].Descriptor()
+	// creditgrantapplication.SubscriptionIDValidator is a validator for the "subscription_id" field. It is called by the builders before save.
+	creditgrantapplication.SubscriptionIDValidator = creditgrantapplicationDescSubscriptionID.Validators[0].(func(string) error)
+	// creditgrantapplicationDescApplicationStatus is the schema descriptor for application_status field.
+	creditgrantapplicationDescApplicationStatus := creditgrantapplicationFields[7].Descriptor()
+	// creditgrantapplication.DefaultApplicationStatus holds the default value on creation for the application_status field.
+	creditgrantapplication.DefaultApplicationStatus = creditgrantapplicationDescApplicationStatus.Default.(string)
+	// creditgrantapplicationDescAmountApplied is the schema descriptor for amount_applied field.
+	creditgrantapplicationDescAmountApplied := creditgrantapplicationFields[8].Descriptor()
+	// creditgrantapplication.DefaultAmountApplied holds the default value on creation for the amount_applied field.
+	creditgrantapplication.DefaultAmountApplied = creditgrantapplicationDescAmountApplied.Default.(decimal.Decimal)
+	// creditgrantapplicationDescRetryCount is the schema descriptor for retry_count field.
+	creditgrantapplicationDescRetryCount := creditgrantapplicationFields[15].Descriptor()
+	// creditgrantapplication.DefaultRetryCount holds the default value on creation for the retry_count field.
+	creditgrantapplication.DefaultRetryCount = creditgrantapplicationDescRetryCount.Default.(int)
 	customerMixin := schema.Customer{}.Mixin()
 	customerMixinFields0 := customerMixin[0].Fields()
 	_ = customerMixinFields0
