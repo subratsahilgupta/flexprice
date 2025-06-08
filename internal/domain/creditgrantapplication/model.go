@@ -3,7 +3,9 @@ package creditgrantapplication
 import (
 	"time"
 
+	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -41,5 +43,49 @@ type CreditGrantApplication struct {
 
 	Metadata types.Metadata `db:"metadata" json:"metadata,omitempty"`
 
+	// EnvironmentID is the environment identifier for the credit grant application
+	EnvironmentID string `db:"environment_id" json:"environment_id"`
+
 	types.BaseModel
+}
+
+// FromEnt converts an ent.CreditGrantApplication to a CreditGrantApplication
+func FromEnt(e *ent.CreditGrantApplication) *CreditGrantApplication {
+	return &CreditGrantApplication{
+		ID:                              e.ID,
+		CreditGrantID:                   e.CreditGrantID,
+		SubscriptionID:                  e.SubscriptionID,
+		ScheduledFor:                    e.ScheduledFor,
+		AppliedAt:                       e.AppliedAt,
+		BillingPeriodStart:              e.BillingPeriodStart,
+		BillingPeriodEnd:                e.BillingPeriodEnd,
+		ApplicationStatus:               types.ApplicationStatus(e.ApplicationStatus),
+		AmountApplied:                   e.AmountApplied,
+		Currency:                        e.Currency,
+		ApplicationReason:               e.ApplicationReason,
+		SubscriptionStatusAtApplication: e.SubscriptionStatusAtApplication,
+		IsProrated:                      e.IsProrated,
+		ProrationFactor:                 lo.ToPtr(e.ProrationFactor),
+		FullPeriodAmount:                lo.ToPtr(e.FullPeriodAmount),
+		RetryCount:                      e.RetryCount,
+		FailureReason:                   e.FailureReason,
+		NextRetryAt:                     e.NextRetryAt,
+		Metadata:                        e.Metadata,
+		EnvironmentID:                   e.EnvironmentID,
+		BaseModel: types.BaseModel{
+			CreatedAt: e.CreatedAt,
+			UpdatedAt: e.UpdatedAt,
+			CreatedBy: e.CreatedBy,
+			UpdatedBy: e.UpdatedBy,
+			TenantID:  e.TenantID,
+			Status:    types.Status(e.Status),
+		},
+	}
+}
+
+// FromEntList converts a list of ent.CreditGrantApplication to a list of CreditGrantApplication
+func FromEntList(e []*ent.CreditGrantApplication) []*CreditGrantApplication {
+	return lo.Map(e, func(item *ent.CreditGrantApplication, _ int) *CreditGrantApplication {
+		return FromEnt(item)
+	})
 }

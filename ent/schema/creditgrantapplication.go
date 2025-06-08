@@ -8,12 +8,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// CreditGrantApplication holds the schema definition for the CreditGrantApplication entity.
 type CreditGrantApplication struct {
 	ent.Schema
 }
 
-// Mixin of the Customer.
 func (CreditGrantApplication) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
