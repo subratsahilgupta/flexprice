@@ -6,10 +6,8 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/creditgrantapplication"
-	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainCreditGrantApplication "github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
-	"github.com/flexprice/flexprice/internal/dsl"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -292,8 +290,6 @@ func (r *creditGrantApplicationRepository) Update(ctx context.Context, applicati
 			creditgrantapplication.EnvironmentID(environmentID),
 		).
 		SetStatus(string(application.Status)).
-		SetCreditGrantID(application.CreditGrantID).
-		SetSubscriptionID(application.SubscriptionID).
 		SetScheduledFor(application.ScheduledFor).
 		SetBillingPeriodStart(application.BillingPeriodStart).
 		SetBillingPeriodEnd(application.BillingPeriodEnd).
@@ -503,7 +499,6 @@ func (o CreditGrantApplicationQueryOptions) GetFieldResolver(field string) (stri
 }
 
 func (o CreditGrantApplicationQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.CreditGrantApplicationFilter, query CreditGrantApplicationQuery) (CreditGrantApplicationQuery, error) {
-	var err error
 	if f == nil {
 		return query, nil
 	}
@@ -532,37 +527,14 @@ func (o CreditGrantApplicationQueryOptions) applyEntityQueryOptions(_ context.Co
 		query = query.Where(creditgrantapplication.ApplicationStatus(string(f.ApplicationStatus)))
 	}
 
-	if f.Filters != nil {
-		query, err = dsl.ApplyFilters[CreditGrantApplicationQuery, predicate.CreditGrantApplication](
-			query,
-			f.Filters,
-			o.GetFieldResolver,
-			func(p dsl.Predicate) predicate.CreditGrantApplication { return predicate.CreditGrantApplication(p) },
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Apply sorts using the generic function
-	if f.Sort != nil {
-		query, err = dsl.ApplySorts[CreditGrantApplicationQuery, creditgrantapplication.OrderOption](
-			query,
-			f.Sort,
-			o.GetFieldResolver,
-			func(o dsl.OrderFunc) creditgrantapplication.OrderOption { return creditgrantapplication.OrderOption(o) },
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	return query, nil
 }
 
 func (r *creditGrantApplicationRepository) SetCache(ctx context.Context, application *domainCreditGrantApplication.CreditGrantApplication) {
 	span := cache.StartCacheSpan(ctx, "creditgrantapplication", "set", map[string]interface{}{
 		"application_id": application.ID,
+		"tenant_id":      types.GetTenantID(ctx),
+		"environment_id": types.GetEnvironmentID(ctx),
 	})
 	defer cache.FinishSpan(span)
 
@@ -578,6 +550,8 @@ func (r *creditGrantApplicationRepository) SetCache(ctx context.Context, applica
 func (r *creditGrantApplicationRepository) GetCache(ctx context.Context, id string) *domainCreditGrantApplication.CreditGrantApplication {
 	span := cache.StartCacheSpan(ctx, "creditgrantapplication", "get", map[string]interface{}{
 		"application_id": id,
+		"tenant_id":      types.GetTenantID(ctx),
+		"environment_id": types.GetEnvironmentID(ctx),
 	})
 	defer cache.FinishSpan(span)
 
