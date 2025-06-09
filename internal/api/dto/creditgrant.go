@@ -54,10 +54,8 @@ func (r *CreateCreditGrantRequest) Validate() error {
 			Mark(errors.ErrValidation)
 	}
 
-	if r.Scope == "" {
-		return errors.NewError("scope is required").
-			WithHint("Please specify the scope (PLAN or SUBSCRIPTION)").
-			Mark(errors.ErrValidation)
+	if err := r.Scope.Validate(); err != nil {
+		return err
 	}
 
 	// Validate based on scope
@@ -112,10 +110,8 @@ func (r *CreateCreditGrantRequest) Validate() error {
 			Mark(errors.ErrValidation)
 	}
 
-	if r.Cadence == "" {
-		return errors.NewError("cadence is required").
-			WithHint("Please specify the cadence (ONETIME or RECURRING)").
-			Mark(errors.ErrValidation)
+	if err := r.Cadence.Validate(); err != nil {
+		return err
 	}
 
 	if err := r.ExpirationType.Validate(); err != nil {
@@ -131,6 +127,10 @@ func (r *CreateCreditGrantRequest) Validate() error {
 					"cadence": r.Cadence,
 				}).
 				Mark(errors.ErrValidation)
+		}
+
+		if err := r.Period.Validate(); err != nil {
+			return err
 		}
 	}
 
