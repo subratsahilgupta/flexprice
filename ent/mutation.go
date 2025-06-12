@@ -4028,10 +4028,10 @@ type CreditGrantApplicationMutation struct {
 	subscription_id                    *string
 	scheduled_for                      *time.Time
 	applied_at                         *time.Time
-	billing_period_start               *time.Time
-	billing_period_end                 *time.Time
+	period_start                       *time.Time
+	period_end                         *time.Time
 	application_status                 *string
-	amount_applied                     *decimal.Decimal
+	credits_applied                    *decimal.Decimal
 	currency                           *string
 	application_reason                 *string
 	subscription_status_at_application *string
@@ -4043,6 +4043,7 @@ type CreditGrantApplicationMutation struct {
 	failure_reason                     *string
 	next_retry_at                      *time.Time
 	metadata                           *types.Metadata
+	idempotency_key                    *string
 	clearedFields                      map[string]struct{}
 	done                               bool
 	oldValue                           func(context.Context) (*CreditGrantApplication, error)
@@ -4601,76 +4602,76 @@ func (m *CreditGrantApplicationMutation) ResetAppliedAt() {
 	delete(m.clearedFields, creditgrantapplication.FieldAppliedAt)
 }
 
-// SetBillingPeriodStart sets the "billing_period_start" field.
-func (m *CreditGrantApplicationMutation) SetBillingPeriodStart(t time.Time) {
-	m.billing_period_start = &t
+// SetPeriodStart sets the "period_start" field.
+func (m *CreditGrantApplicationMutation) SetPeriodStart(t time.Time) {
+	m.period_start = &t
 }
 
-// BillingPeriodStart returns the value of the "billing_period_start" field in the mutation.
-func (m *CreditGrantApplicationMutation) BillingPeriodStart() (r time.Time, exists bool) {
-	v := m.billing_period_start
+// PeriodStart returns the value of the "period_start" field in the mutation.
+func (m *CreditGrantApplicationMutation) PeriodStart() (r time.Time, exists bool) {
+	v := m.period_start
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldBillingPeriodStart returns the old "billing_period_start" field's value of the CreditGrantApplication entity.
+// OldPeriodStart returns the old "period_start" field's value of the CreditGrantApplication entity.
 // If the CreditGrantApplication object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CreditGrantApplicationMutation) OldBillingPeriodStart(ctx context.Context) (v time.Time, err error) {
+func (m *CreditGrantApplicationMutation) OldPeriodStart(ctx context.Context) (v time.Time, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldBillingPeriodStart is only allowed on UpdateOne operations")
+		return v, errors.New("OldPeriodStart is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldBillingPeriodStart requires an ID field in the mutation")
+		return v, errors.New("OldPeriodStart requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldBillingPeriodStart: %w", err)
+		return v, fmt.Errorf("querying old value for OldPeriodStart: %w", err)
 	}
-	return oldValue.BillingPeriodStart, nil
+	return oldValue.PeriodStart, nil
 }
 
-// ResetBillingPeriodStart resets all changes to the "billing_period_start" field.
-func (m *CreditGrantApplicationMutation) ResetBillingPeriodStart() {
-	m.billing_period_start = nil
+// ResetPeriodStart resets all changes to the "period_start" field.
+func (m *CreditGrantApplicationMutation) ResetPeriodStart() {
+	m.period_start = nil
 }
 
-// SetBillingPeriodEnd sets the "billing_period_end" field.
-func (m *CreditGrantApplicationMutation) SetBillingPeriodEnd(t time.Time) {
-	m.billing_period_end = &t
+// SetPeriodEnd sets the "period_end" field.
+func (m *CreditGrantApplicationMutation) SetPeriodEnd(t time.Time) {
+	m.period_end = &t
 }
 
-// BillingPeriodEnd returns the value of the "billing_period_end" field in the mutation.
-func (m *CreditGrantApplicationMutation) BillingPeriodEnd() (r time.Time, exists bool) {
-	v := m.billing_period_end
+// PeriodEnd returns the value of the "period_end" field in the mutation.
+func (m *CreditGrantApplicationMutation) PeriodEnd() (r time.Time, exists bool) {
+	v := m.period_end
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldBillingPeriodEnd returns the old "billing_period_end" field's value of the CreditGrantApplication entity.
+// OldPeriodEnd returns the old "period_end" field's value of the CreditGrantApplication entity.
 // If the CreditGrantApplication object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CreditGrantApplicationMutation) OldBillingPeriodEnd(ctx context.Context) (v time.Time, err error) {
+func (m *CreditGrantApplicationMutation) OldPeriodEnd(ctx context.Context) (v time.Time, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldBillingPeriodEnd is only allowed on UpdateOne operations")
+		return v, errors.New("OldPeriodEnd is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldBillingPeriodEnd requires an ID field in the mutation")
+		return v, errors.New("OldPeriodEnd requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldBillingPeriodEnd: %w", err)
+		return v, fmt.Errorf("querying old value for OldPeriodEnd: %w", err)
 	}
-	return oldValue.BillingPeriodEnd, nil
+	return oldValue.PeriodEnd, nil
 }
 
-// ResetBillingPeriodEnd resets all changes to the "billing_period_end" field.
-func (m *CreditGrantApplicationMutation) ResetBillingPeriodEnd() {
-	m.billing_period_end = nil
+// ResetPeriodEnd resets all changes to the "period_end" field.
+func (m *CreditGrantApplicationMutation) ResetPeriodEnd() {
+	m.period_end = nil
 }
 
 // SetApplicationStatus sets the "application_status" field.
@@ -4709,40 +4710,40 @@ func (m *CreditGrantApplicationMutation) ResetApplicationStatus() {
 	m.application_status = nil
 }
 
-// SetAmountApplied sets the "amount_applied" field.
-func (m *CreditGrantApplicationMutation) SetAmountApplied(d decimal.Decimal) {
-	m.amount_applied = &d
+// SetCreditsApplied sets the "credits_applied" field.
+func (m *CreditGrantApplicationMutation) SetCreditsApplied(d decimal.Decimal) {
+	m.credits_applied = &d
 }
 
-// AmountApplied returns the value of the "amount_applied" field in the mutation.
-func (m *CreditGrantApplicationMutation) AmountApplied() (r decimal.Decimal, exists bool) {
-	v := m.amount_applied
+// CreditsApplied returns the value of the "credits_applied" field in the mutation.
+func (m *CreditGrantApplicationMutation) CreditsApplied() (r decimal.Decimal, exists bool) {
+	v := m.credits_applied
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldAmountApplied returns the old "amount_applied" field's value of the CreditGrantApplication entity.
+// OldCreditsApplied returns the old "credits_applied" field's value of the CreditGrantApplication entity.
 // If the CreditGrantApplication object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CreditGrantApplicationMutation) OldAmountApplied(ctx context.Context) (v decimal.Decimal, err error) {
+func (m *CreditGrantApplicationMutation) OldCreditsApplied(ctx context.Context) (v decimal.Decimal, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldAmountApplied is only allowed on UpdateOne operations")
+		return v, errors.New("OldCreditsApplied is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldAmountApplied requires an ID field in the mutation")
+		return v, errors.New("OldCreditsApplied requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldAmountApplied: %w", err)
+		return v, fmt.Errorf("querying old value for OldCreditsApplied: %w", err)
 	}
-	return oldValue.AmountApplied, nil
+	return oldValue.CreditsApplied, nil
 }
 
-// ResetAmountApplied resets all changes to the "amount_applied" field.
-func (m *CreditGrantApplicationMutation) ResetAmountApplied() {
-	m.amount_applied = nil
+// ResetCreditsApplied resets all changes to the "credits_applied" field.
+func (m *CreditGrantApplicationMutation) ResetCreditsApplied() {
+	m.credits_applied = nil
 }
 
 // SetCurrency sets the "currency" field.
@@ -5190,6 +5191,42 @@ func (m *CreditGrantApplicationMutation) ResetMetadata() {
 	delete(m.clearedFields, creditgrantapplication.FieldMetadata)
 }
 
+// SetIdempotencyKey sets the "idempotency_key" field.
+func (m *CreditGrantApplicationMutation) SetIdempotencyKey(s string) {
+	m.idempotency_key = &s
+}
+
+// IdempotencyKey returns the value of the "idempotency_key" field in the mutation.
+func (m *CreditGrantApplicationMutation) IdempotencyKey() (r string, exists bool) {
+	v := m.idempotency_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIdempotencyKey returns the old "idempotency_key" field's value of the CreditGrantApplication entity.
+// If the CreditGrantApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreditGrantApplicationMutation) OldIdempotencyKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIdempotencyKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIdempotencyKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIdempotencyKey: %w", err)
+	}
+	return oldValue.IdempotencyKey, nil
+}
+
+// ResetIdempotencyKey resets all changes to the "idempotency_key" field.
+func (m *CreditGrantApplicationMutation) ResetIdempotencyKey() {
+	m.idempotency_key = nil
+}
+
 // Where appends a list predicates to the CreditGrantApplicationMutation builder.
 func (m *CreditGrantApplicationMutation) Where(ps ...predicate.CreditGrantApplication) {
 	m.predicates = append(m.predicates, ps...)
@@ -5224,7 +5261,7 @@ func (m *CreditGrantApplicationMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CreditGrantApplicationMutation) Fields() []string {
-	fields := make([]string, 0, 25)
+	fields := make([]string, 0, 26)
 	if m.tenant_id != nil {
 		fields = append(fields, creditgrantapplication.FieldTenantID)
 	}
@@ -5258,17 +5295,17 @@ func (m *CreditGrantApplicationMutation) Fields() []string {
 	if m.applied_at != nil {
 		fields = append(fields, creditgrantapplication.FieldAppliedAt)
 	}
-	if m.billing_period_start != nil {
-		fields = append(fields, creditgrantapplication.FieldBillingPeriodStart)
+	if m.period_start != nil {
+		fields = append(fields, creditgrantapplication.FieldPeriodStart)
 	}
-	if m.billing_period_end != nil {
-		fields = append(fields, creditgrantapplication.FieldBillingPeriodEnd)
+	if m.period_end != nil {
+		fields = append(fields, creditgrantapplication.FieldPeriodEnd)
 	}
 	if m.application_status != nil {
 		fields = append(fields, creditgrantapplication.FieldApplicationStatus)
 	}
-	if m.amount_applied != nil {
-		fields = append(fields, creditgrantapplication.FieldAmountApplied)
+	if m.credits_applied != nil {
+		fields = append(fields, creditgrantapplication.FieldCreditsApplied)
 	}
 	if m.currency != nil {
 		fields = append(fields, creditgrantapplication.FieldCurrency)
@@ -5300,6 +5337,9 @@ func (m *CreditGrantApplicationMutation) Fields() []string {
 	if m.metadata != nil {
 		fields = append(fields, creditgrantapplication.FieldMetadata)
 	}
+	if m.idempotency_key != nil {
+		fields = append(fields, creditgrantapplication.FieldIdempotencyKey)
+	}
 	return fields
 }
 
@@ -5330,14 +5370,14 @@ func (m *CreditGrantApplicationMutation) Field(name string) (ent.Value, bool) {
 		return m.ScheduledFor()
 	case creditgrantapplication.FieldAppliedAt:
 		return m.AppliedAt()
-	case creditgrantapplication.FieldBillingPeriodStart:
-		return m.BillingPeriodStart()
-	case creditgrantapplication.FieldBillingPeriodEnd:
-		return m.BillingPeriodEnd()
+	case creditgrantapplication.FieldPeriodStart:
+		return m.PeriodStart()
+	case creditgrantapplication.FieldPeriodEnd:
+		return m.PeriodEnd()
 	case creditgrantapplication.FieldApplicationStatus:
 		return m.ApplicationStatus()
-	case creditgrantapplication.FieldAmountApplied:
-		return m.AmountApplied()
+	case creditgrantapplication.FieldCreditsApplied:
+		return m.CreditsApplied()
 	case creditgrantapplication.FieldCurrency:
 		return m.Currency()
 	case creditgrantapplication.FieldApplicationReason:
@@ -5358,6 +5398,8 @@ func (m *CreditGrantApplicationMutation) Field(name string) (ent.Value, bool) {
 		return m.NextRetryAt()
 	case creditgrantapplication.FieldMetadata:
 		return m.Metadata()
+	case creditgrantapplication.FieldIdempotencyKey:
+		return m.IdempotencyKey()
 	}
 	return nil, false
 }
@@ -5389,14 +5431,14 @@ func (m *CreditGrantApplicationMutation) OldField(ctx context.Context, name stri
 		return m.OldScheduledFor(ctx)
 	case creditgrantapplication.FieldAppliedAt:
 		return m.OldAppliedAt(ctx)
-	case creditgrantapplication.FieldBillingPeriodStart:
-		return m.OldBillingPeriodStart(ctx)
-	case creditgrantapplication.FieldBillingPeriodEnd:
-		return m.OldBillingPeriodEnd(ctx)
+	case creditgrantapplication.FieldPeriodStart:
+		return m.OldPeriodStart(ctx)
+	case creditgrantapplication.FieldPeriodEnd:
+		return m.OldPeriodEnd(ctx)
 	case creditgrantapplication.FieldApplicationStatus:
 		return m.OldApplicationStatus(ctx)
-	case creditgrantapplication.FieldAmountApplied:
-		return m.OldAmountApplied(ctx)
+	case creditgrantapplication.FieldCreditsApplied:
+		return m.OldCreditsApplied(ctx)
 	case creditgrantapplication.FieldCurrency:
 		return m.OldCurrency(ctx)
 	case creditgrantapplication.FieldApplicationReason:
@@ -5417,6 +5459,8 @@ func (m *CreditGrantApplicationMutation) OldField(ctx context.Context, name stri
 		return m.OldNextRetryAt(ctx)
 	case creditgrantapplication.FieldMetadata:
 		return m.OldMetadata(ctx)
+	case creditgrantapplication.FieldIdempotencyKey:
+		return m.OldIdempotencyKey(ctx)
 	}
 	return nil, fmt.Errorf("unknown CreditGrantApplication field %s", name)
 }
@@ -5503,19 +5547,19 @@ func (m *CreditGrantApplicationMutation) SetField(name string, value ent.Value) 
 		}
 		m.SetAppliedAt(v)
 		return nil
-	case creditgrantapplication.FieldBillingPeriodStart:
+	case creditgrantapplication.FieldPeriodStart:
 		v, ok := value.(time.Time)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetBillingPeriodStart(v)
+		m.SetPeriodStart(v)
 		return nil
-	case creditgrantapplication.FieldBillingPeriodEnd:
+	case creditgrantapplication.FieldPeriodEnd:
 		v, ok := value.(time.Time)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetBillingPeriodEnd(v)
+		m.SetPeriodEnd(v)
 		return nil
 	case creditgrantapplication.FieldApplicationStatus:
 		v, ok := value.(string)
@@ -5524,12 +5568,12 @@ func (m *CreditGrantApplicationMutation) SetField(name string, value ent.Value) 
 		}
 		m.SetApplicationStatus(v)
 		return nil
-	case creditgrantapplication.FieldAmountApplied:
+	case creditgrantapplication.FieldCreditsApplied:
 		v, ok := value.(decimal.Decimal)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetAmountApplied(v)
+		m.SetCreditsApplied(v)
 		return nil
 	case creditgrantapplication.FieldCurrency:
 		v, ok := value.(string)
@@ -5600,6 +5644,13 @@ func (m *CreditGrantApplicationMutation) SetField(name string, value ent.Value) 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMetadata(v)
+		return nil
+	case creditgrantapplication.FieldIdempotencyKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIdempotencyKey(v)
 		return nil
 	}
 	return fmt.Errorf("unknown CreditGrantApplication field %s", name)
@@ -5755,17 +5806,17 @@ func (m *CreditGrantApplicationMutation) ResetField(name string) error {
 	case creditgrantapplication.FieldAppliedAt:
 		m.ResetAppliedAt()
 		return nil
-	case creditgrantapplication.FieldBillingPeriodStart:
-		m.ResetBillingPeriodStart()
+	case creditgrantapplication.FieldPeriodStart:
+		m.ResetPeriodStart()
 		return nil
-	case creditgrantapplication.FieldBillingPeriodEnd:
-		m.ResetBillingPeriodEnd()
+	case creditgrantapplication.FieldPeriodEnd:
+		m.ResetPeriodEnd()
 		return nil
 	case creditgrantapplication.FieldApplicationStatus:
 		m.ResetApplicationStatus()
 		return nil
-	case creditgrantapplication.FieldAmountApplied:
-		m.ResetAmountApplied()
+	case creditgrantapplication.FieldCreditsApplied:
+		m.ResetCreditsApplied()
 		return nil
 	case creditgrantapplication.FieldCurrency:
 		m.ResetCurrency()
@@ -5796,6 +5847,9 @@ func (m *CreditGrantApplicationMutation) ResetField(name string) error {
 		return nil
 	case creditgrantapplication.FieldMetadata:
 		m.ResetMetadata()
+		return nil
+	case creditgrantapplication.FieldIdempotencyKey:
+		m.ResetIdempotencyKey()
 		return nil
 	}
 	return fmt.Errorf("unknown CreditGrantApplication field %s", name)
