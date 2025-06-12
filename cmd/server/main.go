@@ -130,6 +130,8 @@ func main() {
 			repository.NewSecretRepository,
 			repository.NewCreditGrantRepository,
 			repository.NewCostSheetRepository,
+			repository.NewCreditGrantApplicationRepository,
+
 			// PubSub
 			pubsubRouter.NewRouter,
 
