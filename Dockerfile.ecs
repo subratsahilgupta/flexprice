@@ -1,53 +1,55 @@
-# Define platform
+# Dockerfile.ecs
+# enable BuildKit cache mounts
+# syntax=docker/dockerfile:experimental
+
 ARG TARGETPLATFORM=linux/arm64
 
-# Build stage
+#####################################
+# 1) Builder stage
+#####################################
 FROM --platform=${TARGETPLATFORM} golang:1.23.3-alpine3.20 AS builder
 WORKDIR /app
 
-# Copy go mod and sum files
+# cache Go module downloads
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
-# Copy source code
+# copy source & cache-build binary
 COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+    go build -ldflags="-w -s" -trimpath \
+      -o server cmd/server/main.go
 
-# Build the Go binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-    go build -ldflags="-w -s" \
-    -trimpath \
-    -a \
-    -installsuffix cgo \
-    -o server cmd/server/main.go
+#####################################
+# 2) Typst binary stage
+#####################################
+FROM ghcr.io/typst/typst:v0.13.1 AS typst
 
-# Runtime stage
-FROM ghcr.io/typst/typst:v0.13.1 as typst
-FROM --platform=${TARGETPLATFORM} public.ecr.aws/amazonlinux/amazonlinux:2023
-
-# Install necessary dependencies
-RUN dnf update -y && dnf install -y \
-    ca-certificates && \
-    dnf clean all
-
-# Set working directory
+#####################################
+# 3) Runtime stage
+#####################################
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023 AS runtime
 WORKDIR /app
 
-# Copy the binary from the builder stage
+RUN dnf update -y && \
+    dnf install -y ca-certificates && \
+    dnf clean all
+
+# pull in our Go server
 COPY --from=builder /app/server /app/server
 
-# Copy typst binary
+# pull in typst
 COPY --from=typst /bin/typst /usr/local/bin/
 
-# Copy configuration files if needed
+# configs & assets
 COPY internal/config ./config
 COPY assets/fonts ./assets/fonts
 COPY assets/typst-templates ./assets/typst-templates
 
-# Set execute permissions for the binary
 RUN chmod +x /app/server
 
-# Expose application port
 EXPOSE 8080
-
-# Command to run the application
 CMD ["/app/server"]

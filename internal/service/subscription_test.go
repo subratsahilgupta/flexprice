@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -552,13 +553,31 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscription() {
 
 func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 	testCases := []struct {
-		name    string
-		input   dto.CreateSubscriptionRequest
-		want    *dto.SubscriptionResponse
-		wantErr bool
+		name          string
+		input         dto.CreateSubscriptionRequest
+		want          *dto.SubscriptionResponse
+		wantErr       bool
+		expectedError string
+		errorType     string // "validation" or "not_found"
 	}{
 		{
-			name: "successful_subscription_creation",
+			name: "both_customer_id_and_external_id_absent",
+			input: dto.CreateSubscriptionRequest{
+				PlanID:             s.testData.plan.ID,
+				StartDate:          s.testData.now,
+				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+			},
+			wantErr:       true,
+			expectedError: "either customer_id or external_customer_id is required",
+			errorType:     "validation",
+		},
+		{
+			name: "only_customer_id_present",
 			input: dto.CreateSubscriptionRequest{
 				CustomerID:         s.testData.customer.ID,
 				PlanID:             s.testData.plan.ID,
@@ -573,9 +592,9 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			wantErr: false,
 		},
 		{
-			name: "invalid_customer_id",
+			name: "only_external_customer_id_present",
 			input: dto.CreateSubscriptionRequest{
-				CustomerID:         "invalid_customer",
+				ExternalCustomerID: s.testData.customer.ExternalID,
 				PlanID:             s.testData.plan.ID,
 				StartDate:          s.testData.now,
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
@@ -585,13 +604,14 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				BillingPeriodCount: 1,
 				BillingCycle:       types.BillingCycleAnniversary,
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
-			name: "invalid_plan_id",
+			name: "both_customer_id_and_external_id_present",
 			input: dto.CreateSubscriptionRequest{
 				CustomerID:         s.testData.customer.ID,
-				PlanID:             "invalid_plan",
+				ExternalCustomerID: "some_other_external_id",
+				PlanID:             s.testData.plan.ID,
 				StartDate:          s.testData.now,
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
@@ -600,7 +620,58 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				BillingPeriodCount: 1,
 				BillingCycle:       types.BillingCycleAnniversary,
 			},
-			wantErr: true,
+			wantErr: false,
+		},
+		{
+			name: "invalid_external_customer_id",
+			input: dto.CreateSubscriptionRequest{
+				ExternalCustomerID: "non_existent_external_id",
+				PlanID:             s.testData.plan.ID,
+				StartDate:          s.testData.now,
+				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+			},
+			wantErr:       true,
+			expectedError: "customer not found",
+			errorType:     "not_found",
+		},
+		{
+			name: "invalid_customer_id",
+			input: dto.CreateSubscriptionRequest{
+				CustomerID:         "invalid_id",
+				PlanID:             s.testData.plan.ID,
+				StartDate:          s.testData.now,
+				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+			},
+			wantErr:       true,
+			expectedError: "item not found",
+			errorType:     "not_found",
+		},
+		{
+			name: "invalid_plan_id",
+			input: dto.CreateSubscriptionRequest{
+				CustomerID:         s.testData.customer.ID,
+				PlanID:             "invalid_id",
+				StartDate:          s.testData.now,
+				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+			},
+			wantErr:       true,
+			expectedError: "item not found",
+			errorType:     "not_found",
 		},
 		{
 			name: "end_date_before_start_date",
@@ -615,7 +686,9 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				BillingPeriodCount: 1,
 				BillingCycle:       types.BillingCycleAnniversary,
 			},
-			wantErr: true,
+			wantErr:       true,
+			expectedError: "end_date cannot be before start_date",
+			errorType:     "validation",
 		},
 	}
 
@@ -624,13 +697,25 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			resp, err := s.service.CreateSubscription(s.GetContext(), tc.input)
 			if tc.wantErr {
 				s.Error(err)
+				if tc.expectedError != "" {
+					s.Contains(err.Error(), tc.expectedError)
+				}
+				if tc.errorType == "validation" {
+					s.True(ierr.IsValidation(err), "Expected validation error but got different error type")
+				} else if tc.errorType == "not_found" {
+					s.True(ierr.IsNotFound(err), "Expected not found error but got different error type")
+				}
 				return
 			}
 
 			s.NoError(err)
 			s.NotNil(resp)
 			s.NotEmpty(resp.ID)
-			s.Equal(tc.input.CustomerID, resp.CustomerID)
+			if tc.input.CustomerID != "" {
+				s.Equal(tc.input.CustomerID, resp.CustomerID)
+			} else {
+				s.Equal(s.testData.customer.ID, resp.CustomerID)
+			}
 			s.Equal(tc.input.PlanID, resp.PlanID)
 			s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus)
 			s.Equal(tc.input.StartDate.Unix(), resp.StartDate.Unix())
@@ -1012,4 +1097,148 @@ func (s *SubscriptionServiceSuite) TestSubscriptionAnchor_CalendarAndAnniversary
 			s.Equal(tt.expectAnchor, gotAnchor, "expected anchor %v, got %v", tt.expectAnchor, gotAnchor)
 		})
 	}
+}
+
+func (s *SubscriptionServiceSuite) TestGetUsageBySubscriptionWithCommitment() {
+	// Create a subscription with commitment amount and overage factor
+	commitmentSub := &subscription.Subscription{
+		ID:                 "sub_commitment",
+		PlanID:             s.testData.plan.ID,
+		CustomerID:         s.testData.customer.ID,
+		StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+		CurrentPeriodStart: s.testData.now.Add(-24 * time.Hour),
+		CurrentPeriodEnd:   s.testData.now.Add(6 * 24 * time.Hour),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		CommitmentAmount:   lo.ToPtr(decimal.NewFromFloat(50)),
+		OverageFactor:      lo.ToPtr(decimal.NewFromFloat(1.5)),
+		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+	}
+
+	// Create line items for the subscription (just using API calls for simplicity)
+	lineItems := []*subscription.SubscriptionLineItem{
+		{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:   commitmentSub.ID,
+			CustomerID:       commitmentSub.CustomerID,
+			PlanID:           s.testData.plan.ID,
+			PlanDisplayName:  s.testData.plan.Name,
+			PriceID:          s.testData.prices.apiCalls.ID,
+			PriceType:        s.testData.prices.apiCalls.Type,
+			MeterID:          s.testData.meters.apiCalls.ID,
+			MeterDisplayName: s.testData.meters.apiCalls.Name,
+			DisplayName:      s.testData.meters.apiCalls.Name,
+			Quantity:         decimal.Zero,
+			Currency:         commitmentSub.Currency,
+			BillingPeriod:    commitmentSub.BillingPeriod,
+			BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		},
+	}
+
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), commitmentSub, lineItems))
+
+	// Create test events - just API calls for simplicity
+	for i := 0; i < 1000; i++ {
+		event := &events.Event{
+			ID:                 s.GetUUID(),
+			TenantID:           commitmentSub.TenantID,
+			EventName:          s.testData.meters.apiCalls.EventName,
+			ExternalCustomerID: s.testData.customer.ExternalID,
+			Timestamp:          s.testData.now.Add(-1 * time.Hour),
+			Properties:         map[string]interface{}{},
+		}
+		s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+	}
+
+	// Test case 1: Usage below commitment amount
+	s.Run("usage_below_commitment", func() {
+		// Set commitment to a high value to ensure usage is below it
+		commitmentSub.CommitmentAmount = lo.ToPtr(decimal.NewFromFloat(100))
+		commitmentSub.OverageFactor = lo.ToPtr(decimal.NewFromFloat(1.5))
+		s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), commitmentSub))
+
+		req := &dto.GetUsageBySubscriptionRequest{
+			SubscriptionID: commitmentSub.ID,
+			StartTime:      s.testData.now.Add(-48 * time.Hour),
+			EndTime:        s.testData.now,
+		}
+
+		resp, err := s.service.GetUsageBySubscription(s.GetContext(), req)
+		s.NoError(err)
+		s.NotNil(resp)
+
+		// Log the response for debugging
+		s.T().Logf("Case 1 - Total amount: %v, Commitment: %v, HasOverage: %v, Overage: %v",
+			resp.Amount, resp.CommitmentAmount, resp.HasOverage, resp.OverageAmount)
+
+		// Check that commitment amount is correct and no overage
+		s.Equal(100.0, resp.CommitmentAmount)
+		s.False(resp.HasOverage)
+		s.Equal(0.0, resp.OverageAmount)
+	})
+
+	// Test case 2: Usage exceeds commitment amount
+	s.Run("usage_exceeds_commitment", func() {
+		// Set commitment to a low value to ensure usage exceeds it
+		commitmentSub.CommitmentAmount = lo.ToPtr(decimal.NewFromFloat(10))
+		commitmentSub.OverageFactor = lo.ToPtr(decimal.NewFromFloat(1.5))
+		s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), commitmentSub))
+
+		req := &dto.GetUsageBySubscriptionRequest{
+			SubscriptionID: commitmentSub.ID,
+			StartTime:      s.testData.now.Add(-48 * time.Hour),
+			EndTime:        s.testData.now,
+		}
+
+		resp, err := s.service.GetUsageBySubscription(s.GetContext(), req)
+		s.NoError(err)
+		s.NotNil(resp)
+
+		// Log the response for debugging
+		s.T().Logf("Case 2 - Total amount: %v, Commitment: %v, HasOverage: %v, Overage: %v",
+			resp.Amount, resp.CommitmentAmount, resp.HasOverage, resp.OverageAmount)
+
+		// Get base amount without commitment
+		baseReq := &dto.GetUsageBySubscriptionRequest{
+			SubscriptionID: commitmentSub.ID,
+			StartTime:      s.testData.now.Add(-48 * time.Hour),
+			EndTime:        s.testData.now,
+		}
+
+		// Temporarily remove commitment to get base amount
+		origCommitment := commitmentSub.CommitmentAmount
+		origFactor := commitmentSub.OverageFactor
+		commitmentSub.CommitmentAmount = lo.ToPtr(decimal.Zero)
+		commitmentSub.OverageFactor = lo.ToPtr(decimal.NewFromInt(1))
+		s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), commitmentSub))
+
+		baseResp, err := s.service.GetUsageBySubscription(s.GetContext(), baseReq)
+		s.NoError(err)
+
+		// Restore commitment
+		commitmentSub.CommitmentAmount = origCommitment
+		commitmentSub.OverageFactor = origFactor
+		s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), commitmentSub))
+
+		s.T().Logf("Base amount without commitment: %v", baseResp.Amount)
+
+		// Check that commitment amount is correct
+		s.Equal(10.0, resp.CommitmentAmount)
+		s.True(resp.HasOverage)
+
+		// Check that at least one charge is marked as overage
+		hasOverageCharge := false
+		for _, charge := range resp.Charges {
+			if charge.IsOverage {
+				hasOverageCharge = true
+				break
+			}
+		}
+		s.True(hasOverageCharge, "Should have at least one charge marked as overage")
+
+		// Check total amount logic - should be higher with overage than base amount
+		s.Greater(resp.Amount, baseResp.Amount, "Amount with overage should be greater than base amount")
+	})
 }
