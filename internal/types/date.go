@@ -329,9 +329,9 @@ func NextCreditGrantDate(currentPeriodStart, creditGrantAnchor time.Time, unit i
 
 	// For daily and weekly periods, we can use simple addition
 	switch period {
-	case CreditGrantPeriodDaily:
+	case CREDIT_GRANT_PERIOD_DAILY:
 		return currentPeriodStart.AddDate(0, 0, unit), nil
-	case CreditGrantPeriodWeekly:
+	case CREDIT_GRANT_PERIOD_WEEKLY:
 		anchorWeekday := creditGrantAnchor.Weekday()
 		currentWeekday := currentPeriodStart.Weekday()
 
@@ -355,13 +355,13 @@ func NextCreditGrantDate(currentPeriodStart, creditGrantAnchor time.Time, unit i
 	// For monthly and annual periods, calculate the target year and month
 	var years, months int
 	switch period {
-	case CreditGrantPeriodMonthly:
+	case CREDIT_GRANT_PERIOD_MONTHLY:
 		months = unit
-	case CreditGrantPeriodAnnual:
+	case CREDIT_GRANT_PERIOD_ANNUAL:
 		years = unit
-	case CreditGrantPeriodQuarter:
+	case CREDIT_GRANT_PERIOD_QUARTER:
 		months = unit * 3
-	case CreditGrantPeriodHalfYear:
+	case CREDIT_GRANT_PERIOD_HALF_YEARLY:
 		months = unit * 6
 	default:
 		return currentPeriodStart, ierr.NewError("invalid credit grant period type").
@@ -396,7 +396,7 @@ func NextCreditGrantDate(currentPeriodStart, creditGrantAnchor time.Time, unit i
 	}
 
 	// For annual credit grants, preserve the credit grant anchor month
-	if period == CreditGrantPeriodAnnual {
+	if period == CREDIT_GRANT_PERIOD_ANNUAL {
 		targetM = creditGrantAnchor.Month()
 	}
 
@@ -412,7 +412,7 @@ func NextCreditGrantDate(currentPeriodStart, creditGrantAnchor time.Time, unit i
 	}
 
 	// Special case for February 29th in leap years
-	if period == CreditGrantPeriodAnnual &&
+	if period == CREDIT_GRANT_PERIOD_ANNUAL &&
 		creditGrantAnchor.Month() == time.February &&
 		creditGrantAnchor.Day() == 29 &&
 		!isLeapYear(targetY) {
