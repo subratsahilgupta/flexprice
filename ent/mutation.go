@@ -4032,7 +4032,6 @@ type CreditGrantApplicationMutation struct {
 	period_end                         *time.Time
 	application_status                 *types.ApplicationStatus
 	credits_applied                    *decimal.Decimal
-	currency                           *string
 	application_reason                 *types.CreditGrantApplicationReason
 	subscription_status_at_application *types.SubscriptionStatus
 	retry_count                        *int
@@ -4742,42 +4741,6 @@ func (m *CreditGrantApplicationMutation) ResetCreditsApplied() {
 	m.credits_applied = nil
 }
 
-// SetCurrency sets the "currency" field.
-func (m *CreditGrantApplicationMutation) SetCurrency(s string) {
-	m.currency = &s
-}
-
-// Currency returns the value of the "currency" field in the mutation.
-func (m *CreditGrantApplicationMutation) Currency() (r string, exists bool) {
-	v := m.currency
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldCurrency returns the old "currency" field's value of the CreditGrantApplication entity.
-// If the CreditGrantApplication object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CreditGrantApplicationMutation) OldCurrency(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCurrency is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCurrency requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCurrency: %w", err)
-	}
-	return oldValue.Currency, nil
-}
-
-// ResetCurrency resets all changes to the "currency" field.
-func (m *CreditGrantApplicationMutation) ResetCurrency() {
-	m.currency = nil
-}
-
 // SetApplicationReason sets the "application_reason" field.
 func (m *CreditGrantApplicationMutation) SetApplicationReason(tgar types.CreditGrantApplicationReason) {
 	m.application_reason = &tgar
@@ -5074,7 +5037,7 @@ func (m *CreditGrantApplicationMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CreditGrantApplicationMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 21)
 	if m.tenant_id != nil {
 		fields = append(fields, creditgrantapplication.FieldTenantID)
 	}
@@ -5119,9 +5082,6 @@ func (m *CreditGrantApplicationMutation) Fields() []string {
 	}
 	if m.credits_applied != nil {
 		fields = append(fields, creditgrantapplication.FieldCreditsApplied)
-	}
-	if m.currency != nil {
-		fields = append(fields, creditgrantapplication.FieldCurrency)
 	}
 	if m.application_reason != nil {
 		fields = append(fields, creditgrantapplication.FieldApplicationReason)
@@ -5179,8 +5139,6 @@ func (m *CreditGrantApplicationMutation) Field(name string) (ent.Value, bool) {
 		return m.ApplicationStatus()
 	case creditgrantapplication.FieldCreditsApplied:
 		return m.CreditsApplied()
-	case creditgrantapplication.FieldCurrency:
-		return m.Currency()
 	case creditgrantapplication.FieldApplicationReason:
 		return m.ApplicationReason()
 	case creditgrantapplication.FieldSubscriptionStatusAtApplication:
@@ -5232,8 +5190,6 @@ func (m *CreditGrantApplicationMutation) OldField(ctx context.Context, name stri
 		return m.OldApplicationStatus(ctx)
 	case creditgrantapplication.FieldCreditsApplied:
 		return m.OldCreditsApplied(ctx)
-	case creditgrantapplication.FieldCurrency:
-		return m.OldCurrency(ctx)
 	case creditgrantapplication.FieldApplicationReason:
 		return m.OldApplicationReason(ctx)
 	case creditgrantapplication.FieldSubscriptionStatusAtApplication:
@@ -5359,13 +5315,6 @@ func (m *CreditGrantApplicationMutation) SetField(name string, value ent.Value) 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCreditsApplied(v)
-		return nil
-	case creditgrantapplication.FieldCurrency:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetCurrency(v)
 		return nil
 	case creditgrantapplication.FieldApplicationReason:
 		v, ok := value.(types.CreditGrantApplicationReason)
@@ -5556,9 +5505,6 @@ func (m *CreditGrantApplicationMutation) ResetField(name string) error {
 		return nil
 	case creditgrantapplication.FieldCreditsApplied:
 		m.ResetCreditsApplied()
-		return nil
-	case creditgrantapplication.FieldCurrency:
-		m.ResetCurrency()
 		return nil
 	case creditgrantapplication.FieldApplicationReason:
 		m.ResetApplicationReason()
