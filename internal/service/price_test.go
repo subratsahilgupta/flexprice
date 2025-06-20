@@ -190,9 +190,9 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_FlatFee() {
 	quantity := decimal.NewFromInt(5)
 	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 
-	s.True(decimal.NewFromInt(500).Equal(result.FinalCost), "Final cost is %v", result.FinalCost)
-	s.True(decimal.NewFromInt(100).Equal(result.EffectiveUnitCost))
-	s.True(decimal.NewFromInt(100).Equal(result.TierUnitAmount))
+	s.Equal(decimal.NewFromInt(500).Equal(result.FinalCost), true, "Final cost is %v", result.FinalCost)
+	s.Equal(decimal.NewFromInt(100).Equal(result.EffectiveUnitCost), true)
+	s.Equal(decimal.NewFromInt(100).Equal(result.TierUnitAmount), true)
 	s.Equal(-1, result.SelectedTierIndex)
 }
 
@@ -211,18 +211,18 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_Package() {
 	quantity := decimal.NewFromInt(25)
 	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 
-	s.True(decimal.NewFromInt(150).Equal(result.FinalCost)) // 25/10 = 2.5, rounded up to 3, 3*50 = 150
+	s.Equal(decimal.NewFromInt(150).Equal(result.FinalCost), true) // 25/10 = 2.5, rounded up to 3, 3*50 = 150
 
 	// Effective unit cost should be final cost divided by actual quantity (150/25 = 6)
 	expectedUnitCost := decimal.NewFromInt(150).Div(decimal.NewFromInt(25))
-	s.True(expectedUnitCost.Equal(result.EffectiveUnitCost),
+	s.Equal(expectedUnitCost.Equal(result.EffectiveUnitCost), true,
 		"Expected effective unit cost %s but got %s",
 		expectedUnitCost.String(),
 		result.EffectiveUnitCost.String())
 
 	// Tier unit amount should be package price divided by package size (50/10 = 5)
 	expectedTierAmount := decimal.NewFromInt(50).Div(decimal.NewFromInt(10))
-	s.True(expectedTierAmount.Equal(result.TierUnitAmount),
+	s.Equal(expectedTierAmount.Equal(result.TierUnitAmount), true,
 		"Expected tier unit amount %s but got %s",
 		expectedTierAmount.String(),
 		result.TierUnitAmount.String())
@@ -257,25 +257,25 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredVolume() {
 	// Test within first tier
 	quantity := decimal.NewFromInt(5)
 	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
-	s.True(decimal.NewFromInt(250).Equal(result.FinalCost)) // 5 * 50 = 250
-	s.True(decimal.NewFromInt(50).Equal(result.EffectiveUnitCost))
-	s.True(decimal.NewFromInt(50).Equal(result.TierUnitAmount))
+	s.Equal(decimal.NewFromInt(250).Equal(result.FinalCost), true) // 5 * 50 = 250
+	s.Equal(decimal.NewFromInt(50).Equal(result.EffectiveUnitCost), true)
+	s.Equal(decimal.NewFromInt(50).Equal(result.TierUnitAmount), true)
 	s.Equal(0, result.SelectedTierIndex)
 
 	// Test within second tier
 	quantity = decimal.NewFromInt(15)
 	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
-	s.True(decimal.NewFromInt(600).Equal(result.FinalCost)) // 15 * 40 = 600
-	s.True(decimal.NewFromInt(40).Equal(result.EffectiveUnitCost))
-	s.True(decimal.NewFromInt(40).Equal(result.TierUnitAmount))
+	s.Equal(decimal.NewFromInt(600).Equal(result.FinalCost), true) // 15 * 40 = 600
+	s.Equal(decimal.NewFromInt(40).Equal(result.EffectiveUnitCost), true)
+	s.Equal(decimal.NewFromInt(40).Equal(result.TierUnitAmount), true)
 	s.Equal(1, result.SelectedTierIndex)
 
 	// Test within third tier (unlimited)
 	quantity = decimal.NewFromInt(25)
 	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
-	s.True(decimal.NewFromInt(750).Equal(result.FinalCost)) // 25 * 30 = 750
-	s.True(decimal.NewFromInt(30).Equal(result.EffectiveUnitCost))
-	s.True(decimal.NewFromInt(30).Equal(result.TierUnitAmount))
+	s.Equal(decimal.NewFromInt(750).Equal(result.FinalCost), true) // 25 * 30 = 750
+	s.Equal(decimal.NewFromInt(30).Equal(result.EffectiveUnitCost), true)
+	s.Equal(decimal.NewFromInt(30).Equal(result.TierUnitAmount), true)
 	s.Equal(2, result.SelectedTierIndex)
 }
 
@@ -306,8 +306,8 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlab() {
 	// Test within first tier
 	quantity := decimal.NewFromInt(5)
 	result := s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
-	s.True(decimal.NewFromInt(250).Equal(result.FinalCost)) // 5 * 50 = 250
-	s.True(decimal.NewFromInt(50).Equal(result.TierUnitAmount))
+	s.Equal(decimal.NewFromInt(250).Equal(result.FinalCost), true) // 5 * 50 = 250
+	s.Equal(decimal.NewFromInt(50).Equal(result.TierUnitAmount), true)
 	s.Equal(0, result.SelectedTierIndex)
 
 	// Test spanning first and second tiers
@@ -316,11 +316,11 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlab() {
 
 	// The implementation calculates: (10 * 50) + (5 * 40) = 500 + 200 = 700
 	expectedFinalCost := decimal.NewFromInt(700)
-	s.True(expectedFinalCost.Equal(result.FinalCost))
+	s.Equal(expectedFinalCost.Equal(result.FinalCost), true)
 
 	expectedUnitCost := decimal.NewFromInt(700).Div(decimal.NewFromInt(15)) // 700/15
-	s.True(expectedUnitCost.Equal(result.EffectiveUnitCost))
-	s.True(decimal.NewFromInt(40).Equal(result.TierUnitAmount))
+	s.Equal(expectedUnitCost.Equal(result.EffectiveUnitCost), true)
+	s.Equal(decimal.NewFromInt(40).Equal(result.TierUnitAmount), true)
 	s.Equal(1, result.SelectedTierIndex)
 
 	// Test spanning all three tiers
@@ -333,12 +333,12 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlab() {
 	// No third tier is used
 	// Total: 500 + 600 = 1100
 	expectedFinalCost = decimal.NewFromInt(1100)
-	s.True(expectedFinalCost.Equal(result.FinalCost))
+	s.Equal(expectedFinalCost.Equal(result.FinalCost), true)
 
-	expectedUnitCost = decimal.NewFromInt(1100).Div(decimal.NewFromInt(25))
-	s.True(expectedUnitCost.Equal(result.EffectiveUnitCost))
-	s.True(decimal.NewFromInt(40).Equal(result.TierUnitAmount)) // Second tier is the last one used
-	s.Equal(1, result.SelectedTierIndex)                        // Index 1 (second tier)
+	expectedUnitCost = decimal.NewFromInt(1100).Div(decimal.NewFromInt(25)) // 1100/25
+	s.Equal(expectedUnitCost.Equal(result.EffectiveUnitCost), true)
+	s.Equal(decimal.NewFromInt(40).Equal(result.TierUnitAmount), true) // Second tier is the last one used
+	s.Equal(1, result.SelectedTierIndex)                               // Index 1 (second tier)
 }
 
 func (s *PriceServiceSuite) TestCalculateCostWithBreakup_ZeroQuantity() {
