@@ -224,12 +224,22 @@ func (s *creditGrantService) GetCreditGrantsBySubscription(ctx context.Context, 
 // ApplyCreditGrant applies a credit grant to a subscription and creates CGA tracking records
 // This method handles both one-time and recurring credit grants
 func (s *creditGrantService) ApplyCreditGrant(ctx context.Context, grant *creditgrant.CreditGrant, subscription *subscription.Subscription, metadata types.Metadata) error {
-	// Calculate credit grant period
-	// We are using the subscription start date instead of the current period start
-	// because the current period start is the start of the current billing cycle
-	periodStart, periodEnd, err := s.calculateNextPeriod(grant, subscription, subscription.StartDate)
-	if err != nil {
+
+	// Validate credit grant
+	if err := grant.Validate(); err != nil {
 		return err
+	}
+
+	// Calculate credit grant period based on cadence
+	var periodStart, periodEnd time.Time
+	var err error
+
+	if grant.Cadence == types.CreditGrantCadenceRecurring {
+		// For recurring grants, calculate proper period dates
+		periodStart, periodEnd, err = s.calculateNextPeriod(grant, subscription, subscription.StartDate)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Create CGA record for tracking
