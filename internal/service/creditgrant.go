@@ -233,15 +233,22 @@ func (s *creditGrantService) ApplyCreditGrant(ctx context.Context, grant *credit
 	}
 
 	// Create CGA record for tracking
+	var applicationReason types.CreditGrantApplicationReason
+	if grant.Cadence == types.CreditGrantCadenceRecurring {
+		applicationReason = types.ApplicationReasonFirstTimeRecurringCreditGrant
+	} else {
+		applicationReason = types.ApplicationReasonOnetimeCreditGrant
+	}
+
 	cga := &domainCreditGrantApplication.CreditGrantApplication{
 		ID:                              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CREDIT_GRANT_APPLICATION),
 		CreditGrantID:                   grant.ID,
 		SubscriptionID:                  subscription.ID,
 		ScheduledFor:                    time.Now().UTC(),
-		PeriodStart:                     periodStart,
-		PeriodEnd:                       periodEnd,
+		PeriodStart:                     lo.ToPtr(periodStart),
+		PeriodEnd:                       lo.ToPtr(periodEnd),
 		ApplicationStatus:               types.ApplicationStatusPending,
-		ApplicationReason:               types.ApplicationReasonFirstTimeRecurringCreditGrant,
+		ApplicationReason:               applicationReason,
 		SubscriptionStatusAtApplication: subscription.SubscriptionStatus,
 		RetryCount:                      0,
 		CreditsApplied:                  decimal.Zero,
@@ -285,7 +292,6 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 			break
 		}
 	}
-
 	if selectedWallet == nil {
 		// Create new wallet
 		walletReq := &dto.CreateWalletRequest{
@@ -298,6 +304,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 		if err != nil {
 			return s.handleCreditGrantFailure(ctx, cga, err, "Failed to create wallet for top up")
 		}
+
 	}
 
 	// Calculate expiry date
@@ -364,7 +371,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 
 		// Task 3: Create next period application if recurring
 		if grant.Cadence == types.CreditGrantCadenceRecurring {
-			if err := s.createNextPeriodApplication(txCtx, grant, subscription, cga.PeriodEnd); err != nil {
+			if err := s.createNextPeriodApplication(txCtx, grant, subscription, lo.FromPtr(cga.PeriodEnd)); err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to create next period credit grant application").
 					WithReportableDetails(map[string]interface{}{
@@ -589,8 +596,8 @@ func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, gr
 		CreditGrantID:                   grant.ID,
 		SubscriptionID:                  subscription.ID,
 		ScheduledFor:                    nextPeriodStart,
-		PeriodStart:                     nextPeriodStart,
-		PeriodEnd:                       nextPeriodEnd,
+		PeriodStart:                     lo.ToPtr(nextPeriodStart),
+		PeriodEnd:                       lo.ToPtr(nextPeriodEnd),
 		ApplicationStatus:               types.ApplicationStatusPending,
 		CreditsApplied:                  decimal.Zero,
 		ApplicationReason:               types.ApplicationReasonRecurringCreditGrant,
@@ -700,7 +707,7 @@ func (s *creditGrantService) skipCreditGrantApplication(
 
 	// Create next period application if recurring
 	if grant.Cadence == types.CreditGrantCadenceRecurring {
-		return s.createNextPeriodApplication(ctx, grant, subscription, cga.PeriodEnd)
+		return s.createNextPeriodApplication(ctx, grant, subscription, lo.FromPtr(cga.PeriodEnd))
 	}
 
 	return nil
