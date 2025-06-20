@@ -36,6 +36,7 @@ type InvoiceService interface {
 	AttemptPayment(ctx context.Context, id string) error
 	GetInvoicePDF(ctx context.Context, id string) ([]byte, error)
 	GetInvoicePDFUrl(ctx context.Context, id string) (string, error)
+	RecalculateInvoice(ctx context.Context, id string, finalize bool) (*dto.InvoiceResponse, error)
 }
 
 type invoiceService struct {
@@ -1037,4 +1038,176 @@ func (s *invoiceService) publishInternalWebhookEvent(ctx context.Context, eventN
 	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
 		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
 	}
+}
+
+func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, finalize bool) (*dto.InvoiceResponse, error) {
+	s.Logger.Infow("recalculating invoice", "invoice_id", id)
+
+	// Get the invoice
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate invoice is in draft state
+	if inv.InvoiceStatus != types.InvoiceStatusDraft {
+		return nil, ierr.NewError("invoice is not in draft status").
+			WithHint("Only draft invoices can be recalculated").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id":     inv.ID,
+				"current_status": inv.InvoiceStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate this is a subscription invoice
+	if inv.InvoiceType != types.InvoiceTypeSubscription || inv.SubscriptionID == nil {
+		return nil, ierr.NewError("invoice is not a subscription invoice").
+			WithHint("Only subscription invoices can be recalculated").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id":   inv.ID,
+				"invoice_type": inv.InvoiceType,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate period dates are available
+	if inv.PeriodStart == nil || inv.PeriodEnd == nil {
+		return nil, ierr.NewError("invoice period dates are missing").
+			WithHint("Invoice must have period start and end dates for recalculation").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get subscription with line items
+	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, *inv.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start transaction to update invoice atomically
+	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		// STEP 1: Remove existing line items FIRST to ensure fresh calculation
+		// This is crucial - we need to "archive" existing line items before calling
+		// PrepareSubscriptionInvoiceRequest so it treats this as a fresh calculation
+		existingLineItemIDs := make([]string, len(inv.LineItems))
+		for i, item := range inv.LineItems {
+			existingLineItemIDs[i] = item.ID
+		}
+
+		if len(existingLineItemIDs) > 0 {
+			if err := s.InvoiceRepo.RemoveLineItems(txCtx, inv.ID, existingLineItemIDs); err != nil {
+				return err
+			}
+			s.Logger.Infow("archived existing line items for fresh recalculation",
+				"invoice_id", inv.ID,
+				"archived_items", len(existingLineItemIDs))
+		}
+
+		// STEP 2: Now call PrepareSubscriptionInvoiceRequest for fresh calculation
+		// Since we removed existing line items, the billing service will see no already
+		// invoiced items and will recalculate everything completely
+		billingService := NewBillingService(s.ServiceParams)
+
+		// Use period_end reference point to include both arrear and advance charges
+		referencePoint := types.ReferencePointPeriodEnd
+
+		newInvoiceReq, err := billingService.PrepareSubscriptionInvoiceRequest(txCtx,
+			subscription,
+			*inv.PeriodStart,
+			*inv.PeriodEnd,
+			referencePoint,
+		)
+		if err != nil {
+			return err
+		}
+
+		// STEP 3: Update invoice totals and metadata
+		inv.AmountDue = newInvoiceReq.AmountDue
+		inv.AmountRemaining = newInvoiceReq.AmountDue.Sub(inv.AmountPaid)
+		inv.Description = newInvoiceReq.Description
+		if newInvoiceReq.Metadata != nil {
+			inv.Metadata = newInvoiceReq.Metadata
+		}
+
+		// Update payment status if amount due changed
+		if inv.AmountRemaining.IsZero() {
+			inv.PaymentStatus = types.PaymentStatusSucceeded
+		} else if inv.AmountPaid.IsZero() {
+			inv.PaymentStatus = types.PaymentStatusPending
+		} else {
+			inv.PaymentStatus = types.PaymentStatusPending // Partially paid
+		}
+
+		// STEP 4: Create new line items from the fresh calculation
+		newLineItems := make([]*invoice.InvoiceLineItem, len(newInvoiceReq.LineItems))
+		for i, lineItemReq := range newInvoiceReq.LineItems {
+			lineItem := &invoice.InvoiceLineItem{
+				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+				InvoiceID:       inv.ID,
+				CustomerID:      inv.CustomerID,
+				PlanID:          lineItemReq.PlanID,
+				PlanDisplayName: lineItemReq.PlanDisplayName,
+				PriceID:         lineItemReq.PriceID,
+				PriceType:       lineItemReq.PriceType,
+				DisplayName:     lineItemReq.DisplayName,
+				Amount:          lineItemReq.Amount,
+				Quantity:        lineItemReq.Quantity,
+				Currency:        inv.Currency,
+				PeriodStart:     lineItemReq.PeriodStart,
+				PeriodEnd:       lineItemReq.PeriodEnd,
+				Metadata:        lineItemReq.Metadata,
+				EnvironmentID:   inv.EnvironmentID,
+				BaseModel:       types.GetDefaultBaseModel(txCtx),
+			}
+			newLineItems[i] = lineItem
+		}
+
+		// STEP 5: Add the newly calculated line items
+		if len(newLineItems) > 0 {
+			if err := s.InvoiceRepo.AddLineItems(txCtx, inv.ID, newLineItems); err != nil {
+				return err
+			}
+		}
+
+		// STEP 6: Update the invoice
+		if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
+			return err
+		}
+
+		s.Logger.Infow("successfully recalculated invoice with fresh calculation",
+			"invoice_id", inv.ID,
+			"subscription_id", *inv.SubscriptionID,
+			"old_amount_due", inv.AmountDue,
+			"new_amount_due", newInvoiceReq.AmountDue,
+			"old_line_items", len(existingLineItemIDs),
+			"new_line_items", len(newLineItems),
+			"recalculation_type", "complete_fresh_calculation")
+
+		return nil
+	})
+
+	if err != nil {
+		s.Logger.Errorw("failed to recalculate invoice",
+			"error", err,
+			"invoice_id", inv.ID,
+			"subscription_id", *inv.SubscriptionID)
+		return nil, err
+	}
+
+	// Publish webhook event for invoice recalculation
+	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceCreateDraft, inv.ID)
+
+	// Finalize the invoice if requested
+	if finalize {
+		if err := s.FinalizeInvoice(ctx, id); err != nil {
+			s.Logger.Errorw("failed to finalize invoice after recalculation",
+				"error", err,
+				"invoice_id", id)
+			return nil, err
+		}
+		s.Logger.Infow("successfully finalized invoice after recalculation", "invoice_id", id)
+	}
+
+	// Return updated invoice
+	return s.GetInvoice(ctx, id)
 }

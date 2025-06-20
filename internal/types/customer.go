@@ -15,6 +15,7 @@ type CustomerFilter struct {
 	Filters     []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
 	Sort        []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
 	CustomerIDs []string           `json:"customer_ids,omitempty" form:"customer_ids" validate:"omitempty"`
+	ExternalIDs []string           `json:"external_ids,omitempty" form:"external_ids" validate:"omitempty"`
 	ExternalID  string             `json:"external_id,omitempty" form:"external_id" validate:"omitempty"`
 	Email       string             `json:"email,omitempty" form:"email" validate:"omitempty,email"`
 }

@@ -377,7 +377,9 @@ func (r *invoiceRepository) Get(ctx context.Context, id string) (*domainInvoice.
 			invoice.TenantID(types.GetTenantID(ctx)),
 			invoice.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
-		WithLineItems().
+		WithLineItems(func(q *ent.InvoiceLineItemQuery) {
+			q.Where(invoicelineitem.Status(string(types.StatusPublished)))
+		}).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -519,7 +521,9 @@ func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilte
 
 	client := r.client.Querier(ctx)
 	query := client.Invoice.Query().
-		WithLineItems()
+		WithLineItems(func(q *ent.InvoiceLineItemQuery) {
+			q.Where(invoicelineitem.Status(string(types.StatusPublished)))
+		})
 
 	// Apply common query options
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)

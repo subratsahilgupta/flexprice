@@ -434,7 +434,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 		usageResp, err := subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
 			SubscriptionID: sub.Subscription.ID,
 			StartTime:      sub.Subscription.CurrentPeriodStart,
-			EndTime:        time.Now().UTC(),
+			EndTime:        sub.Subscription.CurrentPeriodEnd,
 			LifetimeUsage:  false, // Only get current period usage
 		})
 		if err != nil {
