@@ -354,7 +354,7 @@ func (s *priceService) CalculateCostWithBreakup(ctx context.Context, price *pric
 		}
 
 		// Calculate total cost by multiplying package price by number of packages
-		result.FinalCost = price.Amount.Mul(packagesNeeded)
+		result.FinalCost = price.CalculateAmount(packagesNeeded)
 
 		// Calculate effective unit cost (cost per actual unit used)
 		if !quantity.IsZero() {
