@@ -1399,6 +1399,7 @@ func init() {
 	}
 	CreditGrantsTable.ForeignKeys[0].RefTable = PlansTable
 	CreditGrantsTable.ForeignKeys[1].RefTable = SubscriptionsTable
+	CreditNoteLineItemsTable.ForeignKeys[0].RefTable = CreditNotesTable
 	EntitlementsTable.ForeignKeys[0].RefTable = PlansTable
 	InvoiceLineItemsTable.ForeignKeys[0].RefTable = InvoicesTable
 	PaymentAttemptsTable.ForeignKeys[0].RefTable = PaymentsTable

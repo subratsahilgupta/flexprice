@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/costsheet"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
+	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/environment"
@@ -126,4 +127,8 @@ func NewCostSheetRepository(p RepositoryParams) costsheet.Repository {
 
 func NewCreditGrantApplicationRepository(p RepositoryParams) creditgrantapplication.Repository {
 	return entRepo.NewCreditGrantApplicationRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewCreditNoteRepository(p RepositoryParams) creditnote.Repository {
+	return entRepo.NewCreditNoteRepository(p.EntClient, p.Logger, p.Cache)
 }
