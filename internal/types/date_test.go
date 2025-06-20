@@ -114,7 +114,7 @@ func TestNextbillingDate_Monthly_Anniversary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NextBillingDate(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_MONTHLY)
+			got, err := NextBillingDateLegacy(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_MONTHLY)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error containing %q, got nil", tt.errMsg)
@@ -209,7 +209,7 @@ func TestNextBillingDate_Monthly_Calendar(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("currentPeriod: %v, billingAnchor: %v, unit: %d", tt.currentPeriod, tt.billingAnchor, tt.unit)
-			got, err := NextBillingDate(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_MONTHLY)
+			got, err := NextBillingDateLegacy(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_MONTHLY)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error containing %q, got nil", tt.errMsg)
@@ -349,7 +349,7 @@ func TestNextBillingDate_Annual_Anniversary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NextBillingDate(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_ANNUAL)
+			got, err := NextBillingDateLegacy(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_ANNUAL)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error containing %q, got nil", tt.errMsg)
@@ -481,7 +481,7 @@ func TestNextBillingDate_Annual_Calendar(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("currentPeriod: %v, billingAnchor: %v, unit: %d", tt.currentPeriod, tt.billingAnchor, tt.unit)
-			got, err := NextBillingDate(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_ANNUAL)
+			got, err := NextBillingDateLegacy(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_ANNUAL)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error containing %q, got nil", tt.errMsg)
@@ -557,7 +557,7 @@ func TestNextBillingDate_Weekly_Anniversary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NextBillingDate(tt.currentPeriodStart, tt.billingAnchor, tt.unit, BILLING_PERIOD_WEEKLY)
+			got, err := NextBillingDateLegacy(tt.currentPeriodStart, tt.billingAnchor, tt.unit, BILLING_PERIOD_WEEKLY)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error containing %q, got nil", tt.errMsg)
@@ -647,7 +647,7 @@ func TestNextBillingDate_Weekly_CalendarBilling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NextBillingDate(tt.currentPeriodStart, tt.billingAnchor, tt.unit, BILLING_PERIOD_WEEKLY)
+			got, err := NextBillingDateLegacy(tt.currentPeriodStart, tt.billingAnchor, tt.unit, BILLING_PERIOD_WEEKLY)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -736,7 +736,7 @@ func TestNextBillingDate_Daily_Anniversary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NextBillingDate(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_DAILY)
+			got, err := NextBillingDateLegacy(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_DAILY)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error containing %q, got nil", tt.errMsg)
@@ -802,7 +802,7 @@ func TestNextBillingDate_Daily_CalendarBilling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NextBillingDate(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_DAILY)
+			got, err := NextBillingDateLegacy(tt.currentPeriod, tt.billingAnchor, tt.unit, BILLING_PERIOD_DAILY)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

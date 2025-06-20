@@ -175,7 +175,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	}
 
 	// Calculate the first billing period end date
-	nextBillingDate, err := types.NextBillingDate(sub.StartDate, sub.BillingAnchor, sub.BillingPeriodCount, sub.BillingPeriod)
+	nextBillingDate, err := types.NextBillingDate(sub.StartDate, sub.BillingAnchor, sub.BillingPeriodCount, sub.BillingPeriod, sub.EndDate)
 	if err != nil {
 		return nil, err
 	}
@@ -1028,6 +1028,9 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.Su
 
 /// Helpers
 
+// we get each subscription picked by the cron where the current period end is before now
+// and we process the subscription period to create invoices for the passed period
+// and decide next period start and end or cancel the subscription if it has ended
 func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub *subscription.Subscription, now time.Time) error {
 	// Skip processing for paused subscriptions
 	if sub.SubscriptionStatus == types.SubscriptionStatusPaused {
@@ -1135,6 +1138,8 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		}
 	}
 
+	// TODO: Check if subscription has ended and should be cancelled
+
 	// Initialize services
 	invoiceService := NewInvoiceService(s.ServiceParams)
 
@@ -1154,9 +1159,15 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		end:   currentEnd,
 	})
 
+	// isLastPeriod := false
+	// if sub.EndDate != nil && currentEnd.Equal(*sub.EndDate) {
+	// 	isLastPeriod = true
+	// }
+
+	// Generate periods but respect subscription end date
 	for currentEnd.Before(now) {
 		nextStart := currentEnd
-		nextEnd, err := types.NextBillingDate(nextStart, sub.BillingAnchor, sub.BillingPeriodCount, sub.BillingPeriod)
+		nextEnd, err := types.NextBillingDate(nextStart, sub.BillingAnchor, sub.BillingPeriodCount, sub.BillingPeriod, sub.EndDate)
 		if err != nil {
 			s.Logger.Errorw("failed to calculate next billing date",
 				"subscription_id", sub.ID,
@@ -1173,6 +1184,16 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			start: nextStart,
 			end:   nextEnd,
 		})
+
+		// in case of end date reached or next end is equal to current end, we break the loop
+		// nextEnd will be equal to currentEnd in case of end date reached
+		if nextEnd.Equal(currentEnd) {
+			s.Logger.Infow("stopped period generation - reached subscription end date",
+				"subscription_id", sub.ID,
+				"end_date", sub.EndDate,
+				"final_period_end", currentEnd)
+			break
+		}
 
 		currentEnd = nextEnd
 	}
@@ -1216,6 +1237,17 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 				sub.CancelledAt = sub.CancelAt
 				break
 			}
+
+			// Check if this period end matches the subscription end date
+			if sub.EndDate != nil && period.end.Equal(*sub.EndDate) {
+				sub.SubscriptionStatus = types.SubscriptionStatusCancelled
+				sub.CancelledAt = sub.EndDate
+				s.Logger.Infow("will cancel subscription at end of this period",
+					"subscription_id", sub.ID,
+					"period_end", period.end,
+					"end_date", *sub.EndDate)
+				break
+			}
 		}
 
 		// Update to the new current period (last period)
@@ -1227,6 +1259,16 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(newPeriod.end) {
 			sub.SubscriptionStatus = types.SubscriptionStatusCancelled
 			sub.CancelledAt = sub.CancelAt
+		}
+
+		// Check if the new period end matches the subscription end date
+		if sub.EndDate != nil && newPeriod.end.Equal(*sub.EndDate) {
+			sub.SubscriptionStatus = types.SubscriptionStatusCancelled
+			sub.CancelledAt = sub.EndDate
+			s.Logger.Infow("subscription will be cancelled at new period end (end date reached)",
+				"subscription_id", sub.ID,
+				"new_period_end", newPeriod.end,
+				"end_date", *sub.EndDate)
 		}
 
 		// Update the subscription
@@ -1241,7 +1283,8 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			"new_period_start", sub.CurrentPeriodStart,
 			"new_period_end", sub.CurrentPeriodEnd,
 			"process_up_to", now,
-			"periods_processed", len(periods)-1)
+			"periods_processed", len(periods)-1,
+			"has_end_date", sub.EndDate != nil)
 
 		return nil
 	})
