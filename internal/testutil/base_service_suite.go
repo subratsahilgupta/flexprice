@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
+	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/environment"
@@ -37,6 +38,8 @@ import (
 
 // Stores holds all the repository interfaces for testing
 type Stores struct {
+	CreditGrantRepo            creditgrant.Repository
+	CreditGrantApplicationRepo creditgrantapplication.Repository
 	SubscriptionRepo           subscription.Repository
 	EventRepo                  events.Repository
 	PlanRepo                   plan.Repository
@@ -54,8 +57,7 @@ type Stores struct {
 	FeatureRepo                feature.Repository
 	TaskRepo                   task.Repository
 	SecretRepo                 secret.Repository
-	CreditGrantRepo            creditgrant.Repository
-	CreditGrantApplicationRepo creditgrantapplication.Repository
+	CreditNoteRepo             creditnote.Repository
 }
 
 // BaseServiceTestSuite provides common functionality for all service test suites
@@ -134,6 +136,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 		SecretRepo:                 NewInMemorySecretStore(),
 		CreditGrantRepo:            NewInMemoryCreditGrantStore(),
 		CreditGrantApplicationRepo: NewInMemoryCreditGrantApplicationStore(),
+		CreditNoteRepo:             NewInMemoryCreditNoteStore(),
 	}
 
 	s.db = NewMockPostgresClient(s.logger)
@@ -168,6 +171,7 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.SecretRepo.(*InMemorySecretStore).Clear()
 	s.stores.CreditGrantRepo.(*InMemoryCreditGrantStore).Clear()
 	s.stores.CreditGrantApplicationRepo.(*InMemoryCreditGrantApplicationStore).Clear()
+	s.stores.CreditNoteRepo.(*InMemoryCreditNoteStore).Clear()
 }
 
 func (s *BaseServiceTestSuite) ClearStores() {
