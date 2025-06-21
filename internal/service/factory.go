@@ -6,6 +6,7 @@ import (
 	costsheet "github.com/flexprice/flexprice/internal/domain/costsheet"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
+	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/environment"
@@ -63,6 +64,7 @@ type ServiceParams struct {
 	CreditGrantRepo            creditgrant.Repository
 	CostSheetRepo              costsheet.Repository
 	CreditGrantApplicationRepo creditgrantapplication.Repository
+	CreditNoteRepo             creditnote.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -98,6 +100,7 @@ func NewServiceParams(
 	secretRepo secret.Repository,
 	environmentRepo environment.Repository,
 	creditGrantRepo creditgrant.Repository,
+	creditNoteRepo creditnote.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
 	s3Service s3.Service,
@@ -136,5 +139,6 @@ func NewServiceParams(
 		TaskRepo:                   taskRepo,
 		CostSheetRepo:              costSheetRepo,
 		CreditGrantApplicationRepo: creditGrantApplicationRepo,
+		CreditNoteRepo:             creditNoteRepo,
 	}
 }

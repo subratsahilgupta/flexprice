@@ -5641,6 +5641,7 @@ type CreditNoteMutation struct {
 	currency           *string
 	idempotency_key    *string
 	metadata           *map[string]string
+	total_amount       *decimal.Decimal
 	clearedFields      map[string]struct{}
 	line_items         map[string]struct{}
 	removedline_items  map[string]struct{}
@@ -6255,7 +6256,7 @@ func (m *CreditNoteMutation) Reason() (r types.CreditNoteReason, exists bool) {
 // OldReason returns the old "reason" field's value of the CreditNote entity.
 // If the CreditNote object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CreditNoteMutation) OldReason(ctx context.Context) (v *types.CreditNoteReason, err error) {
+func (m *CreditNoteMutation) OldReason(ctx context.Context) (v types.CreditNoteReason, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldReason is only allowed on UpdateOne operations")
 	}
@@ -6269,22 +6270,9 @@ func (m *CreditNoteMutation) OldReason(ctx context.Context) (v *types.CreditNote
 	return oldValue.Reason, nil
 }
 
-// ClearReason clears the value of the "reason" field.
-func (m *CreditNoteMutation) ClearReason() {
-	m.reason = nil
-	m.clearedFields[creditnote.FieldReason] = struct{}{}
-}
-
-// ReasonCleared returns if the "reason" field was cleared in this mutation.
-func (m *CreditNoteMutation) ReasonCleared() bool {
-	_, ok := m.clearedFields[creditnote.FieldReason]
-	return ok
-}
-
 // ResetReason resets all changes to the "reason" field.
 func (m *CreditNoteMutation) ResetReason() {
 	m.reason = nil
-	delete(m.clearedFields, creditnote.FieldReason)
 }
 
 // SetMemo sets the "memo" field.
@@ -6457,6 +6445,42 @@ func (m *CreditNoteMutation) ResetMetadata() {
 	delete(m.clearedFields, creditnote.FieldMetadata)
 }
 
+// SetTotalAmount sets the "total_amount" field.
+func (m *CreditNoteMutation) SetTotalAmount(d decimal.Decimal) {
+	m.total_amount = &d
+}
+
+// TotalAmount returns the value of the "total_amount" field in the mutation.
+func (m *CreditNoteMutation) TotalAmount() (r decimal.Decimal, exists bool) {
+	v := m.total_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotalAmount returns the old "total_amount" field's value of the CreditNote entity.
+// If the CreditNote object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreditNoteMutation) OldTotalAmount(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotalAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotalAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotalAmount: %w", err)
+	}
+	return oldValue.TotalAmount, nil
+}
+
+// ResetTotalAmount resets all changes to the "total_amount" field.
+func (m *CreditNoteMutation) ResetTotalAmount() {
+	m.total_amount = nil
+}
+
 // AddLineItemIDs adds the "line_items" edge to the CreditNoteLineItem entity by ids.
 func (m *CreditNoteMutation) AddLineItemIDs(ids ...string) {
 	if m.line_items == nil {
@@ -6545,7 +6569,7 @@ func (m *CreditNoteMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CreditNoteMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 18)
 	if m.tenant_id != nil {
 		fields = append(fields, creditnote.FieldTenantID)
 	}
@@ -6597,6 +6621,9 @@ func (m *CreditNoteMutation) Fields() []string {
 	if m.metadata != nil {
 		fields = append(fields, creditnote.FieldMetadata)
 	}
+	if m.total_amount != nil {
+		fields = append(fields, creditnote.FieldTotalAmount)
+	}
 	return fields
 }
 
@@ -6639,6 +6666,8 @@ func (m *CreditNoteMutation) Field(name string) (ent.Value, bool) {
 		return m.IdempotencyKey()
 	case creditnote.FieldMetadata:
 		return m.Metadata()
+	case creditnote.FieldTotalAmount:
+		return m.TotalAmount()
 	}
 	return nil, false
 }
@@ -6682,6 +6711,8 @@ func (m *CreditNoteMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldIdempotencyKey(ctx)
 	case creditnote.FieldMetadata:
 		return m.OldMetadata(ctx)
+	case creditnote.FieldTotalAmount:
+		return m.OldTotalAmount(ctx)
 	}
 	return nil, fmt.Errorf("unknown CreditNote field %s", name)
 }
@@ -6810,6 +6841,13 @@ func (m *CreditNoteMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetMetadata(v)
 		return nil
+	case creditnote.FieldTotalAmount:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotalAmount(v)
+		return nil
 	}
 	return fmt.Errorf("unknown CreditNote field %s", name)
 }
@@ -6852,9 +6890,6 @@ func (m *CreditNoteMutation) ClearedFields() []string {
 	if m.FieldCleared(creditnote.FieldRefundStatus) {
 		fields = append(fields, creditnote.FieldRefundStatus)
 	}
-	if m.FieldCleared(creditnote.FieldReason) {
-		fields = append(fields, creditnote.FieldReason)
-	}
 	if m.FieldCleared(creditnote.FieldIdempotencyKey) {
 		fields = append(fields, creditnote.FieldIdempotencyKey)
 	}
@@ -6886,9 +6921,6 @@ func (m *CreditNoteMutation) ClearField(name string) error {
 		return nil
 	case creditnote.FieldRefundStatus:
 		m.ClearRefundStatus()
-		return nil
-	case creditnote.FieldReason:
-		m.ClearReason()
 		return nil
 	case creditnote.FieldIdempotencyKey:
 		m.ClearIdempotencyKey()
@@ -6954,6 +6986,9 @@ func (m *CreditNoteMutation) ResetField(name string) error {
 		return nil
 	case creditnote.FieldMetadata:
 		m.ResetMetadata()
+		return nil
+	case creditnote.FieldTotalAmount:
+		m.ResetTotalAmount()
 		return nil
 	}
 	return fmt.Errorf("unknown CreditNote field %s", name)
@@ -7059,7 +7094,6 @@ type CreditNoteLineItemMutation struct {
 	invoice_line_item_id *string
 	display_name         *string
 	amount               *decimal.Decimal
-	quantity             *decimal.Decimal
 	currency             *string
 	metadata             *map[string]string
 	clearedFields        map[string]struct{}
@@ -7609,42 +7643,6 @@ func (m *CreditNoteLineItemMutation) ResetAmount() {
 	m.amount = nil
 }
 
-// SetQuantity sets the "quantity" field.
-func (m *CreditNoteLineItemMutation) SetQuantity(d decimal.Decimal) {
-	m.quantity = &d
-}
-
-// Quantity returns the value of the "quantity" field in the mutation.
-func (m *CreditNoteLineItemMutation) Quantity() (r decimal.Decimal, exists bool) {
-	v := m.quantity
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldQuantity returns the old "quantity" field's value of the CreditNoteLineItem entity.
-// If the CreditNoteLineItem object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CreditNoteLineItemMutation) OldQuantity(ctx context.Context) (v decimal.Decimal, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldQuantity is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldQuantity requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldQuantity: %w", err)
-	}
-	return oldValue.Quantity, nil
-}
-
-// ResetQuantity resets all changes to the "quantity" field.
-func (m *CreditNoteLineItemMutation) ResetQuantity() {
-	m.quantity = nil
-}
-
 // SetCurrency sets the "currency" field.
 func (m *CreditNoteLineItemMutation) SetCurrency(s string) {
 	m.currency = &s
@@ -7791,7 +7789,7 @@ func (m *CreditNoteLineItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CreditNoteLineItemMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 13)
 	if m.tenant_id != nil {
 		fields = append(fields, creditnotelineitem.FieldTenantID)
 	}
@@ -7824,9 +7822,6 @@ func (m *CreditNoteLineItemMutation) Fields() []string {
 	}
 	if m.amount != nil {
 		fields = append(fields, creditnotelineitem.FieldAmount)
-	}
-	if m.quantity != nil {
-		fields = append(fields, creditnotelineitem.FieldQuantity)
 	}
 	if m.currency != nil {
 		fields = append(fields, creditnotelineitem.FieldCurrency)
@@ -7864,8 +7859,6 @@ func (m *CreditNoteLineItemMutation) Field(name string) (ent.Value, bool) {
 		return m.DisplayName()
 	case creditnotelineitem.FieldAmount:
 		return m.Amount()
-	case creditnotelineitem.FieldQuantity:
-		return m.Quantity()
 	case creditnotelineitem.FieldCurrency:
 		return m.Currency()
 	case creditnotelineitem.FieldMetadata:
@@ -7901,8 +7894,6 @@ func (m *CreditNoteLineItemMutation) OldField(ctx context.Context, name string) 
 		return m.OldDisplayName(ctx)
 	case creditnotelineitem.FieldAmount:
 		return m.OldAmount(ctx)
-	case creditnotelineitem.FieldQuantity:
-		return m.OldQuantity(ctx)
 	case creditnotelineitem.FieldCurrency:
 		return m.OldCurrency(ctx)
 	case creditnotelineitem.FieldMetadata:
@@ -7992,13 +7983,6 @@ func (m *CreditNoteLineItemMutation) SetField(name string, value ent.Value) erro
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAmount(v)
-		return nil
-	case creditnotelineitem.FieldQuantity:
-		v, ok := value.(decimal.Decimal)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetQuantity(v)
 		return nil
 	case creditnotelineitem.FieldCurrency:
 		v, ok := value.(string)
@@ -8122,9 +8106,6 @@ func (m *CreditNoteLineItemMutation) ResetField(name string) error {
 		return nil
 	case creditnotelineitem.FieldAmount:
 		m.ResetAmount()
-		return nil
-	case creditnotelineitem.FieldQuantity:
-		m.ResetQuantity()
 		return nil
 	case creditnotelineitem.FieldCurrency:
 		m.ResetCurrency()
@@ -12930,6 +12911,8 @@ type InvoiceMutation struct {
 	amount_due          *decimal.Decimal
 	amount_paid         *decimal.Decimal
 	amount_remaining    *decimal.Decimal
+	subtotal            *decimal.Decimal
+	total               *decimal.Decimal
 	description         *string
 	due_date            *time.Time
 	paid_at             *time.Time
@@ -13686,6 +13669,78 @@ func (m *InvoiceMutation) OldAmountRemaining(ctx context.Context) (v decimal.Dec
 // ResetAmountRemaining resets all changes to the "amount_remaining" field.
 func (m *InvoiceMutation) ResetAmountRemaining() {
 	m.amount_remaining = nil
+}
+
+// SetSubtotal sets the "subtotal" field.
+func (m *InvoiceMutation) SetSubtotal(d decimal.Decimal) {
+	m.subtotal = &d
+}
+
+// Subtotal returns the value of the "subtotal" field in the mutation.
+func (m *InvoiceMutation) Subtotal() (r decimal.Decimal, exists bool) {
+	v := m.subtotal
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubtotal returns the old "subtotal" field's value of the Invoice entity.
+// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceMutation) OldSubtotal(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubtotal is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubtotal requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubtotal: %w", err)
+	}
+	return oldValue.Subtotal, nil
+}
+
+// ResetSubtotal resets all changes to the "subtotal" field.
+func (m *InvoiceMutation) ResetSubtotal() {
+	m.subtotal = nil
+}
+
+// SetTotal sets the "total" field.
+func (m *InvoiceMutation) SetTotal(d decimal.Decimal) {
+	m.total = &d
+}
+
+// Total returns the value of the "total" field in the mutation.
+func (m *InvoiceMutation) Total() (r decimal.Decimal, exists bool) {
+	v := m.total
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTotal returns the old "total" field's value of the Invoice entity.
+// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceMutation) OldTotal(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTotal is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTotal requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTotal: %w", err)
+	}
+	return oldValue.Total, nil
+}
+
+// ResetTotal resets all changes to the "total" field.
+func (m *InvoiceMutation) ResetTotal() {
+	m.total = nil
 }
 
 // SetDescription sets the "description" field.
@@ -14539,7 +14594,7 @@ func (m *InvoiceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 33)
 	if m.tenant_id != nil {
 		fields = append(fields, invoice.FieldTenantID)
 	}
@@ -14587,6 +14642,12 @@ func (m *InvoiceMutation) Fields() []string {
 	}
 	if m.amount_remaining != nil {
 		fields = append(fields, invoice.FieldAmountRemaining)
+	}
+	if m.subtotal != nil {
+		fields = append(fields, invoice.FieldSubtotal)
+	}
+	if m.total != nil {
+		fields = append(fields, invoice.FieldTotal)
 	}
 	if m.description != nil {
 		fields = append(fields, invoice.FieldDescription)
@@ -14673,6 +14734,10 @@ func (m *InvoiceMutation) Field(name string) (ent.Value, bool) {
 		return m.AmountPaid()
 	case invoice.FieldAmountRemaining:
 		return m.AmountRemaining()
+	case invoice.FieldSubtotal:
+		return m.Subtotal()
+	case invoice.FieldTotal:
+		return m.Total()
 	case invoice.FieldDescription:
 		return m.Description()
 	case invoice.FieldDueDate:
@@ -14744,6 +14809,10 @@ func (m *InvoiceMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldAmountPaid(ctx)
 	case invoice.FieldAmountRemaining:
 		return m.OldAmountRemaining(ctx)
+	case invoice.FieldSubtotal:
+		return m.OldSubtotal(ctx)
+	case invoice.FieldTotal:
+		return m.OldTotal(ctx)
 	case invoice.FieldDescription:
 		return m.OldDescription(ctx)
 	case invoice.FieldDueDate:
@@ -14894,6 +14963,20 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAmountRemaining(v)
+		return nil
+	case invoice.FieldSubtotal:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubtotal(v)
+		return nil
+	case invoice.FieldTotal:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTotal(v)
 		return nil
 	case invoice.FieldDescription:
 		v, ok := value.(string)
@@ -15234,6 +15317,12 @@ func (m *InvoiceMutation) ResetField(name string) error {
 		return nil
 	case invoice.FieldAmountRemaining:
 		m.ResetAmountRemaining()
+		return nil
+	case invoice.FieldSubtotal:
+		m.ResetSubtotal()
+		return nil
+	case invoice.FieldTotal:
+		m.ResetTotal()
 		return nil
 	case invoice.FieldDescription:
 		m.ResetDescription()

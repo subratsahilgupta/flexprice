@@ -131,7 +131,8 @@ func main() {
 			repository.NewCreditGrantRepository,
 			repository.NewCostSheetRepository,
 			repository.NewCreditGrantApplicationRepository,
-
+			repository.NewCreditNoteRepository,
+			
 			// PubSub
 			pubsubRouter.NewRouter,
 
@@ -176,6 +177,7 @@ func main() {
 			service.NewBillingService,
 			service.NewCreditGrantService,
 			service.NewCostSheetService,
+			service.NewCreditNoteService,
 		),
 	)
 
@@ -223,6 +225,7 @@ func provideHandlers(
 	billingService service.BillingService,
 	creditGrantService service.CreditGrantService,
 	costSheetService service.CostSheetService,
+	creditNoteService service.CreditNoteService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:            v1.NewEventsHandler(eventService, eventPostProcessingService, logger),
@@ -250,6 +253,7 @@ func provideHandlers(
 		CreditGrant:       v1.NewCreditGrantHandler(creditGrantService, logger),
 		CostSheet:         v1.NewCostSheetHandler(costSheetService, logger),
 		CronCreditGrant:   cron.NewCreditGrantCronHandler(creditGrantService, logger),
+		CreditNote:        v1.NewCreditNoteHandler(creditNoteService, logger),
 	}
 }
 
