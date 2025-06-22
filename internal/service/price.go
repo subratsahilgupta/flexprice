@@ -180,7 +180,7 @@ func (s *priceService) DeletePrice(ctx context.Context, id string) error {
 	return nil
 }
 
-// CalculateCost calculates the cost for a given price and usage
+// CalculateCost calculates the cost for a given price and quantity
 // returns the cost in main currency units (e.g., 1.00 = $1.00)
 func (s *priceService) CalculateCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal {
 	cost := decimal.Zero
@@ -200,22 +200,19 @@ func (s *priceService) CalculateCost(ctx context.Context, price *price.Price, qu
 		// Calculate how many complete packages are needed to cover the quantity
 		packagesNeeded := quantity.Div(decimal.NewFromInt(int64(price.TransformQuantity.DivideBy)))
 
-		// Round up to the next package if there's any remainder
-		// This ensures we always charge for a full package
+		// Round based on mode
 		if price.TransformQuantity.Round == types.ROUND_DOWN {
 			packagesNeeded = packagesNeeded.Floor()
 		} else {
-			// Default to rounding up for packages to ensure minimum one package
+			// Default to rounding up for packages
 			packagesNeeded = packagesNeeded.Ceil()
-		}
-
-		// If quantity is greater than 0, ensure at least one package is charged
-		if !quantity.IsZero() && packagesNeeded.IsZero() {
-			packagesNeeded = decimal.NewFromInt(1)
+			// Ensure at least one package when rounding up
+			if packagesNeeded.IsZero() {
+				packagesNeeded = decimal.NewFromInt(1)
+			}
 		}
 
 		// Calculate total cost by multiplying package price by number of packages
-		// cost = price.Amount.Mul(packagesNeeded)
 		cost = price.CalculateAmount(packagesNeeded)
 
 	case types.BILLING_MODEL_TIERED:
@@ -357,9 +354,7 @@ func (s *priceService) CalculateCostWithBreakup(ctx context.Context, price *pric
 		result.FinalCost = price.CalculateAmount(packagesNeeded)
 
 		// Calculate effective unit cost (cost per actual unit used)
-		if !quantity.IsZero() {
-			result.EffectiveUnitCost = result.FinalCost.Div(quantity)
-		}
+		result.EffectiveUnitCost = result.FinalCost.Div(quantity)
 
 		return result
 

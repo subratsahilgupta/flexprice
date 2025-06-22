@@ -126,6 +126,19 @@ func (r *CreatePriceRequest) Validate() error {
 				WithHint("Please provide a valid number of units to set up package pricing").
 				Mark(ierr.ErrValidation)
 		}
+
+		// Validate round type
+		if r.TransformQuantity.Round == "" {
+			r.TransformQuantity.Round = types.ROUND_UP // Default to rounding up
+		} else if r.TransformQuantity.Round != types.ROUND_UP && r.TransformQuantity.Round != types.ROUND_DOWN {
+			return ierr.NewError("transform_quantity.round must be one of: up, down, nearest").
+				WithHint("Please provide a valid rounding type for package pricing").
+				WithReportableDetails(map[string]interface{}{
+					"round":   r.TransformQuantity.Round,
+					"allowed": []string{types.ROUND_UP, types.ROUND_DOWN},
+				}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 
 	switch r.Type {
