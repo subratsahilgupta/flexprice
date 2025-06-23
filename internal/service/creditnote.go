@@ -320,8 +320,8 @@ func (s *creditNoteService) ProcessDraftCreditNote(ctx context.Context, id strin
 
 			// Top up wallet using transaction context
 			walletTxnReq := &dto.TopUpWalletRequest{
-				CreditsToAdd:      cn.TotalAmount,                    // Use credits directly instead of amount
-				TransactionReason: types.TransactionReasonFreeCredit, // Use allowed transaction reason for credit note refunds
+				Amount:            cn.TotalAmount,
+				TransactionReason: types.TransactionReasonInvoiceRefund,
 				Metadata:          types.Metadata{"credit_note_id": cn.ID},
 				IdempotencyKey:    &cn.ID, // Use credit note ID as idempotency key
 				Description:       fmt.Sprintf("Credit note refund: %s", cn.CreditNoteNumber),
