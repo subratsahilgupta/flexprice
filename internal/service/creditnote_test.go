@@ -1050,7 +1050,7 @@ func (s *CreditNoteServiceSuite) TestCreditNoteNumberGeneration() {
 
 	// Verify credit note number is generated
 	s.NotEmpty(resp.CreditNoteNumber)
-	s.Contains(resp.CreditNoteNumber, "CN")
+	s.Contains(resp.CreditNoteNumber, types.SHORT_ID_PREFIX_CREDIT_NOTE)
 }
 
 func (s *CreditNoteServiceSuite) TestCreditNoteTypeDetection() {

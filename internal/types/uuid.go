@@ -96,5 +96,5 @@ const (
 )
 
 const (
-	SHORT_ID_PREFIX_CREDIT_NOTE = "CN"
+	SHORT_ID_PREFIX_CREDIT_NOTE = "CN-"
 )
