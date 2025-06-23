@@ -206,10 +206,6 @@ func (s *priceService) CalculateCost(ctx context.Context, price *price.Price, qu
 		} else {
 			// Default to rounding up for packages
 			packagesNeeded = packagesNeeded.Ceil()
-			// Ensure at least one package when rounding up
-			if packagesNeeded.IsZero() {
-				packagesNeeded = decimal.NewFromInt(1)
-			}
 		}
 
 		// Calculate total cost by multiplying package price by number of packages
@@ -344,10 +340,6 @@ func (s *priceService) CalculateCostWithBreakup(ctx context.Context, price *pric
 		} else {
 			// Default to rounding up for packages
 			packagesNeeded = packagesNeeded.Ceil()
-			// Ensure at least one package when rounding up
-			if packagesNeeded.IsZero() {
-				packagesNeeded = decimal.NewFromInt(1)
-			}
 		}
 
 		// Calculate total cost by multiplying package price by number of packages
