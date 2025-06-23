@@ -131,7 +131,7 @@ func (r *CreatePriceRequest) Validate() error {
 		if r.TransformQuantity.Round == "" {
 			r.TransformQuantity.Round = types.ROUND_UP // Default to rounding up
 		} else if r.TransformQuantity.Round != types.ROUND_UP && r.TransformQuantity.Round != types.ROUND_DOWN {
-			return ierr.NewError("transform_quantity.round must be one of: up, down, nearest").
+			return ierr.NewError("invalid rounding type- allowed values are up and down").
 				WithHint("Please provide a valid rounding type for package pricing").
 				WithReportableDetails(map[string]interface{}{
 					"round":   r.TransformQuantity.Round,
