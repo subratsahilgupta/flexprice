@@ -9,11 +9,12 @@ const (
 	AggregationSum         AggregationType = "SUM"
 	AggregationAvg         AggregationType = "AVG"
 	AggregationCountUnique AggregationType = "COUNT_UNIQUE"
+	AggregationLatest      AggregationType = "LATEST"
 )
 
 func (t AggregationType) Validate() bool {
 	switch t {
-	case AggregationCount, AggregationSum, AggregationAvg, AggregationCountUnique:
+	case AggregationCount, AggregationSum, AggregationAvg, AggregationCountUnique, AggregationLatest:
 		return true
 	default:
 		return false
