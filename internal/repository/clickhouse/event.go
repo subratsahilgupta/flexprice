@@ -186,6 +186,32 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 	})
 	defer FinishSpan(span)
 
+	// Validate factor if provided for aggregations that use it
+	if params.Factor != nil {
+		if *params.Factor <= 0 {
+			err := ierr.NewError("invalid factor value").
+				WithHint("Factor must be greater than zero").
+				WithReportableDetails(map[string]interface{}{
+					"factor": *params.Factor,
+				}).
+				Mark(ierr.ErrValidation)
+			SetSpanError(span, err)
+			return nil, err
+		}
+
+		// Only allow factor for supported aggregation types
+		if params.AggregationType != types.AggregationSumWithCoeff && params.AggregationType != types.AggregationSumWithMulti {
+			err := ierr.NewError("factor not supported for this aggregation type").
+				WithHint("Factor can only be used with SUM_WITH_COEFFICIENT or SUM_WITH_MULTIPLIER aggregations").
+				WithReportableDetails(map[string]interface{}{
+					"aggregation_type": params.AggregationType,
+				}).
+				Mark(ierr.ErrValidation)
+			SetSpanError(span, err)
+			return nil, err
+		}
+	}
+
 	aggregator := GetAggregator(params.AggregationType)
 	if aggregator == nil {
 		err := ierr.NewError("unsupported aggregation type").
