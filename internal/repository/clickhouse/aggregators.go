@@ -22,6 +22,10 @@ func GetAggregator(aggregationType types.AggregationType) events.Aggregator {
 		return &CountUniqueAggregator{}
 	case types.AggregationLatest:
 		return &LatestAggregator{}
+	case types.AggregationSumWithCoeff:
+		return &SumWithCoeffAggregator{}
+	case types.AggregationSumWithMulti:
+		return &SumWithMultiAggregator{}
 	}
 	return nil
 }
@@ -439,6 +443,152 @@ func (a *LatestAggregator) GetQuery(ctx context.Context, params *events.UsagePar
 
 func (a *LatestAggregator) GetType() types.AggregationType {
 	return types.AggregationLatest
+}
+
+// SumWithCoeffAggregator implements sum with coefficient aggregation
+type SumWithCoeffAggregator struct{}
+
+func (a *SumWithCoeffAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
+	windowSize := formatWindowSize(params.WindowSize)
+	selectClause := ""
+	windowClause := ""
+	groupByClause := ""
+	windowGroupBy := ""
+
+	if windowSize != "" {
+		selectClause = "window_size,"
+		windowClause = fmt.Sprintf("%s AS window_size,", windowSize)
+		groupByClause = "GROUP BY window_size ORDER BY window_size"
+		windowGroupBy = ", window_size"
+	}
+
+	externalCustomerFilter := ""
+	if params.ExternalCustomerID != "" {
+		externalCustomerFilter = fmt.Sprintf("AND external_customer_id = '%s'", params.ExternalCustomerID)
+	}
+
+	customerFilter := ""
+	if params.CustomerID != "" {
+		customerFilter = fmt.Sprintf("AND customer_id = '%s'", params.CustomerID)
+	}
+
+	filterConditions := buildFilterConditions(params.Filters)
+	timeConditions := buildTimeConditions(params)
+
+	coefficient := int64(1)
+	if params.Factor != nil {
+		coefficient = *params.Factor
+	}
+
+	return fmt.Sprintf(`
+        SELECT 
+            %s sum(value * %d) as total
+        FROM (
+            SELECT
+                %s anyLast(JSONExtractFloat(assumeNotNull(properties), '%s')) as value
+            FROM events
+            PREWHERE tenant_id = '%s'
+				AND environment_id = '%s'
+				AND event_name = '%s'
+				%s
+				%s
+                %s
+                %s
+            GROUP BY %s %s
+        )
+        %s
+    `,
+		selectClause,
+		coefficient,
+		windowClause,
+		params.PropertyName,
+		types.GetTenantID(ctx),
+		types.GetEnvironmentID(ctx),
+		params.EventName,
+		externalCustomerFilter,
+		customerFilter,
+		filterConditions,
+		timeConditions,
+		getDeduplicationKey(),
+		windowGroupBy,
+		groupByClause)
+}
+
+func (a *SumWithCoeffAggregator) GetType() types.AggregationType {
+	return types.AggregationSumWithCoeff
+}
+
+// SumWithMultiAggregator implements sum with multiplier aggregation
+type SumWithMultiAggregator struct{}
+
+func (a *SumWithMultiAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
+	windowSize := formatWindowSize(params.WindowSize)
+	selectClause := ""
+	windowClause := ""
+	groupByClause := ""
+	windowGroupBy := ""
+
+	if windowSize != "" {
+		selectClause = "window_size,"
+		windowClause = fmt.Sprintf("%s AS window_size,", windowSize)
+		groupByClause = "GROUP BY window_size ORDER BY window_size"
+		windowGroupBy = ", window_size"
+	}
+
+	externalCustomerFilter := ""
+	if params.ExternalCustomerID != "" {
+		externalCustomerFilter = fmt.Sprintf("AND external_customer_id = '%s'", params.ExternalCustomerID)
+	}
+
+	customerFilter := ""
+	if params.CustomerID != "" {
+		customerFilter = fmt.Sprintf("AND customer_id = '%s'", params.CustomerID)
+	}
+
+	filterConditions := buildFilterConditions(params.Filters)
+	timeConditions := buildTimeConditions(params)
+
+	multiplier := int64(1)
+	if params.Factor != nil {
+		multiplier = *params.Factor
+	}
+
+	return fmt.Sprintf(`
+        SELECT 
+            %s (sum(value) * %d) as total
+        FROM (
+            SELECT
+                %s anyLast(JSONExtractFloat(assumeNotNull(properties), '%s')) as value
+            FROM events
+            PREWHERE tenant_id = '%s'
+				AND environment_id = '%s'
+				AND event_name = '%s'
+				%s
+				%s
+                %s
+                %s
+            GROUP BY %s %s
+        )
+        %s
+    `,
+		selectClause,
+		multiplier,
+		windowClause,
+		params.PropertyName,
+		types.GetTenantID(ctx),
+		types.GetEnvironmentID(ctx),
+		params.EventName,
+		externalCustomerFilter,
+		customerFilter,
+		filterConditions,
+		timeConditions,
+		getDeduplicationKey(),
+		windowGroupBy,
+		groupByClause)
+}
+
+func (a *SumWithMultiAggregator) GetType() types.AggregationType {
+	return types.AggregationSumWithMulti
 }
 
 // // buildFilterGroupsQuery builds a query that matches events to the most specific filter group
