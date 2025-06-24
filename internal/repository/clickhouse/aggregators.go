@@ -405,10 +405,11 @@ func (a *LatestAggregator) GetQuery(ctx context.Context, params *events.UsagePar
 
 	return fmt.Sprintf(`
         SELECT 
-            %s anyLast(value) as total
+            %s argMax(value, timestamp) as total
         FROM (
             SELECT
-                %s JSONExtractString(assumeNotNull(properties), '%s') as value
+                %s JSONExtractString(assumeNotNull(properties), '%s') as value,
+                timestamp
             FROM events
             PREWHERE tenant_id = '%s'
                 AND environment_id = '%s'
@@ -417,7 +418,7 @@ func (a *LatestAggregator) GetQuery(ctx context.Context, params *events.UsagePar
                 %s
                 %s
                 %s
-            GROUP BY %s %s
+            GROUP BY %s, timestamp %s
         )
         %s
     `,
