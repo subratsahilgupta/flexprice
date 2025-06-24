@@ -1171,7 +1171,6 @@ func (s *eventPostProcessingService) ReprocessEvents(ctx context.Context, params
 		for _, event := range unprocessedEvents {
 			// hardcoded delay to avoid rate limiting
 			// TODO: remove this to make it configurable
-			time.Sleep(10 * time.Millisecond)
 			if err := s.PublishEvent(ctx, event, true); err != nil {
 				s.Logger.Errorw("failed to publish event for reprocessing",
 					"event_id", event.ID,
