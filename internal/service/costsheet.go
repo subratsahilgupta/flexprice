@@ -84,10 +84,9 @@ func (s *costsheetService) GetInputCostForMargin(ctx context.Context, req *dto.G
 	var totalCost decimal.Decimal
 	itemCosts := make([]dto.CostBreakdownItem, 0)
 
-	// Create a map to track unique meters for usage-based pricing
-	uniqueMeters := make(map[string]struct{})
+	// First pass: Process fixed costs and prepare usage requests
+	usageRequests := make([]*dto.GetUsageByMeterRequest, 0)
 
-	// First pass: Process fixed costs and collect meters for usage-based costs
 	for _, item := range sub.LineItems {
 		if item.Status != types.StatusPublished {
 			continue
@@ -110,28 +109,22 @@ func (s *costsheetService) GetInputCostForMargin(ctx context.Context, req *dto.G
 			})
 			totalCost = totalCost.Add(cost)
 		} else if priceResp.Price.Type == types.PRICE_TYPE_USAGE && item.MeterID != "" {
-			// For usage-based prices, collect the meter ID for later processing
-			uniqueMeters[item.MeterID] = struct{}{}
-		}
-	}
-
-	// Second pass: Process usage-based costs
-	if len(uniqueMeters) > 0 {
-		// Create usage requests for unique meters
-		usageRequests := make([]*dto.GetUsageByMeterRequest, 0, len(uniqueMeters))
-		for meterID := range uniqueMeters {
+			// For usage-based prices, create a usage request
 			usageRequests = append(usageRequests, &dto.GetUsageByMeterRequest{
-				MeterID:   meterID,
+				MeterID:   item.MeterID,
+				PriceID:   item.PriceID,
 				StartTime: startTime,
 				EndTime:   endTime,
 			})
 		}
+	}
 
+	// Second pass: Process usage-based costs
+	if len(usageRequests) > 0 {
 		// Fetch usage data for all meters in bulk
 		usageData, err := eventService.BulkGetUsageByMeter(ctx, usageRequests)
 		if err != nil {
 			return nil, ierr.WithError(err).
-				WithMessage("failed to get usage data").
 				WithHint("failed to get usage data").
 				Mark(ierr.ErrInternal)
 		}
@@ -142,7 +135,7 @@ func (s *costsheetService) GetInputCostForMargin(ctx context.Context, req *dto.G
 				continue
 			}
 
-			usage := usageData[item.MeterID]
+			usage := usageData[item.PriceID]
 			if usage == nil {
 				continue
 			}

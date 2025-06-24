@@ -748,7 +748,10 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	// TODO: should add validation to ensure that same subscription does not have multiple line items with the same meterID
 	for _, request := range meterUsageRequests {
 		meterID := request.MeterID
-		usage, ok := usageMap[meterID]
+		priceID := request.PriceID
+		// usage, ok := usageMap[meterID]
+		usage, ok := usageMap[priceID]
+
 		if !ok {
 			continue
 		}
