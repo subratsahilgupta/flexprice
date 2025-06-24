@@ -608,12 +608,6 @@ func (ic *InvoiceCreate) check() error {
 	if _, ok := ic.mutation.AmountRemaining(); !ok {
 		return &ValidationError{Name: "amount_remaining", err: errors.New(`ent: missing required field "Invoice.amount_remaining"`)}
 	}
-	if _, ok := ic.mutation.Subtotal(); !ok {
-		return &ValidationError{Name: "subtotal", err: errors.New(`ent: missing required field "Invoice.subtotal"`)}
-	}
-	if _, ok := ic.mutation.Total(); !ok {
-		return &ValidationError{Name: "total", err: errors.New(`ent: missing required field "Invoice.total"`)}
-	}
 	if _, ok := ic.mutation.Version(); !ok {
 		return &ValidationError{Name: "version", err: errors.New(`ent: missing required field "Invoice.version"`)}
 	}

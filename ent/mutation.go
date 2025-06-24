@@ -5632,6 +5632,8 @@ type CreditNoteMutation struct {
 	updated_by         *string
 	environment_id     *string
 	invoice_id         *string
+	customer_id        *string
+	subscription_id    *string
 	credit_note_number *string
 	credit_note_status *types.CreditNoteStatus
 	credit_note_type   *types.CreditNoteType
@@ -6080,6 +6082,91 @@ func (m *CreditNoteMutation) OldInvoiceID(ctx context.Context) (v string, err er
 // ResetInvoiceID resets all changes to the "invoice_id" field.
 func (m *CreditNoteMutation) ResetInvoiceID() {
 	m.invoice_id = nil
+}
+
+// SetCustomerID sets the "customer_id" field.
+func (m *CreditNoteMutation) SetCustomerID(s string) {
+	m.customer_id = &s
+}
+
+// CustomerID returns the value of the "customer_id" field in the mutation.
+func (m *CreditNoteMutation) CustomerID() (r string, exists bool) {
+	v := m.customer_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCustomerID returns the old "customer_id" field's value of the CreditNote entity.
+// If the CreditNote object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreditNoteMutation) OldCustomerID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCustomerID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCustomerID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCustomerID: %w", err)
+	}
+	return oldValue.CustomerID, nil
+}
+
+// ResetCustomerID resets all changes to the "customer_id" field.
+func (m *CreditNoteMutation) ResetCustomerID() {
+	m.customer_id = nil
+}
+
+// SetSubscriptionID sets the "subscription_id" field.
+func (m *CreditNoteMutation) SetSubscriptionID(s string) {
+	m.subscription_id = &s
+}
+
+// SubscriptionID returns the value of the "subscription_id" field in the mutation.
+func (m *CreditNoteMutation) SubscriptionID() (r string, exists bool) {
+	v := m.subscription_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubscriptionID returns the old "subscription_id" field's value of the CreditNote entity.
+// If the CreditNote object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreditNoteMutation) OldSubscriptionID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubscriptionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubscriptionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubscriptionID: %w", err)
+	}
+	return oldValue.SubscriptionID, nil
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (m *CreditNoteMutation) ClearSubscriptionID() {
+	m.subscription_id = nil
+	m.clearedFields[creditnote.FieldSubscriptionID] = struct{}{}
+}
+
+// SubscriptionIDCleared returns if the "subscription_id" field was cleared in this mutation.
+func (m *CreditNoteMutation) SubscriptionIDCleared() bool {
+	_, ok := m.clearedFields[creditnote.FieldSubscriptionID]
+	return ok
+}
+
+// ResetSubscriptionID resets all changes to the "subscription_id" field.
+func (m *CreditNoteMutation) ResetSubscriptionID() {
+	m.subscription_id = nil
+	delete(m.clearedFields, creditnote.FieldSubscriptionID)
 }
 
 // SetCreditNoteNumber sets the "credit_note_number" field.
@@ -6569,7 +6656,7 @@ func (m *CreditNoteMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CreditNoteMutation) Fields() []string {
-	fields := make([]string, 0, 18)
+	fields := make([]string, 0, 20)
 	if m.tenant_id != nil {
 		fields = append(fields, creditnote.FieldTenantID)
 	}
@@ -6593,6 +6680,12 @@ func (m *CreditNoteMutation) Fields() []string {
 	}
 	if m.invoice_id != nil {
 		fields = append(fields, creditnote.FieldInvoiceID)
+	}
+	if m.customer_id != nil {
+		fields = append(fields, creditnote.FieldCustomerID)
+	}
+	if m.subscription_id != nil {
+		fields = append(fields, creditnote.FieldSubscriptionID)
 	}
 	if m.credit_note_number != nil {
 		fields = append(fields, creditnote.FieldCreditNoteNumber)
@@ -6648,6 +6741,10 @@ func (m *CreditNoteMutation) Field(name string) (ent.Value, bool) {
 		return m.EnvironmentID()
 	case creditnote.FieldInvoiceID:
 		return m.InvoiceID()
+	case creditnote.FieldCustomerID:
+		return m.CustomerID()
+	case creditnote.FieldSubscriptionID:
+		return m.SubscriptionID()
 	case creditnote.FieldCreditNoteNumber:
 		return m.CreditNoteNumber()
 	case creditnote.FieldCreditNoteStatus:
@@ -6693,6 +6790,10 @@ func (m *CreditNoteMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldEnvironmentID(ctx)
 	case creditnote.FieldInvoiceID:
 		return m.OldInvoiceID(ctx)
+	case creditnote.FieldCustomerID:
+		return m.OldCustomerID(ctx)
+	case creditnote.FieldSubscriptionID:
+		return m.OldSubscriptionID(ctx)
 	case creditnote.FieldCreditNoteNumber:
 		return m.OldCreditNoteNumber(ctx)
 	case creditnote.FieldCreditNoteStatus:
@@ -6777,6 +6878,20 @@ func (m *CreditNoteMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetInvoiceID(v)
+		return nil
+	case creditnote.FieldCustomerID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCustomerID(v)
+		return nil
+	case creditnote.FieldSubscriptionID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubscriptionID(v)
 		return nil
 	case creditnote.FieldCreditNoteNumber:
 		v, ok := value.(string)
@@ -6887,6 +7002,9 @@ func (m *CreditNoteMutation) ClearedFields() []string {
 	if m.FieldCleared(creditnote.FieldEnvironmentID) {
 		fields = append(fields, creditnote.FieldEnvironmentID)
 	}
+	if m.FieldCleared(creditnote.FieldSubscriptionID) {
+		fields = append(fields, creditnote.FieldSubscriptionID)
+	}
 	if m.FieldCleared(creditnote.FieldRefundStatus) {
 		fields = append(fields, creditnote.FieldRefundStatus)
 	}
@@ -6918,6 +7036,9 @@ func (m *CreditNoteMutation) ClearField(name string) error {
 		return nil
 	case creditnote.FieldEnvironmentID:
 		m.ClearEnvironmentID()
+		return nil
+	case creditnote.FieldSubscriptionID:
+		m.ClearSubscriptionID()
 		return nil
 	case creditnote.FieldRefundStatus:
 		m.ClearRefundStatus()
@@ -6959,6 +7080,12 @@ func (m *CreditNoteMutation) ResetField(name string) error {
 		return nil
 	case creditnote.FieldInvoiceID:
 		m.ResetInvoiceID()
+		return nil
+	case creditnote.FieldCustomerID:
+		m.ResetCustomerID()
+		return nil
+	case creditnote.FieldSubscriptionID:
+		m.ResetSubscriptionID()
 		return nil
 	case creditnote.FieldCreditNoteNumber:
 		m.ResetCreditNoteNumber()
@@ -13702,9 +13829,22 @@ func (m *InvoiceMutation) OldSubtotal(ctx context.Context) (v decimal.Decimal, e
 	return oldValue.Subtotal, nil
 }
 
+// ClearSubtotal clears the value of the "subtotal" field.
+func (m *InvoiceMutation) ClearSubtotal() {
+	m.subtotal = nil
+	m.clearedFields[invoice.FieldSubtotal] = struct{}{}
+}
+
+// SubtotalCleared returns if the "subtotal" field was cleared in this mutation.
+func (m *InvoiceMutation) SubtotalCleared() bool {
+	_, ok := m.clearedFields[invoice.FieldSubtotal]
+	return ok
+}
+
 // ResetSubtotal resets all changes to the "subtotal" field.
 func (m *InvoiceMutation) ResetSubtotal() {
 	m.subtotal = nil
+	delete(m.clearedFields, invoice.FieldSubtotal)
 }
 
 // SetTotal sets the "total" field.
@@ -13738,9 +13878,22 @@ func (m *InvoiceMutation) OldTotal(ctx context.Context) (v decimal.Decimal, err 
 	return oldValue.Total, nil
 }
 
+// ClearTotal clears the value of the "total" field.
+func (m *InvoiceMutation) ClearTotal() {
+	m.total = nil
+	m.clearedFields[invoice.FieldTotal] = struct{}{}
+}
+
+// TotalCleared returns if the "total" field was cleared in this mutation.
+func (m *InvoiceMutation) TotalCleared() bool {
+	_, ok := m.clearedFields[invoice.FieldTotal]
+	return ok
+}
+
 // ResetTotal resets all changes to the "total" field.
 func (m *InvoiceMutation) ResetTotal() {
 	m.total = nil
+	delete(m.clearedFields, invoice.FieldTotal)
 }
 
 // SetDescription sets the "description" field.
@@ -15152,6 +15305,12 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	if m.FieldCleared(invoice.FieldSubscriptionID) {
 		fields = append(fields, invoice.FieldSubscriptionID)
 	}
+	if m.FieldCleared(invoice.FieldSubtotal) {
+		fields = append(fields, invoice.FieldSubtotal)
+	}
+	if m.FieldCleared(invoice.FieldTotal) {
+		fields = append(fields, invoice.FieldTotal)
+	}
 	if m.FieldCleared(invoice.FieldDescription) {
 		fields = append(fields, invoice.FieldDescription)
 	}
@@ -15219,6 +15378,12 @@ func (m *InvoiceMutation) ClearField(name string) error {
 		return nil
 	case invoice.FieldSubscriptionID:
 		m.ClearSubscriptionID()
+		return nil
+	case invoice.FieldSubtotal:
+		m.ClearSubtotal()
+		return nil
+	case invoice.FieldTotal:
+		m.ClearTotal()
 		return nil
 	case invoice.FieldDescription:
 		m.ClearDescription()

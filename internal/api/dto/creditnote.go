@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -46,10 +47,13 @@ func (r *CreateCreditNoteRequest) Validate() error {
 }
 
 func (r *CreateCreditNoteRequest) ToCreditNote(ctx context.Context, inv *invoice.Invoice) *creditnote.CreditNote {
+
 	cn := &creditnote.CreditNote{
 		ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CREDIT_NOTE),
 		EnvironmentID:    types.GetEnvironmentID(ctx),
 		InvoiceID:        r.InvoiceID,
+		CustomerID:       inv.CustomerID,
+		SubscriptionID:   inv.SubscriptionID,
 		Memo:             r.Memo,
 		CreditNoteNumber: r.CreditNoteNumber,
 		CreditNoteStatus: types.CreditNoteStatusDraft,
@@ -103,6 +107,9 @@ func (r *CreateCreditNoteLineItemRequest) ToCreditNoteLineItem(ctx context.Conte
 
 type CreditNoteResponse struct {
 	*creditnote.CreditNote
+	Invoice      *InvoiceResponse      `json:"invoice,omitempty"`
+	Subscription *SubscriptionResponse `json:"subscription,omitempty"`
+	Customer     *customer.Customer    `json:"customer,omitempty"`
 }
 
 // ListCreditNotesResponse represents the response for listing credit notes

@@ -174,6 +174,12 @@ func (iu *InvoiceUpdate) SetNillableSubtotal(d *decimal.Decimal) *InvoiceUpdate 
 	return iu
 }
 
+// ClearSubtotal clears the value of the "subtotal" field.
+func (iu *InvoiceUpdate) ClearSubtotal() *InvoiceUpdate {
+	iu.mutation.ClearSubtotal()
+	return iu
+}
+
 // SetTotal sets the "total" field.
 func (iu *InvoiceUpdate) SetTotal(d decimal.Decimal) *InvoiceUpdate {
 	iu.mutation.SetTotal(d)
@@ -185,6 +191,12 @@ func (iu *InvoiceUpdate) SetNillableTotal(d *decimal.Decimal) *InvoiceUpdate {
 	if d != nil {
 		iu.SetTotal(*d)
 	}
+	return iu
+}
+
+// ClearTotal clears the value of the "total" field.
+func (iu *InvoiceUpdate) ClearTotal() *InvoiceUpdate {
+	iu.mutation.ClearTotal()
 	return iu
 }
 
@@ -556,8 +568,14 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := iu.mutation.Subtotal(); ok {
 		_spec.SetField(invoice.FieldSubtotal, field.TypeOther, value)
 	}
+	if iu.mutation.SubtotalCleared() {
+		_spec.ClearField(invoice.FieldSubtotal, field.TypeOther)
+	}
 	if value, ok := iu.mutation.Total(); ok {
 		_spec.SetField(invoice.FieldTotal, field.TypeOther, value)
+	}
+	if iu.mutation.TotalCleared() {
+		_spec.ClearField(invoice.FieldTotal, field.TypeOther)
 	}
 	if value, ok := iu.mutation.Description(); ok {
 		_spec.SetField(invoice.FieldDescription, field.TypeString, value)
@@ -852,6 +870,12 @@ func (iuo *InvoiceUpdateOne) SetNillableSubtotal(d *decimal.Decimal) *InvoiceUpd
 	return iuo
 }
 
+// ClearSubtotal clears the value of the "subtotal" field.
+func (iuo *InvoiceUpdateOne) ClearSubtotal() *InvoiceUpdateOne {
+	iuo.mutation.ClearSubtotal()
+	return iuo
+}
+
 // SetTotal sets the "total" field.
 func (iuo *InvoiceUpdateOne) SetTotal(d decimal.Decimal) *InvoiceUpdateOne {
 	iuo.mutation.SetTotal(d)
@@ -863,6 +887,12 @@ func (iuo *InvoiceUpdateOne) SetNillableTotal(d *decimal.Decimal) *InvoiceUpdate
 	if d != nil {
 		iuo.SetTotal(*d)
 	}
+	return iuo
+}
+
+// ClearTotal clears the value of the "total" field.
+func (iuo *InvoiceUpdateOne) ClearTotal() *InvoiceUpdateOne {
+	iuo.mutation.ClearTotal()
 	return iuo
 }
 
@@ -1264,8 +1294,14 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	if value, ok := iuo.mutation.Subtotal(); ok {
 		_spec.SetField(invoice.FieldSubtotal, field.TypeOther, value)
 	}
+	if iuo.mutation.SubtotalCleared() {
+		_spec.ClearField(invoice.FieldSubtotal, field.TypeOther)
+	}
 	if value, ok := iuo.mutation.Total(); ok {
 		_spec.SetField(invoice.FieldTotal, field.TypeOther, value)
+	}
+	if iuo.mutation.TotalCleared() {
+		_spec.ClearField(invoice.FieldTotal, field.TypeOther)
 	}
 	if value, ok := iuo.mutation.Description(); ok {
 		_spec.SetField(invoice.FieldDescription, field.TypeString, value)

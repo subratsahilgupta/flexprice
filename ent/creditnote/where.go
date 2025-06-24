@@ -107,6 +107,16 @@ func InvoiceID(v string) predicate.CreditNote {
 	return predicate.CreditNote(sql.FieldEQ(FieldInvoiceID, v))
 }
 
+// CustomerID applies equality check predicate on the "customer_id" field. It's identical to CustomerIDEQ.
+func CustomerID(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEQ(FieldCustomerID, v))
+}
+
+// SubscriptionID applies equality check predicate on the "subscription_id" field. It's identical to SubscriptionIDEQ.
+func SubscriptionID(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEQ(FieldSubscriptionID, v))
+}
+
 // CreditNoteNumber applies equality check predicate on the "credit_note_number" field. It's identical to CreditNoteNumberEQ.
 func CreditNoteNumber(v string) predicate.CreditNote {
 	return predicate.CreditNote(sql.FieldEQ(FieldCreditNoteNumber, v))
@@ -654,6 +664,146 @@ func InvoiceIDEqualFold(v string) predicate.CreditNote {
 // InvoiceIDContainsFold applies the ContainsFold predicate on the "invoice_id" field.
 func InvoiceIDContainsFold(v string) predicate.CreditNote {
 	return predicate.CreditNote(sql.FieldContainsFold(FieldInvoiceID, v))
+}
+
+// CustomerIDEQ applies the EQ predicate on the "customer_id" field.
+func CustomerIDEQ(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEQ(FieldCustomerID, v))
+}
+
+// CustomerIDNEQ applies the NEQ predicate on the "customer_id" field.
+func CustomerIDNEQ(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNEQ(FieldCustomerID, v))
+}
+
+// CustomerIDIn applies the In predicate on the "customer_id" field.
+func CustomerIDIn(vs ...string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldIn(FieldCustomerID, vs...))
+}
+
+// CustomerIDNotIn applies the NotIn predicate on the "customer_id" field.
+func CustomerIDNotIn(vs ...string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNotIn(FieldCustomerID, vs...))
+}
+
+// CustomerIDGT applies the GT predicate on the "customer_id" field.
+func CustomerIDGT(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldGT(FieldCustomerID, v))
+}
+
+// CustomerIDGTE applies the GTE predicate on the "customer_id" field.
+func CustomerIDGTE(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldGTE(FieldCustomerID, v))
+}
+
+// CustomerIDLT applies the LT predicate on the "customer_id" field.
+func CustomerIDLT(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldLT(FieldCustomerID, v))
+}
+
+// CustomerIDLTE applies the LTE predicate on the "customer_id" field.
+func CustomerIDLTE(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldLTE(FieldCustomerID, v))
+}
+
+// CustomerIDContains applies the Contains predicate on the "customer_id" field.
+func CustomerIDContains(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldContains(FieldCustomerID, v))
+}
+
+// CustomerIDHasPrefix applies the HasPrefix predicate on the "customer_id" field.
+func CustomerIDHasPrefix(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldHasPrefix(FieldCustomerID, v))
+}
+
+// CustomerIDHasSuffix applies the HasSuffix predicate on the "customer_id" field.
+func CustomerIDHasSuffix(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldHasSuffix(FieldCustomerID, v))
+}
+
+// CustomerIDEqualFold applies the EqualFold predicate on the "customer_id" field.
+func CustomerIDEqualFold(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEqualFold(FieldCustomerID, v))
+}
+
+// CustomerIDContainsFold applies the ContainsFold predicate on the "customer_id" field.
+func CustomerIDContainsFold(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldContainsFold(FieldCustomerID, v))
+}
+
+// SubscriptionIDEQ applies the EQ predicate on the "subscription_id" field.
+func SubscriptionIDEQ(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEQ(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDNEQ applies the NEQ predicate on the "subscription_id" field.
+func SubscriptionIDNEQ(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNEQ(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDIn applies the In predicate on the "subscription_id" field.
+func SubscriptionIDIn(vs ...string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldIn(FieldSubscriptionID, vs...))
+}
+
+// SubscriptionIDNotIn applies the NotIn predicate on the "subscription_id" field.
+func SubscriptionIDNotIn(vs ...string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNotIn(FieldSubscriptionID, vs...))
+}
+
+// SubscriptionIDGT applies the GT predicate on the "subscription_id" field.
+func SubscriptionIDGT(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldGT(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDGTE applies the GTE predicate on the "subscription_id" field.
+func SubscriptionIDGTE(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldGTE(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDLT applies the LT predicate on the "subscription_id" field.
+func SubscriptionIDLT(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldLT(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDLTE applies the LTE predicate on the "subscription_id" field.
+func SubscriptionIDLTE(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldLTE(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDContains applies the Contains predicate on the "subscription_id" field.
+func SubscriptionIDContains(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldContains(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDHasPrefix applies the HasPrefix predicate on the "subscription_id" field.
+func SubscriptionIDHasPrefix(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldHasPrefix(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDHasSuffix applies the HasSuffix predicate on the "subscription_id" field.
+func SubscriptionIDHasSuffix(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldHasSuffix(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDIsNil applies the IsNil predicate on the "subscription_id" field.
+func SubscriptionIDIsNil() predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldIsNull(FieldSubscriptionID))
+}
+
+// SubscriptionIDNotNil applies the NotNil predicate on the "subscription_id" field.
+func SubscriptionIDNotNil() predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNotNull(FieldSubscriptionID))
+}
+
+// SubscriptionIDEqualFold applies the EqualFold predicate on the "subscription_id" field.
+func SubscriptionIDEqualFold(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEqualFold(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDContainsFold applies the ContainsFold predicate on the "subscription_id" field.
+func SubscriptionIDContainsFold(v string) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldContainsFold(FieldSubscriptionID, v))
 }
 
 // CreditNoteNumberEQ applies the EQ predicate on the "credit_note_number" field.

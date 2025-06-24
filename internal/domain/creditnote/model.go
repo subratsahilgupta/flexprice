@@ -11,6 +11,8 @@ type CreditNote struct {
 	ID               string                 `json:"id"`
 	CreditNoteNumber string                 `json:"credit_note_number"`
 	InvoiceID        string                 `json:"invoice_id"`
+	CustomerID       string                 `json:"customer_id"`
+	SubscriptionID   *string                `json:"subscription_id,omitempty"`
 	CreditNoteStatus types.CreditNoteStatus `json:"credit_note_status"`
 	CreditNoteType   types.CreditNoteType   `json:"credit_note_type"`
 	RefundStatus     *types.PaymentStatus   `json:"refund_status"`
@@ -22,6 +24,7 @@ type CreditNote struct {
 	EnvironmentID    string                 `json:"environment_id"`
 	TotalAmount      decimal.Decimal        `json:"total_amount"`
 	IdempotencyKey   *string                `json:"idempotency_key"`
+
 	types.BaseModel
 }
 
@@ -42,6 +45,8 @@ func FromEnt(e *ent.CreditNote) *CreditNote {
 		Memo:             e.Memo,
 		Currency:         e.Currency,
 		Metadata:         e.Metadata,
+		CustomerID:       e.CustomerID,
+		SubscriptionID:   e.SubscriptionID,
 		LineItems:        creditNoteLineItem.FromEntList(e.Edges.LineItems),
 		TotalAmount:      e.TotalAmount,
 		IdempotencyKey:   e.IdempotencyKey,

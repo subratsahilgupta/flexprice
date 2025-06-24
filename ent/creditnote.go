@@ -36,6 +36,10 @@ type CreditNote struct {
 	EnvironmentID string `json:"environment_id,omitempty"`
 	// InvoiceID holds the value of the "invoice_id" field.
 	InvoiceID string `json:"invoice_id,omitempty"`
+	// CustomerID holds the value of the "customer_id" field.
+	CustomerID string `json:"customer_id,omitempty"`
+	// SubscriptionID holds the value of the "subscription_id" field.
+	SubscriptionID *string `json:"subscription_id,omitempty"`
 	// CreditNoteNumber holds the value of the "credit_note_number" field.
 	CreditNoteNumber string `json:"credit_note_number,omitempty"`
 	// CreditNoteStatus holds the value of the "credit_note_status" field.
@@ -89,7 +93,7 @@ func (*CreditNote) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case creditnote.FieldTotalAmount:
 			values[i] = new(decimal.Decimal)
-		case creditnote.FieldID, creditnote.FieldTenantID, creditnote.FieldStatus, creditnote.FieldCreatedBy, creditnote.FieldUpdatedBy, creditnote.FieldEnvironmentID, creditnote.FieldInvoiceID, creditnote.FieldCreditNoteNumber, creditnote.FieldCreditNoteStatus, creditnote.FieldCreditNoteType, creditnote.FieldRefundStatus, creditnote.FieldReason, creditnote.FieldMemo, creditnote.FieldCurrency, creditnote.FieldIdempotencyKey:
+		case creditnote.FieldID, creditnote.FieldTenantID, creditnote.FieldStatus, creditnote.FieldCreatedBy, creditnote.FieldUpdatedBy, creditnote.FieldEnvironmentID, creditnote.FieldInvoiceID, creditnote.FieldCustomerID, creditnote.FieldSubscriptionID, creditnote.FieldCreditNoteNumber, creditnote.FieldCreditNoteStatus, creditnote.FieldCreditNoteType, creditnote.FieldRefundStatus, creditnote.FieldReason, creditnote.FieldMemo, creditnote.FieldCurrency, creditnote.FieldIdempotencyKey:
 			values[i] = new(sql.NullString)
 		case creditnote.FieldCreatedAt, creditnote.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -161,6 +165,19 @@ func (cn *CreditNote) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field invoice_id", values[i])
 			} else if value.Valid {
 				cn.InvoiceID = value.String
+			}
+		case creditnote.FieldCustomerID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field customer_id", values[i])
+			} else if value.Valid {
+				cn.CustomerID = value.String
+			}
+		case creditnote.FieldSubscriptionID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field subscription_id", values[i])
+			} else if value.Valid {
+				cn.SubscriptionID = new(string)
+				*cn.SubscriptionID = value.String
 			}
 		case creditnote.FieldCreditNoteNumber:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -290,6 +307,14 @@ func (cn *CreditNote) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("invoice_id=")
 	builder.WriteString(cn.InvoiceID)
+	builder.WriteString(", ")
+	builder.WriteString("customer_id=")
+	builder.WriteString(cn.CustomerID)
+	builder.WriteString(", ")
+	if v := cn.SubscriptionID; v != nil {
+		builder.WriteString("subscription_id=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("credit_note_number=")
 	builder.WriteString(cn.CreditNoteNumber)

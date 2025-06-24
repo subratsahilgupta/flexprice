@@ -21,6 +21,8 @@ type CreateInvoiceRequest struct {
 	InvoiceType    types.InvoiceType              `json:"invoice_type"`
 	Currency       string                         `json:"currency" validate:"required"`
 	AmountDue      decimal.Decimal                `json:"amount_due" validate:"required"`
+	Total          decimal.Decimal                `json:"total" validate:"required"`
+	Subtotal       decimal.Decimal                `json:"subtotal" validate:"required"`
 	Description    string                         `json:"description,omitempty"`
 	DueDate        *time.Time                     `json:"due_date,omitempty"`
 	BillingPeriod  *string                        `json:"billing_period,omitempty"`
@@ -117,6 +119,8 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 		InvoiceType:     r.InvoiceType,
 		Currency:        strings.ToLower(r.Currency),
 		AmountDue:       r.AmountDue,
+		Total:           r.Total,
+		Subtotal:        r.Subtotal,
 		Description:     r.Description,
 		DueDate:         r.DueDate,
 		PeriodStart:     r.PeriodStart,

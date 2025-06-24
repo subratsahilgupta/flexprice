@@ -119,6 +119,26 @@ func (cnc *CreditNoteCreate) SetInvoiceID(s string) *CreditNoteCreate {
 	return cnc
 }
 
+// SetCustomerID sets the "customer_id" field.
+func (cnc *CreditNoteCreate) SetCustomerID(s string) *CreditNoteCreate {
+	cnc.mutation.SetCustomerID(s)
+	return cnc
+}
+
+// SetSubscriptionID sets the "subscription_id" field.
+func (cnc *CreditNoteCreate) SetSubscriptionID(s string) *CreditNoteCreate {
+	cnc.mutation.SetSubscriptionID(s)
+	return cnc
+}
+
+// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
+func (cnc *CreditNoteCreate) SetNillableSubscriptionID(s *string) *CreditNoteCreate {
+	if s != nil {
+		cnc.SetSubscriptionID(*s)
+	}
+	return cnc
+}
+
 // SetCreditNoteNumber sets the "credit_note_number" field.
 func (cnc *CreditNoteCreate) SetCreditNoteNumber(s string) *CreditNoteCreate {
 	cnc.mutation.SetCreditNoteNumber(s)
@@ -320,6 +340,14 @@ func (cnc *CreditNoteCreate) check() error {
 			return &ValidationError{Name: "invoice_id", err: fmt.Errorf(`ent: validator failed for field "CreditNote.invoice_id": %w`, err)}
 		}
 	}
+	if _, ok := cnc.mutation.CustomerID(); !ok {
+		return &ValidationError{Name: "customer_id", err: errors.New(`ent: missing required field "CreditNote.customer_id"`)}
+	}
+	if v, ok := cnc.mutation.CustomerID(); ok {
+		if err := creditnote.CustomerIDValidator(v); err != nil {
+			return &ValidationError{Name: "customer_id", err: fmt.Errorf(`ent: validator failed for field "CreditNote.customer_id": %w`, err)}
+		}
+	}
 	if _, ok := cnc.mutation.CreditNoteNumber(); !ok {
 		return &ValidationError{Name: "credit_note_number", err: errors.New(`ent: missing required field "CreditNote.credit_note_number"`)}
 	}
@@ -427,6 +455,14 @@ func (cnc *CreditNoteCreate) createSpec() (*CreditNote, *sqlgraph.CreateSpec) {
 	if value, ok := cnc.mutation.InvoiceID(); ok {
 		_spec.SetField(creditnote.FieldInvoiceID, field.TypeString, value)
 		_node.InvoiceID = value
+	}
+	if value, ok := cnc.mutation.CustomerID(); ok {
+		_spec.SetField(creditnote.FieldCustomerID, field.TypeString, value)
+		_node.CustomerID = value
+	}
+	if value, ok := cnc.mutation.SubscriptionID(); ok {
+		_spec.SetField(creditnote.FieldSubscriptionID, field.TypeString, value)
+		_node.SubscriptionID = &value
 	}
 	if value, ok := cnc.mutation.CreditNoteNumber(); ok {
 		_spec.SetField(creditnote.FieldCreditNoteNumber, field.TypeString, value)

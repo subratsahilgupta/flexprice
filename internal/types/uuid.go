@@ -57,7 +57,9 @@ func GenerateShortIDWithPrefix(prefix string) string {
 		id = id[:availableLen]
 	}
 
-	return prefix + id
+	shortId := strings.ToUpper(fmt.Sprintf("%s%s", prefix, id))
+
+	return shortId
 }
 
 const (

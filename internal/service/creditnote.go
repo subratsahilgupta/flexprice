@@ -108,6 +108,7 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 		// Set correct credit note type and status
 		cn.CreditNoteType = creditNoteType
 		cn.CreditNoteStatus = types.CreditNoteStatusDraft
+		cn.SubscriptionID = inv.SubscriptionID
 
 		// Create credit note with line items in a single transaction
 		if err := s.CreditNoteRepo.CreateWithLineItems(tx, cn); err != nil {
@@ -159,12 +160,43 @@ func (s *creditNoteService) GetCreditNote(ctx context.Context, id string) (*dto.
 		return nil, err
 	}
 
+	invoiceService := NewInvoiceService(s.ServiceParams)
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	customerService := NewCustomerService(s.ServiceParams)
+
+	invoiceResponse, err := invoiceService.GetInvoice(ctx, cn.InvoiceID)
+	if err != nil {
+		return nil, err
+	}
+
+	var subscription *dto.SubscriptionResponse
+	if cn.SubscriptionID != nil && lo.FromPtr(cn.SubscriptionID) != "" {
+		sub, err := subscriptionService.GetSubscription(ctx, *cn.SubscriptionID)
+		if err != nil {
+			return nil, err
+		}
+		subscription = sub
+	}
+
+	customer, err := customerService.GetCustomer(ctx, cn.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &dto.CreditNoteResponse{
-		CreditNote: cn,
+		CreditNote:   cn,
+		Invoice:      invoiceResponse,
+		Subscription: subscription,
+		Customer:     customer.Customer,
 	}, nil
 }
 
 func (s *creditNoteService) ListCreditNotes(ctx context.Context, filter *types.CreditNoteFilter) (*dto.ListCreditNotesResponse, error) {
+
+	if err := filter.GetExpand().Validate(types.CreditNoteExpandConfig); err != nil {
+		return nil, err
+	}
+
 	creditNotes, err := s.CreditNoteRepo.List(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -175,17 +207,146 @@ func (s *creditNoteService) ListCreditNotes(ctx context.Context, filter *types.C
 		return nil, err
 	}
 
-	items := make([]*dto.CreditNoteResponse, len(creditNotes))
-	for i, cn := range creditNotes {
-		items[i] = &dto.CreditNoteResponse{
-			CreditNote: cn,
+	// Build response
+	response := &dto.ListCreditNotesResponse{
+		Items: make([]*dto.CreditNoteResponse, len(creditNotes)),
+	}
+
+	// Initialize service instances for expansion
+	invoiceService := NewInvoiceService(s.ServiceParams)
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	customerService := NewCustomerService(s.ServiceParams)
+
+	// If invoices are requested to be expanded, fetch all invoices in one query
+	var invoicesByID map[string]*dto.InvoiceResponse
+	if filter.GetExpand().Has(types.ExpandInvoice) && len(creditNotes) > 0 {
+		// Extract unique invoice IDs
+		invoiceIDs := make([]string, 0)
+		invoiceIDMap := make(map[string]bool)
+		for _, cn := range creditNotes {
+			if cn.InvoiceID != "" && !invoiceIDMap[cn.InvoiceID] {
+				invoiceIDs = append(invoiceIDs, cn.InvoiceID)
+				invoiceIDMap[cn.InvoiceID] = true
+			}
+		}
+
+		if len(invoiceIDs) > 0 {
+			// Fetch all invoices in one query using filter with IDs
+			invoiceFilter := &types.InvoiceFilter{
+				InvoiceIDs: invoiceIDs,
+			}
+			invoicesResponse, err := invoiceService.ListInvoices(ctx, invoiceFilter)
+			if err != nil {
+				return nil, err
+			}
+
+			// Create a map for quick invoice lookup
+			invoicesByID = make(map[string]*dto.InvoiceResponse, len(invoicesResponse.Items))
+			for _, inv := range invoicesResponse.Items {
+				invoicesByID[inv.ID] = inv
+			}
+
+			s.Logger.Debugw("fetched invoices for credit notes", "count", len(invoicesResponse.Items))
 		}
 	}
 
-	return &dto.ListCreditNotesResponse{
-		Items:      items,
-		Pagination: types.NewPaginationResponse(total, filter.GetLimit(), filter.GetOffset()),
-	}, nil
+	// If subscriptions are requested to be expanded, fetch all subscriptions in one query
+	var subscriptionsByID map[string]*dto.SubscriptionResponse
+	if filter.GetExpand().Has(types.ExpandSubscription) && len(creditNotes) > 0 {
+		// Extract unique subscription IDs
+		subscriptionIDs := make([]string, 0)
+		subscriptionIDMap := make(map[string]bool)
+		for _, cn := range creditNotes {
+			if cn.SubscriptionID != nil && *cn.SubscriptionID != "" && !subscriptionIDMap[*cn.SubscriptionID] {
+				subscriptionIDs = append(subscriptionIDs, *cn.SubscriptionID)
+				subscriptionIDMap[*cn.SubscriptionID] = true
+			}
+		}
+
+		if len(subscriptionIDs) > 0 {
+			// Fetch all subscriptions in one query using filter with IDs
+			subscriptionFilter := &types.SubscriptionFilter{
+				SubscriptionIDs: subscriptionIDs,
+			}
+			subscriptionsResponse, err := subscriptionService.ListSubscriptions(ctx, subscriptionFilter)
+			if err != nil {
+				return nil, err
+			}
+
+			// Create a map for quick subscription lookup
+			subscriptionsByID = make(map[string]*dto.SubscriptionResponse, len(subscriptionsResponse.Items))
+			for _, sub := range subscriptionsResponse.Items {
+				subscriptionsByID[sub.ID] = sub
+			}
+
+			s.Logger.Debugw("fetched subscriptions for credit notes", "count", len(subscriptionsResponse.Items))
+		}
+	}
+
+	// If customers are requested to be expanded, fetch all customers in one query
+	var customersByID map[string]*dto.CustomerResponse
+	if filter.GetExpand().Has(types.ExpandCustomer) && len(creditNotes) > 0 {
+		// Extract unique customer IDs
+		customerIDs := make([]string, 0)
+		customerIDMap := make(map[string]bool)
+		for _, cn := range creditNotes {
+			if cn.CustomerID != "" && !customerIDMap[cn.CustomerID] {
+				customerIDs = append(customerIDs, cn.CustomerID)
+				customerIDMap[cn.CustomerID] = true
+			}
+		}
+
+		if len(customerIDs) > 0 {
+			// Fetch all customers in one query using filter with IDs
+			customerFilter := &types.CustomerFilter{
+				CustomerIDs: customerIDs,
+			}
+			customersResponse, err := customerService.GetCustomers(ctx, customerFilter)
+			if err != nil {
+				return nil, err
+			}
+
+			// Create a map for quick customer lookup
+			customersByID = make(map[string]*dto.CustomerResponse, len(customersResponse.Items))
+			for _, cust := range customersResponse.Items {
+				customersByID[cust.ID] = cust
+			}
+
+			s.Logger.Debugw("fetched customers for credit notes", "count", len(customersResponse.Items))
+		}
+	}
+
+	// Build response with expanded fields
+	for i, cn := range creditNotes {
+		response.Items[i] = &dto.CreditNoteResponse{
+			CreditNote: cn,
+		}
+
+		// Add invoice if requested and available
+		if filter.GetExpand().Has(types.ExpandInvoice) && cn.InvoiceID != "" {
+			if inv, ok := invoicesByID[cn.InvoiceID]; ok {
+				response.Items[i].Invoice = inv
+			}
+		}
+
+		// Add subscription if requested and available
+		if filter.GetExpand().Has(types.ExpandSubscription) && cn.SubscriptionID != nil && *cn.SubscriptionID != "" {
+			if sub, ok := subscriptionsByID[*cn.SubscriptionID]; ok {
+				response.Items[i].Subscription = sub
+			}
+		}
+
+		// Add customer if requested and available
+		if filter.GetExpand().Has(types.ExpandCustomer) && cn.CustomerID != "" {
+			if cust, ok := customersByID[cn.CustomerID]; ok {
+				response.Items[i].Customer = cust.Customer
+			}
+		}
+	}
+
+	response.Pagination = types.NewPaginationResponse(total, filter.GetLimit(), filter.GetOffset())
+
+	return response, nil
 }
 
 func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error {

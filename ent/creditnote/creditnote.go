@@ -32,6 +32,10 @@ const (
 	FieldEnvironmentID = "environment_id"
 	// FieldInvoiceID holds the string denoting the invoice_id field in the database.
 	FieldInvoiceID = "invoice_id"
+	// FieldCustomerID holds the string denoting the customer_id field in the database.
+	FieldCustomerID = "customer_id"
+	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
+	FieldSubscriptionID = "subscription_id"
 	// FieldCreditNoteNumber holds the string denoting the credit_note_number field in the database.
 	FieldCreditNoteNumber = "credit_note_number"
 	// FieldCreditNoteStatus holds the string denoting the credit_note_status field in the database.
@@ -76,6 +80,8 @@ var Columns = []string{
 	FieldUpdatedBy,
 	FieldEnvironmentID,
 	FieldInvoiceID,
+	FieldCustomerID,
+	FieldSubscriptionID,
 	FieldCreditNoteNumber,
 	FieldCreditNoteStatus,
 	FieldCreditNoteType,
@@ -113,6 +119,8 @@ var (
 	DefaultEnvironmentID string
 	// InvoiceIDValidator is a validator for the "invoice_id" field. It is called by the builders before save.
 	InvoiceIDValidator func(string) error
+	// CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
+	CustomerIDValidator func(string) error
 	// DefaultCreditNoteStatus holds the default value on creation for the "credit_note_status" field.
 	DefaultCreditNoteStatus types.CreditNoteStatus
 	// CreditNoteTypeValidator is a validator for the "credit_note_type" field. It is called by the builders before save.
@@ -169,6 +177,16 @@ func ByEnvironmentID(opts ...sql.OrderTermOption) OrderOption {
 // ByInvoiceID orders the results by the invoice_id field.
 func ByInvoiceID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldInvoiceID, opts...).ToFunc()
+}
+
+// ByCustomerID orders the results by the customer_id field.
+func ByCustomerID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCustomerID, opts...).ToFunc()
+}
+
+// BySubscriptionID orders the results by the subscription_id field.
+func BySubscriptionID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionID, opts...).ToFunc()
 }
 
 // ByCreditNoteNumber orders the results by the credit_note_number field.

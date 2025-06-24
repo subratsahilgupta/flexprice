@@ -45,6 +45,20 @@ func (CreditNote) Fields() []ent.Field {
 			NotEmpty().
 			Immutable(),
 
+		field.String("customer_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			NotEmpty().
+			Immutable(),
+
+		field.String("subscription_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Optional().
+			Nillable(),
+
 		field.String("credit_note_number").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",

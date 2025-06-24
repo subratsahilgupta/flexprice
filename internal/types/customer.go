@@ -12,6 +12,7 @@ type CustomerFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
 	// filters allows complex filtering based on multiple fields
+
 	Filters     []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
 	Sort        []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
 	CustomerIDs []string           `json:"customer_ids,omitempty" form:"customer_ids" validate:"omitempty"`

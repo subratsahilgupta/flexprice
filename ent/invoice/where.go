@@ -1221,6 +1221,16 @@ func SubtotalLTE(v decimal.Decimal) predicate.Invoice {
 	return predicate.Invoice(sql.FieldLTE(FieldSubtotal, v))
 }
 
+// SubtotalIsNil applies the IsNil predicate on the "subtotal" field.
+func SubtotalIsNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldIsNull(FieldSubtotal))
+}
+
+// SubtotalNotNil applies the NotNil predicate on the "subtotal" field.
+func SubtotalNotNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotNull(FieldSubtotal))
+}
+
 // TotalEQ applies the EQ predicate on the "total" field.
 func TotalEQ(v decimal.Decimal) predicate.Invoice {
 	return predicate.Invoice(sql.FieldEQ(FieldTotal, v))
@@ -1259,6 +1269,16 @@ func TotalLT(v decimal.Decimal) predicate.Invoice {
 // TotalLTE applies the LTE predicate on the "total" field.
 func TotalLTE(v decimal.Decimal) predicate.Invoice {
 	return predicate.Invoice(sql.FieldLTE(FieldTotal, v))
+}
+
+// TotalIsNil applies the IsNil predicate on the "total" field.
+func TotalIsNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldIsNull(FieldTotal))
+}
+
+// TotalNotNil applies the NotNil predicate on the "total" field.
+func TotalNotNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotNull(FieldTotal))
 }
 
 // DescriptionEQ applies the EQ predicate on the "description" field.

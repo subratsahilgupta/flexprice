@@ -278,20 +278,24 @@ func init() {
 	creditnoteDescInvoiceID := creditnoteFields[1].Descriptor()
 	// creditnote.InvoiceIDValidator is a validator for the "invoice_id" field. It is called by the builders before save.
 	creditnote.InvoiceIDValidator = creditnoteDescInvoiceID.Validators[0].(func(string) error)
+	// creditnoteDescCustomerID is the schema descriptor for customer_id field.
+	creditnoteDescCustomerID := creditnoteFields[2].Descriptor()
+	// creditnote.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
+	creditnote.CustomerIDValidator = creditnoteDescCustomerID.Validators[0].(func(string) error)
 	// creditnoteDescCreditNoteStatus is the schema descriptor for credit_note_status field.
-	creditnoteDescCreditNoteStatus := creditnoteFields[3].Descriptor()
+	creditnoteDescCreditNoteStatus := creditnoteFields[5].Descriptor()
 	// creditnote.DefaultCreditNoteStatus holds the default value on creation for the credit_note_status field.
 	creditnote.DefaultCreditNoteStatus = types.CreditNoteStatus(creditnoteDescCreditNoteStatus.Default.(string))
 	// creditnoteDescCreditNoteType is the schema descriptor for credit_note_type field.
-	creditnoteDescCreditNoteType := creditnoteFields[4].Descriptor()
+	creditnoteDescCreditNoteType := creditnoteFields[6].Descriptor()
 	// creditnote.CreditNoteTypeValidator is a validator for the "credit_note_type" field. It is called by the builders before save.
 	creditnote.CreditNoteTypeValidator = creditnoteDescCreditNoteType.Validators[0].(func(string) error)
 	// creditnoteDescReason is the schema descriptor for reason field.
-	creditnoteDescReason := creditnoteFields[6].Descriptor()
+	creditnoteDescReason := creditnoteFields[8].Descriptor()
 	// creditnote.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
 	creditnote.ReasonValidator = creditnoteDescReason.Validators[0].(func(string) error)
 	// creditnoteDescTotalAmount is the schema descriptor for total_amount field.
-	creditnoteDescTotalAmount := creditnoteFields[11].Descriptor()
+	creditnoteDescTotalAmount := creditnoteFields[13].Descriptor()
 	// creditnote.DefaultTotalAmount holds the default value on creation for the total_amount field.
 	creditnote.DefaultTotalAmount = creditnoteDescTotalAmount.Default.(decimal.Decimal)
 	creditnotelineitemMixin := schema.CreditNoteLineItem{}.Mixin()

@@ -70,6 +70,26 @@ func (cnu *CreditNoteUpdate) ClearUpdatedBy() *CreditNoteUpdate {
 	return cnu
 }
 
+// SetSubscriptionID sets the "subscription_id" field.
+func (cnu *CreditNoteUpdate) SetSubscriptionID(s string) *CreditNoteUpdate {
+	cnu.mutation.SetSubscriptionID(s)
+	return cnu
+}
+
+// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
+func (cnu *CreditNoteUpdate) SetNillableSubscriptionID(s *string) *CreditNoteUpdate {
+	if s != nil {
+		cnu.SetSubscriptionID(*s)
+	}
+	return cnu
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (cnu *CreditNoteUpdate) ClearSubscriptionID() *CreditNoteUpdate {
+	cnu.mutation.ClearSubscriptionID()
+	return cnu
+}
+
 // SetCreditNoteStatus sets the "credit_note_status" field.
 func (cnu *CreditNoteUpdate) SetCreditNoteStatus(tns types.CreditNoteStatus) *CreditNoteUpdate {
 	cnu.mutation.SetCreditNoteStatus(tns)
@@ -276,6 +296,12 @@ func (cnu *CreditNoteUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if cnu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(creditnote.FieldEnvironmentID, field.TypeString)
 	}
+	if value, ok := cnu.mutation.SubscriptionID(); ok {
+		_spec.SetField(creditnote.FieldSubscriptionID, field.TypeString, value)
+	}
+	if cnu.mutation.SubscriptionIDCleared() {
+		_spec.ClearField(creditnote.FieldSubscriptionID, field.TypeString)
+	}
 	if value, ok := cnu.mutation.CreditNoteStatus(); ok {
 		_spec.SetField(creditnote.FieldCreditNoteStatus, field.TypeString, value)
 	}
@@ -402,6 +428,26 @@ func (cnuo *CreditNoteUpdateOne) SetNillableUpdatedBy(s *string) *CreditNoteUpda
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (cnuo *CreditNoteUpdateOne) ClearUpdatedBy() *CreditNoteUpdateOne {
 	cnuo.mutation.ClearUpdatedBy()
+	return cnuo
+}
+
+// SetSubscriptionID sets the "subscription_id" field.
+func (cnuo *CreditNoteUpdateOne) SetSubscriptionID(s string) *CreditNoteUpdateOne {
+	cnuo.mutation.SetSubscriptionID(s)
+	return cnuo
+}
+
+// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
+func (cnuo *CreditNoteUpdateOne) SetNillableSubscriptionID(s *string) *CreditNoteUpdateOne {
+	if s != nil {
+		cnuo.SetSubscriptionID(*s)
+	}
+	return cnuo
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (cnuo *CreditNoteUpdateOne) ClearSubscriptionID() *CreditNoteUpdateOne {
+	cnuo.mutation.ClearSubscriptionID()
 	return cnuo
 }
 
@@ -640,6 +686,12 @@ func (cnuo *CreditNoteUpdateOne) sqlSave(ctx context.Context) (_node *CreditNote
 	}
 	if cnuo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(creditnote.FieldEnvironmentID, field.TypeString)
+	}
+	if value, ok := cnuo.mutation.SubscriptionID(); ok {
+		_spec.SetField(creditnote.FieldSubscriptionID, field.TypeString, value)
+	}
+	if cnuo.mutation.SubscriptionIDCleared() {
+		_spec.ClearField(creditnote.FieldSubscriptionID, field.TypeString)
 	}
 	if value, ok := cnuo.mutation.CreditNoteStatus(); ok {
 		_spec.SetField(creditnote.FieldCreditNoteStatus, field.TypeString, value)
