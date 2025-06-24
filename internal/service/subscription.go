@@ -749,7 +749,6 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	for _, request := range meterUsageRequests {
 		meterID := request.MeterID
 		priceID := request.PriceID
-		// usage, ok := usageMap[meterID]
 		usage, ok := usageMap[priceID]
 
 		if !ok {
