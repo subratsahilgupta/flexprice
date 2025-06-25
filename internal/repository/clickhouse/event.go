@@ -200,9 +200,9 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 		}
 
 		// Only allow factor for supported aggregation types
-		if params.AggregationType != types.AggregationSumWithCoeff && params.AggregationType != types.AggregationSumWithMulti {
+		if params.AggregationType != types.AggregationSumWithMulti {
 			err := ierr.NewError("factor not supported for this aggregation type").
-				WithHint("Factor can only be used with SUM_WITH_COEFFICIENT or SUM_WITH_MULTIPLIER aggregations").
+				WithHint("Factor can only be used with SUM_WITH_MULTIPLIER aggregations").
 				WithReportableDetails(map[string]interface{}{
 					"aggregation_type": params.AggregationType,
 				}).

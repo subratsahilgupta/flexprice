@@ -10,14 +10,13 @@ const (
 	AggregationAvg          AggregationType = "AVG"
 	AggregationCountUnique  AggregationType = "COUNT_UNIQUE"
 	AggregationLatest       AggregationType = "LATEST"
-	AggregationSumWithCoeff AggregationType = "SUM_WITH_COEFFICIENT" // Sum with a coefficient - sum(value * factor)
-	AggregationSumWithMulti AggregationType = "SUM_WITH_MULTIPLIER"  // Sum with a multiplier - [sum(value) * factor]
+	AggregationSumWithMulti AggregationType = "SUM_WITH_MULTIPLIER" // Sum with a multiplier - [sum(value) * factor]
 
 )
 
 func (t AggregationType) Validate() bool {
 	switch t {
-	case AggregationCount, AggregationSum, AggregationAvg, AggregationCountUnique, AggregationLatest, AggregationSumWithCoeff, AggregationSumWithMulti:
+	case AggregationCount, AggregationSum, AggregationAvg, AggregationCountUnique, AggregationLatest, AggregationSumWithMulti:
 		return true
 	default:
 		return false
