@@ -55,7 +55,6 @@ The cost sheet implementation follows a clean domain-driven design:
        Update(ctx context.Context, costsheet *Costsheet) error
        Delete(ctx context.Context, id string) error
        List(ctx context.Context, filter *Filter) ([]*Costsheet, error)
-       GetByMeterAndPrice(ctx context.Context, meterID, priceID string) (*Costsheet, error)
    }
    ```
 

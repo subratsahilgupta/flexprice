@@ -268,7 +268,7 @@ func (s *eventService) BulkGetUsageByMeter(ctx context.Context, req []*dto.GetUs
 
 			// Safely store result in map
 			resultsMu.Lock()
-			results[meterID] = result
+			results[r.PriceID] = result
 			resultsMu.Unlock()
 
 			countMu.Lock()

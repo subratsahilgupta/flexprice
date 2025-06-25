@@ -328,56 +328,6 @@ func (r *costsheetRepository) List(ctx context.Context, filter *domainCostsheet.
 	return result, nil
 }
 
-// GetByMeterAndPrice retrieves a costsheet by meter ID and price ID.
-// Only returns published costsheets for the given meter and price combination.
-func (r *costsheetRepository) GetByMeterAndPrice(ctx context.Context, meterID, priceID string) (*domainCostsheet.Costsheet, error) {
-	client := r.client.Querier(ctx)
-
-	// Start tracing span
-	span := StartRepositorySpan(ctx, "costsheet", "get_by_meter_and_price", map[string]interface{}{
-		"meter_id": meterID,
-		"price_id": priceID,
-	})
-	defer FinishSpan(span)
-
-	// Query costsheet with specific filters
-	cs, err := client.Costsheet.Query().
-		Where(
-			costsheet.MeterID(meterID),
-			costsheet.PriceID(priceID),
-			costsheet.TenantID(types.GetTenantID(ctx)),
-			costsheet.EnvironmentID(types.GetEnvironmentID(ctx)),
-			costsheet.Status(string(types.StatusPublished)),
-		).
-		Only(ctx)
-
-	// Handle potential errors
-	if err != nil {
-		SetSpanError(span, err)
-		if ent.IsNotFound(err) {
-			return nil, ierr.WithError(err).
-				WithMessage("costsheet not found").
-				WithHint("No published costsheet found for the given meter and price").
-				WithReportableDetails(map[string]any{
-					"meter_id": meterID,
-					"price_id": priceID,
-				}).
-				Mark(ierr.ErrNotFound)
-		}
-		return nil, ierr.WithError(err).
-			WithMessage("failed to get costsheet").
-			WithHint("Failed to retrieve costsheet by meter and price").
-			WithReportableDetails(map[string]any{
-				"meter_id": meterID,
-				"price_id": priceID,
-			}).
-			Mark(ierr.ErrDatabase)
-	}
-
-	SetSpanSuccess(span)
-	return fromEnt(cs), nil
-}
-
 // Query option types and methods for costsheet queries
 type CostsheetQuery = *ent.CostsheetQuery
 

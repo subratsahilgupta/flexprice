@@ -84,10 +84,9 @@ func (s *costsheetService) GetInputCostForMargin(ctx context.Context, req *dto.G
 	var totalCost decimal.Decimal
 	itemCosts := make([]dto.CostBreakdownItem, 0)
 
-	// Create a map to track unique meters for usage-based pricing
-	uniqueMeters := make(map[string]struct{})
+	// First pass: Process fixed costs and prepare usage requests
+	usageRequests := make([]*dto.GetUsageByMeterRequest, 0)
 
-	// First pass: Process fixed costs and collect meters for usage-based costs
 	for _, item := range sub.LineItems {
 		if item.Status != types.StatusPublished {
 			continue
@@ -109,40 +108,48 @@ func (s *costsheetService) GetInputCostForMargin(ctx context.Context, req *dto.G
 				Cost: cost,
 			})
 			totalCost = totalCost.Add(cost)
-		} else if priceResp.Price.Type == types.PRICE_TYPE_USAGE && item.MeterID != "" {
-			// For usage-based prices, collect the meter ID for later processing
-			uniqueMeters[item.MeterID] = struct{}{}
-		}
-	}
+		} else if priceResp.Price.Type == types.PRICE_TYPE_USAGE {
+			// For usage-based prices, validate both MeterID and PriceID before creating request
+			if item.MeterID == "" || item.PriceID == "" {
+				s.Logger.Warnw("skipping usage request due to missing meter or price ID",
+					"line_item_id", item.ID,
+					"meter_id", item.MeterID,
+					"price_id", item.PriceID)
+				continue
+			}
 
-	// Second pass: Process usage-based costs
-	if len(uniqueMeters) > 0 {
-		// Create usage requests for unique meters
-		usageRequests := make([]*dto.GetUsageByMeterRequest, 0, len(uniqueMeters))
-		for meterID := range uniqueMeters {
+			// Create usage request only if both IDs are present
 			usageRequests = append(usageRequests, &dto.GetUsageByMeterRequest{
-				MeterID:   meterID,
+				MeterID:   item.MeterID,
+				PriceID:   item.PriceID,
 				StartTime: startTime,
 				EndTime:   endTime,
 			})
 		}
+	}
 
+	// Second pass: Process usage-based costs
+	if len(usageRequests) > 0 {
 		// Fetch usage data for all meters in bulk
 		usageData, err := eventService.BulkGetUsageByMeter(ctx, usageRequests)
 		if err != nil {
 			return nil, ierr.WithError(err).
-				WithMessage("failed to get usage data").
 				WithHint("failed to get usage data").
 				Mark(ierr.ErrInternal)
 		}
 
 		// Process each meter's usage
 		for _, item := range sub.LineItems {
-			if item.Status != types.StatusPublished || item.MeterID == "" {
+			if item.Status != types.StatusPublished {
 				continue
 			}
 
-			usage := usageData[item.MeterID]
+			// Skip if either MeterID or PriceID is empty
+			if item.MeterID == "" || item.PriceID == "" {
+				continue
+			}
+
+			usage := usageData[item.PriceID]
 			if usage == nil {
 				continue
 			}
