@@ -383,13 +383,11 @@ func (a *LatestAggregator) GetQuery(ctx context.Context, params *events.UsagePar
 	selectClause := ""
 	windowClause := ""
 	groupByClause := ""
-	windowGroupBy := ""
 
 	if windowSize != "" {
 		selectClause = "window_size,"
 		windowClause = fmt.Sprintf("%s AS window_size,", windowSize)
 		groupByClause = "GROUP BY window_size ORDER BY window_size"
-		windowGroupBy = ", window_size"
 	}
 
 	externalCustomerFilter := ""
@@ -410,8 +408,9 @@ func (a *LatestAggregator) GetQuery(ctx context.Context, params *events.UsagePar
             %s argMax(value, timestamp) as total
         FROM (
             SELECT
-                %s JSONExtractString(assumeNotNull(properties), '%s') as value,
-                timestamp
+                %s JSONExtractFloat(assumeNotNull(properties), '%s') as value,
+                timestamp,
+                %s as id
             FROM events
             PREWHERE tenant_id = '%s'
                 AND environment_id = '%s'
@@ -420,13 +419,13 @@ func (a *LatestAggregator) GetQuery(ctx context.Context, params *events.UsagePar
                 %s
                 %s
                 %s
-            GROUP BY %s, timestamp %s
         )
         %s
     `,
 		selectClause,
 		windowClause,
 		params.PropertyName,
+		getDeduplicationKey(),
 		types.GetTenantID(ctx),
 		types.GetEnvironmentID(ctx),
 		params.EventName,
@@ -434,8 +433,6 @@ func (a *LatestAggregator) GetQuery(ctx context.Context, params *events.UsagePar
 		customerFilter,
 		filterConditions,
 		timeConditions,
-		getDeduplicationKey(),
-		windowGroupBy,
 		groupByClause)
 }
 
