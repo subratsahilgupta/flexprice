@@ -108,8 +108,17 @@ func (s *costsheetService) GetInputCostForMargin(ctx context.Context, req *dto.G
 				Cost: cost,
 			})
 			totalCost = totalCost.Add(cost)
-		} else if priceResp.Price.Type == types.PRICE_TYPE_USAGE && item.MeterID != "" {
-			// For usage-based prices, create a usage request
+		} else if priceResp.Price.Type == types.PRICE_TYPE_USAGE {
+			// For usage-based prices, validate both MeterID and PriceID before creating request
+			if item.MeterID == "" || item.PriceID == "" {
+				s.Logger.Warnw("skipping usage request due to missing meter or price ID",
+					"line_item_id", item.ID,
+					"meter_id", item.MeterID,
+					"price_id", item.PriceID)
+				continue
+			}
+
+			// Create usage request only if both IDs are present
 			usageRequests = append(usageRequests, &dto.GetUsageByMeterRequest{
 				MeterID:   item.MeterID,
 				PriceID:   item.PriceID,
@@ -131,7 +140,12 @@ func (s *costsheetService) GetInputCostForMargin(ctx context.Context, req *dto.G
 
 		// Process each meter's usage
 		for _, item := range sub.LineItems {
-			if item.Status != types.StatusPublished || item.MeterID == "" {
+			if item.Status != types.StatusPublished {
+				continue
+			}
+
+			// Skip if either MeterID or PriceID is empty
+			if item.MeterID == "" || item.PriceID == "" {
 				continue
 			}
 
