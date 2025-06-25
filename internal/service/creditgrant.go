@@ -238,7 +238,7 @@ func (s *creditGrantService) ApplyCreditGrant(ctx context.Context, grant *credit
 
 	if grant.Cadence == types.CreditGrantCadenceRecurring {
 		// For recurring grants, calculate proper period dates
-		periodStart, periodEnd, err = s.calculateNextPeriod(grant, subscription, subscription.StartDate)
+		periodStart, periodEnd, err = s.calculateNextPeriod(grant, subscription.StartDate)
 		if err != nil {
 			return err
 		}
@@ -590,7 +590,7 @@ func (s *creditGrantService) processScheduledApplication(
 // createNextPeriodApplication creates a new CGA entry with scheduled status for the next period
 func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, grant *creditgrant.CreditGrant, subscription *subscription.Subscription, currentPeriodEnd time.Time) error {
 	// Calculate next period dates
-	nextPeriodStart, nextPeriodEnd, err := s.calculateNextPeriod(grant, subscription, currentPeriodEnd)
+	nextPeriodStart, nextPeriodEnd, err := s.calculateNextPeriod(grant, currentPeriodEnd)
 	if err != nil {
 		s.Logger.Errorw("Failed to calculate next period",
 			"grant_id", grant.ID,
@@ -645,38 +645,14 @@ func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, gr
 }
 
 // calculateNextPeriod calculates the next credit grant period using simplified logic
-func (s *creditGrantService) calculateNextPeriod(grant *creditgrant.CreditGrant, subscription *subscription.Subscription, currentPeriodEnd time.Time) (time.Time, time.Time, error) {
-	nextPeriodStart := currentPeriodEnd
-
-	creditGrantPeriodConfig := map[types.CreditGrantPeriod]types.BillingPeriod{
-		types.CREDIT_GRANT_PERIOD_ANNUAL:      types.BILLING_PERIOD_ANNUAL,
-		types.CREDIT_GRANT_PERIOD_HALF_YEARLY: types.BILLING_PERIOD_HALF_YEAR,
-		types.CREDIT_GRANT_PERIOD_QUARTER:     types.BILLING_PERIOD_QUARTER,
-		types.CREDIT_GRANT_PERIOD_MONTHLY:     types.BILLING_PERIOD_MONTHLY,
-		types.CREDIT_GRANT_PERIOD_WEEKLY:      types.BILLING_PERIOD_WEEKLY,
-		types.CREDIT_GRANT_PERIOD_DAILY:       types.BILLING_PERIOD_DAILY,
+func (s *creditGrantService) calculateNextPeriod(grant *creditgrant.CreditGrant, nextPeriodStart time.Time) (time.Time, time.Time, error) {
+	billingPeriod, err := types.GetBillingPeriodFromCreditGrantPeriod(lo.FromPtr(grant.Period))
+	if err != nil {
+		return time.Time{}, time.Time{}, err
 	}
 
-	creditGrantPeriod := creditGrantPeriodConfig[lo.FromPtr(grant.Period)]
-
-	// Use credit grant-specific period if defined, otherwise use billing period
-	if grant.Period != nil && grant.PeriodCount != nil {
-		// get the anchor date
-		anchor := subscription.BillingAnchor
-
-		// get the next period end
-		nextPeriodEnd, err := types.NextBillingDate(nextPeriodStart, anchor, *grant.PeriodCount, creditGrantPeriod, nil)
-		if err != nil {
-			return time.Time{}, time.Time{}, err
-		}
-
-		// return the next period start and end
-		return nextPeriodStart, nextPeriodEnd, nil
-	}
-
-	// Fall back to billing alignment
-	// this is the case where the credit grant period is not defined
-	nextPeriodEnd, err := types.NextBillingDate(nextPeriodStart, subscription.BillingAnchor, subscription.BillingPeriodCount, subscription.BillingPeriod, nil)
+	// Calculate next period end using the grant's creation date as anchor
+	nextPeriodEnd, err := types.NextBillingDateLegacy(nextPeriodStart, grant.CreatedAt, lo.FromPtr(grant.PeriodCount), billingPeriod)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}
