@@ -26,3 +26,15 @@ type Repository interface {
 	// Idempotency operations
 	GetByIdempotencyKey(ctx context.Context, key string) (*CreditNote, error)
 }
+
+type CreditNoteLineItemRepository interface {
+	Create(ctx context.Context, lineItem *CreditNoteLineItem) error
+	Get(ctx context.Context, id string) (*CreditNoteLineItem, error)
+	Update(ctx context.Context, lineItem *CreditNoteLineItem) error
+	Delete(ctx context.Context, id string) error
+	List(ctx context.Context, filter *types.CreditNoteLineItemFilter) ([]*CreditNoteLineItem, error)
+	Count(ctx context.Context, filter *types.CreditNoteLineItemFilter) (int, error)
+	ListByCreditNote(ctx context.Context, creditNoteID string) ([]*CreditNoteLineItem, error)
+	ListByInvoiceLineItem(ctx context.Context, invoiceLineItemID string) ([]*CreditNoteLineItem, error)
+	CreateBulk(ctx context.Context, lineItems []*CreditNoteLineItem) error
+}

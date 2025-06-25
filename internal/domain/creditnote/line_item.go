@@ -20,32 +20,30 @@ type CreditNoteLineItem struct {
 }
 
 // FromEnt converts an ent.CreditNoteLineItem to domain CreditNoteLineItem
-func (c *CreditNoteLineItem) FromEnt(e *ent.CreditNoteLineItem) *CreditNoteLineItem {
-	return &CreditNoteLineItem{
-		ID:                e.ID,
-		CreditNoteID:      e.CreditNoteID,
-		InvoiceLineItemID: e.InvoiceLineItemID,
-		DisplayName:       e.DisplayName,
-		Amount:            e.Amount,
-		Currency:          e.Currency,
-		Metadata:          e.Metadata,
-		EnvironmentID:     e.EnvironmentID,
-		BaseModel: types.BaseModel{
-			Status:    types.Status(e.Status),
-			CreatedBy: e.CreatedBy,
-			TenantID:  e.TenantID,
-			UpdatedBy: e.UpdatedBy,
-			CreatedAt: e.CreatedAt,
-			UpdatedAt: e.UpdatedAt,
-		},
+func (c *CreditNoteLineItem) FromEnt(e *ent.CreditNoteLineItem) {
+	c.ID = e.ID
+	c.CreditNoteID = e.CreditNoteID
+	c.InvoiceLineItemID = e.InvoiceLineItemID
+	c.DisplayName = e.DisplayName
+	c.Amount = e.Amount
+	c.Currency = e.Currency
+	c.Metadata = e.Metadata
+	c.EnvironmentID = e.EnvironmentID
+	c.BaseModel = types.BaseModel{
+		Status:    types.Status(e.Status),
+		CreatedBy: e.CreatedBy,
+		TenantID:  e.TenantID,
+		UpdatedBy: e.UpdatedBy,
+		CreatedAt: e.CreatedAt,
+		UpdatedAt: e.UpdatedAt,
 	}
 }
 
-// FromEntList converts a list of ent credit notes to domain credit notes
 func (c *CreditNoteLineItem) FromEntList(creditNoteLineItems []*ent.CreditNoteLineItem) []*CreditNoteLineItem {
 	result := make([]*CreditNoteLineItem, len(creditNoteLineItems))
 	for i, cnli := range creditNoteLineItems {
-		result[i] = c.FromEnt(cnli)
+		result[i] = &CreditNoteLineItem{}
+		result[i].FromEnt(cnli)
 	}
 	return result
 }

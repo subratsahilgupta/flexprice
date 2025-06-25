@@ -132,3 +132,7 @@ func NewCreditGrantApplicationRepository(p RepositoryParams) creditgrantapplicat
 func NewCreditNoteRepository(p RepositoryParams) creditnote.Repository {
 	return entRepo.NewCreditNoteRepository(p.EntClient, p.Logger, p.Cache)
 }
+
+func NewCreditNoteLineItemRepository(p RepositoryParams) creditnote.CreditNoteLineItemRepository {
+	return entRepo.NewCreditNoteLineItemRepository(p.EntClient, p.Logger, p.Cache)
+}

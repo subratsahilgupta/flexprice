@@ -31,7 +31,7 @@ type CreditNote struct {
 // FromEnt converts an ent credit note to domain credit note
 func FromEnt(e *ent.CreditNote) *CreditNote {
 
-	creditNoteLineItem := CreditNoteLineItem{}
+		creditNoteLineItem := CreditNoteLineItem{}
 
 	return &CreditNote{
 		ID:               e.ID,

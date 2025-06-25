@@ -133,6 +133,8 @@ func main() {
 			repository.NewCreditGrantApplicationRepository,
 			repository.NewCreditNoteRepository,
 			
+			repository.NewCreditNoteLineItemRepository,
+
 			// PubSub
 			pubsubRouter.NewRouter,
 
