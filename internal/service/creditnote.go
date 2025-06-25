@@ -583,7 +583,10 @@ func (s *creditNoteService) validateCreditNoteAmounts(ctx context.Context, req *
 	// Check if total amount exceeds max creditable amount
 	if totalCreditNoteAmount.GreaterThan(maxCreditableAmount) {
 		return ierr.NewError("total credit note amount is greater than max creditable amount").
-			WithHintf("Total credit note amount - %s is greater than max creditable amount - %s", totalCreditNoteAmount, maxCreditableAmount).
+			WithHintf(
+				"Credit note amount %s exceeds the available limit of %s. %s has already been credited against this invoice.",
+				totalCreditNoteAmount, maxCreditableAmount, maxCreditableAmount.Sub(totalCreditNoteAmount),
+			).
 			WithReportableDetails(map[string]any{
 				"total_credit_note_amount":    totalCreditNoteAmount,
 				"max_creditable_amount":       maxCreditableAmount,
