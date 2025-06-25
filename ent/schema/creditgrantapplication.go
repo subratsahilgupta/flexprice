@@ -53,10 +53,12 @@ func (CreditGrantApplication) Fields() []ent.Field {
 		// Billing period context
 		field.Time("period_start").
 			Nillable().
+			Immutable().
 			Optional(),
 
 		field.Time("period_end").
 			Nillable().
+			Immutable().
 			Optional(),
 
 		// Application details
@@ -64,7 +66,7 @@ func (CreditGrantApplication) Fields() []ent.Field {
 			GoType(types.ApplicationStatus("")).
 			Default(string(types.ApplicationStatusPending)),
 
-		field.Other("credits_applied", decimal.Decimal{}).
+		field.Other("credits", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,8)",
 			}).

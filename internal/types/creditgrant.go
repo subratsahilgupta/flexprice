@@ -147,7 +147,7 @@ func (p CreditGrantPeriod) Validate() error {
 }
 
 // CreditGrantPeriodToBillingPeriodMap maps credit grant period to billing period
-var CreditGrantPeriodToBillingPeriodConfig = map[CreditGrantPeriod]BillingPeriod{
+var creditGrantPeriodToBillingPeriodConfig = map[CreditGrantPeriod]BillingPeriod{
 	CREDIT_GRANT_PERIOD_DAILY:       BILLING_PERIOD_DAILY,
 	CREDIT_GRANT_PERIOD_WEEKLY:      BILLING_PERIOD_WEEKLY,
 	CREDIT_GRANT_PERIOD_MONTHLY:     BILLING_PERIOD_MONTHLY,
@@ -158,10 +158,10 @@ var CreditGrantPeriodToBillingPeriodConfig = map[CreditGrantPeriod]BillingPeriod
 
 // GetBillingPeriodFromCreditGrantPeriod maps credit grant period to billing period
 func GetBillingPeriodFromCreditGrantPeriod(period CreditGrantPeriod) (BillingPeriod, error) {
-	billingPeriod, exists := CreditGrantPeriodToBillingPeriodConfig[period]
+	billingPeriod, exists := creditGrantPeriodToBillingPeriodConfig[period]
 	if !exists {
 		return BillingPeriod(""), ierr.NewError("invalid credit grant period").
-			WithHint(fmt.Sprintf("Credit grant period must be one of: %v", CreditGrantPeriodToBillingPeriodConfig)).
+			WithHint(fmt.Sprintf("Credit grant period must be one of: %v", creditGrantPeriodToBillingPeriodConfig)).
 			Mark(ierr.ErrValidation)
 	}
 	return billingPeriod, nil

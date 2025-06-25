@@ -4031,7 +4031,7 @@ type CreditGrantApplicationMutation struct {
 	period_start                       *time.Time
 	period_end                         *time.Time
 	application_status                 *types.ApplicationStatus
-	credits_applied                    *decimal.Decimal
+	credits                            *decimal.Decimal
 	application_reason                 *types.CreditGrantApplicationReason
 	subscription_status_at_application *types.SubscriptionStatus
 	retry_count                        *int
@@ -4731,40 +4731,40 @@ func (m *CreditGrantApplicationMutation) ResetApplicationStatus() {
 	m.application_status = nil
 }
 
-// SetCreditsApplied sets the "credits_applied" field.
-func (m *CreditGrantApplicationMutation) SetCreditsApplied(d decimal.Decimal) {
-	m.credits_applied = &d
+// SetCredits sets the "credits" field.
+func (m *CreditGrantApplicationMutation) SetCredits(d decimal.Decimal) {
+	m.credits = &d
 }
 
-// CreditsApplied returns the value of the "credits_applied" field in the mutation.
-func (m *CreditGrantApplicationMutation) CreditsApplied() (r decimal.Decimal, exists bool) {
-	v := m.credits_applied
+// Credits returns the value of the "credits" field in the mutation.
+func (m *CreditGrantApplicationMutation) Credits() (r decimal.Decimal, exists bool) {
+	v := m.credits
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldCreditsApplied returns the old "credits_applied" field's value of the CreditGrantApplication entity.
+// OldCredits returns the old "credits" field's value of the CreditGrantApplication entity.
 // If the CreditGrantApplication object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CreditGrantApplicationMutation) OldCreditsApplied(ctx context.Context) (v decimal.Decimal, err error) {
+func (m *CreditGrantApplicationMutation) OldCredits(ctx context.Context) (v decimal.Decimal, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCreditsApplied is only allowed on UpdateOne operations")
+		return v, errors.New("OldCredits is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCreditsApplied requires an ID field in the mutation")
+		return v, errors.New("OldCredits requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCreditsApplied: %w", err)
+		return v, fmt.Errorf("querying old value for OldCredits: %w", err)
 	}
-	return oldValue.CreditsApplied, nil
+	return oldValue.Credits, nil
 }
 
-// ResetCreditsApplied resets all changes to the "credits_applied" field.
-func (m *CreditGrantApplicationMutation) ResetCreditsApplied() {
-	m.credits_applied = nil
+// ResetCredits resets all changes to the "credits" field.
+func (m *CreditGrantApplicationMutation) ResetCredits() {
+	m.credits = nil
 }
 
 // SetApplicationReason sets the "application_reason" field.
@@ -5106,8 +5106,8 @@ func (m *CreditGrantApplicationMutation) Fields() []string {
 	if m.application_status != nil {
 		fields = append(fields, creditgrantapplication.FieldApplicationStatus)
 	}
-	if m.credits_applied != nil {
-		fields = append(fields, creditgrantapplication.FieldCreditsApplied)
+	if m.credits != nil {
+		fields = append(fields, creditgrantapplication.FieldCredits)
 	}
 	if m.application_reason != nil {
 		fields = append(fields, creditgrantapplication.FieldApplicationReason)
@@ -5163,8 +5163,8 @@ func (m *CreditGrantApplicationMutation) Field(name string) (ent.Value, bool) {
 		return m.PeriodEnd()
 	case creditgrantapplication.FieldApplicationStatus:
 		return m.ApplicationStatus()
-	case creditgrantapplication.FieldCreditsApplied:
-		return m.CreditsApplied()
+	case creditgrantapplication.FieldCredits:
+		return m.Credits()
 	case creditgrantapplication.FieldApplicationReason:
 		return m.ApplicationReason()
 	case creditgrantapplication.FieldSubscriptionStatusAtApplication:
@@ -5214,8 +5214,8 @@ func (m *CreditGrantApplicationMutation) OldField(ctx context.Context, name stri
 		return m.OldPeriodEnd(ctx)
 	case creditgrantapplication.FieldApplicationStatus:
 		return m.OldApplicationStatus(ctx)
-	case creditgrantapplication.FieldCreditsApplied:
-		return m.OldCreditsApplied(ctx)
+	case creditgrantapplication.FieldCredits:
+		return m.OldCredits(ctx)
 	case creditgrantapplication.FieldApplicationReason:
 		return m.OldApplicationReason(ctx)
 	case creditgrantapplication.FieldSubscriptionStatusAtApplication:
@@ -5335,12 +5335,12 @@ func (m *CreditGrantApplicationMutation) SetField(name string, value ent.Value) 
 		}
 		m.SetApplicationStatus(v)
 		return nil
-	case creditgrantapplication.FieldCreditsApplied:
+	case creditgrantapplication.FieldCredits:
 		v, ok := value.(decimal.Decimal)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetCreditsApplied(v)
+		m.SetCredits(v)
 		return nil
 	case creditgrantapplication.FieldApplicationReason:
 		v, ok := value.(types.CreditGrantApplicationReason)
@@ -5541,8 +5541,8 @@ func (m *CreditGrantApplicationMutation) ResetField(name string) error {
 	case creditgrantapplication.FieldApplicationStatus:
 		m.ResetApplicationStatus()
 		return nil
-	case creditgrantapplication.FieldCreditsApplied:
-		m.ResetCreditsApplied()
+	case creditgrantapplication.FieldCredits:
+		m.ResetCredits()
 		return nil
 	case creditgrantapplication.FieldApplicationReason:
 		m.ResetApplicationReason()

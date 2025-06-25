@@ -218,26 +218,6 @@ func (s *InMemoryCreditGrantApplicationStore) Delete(ctx context.Context, cga *c
 	return nil
 }
 
-// ExistsForPeriod checks if a credit grant application exists for a specific period
-func (s *InMemoryCreditGrantApplicationStore) ExistsForPeriod(ctx context.Context, grantID, subscriptionID string, periodStart, periodEnd time.Time) (bool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, cga := range s.applications {
-		if cga.CreditGrantID == grantID &&
-			cga.SubscriptionID == subscriptionID &&
-			cga.PeriodStart != nil && cga.PeriodEnd != nil &&
-			cga.PeriodStart.Equal(periodStart) &&
-			cga.PeriodEnd.Equal(periodEnd) &&
-			cga.ApplicationStatus != types.ApplicationStatusCancelled &&
-			cga.ApplicationStatus != types.ApplicationStatusFailed {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
 // FindAllScheduledApplications finds all applications scheduled for processing
 func (s *InMemoryCreditGrantApplicationStore) FindAllScheduledApplications(ctx context.Context) ([]*creditgrantapplication.CreditGrantApplication, error) {
 	s.mu.RLock()

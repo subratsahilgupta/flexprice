@@ -137,9 +137,9 @@ func ApplicationStatus(v types.ApplicationStatus) predicate.CreditGrantApplicati
 	return predicate.CreditGrantApplication(sql.FieldEQ(FieldApplicationStatus, vc))
 }
 
-// CreditsApplied applies equality check predicate on the "credits_applied" field. It's identical to CreditsAppliedEQ.
-func CreditsApplied(v decimal.Decimal) predicate.CreditGrantApplication {
-	return predicate.CreditGrantApplication(sql.FieldEQ(FieldCreditsApplied, v))
+// Credits applies equality check predicate on the "credits" field. It's identical to CreditsEQ.
+func Credits(v decimal.Decimal) predicate.CreditGrantApplication {
+	return predicate.CreditGrantApplication(sql.FieldEQ(FieldCredits, v))
 }
 
 // ApplicationReason applies equality check predicate on the "application_reason" field. It's identical to ApplicationReasonEQ.
@@ -1013,44 +1013,44 @@ func ApplicationStatusContainsFold(v types.ApplicationStatus) predicate.CreditGr
 	return predicate.CreditGrantApplication(sql.FieldContainsFold(FieldApplicationStatus, vc))
 }
 
-// CreditsAppliedEQ applies the EQ predicate on the "credits_applied" field.
-func CreditsAppliedEQ(v decimal.Decimal) predicate.CreditGrantApplication {
-	return predicate.CreditGrantApplication(sql.FieldEQ(FieldCreditsApplied, v))
+// CreditsEQ applies the EQ predicate on the "credits" field.
+func CreditsEQ(v decimal.Decimal) predicate.CreditGrantApplication {
+	return predicate.CreditGrantApplication(sql.FieldEQ(FieldCredits, v))
 }
 
-// CreditsAppliedNEQ applies the NEQ predicate on the "credits_applied" field.
-func CreditsAppliedNEQ(v decimal.Decimal) predicate.CreditGrantApplication {
-	return predicate.CreditGrantApplication(sql.FieldNEQ(FieldCreditsApplied, v))
+// CreditsNEQ applies the NEQ predicate on the "credits" field.
+func CreditsNEQ(v decimal.Decimal) predicate.CreditGrantApplication {
+	return predicate.CreditGrantApplication(sql.FieldNEQ(FieldCredits, v))
 }
 
-// CreditsAppliedIn applies the In predicate on the "credits_applied" field.
-func CreditsAppliedIn(vs ...decimal.Decimal) predicate.CreditGrantApplication {
-	return predicate.CreditGrantApplication(sql.FieldIn(FieldCreditsApplied, vs...))
+// CreditsIn applies the In predicate on the "credits" field.
+func CreditsIn(vs ...decimal.Decimal) predicate.CreditGrantApplication {
+	return predicate.CreditGrantApplication(sql.FieldIn(FieldCredits, vs...))
 }
 
-// CreditsAppliedNotIn applies the NotIn predicate on the "credits_applied" field.
-func CreditsAppliedNotIn(vs ...decimal.Decimal) predicate.CreditGrantApplication {
-	return predicate.CreditGrantApplication(sql.FieldNotIn(FieldCreditsApplied, vs...))
+// CreditsNotIn applies the NotIn predicate on the "credits" field.
+func CreditsNotIn(vs ...decimal.Decimal) predicate.CreditGrantApplication {
+	return predicate.CreditGrantApplication(sql.FieldNotIn(FieldCredits, vs...))
 }
 
-// CreditsAppliedGT applies the GT predicate on the "credits_applied" field.
-func CreditsAppliedGT(v decimal.Decimal) predicate.CreditGrantApplication {
-	return predicate.CreditGrantApplication(sql.FieldGT(FieldCreditsApplied, v))
+// CreditsGT applies the GT predicate on the "credits" field.
+func CreditsGT(v decimal.Decimal) predicate.CreditGrantApplication {
+	return predicate.CreditGrantApplication(sql.FieldGT(FieldCredits, v))
 }
 
-// CreditsAppliedGTE applies the GTE predicate on the "credits_applied" field.
-func CreditsAppliedGTE(v decimal.Decimal) predicate.CreditGrantApplication {
-	return predicate.CreditGrantApplication(sql.FieldGTE(FieldCreditsApplied, v))
+// CreditsGTE applies the GTE predicate on the "credits" field.
+func CreditsGTE(v decimal.Decimal) predicate.CreditGrantApplication {
+	return predicate.CreditGrantApplication(sql.FieldGTE(FieldCredits, v))
 }
 
-// CreditsAppliedLT applies the LT predicate on the "credits_applied" field.
-func CreditsAppliedLT(v decimal.Decimal) predicate.CreditGrantApplication {
-	return predicate.CreditGrantApplication(sql.FieldLT(FieldCreditsApplied, v))
+// CreditsLT applies the LT predicate on the "credits" field.
+func CreditsLT(v decimal.Decimal) predicate.CreditGrantApplication {
+	return predicate.CreditGrantApplication(sql.FieldLT(FieldCredits, v))
 }
 
-// CreditsAppliedLTE applies the LTE predicate on the "credits_applied" field.
-func CreditsAppliedLTE(v decimal.Decimal) predicate.CreditGrantApplication {
-	return predicate.CreditGrantApplication(sql.FieldLTE(FieldCreditsApplied, v))
+// CreditsLTE applies the LTE predicate on the "credits" field.
+func CreditsLTE(v decimal.Decimal) predicate.CreditGrantApplication {
+	return predicate.CreditGrantApplication(sql.FieldLTE(FieldCredits, v))
 }
 
 // ApplicationReasonEQ applies the EQ predicate on the "application_reason" field.

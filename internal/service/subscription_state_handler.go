@@ -62,7 +62,7 @@ func (h *SubscriptionStateHandler) DetermineAction() (StateAction, error) {
 
 	case types.SubscriptionStatusPaused:
 		// Paused subscriptions should defer credits until resumed
-		return StateActionDefer, nil
+		return StateActionSkip, nil
 
 	default:
 		// Unknown status - skip for safety

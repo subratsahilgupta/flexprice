@@ -186,16 +186,16 @@ func (cgac *CreditGrantApplicationCreate) SetNillableApplicationStatus(ts *types
 	return cgac
 }
 
-// SetCreditsApplied sets the "credits_applied" field.
-func (cgac *CreditGrantApplicationCreate) SetCreditsApplied(d decimal.Decimal) *CreditGrantApplicationCreate {
-	cgac.mutation.SetCreditsApplied(d)
+// SetCredits sets the "credits" field.
+func (cgac *CreditGrantApplicationCreate) SetCredits(d decimal.Decimal) *CreditGrantApplicationCreate {
+	cgac.mutation.SetCredits(d)
 	return cgac
 }
 
-// SetNillableCreditsApplied sets the "credits_applied" field if the given value is not nil.
-func (cgac *CreditGrantApplicationCreate) SetNillableCreditsApplied(d *decimal.Decimal) *CreditGrantApplicationCreate {
+// SetNillableCredits sets the "credits" field if the given value is not nil.
+func (cgac *CreditGrantApplicationCreate) SetNillableCredits(d *decimal.Decimal) *CreditGrantApplicationCreate {
 	if d != nil {
-		cgac.SetCreditsApplied(*d)
+		cgac.SetCredits(*d)
 	}
 	return cgac
 }
@@ -313,9 +313,9 @@ func (cgac *CreditGrantApplicationCreate) defaults() {
 		v := creditgrantapplication.DefaultApplicationStatus
 		cgac.mutation.SetApplicationStatus(v)
 	}
-	if _, ok := cgac.mutation.CreditsApplied(); !ok {
-		v := creditgrantapplication.DefaultCreditsApplied
-		cgac.mutation.SetCreditsApplied(v)
+	if _, ok := cgac.mutation.Credits(); !ok {
+		v := creditgrantapplication.DefaultCredits
+		cgac.mutation.SetCredits(v)
 	}
 	if _, ok := cgac.mutation.RetryCount(); !ok {
 		v := creditgrantapplication.DefaultRetryCount
@@ -364,8 +364,8 @@ func (cgac *CreditGrantApplicationCreate) check() error {
 	if _, ok := cgac.mutation.ApplicationStatus(); !ok {
 		return &ValidationError{Name: "application_status", err: errors.New(`ent: missing required field "CreditGrantApplication.application_status"`)}
 	}
-	if _, ok := cgac.mutation.CreditsApplied(); !ok {
-		return &ValidationError{Name: "credits_applied", err: errors.New(`ent: missing required field "CreditGrantApplication.credits_applied"`)}
+	if _, ok := cgac.mutation.Credits(); !ok {
+		return &ValidationError{Name: "credits", err: errors.New(`ent: missing required field "CreditGrantApplication.credits"`)}
 	}
 	if _, ok := cgac.mutation.ApplicationReason(); !ok {
 		return &ValidationError{Name: "application_reason", err: errors.New(`ent: missing required field "CreditGrantApplication.application_reason"`)}
@@ -480,9 +480,9 @@ func (cgac *CreditGrantApplicationCreate) createSpec() (*CreditGrantApplication,
 		_spec.SetField(creditgrantapplication.FieldApplicationStatus, field.TypeString, value)
 		_node.ApplicationStatus = value
 	}
-	if value, ok := cgac.mutation.CreditsApplied(); ok {
-		_spec.SetField(creditgrantapplication.FieldCreditsApplied, field.TypeOther, value)
-		_node.CreditsApplied = value
+	if value, ok := cgac.mutation.Credits(); ok {
+		_spec.SetField(creditgrantapplication.FieldCredits, field.TypeOther, value)
+		_node.Credits = value
 	}
 	if value, ok := cgac.mutation.ApplicationReason(); ok {
 		_spec.SetField(creditgrantapplication.FieldApplicationReason, field.TypeString, value)
