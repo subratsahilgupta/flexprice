@@ -22,7 +22,7 @@ func GetAggregator(aggregationType types.AggregationType) events.Aggregator {
 		return &CountUniqueAggregator{}
 	case types.AggregationLatest:
 		return &LatestAggregator{}
-	case types.AggregationSumWithMulti:
+	case types.AggregationSumWithMultiplier:
 		return &SumWithMultiAggregator{}
 	}
 	return nil
@@ -380,12 +380,10 @@ type LatestAggregator struct{}
 
 func (a *LatestAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
 	windowSize := formatWindowSize(params.WindowSize)
-	selectClause := ""
 	windowClause := ""
 	groupByClause := ""
 
 	if windowSize != "" {
-		selectClause = "window_size,"
 		windowClause = fmt.Sprintf("%s AS window_size,", windowSize)
 		groupByClause = "GROUP BY window_size ORDER BY window_size"
 	}
@@ -405,27 +403,19 @@ func (a *LatestAggregator) GetQuery(ctx context.Context, params *events.UsagePar
 
 	return fmt.Sprintf(`
         SELECT 
-            %s argMax(value, timestamp) as total
-        FROM (
-            SELECT
-                %s JSONExtractFloat(assumeNotNull(properties), '%s') as value,
-                timestamp,
-                %s as id
-            FROM events
-            PREWHERE tenant_id = '%s'
+            %s argMax(JSONExtractFloat(assumeNotNull(properties), '%s'), timestamp) as total
+        FROM 
+			events	PREWHERE tenant_id = '%s'
                 AND environment_id = '%s'
                 AND event_name = '%s'
                 %s
                 %s
                 %s
                 %s
-        )
         %s
     `,
-		selectClause,
 		windowClause,
 		params.PropertyName,
-		getDeduplicationKey(),
 		types.GetTenantID(ctx),
 		types.GetEnvironmentID(ctx),
 		params.EventName,
@@ -471,8 +461,8 @@ func (a *SumWithMultiAggregator) GetQuery(ctx context.Context, params *events.Us
 	timeConditions := buildTimeConditions(params)
 
 	multiplier := int64(1)
-	if params.Factor != nil {
-		multiplier = *params.Factor
+	if params.Multiplier != nil {
+		multiplier = *params.Multiplier
 	}
 
 	return fmt.Sprintf(`
@@ -510,7 +500,7 @@ func (a *SumWithMultiAggregator) GetQuery(ctx context.Context, params *events.Us
 }
 
 func (a *SumWithMultiAggregator) GetType() types.AggregationType {
-	return types.AggregationSumWithMulti
+	return types.AggregationSumWithMultiplier
 }
 
 // // buildFilterGroupsQuery builds a query that matches events to the most specific filter group

@@ -186,13 +186,13 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 	})
 	defer FinishSpan(span)
 
-	// Validate factor if provided for aggregations that use it
-	if params.Factor != nil {
-		if *params.Factor <= 0 {
-			err := ierr.NewError("invalid factor value").
-				WithHint("Factor must be greater than zero").
+	// Validate multiplier if provided for aggregations that use it
+	if params.Multiplier != nil {
+		if *params.Multiplier <= 0 {
+			err := ierr.NewError("invalid multiplier value").
+				WithHint("Multiplier must be greater than zero").
 				WithReportableDetails(map[string]interface{}{
-					"factor": *params.Factor,
+					"multiplier": *params.Multiplier,
 				}).
 				Mark(ierr.ErrValidation)
 			SetSpanError(span, err)
@@ -200,9 +200,9 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 		}
 
 		// Only allow factor for supported aggregation types
-		if params.AggregationType != types.AggregationSumWithMulti {
-			err := ierr.NewError("factor not supported for this aggregation type").
-				WithHint("Factor can only be used with SUM_WITH_MULTIPLIER aggregations").
+		if params.AggregationType != types.AggregationSumWithMultiplier {
+			err := ierr.NewError("multiplier not supported for this aggregation type").
+				WithHint("Multiplier can only be used with SUM_WITH_MULTIPLIER aggregations").
 				WithReportableDetails(map[string]interface{}{
 					"aggregation_type": params.AggregationType,
 				}).
@@ -264,7 +264,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 						Mark(ierr.ErrDatabase)
 				}
 				value = decimal.NewFromUint64(countValue)
-			case types.AggregationSum, types.AggregationAvg, types.AggregationLatest, types.AggregationSumWithMulti:
+			case types.AggregationSum, types.AggregationAvg, types.AggregationLatest, types.AggregationSumWithMultiplier:
 				var floatValue float64
 				if err := rows.Scan(&windowSize, &floatValue); err != nil {
 					SetSpanError(span, err)
@@ -308,7 +308,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 						Mark(ierr.ErrDatabase)
 				}
 				result.Value = decimal.NewFromUint64(value)
-			case types.AggregationSum, types.AggregationAvg, types.AggregationLatest, types.AggregationSumWithMulti:
+			case types.AggregationSum, types.AggregationAvg, types.AggregationLatest, types.AggregationSumWithMultiplier:
 				var value float64
 				if err := rows.Scan(&value); err != nil {
 					SetSpanError(span, err)
@@ -409,7 +409,7 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 					Mark(ierr.ErrDatabase)
 			}
 			result.Value = decimal.NewFromUint64(value)
-		case types.AggregationSum, types.AggregationAvg, types.AggregationLatest, types.AggregationSumWithMulti:
+		case types.AggregationSum, types.AggregationAvg, types.AggregationLatest, types.AggregationSumWithMultiplier:
 			var value float64
 			if err := rows.Scan(&filterGroupID, &value); err != nil {
 				SetSpanError(span, err)
