@@ -8,6 +8,8 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/domain/plan"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -59,6 +61,12 @@ func (s *CreditNoteServiceSuite) setupService() {
 		CreditNoteRepo:   s.GetStores().CreditNoteRepo,
 		InvoiceRepo:      s.GetStores().InvoiceRepo,
 		CustomerRepo:     s.GetStores().CustomerRepo,
+		SubRepo:          s.GetStores().SubscriptionRepo,
+		PlanRepo:         s.GetStores().PlanRepo,
+		PriceRepo:        s.GetStores().PriceRepo,
+		MeterRepo:        s.GetStores().MeterRepo,
+		EntitlementRepo:  s.GetStores().EntitlementRepo,
+		FeatureRepo:      s.GetStores().FeatureRepo,
 		WalletRepo:       s.GetStores().WalletRepo,
 		EventPublisher:   s.GetPublisher(),
 		WebhookPublisher: s.GetWebhookPublisher(),
@@ -70,14 +78,282 @@ func (s *CreditNoteServiceSuite) setupTestData() {
 
 	// Create test customer
 	s.testData.customer = &customer.Customer{
-		ID:         "cust_123",
-		ExternalID: "external_123",
-		Name:       "Test Customer",
-		Email:      "test@example.com",
-		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+		ID:        "cust_test_123",
+		Name:      "Test Customer",
+		Email:     "test@example.com",
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().CustomerRepo.Create(s.GetContext(), s.testData.customer))
 
+	// Create test plans
+	s.createTestPlans()
+
+	// Create test subscriptions
+	s.createTestSubscriptions()
+
+	// Create test invoices (both subscription and one-off types)
+	s.createTestInvoices()
+
+	// Create test wallets
+	s.createTestWallets()
+}
+
+func (s *CreditNoteServiceSuite) createTestPlans() {
+	// Create a test plan for USD subscriptions
+	usdPlan := &plan.Plan{
+		ID:          "plan_test_123",
+		Name:        "Test Plan USD",
+		Description: "Test plan for USD subscriptions",
+		BaseModel: types.BaseModel{
+			TenantID:  types.GetTenantID(s.GetContext()),
+			Status:    types.StatusPublished,
+			CreatedAt: s.testData.now,
+			UpdatedAt: s.testData.now,
+			CreatedBy: types.GetUserID(s.GetContext()),
+			UpdatedBy: types.GetUserID(s.GetContext()),
+		},
+	}
+	s.NoError(s.GetStores().PlanRepo.Create(s.GetContext(), usdPlan))
+
+	// Create a test plan for EUR subscriptions
+	eurPlan := &plan.Plan{
+		ID:          "plan_eur_123",
+		Name:        "Test Plan EUR",
+		Description: "Test plan for EUR subscriptions",
+		BaseModel: types.BaseModel{
+			TenantID:  types.GetTenantID(s.GetContext()),
+			Status:    types.StatusPublished,
+			CreatedAt: s.testData.now,
+			UpdatedAt: s.testData.now,
+			CreatedBy: types.GetUserID(s.GetContext()),
+			UpdatedBy: types.GetUserID(s.GetContext()),
+		},
+	}
+	s.NoError(s.GetStores().PlanRepo.Create(s.GetContext(), eurPlan))
+}
+
+func (s *CreditNoteServiceSuite) createTestSubscriptions() {
+	// Create a mock subscription for subscription-type invoices
+	testSubscription := &subscription.Subscription{
+		ID:                 "sub_test_123",
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             "plan_test_123",
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		Currency:           "USD",
+		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		StartDate:          s.testData.now,
+		CurrentPeriodStart: s.testData.now,
+		CurrentPeriodEnd:   s.testData.now.AddDate(0, 1, 0),
+		BillingAnchor:      s.testData.now,
+		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+	}
+
+	// Create subscription line items for the test subscription
+	testLineItems := []*subscription.SubscriptionLineItem{
+		{
+			ID:             "sub_line_1",
+			SubscriptionID: testSubscription.ID,
+			PriceID:        "price_test_123",
+			Quantity:       decimal.NewFromInt(1),
+			Currency:       "USD",
+			BillingPeriod:  types.BILLING_PERIOD_MONTHLY,
+			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		},
+	}
+
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSubscription, testLineItems))
+
+	// Create another subscription for EUR invoices
+	eurSubscription := &subscription.Subscription{
+		ID:                 "sub_eur_123",
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             "plan_eur_123",
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		Currency:           "EUR",
+		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		StartDate:          s.testData.now,
+		CurrentPeriodStart: s.testData.now,
+		CurrentPeriodEnd:   s.testData.now.AddDate(0, 1, 0),
+		BillingAnchor:      s.testData.now,
+		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+	}
+
+	// Create subscription line items for the EUR subscription
+	eurLineItems := []*subscription.SubscriptionLineItem{
+		{
+			ID:             "sub_line_eur_1",
+			SubscriptionID: eurSubscription.ID,
+			PriceID:        "price_eur_123",
+			Quantity:       decimal.NewFromInt(1),
+			Currency:       "EUR",
+			BillingPeriod:  types.BILLING_PERIOD_MONTHLY,
+			BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+		},
+	}
+
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), eurSubscription, eurLineItems))
+}
+
+func (s *CreditNoteServiceSuite) createTestInvoices() {
+	// Create a test subscription ID
+	testSubscriptionID := "sub_test_123"
+	eurSubscriptionID := "sub_eur_123"
+
+	// Finalized subscription invoice with succeeded payment
+	s.testData.invoices.finalized = &invoice.Invoice{
+		ID:             "inv_finalized_123",
+		CustomerID:     s.testData.customer.ID,
+		SubscriptionID: &testSubscriptionID,
+		InvoiceNumber:  lo.ToPtr("INV-001"),
+		InvoiceType:    types.InvoiceTypeSubscription,
+		InvoiceStatus:  types.InvoiceStatusFinalized,
+		PaymentStatus:  types.PaymentStatusSucceeded,
+		Currency:       "USD",
+		Subtotal:       decimal.NewFromFloat(100.00),
+		Total:          decimal.NewFromFloat(110.00),
+		AmountPaid:     decimal.NewFromFloat(110.00),
+		AmountDue:      decimal.Zero,
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:          "line_1",
+				DisplayName: lo.ToPtr("Product A"),
+				Amount:      decimal.NewFromFloat(50.00),
+				Currency:    "USD",
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:          "line_2",
+				DisplayName: lo.ToPtr("Product B"),
+				Amount:      decimal.NewFromFloat(50.00),
+				Currency:    "USD",
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			},
+		},
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.finalized))
+
+	// One-off invoice with pending payment
+	s.testData.invoices.pending = &invoice.Invoice{
+		ID:            "inv_pending_123",
+		CustomerID:    s.testData.customer.ID,
+		InvoiceNumber: lo.ToPtr("INV-002"),
+		InvoiceType:   types.InvoiceTypeOneOff,
+		InvoiceStatus: types.InvoiceStatusFinalized,
+		PaymentStatus: types.PaymentStatusPending,
+		Currency:      "USD",
+		Subtotal:      decimal.NewFromFloat(80.00),
+		Total:         decimal.NewFromFloat(88.00),
+		AmountPaid:    decimal.Zero,
+		AmountDue:     decimal.NewFromFloat(88.00),
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:          "line_3",
+				DisplayName: lo.ToPtr("Product C"),
+				Amount:      decimal.NewFromFloat(80.00),
+				Currency:    "USD",
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			},
+		},
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.pending))
+
+	// One-off invoice with failed payment
+	s.testData.invoices.failed = &invoice.Invoice{
+		ID:            "inv_failed_123",
+		CustomerID:    s.testData.customer.ID,
+		InvoiceNumber: lo.ToPtr("INV-003"),
+		InvoiceType:   types.InvoiceTypeOneOff,
+		InvoiceStatus: types.InvoiceStatusFinalized,
+		PaymentStatus: types.PaymentStatusFailed,
+		Currency:      "USD",
+		Subtotal:      decimal.NewFromFloat(60.00),
+		Total:         decimal.NewFromFloat(66.00),
+		AmountPaid:    decimal.Zero,
+		AmountDue:     decimal.NewFromFloat(66.00),
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:          "line_4",
+				DisplayName: lo.ToPtr("Product D"),
+				Amount:      decimal.NewFromFloat(60.00),
+				Currency:    "USD",
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			},
+		},
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.failed))
+
+	// Subscription invoice with refunded payment
+	s.testData.invoices.refunded = &invoice.Invoice{
+		ID:             "inv_refunded_123",
+		CustomerID:     s.testData.customer.ID,
+		SubscriptionID: &testSubscriptionID,
+		InvoiceNumber:  lo.ToPtr("INV-004"),
+		InvoiceType:    types.InvoiceTypeSubscription,
+		InvoiceStatus:  types.InvoiceStatusFinalized,
+		PaymentStatus:  types.PaymentStatusRefunded,
+		Currency:       "USD",
+		Subtotal:       decimal.NewFromFloat(40.00),
+		Total:          decimal.NewFromFloat(44.00),
+		AmountPaid:     decimal.NewFromFloat(44.00),
+		AmountDue:      decimal.Zero,
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:          "line_5",
+				DisplayName: lo.ToPtr("Product E"),
+				Amount:      decimal.NewFromFloat(40.00),
+				Currency:    "USD",
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			},
+		},
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.refunded))
+
+	// Subscription invoice with partially refunded payment (EUR)
+	s.testData.invoices.partialRefunded = &invoice.Invoice{
+		ID:             "inv_partial_refund_123",
+		CustomerID:     s.testData.customer.ID,
+		SubscriptionID: &eurSubscriptionID,
+		InvoiceNumber:  lo.ToPtr("INV-005"),
+		InvoiceType:    types.InvoiceTypeSubscription,
+		InvoiceStatus:  types.InvoiceStatusFinalized,
+		PaymentStatus:  types.PaymentStatusPartiallyRefunded,
+		Currency:       "EUR",
+		Subtotal:       decimal.NewFromFloat(120.00),
+		Total:          decimal.NewFromFloat(132.00),
+		AmountPaid:     decimal.NewFromFloat(132.00),
+		AmountDue:      decimal.Zero,
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:          "line_6",
+				DisplayName: lo.ToPtr("Product F"),
+				Amount:      decimal.NewFromFloat(60.00),
+				Currency:    "EUR",
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:          "line_7",
+				DisplayName: lo.ToPtr("Product G"),
+				Amount:      decimal.NewFromFloat(60.00),
+				Currency:    "EUR",
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			},
+		},
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.partialRefunded))
+}
+
+func (s *CreditNoteServiceSuite) createTestWallets() {
 	// Create test wallets using the wallet service
 	walletService := NewWalletService(ServiceParams{
 		Logger:           s.GetLogger(),
@@ -127,155 +403,6 @@ func (s *CreditNoteServiceSuite) setupTestData() {
 		CreditBalance: eurWalletResp.CreditBalance,
 		BaseModel:     types.GetDefaultBaseModel(s.GetContext()),
 	}
-
-	// Create test invoices with different payment statuses
-	s.createTestInvoices()
-}
-
-func (s *CreditNoteServiceSuite) createTestInvoices() {
-	// Finalized invoice with succeeded payment
-	s.testData.invoices.finalized = &invoice.Invoice{
-		ID:            "inv_finalized_123",
-		CustomerID:    s.testData.customer.ID,
-		InvoiceNumber: lo.ToPtr("INV-001"),
-		InvoiceType:   types.InvoiceTypeSubscription,
-		InvoiceStatus: types.InvoiceStatusFinalized,
-		PaymentStatus: types.PaymentStatusSucceeded,
-		Currency:      "USD",
-		Subtotal:      decimal.NewFromFloat(100.00),
-		Total:         decimal.NewFromFloat(110.00),
-		AmountPaid:    decimal.NewFromFloat(110.00),
-		AmountDue:     decimal.Zero,
-		LineItems: []*invoice.InvoiceLineItem{
-			{
-				ID:          "line_1",
-				DisplayName: lo.ToPtr("Product A"),
-				Amount:      decimal.NewFromFloat(50.00),
-				Currency:    "USD",
-				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
-			},
-			{
-				ID:          "line_2",
-				DisplayName: lo.ToPtr("Product B"),
-				Amount:      decimal.NewFromFloat(50.00),
-				Currency:    "USD",
-				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
-			},
-		},
-		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
-	}
-	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.finalized))
-
-	// Invoice with pending payment
-	s.testData.invoices.pending = &invoice.Invoice{
-		ID:            "inv_pending_123",
-		CustomerID:    s.testData.customer.ID,
-		InvoiceNumber: lo.ToPtr("INV-002"),
-		InvoiceType:   types.InvoiceTypeSubscription,
-		InvoiceStatus: types.InvoiceStatusFinalized,
-		PaymentStatus: types.PaymentStatusPending,
-		Currency:      "USD",
-		Subtotal:      decimal.NewFromFloat(80.00),
-		Total:         decimal.NewFromFloat(88.00),
-		AmountPaid:    decimal.Zero,
-		AmountDue:     decimal.NewFromFloat(88.00),
-		LineItems: []*invoice.InvoiceLineItem{
-			{
-				ID:          "line_3",
-				DisplayName: lo.ToPtr("Product C"),
-				Amount:      decimal.NewFromFloat(80.00),
-				Currency:    "USD",
-				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
-			},
-		},
-		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
-	}
-	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.pending))
-
-	// Invoice with failed payment
-	s.testData.invoices.failed = &invoice.Invoice{
-		ID:            "inv_failed_123",
-		CustomerID:    s.testData.customer.ID,
-		InvoiceNumber: lo.ToPtr("INV-003"),
-		InvoiceType:   types.InvoiceTypeSubscription,
-		InvoiceStatus: types.InvoiceStatusFinalized,
-		PaymentStatus: types.PaymentStatusFailed,
-		Currency:      "USD",
-		Subtotal:      decimal.NewFromFloat(60.00),
-		Total:         decimal.NewFromFloat(66.00),
-		AmountPaid:    decimal.Zero,
-		AmountDue:     decimal.NewFromFloat(66.00),
-		LineItems: []*invoice.InvoiceLineItem{
-			{
-				ID:          "line_4",
-				DisplayName: lo.ToPtr("Product D"),
-				Amount:      decimal.NewFromFloat(60.00),
-				Currency:    "USD",
-				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
-			},
-		},
-		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
-	}
-	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.failed))
-
-	// Invoice with refunded payment
-	s.testData.invoices.refunded = &invoice.Invoice{
-		ID:            "inv_refunded_123",
-		CustomerID:    s.testData.customer.ID,
-		InvoiceNumber: lo.ToPtr("INV-004"),
-		InvoiceType:   types.InvoiceTypeSubscription,
-		InvoiceStatus: types.InvoiceStatusFinalized,
-		PaymentStatus: types.PaymentStatusRefunded,
-		Currency:      "USD",
-		Subtotal:      decimal.NewFromFloat(40.00),
-		Total:         decimal.NewFromFloat(44.00),
-		AmountPaid:    decimal.NewFromFloat(44.00),
-		AmountDue:     decimal.Zero,
-		LineItems: []*invoice.InvoiceLineItem{
-			{
-				ID:          "line_5",
-				DisplayName: lo.ToPtr("Product E"),
-				Amount:      decimal.NewFromFloat(40.00),
-				Currency:    "USD",
-				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
-			},
-		},
-		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
-	}
-	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.refunded))
-
-	// Invoice with partially refunded payment
-	s.testData.invoices.partialRefunded = &invoice.Invoice{
-		ID:            "inv_partial_refund_123",
-		CustomerID:    s.testData.customer.ID,
-		InvoiceNumber: lo.ToPtr("INV-005"),
-		InvoiceType:   types.InvoiceTypeSubscription,
-		InvoiceStatus: types.InvoiceStatusFinalized,
-		PaymentStatus: types.PaymentStatusPartiallyRefunded,
-		Currency:      "EUR",
-		Subtotal:      decimal.NewFromFloat(120.00),
-		Total:         decimal.NewFromFloat(132.00),
-		AmountPaid:    decimal.NewFromFloat(132.00),
-		AmountDue:     decimal.Zero,
-		LineItems: []*invoice.InvoiceLineItem{
-			{
-				ID:          "line_6",
-				DisplayName: lo.ToPtr("Product F"),
-				Amount:      decimal.NewFromFloat(60.00),
-				Currency:    "EUR",
-				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
-			},
-			{
-				ID:          "line_7",
-				DisplayName: lo.ToPtr("Product G"),
-				Amount:      decimal.NewFromFloat(60.00),
-				Currency:    "EUR",
-				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
-			},
-		},
-		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
-	}
-	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.GetContext(), s.testData.invoices.partialRefunded))
 }
 
 // Test CreateCreditNote method
@@ -750,39 +877,49 @@ func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 	// This bypasses the CreateCreditNote validation that automatically processes the credit note
 	draftCNData := &creditnote.CreditNote{
 		ID:               "cn_draft_test",
+		CustomerID:       s.testData.customer.ID,
 		InvoiceID:        s.testData.invoices.finalized.ID,
+		SubscriptionID:   s.testData.invoices.finalized.SubscriptionID, // Copy from invoice
 		CreditNoteNumber: "CN-DRAFT-TEST",
 		CreditNoteStatus: types.CreditNoteStatusDraft,
 		CreditNoteType:   types.CreditNoteTypeRefund, // Since finalized invoice with succeeded payment
 		Reason:           types.CreditNoteReasonBillingError,
 		Currency:         "USD",
 		TotalAmount:      decimal.NewFromFloat(20.00),
-		BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		LineItems: []*creditnote.CreditNoteLineItem{
+			{
+				ID:          "draft_line_1",
+				DisplayName: "Refund for Product A",
+				Amount:      decimal.NewFromFloat(20.00),
+				Currency:    "USD",
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			},
+		},
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
 	}
-
-	err := s.GetStores().CreditNoteRepo.CreateWithLineItems(s.GetContext(), draftCNData)
-	s.NoError(err)
+	s.NoError(s.GetStores().CreditNoteRepo.CreateWithLineItems(s.GetContext(), draftCNData))
 
 	// Create a manual draft credit note with zero amount directly in the repository for testing
-	// This bypasses the CreateCreditNote validation
 	zeroCNData := &creditnote.CreditNote{
 		ID:               "cn_zero_test",
-		InvoiceID:        s.testData.invoices.pending.ID,
+		CustomerID:       s.testData.customer.ID,
+		InvoiceID:        s.testData.invoices.finalized.ID,
 		CreditNoteNumber: "CN-ZERO-TEST",
 		CreditNoteStatus: types.CreditNoteStatusDraft,
-		CreditNoteType:   types.CreditNoteTypeAdjustment,
-		Reason:           types.CreditNoteReasonService,
+		CreditNoteType:   types.CreditNoteTypeRefund,
+		Reason:           types.CreditNoteReasonBillingError,
 		Currency:         "USD",
 		TotalAmount:      decimal.Zero,
 		BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 	}
 
-	err = s.GetStores().CreditNoteRepo.CreateWithLineItems(s.GetContext(), zeroCNData)
+	err := s.GetStores().CreditNoteRepo.CreateWithLineItems(s.GetContext(), zeroCNData)
 	s.NoError(err)
 
 	// Create a processed credit note for the "already processed" test
 	processedCNData := &creditnote.CreditNote{
 		ID:               "cn_processed_test",
+		CustomerID:       s.testData.customer.ID,
 		InvoiceID:        s.testData.invoices.finalized.ID,
 		CreditNoteNumber: "CN-PROCESSED-TEST",
 		CreditNoteStatus: types.CreditNoteStatusFinalized,

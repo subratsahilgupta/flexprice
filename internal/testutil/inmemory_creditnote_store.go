@@ -560,6 +560,8 @@ func (s *InMemoryCreditNoteStore) cloneCreditNote(cn *creditnote.CreditNote) *cr
 		ID:               cn.ID,
 		CreditNoteNumber: cn.CreditNoteNumber,
 		InvoiceID:        cn.InvoiceID,
+		CustomerID:       cn.CustomerID,
+		SubscriptionID:   cn.SubscriptionID,
 		CreditNoteStatus: cn.CreditNoteStatus,
 		CreditNoteType:   cn.CreditNoteType,
 		RefundStatus:     cn.RefundStatus,

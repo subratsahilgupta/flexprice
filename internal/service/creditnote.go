@@ -9,6 +9,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
@@ -109,6 +110,7 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 		cn.CreditNoteType = creditNoteType
 		cn.CreditNoteStatus = types.CreditNoteStatusDraft
 		cn.SubscriptionID = inv.SubscriptionID
+		cn.CustomerID = inv.CustomerID
 
 		// Create credit note with line items in a single transaction
 		if err := s.CreditNoteRepo.CreateWithLineItems(tx, cn); err != nil {
@@ -178,16 +180,24 @@ func (s *creditNoteService) GetCreditNote(ctx context.Context, id string) (*dto.
 		subscription = sub
 	}
 
-	customer, err := customerService.GetCustomer(ctx, cn.CustomerID)
-	if err != nil {
-		return nil, err
+	var customerResp *dto.CustomerResponse
+	if cn.CustomerID != "" {
+		customerResp, err = customerService.GetCustomer(ctx, cn.CustomerID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var customerData *customer.Customer
+	if customerResp != nil {
+		customerData = customerResp.Customer
 	}
 
 	return &dto.CreditNoteResponse{
 		CreditNote:   cn,
 		Invoice:      invoiceResponse,
 		Subscription: subscription,
-		Customer:     customer.Customer,
+		Customer:     customerData,
 	}, nil
 }
 
