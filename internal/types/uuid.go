@@ -48,6 +48,7 @@ const (
 	UUID_PREFIX_SECRET                      = "secret"
 	UUID_PREFIX_CREDIT_GRANT                = "cg"
 	UUID_PREFIX_COSTSHEET                   = "cost"
+	UUID_PREFIX_CREDIT_GRANT_APPLICATION    = "cga"
 
 	UUID_PREFIX_WEBHOOK_EVENT = "webhook"
 )
