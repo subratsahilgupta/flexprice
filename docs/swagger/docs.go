@@ -153,14 +153,14 @@ const docTemplate = `{
                     {
                         "enum": [
                             "published",
-                            "draft",
+                            "deleted",
                             "archived"
                         ],
                         "type": "string",
                         "x-enum-varnames": [
-                            "CostsheetStatusPublished",
-                            "CostsheetStatusDraft",
-                            "CostsheetStatusArchived"
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
                         ],
                         "description": "Status filters by costsheet status",
                         "name": "status",
@@ -472,7 +472,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Delete a cost sheet",
+                "description": "Delete a cost sheet. If status is published/draft, it will be archived. If already archived, it will be deleted from database.",
                 "consumes": [
                     "application/json"
                 ],
@@ -504,12 +504,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -3319,6 +3313,11 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "external_customer_id",
                         "in": "query"
                     },
                     {
@@ -7294,8 +7293,6 @@ const docTemplate = `{
         "dto.CalculateROIRequest": {
             "type": "object",
             "required": [
-                "meter_id",
-                "price_id",
                 "subscription_id"
             ],
             "properties": {
@@ -7428,10 +7425,6 @@ const docTemplate = `{
                 },
                 "price_id": {
                     "description": "PriceID references the price configuration",
-                    "type": "string"
-                },
-                "subscription_id": {
-                    "description": "SubscriptionID to get the time period from if not provided in context",
                     "type": "string"
                 }
             }
@@ -8288,6 +8281,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "external_customer_id": {
+                    "type": "string"
+                },
+                "initial_credits_expiry_date_utc": {
+                    "description": "initial_credits_expiry_date_utc is the expiry date in UTC timezone (optional to set nil means no expiry)\nex 2025-01-01 00:00:00 UTC",
                     "type": "string"
                 },
                 "initial_credits_to_load": {
@@ -9150,6 +9147,9 @@ const docTemplate = `{
                             "type": "string"
                         }
                     }
+                },
+                "multiplier": {
+                    "type": "integer"
                 },
                 "property_name": {
                     "description": "will be empty/ignored in case of COUNT",
@@ -11511,6 +11511,10 @@ const docTemplate = `{
                     "description": "Field is the key in $event.properties on which the aggregation is to be applied\nFor ex if the aggregation type is sum for API usage, the field could be \"duration_ms\"",
                     "type": "string"
                 },
+                "multiplier": {
+                    "description": "Multiplier is the multiplier for the aggregation\nFor ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000\nto scale up by a factor of 1000",
+                    "type": "integer"
+                },
                 "type": {
                     "$ref": "#/definitions/types.AggregationType"
                 }
@@ -11878,13 +11882,20 @@ const docTemplate = `{
                 "COUNT",
                 "SUM",
                 "AVG",
-                "COUNT_UNIQUE"
+                "COUNT_UNIQUE",
+                "LATEST",
+                "SUM_WITH_MULTIPLIER"
             ],
+            "x-enum-comments": {
+                "AggregationSumWithMultiplier": "Sum with a multiplier - [sum(value) * multiplier]"
+            },
             "x-enum-varnames": [
                 "AggregationCount",
                 "AggregationSum",
                 "AggregationAvg",
-                "AggregationCountUnique"
+                "AggregationCountUnique",
+                "AggregationLatest",
+                "AggregationSumWithMultiplier"
             ]
         },
         "types.AutoTopupTrigger": {
@@ -11963,19 +11974,6 @@ const docTemplate = `{
                 "BILLING_TIER_SLAB"
             ]
         },
-        "types.CostsheetStatus": {
-            "type": "string",
-            "enum": [
-                "published",
-                "draft",
-                "archived"
-            ],
-            "x-enum-varnames": [
-                "CostsheetStatusPublished",
-                "CostsheetStatusDraft",
-                "CostsheetStatusArchived"
-            ]
-        },
         "types.CreditGrantCadence": {
             "type": "string",
             "enum": [
@@ -12026,12 +12024,12 @@ const docTemplate = `{
                 "HALF_YEARLY"
             ],
             "x-enum-varnames": [
-                "CreditGrantPeriodDaily",
-                "CreditGrantPeriodWeekly",
-                "CreditGrantPeriodMonthly",
-                "CreditGrantPeriodAnnual",
-                "CreditGrantPeriodQuarter",
-                "CreditGrantPeriodHalfYear"
+                "CREDIT_GRANT_PERIOD_DAILY",
+                "CREDIT_GRANT_PERIOD_WEEKLY",
+                "CREDIT_GRANT_PERIOD_MONTHLY",
+                "CREDIT_GRANT_PERIOD_ANNUAL",
+                "CREDIT_GRANT_PERIOD_QUARTER",
+                "CREDIT_GRANT_PERIOD_HALF_YEARLY"
             ]
         },
         "types.CreditGrantScope": {
