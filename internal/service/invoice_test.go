@@ -680,6 +680,222 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatus() {
 	}
 }
 
+func (s *InvoiceServiceSuite) TestUpdatePaymentStatusWithPayments() {
+	// Clear payment repository to ensure clean state
+	s.GetStores().PaymentRepo.(*testutil.InMemoryPaymentStore).Clear()
+
+	// Create a finalized invoice for testing
+	testInvoice := &invoice.Invoice{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+		CustomerID:      s.testData.customer.ID,
+		SubscriptionID:  &s.testData.subscription.ID,
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusFinalized,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromFloat(100),
+		AmountPaid:      decimal.Zero,
+		AmountRemaining: decimal.NewFromFloat(100),
+		Description:     "Test Invoice for Payment Status Update",
+		BillingPeriod:   lo.ToPtr(string(s.testData.subscription.BillingPeriod)),
+		PeriodStart:     &s.testData.subscription.CurrentPeriodStart,
+		PeriodEnd:       &s.testData.subscription.CurrentPeriodEnd,
+		BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.invoiceRepo.Create(s.GetContext(), testInvoice))
+
+	// Create another invoice without payments for comparison
+	invoiceWithoutPayments := &invoice.Invoice{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+		CustomerID:      s.testData.customer.ID,
+		SubscriptionID:  &s.testData.subscription.ID,
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusFinalized,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromFloat(50),
+		AmountPaid:      decimal.Zero,
+		AmountRemaining: decimal.NewFromFloat(50),
+		Description:     "Test Invoice without Payments",
+		BillingPeriod:   lo.ToPtr(string(s.testData.subscription.BillingPeriod)),
+		PeriodStart:     &s.testData.subscription.CurrentPeriodStart,
+		PeriodEnd:       &s.testData.subscription.CurrentPeriodEnd,
+		BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.invoiceRepo.Create(s.GetContext(), invoiceWithoutPayments))
+
+	tests := []struct {
+		name                 string
+		setupPayment         func() string // Returns invoice ID
+		newPaymentStatus     types.PaymentStatus
+		newAmount            *decimal.Decimal
+		wantErr              bool
+		expectedErrorMessage string
+		shouldUpdateStatus   bool
+	}{
+		{
+			name: "should return error when invoice has active payment records",
+			setupPayment: func() string {
+				// Create a payment record for the test invoice
+				paymentService := NewPaymentService(ServiceParams{
+					Logger:           s.GetLogger(),
+					Config:           s.GetConfig(),
+					DB:               s.GetDB(),
+					SubRepo:          s.GetStores().SubscriptionRepo,
+					PlanRepo:         s.GetStores().PlanRepo,
+					PriceRepo:        s.GetStores().PriceRepo,
+					EventRepo:        s.eventRepo,
+					MeterRepo:        s.GetStores().MeterRepo,
+					CustomerRepo:     s.GetStores().CustomerRepo,
+					InvoiceRepo:      s.invoiceRepo,
+					EntitlementRepo:  s.GetStores().EntitlementRepo,
+					EnvironmentRepo:  s.GetStores().EnvironmentRepo,
+					FeatureRepo:      s.GetStores().FeatureRepo,
+					TenantRepo:       s.GetStores().TenantRepo,
+					UserRepo:         s.GetStores().UserRepo,
+					AuthRepo:         s.GetStores().AuthRepo,
+					WalletRepo:       s.GetStores().WalletRepo,
+					PaymentRepo:      s.GetStores().PaymentRepo,
+					EventPublisher:   s.GetPublisher(),
+					WebhookPublisher: s.GetWebhookPublisher(),
+				})
+
+				// Create a payment record
+				payment, err := paymentService.CreatePayment(s.GetContext(), &dto.CreatePaymentRequest{
+					Amount:            decimal.NewFromFloat(100),
+					Currency:          "usd",
+					PaymentMethodType: types.PaymentMethodTypeOffline,
+					DestinationType:   types.PaymentDestinationTypeInvoice,
+					DestinationID:     testInvoice.ID,
+					IdempotencyKey:    "test_payment_for_invoice",
+					Metadata: types.Metadata{
+						"test": "payment_for_invoice",
+					},
+				})
+				s.NoError(err)
+				s.T().Logf("Created payment: %s for invoice: %s", payment.ID, testInvoice.ID)
+
+				return testInvoice.ID
+			},
+			newPaymentStatus:     types.PaymentStatusSucceeded,
+			newAmount:            lo.ToPtr(decimal.NewFromFloat(100)),
+			wantErr:              true,
+			expectedErrorMessage: "invoice has active payment records",
+			shouldUpdateStatus:   false,
+		},
+		{
+			name: "should successfully update payment status when no payments exist",
+			setupPayment: func() string {
+				// Return the invoice ID without creating any payments
+				return invoiceWithoutPayments.ID
+			},
+			newPaymentStatus:   types.PaymentStatusSucceeded,
+			newAmount:          lo.ToPtr(decimal.NewFromFloat(50)),
+			wantErr:            false,
+			shouldUpdateStatus: true,
+		},
+		{
+			name: "should successfully update to failed status when no payments exist",
+			setupPayment: func() string {
+				// Create another invoice without payments for this test
+				anotherInvoice := &invoice.Invoice{
+					ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+					CustomerID:      s.testData.customer.ID,
+					InvoiceType:     types.InvoiceTypeOneOff,
+					InvoiceStatus:   types.InvoiceStatusFinalized,
+					PaymentStatus:   types.PaymentStatusPending,
+					Currency:        "usd",
+					AmountDue:       decimal.NewFromFloat(75),
+					AmountPaid:      decimal.Zero,
+					AmountRemaining: decimal.NewFromFloat(75),
+					Description:     "Test Invoice for Failed Payment",
+					BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+				}
+				s.NoError(s.invoiceRepo.Create(s.GetContext(), anotherInvoice))
+				return anotherInvoice.ID
+			},
+			newPaymentStatus:   types.PaymentStatusFailed,
+			newAmount:          nil, // No amount for failed payment
+			wantErr:            false,
+			shouldUpdateStatus: true,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			// Setup payment or get invoice ID
+			invoiceID := tt.setupPayment()
+
+			// Get the original invoice state for comparison
+			originalInvoice, err := s.invoiceRepo.Get(s.GetContext(), invoiceID)
+			s.NoError(err)
+
+			// Attempt to update payment status
+			err = s.service.UpdatePaymentStatus(s.GetContext(), invoiceID, tt.newPaymentStatus, tt.newAmount)
+
+			if tt.wantErr {
+				s.Error(err, "Expected error for test case: %s", tt.name)
+				if tt.expectedErrorMessage != "" {
+					s.Contains(err.Error(), tt.expectedErrorMessage,
+						"Expected error message '%s' not found in error: %v", tt.expectedErrorMessage, err)
+				}
+
+				// Verify that the invoice status was NOT updated
+				updatedInvoice, err := s.invoiceRepo.Get(s.GetContext(), invoiceID)
+				s.NoError(err)
+				s.Equal(originalInvoice.PaymentStatus, updatedInvoice.PaymentStatus,
+					"Payment status should not have changed when error occurred")
+				s.True(originalInvoice.AmountPaid.Equal(updatedInvoice.AmountPaid),
+					"Amount paid should not have changed when error occurred")
+				s.True(originalInvoice.AmountRemaining.Equal(updatedInvoice.AmountRemaining),
+					"Amount remaining should not have changed when error occurred")
+
+				return
+			}
+
+			s.NoError(err, "Unexpected error for test case: %s", tt.name)
+
+			if tt.shouldUpdateStatus {
+				// Verify that the invoice was updated correctly
+				updatedInvoice, err := s.invoiceRepo.Get(s.GetContext(), invoiceID)
+				s.NoError(err)
+
+				s.Equal(tt.newPaymentStatus, updatedInvoice.PaymentStatus,
+					"Payment status should be updated to %s", tt.newPaymentStatus)
+
+				// Verify amounts based on payment status
+				switch tt.newPaymentStatus {
+				case types.PaymentStatusSucceeded:
+					s.True(updatedInvoice.AmountDue.Equal(updatedInvoice.AmountPaid),
+						"Amount paid should equal amount due for succeeded payment")
+					s.True(decimal.Zero.Equal(updatedInvoice.AmountRemaining),
+						"Amount remaining should be zero for succeeded payment")
+					s.NotNil(updatedInvoice.PaidAt, "PaidAt should be set for succeeded payment")
+
+				case types.PaymentStatusFailed:
+					s.True(decimal.Zero.Equal(updatedInvoice.AmountPaid),
+						"Amount paid should be zero for failed payment")
+					s.True(updatedInvoice.AmountDue.Equal(updatedInvoice.AmountRemaining),
+						"Amount remaining should equal amount due for failed payment")
+					s.Nil(updatedInvoice.PaidAt, "PaidAt should be nil for failed payment")
+
+				case types.PaymentStatusPending:
+					if tt.newAmount != nil {
+						s.True(tt.newAmount.Equal(updatedInvoice.AmountPaid),
+							"Amount paid should equal provided amount for pending payment")
+						expectedRemaining := updatedInvoice.AmountDue.Sub(*tt.newAmount)
+						s.True(expectedRemaining.Equal(updatedInvoice.AmountRemaining),
+							"Amount remaining should be correctly calculated for pending payment")
+					}
+				}
+
+				s.T().Logf("Successfully updated invoice %s to payment status %s with amount paid %s",
+					invoiceID, tt.newPaymentStatus, updatedInvoice.AmountPaid)
+			}
+		})
+	}
+}
+
 func (s *InvoiceServiceSuite) TestGetCustomerInvoiceSummary() {
 	// Setup test data
 	customer := s.testData.customer
