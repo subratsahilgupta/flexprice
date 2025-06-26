@@ -28,7 +28,7 @@ type SubscriptionStateHandler struct {
 	grant        *creditgrant.CreditGrant
 }
 
-func (h *SubscriptionStateHandler) DetermineAction() (StateAction, error) {
+func (h *SubscriptionStateHandler) DetermineCreditGrantAction() (StateAction, error) {
 	switch h.subscription.SubscriptionStatus {
 	case types.SubscriptionStatusActive:
 		return StateActionApply, nil
@@ -61,7 +61,7 @@ func (h *SubscriptionStateHandler) DetermineAction() (StateAction, error) {
 		return StateActionCancel, nil
 
 	case types.SubscriptionStatusPaused:
-		// Paused subscriptions should defer credits until resumed
+		// Paused subscriptions should skip credits until resumed
 		return StateActionSkip, nil
 
 	default:

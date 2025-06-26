@@ -532,7 +532,7 @@ func (s *creditGrantService) processScheduledApplication(
 	// Apply the grant
 	// Check subscription state
 	stateHandler := NewSubscriptionStateHandler(subscription.Subscription, creditGrant.CreditGrant)
-	action, err := stateHandler.DetermineAction()
+	action, err := stateHandler.DetermineCreditGrantAction()
 
 	if err != nil {
 		s.Logger.Errorw("Failed to determine action", "application_id", cga.ID, "error", err)

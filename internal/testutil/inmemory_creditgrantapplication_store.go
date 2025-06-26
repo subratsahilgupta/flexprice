@@ -2,9 +2,6 @@ package testutil
 
 import (
 	"context"
-	"sort"
-	"sync"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -14,14 +11,13 @@ import (
 
 // InMemoryCreditGrantApplicationStore provides an in-memory implementation of creditgrantapplication.Repository for testing
 type InMemoryCreditGrantApplicationStore struct {
-	mu           sync.RWMutex
-	applications map[string]*creditgrantapplication.CreditGrantApplication
+	*InMemoryStore[*creditgrantapplication.CreditGrantApplication]
 }
 
 // NewInMemoryCreditGrantApplicationStore creates a new in-memory credit grant application store
 func NewInMemoryCreditGrantApplicationStore() *InMemoryCreditGrantApplicationStore {
 	return &InMemoryCreditGrantApplicationStore{
-		applications: make(map[string]*creditgrantapplication.CreditGrantApplication),
+		InMemoryStore: NewInMemoryStore[*creditgrantapplication.CreditGrantApplication](),
 	}
 }
 
@@ -59,40 +55,19 @@ func copyCreditGrantApplication(cga *creditgrantapplication.CreditGrantApplicati
 
 // Create creates a new credit grant application
 func (s *InMemoryCreditGrantApplicationStore) Create(ctx context.Context, cga *creditgrantapplication.CreditGrantApplication) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Check if already exists
-	if _, exists := s.applications[cga.ID]; exists {
-		return ierr.NewError("credit grant application already exists").
-			WithHint("A credit grant application with this ID already exists").
-			WithReportableDetails(map[string]interface{}{"id": cga.ID}).
-			Mark(ierr.ErrAlreadyExists)
-	}
-
 	// Set environment ID from context if not already set
 	if cga.EnvironmentID == "" {
 		cga.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
-	// Store copy to avoid mutation
-	stored := copyCreditGrantApplication(cga)
-	s.applications[cga.ID] = stored
-
-	return nil
+	return s.InMemoryStore.Create(ctx, cga.ID, copyCreditGrantApplication(cga))
 }
 
 // Get retrieves a credit grant application by ID
 func (s *InMemoryCreditGrantApplicationStore) Get(ctx context.Context, id string) (*creditgrantapplication.CreditGrantApplication, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	cga, exists := s.applications[id]
-	if !exists {
-		return nil, ierr.NewError("credit grant application not found").
-			WithHint("No credit grant application found with the given ID").
-			WithReportableDetails(map[string]interface{}{"id": id}).
-			Mark(ierr.ErrNotFound)
+	cga, err := s.InMemoryStore.Get(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 
 	return copyCreditGrantApplication(cga), nil
@@ -100,70 +75,19 @@ func (s *InMemoryCreditGrantApplicationStore) Get(ctx context.Context, id string
 
 // List retrieves credit grant applications based on filter
 func (s *InMemoryCreditGrantApplicationStore) List(ctx context.Context, filter *types.CreditGrantApplicationFilter) ([]*creditgrantapplication.CreditGrantApplication, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var results []*creditgrantapplication.CreditGrantApplication
-
-	for _, cga := range s.applications {
-		if s.matchesFilter(ctx, cga, filter) {
-			results = append(results, copyCreditGrantApplication(cga))
-		}
+	items, err := s.InMemoryStore.List(ctx, filter, creditGrantApplicationFilterFn, creditGrantApplicationSortFn)
+	if err != nil {
+		return nil, err
 	}
 
-	// Apply sorting
-	if filter != nil && filter.QueryFilter != nil && filter.QueryFilter.Sort != nil {
-		sort.Slice(results, func(i, j int) bool {
-			switch *filter.QueryFilter.Sort {
-			case "scheduled_for":
-				if filter.QueryFilter.Order != nil && *filter.QueryFilter.Order == "asc" {
-					return results[i].ScheduledFor.Before(results[j].ScheduledFor)
-				}
-				return results[i].ScheduledFor.After(results[j].ScheduledFor)
-			case "created_at":
-				if filter.QueryFilter.Order != nil && *filter.QueryFilter.Order == "asc" {
-					return results[i].CreatedAt.Before(results[j].CreatedAt)
-				}
-				return results[i].CreatedAt.After(results[j].CreatedAt)
-			default:
-				return results[i].CreatedAt.After(results[j].CreatedAt)
-			}
-		})
-	}
-
-	// Apply pagination
-	if filter != nil && filter.QueryFilter != nil {
-		offset := filter.GetOffset()
-		limit := filter.GetLimit()
-
-		if offset > len(results) {
-			return []*creditgrantapplication.CreditGrantApplication{}, nil
-		}
-
-		end := offset + limit
-		if end > len(results) {
-			end = len(results)
-		}
-
-		results = results[offset:end]
-	}
-
-	return results, nil
+	return lo.Map(items, func(cga *creditgrantapplication.CreditGrantApplication, _ int) *creditgrantapplication.CreditGrantApplication {
+		return copyCreditGrantApplication(cga)
+	}), nil
 }
 
 // Count counts credit grant applications based on filter
 func (s *InMemoryCreditGrantApplicationStore) Count(ctx context.Context, filter *types.CreditGrantApplicationFilter) (int, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	count := 0
-	for _, cga := range s.applications {
-		if s.matchesFilter(ctx, cga, filter) {
-			count++
-		}
-	}
-
-	return count, nil
+	return s.InMemoryStore.Count(ctx, filter, creditGrantApplicationFilterFn)
 }
 
 // ListAll retrieves all credit grant applications based on filter without pagination
@@ -185,78 +109,58 @@ func (s *InMemoryCreditGrantApplicationStore) ListAll(ctx context.Context, filte
 
 // Update updates an existing credit grant application
 func (s *InMemoryCreditGrantApplicationStore) Update(ctx context.Context, cga *creditgrantapplication.CreditGrantApplication) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.applications[cga.ID]; !exists {
-		return ierr.NewError("credit grant application not found").
-			WithHint("No credit grant application found with the given ID").
-			WithReportableDetails(map[string]interface{}{"id": cga.ID}).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Store copy to avoid mutation
-	stored := copyCreditGrantApplication(cga)
-	s.applications[cga.ID] = stored
-
-	return nil
+	return s.InMemoryStore.Update(ctx, cga.ID, copyCreditGrantApplication(cga))
 }
 
 // Delete deletes a credit grant application
 func (s *InMemoryCreditGrantApplicationStore) Delete(ctx context.Context, cga *creditgrantapplication.CreditGrantApplication) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.applications[cga.ID]; !exists {
-		return ierr.NewError("credit grant application not found").
-			WithHint("No credit grant application found with the given ID").
-			WithReportableDetails(map[string]interface{}{"id": cga.ID}).
-			Mark(ierr.ErrNotFound)
-	}
-
-	delete(s.applications, cga.ID)
-	return nil
+	return s.InMemoryStore.Delete(ctx, cga.ID)
 }
 
-// FindAllScheduledApplications finds all applications scheduled for processing
+// FindAllScheduledApplications retrieves all scheduled applications
 func (s *InMemoryCreditGrantApplicationStore) FindAllScheduledApplications(ctx context.Context) ([]*creditgrantapplication.CreditGrantApplication, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var results []*creditgrantapplication.CreditGrantApplication
-	now := time.Now().UTC()
-
-	for _, cga := range s.applications {
-		if (cga.ApplicationStatus == types.ApplicationStatusPending || cga.ApplicationStatus == types.ApplicationStatusFailed) &&
-			cga.ScheduledFor.Before(now) {
-			results = append(results, copyCreditGrantApplication(cga))
-		}
+	filter := &types.CreditGrantApplicationFilter{
+		QueryFilter:         types.NewNoLimitQueryFilter(),
+		ApplicationStatuses: []types.ApplicationStatus{types.ApplicationStatusPending, types.ApplicationStatusFailed},
 	}
 
-	return results, nil
+	return s.List(ctx, filter)
 }
 
 // FindByIdempotencyKey finds a credit grant application by idempotency key
 func (s *InMemoryCreditGrantApplicationStore) FindByIdempotencyKey(ctx context.Context, idempotencyKey string) (*creditgrantapplication.CreditGrantApplication, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, cga := range s.applications {
-		if cga.IdempotencyKey == idempotencyKey {
-			return copyCreditGrantApplication(cga), nil
-		}
+	// Create a filter function that matches by idempotency key
+	filterFn := func(ctx context.Context, cga *creditgrantapplication.CreditGrantApplication, _ interface{}) bool {
+		return cga.IdempotencyKey == idempotencyKey &&
+			cga.TenantID == types.GetTenantID(ctx) &&
+			CheckEnvironmentFilter(ctx, cga.EnvironmentID)
 	}
 
-	return nil, ierr.NewError("credit grant application not found").
-		WithHint("No credit grant application found with the given idempotency key").
-		WithReportableDetails(map[string]interface{}{"idempotency_key": idempotencyKey}).
-		Mark(ierr.ErrNotFound)
+	// List all applications with our filter
+	applications, err := s.InMemoryStore.List(ctx, nil, filterFn, nil)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list credit grant applications").
+			Mark(ierr.ErrDatabase)
+	}
+
+	if len(applications) == 0 {
+		return nil, ierr.NewError("credit grant application not found").
+			WithHintf("Credit grant application with idempotency key %s was not found", idempotencyKey).
+			WithReportableDetails(map[string]any{
+				"idempotency_key": idempotencyKey,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	return copyCreditGrantApplication(applications[0]), nil
 }
 
-// matchesFilter checks if a credit grant application matches the given filter
-func (s *InMemoryCreditGrantApplicationStore) matchesFilter(ctx context.Context, cga *creditgrantapplication.CreditGrantApplication, filter *types.CreditGrantApplicationFilter) bool {
-	if filter == nil {
-		return true
+// creditGrantApplicationFilterFn implements filtering logic for credit grant applications
+func creditGrantApplicationFilterFn(ctx context.Context, cga *creditgrantapplication.CreditGrantApplication, filter interface{}) bool {
+	f, ok := filter.(*types.CreditGrantApplicationFilter)
+	if !ok {
+		return false
 	}
 
 	// Apply tenant filter
@@ -266,56 +170,38 @@ func (s *InMemoryCreditGrantApplicationStore) matchesFilter(ctx context.Context,
 	}
 
 	// Apply environment filter
-	environmentID := types.GetEnvironmentID(ctx)
-	if environmentID != "" && cga.EnvironmentID != environmentID {
+	if !CheckEnvironmentFilter(ctx, cga.EnvironmentID) {
 		return false
 	}
 
-	// Check status filter
-	if filter.QueryFilter != nil && filter.QueryFilter.Status != nil {
-		if cga.Status != *filter.QueryFilter.Status {
-			return false
-		}
-	}
-
 	// Check application IDs filter
-	if len(filter.ApplicationIDs) > 0 {
-		if !lo.Contains(filter.ApplicationIDs, cga.ID) {
-			return false
-		}
+	if len(f.ApplicationIDs) > 0 && !lo.Contains(f.ApplicationIDs, cga.ID) {
+		return false
 	}
 
 	// Check credit grant IDs filter
-	if len(filter.CreditGrantIDs) > 0 {
-		if !lo.Contains(filter.CreditGrantIDs, cga.CreditGrantID) {
-			return false
-		}
+	if len(f.CreditGrantIDs) > 0 && !lo.Contains(f.CreditGrantIDs, cga.CreditGrantID) {
+		return false
 	}
 
 	// Check subscription IDs filter
-	if len(filter.SubscriptionIDs) > 0 {
-		if !lo.Contains(filter.SubscriptionIDs, cga.SubscriptionID) {
-			return false
-		}
+	if len(f.SubscriptionIDs) > 0 && !lo.Contains(f.SubscriptionIDs, cga.SubscriptionID) {
+		return false
+	}
+
+	// Check application statuses filter
+	if len(f.ApplicationStatuses) > 0 && !lo.Contains(f.ApplicationStatuses, cga.ApplicationStatus) {
+		return false
 	}
 
 	// Check scheduled for filter
-	if filter.ScheduledFor != nil {
-		if !cga.ScheduledFor.Equal(*filter.ScheduledFor) {
-			return false
-		}
+	if f.ScheduledFor != nil && !cga.ScheduledFor.Equal(*f.ScheduledFor) {
+		return false
 	}
 
 	// Check applied at filter
-	if filter.AppliedAt != nil {
-		if cga.AppliedAt == nil || !cga.AppliedAt.Equal(*filter.AppliedAt) {
-			return false
-		}
-	}
-
-	// Check application status filter
-	if len(filter.ApplicationStatuses) > 0 {
-		if !lo.Contains(filter.ApplicationStatuses, cga.ApplicationStatus) {
+	if f.AppliedAt != nil {
+		if cga.AppliedAt == nil || !cga.AppliedAt.Equal(*f.AppliedAt) {
 			return false
 		}
 	}
@@ -323,9 +209,13 @@ func (s *InMemoryCreditGrantApplicationStore) matchesFilter(ctx context.Context,
 	return true
 }
 
+// creditGrantApplicationSortFn implements sorting logic for credit grant applications
+func creditGrantApplicationSortFn(i, j *creditgrantapplication.CreditGrantApplication) bool {
+	// Default sort by created_at desc
+	return i.CreatedAt.After(j.CreatedAt)
+}
+
 // Clear removes all credit grant applications from the store
 func (s *InMemoryCreditGrantApplicationStore) Clear() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.applications = make(map[string]*creditgrantapplication.CreditGrantApplication)
+	s.InMemoryStore.Clear()
 }

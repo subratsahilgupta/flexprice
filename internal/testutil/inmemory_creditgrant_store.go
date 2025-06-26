@@ -2,8 +2,6 @@ package testutil
 
 import (
 	"context"
-	"sort"
-	"sync"
 
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -13,112 +11,109 @@ import (
 
 // InMemoryCreditGrantStore provides an in-memory implementation of creditgrant.Repository for testing
 type InMemoryCreditGrantStore struct {
-	mu           sync.RWMutex
-	creditGrants map[string]*creditgrant.CreditGrant
+	*InMemoryStore[*creditgrant.CreditGrant]
 }
 
 // NewInMemoryCreditGrantStore creates a new in-memory credit grant store
 func NewInMemoryCreditGrantStore() *InMemoryCreditGrantStore {
 	return &InMemoryCreditGrantStore{
-		creditGrants: make(map[string]*creditgrant.CreditGrant),
+		InMemoryStore: NewInMemoryStore[*creditgrant.CreditGrant](),
 	}
+}
+
+// Helper to copy credit grant
+func copyCreditGrant(cg *creditgrant.CreditGrant) *creditgrant.CreditGrant {
+	if cg == nil {
+		return nil
+	}
+
+	copy := *cg
+
+	// Deep copy pointers
+	if cg.PlanID != nil {
+		planID := *cg.PlanID
+		copy.PlanID = &planID
+	}
+	if cg.SubscriptionID != nil {
+		subscriptionID := *cg.SubscriptionID
+		copy.SubscriptionID = &subscriptionID
+	}
+	if cg.Period != nil {
+		period := *cg.Period
+		copy.Period = &period
+	}
+	if cg.PeriodCount != nil {
+		periodCount := *cg.PeriodCount
+		copy.PeriodCount = &periodCount
+	}
+	if cg.ExpirationDuration != nil {
+		expirationDuration := *cg.ExpirationDuration
+		copy.ExpirationDuration = &expirationDuration
+	}
+	if cg.ExpirationDurationUnit != nil {
+		expirationDurationUnit := *cg.ExpirationDurationUnit
+		copy.ExpirationDurationUnit = &expirationDurationUnit
+	}
+	if cg.Priority != nil {
+		priority := *cg.Priority
+		copy.Priority = &priority
+	}
+
+	// Deep copy metadata
+	if cg.Metadata != nil {
+		copy.Metadata = lo.Assign(map[string]string{}, cg.Metadata)
+	}
+
+	return &copy
 }
 
 // Create creates a new credit grant
 func (s *InMemoryCreditGrantStore) Create(ctx context.Context, cg *creditgrant.CreditGrant) (*creditgrant.CreditGrant, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if err := cg.Validate(); err != nil {
 		return nil, err
 	}
 
-	// Check if already exists
-	if _, exists := s.creditGrants[cg.ID]; exists {
-		return nil, ierr.NewError("credit grant already exists").
-			WithHint("A credit grant with this ID already exists").
-			WithReportableDetails(map[string]interface{}{"id": cg.ID}).
-			Mark(ierr.ErrAlreadyExists)
+	// Set environment ID from context if not already set
+	if cg.EnvironmentID == "" {
+		cg.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
-	// Store copy to avoid mutation
-	stored := *cg
-	s.creditGrants[cg.ID] = &stored
+	err := s.InMemoryStore.Create(ctx, cg.ID, copyCreditGrant(cg))
+	if err != nil {
+		return nil, err
+	}
 
-	return &stored, nil
+	return copyCreditGrant(cg), nil
 }
 
 // Get retrieves a credit grant by ID
 func (s *InMemoryCreditGrantStore) Get(ctx context.Context, id string) (*creditgrant.CreditGrant, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	cg, err := s.InMemoryStore.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 
-	cg, exists := s.creditGrants[id]
-	if !exists || cg.Status == types.StatusArchived {
+	// Check if archived (soft deleted)
+	if cg.Status == types.StatusArchived {
 		return nil, ierr.NewError("credit grant not found").
 			WithHint("No credit grant found with the given ID").
 			WithReportableDetails(map[string]interface{}{"id": id}).
 			Mark(ierr.ErrNotFound)
 	}
 
-	// Return copy to avoid mutation
-	result := *cg
-	return &result, nil
+	return copyCreditGrant(cg), nil
 }
 
 // List retrieves credit grants based on filter
 func (s *InMemoryCreditGrantStore) List(ctx context.Context, filter *types.CreditGrantFilter) ([]*creditgrant.CreditGrant, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var results []*creditgrant.CreditGrant
-
-	for _, cg := range s.creditGrants {
-		if s.matchesFilter(cg, filter) {
-			// Return copy to avoid mutation
-			copy := *cg
-			results = append(results, &copy)
-		}
+	items, err := s.InMemoryStore.List(ctx, filter, creditGrantFilterFn, creditGrantSortFn)
+	if err != nil {
+		return nil, err
 	}
 
-	// Apply sorting
-	if filter != nil && filter.QueryFilter != nil && filter.QueryFilter.Sort != nil {
-		sort.Slice(results, func(i, j int) bool {
-			switch *filter.QueryFilter.Sort {
-			case "created_at":
-				if filter.QueryFilter.Order != nil && *filter.QueryFilter.Order == "asc" {
-					return results[i].CreatedAt.Before(results[j].CreatedAt)
-				}
-				return results[i].CreatedAt.After(results[j].CreatedAt)
-			case "name":
-				if filter.QueryFilter.Order != nil && *filter.QueryFilter.Order == "desc" {
-					return results[i].Name > results[j].Name
-				}
-				return results[i].Name < results[j].Name
-			default:
-				return results[i].CreatedAt.After(results[j].CreatedAt)
-			}
-		})
-	}
-
-	// Apply pagination
-	if filter != nil && filter.QueryFilter != nil {
-		offset := filter.GetOffset()
-		limit := filter.GetLimit()
-
-		if offset > len(results) {
-			return []*creditgrant.CreditGrant{}, nil
-		}
-
-		end := offset + limit
-		if end > len(results) {
-			end = len(results)
-		}
-
-		results = results[offset:end]
-	}
-
-	return results, nil
+	return lo.Map(items, func(cg *creditgrant.CreditGrant, _ int) *creditgrant.CreditGrant {
+		return copyCreditGrant(cg)
+	}), nil
 }
 
 // ListAll retrieves all credit grants based on filter without pagination
@@ -140,60 +135,33 @@ func (s *InMemoryCreditGrantStore) ListAll(ctx context.Context, filter *types.Cr
 
 // Count counts credit grants based on filter
 func (s *InMemoryCreditGrantStore) Count(ctx context.Context, filter *types.CreditGrantFilter) (int, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	count := 0
-	for _, cg := range s.creditGrants {
-		if s.matchesFilter(cg, filter) {
-			count++
-		}
-	}
-
-	return count, nil
+	return s.InMemoryStore.Count(ctx, filter, creditGrantFilterFn)
 }
 
 // Update updates an existing credit grant
 func (s *InMemoryCreditGrantStore) Update(ctx context.Context, cg *creditgrant.CreditGrant) (*creditgrant.CreditGrant, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.creditGrants[cg.ID]; !exists {
-		return nil, ierr.NewError("credit grant not found").
-			WithHint("No credit grant found with the given ID").
-			WithReportableDetails(map[string]interface{}{"id": cg.ID}).
-			Mark(ierr.ErrNotFound)
-	}
-
 	if err := cg.Validate(); err != nil {
 		return nil, err
 	}
 
-	// Store copy to avoid mutation
-	stored := *cg
-	s.creditGrants[cg.ID] = &stored
+	err := s.InMemoryStore.Update(ctx, cg.ID, copyCreditGrant(cg))
+	if err != nil {
+		return nil, err
+	}
 
-	return &stored, nil
+	return copyCreditGrant(cg), nil
 }
 
 // Delete deletes a credit grant by ID (soft delete by setting status to archived)
 func (s *InMemoryCreditGrantStore) Delete(ctx context.Context, id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cg, exists := s.creditGrants[id]
-	if !exists {
-		return ierr.NewError("credit grant not found").
-			WithHint("No credit grant found with the given ID").
-			WithReportableDetails(map[string]interface{}{"id": id}).
-			Mark(ierr.ErrNotFound)
+	cg, err := s.InMemoryStore.Get(ctx, id)
+	if err != nil {
+		return err
 	}
 
 	// Soft delete by setting status to archived
 	cg.Status = types.StatusArchived
-	s.creditGrants[id] = cg
-
-	return nil
+	return s.InMemoryStore.Update(ctx, id, cg)
 }
 
 // GetByPlan retrieves credit grants for a specific plan
@@ -218,41 +186,55 @@ func (s *InMemoryCreditGrantStore) GetBySubscription(ctx context.Context, subscr
 	return s.List(ctx, filter)
 }
 
-// matchesFilter checks if a credit grant matches the given filter
-func (s *InMemoryCreditGrantStore) matchesFilter(cg *creditgrant.CreditGrant, filter *types.CreditGrantFilter) bool {
-	if filter == nil {
-		return true
+// creditGrantFilterFn implements filtering logic for credit grants
+func creditGrantFilterFn(ctx context.Context, cg *creditgrant.CreditGrant, filter interface{}) bool {
+	f, ok := filter.(*types.CreditGrantFilter)
+	if !ok {
+		return false
+	}
+
+	// Apply tenant filter
+	tenantID := types.GetTenantID(ctx)
+	if tenantID != "" && cg.TenantID != tenantID {
+		return false
+	}
+
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, cg.EnvironmentID) {
+		return false
 	}
 
 	// Check status filter
-	if filter.QueryFilter != nil && filter.QueryFilter.Status != nil {
-		if cg.Status != *filter.QueryFilter.Status {
+	if f.QueryFilter != nil && f.QueryFilter.Status != nil {
+		if cg.Status != *f.QueryFilter.Status {
 			return false
 		}
 	}
 
 	// Check plan IDs filter
-	if len(filter.PlanIDs) > 0 {
-		if cg.PlanID == nil || !lo.Contains(filter.PlanIDs, *cg.PlanID) {
+	if len(f.PlanIDs) > 0 {
+		if cg.PlanID == nil || !lo.Contains(f.PlanIDs, *cg.PlanID) {
 			return false
 		}
 	}
 
 	// Check subscription IDs filter
-	if len(filter.SubscriptionIDs) > 0 {
-		if cg.SubscriptionID == nil || !lo.Contains(filter.SubscriptionIDs, *cg.SubscriptionID) {
+	if len(f.SubscriptionIDs) > 0 {
+		if cg.SubscriptionID == nil || !lo.Contains(f.SubscriptionIDs, *cg.SubscriptionID) {
 			return false
 		}
 	}
 
-	// Note: Scope and Cadence filtering would need to be added to CreditGrantFilter type if needed
-
 	return true
+}
+
+// creditGrantSortFn implements sorting logic for credit grants
+func creditGrantSortFn(i, j *creditgrant.CreditGrant) bool {
+	// Default sort by created_at desc
+	return i.CreatedAt.After(j.CreatedAt)
 }
 
 // Clear removes all credit grants from the store
 func (s *InMemoryCreditGrantStore) Clear() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.creditGrants = make(map[string]*creditgrant.CreditGrant)
+	s.InMemoryStore.Clear()
 }
