@@ -43,8 +43,8 @@ const (
 	FieldPeriodEnd = "period_end"
 	// FieldApplicationStatus holds the string denoting the application_status field in the database.
 	FieldApplicationStatus = "application_status"
-	// FieldCreditsApplied holds the string denoting the credits_applied field in the database.
-	FieldCreditsApplied = "credits_applied"
+	// FieldCredits holds the string denoting the credits field in the database.
+	FieldCredits = "credits"
 	// FieldApplicationReason holds the string denoting the application_reason field in the database.
 	FieldApplicationReason = "application_reason"
 	// FieldSubscriptionStatusAtApplication holds the string denoting the subscription_status_at_application field in the database.
@@ -78,7 +78,7 @@ var Columns = []string{
 	FieldPeriodStart,
 	FieldPeriodEnd,
 	FieldApplicationStatus,
-	FieldCreditsApplied,
+	FieldCredits,
 	FieldApplicationReason,
 	FieldSubscriptionStatusAtApplication,
 	FieldRetryCount,
@@ -116,8 +116,8 @@ var (
 	SubscriptionIDValidator func(string) error
 	// DefaultApplicationStatus holds the default value on creation for the "application_status" field.
 	DefaultApplicationStatus types.ApplicationStatus
-	// DefaultCreditsApplied holds the default value on creation for the "credits_applied" field.
-	DefaultCreditsApplied decimal.Decimal
+	// DefaultCredits holds the default value on creation for the "credits" field.
+	DefaultCredits decimal.Decimal
 	// ApplicationReasonValidator is a validator for the "application_reason" field. It is called by the builders before save.
 	ApplicationReasonValidator func(string) error
 	// SubscriptionStatusAtApplicationValidator is a validator for the "subscription_status_at_application" field. It is called by the builders before save.
@@ -204,9 +204,9 @@ func ByApplicationStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldApplicationStatus, opts...).ToFunc()
 }
 
-// ByCreditsApplied orders the results by the credits_applied field.
-func ByCreditsApplied(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCreditsApplied, opts...).ToFunc()
+// ByCredits orders the results by the credits field.
+func ByCredits(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCredits, opts...).ToFunc()
 }
 
 // ByApplicationReason orders the results by the application_reason field.

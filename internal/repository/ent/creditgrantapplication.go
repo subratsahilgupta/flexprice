@@ -60,10 +60,10 @@ func (r *creditGrantApplicationRepository) Create(ctx context.Context, a *domain
 		SetCreditGrantID(a.CreditGrantID).
 		SetSubscriptionID(a.SubscriptionID).
 		SetScheduledFor(a.ScheduledFor).
-		SetPeriodStart(lo.FromPtr(a.PeriodStart)).
-		SetPeriodEnd(lo.FromPtr(a.PeriodEnd)).
+		SetNillablePeriodStart(a.PeriodStart).
+		SetNillablePeriodEnd(a.PeriodEnd).
 		SetApplicationStatus(a.ApplicationStatus).
-		SetCreditsApplied(a.CreditsApplied).
+		SetCredits(a.Credits).
 		SetApplicationReason(a.ApplicationReason).
 		SetSubscriptionStatusAtApplication(a.SubscriptionStatusAtApplication).
 		SetRetryCount(a.RetryCount).
@@ -275,10 +275,8 @@ func (r *creditGrantApplicationRepository) Update(ctx context.Context, a *domain
 		).
 		SetStatus(string(a.Status)).
 		SetScheduledFor(a.ScheduledFor).
-		SetPeriodStart(lo.FromPtr(a.PeriodStart)).
-		SetPeriodEnd(lo.FromPtr(a.PeriodEnd)).
 		SetApplicationStatus(a.ApplicationStatus).
-		SetCreditsApplied(a.CreditsApplied).
+		SetCredits(a.Credits).
 		SetSubscriptionStatusAtApplication(a.SubscriptionStatusAtApplication).
 		SetRetryCount(a.RetryCount).
 		SetMetadata(a.Metadata).
@@ -365,30 +363,6 @@ func (r *creditGrantApplicationRepository) Delete(ctx context.Context, applicati
 	SetSpanSuccess(span)
 	r.DeleteCache(ctx, application)
 	return nil
-}
-
-func (r *creditGrantApplicationRepository) ExistsForPeriod(ctx context.Context, grantID, subscriptionID string, periodStart, periodEnd time.Time) (bool, error) {
-
-	r.log.Debugw("checking if credit grant application exists for period", "grant_id", grantID, "subscription_id", subscriptionID, "period_start", periodStart, "period_end", periodEnd)
-
-	client := r.client.Querier(ctx)
-
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	count, err := client.CreditGrantApplication.Query().
-		Where(
-			cga.CreditGrantID(grantID),
-			cga.SubscriptionID(subscriptionID),
-			cga.PeriodStart(periodStart),
-			cga.PeriodEnd(periodEnd),
-			cga.TenantID(tenantID),
-			cga.EnvironmentID(environmentID),
-			cga.Status(string(types.StatusPublished)),
-		).
-		Count(ctx)
-
-	return count > 0, err
 }
 
 // This runs every 15 mins
@@ -520,8 +494,8 @@ func (o CreditGrantApplicationQueryOptions) GetFieldName(field string) string {
 		return cga.FieldPeriodEnd
 	case "application_status":
 		return cga.FieldApplicationStatus
-	case "credits_applied":
-		return cga.FieldCreditsApplied
+	case "credits":
+		return cga.FieldCredits
 	case "credit_grant_id":
 		return cga.FieldCreditGrantID
 	case "subscription_id":

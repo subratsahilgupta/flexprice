@@ -227,10 +227,10 @@ func init() {
 	creditgrantapplicationDescApplicationStatus := creditgrantapplicationFields[7].Descriptor()
 	// creditgrantapplication.DefaultApplicationStatus holds the default value on creation for the application_status field.
 	creditgrantapplication.DefaultApplicationStatus = types.ApplicationStatus(creditgrantapplicationDescApplicationStatus.Default.(string))
-	// creditgrantapplicationDescCreditsApplied is the schema descriptor for credits_applied field.
-	creditgrantapplicationDescCreditsApplied := creditgrantapplicationFields[8].Descriptor()
-	// creditgrantapplication.DefaultCreditsApplied holds the default value on creation for the credits_applied field.
-	creditgrantapplication.DefaultCreditsApplied = creditgrantapplicationDescCreditsApplied.Default.(decimal.Decimal)
+	// creditgrantapplicationDescCredits is the schema descriptor for credits field.
+	creditgrantapplicationDescCredits := creditgrantapplicationFields[8].Descriptor()
+	// creditgrantapplication.DefaultCredits holds the default value on creation for the credits field.
+	creditgrantapplication.DefaultCredits = creditgrantapplicationDescCredits.Default.(decimal.Decimal)
 	// creditgrantapplicationDescApplicationReason is the schema descriptor for application_reason field.
 	creditgrantapplicationDescApplicationReason := creditgrantapplicationFields[9].Descriptor()
 	// creditgrantapplication.ApplicationReasonValidator is a validator for the "application_reason" field. It is called by the builders before save.

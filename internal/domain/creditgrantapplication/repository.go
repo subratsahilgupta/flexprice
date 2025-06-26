@@ -2,7 +2,6 @@ package creditgrantapplication
 
 import (
 	"context"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -16,7 +15,6 @@ type Repository interface {
 	ListAll(ctx context.Context, filter *types.CreditGrantApplicationFilter) ([]*CreditGrantApplication, error)
 	Update(ctx context.Context, application *CreditGrantApplication) error
 	Delete(ctx context.Context, application *CreditGrantApplication) error
-	ExistsForPeriod(ctx context.Context, grantID, subscriptionID string, periodStart, periodEnd time.Time) (bool, error)
 
 	// This runs every 15 mins
 	// NOTE: THIS IS ONLY FOR CRON JOB SHOULD NOT BE USED ELSEWHERE IN OTHER WORKFLOWS

@@ -14,7 +14,6 @@ import (
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
-	"github.com/shopspring/decimal"
 )
 
 // CreditGrantService defines the interface for credit grant service
@@ -131,12 +130,6 @@ func (s *creditGrantService) ListCreditGrants(ctx context.Context, filter *types
 		filter.QueryFilter = types.NewDefaultQueryFilter()
 	}
 
-	// Set default sort order if not specified
-	if filter.QueryFilter.Sort == nil {
-		filter.QueryFilter.Sort = lo.ToPtr("created_at")
-		filter.QueryFilter.Order = lo.ToPtr("desc")
-	}
-
 	creditGrants, err := s.CreditGrantRepo.List(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -238,7 +231,7 @@ func (s *creditGrantService) ApplyCreditGrant(ctx context.Context, grant *credit
 
 	if grant.Cadence == types.CreditGrantCadenceRecurring {
 		// For recurring grants, calculate proper period dates
-		periodStart, periodEnd, err = s.calculateNextPeriod(grant, subscription.StartDate)
+		periodStart, periodEnd, err = s.calculateNextPeriod(grant, subscription.StartDate, subscription.EndDate)
 		if err != nil {
 			return err
 		}
@@ -263,7 +256,7 @@ func (s *creditGrantService) ApplyCreditGrant(ctx context.Context, grant *credit
 		ApplicationReason:               applicationReason,
 		SubscriptionStatusAtApplication: subscription.SubscriptionStatus,
 		RetryCount:                      0,
-		CreditsApplied:                  decimal.Zero,
+		Credits:                         grant.Credits,
 		Metadata:                        metadata,
 		IdempotencyKey:                  s.generateIdempotencyKey(grant, subscription, periodStart, periodEnd),
 		EnvironmentID:                   types.GetEnvironmentID(ctx),
@@ -358,7 +351,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 
 	// Prepare top-up request
 	topupReq := &dto.TopUpWalletRequest{
-		CreditsToAdd:      grant.Credits,
+		CreditsToAdd:      cga.Credits,
 		TransactionReason: types.TransactionReasonSubscriptionCredit,
 		ExpiryDateUTC:     expiryDate,
 		Priority:          grant.Priority,
@@ -381,7 +374,6 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 		// Task 2: Update CGA status to applied
 		cga.ApplicationStatus = types.ApplicationStatusApplied
 		cga.AppliedAt = lo.ToPtr(time.Now().UTC())
-		cga.CreditsApplied = grant.Credits
 		cga.FailureReason = nil // Clear any previous failure reason
 
 		if err := s.CreditGrantApplicationRepo.Update(txCtx, cga); err != nil {
@@ -408,7 +400,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 		"grant_id", grant.ID,
 		"subscription_id", subscription.ID,
 		"wallet_id", selectedWallet.ID,
-		"credits_applied", grant.Credits,
+		"credits_applied", cga.Credits,
 		"cga_id", cga.ID,
 		"is_recurring", grant.Cadence == types.CreditGrantCadenceRecurring,
 	)
@@ -533,17 +525,14 @@ func (s *creditGrantService) processScheduledApplication(
 
 		// Only increment retry count if application is failed as it applyCreditGrantToWallet will handle the status update as well as reset the failure reason
 		cga.RetryCount++
+		// We are not updating the CGA status here as it will be updated by methods following every step
 
-		if err := s.CreditGrantApplicationRepo.Update(ctx, cga); err != nil {
-			s.Logger.Errorw("Failed to update application after retry", "application_id", cga.ID, "error", err)
-			return err
-		}
 	}
 
 	// Apply the grant
 	// Check subscription state
 	stateHandler := NewSubscriptionStateHandler(subscription.Subscription, creditGrant.CreditGrant)
-	action, err := stateHandler.DetermineAction()
+	action, err := stateHandler.DetermineCreditGrantAction()
 
 	if err != nil {
 		s.Logger.Errorw("Failed to determine action", "application_id", cga.ID, "error", err)
@@ -590,7 +579,7 @@ func (s *creditGrantService) processScheduledApplication(
 // createNextPeriodApplication creates a new CGA entry with scheduled status for the next period
 func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, grant *creditgrant.CreditGrant, subscription *subscription.Subscription, currentPeriodEnd time.Time) error {
 	// Calculate next period dates
-	nextPeriodStart, nextPeriodEnd, err := s.calculateNextPeriod(grant, currentPeriodEnd)
+	nextPeriodStart, nextPeriodEnd, err := s.calculateNextPeriod(grant, currentPeriodEnd, subscription.EndDate)
 	if err != nil {
 		s.Logger.Errorw("Failed to calculate next period",
 			"grant_id", grant.ID,
@@ -616,7 +605,7 @@ func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, gr
 		PeriodStart:                     lo.ToPtr(nextPeriodStart),
 		PeriodEnd:                       lo.ToPtr(nextPeriodEnd),
 		ApplicationStatus:               types.ApplicationStatusPending,
-		CreditsApplied:                  decimal.Zero,
+		Credits:                         grant.Credits,
 		ApplicationReason:               types.ApplicationReasonRecurringCreditGrant,
 		SubscriptionStatusAtApplication: subscription.SubscriptionStatus,
 		RetryCount:                      0,
@@ -645,14 +634,14 @@ func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, gr
 }
 
 // calculateNextPeriod calculates the next credit grant period using simplified logic
-func (s *creditGrantService) calculateNextPeriod(grant *creditgrant.CreditGrant, nextPeriodStart time.Time) (time.Time, time.Time, error) {
+func (s *creditGrantService) calculateNextPeriod(grant *creditgrant.CreditGrant, nextPeriodStart time.Time, subscriptionEndDate *time.Time) (time.Time, time.Time, error) {
 	billingPeriod, err := types.GetBillingPeriodFromCreditGrantPeriod(lo.FromPtr(grant.Period))
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}
 
 	// Calculate next period end using the grant's creation date as anchor
-	nextPeriodEnd, err := types.NextBillingDateLegacy(nextPeriodStart, grant.CreatedAt, lo.FromPtr(grant.PeriodCount), billingPeriod)
+	nextPeriodEnd, err := types.NextBillingDate(nextPeriodStart, grant.CreatedAt, lo.FromPtr(grant.PeriodCount), billingPeriod, subscriptionEndDate)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}

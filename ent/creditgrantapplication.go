@@ -47,8 +47,8 @@ type CreditGrantApplication struct {
 	PeriodEnd *time.Time `json:"period_end,omitempty"`
 	// ApplicationStatus holds the value of the "application_status" field.
 	ApplicationStatus types.ApplicationStatus `json:"application_status,omitempty"`
-	// CreditsApplied holds the value of the "credits_applied" field.
-	CreditsApplied decimal.Decimal `json:"credits_applied,omitempty"`
+	// Credits holds the value of the "credits" field.
+	Credits decimal.Decimal `json:"credits,omitempty"`
 	// ApplicationReason holds the value of the "application_reason" field.
 	ApplicationReason types.CreditGrantApplicationReason `json:"application_reason,omitempty"`
 	// SubscriptionStatusAtApplication holds the value of the "subscription_status_at_application" field.
@@ -69,7 +69,7 @@ func (*CreditGrantApplication) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case creditgrantapplication.FieldCreditsApplied:
+		case creditgrantapplication.FieldCredits:
 			values[i] = new(decimal.Decimal)
 		case creditgrantapplication.FieldRetryCount:
 			values[i] = new(sql.NullInt64)
@@ -187,11 +187,11 @@ func (cga *CreditGrantApplication) assignValues(columns []string, values []any) 
 			} else if value.Valid {
 				cga.ApplicationStatus = types.ApplicationStatus(value.String)
 			}
-		case creditgrantapplication.FieldCreditsApplied:
+		case creditgrantapplication.FieldCredits:
 			if value, ok := values[i].(*decimal.Decimal); !ok {
-				return fmt.Errorf("unexpected type %T for field credits_applied", values[i])
+				return fmt.Errorf("unexpected type %T for field credits", values[i])
 			} else if value != nil {
-				cga.CreditsApplied = *value
+				cga.Credits = *value
 			}
 		case creditgrantapplication.FieldApplicationReason:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -314,8 +314,8 @@ func (cga *CreditGrantApplication) String() string {
 	builder.WriteString("application_status=")
 	builder.WriteString(fmt.Sprintf("%v", cga.ApplicationStatus))
 	builder.WriteString(", ")
-	builder.WriteString("credits_applied=")
-	builder.WriteString(fmt.Sprintf("%v", cga.CreditsApplied))
+	builder.WriteString("credits=")
+	builder.WriteString(fmt.Sprintf("%v", cga.Credits))
 	builder.WriteString(", ")
 	builder.WriteString("application_reason=")
 	builder.WriteString(fmt.Sprintf("%v", cga.ApplicationReason))
