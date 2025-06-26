@@ -427,7 +427,7 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 	if len(payments.Items) > 0 {
 		return ierr.NewError("invoice has active payment records").
 			WithHint("Manual payment status updates are disabled for payment-based invoices.").
-			Mark(ierr.ErrValidation)
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	// Validate the payment status transition
