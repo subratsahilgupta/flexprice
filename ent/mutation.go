@@ -16316,6 +16316,7 @@ type PaymentMutation struct {
 	succeeded_at        *time.Time
 	failed_at           *time.Time
 	refunded_at         *time.Time
+	recorded_at         *time.Time
 	error_message       *string
 	clearedFields       map[string]struct{}
 	attempts            map[string]struct{}
@@ -17352,6 +17353,55 @@ func (m *PaymentMutation) ResetRefundedAt() {
 	delete(m.clearedFields, payment.FieldRefundedAt)
 }
 
+// SetRecordedAt sets the "recorded_at" field.
+func (m *PaymentMutation) SetRecordedAt(t time.Time) {
+	m.recorded_at = &t
+}
+
+// RecordedAt returns the value of the "recorded_at" field in the mutation.
+func (m *PaymentMutation) RecordedAt() (r time.Time, exists bool) {
+	v := m.recorded_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecordedAt returns the old "recorded_at" field's value of the Payment entity.
+// If the Payment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentMutation) OldRecordedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecordedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecordedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecordedAt: %w", err)
+	}
+	return oldValue.RecordedAt, nil
+}
+
+// ClearRecordedAt clears the value of the "recorded_at" field.
+func (m *PaymentMutation) ClearRecordedAt() {
+	m.recorded_at = nil
+	m.clearedFields[payment.FieldRecordedAt] = struct{}{}
+}
+
+// RecordedAtCleared returns if the "recorded_at" field was cleared in this mutation.
+func (m *PaymentMutation) RecordedAtCleared() bool {
+	_, ok := m.clearedFields[payment.FieldRecordedAt]
+	return ok
+}
+
+// ResetRecordedAt resets all changes to the "recorded_at" field.
+func (m *PaymentMutation) ResetRecordedAt() {
+	m.recorded_at = nil
+	delete(m.clearedFields, payment.FieldRecordedAt)
+}
+
 // SetErrorMessage sets the "error_message" field.
 func (m *PaymentMutation) SetErrorMessage(s string) {
 	m.error_message = &s
@@ -17489,7 +17539,7 @@ func (m *PaymentMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.tenant_id != nil {
 		fields = append(fields, payment.FieldTenantID)
 	}
@@ -17556,6 +17606,9 @@ func (m *PaymentMutation) Fields() []string {
 	if m.refunded_at != nil {
 		fields = append(fields, payment.FieldRefundedAt)
 	}
+	if m.recorded_at != nil {
+		fields = append(fields, payment.FieldRecordedAt)
+	}
 	if m.error_message != nil {
 		fields = append(fields, payment.FieldErrorMessage)
 	}
@@ -17611,6 +17664,8 @@ func (m *PaymentMutation) Field(name string) (ent.Value, bool) {
 		return m.FailedAt()
 	case payment.FieldRefundedAt:
 		return m.RefundedAt()
+	case payment.FieldRecordedAt:
+		return m.RecordedAt()
 	case payment.FieldErrorMessage:
 		return m.ErrorMessage()
 	}
@@ -17666,6 +17721,8 @@ func (m *PaymentMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldFailedAt(ctx)
 	case payment.FieldRefundedAt:
 		return m.OldRefundedAt(ctx)
+	case payment.FieldRecordedAt:
+		return m.OldRecordedAt(ctx)
 	case payment.FieldErrorMessage:
 		return m.OldErrorMessage(ctx)
 	}
@@ -17831,6 +17888,13 @@ func (m *PaymentMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRefundedAt(v)
 		return nil
+	case payment.FieldRecordedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecordedAt(v)
+		return nil
 	case payment.FieldErrorMessage:
 		v, ok := value.(string)
 		if !ok {
@@ -17898,6 +17962,9 @@ func (m *PaymentMutation) ClearedFields() []string {
 	if m.FieldCleared(payment.FieldRefundedAt) {
 		fields = append(fields, payment.FieldRefundedAt)
 	}
+	if m.FieldCleared(payment.FieldRecordedAt) {
+		fields = append(fields, payment.FieldRecordedAt)
+	}
 	if m.FieldCleared(payment.FieldErrorMessage) {
 		fields = append(fields, payment.FieldErrorMessage)
 	}
@@ -17944,6 +18011,9 @@ func (m *PaymentMutation) ClearField(name string) error {
 		return nil
 	case payment.FieldRefundedAt:
 		m.ClearRefundedAt()
+		return nil
+	case payment.FieldRecordedAt:
+		m.ClearRecordedAt()
 		return nil
 	case payment.FieldErrorMessage:
 		m.ClearErrorMessage()
@@ -18021,6 +18091,9 @@ func (m *PaymentMutation) ResetField(name string) error {
 		return nil
 	case payment.FieldRefundedAt:
 		m.ResetRefundedAt()
+		return nil
+	case payment.FieldRecordedAt:
+		m.ResetRecordedAt()
 		return nil
 	case payment.FieldErrorMessage:
 		m.ResetErrorMessage()
