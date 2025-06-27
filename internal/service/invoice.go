@@ -1043,6 +1043,7 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 		InvoiceID:        inv.ID,
 		CreditNoteType:   types.CreditNoteTypeAdjustment,
 		CreditNoteStatus: []types.CreditNoteStatus{types.CreditNoteStatusFinalized},
+		QueryFilter:      types.NewNoLimitPublishedQueryFilter(),
 	}
 
 	creditNotes, err := s.CreditNoteRepo.List(ctx, filter)
@@ -1057,10 +1058,16 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 	}
 
 	inv.AmountDue = inv.Total.Sub(totalAdjustmentCredits)
-	inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
+	remaining := inv.AmountDue.Sub(inv.AmountPaid)
+	if remaining.IsPositive() {
+		inv.AmountRemaining = remaining
+	} else {
+		inv.AmountRemaining = decimal.Zero
+	}
 
 	// Update the payment status if the invoice is fully paid
-	if inv.AmountRemaining.LessThanOrEqual(decimal.Zero) {
+	if inv.AmountRemaining.Equal(decimal.Zero) {
+		s.Logger.Infow("invoice is fully paid, updating payment status to succeeded", "invoice_id", inv.ID)
 		inv.PaymentStatus = types.PaymentStatusSucceeded
 	}
 

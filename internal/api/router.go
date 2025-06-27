@@ -303,7 +303,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			creditNotes.GET("", handlers.CreditNote.ListCreditNotes)
 			creditNotes.GET("/:id", handlers.CreditNote.GetCreditNote)
 			creditNotes.POST("/:id/void", handlers.CreditNote.VoidCreditNote)
-			creditNotes.POST("/:id/process", handlers.CreditNote.ProcessDraftCreditNote)
+			creditNotes.POST("/:id/finalize", handlers.CreditNote.FinalizeCreditNote)
 		}
 
 		// Admin routes (API Key only)

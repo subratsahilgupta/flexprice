@@ -55,21 +55,22 @@ func (s *CreditNoteServiceSuite) TearDownTest() {
 
 func (s *CreditNoteServiceSuite) setupService() {
 	s.service = NewCreditNoteService(ServiceParams{
-		Logger:           s.GetLogger(),
-		Config:           s.GetConfig(),
-		DB:               s.GetDB(),
-		CreditNoteRepo:   s.GetStores().CreditNoteRepo,
-		InvoiceRepo:      s.GetStores().InvoiceRepo,
-		CustomerRepo:     s.GetStores().CustomerRepo,
-		SubRepo:          s.GetStores().SubscriptionRepo,
-		PlanRepo:         s.GetStores().PlanRepo,
-		PriceRepo:        s.GetStores().PriceRepo,
-		MeterRepo:        s.GetStores().MeterRepo,
-		EntitlementRepo:  s.GetStores().EntitlementRepo,
-		FeatureRepo:      s.GetStores().FeatureRepo,
-		WalletRepo:       s.GetStores().WalletRepo,
-		EventPublisher:   s.GetPublisher(),
-		WebhookPublisher: s.GetWebhookPublisher(),
+		Logger:                 s.GetLogger(),
+		Config:                 s.GetConfig(),
+		DB:                     s.GetDB(),
+		CreditNoteRepo:         s.GetStores().CreditNoteRepo,
+		CreditNoteLineItemRepo: s.GetStores().CreditNoteLineItemRepo,
+		InvoiceRepo:            s.GetStores().InvoiceRepo,
+		CustomerRepo:           s.GetStores().CustomerRepo,
+		SubRepo:                s.GetStores().SubscriptionRepo,
+		PlanRepo:               s.GetStores().PlanRepo,
+		PriceRepo:              s.GetStores().PriceRepo,
+		MeterRepo:              s.GetStores().MeterRepo,
+		EntitlementRepo:        s.GetStores().EntitlementRepo,
+		FeatureRepo:            s.GetStores().FeatureRepo,
+		WalletRepo:             s.GetStores().WalletRepo,
+		EventPublisher:         s.GetPublisher(),
+		WebhookPublisher:       s.GetWebhookPublisher(),
 	})
 }
 
@@ -978,7 +979,7 @@ func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.service.ProcessDraftCreditNote(s.GetContext(), tt.id)
+			err := s.service.FinalizeCreditNote(s.GetContext(), tt.id)
 
 			if tt.wantErr {
 				s.Error(err)

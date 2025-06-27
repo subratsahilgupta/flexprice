@@ -295,7 +295,7 @@ func init() {
 	// creditnote.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
 	creditnote.ReasonValidator = creditnoteDescReason.Validators[0].(func(string) error)
 	// creditnoteDescTotalAmount is the schema descriptor for total_amount field.
-	creditnoteDescTotalAmount := creditnoteFields[13].Descriptor()
+	creditnoteDescTotalAmount := creditnoteFields[15].Descriptor()
 	// creditnote.DefaultTotalAmount holds the default value on creation for the total_amount field.
 	creditnote.DefaultTotalAmount = creditnoteDescTotalAmount.Default.(decimal.Decimal)
 	creditnotelineitemMixin := schema.CreditNoteLineItem{}.Mixin()

@@ -56,6 +56,10 @@ type CreditNote struct {
 	Currency string `json:"currency,omitempty"`
 	// IdempotencyKey holds the value of the "idempotency_key" field.
 	IdempotencyKey *string `json:"idempotency_key,omitempty"`
+	// VoidedAt holds the value of the "voided_at" field.
+	VoidedAt *time.Time `json:"voided_at,omitempty"`
+	// FinalizedAt holds the value of the "finalized_at" field.
+	FinalizedAt *time.Time `json:"finalized_at,omitempty"`
 	// Metadata holds the value of the "metadata" field.
 	Metadata map[string]string `json:"metadata,omitempty"`
 	// TotalAmount holds the value of the "total_amount" field.
@@ -95,7 +99,7 @@ func (*CreditNote) scanValues(columns []string) ([]any, error) {
 			values[i] = new(decimal.Decimal)
 		case creditnote.FieldID, creditnote.FieldTenantID, creditnote.FieldStatus, creditnote.FieldCreatedBy, creditnote.FieldUpdatedBy, creditnote.FieldEnvironmentID, creditnote.FieldInvoiceID, creditnote.FieldCustomerID, creditnote.FieldSubscriptionID, creditnote.FieldCreditNoteNumber, creditnote.FieldCreditNoteStatus, creditnote.FieldCreditNoteType, creditnote.FieldRefundStatus, creditnote.FieldReason, creditnote.FieldMemo, creditnote.FieldCurrency, creditnote.FieldIdempotencyKey:
 			values[i] = new(sql.NullString)
-		case creditnote.FieldCreatedAt, creditnote.FieldUpdatedAt:
+		case creditnote.FieldCreatedAt, creditnote.FieldUpdatedAt, creditnote.FieldVoidedAt, creditnote.FieldFinalizedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -229,6 +233,20 @@ func (cn *CreditNote) assignValues(columns []string, values []any) error {
 				cn.IdempotencyKey = new(string)
 				*cn.IdempotencyKey = value.String
 			}
+		case creditnote.FieldVoidedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field voided_at", values[i])
+			} else if value.Valid {
+				cn.VoidedAt = new(time.Time)
+				*cn.VoidedAt = value.Time
+			}
+		case creditnote.FieldFinalizedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field finalized_at", values[i])
+			} else if value.Valid {
+				cn.FinalizedAt = new(time.Time)
+				*cn.FinalizedAt = value.Time
+			}
 		case creditnote.FieldMetadata:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field metadata", values[i])
@@ -342,6 +360,16 @@ func (cn *CreditNote) String() string {
 	if v := cn.IdempotencyKey; v != nil {
 		builder.WriteString("idempotency_key=")
 		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := cn.VoidedAt; v != nil {
+		builder.WriteString("voided_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := cn.FinalizedAt; v != nil {
+		builder.WriteString("finalized_at=")
+		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("metadata=")

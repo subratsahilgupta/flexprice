@@ -167,9 +167,9 @@ func (h *CreditNoteHandler) VoidCreditNote(c *gin.Context) {
 // @Failure 403 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /creditnotes/{id}/process [post]
+// @Router /creditnotes/{id}/finalize [post]
 // @Security ApiKeyAuth
-func (h *CreditNoteHandler) ProcessDraftCreditNote(c *gin.Context) {
+func (h *CreditNoteHandler) FinalizeCreditNote(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
 		c.Error(ierr.NewError("credit note ID is required").
@@ -178,7 +178,7 @@ func (h *CreditNoteHandler) ProcessDraftCreditNote(c *gin.Context) {
 		return
 	}
 
-	err := h.creditNoteService.ProcessDraftCreditNote(c.Request.Context(), id)
+	err := h.creditNoteService.FinalizeCreditNote(c.Request.Context(), id)
 	if err != nil {
 		c.Error(err)
 		return

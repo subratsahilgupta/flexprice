@@ -52,6 +52,10 @@ const (
 	FieldCurrency = "currency"
 	// FieldIdempotencyKey holds the string denoting the idempotency_key field in the database.
 	FieldIdempotencyKey = "idempotency_key"
+	// FieldVoidedAt holds the string denoting the voided_at field in the database.
+	FieldVoidedAt = "voided_at"
+	// FieldFinalizedAt holds the string denoting the finalized_at field in the database.
+	FieldFinalizedAt = "finalized_at"
 	// FieldMetadata holds the string denoting the metadata field in the database.
 	FieldMetadata = "metadata"
 	// FieldTotalAmount holds the string denoting the total_amount field in the database.
@@ -90,6 +94,8 @@ var Columns = []string{
 	FieldMemo,
 	FieldCurrency,
 	FieldIdempotencyKey,
+	FieldVoidedAt,
+	FieldFinalizedAt,
 	FieldMetadata,
 	FieldTotalAmount,
 }
@@ -227,6 +233,16 @@ func ByCurrency(opts ...sql.OrderTermOption) OrderOption {
 // ByIdempotencyKey orders the results by the idempotency_key field.
 func ByIdempotencyKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldIdempotencyKey, opts...).ToFunc()
+}
+
+// ByVoidedAt orders the results by the voided_at field.
+func ByVoidedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVoidedAt, opts...).ToFunc()
+}
+
+// ByFinalizedAt orders the results by the finalized_at field.
+func ByFinalizedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFinalizedAt, opts...).ToFunc()
 }
 
 // ByTotalAmount orders the results by the total_amount field.

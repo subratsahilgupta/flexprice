@@ -12,14 +12,28 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// CreateCreditNoteRequest represents the request payload for creating a new credit note
 type CreateCreditNoteRequest struct {
-	CreditNoteNumber string                            `json:"credit_note_number" validate:"omitempty"`
-	InvoiceID        string                            `json:"invoice_id" validate:"required"`
-	Memo             string                            `json:"memo" validate:"omitempty"`
-	Reason           types.CreditNoteReason            `json:"reason" validate:"required"`
-	Metadata         types.Metadata                    `json:"metadata" validate:"omitempty"`
-	LineItems        []CreateCreditNoteLineItemRequest `json:"line_items"`
-	IdempotencyKey   *string                           `json:"idempotency_key" validate:"omitempty"`
+	// credit_note_number is an optional human-readable identifier for the credit note
+	CreditNoteNumber string `json:"credit_note_number" validate:"omitempty"`
+
+	// invoice_id is the unique identifier of the invoice this credit note is applied to
+	InvoiceID string `json:"invoice_id" validate:"required"`
+
+	// memo is an optional free-text field for additional notes about the credit note
+	Memo string `json:"memo" validate:"omitempty"`
+
+	// reason specifies the reason for creating this credit note (duplicate, fraudulent, order_change, product_unsatisfactory)
+	Reason types.CreditNoteReason `json:"reason" validate:"required"`
+
+	// metadata contains additional custom key-value pairs for storing extra information
+	Metadata types.Metadata `json:"metadata" validate:"omitempty"`
+
+	// line_items contains the individual line items that make up this credit note (minimum 1 required)
+	LineItems []CreateCreditNoteLineItemRequest `json:"line_items"`
+
+	// idempotency_key is an optional key used to prevent duplicate credit note creation
+	IdempotencyKey *string `json:"idempotency_key" validate:"omitempty"`
 }
 
 func (r *CreateCreditNoteRequest) Validate() error {
@@ -75,6 +89,21 @@ func (r *CreateCreditNoteRequest) ToCreditNote(ctx context.Context, inv *invoice
 	return cn
 }
 
+// CreateCreditNoteLineItemRequest represents a single line item in a credit note creation request
+type CreateCreditNoteLineItemRequest struct {
+	// invoice_line_item_id is the unique identifier of the invoice line item being credited
+	InvoiceLineItemID string `json:"invoice_line_item_id" validate:"required"`
+
+	// display_name is an optional human-readable name for this credit note line item
+	DisplayName string `json:"display_name" validate:"omitempty"`
+
+	// amount is the monetary amount to be credited for this line item
+	Amount decimal.Decimal `json:"amount" validate:"required"`
+
+	// metadata contains additional custom key-value pairs for storing extra information about this line item
+	Metadata types.Metadata `json:"metadata" validate:"omitempty"`
+}
+
 func (r *CreateCreditNoteLineItemRequest) Validate() error {
 
 	if err := validator.ValidateRequest(r); err != nil {
@@ -82,13 +111,6 @@ func (r *CreateCreditNoteLineItemRequest) Validate() error {
 	}
 
 	return nil
-}
-
-type CreateCreditNoteLineItemRequest struct {
-	InvoiceLineItemID string          `json:"invoice_line_item_id" validate:"required"`
-	DisplayName       string          `json:"display_name" validate:"omitempty"`
-	Amount            decimal.Decimal `json:"amount" validate:"required"`
-	Metadata          types.Metadata  `json:"metadata" validate:"omitempty"`
 }
 
 func (r *CreateCreditNoteLineItemRequest) ToCreditNoteLineItem(ctx context.Context, cn *creditnote.CreditNote) *creditnote.CreditNoteLineItem {
@@ -105,12 +127,19 @@ func (r *CreateCreditNoteLineItemRequest) ToCreditNoteLineItem(ctx context.Conte
 	}
 }
 
+// CreditNoteResponse represents the response payload containing credit note information
 type CreditNoteResponse struct {
 	*creditnote.CreditNote
-	Invoice      *InvoiceResponse      `json:"invoice,omitempty"`
+
+	// invoice contains the associated invoice information if requested
+	Invoice *InvoiceResponse `json:"invoice,omitempty"`
+
+	// subscription contains the associated subscription information if applicable
 	Subscription *SubscriptionResponse `json:"subscription,omitempty"`
-	Customer     *customer.Customer    `json:"customer,omitempty"`
+
+	// customer contains the customer information associated with this credit note
+	Customer *customer.Customer `json:"customer,omitempty"`
 }
 
-// ListCreditNotesResponse represents the response for listing credit notes
+// ListCreditNotesResponse represents the paginated response for listing credit notes
 type ListCreditNotesResponse = types.ListResponse[*CreditNoteResponse]

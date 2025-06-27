@@ -16,7 +16,9 @@ import (
 
 // CreateWalletRequest represents the request to create a wallet
 type CreateWalletRequest struct {
-	CustomerID          string                 `json:"customer_id,omitempty"`
+	CustomerID string `json:"customer_id,omitempty"`
+
+	// external_customer_id is the customer id in the external system
 	ExternalCustomerID  string                 `json:"external_customer_id,omitempty"`
 	Name                string                 `json:"name,omitempty"`
 	Currency            string                 `json:"currency" binding:"required"`
@@ -338,7 +340,7 @@ func (r *TopUpWalletRequest) Validate() error {
 		types.TransactionReasonPurchasedCreditInvoiced,
 		types.TransactionReasonPurchasedCreditDirect,
 		types.TransactionReasonSubscriptionCredit,
-		types.TransactionReasonInvoiceRefund,
+		types.TransactionReasonCreditNote,
 	}
 
 	if !lo.Contains(allowedTransactionReasons, r.TransactionReason) {

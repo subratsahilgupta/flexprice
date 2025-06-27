@@ -5642,6 +5642,8 @@ type CreditNoteMutation struct {
 	memo               *string
 	currency           *string
 	idempotency_key    *string
+	voided_at          *time.Time
+	finalized_at       *time.Time
 	metadata           *map[string]string
 	total_amount       *decimal.Decimal
 	clearedFields      map[string]struct{}
@@ -6483,6 +6485,104 @@ func (m *CreditNoteMutation) ResetIdempotencyKey() {
 	delete(m.clearedFields, creditnote.FieldIdempotencyKey)
 }
 
+// SetVoidedAt sets the "voided_at" field.
+func (m *CreditNoteMutation) SetVoidedAt(t time.Time) {
+	m.voided_at = &t
+}
+
+// VoidedAt returns the value of the "voided_at" field in the mutation.
+func (m *CreditNoteMutation) VoidedAt() (r time.Time, exists bool) {
+	v := m.voided_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVoidedAt returns the old "voided_at" field's value of the CreditNote entity.
+// If the CreditNote object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreditNoteMutation) OldVoidedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVoidedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVoidedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVoidedAt: %w", err)
+	}
+	return oldValue.VoidedAt, nil
+}
+
+// ClearVoidedAt clears the value of the "voided_at" field.
+func (m *CreditNoteMutation) ClearVoidedAt() {
+	m.voided_at = nil
+	m.clearedFields[creditnote.FieldVoidedAt] = struct{}{}
+}
+
+// VoidedAtCleared returns if the "voided_at" field was cleared in this mutation.
+func (m *CreditNoteMutation) VoidedAtCleared() bool {
+	_, ok := m.clearedFields[creditnote.FieldVoidedAt]
+	return ok
+}
+
+// ResetVoidedAt resets all changes to the "voided_at" field.
+func (m *CreditNoteMutation) ResetVoidedAt() {
+	m.voided_at = nil
+	delete(m.clearedFields, creditnote.FieldVoidedAt)
+}
+
+// SetFinalizedAt sets the "finalized_at" field.
+func (m *CreditNoteMutation) SetFinalizedAt(t time.Time) {
+	m.finalized_at = &t
+}
+
+// FinalizedAt returns the value of the "finalized_at" field in the mutation.
+func (m *CreditNoteMutation) FinalizedAt() (r time.Time, exists bool) {
+	v := m.finalized_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFinalizedAt returns the old "finalized_at" field's value of the CreditNote entity.
+// If the CreditNote object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreditNoteMutation) OldFinalizedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFinalizedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFinalizedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFinalizedAt: %w", err)
+	}
+	return oldValue.FinalizedAt, nil
+}
+
+// ClearFinalizedAt clears the value of the "finalized_at" field.
+func (m *CreditNoteMutation) ClearFinalizedAt() {
+	m.finalized_at = nil
+	m.clearedFields[creditnote.FieldFinalizedAt] = struct{}{}
+}
+
+// FinalizedAtCleared returns if the "finalized_at" field was cleared in this mutation.
+func (m *CreditNoteMutation) FinalizedAtCleared() bool {
+	_, ok := m.clearedFields[creditnote.FieldFinalizedAt]
+	return ok
+}
+
+// ResetFinalizedAt resets all changes to the "finalized_at" field.
+func (m *CreditNoteMutation) ResetFinalizedAt() {
+	m.finalized_at = nil
+	delete(m.clearedFields, creditnote.FieldFinalizedAt)
+}
+
 // SetMetadata sets the "metadata" field.
 func (m *CreditNoteMutation) SetMetadata(value map[string]string) {
 	m.metadata = &value
@@ -6656,7 +6756,7 @@ func (m *CreditNoteMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CreditNoteMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 22)
 	if m.tenant_id != nil {
 		fields = append(fields, creditnote.FieldTenantID)
 	}
@@ -6711,6 +6811,12 @@ func (m *CreditNoteMutation) Fields() []string {
 	if m.idempotency_key != nil {
 		fields = append(fields, creditnote.FieldIdempotencyKey)
 	}
+	if m.voided_at != nil {
+		fields = append(fields, creditnote.FieldVoidedAt)
+	}
+	if m.finalized_at != nil {
+		fields = append(fields, creditnote.FieldFinalizedAt)
+	}
 	if m.metadata != nil {
 		fields = append(fields, creditnote.FieldMetadata)
 	}
@@ -6761,6 +6867,10 @@ func (m *CreditNoteMutation) Field(name string) (ent.Value, bool) {
 		return m.Currency()
 	case creditnote.FieldIdempotencyKey:
 		return m.IdempotencyKey()
+	case creditnote.FieldVoidedAt:
+		return m.VoidedAt()
+	case creditnote.FieldFinalizedAt:
+		return m.FinalizedAt()
 	case creditnote.FieldMetadata:
 		return m.Metadata()
 	case creditnote.FieldTotalAmount:
@@ -6810,6 +6920,10 @@ func (m *CreditNoteMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldCurrency(ctx)
 	case creditnote.FieldIdempotencyKey:
 		return m.OldIdempotencyKey(ctx)
+	case creditnote.FieldVoidedAt:
+		return m.OldVoidedAt(ctx)
+	case creditnote.FieldFinalizedAt:
+		return m.OldFinalizedAt(ctx)
 	case creditnote.FieldMetadata:
 		return m.OldMetadata(ctx)
 	case creditnote.FieldTotalAmount:
@@ -6949,6 +7063,20 @@ func (m *CreditNoteMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetIdempotencyKey(v)
 		return nil
+	case creditnote.FieldVoidedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVoidedAt(v)
+		return nil
+	case creditnote.FieldFinalizedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFinalizedAt(v)
+		return nil
 	case creditnote.FieldMetadata:
 		v, ok := value.(map[string]string)
 		if !ok {
@@ -7011,6 +7139,12 @@ func (m *CreditNoteMutation) ClearedFields() []string {
 	if m.FieldCleared(creditnote.FieldIdempotencyKey) {
 		fields = append(fields, creditnote.FieldIdempotencyKey)
 	}
+	if m.FieldCleared(creditnote.FieldVoidedAt) {
+		fields = append(fields, creditnote.FieldVoidedAt)
+	}
+	if m.FieldCleared(creditnote.FieldFinalizedAt) {
+		fields = append(fields, creditnote.FieldFinalizedAt)
+	}
 	if m.FieldCleared(creditnote.FieldMetadata) {
 		fields = append(fields, creditnote.FieldMetadata)
 	}
@@ -7045,6 +7179,12 @@ func (m *CreditNoteMutation) ClearField(name string) error {
 		return nil
 	case creditnote.FieldIdempotencyKey:
 		m.ClearIdempotencyKey()
+		return nil
+	case creditnote.FieldVoidedAt:
+		m.ClearVoidedAt()
+		return nil
+	case creditnote.FieldFinalizedAt:
+		m.ClearFinalizedAt()
 		return nil
 	case creditnote.FieldMetadata:
 		m.ClearMetadata()
@@ -7110,6 +7250,12 @@ func (m *CreditNoteMutation) ResetField(name string) error {
 		return nil
 	case creditnote.FieldIdempotencyKey:
 		m.ResetIdempotencyKey()
+		return nil
+	case creditnote.FieldVoidedAt:
+		m.ResetVoidedAt()
+		return nil
+	case creditnote.FieldFinalizedAt:
+		m.ResetFinalizedAt()
 		return nil
 	case creditnote.FieldMetadata:
 		m.ResetMetadata()

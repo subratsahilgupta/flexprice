@@ -58,6 +58,7 @@ type Stores struct {
 	TaskRepo                   task.Repository
 	SecretRepo                 secret.Repository
 	CreditNoteRepo             creditnote.Repository
+	CreditNoteLineItemRepo     creditnote.CreditNoteLineItemRepository
 }
 
 // BaseServiceTestSuite provides common functionality for all service test suites
@@ -137,6 +138,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 		CreditGrantRepo:            NewInMemoryCreditGrantStore(),
 		CreditGrantApplicationRepo: NewInMemoryCreditGrantApplicationStore(),
 		CreditNoteRepo:             NewInMemoryCreditNoteStore(),
+		CreditNoteLineItemRepo:     NewInMemoryCreditNoteLineItemStore(),
 	}
 
 	s.db = NewMockPostgresClient(s.logger)
@@ -172,6 +174,7 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.CreditGrantRepo.(*InMemoryCreditGrantStore).Clear()
 	s.stores.CreditGrantApplicationRepo.(*InMemoryCreditGrantApplicationStore).Clear()
 	s.stores.CreditNoteRepo.(*InMemoryCreditNoteStore).Clear()
+	s.stores.CreditNoteLineItemRepo.(*InMemoryCreditNoteLineItemStore).Clear()
 }
 
 func (s *BaseServiceTestSuite) ClearStores() {

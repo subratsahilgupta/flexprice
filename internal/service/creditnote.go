@@ -25,7 +25,9 @@ type CreditNoteService interface {
 	// this can be done when credit note is a adjustment and not a refund so we can cancel the adjustment
 	VoidCreditNote(ctx context.Context, id string) error
 
-	ProcessDraftCreditNote(ctx context.Context, id string) error
+	// This method is used to finalize a credit note
+	// this can be done when credit note is a adjustment and not a refund so we can cancel the adjustment
+	FinalizeCreditNote(ctx context.Context, id string) error
 }
 
 type creditNoteService struct {
@@ -140,8 +142,8 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 		return nil, err
 	}
 
-	// Process the credit note
-	if err := s.ProcessDraftCreditNote(ctx, creditNote.ID); err != nil {
+	// Finalize the credit note
+	if err := s.FinalizeCreditNote(ctx, creditNote.ID); err != nil {
 		return nil, err
 	}
 
@@ -409,7 +411,7 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 	return nil
 }
 
-func (s *creditNoteService) ProcessDraftCreditNote(ctx context.Context, id string) error {
+func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) error {
 	if id == "" {
 		return ierr.NewError("credit note id is required").
 			WithHint("Credit note ID cannot be empty").
@@ -492,7 +494,7 @@ func (s *creditNoteService) ProcessDraftCreditNote(ctx context.Context, id strin
 			// Top up wallet using transaction context
 			walletTxnReq := &dto.TopUpWalletRequest{
 				Amount:            cn.TotalAmount,
-				TransactionReason: types.TransactionReasonInvoiceRefund,
+				TransactionReason: types.TransactionReasonCreditNote,
 				Metadata:          types.Metadata{"credit_note_id": cn.ID},
 				IdempotencyKey:    &cn.ID, // Use credit note ID as idempotency key
 				Description:       fmt.Sprintf("Credit note refund: %s", cn.CreditNoteNumber),

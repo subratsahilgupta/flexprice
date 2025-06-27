@@ -234,6 +234,8 @@ var (
 		{Name: "memo", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(100)"}},
+		{Name: "voided_at", Type: field.TypeTime, Nullable: true},
+		{Name: "finalized_at", Type: field.TypeTime, Nullable: true},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
 		{Name: "total_amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 	}
@@ -250,6 +252,39 @@ var (
 				Annotation: &entsql.IndexAnnotation{
 					Where: "credit_note_number IS NOT NULL AND credit_note_number != '' AND status = 'published'",
 				},
+			},
+			{
+				Name:    "creditnote_tenant_id_environment_id_idempotency_key",
+				Unique:  false,
+				Columns: []*schema.Column{CreditNotesColumns[1], CreditNotesColumns[7], CreditNotesColumns[18]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "idempotency_key IS NOT NULL AND idempotency_key != ''",
+				},
+			},
+			{
+				Name:    "creditnote_tenant_id_environment_id_invoice_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreditNotesColumns[1], CreditNotesColumns[7], CreditNotesColumns[8]},
+			},
+			{
+				Name:    "creditnote_tenant_id_environment_id_credit_note_status",
+				Unique:  false,
+				Columns: []*schema.Column{CreditNotesColumns[1], CreditNotesColumns[7], CreditNotesColumns[12]},
+			},
+			{
+				Name:    "creditnote_tenant_id_environment_id_credit_note_type",
+				Unique:  false,
+				Columns: []*schema.Column{CreditNotesColumns[1], CreditNotesColumns[7], CreditNotesColumns[13]},
+			},
+			{
+				Name:    "creditnote_tenant_id_environment_id_customer_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreditNotesColumns[1], CreditNotesColumns[7], CreditNotesColumns[9]},
+			},
+			{
+				Name:    "creditnote_tenant_id_environment_id_subscription_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreditNotesColumns[1], CreditNotesColumns[7], CreditNotesColumns[10]},
 			},
 		},
 	}

@@ -104,20 +104,6 @@ func (cnu *CreditNoteUpdate) SetNillableCreditNoteStatus(tns *types.CreditNoteSt
 	return cnu
 }
 
-// SetCreditNoteType sets the "credit_note_type" field.
-func (cnu *CreditNoteUpdate) SetCreditNoteType(tnt types.CreditNoteType) *CreditNoteUpdate {
-	cnu.mutation.SetCreditNoteType(tnt)
-	return cnu
-}
-
-// SetNillableCreditNoteType sets the "credit_note_type" field if the given value is not nil.
-func (cnu *CreditNoteUpdate) SetNillableCreditNoteType(tnt *types.CreditNoteType) *CreditNoteUpdate {
-	if tnt != nil {
-		cnu.SetCreditNoteType(*tnt)
-	}
-	return cnu
-}
-
 // SetRefundStatus sets the "refund_status" field.
 func (cnu *CreditNoteUpdate) SetRefundStatus(ts types.PaymentStatus) *CreditNoteUpdate {
 	cnu.mutation.SetRefundStatus(ts)
@@ -135,20 +121,6 @@ func (cnu *CreditNoteUpdate) SetNillableRefundStatus(ts *types.PaymentStatus) *C
 // ClearRefundStatus clears the value of the "refund_status" field.
 func (cnu *CreditNoteUpdate) ClearRefundStatus() *CreditNoteUpdate {
 	cnu.mutation.ClearRefundStatus()
-	return cnu
-}
-
-// SetReason sets the "reason" field.
-func (cnu *CreditNoteUpdate) SetReason(tnr types.CreditNoteReason) *CreditNoteUpdate {
-	cnu.mutation.SetReason(tnr)
-	return cnu
-}
-
-// SetNillableReason sets the "reason" field if the given value is not nil.
-func (cnu *CreditNoteUpdate) SetNillableReason(tnr *types.CreditNoteReason) *CreditNoteUpdate {
-	if tnr != nil {
-		cnu.SetReason(*tnr)
-	}
 	return cnu
 }
 
@@ -241,35 +213,7 @@ func (cnu *CreditNoteUpdate) defaults() {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (cnu *CreditNoteUpdate) check() error {
-	if v, ok := cnu.mutation.CreditNoteStatus(); ok {
-		if err := v.Validate(); err != nil {
-			return &ValidationError{Name: "credit_note_status", err: fmt.Errorf(`ent: validator failed for field "CreditNote.credit_note_status": %w`, err)}
-		}
-	}
-	if v, ok := cnu.mutation.CreditNoteType(); ok {
-		if err := creditnote.CreditNoteTypeValidator(string(v)); err != nil {
-			return &ValidationError{Name: "credit_note_type", err: fmt.Errorf(`ent: validator failed for field "CreditNote.credit_note_type": %w`, err)}
-		}
-	}
-	if v, ok := cnu.mutation.RefundStatus(); ok {
-		if err := v.Validate(); err != nil {
-			return &ValidationError{Name: "refund_status", err: fmt.Errorf(`ent: validator failed for field "CreditNote.refund_status": %w`, err)}
-		}
-	}
-	if v, ok := cnu.mutation.Reason(); ok {
-		if err := creditnote.ReasonValidator(string(v)); err != nil {
-			return &ValidationError{Name: "reason", err: fmt.Errorf(`ent: validator failed for field "CreditNote.reason": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (cnu *CreditNoteUpdate) sqlSave(ctx context.Context) (n int, err error) {
-	if err := cnu.check(); err != nil {
-		return n, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(creditnote.Table, creditnote.Columns, sqlgraph.NewFieldSpec(creditnote.FieldID, field.TypeString))
 	if ps := cnu.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -305,20 +249,20 @@ func (cnu *CreditNoteUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := cnu.mutation.CreditNoteStatus(); ok {
 		_spec.SetField(creditnote.FieldCreditNoteStatus, field.TypeString, value)
 	}
-	if value, ok := cnu.mutation.CreditNoteType(); ok {
-		_spec.SetField(creditnote.FieldCreditNoteType, field.TypeString, value)
-	}
 	if value, ok := cnu.mutation.RefundStatus(); ok {
 		_spec.SetField(creditnote.FieldRefundStatus, field.TypeString, value)
 	}
 	if cnu.mutation.RefundStatusCleared() {
 		_spec.ClearField(creditnote.FieldRefundStatus, field.TypeString)
 	}
-	if value, ok := cnu.mutation.Reason(); ok {
-		_spec.SetField(creditnote.FieldReason, field.TypeString, value)
-	}
 	if cnu.mutation.IdempotencyKeyCleared() {
 		_spec.ClearField(creditnote.FieldIdempotencyKey, field.TypeString)
+	}
+	if cnu.mutation.VoidedAtCleared() {
+		_spec.ClearField(creditnote.FieldVoidedAt, field.TypeTime)
+	}
+	if cnu.mutation.FinalizedAtCleared() {
+		_spec.ClearField(creditnote.FieldFinalizedAt, field.TypeTime)
 	}
 	if value, ok := cnu.mutation.Metadata(); ok {
 		_spec.SetField(creditnote.FieldMetadata, field.TypeJSON, value)
@@ -465,20 +409,6 @@ func (cnuo *CreditNoteUpdateOne) SetNillableCreditNoteStatus(tns *types.CreditNo
 	return cnuo
 }
 
-// SetCreditNoteType sets the "credit_note_type" field.
-func (cnuo *CreditNoteUpdateOne) SetCreditNoteType(tnt types.CreditNoteType) *CreditNoteUpdateOne {
-	cnuo.mutation.SetCreditNoteType(tnt)
-	return cnuo
-}
-
-// SetNillableCreditNoteType sets the "credit_note_type" field if the given value is not nil.
-func (cnuo *CreditNoteUpdateOne) SetNillableCreditNoteType(tnt *types.CreditNoteType) *CreditNoteUpdateOne {
-	if tnt != nil {
-		cnuo.SetCreditNoteType(*tnt)
-	}
-	return cnuo
-}
-
 // SetRefundStatus sets the "refund_status" field.
 func (cnuo *CreditNoteUpdateOne) SetRefundStatus(ts types.PaymentStatus) *CreditNoteUpdateOne {
 	cnuo.mutation.SetRefundStatus(ts)
@@ -496,20 +426,6 @@ func (cnuo *CreditNoteUpdateOne) SetNillableRefundStatus(ts *types.PaymentStatus
 // ClearRefundStatus clears the value of the "refund_status" field.
 func (cnuo *CreditNoteUpdateOne) ClearRefundStatus() *CreditNoteUpdateOne {
 	cnuo.mutation.ClearRefundStatus()
-	return cnuo
-}
-
-// SetReason sets the "reason" field.
-func (cnuo *CreditNoteUpdateOne) SetReason(tnr types.CreditNoteReason) *CreditNoteUpdateOne {
-	cnuo.mutation.SetReason(tnr)
-	return cnuo
-}
-
-// SetNillableReason sets the "reason" field if the given value is not nil.
-func (cnuo *CreditNoteUpdateOne) SetNillableReason(tnr *types.CreditNoteReason) *CreditNoteUpdateOne {
-	if tnr != nil {
-		cnuo.SetReason(*tnr)
-	}
 	return cnuo
 }
 
@@ -615,35 +531,7 @@ func (cnuo *CreditNoteUpdateOne) defaults() {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (cnuo *CreditNoteUpdateOne) check() error {
-	if v, ok := cnuo.mutation.CreditNoteStatus(); ok {
-		if err := v.Validate(); err != nil {
-			return &ValidationError{Name: "credit_note_status", err: fmt.Errorf(`ent: validator failed for field "CreditNote.credit_note_status": %w`, err)}
-		}
-	}
-	if v, ok := cnuo.mutation.CreditNoteType(); ok {
-		if err := creditnote.CreditNoteTypeValidator(string(v)); err != nil {
-			return &ValidationError{Name: "credit_note_type", err: fmt.Errorf(`ent: validator failed for field "CreditNote.credit_note_type": %w`, err)}
-		}
-	}
-	if v, ok := cnuo.mutation.RefundStatus(); ok {
-		if err := v.Validate(); err != nil {
-			return &ValidationError{Name: "refund_status", err: fmt.Errorf(`ent: validator failed for field "CreditNote.refund_status": %w`, err)}
-		}
-	}
-	if v, ok := cnuo.mutation.Reason(); ok {
-		if err := creditnote.ReasonValidator(string(v)); err != nil {
-			return &ValidationError{Name: "reason", err: fmt.Errorf(`ent: validator failed for field "CreditNote.reason": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (cnuo *CreditNoteUpdateOne) sqlSave(ctx context.Context) (_node *CreditNote, err error) {
-	if err := cnuo.check(); err != nil {
-		return _node, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(creditnote.Table, creditnote.Columns, sqlgraph.NewFieldSpec(creditnote.FieldID, field.TypeString))
 	id, ok := cnuo.mutation.ID()
 	if !ok {
@@ -696,20 +584,20 @@ func (cnuo *CreditNoteUpdateOne) sqlSave(ctx context.Context) (_node *CreditNote
 	if value, ok := cnuo.mutation.CreditNoteStatus(); ok {
 		_spec.SetField(creditnote.FieldCreditNoteStatus, field.TypeString, value)
 	}
-	if value, ok := cnuo.mutation.CreditNoteType(); ok {
-		_spec.SetField(creditnote.FieldCreditNoteType, field.TypeString, value)
-	}
 	if value, ok := cnuo.mutation.RefundStatus(); ok {
 		_spec.SetField(creditnote.FieldRefundStatus, field.TypeString, value)
 	}
 	if cnuo.mutation.RefundStatusCleared() {
 		_spec.ClearField(creditnote.FieldRefundStatus, field.TypeString)
 	}
-	if value, ok := cnuo.mutation.Reason(); ok {
-		_spec.SetField(creditnote.FieldReason, field.TypeString, value)
-	}
 	if cnuo.mutation.IdempotencyKeyCleared() {
 		_spec.ClearField(creditnote.FieldIdempotencyKey, field.TypeString)
+	}
+	if cnuo.mutation.VoidedAtCleared() {
+		_spec.ClearField(creditnote.FieldVoidedAt, field.TypeTime)
+	}
+	if cnuo.mutation.FinalizedAtCleared() {
+		_spec.ClearField(creditnote.FieldFinalizedAt, field.TypeTime)
 	}
 	if value, ok := cnuo.mutation.Metadata(); ok {
 		_spec.SetField(creditnote.FieldMetadata, field.TypeJSON, value)

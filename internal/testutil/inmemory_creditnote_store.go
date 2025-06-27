@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"context"
-	"sort"
 	"sync"
 	"time"
 
@@ -14,8 +13,8 @@ import (
 
 // InMemoryCreditNoteStore implements the creditnote.Repository interface for testing
 type InMemoryCreditNoteStore struct {
+	*InMemoryStore[*creditnote.CreditNote]
 	mu                  sync.RWMutex
-	creditNotes         map[string]*creditnote.CreditNote
 	creditNoteLineItems map[string][]*creditnote.CreditNoteLineItem
 	idempotencyKeyIndex map[string]string // idempotency_key -> credit_note_id
 }
@@ -23,26 +22,55 @@ type InMemoryCreditNoteStore struct {
 // NewInMemoryCreditNoteStore creates a new in-memory credit note store
 func NewInMemoryCreditNoteStore() *InMemoryCreditNoteStore {
 	return &InMemoryCreditNoteStore{
-		creditNotes:         make(map[string]*creditnote.CreditNote),
+		InMemoryStore:       NewInMemoryStore[*creditnote.CreditNote](),
 		creditNoteLineItems: make(map[string][]*creditnote.CreditNoteLineItem),
 		idempotencyKeyIndex: make(map[string]string),
 	}
 }
 
-// Create creates a new credit note
-func (s *InMemoryCreditNoteStore) Create(ctx context.Context, cn *creditnote.CreditNote) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if cn.ID == "" {
-		return ierr.NewError("credit note ID is required").Mark(ierr.ErrValidation)
+// Helper to copy credit note
+func copyCreditNote(cn *creditnote.CreditNote) *creditnote.CreditNote {
+	if cn == nil {
+		return nil
 	}
 
-	// Check if credit note already exists
-	if _, exists := s.creditNotes[cn.ID]; exists {
-		return ierr.NewError("credit note already exists").
-			WithHintf("Credit note with ID %s already exists", cn.ID).
-			Mark(ierr.ErrAlreadyExists)
+	// Create a deep copy
+	cloned := &creditnote.CreditNote{
+		ID:               cn.ID,
+		CreditNoteNumber: cn.CreditNoteNumber,
+		InvoiceID:        cn.InvoiceID,
+		CustomerID:       cn.CustomerID,
+		SubscriptionID:   cn.SubscriptionID,
+		CreditNoteStatus: cn.CreditNoteStatus,
+		CreditNoteType:   cn.CreditNoteType,
+		RefundStatus:     cn.RefundStatus,
+		Reason:           cn.Reason,
+		Memo:             cn.Memo,
+		Currency:         cn.Currency,
+		Metadata:         make(types.Metadata),
+		EnvironmentID:    cn.EnvironmentID,
+		TotalAmount:      cn.TotalAmount,
+		IdempotencyKey:   cn.IdempotencyKey,
+		BaseModel:        cn.BaseModel,
+	}
+
+	// Copy metadata
+	for k, v := range cn.Metadata {
+		cloned.Metadata[k] = v
+	}
+
+	return cloned
+}
+
+// Create creates a new credit note
+func (s *InMemoryCreditNoteStore) Create(ctx context.Context, cn *creditnote.CreditNote) error {
+	if cn == nil {
+		return ierr.NewError("credit note cannot be nil").Mark(ierr.ErrValidation)
+	}
+
+	// Set environment ID from context if not already set
+	if cn.EnvironmentID == "" {
+		cn.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
 	// Set timestamps if not set
@@ -64,142 +92,65 @@ func (s *InMemoryCreditNoteStore) Create(ctx context.Context, cn *creditnote.Cre
 		cn.UpdatedBy = types.GetUserID(ctx)
 	}
 
-	// Clone to avoid mutations
-	cloned := s.cloneCreditNote(cn)
-	s.creditNotes[cn.ID] = cloned
+	// Create the credit note first
+	err := s.InMemoryStore.Create(ctx, cn.ID, copyCreditNote(cn))
+	if err != nil {
+		return err
+	}
+
+	// Index idempotency key if provided
+	if cn.IdempotencyKey != nil && *cn.IdempotencyKey != "" {
+		s.mu.Lock()
+		s.idempotencyKeyIndex[*cn.IdempotencyKey] = cn.ID
+		s.mu.Unlock()
+	}
 
 	return nil
 }
 
 // Get retrieves a credit note by ID
 func (s *InMemoryCreditNoteStore) Get(ctx context.Context, id string) (*creditnote.CreditNote, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	cn, exists := s.creditNotes[id]
-	if !exists {
-		return nil, ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", id).
-			Mark(ierr.ErrNotFound)
+	cn, err := s.InMemoryStore.Get(ctx, id)
+	if err != nil {
+		return nil, err
 	}
 
-	// Check tenant access
-	if cn.TenantID != tenantID {
-		return nil, ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", id).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Check environment access
-	if environmentID != "" && cn.EnvironmentID != environmentID {
-		return nil, ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", id).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Check if deleted
-	if cn.Status == types.StatusDeleted {
-		return nil, ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", id).
-			Mark(ierr.ErrNotFound)
-	}
-
-	cloned := s.cloneCreditNote(cn)
+	cloned := copyCreditNote(cn)
 	// Load line items
+	s.mu.RLock()
 	if lineItems, exists := s.creditNoteLineItems[id]; exists {
 		cloned.LineItems = s.cloneCreditNoteLineItems(lineItems)
 	}
+	s.mu.RUnlock()
 
 	return cloned, nil
 }
 
 // Update updates a credit note
 func (s *InMemoryCreditNoteStore) Update(ctx context.Context, cn *creditnote.CreditNote) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-	userID := types.GetUserID(ctx)
-
-	existing, exists := s.creditNotes[cn.ID]
-	if !exists {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", cn.ID).
-			Mark(ierr.ErrNotFound)
+	if cn == nil {
+		return ierr.NewError("credit note cannot be nil").Mark(ierr.ErrValidation)
 	}
 
-	// Check tenant access
-	if existing.TenantID != tenantID {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", cn.ID).
-			Mark(ierr.ErrNotFound)
+	// Update timestamp
+	cn.UpdatedAt = time.Now().UTC()
+	if cn.UpdatedBy == "" {
+		cn.UpdatedBy = types.GetUserID(ctx)
 	}
 
-	// Check environment access
-	if environmentID != "" && existing.EnvironmentID != environmentID {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", cn.ID).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Check if deleted
-	if existing.Status == types.StatusDeleted {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", cn.ID).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Update fields
-	updated := s.cloneCreditNote(existing)
-	updated.CreditNoteStatus = cn.CreditNoteStatus
-	updated.RefundStatus = cn.RefundStatus
-	updated.Reason = cn.Reason
-	updated.Metadata = cn.Metadata
-	updated.UpdatedAt = time.Now().UTC()
-	updated.UpdatedBy = userID
-
-	s.creditNotes[cn.ID] = updated
-	return nil
+	return s.InMemoryStore.Update(ctx, cn.ID, copyCreditNote(cn))
 }
 
 // Delete marks a credit note as deleted
 func (s *InMemoryCreditNoteStore) Delete(ctx context.Context, id string) error {
+	// Get the credit note first to mark line items as deleted
+	cn, err := s.InMemoryStore.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
 	userID := types.GetUserID(ctx)
-
-	cn, exists := s.creditNotes[id]
-	if !exists {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", id).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Check tenant access
-	if cn.TenantID != tenantID {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", id).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Check environment access
-	if environmentID != "" && cn.EnvironmentID != environmentID {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", id).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Mark as deleted
-	cn.Status = types.StatusDeleted
-	cn.UpdatedAt = time.Now().UTC()
-	cn.UpdatedBy = userID
 
 	// Mark line items as deleted
 	if lineItems, exists := s.creditNoteLineItems[id]; exists {
@@ -209,67 +160,34 @@ func (s *InMemoryCreditNoteStore) Delete(ctx context.Context, id string) error {
 			item.UpdatedBy = userID
 		}
 	}
+	s.mu.Unlock()
 
-	return nil
+	// Mark credit note as deleted
+	cn.Status = types.StatusDeleted
+	cn.UpdatedAt = time.Now().UTC()
+	cn.UpdatedBy = userID
+
+	return s.InMemoryStore.Update(ctx, id, copyCreditNote(cn))
 }
 
 // List returns a list of credit notes based on the filter
 func (s *InMemoryCreditNoteStore) List(ctx context.Context, filter *types.CreditNoteFilter) ([]*creditnote.CreditNote, error) {
+	items, err := s.InMemoryStore.List(ctx, filter, creditNoteFilterFn, creditNoteSortFn)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load line items for each credit note
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	var result []*creditnote.CreditNote
-
-	for _, cn := range s.creditNotes {
-		// Check tenant access
-		if cn.TenantID != tenantID {
-			continue
+	result := make([]*creditnote.CreditNote, 0, len(items))
+	for _, cn := range items {
+		cloned := copyCreditNote(cn)
+		if lineItems, exists := s.creditNoteLineItems[cn.ID]; exists {
+			cloned.LineItems = s.cloneCreditNoteLineItems(lineItems)
 		}
-
-		// Check environment access
-		if environmentID != "" && cn.EnvironmentID != environmentID {
-			continue
-		}
-
-		// Check if deleted
-		if cn.Status == types.StatusDeleted {
-			continue
-		}
-
-		// Apply filters
-		if s.matchesFilter(cn, filter) {
-			cloned := s.cloneCreditNote(cn)
-			// Load line items
-			if lineItems, exists := s.creditNoteLineItems[cn.ID]; exists {
-				cloned.LineItems = s.cloneCreditNoteLineItems(lineItems)
-			}
-			result = append(result, cloned)
-		}
-	}
-
-	// Sort results
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].CreatedAt.After(result[j].CreatedAt)
-	})
-
-	// Apply pagination
-	if filter != nil {
-		offset := filter.GetOffset()
-		limit := filter.GetLimit()
-
-		if offset >= len(result) {
-			return []*creditnote.CreditNote{}, nil
-		}
-
-		end := offset + limit
-		if end > len(result) {
-			end = len(result)
-		}
-
-		result = result[offset:end]
+		result = append(result, cloned)
 	}
 
 	return result, nil
@@ -277,73 +195,28 @@ func (s *InMemoryCreditNoteStore) List(ctx context.Context, filter *types.Credit
 
 // Count returns the total count of credit notes based on the filter
 func (s *InMemoryCreditNoteStore) Count(ctx context.Context, filter *types.CreditNoteFilter) (int, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	count := 0
-
-	for _, cn := range s.creditNotes {
-		// Check tenant access
-		if cn.TenantID != tenantID {
-			continue
-		}
-
-		// Check environment access
-		if environmentID != "" && cn.EnvironmentID != environmentID {
-			continue
-		}
-
-		// Check if deleted
-		if cn.Status == types.StatusDeleted {
-			continue
-		}
-
-		// Apply filters
-		if s.matchesFilter(cn, filter) {
-			count++
-		}
-	}
-
-	return count, nil
+	return s.InMemoryStore.Count(ctx, filter, creditNoteFilterFn)
 }
 
 // AddLineItems adds line items to a credit note
 func (s *InMemoryCreditNoteStore) AddLineItems(ctx context.Context, creditNoteID string, items []*creditnote.CreditNoteLineItem) error {
+	// Check if credit note exists
+	_, err := s.InMemoryStore.Get(ctx, creditNoteID)
+	if err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	// Check if credit note exists
-	cn, exists := s.creditNotes[creditNoteID]
-	if !exists {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", creditNoteID).
-			Mark(ierr.ErrNotFound)
-	}
-
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	// Check tenant access
-	if cn.TenantID != tenantID {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", creditNoteID).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Check environment access
-	if environmentID != "" && cn.EnvironmentID != environmentID {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", creditNoteID).
-			Mark(ierr.ErrNotFound)
-	}
 
 	// Add line items
 	if s.creditNoteLineItems[creditNoteID] == nil {
 		s.creditNoteLineItems[creditNoteID] = make([]*creditnote.CreditNoteLineItem, 0)
 	}
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	userID := types.GetUserID(ctx)
 
 	for _, item := range items {
 		if item.CreatedAt.IsZero() {
@@ -353,10 +226,10 @@ func (s *InMemoryCreditNoteStore) AddLineItems(ctx context.Context, creditNoteID
 			item.UpdatedAt = time.Now().UTC()
 		}
 		if item.CreatedBy == "" {
-			item.CreatedBy = types.GetUserID(ctx)
+			item.CreatedBy = userID
 		}
 		if item.UpdatedBy == "" {
-			item.UpdatedBy = types.GetUserID(ctx)
+			item.UpdatedBy = userID
 		}
 		if item.TenantID == "" {
 			item.TenantID = tenantID
@@ -373,34 +246,16 @@ func (s *InMemoryCreditNoteStore) AddLineItems(ctx context.Context, creditNoteID
 
 // RemoveLineItems removes line items from a credit note
 func (s *InMemoryCreditNoteStore) RemoveLineItems(ctx context.Context, creditNoteID string, itemIDs []string) error {
+	// Check if credit note exists
+	_, err := s.InMemoryStore.Get(ctx, creditNoteID)
+	if err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if credit note exists
-	cn, exists := s.creditNotes[creditNoteID]
-	if !exists {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", creditNoteID).
-			Mark(ierr.ErrNotFound)
-	}
-
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
 	userID := types.GetUserID(ctx)
-
-	// Check tenant access
-	if cn.TenantID != tenantID {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", creditNoteID).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Check environment access
-	if environmentID != "" && cn.EnvironmentID != environmentID {
-		return ierr.NewError("credit note not found").
-			WithHintf("Credit note with ID %s not found", creditNoteID).
-			Mark(ierr.ErrNotFound)
-	}
 
 	// Mark line items as deleted
 	if lineItems, exists := s.creditNoteLineItems[creditNoteID]; exists {
@@ -418,18 +273,13 @@ func (s *InMemoryCreditNoteStore) RemoveLineItems(ctx context.Context, creditNot
 
 // CreateWithLineItems creates a credit note with its line items
 func (s *InMemoryCreditNoteStore) CreateWithLineItems(ctx context.Context, cn *creditnote.CreditNote) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if cn.ID == "" {
-		return ierr.NewError("credit note ID is required").Mark(ierr.ErrValidation)
+	if cn == nil {
+		return ierr.NewError("credit note cannot be nil").Mark(ierr.ErrValidation)
 	}
 
-	// Check if credit note already exists
-	if _, exists := s.creditNotes[cn.ID]; exists {
-		return ierr.NewError("credit note already exists").
-			WithHintf("Credit note with ID %s already exists", cn.ID).
-			Mark(ierr.ErrAlreadyExists)
+	// Set environment ID from context if not already set
+	if cn.EnvironmentID == "" {
+		cn.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
 	// Set timestamps if not set
@@ -451,12 +301,24 @@ func (s *InMemoryCreditNoteStore) CreateWithLineItems(ctx context.Context, cn *c
 		cn.UpdatedBy = types.GetUserID(ctx)
 	}
 
-	// Clone to avoid mutations
-	cloned := s.cloneCreditNote(cn)
-	s.creditNotes[cn.ID] = cloned
+	// Create the credit note first
+	err := s.InMemoryStore.Create(ctx, cn.ID, copyCreditNote(cn))
+	if err != nil {
+		return err
+	}
+
+	// Index idempotency key if provided
+	if cn.IdempotencyKey != nil && *cn.IdempotencyKey != "" {
+		s.mu.Lock()
+		s.idempotencyKeyIndex[*cn.IdempotencyKey] = cn.ID
+		s.mu.Unlock()
+	}
 
 	// Add line items
 	if len(cn.LineItems) > 0 {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
 		s.creditNoteLineItems[cn.ID] = make([]*creditnote.CreditNoteLineItem, 0)
 		for _, item := range cn.LineItems {
 			if item.CreatedAt.IsZero() {
@@ -488,9 +350,9 @@ func (s *InMemoryCreditNoteStore) CreateWithLineItems(ctx context.Context, cn *c
 // GetByIdempotencyKey retrieves a credit note by idempotency key
 func (s *InMemoryCreditNoteStore) GetByIdempotencyKey(ctx context.Context, key string) (*creditnote.CreditNote, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	creditNoteID, exists := s.idempotencyKeyIndex[key]
+	s.mu.RUnlock()
+
 	if !exists {
 		return nil, ierr.NewError("credit note not found").
 			WithHintf("Credit note with idempotency key %s not found", key).
@@ -502,47 +364,68 @@ func (s *InMemoryCreditNoteStore) GetByIdempotencyKey(ctx context.Context, key s
 
 // Clear removes all credit notes from the store
 func (s *InMemoryCreditNoteStore) Clear() {
+	s.InMemoryStore.Clear()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	s.creditNotes = make(map[string]*creditnote.CreditNote)
 	s.creditNoteLineItems = make(map[string][]*creditnote.CreditNoteLineItem)
 	s.idempotencyKeyIndex = make(map[string]string)
 }
 
-// Helper methods
+// Helper methods for filtering and sorting
 
-func (s *InMemoryCreditNoteStore) matchesFilter(cn *creditnote.CreditNote, filter *types.CreditNoteFilter) bool {
-	if filter == nil {
-		return true
+func creditNoteFilterFn(ctx context.Context, cn *creditnote.CreditNote, filter interface{}) bool {
+	if cn == nil {
+		return false
+	}
+
+	f, ok := filter.(*types.CreditNoteFilter)
+	if !ok {
+		return true // No filter applied
+	}
+
+	// Check tenant ID
+	if tenantID := types.GetTenantID(ctx); tenantID != "" {
+		if cn.TenantID != tenantID {
+			return false
+		}
+	}
+
+	// Apply environment filter
+	if !CheckEnvironmentFilter(ctx, cn.EnvironmentID) {
+		return false
+	}
+
+	// Check if deleted
+	if cn.Status == types.StatusDeleted {
+		return false
 	}
 
 	// Invoice ID filter
-	if filter.InvoiceID != "" && cn.InvoiceID != filter.InvoiceID {
+	if f.InvoiceID != "" && cn.InvoiceID != f.InvoiceID {
 		return false
 	}
 
 	// Credit note type filter
-	if filter.CreditNoteType != "" && cn.CreditNoteType != filter.CreditNoteType {
+	if f.CreditNoteType != "" && cn.CreditNoteType != f.CreditNoteType {
 		return false
 	}
 
 	// Credit note IDs filter
-	if len(filter.CreditNoteIDs) > 0 && !lo.Contains(filter.CreditNoteIDs, cn.ID) {
+	if len(f.CreditNoteIDs) > 0 && !lo.Contains(f.CreditNoteIDs, cn.ID) {
 		return false
 	}
 
 	// Credit note status filter
-	if len(filter.CreditNoteStatus) > 0 && !lo.Contains(filter.CreditNoteStatus, cn.CreditNoteStatus) {
+	if len(f.CreditNoteStatus) > 0 && !lo.Contains(f.CreditNoteStatus, cn.CreditNoteStatus) {
 		return false
 	}
 
 	// Time range filter
-	if filter.TimeRangeFilter != nil {
-		if filter.TimeRangeFilter.StartTime != nil && cn.CreatedAt.Before(*filter.TimeRangeFilter.StartTime) {
+	if f.TimeRangeFilter != nil {
+		if f.TimeRangeFilter.StartTime != nil && cn.CreatedAt.Before(*f.TimeRangeFilter.StartTime) {
 			return false
 		}
-		if filter.TimeRangeFilter.EndTime != nil && cn.CreatedAt.After(*filter.TimeRangeFilter.EndTime) {
+		if f.TimeRangeFilter.EndTime != nil && cn.CreatedAt.After(*f.TimeRangeFilter.EndTime) {
 			return false
 		}
 	}
@@ -550,36 +433,8 @@ func (s *InMemoryCreditNoteStore) matchesFilter(cn *creditnote.CreditNote, filte
 	return true
 }
 
-func (s *InMemoryCreditNoteStore) cloneCreditNote(cn *creditnote.CreditNote) *creditnote.CreditNote {
-	if cn == nil {
-		return nil
-	}
-
-	// Create a deep copy
-	cloned := &creditnote.CreditNote{
-		ID:               cn.ID,
-		CreditNoteNumber: cn.CreditNoteNumber,
-		InvoiceID:        cn.InvoiceID,
-		CustomerID:       cn.CustomerID,
-		SubscriptionID:   cn.SubscriptionID,
-		CreditNoteStatus: cn.CreditNoteStatus,
-		CreditNoteType:   cn.CreditNoteType,
-		RefundStatus:     cn.RefundStatus,
-		Reason:           cn.Reason,
-		Memo:             cn.Memo,
-		Currency:         cn.Currency,
-		Metadata:         make(types.Metadata),
-		EnvironmentID:    cn.EnvironmentID,
-		TotalAmount:      cn.TotalAmount,
-		BaseModel:        cn.BaseModel,
-	}
-
-	// Copy metadata
-	for k, v := range cn.Metadata {
-		cloned.Metadata[k] = v
-	}
-
-	return cloned
+func creditNoteSortFn(i, j *creditnote.CreditNote) bool {
+	return i.CreatedAt.After(j.CreatedAt)
 }
 
 func (s *InMemoryCreditNoteStore) cloneCreditNoteLineItem(item *creditnote.CreditNoteLineItem) *creditnote.CreditNoteLineItem {

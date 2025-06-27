@@ -211,6 +211,34 @@ func (cnc *CreditNoteCreate) SetNillableIdempotencyKey(s *string) *CreditNoteCre
 	return cnc
 }
 
+// SetVoidedAt sets the "voided_at" field.
+func (cnc *CreditNoteCreate) SetVoidedAt(t time.Time) *CreditNoteCreate {
+	cnc.mutation.SetVoidedAt(t)
+	return cnc
+}
+
+// SetNillableVoidedAt sets the "voided_at" field if the given value is not nil.
+func (cnc *CreditNoteCreate) SetNillableVoidedAt(t *time.Time) *CreditNoteCreate {
+	if t != nil {
+		cnc.SetVoidedAt(*t)
+	}
+	return cnc
+}
+
+// SetFinalizedAt sets the "finalized_at" field.
+func (cnc *CreditNoteCreate) SetFinalizedAt(t time.Time) *CreditNoteCreate {
+	cnc.mutation.SetFinalizedAt(t)
+	return cnc
+}
+
+// SetNillableFinalizedAt sets the "finalized_at" field if the given value is not nil.
+func (cnc *CreditNoteCreate) SetNillableFinalizedAt(t *time.Time) *CreditNoteCreate {
+	if t != nil {
+		cnc.SetFinalizedAt(*t)
+	}
+	return cnc
+}
+
 // SetMetadata sets the "metadata" field.
 func (cnc *CreditNoteCreate) SetMetadata(m map[string]string) *CreditNoteCreate {
 	cnc.mutation.SetMetadata(m)
@@ -495,6 +523,14 @@ func (cnc *CreditNoteCreate) createSpec() (*CreditNote, *sqlgraph.CreateSpec) {
 	if value, ok := cnc.mutation.IdempotencyKey(); ok {
 		_spec.SetField(creditnote.FieldIdempotencyKey, field.TypeString, value)
 		_node.IdempotencyKey = &value
+	}
+	if value, ok := cnc.mutation.VoidedAt(); ok {
+		_spec.SetField(creditnote.FieldVoidedAt, field.TypeTime, value)
+		_node.VoidedAt = &value
+	}
+	if value, ok := cnc.mutation.FinalizedAt(); ok {
+		_spec.SetField(creditnote.FieldFinalizedAt, field.TypeTime, value)
+		_node.FinalizedAt = &value
 	}
 	if value, ok := cnc.mutation.Metadata(); ok {
 		_spec.SetField(creditnote.FieldMetadata, field.TypeJSON, value)

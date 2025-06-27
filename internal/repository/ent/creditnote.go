@@ -366,7 +366,6 @@ func (r *creditnoteRepository) Update(ctx context.Context, cn *domainCreditNote.
 		).
 		SetCreditNoteStatus(cn.CreditNoteStatus).
 		SetNillableRefundStatus(cn.RefundStatus).
-		SetReason(cn.Reason).
 		SetMetadata(cn.Metadata).
 		SetUpdatedAt(time.Now()).
 		SetUpdatedBy(types.GetUserID(ctx))

@@ -55,7 +55,7 @@ const (
 	TransactionReasonSubscriptionCredit      TransactionReason = "SUBSCRIPTION_CREDIT_GRANT"
 	TransactionReasonPurchasedCreditInvoiced TransactionReason = "PURCHASED_CREDIT_INVOICED"
 	TransactionReasonPurchasedCreditDirect   TransactionReason = "PURCHASED_CREDIT_DIRECT"
-	TransactionReasonInvoiceRefund           TransactionReason = "INVOICE_REFUND"
+	TransactionReasonCreditNote              TransactionReason = "CREDIT_NOTE"
 	TransactionReasonCreditExpired           TransactionReason = "CREDIT_EXPIRED"
 	TransactionReasonWalletTermination       TransactionReason = "WALLET_TERMINATION"
 )
@@ -71,10 +71,9 @@ func (t TransactionReason) Validate() error {
 		string(TransactionReasonSubscriptionCredit),
 		string(TransactionReasonPurchasedCreditInvoiced),
 		string(TransactionReasonPurchasedCreditDirect),
-		string(TransactionReasonInvoiceRefund),
+		string(TransactionReasonCreditNote),
 		string(TransactionReasonCreditExpired),
 		string(TransactionReasonWalletTermination),
-		
 	}
 	if !lo.Contains(allowedValues, string(t)) {
 		return ierr.NewError("invalid transaction reason").

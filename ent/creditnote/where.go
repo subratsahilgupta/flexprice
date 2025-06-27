@@ -161,6 +161,16 @@ func IdempotencyKey(v string) predicate.CreditNote {
 	return predicate.CreditNote(sql.FieldEQ(FieldIdempotencyKey, v))
 }
 
+// VoidedAt applies equality check predicate on the "voided_at" field. It's identical to VoidedAtEQ.
+func VoidedAt(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEQ(FieldVoidedAt, v))
+}
+
+// FinalizedAt applies equality check predicate on the "finalized_at" field. It's identical to FinalizedAtEQ.
+func FinalizedAt(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEQ(FieldFinalizedAt, v))
+}
+
 // TotalAmount applies equality check predicate on the "total_amount" field. It's identical to TotalAmountEQ.
 func TotalAmount(v decimal.Decimal) predicate.CreditNote {
 	return predicate.CreditNote(sql.FieldEQ(FieldTotalAmount, v))
@@ -1420,6 +1430,106 @@ func IdempotencyKeyEqualFold(v string) predicate.CreditNote {
 // IdempotencyKeyContainsFold applies the ContainsFold predicate on the "idempotency_key" field.
 func IdempotencyKeyContainsFold(v string) predicate.CreditNote {
 	return predicate.CreditNote(sql.FieldContainsFold(FieldIdempotencyKey, v))
+}
+
+// VoidedAtEQ applies the EQ predicate on the "voided_at" field.
+func VoidedAtEQ(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEQ(FieldVoidedAt, v))
+}
+
+// VoidedAtNEQ applies the NEQ predicate on the "voided_at" field.
+func VoidedAtNEQ(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNEQ(FieldVoidedAt, v))
+}
+
+// VoidedAtIn applies the In predicate on the "voided_at" field.
+func VoidedAtIn(vs ...time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldIn(FieldVoidedAt, vs...))
+}
+
+// VoidedAtNotIn applies the NotIn predicate on the "voided_at" field.
+func VoidedAtNotIn(vs ...time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNotIn(FieldVoidedAt, vs...))
+}
+
+// VoidedAtGT applies the GT predicate on the "voided_at" field.
+func VoidedAtGT(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldGT(FieldVoidedAt, v))
+}
+
+// VoidedAtGTE applies the GTE predicate on the "voided_at" field.
+func VoidedAtGTE(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldGTE(FieldVoidedAt, v))
+}
+
+// VoidedAtLT applies the LT predicate on the "voided_at" field.
+func VoidedAtLT(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldLT(FieldVoidedAt, v))
+}
+
+// VoidedAtLTE applies the LTE predicate on the "voided_at" field.
+func VoidedAtLTE(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldLTE(FieldVoidedAt, v))
+}
+
+// VoidedAtIsNil applies the IsNil predicate on the "voided_at" field.
+func VoidedAtIsNil() predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldIsNull(FieldVoidedAt))
+}
+
+// VoidedAtNotNil applies the NotNil predicate on the "voided_at" field.
+func VoidedAtNotNil() predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNotNull(FieldVoidedAt))
+}
+
+// FinalizedAtEQ applies the EQ predicate on the "finalized_at" field.
+func FinalizedAtEQ(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldEQ(FieldFinalizedAt, v))
+}
+
+// FinalizedAtNEQ applies the NEQ predicate on the "finalized_at" field.
+func FinalizedAtNEQ(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNEQ(FieldFinalizedAt, v))
+}
+
+// FinalizedAtIn applies the In predicate on the "finalized_at" field.
+func FinalizedAtIn(vs ...time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldIn(FieldFinalizedAt, vs...))
+}
+
+// FinalizedAtNotIn applies the NotIn predicate on the "finalized_at" field.
+func FinalizedAtNotIn(vs ...time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNotIn(FieldFinalizedAt, vs...))
+}
+
+// FinalizedAtGT applies the GT predicate on the "finalized_at" field.
+func FinalizedAtGT(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldGT(FieldFinalizedAt, v))
+}
+
+// FinalizedAtGTE applies the GTE predicate on the "finalized_at" field.
+func FinalizedAtGTE(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldGTE(FieldFinalizedAt, v))
+}
+
+// FinalizedAtLT applies the LT predicate on the "finalized_at" field.
+func FinalizedAtLT(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldLT(FieldFinalizedAt, v))
+}
+
+// FinalizedAtLTE applies the LTE predicate on the "finalized_at" field.
+func FinalizedAtLTE(v time.Time) predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldLTE(FieldFinalizedAt, v))
+}
+
+// FinalizedAtIsNil applies the IsNil predicate on the "finalized_at" field.
+func FinalizedAtIsNil() predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldIsNull(FieldFinalizedAt))
+}
+
+// FinalizedAtNotNil applies the NotNil predicate on the "finalized_at" field.
+func FinalizedAtNotNil() predicate.CreditNote {
+	return predicate.CreditNote(sql.FieldNotNull(FieldFinalizedAt))
 }
 
 // MetadataIsNil applies the IsNil predicate on the "metadata" field.
