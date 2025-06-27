@@ -42,29 +42,31 @@ type ServiceParams struct {
 	S3           s3.Service
 
 	// Repositories
-	AuthRepo                 auth.Repository
-	UserRepo                 user.Repository
-	EventRepo                events.Repository
-	ProcessedEventRepo       events.ProcessedEventRepository
-	MeterRepo                meter.Repository
-	PriceRepo                price.Repository
-	CustomerRepo             customer.Repository
-	PlanRepo                 plan.Repository
-	SubRepo                  subscription.Repository
-	SubscriptionScheduleRepo subscription.SubscriptionScheduleRepository
-	WalletRepo               wallet.Repository
-	TenantRepo               tenant.Repository
-	InvoiceRepo              invoice.Repository
-	FeatureRepo              feature.Repository
-	EntitlementRepo          entitlement.Repository
-	PaymentRepo              payment.Repository
-	SecretRepo               secret.Repository
-	EnvironmentRepo          environment.Repository
-	TaskRepo                 task.Repository
-	CreditGrantRepo          creditgrant.Repository
-	CostSheetRepo            costsheet.Repository
-	CreditNoteRepo           creditnote.Repository
-	CreditNoteLineItemRepo   creditnote.CreditNoteLineItemRepository
+	AuthRepo                   auth.Repository
+	UserRepo                   user.Repository
+	EventRepo                  events.Repository
+	ProcessedEventRepo         events.ProcessedEventRepository
+	MeterRepo                  meter.Repository
+	PriceRepo                  price.Repository
+	CustomerRepo               customer.Repository
+	PlanRepo                   plan.Repository
+	SubRepo                    subscription.Repository
+	SubscriptionScheduleRepo   subscription.SubscriptionScheduleRepository
+	WalletRepo                 wallet.Repository
+	TenantRepo                 tenant.Repository
+	InvoiceRepo                invoice.Repository
+	FeatureRepo                feature.Repository
+	EntitlementRepo            entitlement.Repository
+	PaymentRepo                payment.Repository
+	SecretRepo                 secret.Repository
+	EnvironmentRepo            environment.Repository
+	TaskRepo                   task.Repository
+	CreditGrantRepo            creditgrant.Repository
+	CostSheetRepo              costsheet.Repository
+	CreditNoteRepo             creditnote.Repository
+	CreditNoteLineItemRepo     creditnote.CreditNoteLineItemRepository
+	CreditGrantApplicationRepo creditgrantapplication.Repository
+
 	// Publishers
 	EventPublisher   publisher.EventPublisher
 	WebhookPublisher webhookPublisher.WebhookPublisher
