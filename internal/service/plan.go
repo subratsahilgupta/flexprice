@@ -5,15 +5,13 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
-	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/repository/ent"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -42,35 +40,14 @@ type PlanService interface {
 }
 
 type planService struct {
-	planRepo         plan.Repository
-	priceRepo        price.Repository
-	subscriptionRepo subscription.Repository
-	meterRepo        meter.Repository
-	entitlementRepo  entitlement.Repository
-	featureRepo      feature.Repository
-	client           postgres.IClient
-	logger           *logger.Logger
+	ServiceParams
 }
 
 func NewPlanService(
-	client postgres.IClient,
-	planRepo plan.Repository,
-	priceRepo price.Repository,
-	subscriptionRepo subscription.Repository,
-	meterRepo meter.Repository,
-	entitlementRepo entitlement.Repository,
-	featureRepo feature.Repository,
-	logger *logger.Logger,
+	serviceParams ServiceParams,
 ) PlanService {
 	return &planService{
-		client:           client,
-		planRepo:         planRepo,
-		priceRepo:        priceRepo,
-		subscriptionRepo: subscriptionRepo,
-		meterRepo:        meterRepo,
-		entitlementRepo:  entitlementRepo,
-		featureRepo:      featureRepo,
-		logger:           logger,
+		ServiceParams: serviceParams,
 	}
 }
 
@@ -85,9 +62,9 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 	plan := req.ToPlan(ctx)
 
 	// Start a transaction to create plan, prices, and entitlements
-	err := s.client.WithTx(ctx, func(ctx context.Context) error {
+	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// 1. Create the plan
-		if err := s.planRepo.Create(ctx, plan); err != nil {
+		if err := s.PlanRepo.Create(ctx, plan); err != nil {
 			return err
 		}
 
@@ -106,7 +83,7 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 			}
 
 			// Create prices in bulk
-			if err := s.priceRepo.CreateBulk(ctx, prices); err != nil {
+			if err := s.PriceRepo.CreateBulk(ctx, prices); err != nil {
 				return err
 			}
 		}
@@ -122,11 +99,36 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 			}
 
 			// Create entitlements in bulk
-			if _, err := s.entitlementRepo.CreateBulk(ctx, entitlements); err != nil {
+			if _, err := s.EntitlementRepo.CreateBulk(ctx, entitlements); err != nil {
 				return err
 			}
 		}
 
+		// 4. Create credit grants in bulk if present
+		if len(req.CreditGrants) > 0 {
+
+			creditGrants := make([]*creditgrant.CreditGrant, len(req.CreditGrants))
+			for i, creditGrantReq := range req.CreditGrants {
+				creditGrant := creditGrantReq.ToCreditGrant(ctx)
+				creditGrant.PlanID = &plan.ID
+				creditGrant.Scope = types.CreditGrantScopePlan
+				creditGrants[i] = creditGrant
+			}
+
+			// validate credit grants
+			for _, creditGrant := range creditGrants {
+				if err := creditGrant.Validate(); err != nil {
+					return ierr.WithError(err).
+						WithHint("Invalid credit grant data provided").
+						Mark(ierr.ErrValidation)
+				}
+			}
+
+			// Create credit grants in bulk
+			if _, err := s.CreditGrantRepo.CreateBulk(ctx, creditGrants); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 
@@ -146,23 +148,30 @@ func (s *planService) GetPlan(ctx context.Context, id string) (*dto.PlanResponse
 			Mark(ierr.ErrValidation)
 	}
 
-	plan, err := s.planRepo.Get(ctx, id)
+	plan, err := s.PlanRepo.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
-	entitlementService := NewEntitlementService(s.entitlementRepo, s.planRepo, s.featureRepo, s.meterRepo, s.logger)
+	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
+	entitlementService := NewEntitlementService(s.EntitlementRepo, s.PlanRepo, s.FeatureRepo, s.MeterRepo, s.Logger)
 
 	pricesResponse, err := priceService.GetPricesByPlanID(ctx, plan.ID)
 	if err != nil {
-		s.logger.Errorw("failed to fetch prices for plan", "plan_id", plan.ID, "error", err)
+		s.Logger.Errorw("failed to fetch prices for plan", "plan_id", plan.ID, "error", err)
 		return nil, err
 	}
 
 	entitlements, err := entitlementService.GetPlanEntitlements(ctx, plan.ID)
 	if err != nil {
-		s.logger.Errorw("failed to fetch entitlements for plan", "plan_id", plan.ID, "error", err)
+		s.Logger.Errorw("failed to fetch entitlements for plan", "plan_id", plan.ID, "error", err)
+		return nil, err
+	}
+
+	creditGrantService := NewCreditGrantService(s.ServiceParams)
+	creditGrants, err := creditGrantService.GetCreditGrantsByPlan(ctx, plan.ID)
+	if err != nil {
+		s.Logger.Errorw("failed to fetch credit grants for plan", "plan_id", plan.ID, "error", err)
 		return nil, err
 	}
 
@@ -170,6 +179,7 @@ func (s *planService) GetPlan(ctx context.Context, id string) (*dto.PlanResponse
 		Plan:         plan,
 		Prices:       pricesResponse.Items,
 		Entitlements: entitlements.Items,
+		CreditGrants: creditGrants.Items,
 	}
 	return response, nil
 }
@@ -184,7 +194,7 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 	}
 
 	// Fetch plans
-	plans, err := s.planRepo.List(ctx, filter)
+	plans, err := s.PlanRepo.List(ctx, filter)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to retrieve plans").
@@ -192,7 +202,7 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 	}
 
 	// Get count
-	count, err := s.planRepo.Count(ctx, filter)
+	count, err := s.PlanRepo.Count(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -223,9 +233,11 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 	// Create maps for storing expanded data
 	pricesByPlanID := make(map[string][]*dto.PriceResponse)
 	entitlementsByPlanID := make(map[string][]*dto.EntitlementResponse)
+	creditGrantsByPlanID := make(map[string][]*dto.CreditGrantResponse)
 
-	priceService := NewPriceService(s.priceRepo, s.meterRepo, s.logger)
-	entitlementService := NewEntitlementService(s.entitlementRepo, s.planRepo, s.featureRepo, s.meterRepo, s.logger)
+	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
+	entitlementService := NewEntitlementService(s.EntitlementRepo, s.PlanRepo, s.FeatureRepo, s.MeterRepo, s.Logger)
+	creditGrantService := NewCreditGrantService(s.ServiceParams)
 
 	// If prices or entitlements expansion is requested, fetch them in bulk
 	// Fetch prices if requested
@@ -270,6 +282,24 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 		}
 	}
 
+	// Fetch credit grants if requested
+	if filter.GetExpand().Has(types.ExpandCreditGrant) {
+		creditGrantFilter := types.NewNoLimitCreditGrantFilter().
+			WithPlanIDs(planIDs).
+			WithStatus(types.StatusPublished)
+
+		creditGrants, err := creditGrantService.ListCreditGrants(ctx, creditGrantFilter)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, cg := range creditGrants.Items {
+			if cg.PlanID != nil {
+				creditGrantsByPlanID[*cg.PlanID] = append(creditGrantsByPlanID[*cg.PlanID], cg)
+			}
+		}
+	}
+
 	// Build response with expanded fields
 	for i, plan := range plans {
 
@@ -281,6 +311,11 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 		// Add entitlements if available
 		if entitlements, ok := entitlementsByPlanID[plan.ID]; ok {
 			response.Items[i].Entitlements = entitlements
+		}
+
+		// Add credit grants if available
+		if creditGrants, ok := creditGrantsByPlanID[plan.ID]; ok {
+			response.Items[i].CreditGrants = creditGrants
 		}
 	}
 
@@ -314,9 +349,9 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 	}
 
 	// Start a transaction for updating plan, prices, and entitlements
-	err = s.client.WithTx(ctx, func(ctx context.Context) error {
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// 1. Update the plan
-		if err := s.planRepo.Update(ctx, plan); err != nil {
+		if err := s.PlanRepo.Update(ctx, plan); err != nil {
 			return err
 		}
 
@@ -340,7 +375,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 					price.Description = reqPrice.Description
 					price.Metadata = reqPrice.Metadata
 					price.LookupKey = reqPrice.LookupKey
-					if err := s.priceRepo.Update(ctx, price.Price); err != nil {
+					if err := s.PriceRepo.Update(ctx, price.Price); err != nil {
 						return err
 					}
 				} else {
@@ -351,7 +386,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 
 			// Delete prices in bulk
 			if len(pricesToDelete) > 0 {
-				if err := s.priceRepo.DeleteBulk(ctx, pricesToDelete); err != nil {
+				if err := s.PriceRepo.DeleteBulk(ctx, pricesToDelete); err != nil {
 					return err
 				}
 			}
@@ -372,7 +407,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 			}
 
 			if len(newPrices) > 0 {
-				if err := s.priceRepo.CreateBulk(ctx, newPrices); err != nil {
+				if err := s.PriceRepo.CreateBulk(ctx, newPrices); err != nil {
 					return err
 				}
 			}
@@ -400,7 +435,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 					ent.UsageResetPeriod = reqEnt.UsageResetPeriod
 					ent.IsSoftLimit = reqEnt.IsSoftLimit
 					ent.StaticValue = reqEnt.StaticValue
-					if _, err := s.entitlementRepo.Update(ctx, ent.Entitlement); err != nil {
+					if _, err := s.EntitlementRepo.Update(ctx, ent.Entitlement); err != nil {
 						return err
 					}
 				} else {
@@ -411,7 +446,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 
 			// Delete entitlements in bulk
 			if len(entsToDelete) > 0 {
-				if err := s.entitlementRepo.DeleteBulk(ctx, entsToDelete); err != nil {
+				if err := s.EntitlementRepo.DeleteBulk(ctx, entsToDelete); err != nil {
 					return err
 				}
 			}
@@ -426,7 +461,68 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 			}
 
 			if len(newEntitlements) > 0 {
-				if _, err := s.entitlementRepo.CreateBulk(ctx, newEntitlements); err != nil {
+				if _, err := s.EntitlementRepo.CreateBulk(ctx, newEntitlements); err != nil {
+					return err
+				}
+			}
+		}
+
+		// 4. Handle credit grants
+		if len(req.CreditGrants) > 0 {
+			// Create maps for tracking
+			reqCreditGrantMap := make(map[string]dto.UpdatePlanCreditGrantRequest)
+			for _, reqCreditGrant := range req.CreditGrants {
+				if reqCreditGrant.ID != "" {
+					reqCreditGrantMap[reqCreditGrant.ID] = reqCreditGrant
+				}
+			}
+
+			// Track credit grants to delete
+			creditGrantsToDelete := make([]string, 0)
+
+			// Handle existing credit grants
+			for _, cg := range planResponse.CreditGrants {
+				if reqCreditGrant, ok := reqCreditGrantMap[cg.ID]; ok {
+					// Update existing credit grant using the UpdateCreditGrant method
+					if reqCreditGrant.CreateCreditGrantRequest != nil {
+						updateReq := dto.UpdateCreditGrantRequest{
+							Name:     &reqCreditGrant.CreateCreditGrantRequest.Name,
+							Metadata: &reqCreditGrant.CreateCreditGrantRequest.Metadata,
+						}
+						updateReq.UpdateCreditGrant(cg.CreditGrant, ctx)
+					}
+					if _, err := s.CreditGrantRepo.Update(ctx, cg.CreditGrant); err != nil {
+						return err
+					}
+				} else {
+					// Delete credit grant not in request
+					creditGrantsToDelete = append(creditGrantsToDelete, cg.ID)
+				}
+			}
+
+			// Delete credit grants in bulk
+			if len(creditGrantsToDelete) > 0 {
+				if err := s.CreditGrantRepo.DeleteBulk(ctx, creditGrantsToDelete); err != nil {
+					return err
+				}
+			}
+
+			// Create new credit grants
+			newCreditGrants := make([]*creditgrant.CreditGrant, 0)
+			for _, reqCreditGrant := range req.CreditGrants {
+				if reqCreditGrant.ID == "" {
+					// Use the embedded CreateCreditGrantRequest
+					createReq := *reqCreditGrant.CreateCreditGrantRequest
+					createReq.Scope = types.CreditGrantScopePlan
+					createReq.PlanID = &plan.ID
+
+					newCreditGrant := createReq.ToCreditGrant(ctx)
+					newCreditGrants = append(newCreditGrants, newCreditGrant)
+				}
+			}
+
+			if len(newCreditGrants) > 0 {
+				if _, err := s.CreditGrantRepo.CreateBulk(ctx, newCreditGrants); err != nil {
 					return err
 				}
 			}
@@ -451,7 +547,7 @@ func (s *planService) DeletePlan(ctx context.Context, id string) error {
 	}
 
 	// check if plan exists
-	plan, err := s.planRepo.Get(ctx, id)
+	plan, err := s.PlanRepo.Get(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -459,13 +555,11 @@ func (s *planService) DeletePlan(ctx context.Context, id string) error {
 	subscriptionFilters := types.NewDefaultQueryFilter()
 	subscriptionFilters.Status = lo.ToPtr(types.StatusPublished)
 	subscriptionFilters.Limit = lo.ToPtr(1)
-
-	subscriptions, err := s.subscriptionRepo.List(ctx, &types.SubscriptionFilter{
+	subscriptions, err := s.SubRepo.List(ctx, &types.SubscriptionFilter{
 		QueryFilter:             subscriptionFilters,
 		PlanID:                  id,
 		SubscriptionStatusNotIn: []types.SubscriptionStatus{types.SubscriptionStatusCancelled},
 	})
-
 	if err != nil {
 		return err
 	}
@@ -479,7 +573,7 @@ func (s *planService) DeletePlan(ctx context.Context, id string) error {
 			Mark(ierr.ErrInvalidOperation)
 	}
 
-	err = s.planRepo.Delete(ctx, plan)
+	err = s.PlanRepo.Delete(ctx, plan)
 	if err != nil {
 		return err
 	}
@@ -497,7 +591,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 	environmentID := types.GetEnvironmentID(ctx)
 
 	// Get the plan to be synced
-	p, err := s.planRepo.Get(ctx, id)
+	p, err := s.PlanRepo.Get(ctx, id)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to get plan").
@@ -513,14 +607,14 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 			Mark(ierr.ErrInvalidOperation)
 	}
 
-	s.logger.Infow("Found plan", "plan_id", id, "plan_name", p.Name)
+	s.Logger.Infow("Found plan", "plan_id", id, "plan_name", p.Name)
 
 	// Get all prices for the plan
 	priceFilter := types.NewNoLimitPriceFilter()
 	priceFilter = priceFilter.WithStatus(types.StatusPublished)
 	priceFilter = priceFilter.WithPlanIDs([]string{id})
 
-	prices, err := s.priceRepo.List(ctx, priceFilter)
+	prices, err := s.PriceRepo.List(ctx, priceFilter)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list prices for plan").
@@ -541,7 +635,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 
 	meterFilter := types.NewNoLimitMeterFilter()
 	meterFilter.MeterIDs = lo.Keys(meterMap)
-	meters, err := s.meterRepo.List(ctx, meterFilter)
+	meters, err := s.MeterRepo.List(ctx, meterFilter)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list meters").
@@ -561,7 +655,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 			Mark(ierr.ErrInvalidOperation)
 	}
 
-	s.logger.Infow("Found prices for plan", "plan_id", id, "price_count", len(planPrices))
+	s.Logger.Infow("Found prices for plan", "plan_id", id, "price_count", len(planPrices))
 
 	// Set up filter for subscriptions
 	subscriptionFilter := &types.SubscriptionFilter{}
@@ -572,27 +666,27 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 	}
 
 	// Get all active subscriptions for this plan
-	subs, err := s.subscriptionRepo.ListAll(ctx, subscriptionFilter)
+	subs, err := s.SubRepo.ListAll(ctx, subscriptionFilter)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list subscriptions").
 			Mark(ierr.ErrDatabase)
 	}
 
-	s.logger.Infow("Found active subscriptions using plan", "plan_id", id, "subscription_count", len(subs))
+	s.Logger.Infow("Found active subscriptions using plan", "plan_id", id, "subscription_count", len(subs))
 
 	totalAdded := 0
 	totalRemoved := 0
 	totalSkipped := 0
 
 	// Get line item repository from ent package
-	lineItemRepo := ent.NewSubscriptionLineItemRepository(s.client)
+	lineItemRepo := ent.NewSubscriptionLineItemRepository(s.DB)
 
 	// Iterate through each subscription
 	for _, sub := range subs {
 		time.Sleep(100 * time.Millisecond)
 		if sub.TenantID != tenantID || sub.EnvironmentID != environmentID {
-			s.logger.Infow("Skipping subscription - not in the specified tenant/environment", "subscription_id", sub.ID)
+			s.Logger.Infow("Skipping subscription - not in the specified tenant/environment", "subscription_id", sub.ID)
 			continue
 		}
 
@@ -609,7 +703,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 		// Get existing line items for the subscription
 		lineItems, err := lineItemRepo.ListBySubscription(ctx, sub.ID)
 		if err != nil {
-			s.logger.Infow("Failed to get line items for subscription", "subscription_id", sub.ID, "error", err)
+			s.Logger.Infow("Failed to get line items for subscription", "subscription_id", sub.ID, "error", err)
 			continue
 		}
 
@@ -678,11 +772,11 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 
 			err = lineItemRepo.Create(ctx, newLineItem)
 			if err != nil {
-				s.logger.Infow("Failed to create line item for subscription", "subscription_id", sub.ID, "error", err)
+				s.Logger.Infow("Failed to create line item for subscription", "subscription_id", sub.ID, "error", err)
 				continue
 			}
 
-			s.logger.Infow("Added price to subscription", "subscription_id", sub.ID, "price_id", pr.ID)
+			s.Logger.Infow("Added price to subscription", "subscription_id", sub.ID, "price_id", pr.ID)
 			addedCount++
 		}
 
@@ -695,16 +789,16 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 
 				err = lineItemRepo.Update(ctx, item)
 				if err != nil {
-					s.logger.Infow("Failed to delete line item for subscription", "subscription_id", sub.ID, "error", err)
+					s.Logger.Infow("Failed to delete line item for subscription", "subscription_id", sub.ID, "error", err)
 					continue
 				}
 
-				s.logger.Infow("Removed price from subscription", "subscription_id", sub.ID, "price_id", priceID)
+				s.Logger.Infow("Removed price from subscription", "subscription_id", sub.ID, "price_id", priceID)
 				removedCount++
 			}
 		}
 
-		s.logger.Infow("Subscription", "subscription_id", sub.ID, "added_count", addedCount, "removed_count", removedCount, "skipped_count", skippedCount)
+		s.Logger.Infow("Subscription", "subscription_id", sub.ID, "added_count", addedCount, "removed_count", removedCount, "skipped_count", skippedCount)
 
 		totalAdded += addedCount
 		totalRemoved += removedCount
@@ -729,7 +823,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 		},
 	}
 
-	s.logger.Infow("Plan sync completed", "total_added", totalAdded, "total_removed", totalRemoved, "total_skipped", totalSkipped)
+	s.Logger.Infow("Plan sync completed", "total_added", totalAdded, "total_removed", totalRemoved, "total_skipped", totalSkipped)
 
 	return response, nil
 }
