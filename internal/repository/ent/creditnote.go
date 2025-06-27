@@ -69,6 +69,8 @@ func (r *creditnoteRepository) Create(ctx context.Context, cn *domainCreditNote.
 		SetUpdatedAt(cn.UpdatedAt).
 		SetCreatedBy(cn.CreatedBy).
 		SetUpdatedBy(cn.UpdatedBy).
+		SetNillableVoidedAt(cn.VoidedAt).
+		SetNillableFinalizedAt(cn.FinalizedAt).
 		SetCustomerID(cn.CustomerID).
 		SetSubscriptionID(lo.FromPtr(cn.SubscriptionID)).
 		SetEnvironmentID(cn.EnvironmentID).
@@ -151,6 +153,8 @@ func (r *creditnoteRepository) CreateWithLineItems(ctx context.Context, cn *doma
 			SetCreatedBy(cn.CreatedBy).
 			SetCustomerID(cn.CustomerID).
 			SetSubscriptionID(lo.FromPtr(cn.SubscriptionID)).
+			SetNillableVoidedAt(cn.VoidedAt).
+			SetNillableFinalizedAt(cn.FinalizedAt).
 			SetUpdatedBy(cn.UpdatedBy).
 			SetTotalAmount(cn.TotalAmount).
 			SetEnvironmentID(cn.EnvironmentID).
