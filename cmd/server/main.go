@@ -132,7 +132,6 @@ func main() {
 			repository.NewCostSheetRepository,
 			repository.NewCreditGrantApplicationRepository,
 			repository.NewCreditNoteRepository,
-			
 			repository.NewCreditNoteLineItemRepository,
 
 			// PubSub

@@ -1473,6 +1473,8 @@ var (
 		CostsheetTable,
 		CreditGrantsTable,
 		CreditGrantApplicationsTable,
+		CreditNotesTable,
+		CreditNoteLineItemsTable,
 		CustomersTable,
 		EntitlementsTable,
 		EnvironmentsTable,
