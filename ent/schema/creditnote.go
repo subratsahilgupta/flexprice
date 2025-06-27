@@ -119,13 +119,11 @@ func (CreditNote) Fields() []ent.Field {
 
 		field.Time("voided_at").
 			Optional().
-			Nillable().
-			Immutable(),
+			Nillable(),
 
 		field.Time("finalized_at").
 			Optional().
-			Nillable().
-			Immutable(),
+			Nillable(),
 
 		field.JSON("metadata", map[string]string{}).
 			Optional(),

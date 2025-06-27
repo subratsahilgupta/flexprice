@@ -124,6 +124,46 @@ func (cnu *CreditNoteUpdate) ClearRefundStatus() *CreditNoteUpdate {
 	return cnu
 }
 
+// SetVoidedAt sets the "voided_at" field.
+func (cnu *CreditNoteUpdate) SetVoidedAt(t time.Time) *CreditNoteUpdate {
+	cnu.mutation.SetVoidedAt(t)
+	return cnu
+}
+
+// SetNillableVoidedAt sets the "voided_at" field if the given value is not nil.
+func (cnu *CreditNoteUpdate) SetNillableVoidedAt(t *time.Time) *CreditNoteUpdate {
+	if t != nil {
+		cnu.SetVoidedAt(*t)
+	}
+	return cnu
+}
+
+// ClearVoidedAt clears the value of the "voided_at" field.
+func (cnu *CreditNoteUpdate) ClearVoidedAt() *CreditNoteUpdate {
+	cnu.mutation.ClearVoidedAt()
+	return cnu
+}
+
+// SetFinalizedAt sets the "finalized_at" field.
+func (cnu *CreditNoteUpdate) SetFinalizedAt(t time.Time) *CreditNoteUpdate {
+	cnu.mutation.SetFinalizedAt(t)
+	return cnu
+}
+
+// SetNillableFinalizedAt sets the "finalized_at" field if the given value is not nil.
+func (cnu *CreditNoteUpdate) SetNillableFinalizedAt(t *time.Time) *CreditNoteUpdate {
+	if t != nil {
+		cnu.SetFinalizedAt(*t)
+	}
+	return cnu
+}
+
+// ClearFinalizedAt clears the value of the "finalized_at" field.
+func (cnu *CreditNoteUpdate) ClearFinalizedAt() *CreditNoteUpdate {
+	cnu.mutation.ClearFinalizedAt()
+	return cnu
+}
+
 // SetMetadata sets the "metadata" field.
 func (cnu *CreditNoteUpdate) SetMetadata(m map[string]string) *CreditNoteUpdate {
 	cnu.mutation.SetMetadata(m)
@@ -258,8 +298,14 @@ func (cnu *CreditNoteUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if cnu.mutation.IdempotencyKeyCleared() {
 		_spec.ClearField(creditnote.FieldIdempotencyKey, field.TypeString)
 	}
+	if value, ok := cnu.mutation.VoidedAt(); ok {
+		_spec.SetField(creditnote.FieldVoidedAt, field.TypeTime, value)
+	}
 	if cnu.mutation.VoidedAtCleared() {
 		_spec.ClearField(creditnote.FieldVoidedAt, field.TypeTime)
+	}
+	if value, ok := cnu.mutation.FinalizedAt(); ok {
+		_spec.SetField(creditnote.FieldFinalizedAt, field.TypeTime, value)
 	}
 	if cnu.mutation.FinalizedAtCleared() {
 		_spec.ClearField(creditnote.FieldFinalizedAt, field.TypeTime)
@@ -429,6 +475,46 @@ func (cnuo *CreditNoteUpdateOne) ClearRefundStatus() *CreditNoteUpdateOne {
 	return cnuo
 }
 
+// SetVoidedAt sets the "voided_at" field.
+func (cnuo *CreditNoteUpdateOne) SetVoidedAt(t time.Time) *CreditNoteUpdateOne {
+	cnuo.mutation.SetVoidedAt(t)
+	return cnuo
+}
+
+// SetNillableVoidedAt sets the "voided_at" field if the given value is not nil.
+func (cnuo *CreditNoteUpdateOne) SetNillableVoidedAt(t *time.Time) *CreditNoteUpdateOne {
+	if t != nil {
+		cnuo.SetVoidedAt(*t)
+	}
+	return cnuo
+}
+
+// ClearVoidedAt clears the value of the "voided_at" field.
+func (cnuo *CreditNoteUpdateOne) ClearVoidedAt() *CreditNoteUpdateOne {
+	cnuo.mutation.ClearVoidedAt()
+	return cnuo
+}
+
+// SetFinalizedAt sets the "finalized_at" field.
+func (cnuo *CreditNoteUpdateOne) SetFinalizedAt(t time.Time) *CreditNoteUpdateOne {
+	cnuo.mutation.SetFinalizedAt(t)
+	return cnuo
+}
+
+// SetNillableFinalizedAt sets the "finalized_at" field if the given value is not nil.
+func (cnuo *CreditNoteUpdateOne) SetNillableFinalizedAt(t *time.Time) *CreditNoteUpdateOne {
+	if t != nil {
+		cnuo.SetFinalizedAt(*t)
+	}
+	return cnuo
+}
+
+// ClearFinalizedAt clears the value of the "finalized_at" field.
+func (cnuo *CreditNoteUpdateOne) ClearFinalizedAt() *CreditNoteUpdateOne {
+	cnuo.mutation.ClearFinalizedAt()
+	return cnuo
+}
+
 // SetMetadata sets the "metadata" field.
 func (cnuo *CreditNoteUpdateOne) SetMetadata(m map[string]string) *CreditNoteUpdateOne {
 	cnuo.mutation.SetMetadata(m)
@@ -593,8 +679,14 @@ func (cnuo *CreditNoteUpdateOne) sqlSave(ctx context.Context) (_node *CreditNote
 	if cnuo.mutation.IdempotencyKeyCleared() {
 		_spec.ClearField(creditnote.FieldIdempotencyKey, field.TypeString)
 	}
+	if value, ok := cnuo.mutation.VoidedAt(); ok {
+		_spec.SetField(creditnote.FieldVoidedAt, field.TypeTime, value)
+	}
 	if cnuo.mutation.VoidedAtCleared() {
 		_spec.ClearField(creditnote.FieldVoidedAt, field.TypeTime)
+	}
+	if value, ok := cnuo.mutation.FinalizedAt(); ok {
+		_spec.SetField(creditnote.FieldFinalizedAt, field.TypeTime, value)
 	}
 	if cnuo.mutation.FinalizedAtCleared() {
 		_spec.ClearField(creditnote.FieldFinalizedAt, field.TypeTime)
