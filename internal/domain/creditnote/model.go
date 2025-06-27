@@ -1,6 +1,8 @@
 package creditnote
 
 import (
+	"time"
+
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
@@ -53,6 +55,12 @@ type CreditNote struct {
 	// total_amount is the total including creditable invoice-level discounts or minimums, and tax
 	TotalAmount decimal.Decimal `json:"total_amount"`
 
+	// voided_at is the timestamp when the credit note was voided
+	VoidedAt *time.Time `json:"voided_at,omitempty"`
+
+	// finalized_at is the timestamp when the credit note was finalized
+	FinalizedAt *time.Time `json:"finalized_at,omitempty"`
+
 	// idempotency_key is an optional key used to prevent duplicate credit note creation
 	IdempotencyKey *string `json:"idempotency_key"`
 
@@ -78,6 +86,8 @@ func FromEnt(e *ent.CreditNote) *CreditNote {
 		Metadata:         e.Metadata,
 		CustomerID:       e.CustomerID,
 		SubscriptionID:   e.SubscriptionID,
+		VoidedAt:         e.VoidedAt,
+		FinalizedAt:      e.FinalizedAt,
 		LineItems:        creditNoteLineItem.FromEntList(e.Edges.LineItems),
 		TotalAmount:      e.TotalAmount,
 		IdempotencyKey:   e.IdempotencyKey,
