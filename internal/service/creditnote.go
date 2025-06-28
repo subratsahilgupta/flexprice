@@ -404,6 +404,15 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 		return err
 	}
 
+	// Recalculate invoice amounts
+	invoiceService := NewInvoiceService(s.ServiceParams)
+	if err := invoiceService.RecalculateInvoiceAmounts(ctx, cn.InvoiceID); err != nil {
+		s.Logger.Errorw("failed to recalculate invoice amounts after credit note voiding",
+			"error", err,
+			"credit_note_id", id,
+			"invoice_id", cn.InvoiceID)
+	}
+
 	s.Logger.Infow("credit note voided successfully",
 		"credit_note_id", id,
 		"previous_status", cn.CreditNoteStatus)
