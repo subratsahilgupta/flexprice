@@ -35,6 +35,9 @@ var Module = fx.Options(
 
 		// Main webhook service
 		NewWebhookService,
+
+		// Svix service
+		service.NewSvixService,
 	),
 )
 
