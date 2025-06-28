@@ -1128,7 +1128,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/creditnotes/{id}/process": {
+        "/creditnotes/{id}/finalize": {
             "post": {
                 "security": [
                     {
@@ -3292,16 +3292,19 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "number",
+                        "description": "amount_due_gt filters invoices with a total amount due greater than the specified value\nUseful for finding invoices above a certain threshold or identifying high-value invoices",
                         "name": "amount_due_gt",
                         "in": "query"
                     },
                     {
                         "type": "number",
+                        "description": "amount_remaining_gt filters invoices with an outstanding balance greater than the specified value\nUseful for finding invoices that still have significant unpaid amounts",
                         "name": "amount_remaining_gt",
                         "in": "query"
                     },
                     {
                         "type": "string",
+                        "description": "customer_id filters invoices for a specific customer using FlexPrice's internal customer ID\nThis is the ID returned by FlexPrice when creating or retrieving customers",
                         "name": "customer_id",
                         "in": "query"
                     },
@@ -3317,6 +3320,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "external_customer_id filters invoices for a customer using your system's customer identifier\nThis is the ID you provided when creating the customer in FlexPrice",
                         "name": "external_customer_id",
                         "in": "query"
                     },
@@ -3326,6 +3330,7 @@ const docTemplate = `{
                             "type": "string"
                         },
                         "collectionFormat": "csv",
+                        "description": "invoice_ids restricts results to invoices with the specified IDs\nUse this to retrieve specific invoices when you know their exact identifiers",
                         "name": "invoice_ids",
                         "in": "query"
                     },
@@ -3340,6 +3345,7 @@ const docTemplate = `{
                             "type": "string"
                         },
                         "collectionFormat": "csv",
+                        "description": "invoice_status filters by the current state of invoices in their lifecycle\nMultiple statuses can be specified to include invoices in any of the listed states",
                         "name": "invoice_status",
                         "in": "query"
                     },
@@ -3355,6 +3361,7 @@ const docTemplate = `{
                             "InvoiceTypeOneOff",
                             "InvoiceTypeCredit"
                         ],
+                        "description": "invoice_type filters by the nature of the invoice (SUBSCRIPTION, ONE_OFF, or CREDIT)\nUse this to separate recurring charges from one-time fees or credit adjustments",
                         "name": "invoice_type",
                         "in": "query"
                     },
@@ -3394,6 +3401,7 @@ const docTemplate = `{
                             "type": "string"
                         },
                         "collectionFormat": "csv",
+                        "description": "payment_status filters by the payment state of invoices\nMultiple statuses can be specified to include invoices with any of the listed payment states",
                         "name": "payment_status",
                         "in": "query"
                     },
@@ -3424,6 +3432,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "subscription_id filters invoices generated for a specific subscription\nOnly returns invoices that were created as part of the specified subscription's billing",
                         "name": "subscription_id",
                         "in": "query"
                     }
@@ -5527,6 +5536,15 @@ const docTemplate = `{
                     {
                         "type": "array",
                         "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "subscription_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
                             "enum": [
                                 "active",
                                 "paused",
@@ -7041,7 +7059,7 @@ const docTemplate = `{
                             "SUBSCRIPTION_CREDIT_GRANT",
                             "PURCHASED_CREDIT_INVOICED",
                             "PURCHASED_CREDIT_DIRECT",
-                            "INVOICE_REFUND",
+                            "CREDIT_NOTE",
                             "CREDIT_EXPIRED",
                             "WALLET_TERMINATION"
                         ],
@@ -7052,7 +7070,7 @@ const docTemplate = `{
                             "TransactionReasonSubscriptionCredit",
                             "TransactionReasonPurchasedCreditInvoiced",
                             "TransactionReasonPurchasedCreditDirect",
-                            "TransactionReasonInvoiceRefund",
+                            "TransactionReasonCreditNote",
                             "TransactionReasonCreditExpired",
                             "TransactionReasonWalletTermination"
                         ],
@@ -7150,6 +7168,80 @@ const docTemplate = `{
                 },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "customer.Customer": {
+            "type": "object",
+            "properties": {
+                "address_city": {
+                    "description": "AddressCity is the city of the customer's address",
+                    "type": "string"
+                },
+                "address_country": {
+                    "description": "AddressCountry is the country of the customer's address (ISO 3166-1 alpha-2)",
+                    "type": "string"
+                },
+                "address_line1": {
+                    "description": "AddressLine1 is the first line of the customer's address",
+                    "type": "string"
+                },
+                "address_line2": {
+                    "description": "AddressLine2 is the second line of the customer's address",
+                    "type": "string"
+                },
+                "address_postal_code": {
+                    "description": "AddressPostalCode is the postal code of the customer's address",
+                    "type": "string"
+                },
+                "address_state": {
+                    "description": "AddressState is the state of the customer's address",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "email": {
+                    "description": "Email is the email of the customer",
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the customer",
+                    "type": "string"
+                },
+                "external_id": {
+                    "description": "ExternalID is the external identifier for the customer",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the customer",
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "Name is the name of the customer",
+                    "type": "string"
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
@@ -7491,16 +7583,24 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
+                    "description": "amount is the monetary amount to be credited for this line item",
                     "type": "number"
                 },
                 "display_name": {
+                    "description": "display_name is an optional human-readable name for this credit note line item",
                     "type": "string"
                 },
                 "invoice_line_item_id": {
+                    "description": "invoice_line_item_id is the unique identifier of the invoice line item being credited",
                     "type": "string"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
+                    "description": "metadata contains additional custom key-value pairs for storing extra information about this line item",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Metadata"
+                        }
+                    ]
                 }
             }
         },
@@ -7512,28 +7612,43 @@ const docTemplate = `{
             ],
             "properties": {
                 "credit_note_number": {
+                    "description": "credit_note_number is an optional human-readable identifier for the credit note",
                     "type": "string"
                 },
                 "idempotency_key": {
+                    "description": "idempotency_key is an optional key used to prevent duplicate credit note creation",
                     "type": "string"
                 },
                 "invoice_id": {
+                    "description": "invoice_id is the unique identifier of the invoice this credit note is applied to",
                     "type": "string"
                 },
                 "line_items": {
+                    "description": "line_items contains the individual line items that make up this credit note (minimum 1 required)",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.CreateCreditNoteLineItemRequest"
                     }
                 },
                 "memo": {
+                    "description": "memo is an optional free-text field for additional notes about the credit note",
                     "type": "string"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
+                    "description": "metadata contains additional custom key-value pairs for storing extra information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Metadata"
+                        }
+                    ]
                 },
                 "reason": {
-                    "$ref": "#/definitions/types.CreditNoteReason"
+                    "description": "reason specifies the reason for creating this credit note (duplicate, fraudulent, order_change, product_unsatisfactory)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.CreditNoteReason"
+                        }
+                    ]
                 }
             }
         },
@@ -7697,39 +7812,55 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
+                    "description": "amount is the monetary amount for this line item",
                     "type": "number"
                 },
                 "display_name": {
+                    "description": "display_name is the optional human-readable name for this line item",
                     "type": "string"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
+                    "description": "metadata contains additional custom key-value pairs for storing extra information about this line item",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Metadata"
+                        }
+                    ]
                 },
                 "meter_display_name": {
+                    "description": "meter_display_name is the optional human-readable name of the meter",
                     "type": "string"
                 },
                 "meter_id": {
+                    "description": "meter_id is the optional unique identifier of the meter used for usage tracking",
                     "type": "string"
                 },
                 "period_end": {
+                    "description": "period_end is the optional end date of the period this line item covers",
                     "type": "string"
                 },
                 "period_start": {
+                    "description": "period_start is the optional start date of the period this line item covers",
                     "type": "string"
                 },
                 "plan_display_name": {
+                    "description": "plan_display_name is the optional human-readable name of the plan",
                     "type": "string"
                 },
                 "plan_id": {
+                    "description": "plan_id is the optional unique identifier of the plan associated with this line item",
                     "type": "string"
                 },
                 "price_id": {
+                    "description": "price_id is the optional unique identifier of the price associated with this line item",
                     "type": "string"
                 },
                 "price_type": {
+                    "description": "price_type indicates the type of pricing (fixed, usage, tiered, etc.)",
                     "type": "string"
                 },
                 "quantity": {
+                    "description": "quantity is the quantity of units for this line item",
                     "type": "number"
                 }
             }
@@ -7739,68 +7870,117 @@ const docTemplate = `{
             "required": [
                 "amount_due",
                 "currency",
-                "customer_id"
+                "customer_id",
+                "subtotal",
+                "total"
             ],
             "properties": {
                 "amount_due": {
+                    "description": "amount_due is the total amount that needs to be paid for this invoice",
                     "type": "number"
                 },
                 "amount_paid": {
+                    "description": "amount_paid is the amount that has been paid towards this invoice",
                     "type": "number"
                 },
                 "billing_period": {
+                    "description": "billing_period is the period this invoice covers (e.g., \"monthly\", \"yearly\")",
                     "type": "string"
                 },
                 "billing_reason": {
-                    "$ref": "#/definitions/types.InvoiceBillingReason"
+                    "description": "billing_reason indicates why this invoice was created (subscription_cycle, manual, etc.)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceBillingReason"
+                        }
+                    ]
                 },
                 "currency": {
+                    "description": "currency is the three-letter ISO currency code (e.g., USD, EUR) for the invoice",
                     "type": "string"
                 },
                 "customer_id": {
+                    "description": "customer_id is the unique identifier of the customer this invoice belongs to",
                     "type": "string"
                 },
                 "description": {
+                    "description": "description is an optional text description of the invoice",
                     "type": "string"
                 },
                 "due_date": {
+                    "description": "due_date is the date by which payment is expected",
                     "type": "string"
                 },
                 "environment_id": {
+                    "description": "environment_id is the unique identifier of the environment this invoice belongs to",
                     "type": "string"
                 },
                 "idempotency_key": {
+                    "description": "idempotency_key is an optional key used to prevent duplicate invoice creation",
                     "type": "string"
                 },
                 "invoice_number": {
+                    "description": "invoice_number is an optional human-readable identifier for the invoice",
                     "type": "string"
                 },
                 "invoice_status": {
-                    "$ref": "#/definitions/types.InvoiceStatus"
+                    "description": "invoice_status represents the current status of the invoice (draft, finalized, etc.)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceStatus"
+                        }
+                    ]
                 },
                 "invoice_type": {
-                    "$ref": "#/definitions/types.InvoiceType"
+                    "description": "invoice_type indicates the type of invoice (subscription, one_time, etc.)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceType"
+                        }
+                    ]
                 },
                 "line_items": {
+                    "description": "line_items contains the individual items that make up this invoice",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.CreateInvoiceLineItemRequest"
                     }
                 },
                 "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
+                    "description": "metadata contains additional custom key-value pairs for storing extra information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Metadata"
+                        }
+                    ]
                 },
                 "payment_status": {
-                    "$ref": "#/definitions/types.PaymentStatus"
+                    "description": "payment_status represents the payment status of the invoice (unpaid, paid, etc.)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PaymentStatus"
+                        }
+                    ]
                 },
                 "period_end": {
+                    "description": "period_end is the end date of the billing period",
                     "type": "string"
                 },
                 "period_start": {
+                    "description": "period_start is the start date of the billing period",
                     "type": "string"
                 },
                 "subscription_id": {
+                    "description": "subscription_id is the optional unique identifier of the subscription associated with this invoice",
                     "type": "string"
+                },
+                "subtotal": {
+                    "description": "subtotal is the amount before taxes and discounts are applied",
+                    "type": "number"
+                },
+                "total": {
+                    "description": "total is the total amount of the invoice including taxes and discounts",
+                    "type": "number"
                 }
             }
         },
@@ -8287,6 +8467,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "external_customer_id": {
+                    "description": "external_customer_id is the customer id in the external system",
                     "type": "string"
                 },
                 "initial_credits_expiry_date_utc": {
@@ -8394,60 +8575,134 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "credit_note_number": {
+                    "description": "credit_note_number is the unique identifier for credit notes",
                     "type": "string"
                 },
                 "credit_note_status": {
-                    "$ref": "#/definitions/types.CreditNoteStatus"
+                    "description": "credit_note_status represents the current status of the credit note (e.g., draft, finalized, voided)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.CreditNoteStatus"
+                        }
+                    ]
                 },
                 "credit_note_type": {
-                    "$ref": "#/definitions/types.CreditNoteType"
+                    "description": "credit_note_type indicates the type of credit note (refund, adjustment)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.CreditNoteType"
+                        }
+                    ]
                 },
                 "currency": {
+                    "description": "currency is the three-letter ISO currency code (e.g., USD, EUR) for the credit note",
+                    "type": "string"
+                },
+                "customer": {
+                    "description": "customer contains the customer information associated with this credit note",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/customer.Customer"
+                        }
+                    ]
+                },
+                "customer_id": {
+                    "description": "customer_id is the unique identifier of the customer who owns this credit note",
                     "type": "string"
                 },
                 "environment_id": {
+                    "description": "environment_id is the unique identifier of the environment this credit note belongs to",
+                    "type": "string"
+                },
+                "finalized_at": {
+                    "description": "finalized_at is the timestamp when the credit note was finalized",
                     "type": "string"
                 },
                 "id": {
+                    "description": "id is the unique identifier for the credit note",
                     "type": "string"
                 },
                 "idempotency_key": {
+                    "description": "idempotency_key is an optional key used to prevent duplicate credit note creation",
                     "type": "string"
                 },
+                "invoice": {
+                    "description": "invoice contains the associated invoice information if requested",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.InvoiceResponse"
+                        }
+                    ]
+                },
                 "invoice_id": {
+                    "description": "invoice_id is the id of the invoice resource that this credit note is applied to",
                     "type": "string"
                 },
                 "line_items": {
+                    "description": "line_items contains all of the line items associated with this credit note",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/creditnote.CreditNoteLineItem"
                     }
                 },
                 "memo": {
+                    "description": "memo is an optional memo supplied on the credit note",
                     "type": "string"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
+                    "description": "metadata contains additional custom key-value pairs for storing extra information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Metadata"
+                        }
+                    ]
                 },
                 "reason": {
-                    "$ref": "#/definitions/types.CreditNoteReason"
+                    "description": "reason specifies the reason for creating this credit note (duplicate, fraudulent, order_change, product_unsatisfactory)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.CreditNoteReason"
+                        }
+                    ]
                 },
                 "refund_status": {
-                    "$ref": "#/definitions/types.PaymentStatus"
+                    "description": "refund_status represents the status of any refund associated with this credit note",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PaymentStatus"
+                        }
+                    ]
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
+                },
+                "subscription": {
+                    "description": "subscription contains the associated subscription information if applicable",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.SubscriptionResponse"
+                        }
+                    ]
+                },
+                "subscription_id": {
+                    "description": "subscription_id is the optional unique identifier of the subscription related to this credit note",
+                    "type": "string"
                 },
                 "tenant_id": {
                     "type": "string"
                 },
                 "total_amount": {
+                    "description": "total_amount is the total including creditable invoice-level discounts or minimums, and tax",
                     "type": "number"
                 },
                 "updated_at": {
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "string"
+                },
+                "voided_at": {
+                    "description": "voided_at is the timestamp when the credit note was voided",
                     "type": "string"
                 }
             }
@@ -8470,33 +8725,43 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "currency": {
+                    "description": "currency is the three-letter ISO currency code for this summary",
                     "type": "string"
                 },
                 "customer_id": {
+                    "description": "customer_id is the unique identifier of the customer",
                     "type": "string"
                 },
                 "overdue_invoice_count": {
+                    "description": "overdue_invoice_count is the number of overdue invoices for this customer in this currency",
                     "type": "integer"
                 },
                 "total_invoice_count": {
+                    "description": "total_invoice_count is the total number of invoices for this customer in this currency",
                     "type": "integer"
                 },
                 "total_overdue_amount": {
+                    "description": "total_overdue_amount is the total amount of overdue invoices in this currency",
                     "type": "number"
                 },
                 "total_revenue_amount": {
+                    "description": "total_revenue_amount is the total revenue generated from this customer in this currency",
                     "type": "number"
                 },
                 "total_unpaid_amount": {
+                    "description": "total_unpaid_amount is the total amount of unpaid invoices in this currency",
                     "type": "number"
                 },
                 "unpaid_fixed_charges": {
+                    "description": "unpaid_fixed_charges is the total amount of unpaid fixed charges in this currency",
                     "type": "number"
                 },
                 "unpaid_invoice_count": {
+                    "description": "unpaid_invoice_count is the number of unpaid invoices for this customer in this currency",
                     "type": "integer"
                 },
                 "unpaid_usage_charges": {
+                    "description": "unpaid_usage_charges is the total amount of unpaid usage-based charges in this currency",
                     "type": "number"
                 }
             }
@@ -8505,12 +8770,15 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "customer_id": {
+                    "description": "customer_id is the unique identifier of the customer",
                     "type": "string"
                 },
                 "default_currency": {
+                    "description": "default_currency is the primary currency for this customer",
                     "type": "string"
                 },
                 "summaries": {
+                    "description": "summaries contains the invoice summaries for each currency",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.CustomerInvoiceSummary"
@@ -8935,12 +9203,15 @@ const docTemplate = `{
             ],
             "properties": {
                 "period_end": {
+                    "description": "period_end is the optional end date of the period to preview",
                     "type": "string"
                 },
                 "period_start": {
+                    "description": "period_start is the optional start date of the period to preview",
                     "type": "string"
                 },
                 "subscription_id": {
+                    "description": "subscription_id is the unique identifier of the subscription to preview invoice for",
                     "type": "string"
                 }
             }
@@ -9240,72 +9511,99 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "amount": {
+                    "description": "amount is the monetary amount for this line item",
                     "type": "number"
                 },
                 "created_at": {
+                    "description": "created_at is the timestamp when this line item was created",
                     "type": "string"
                 },
                 "created_by": {
+                    "description": "created_by is the identifier of the user who created this line item",
                     "type": "string"
                 },
                 "currency": {
+                    "description": "currency is the three-letter ISO currency code for this line item",
                     "type": "string"
                 },
                 "customer_id": {
+                    "description": "customer_id is the unique identifier of the customer associated with this line item",
                     "type": "string"
                 },
                 "display_name": {
+                    "description": "display_name is the optional human-readable name for this line item",
                     "type": "string"
                 },
                 "id": {
+                    "description": "id is the unique identifier for this line item",
                     "type": "string"
                 },
                 "invoice_id": {
+                    "description": "invoice_id is the unique identifier of the invoice this line item belongs to",
                     "type": "string"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
+                    "description": "metadata contains additional custom key-value pairs for storing extra information about this line item",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Metadata"
+                        }
+                    ]
                 },
                 "meter_display_name": {
+                    "description": "meter_display_name is the optional human-readable name of the meter",
                     "type": "string"
                 },
                 "meter_id": {
+                    "description": "meter_id is the optional unique identifier of the meter used for usage tracking",
                     "type": "string"
                 },
                 "period_end": {
+                    "description": "period_end is the optional end date of the period this line item covers",
                     "type": "string"
                 },
                 "period_start": {
+                    "description": "period_start is the optional start date of the period this line item covers",
                     "type": "string"
                 },
                 "plan_display_name": {
+                    "description": "plan_display_name is the optional human-readable name of the plan",
                     "type": "string"
                 },
                 "plan_id": {
+                    "description": "plan_id is the optional unique identifier of the plan associated with this line item",
                     "type": "string"
                 },
                 "price_id": {
+                    "description": "price_id is the optional unique identifier of the price associated with this line item",
                     "type": "string"
                 },
                 "price_type": {
+                    "description": "price_type indicates the type of pricing (fixed, usage, tiered, etc.)",
                     "type": "string"
                 },
                 "quantity": {
+                    "description": "quantity is the quantity of units for this line item",
                     "type": "number"
                 },
                 "status": {
+                    "description": "status represents the current status of this line item",
                     "type": "string"
                 },
                 "subscription_id": {
+                    "description": "subscription_id is the optional unique identifier of the subscription associated with this line item",
                     "type": "string"
                 },
                 "tenant_id": {
+                    "description": "tenant_id is the unique identifier of the tenant this line item belongs to",
                     "type": "string"
                 },
                 "updated_at": {
+                    "description": "updated_at is the timestamp when this line item was last updated",
                     "type": "string"
                 },
                 "updated_by": {
+                    "description": "updated_by is the identifier of the user who last updated this line item",
                     "type": "string"
                 }
             }
@@ -9314,114 +9612,174 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "amount_due": {
+                    "description": "amount_due is the total amount that needs to be paid for this invoice",
                     "type": "number"
                 },
                 "amount_paid": {
+                    "description": "amount_paid is the amount that has been paid towards this invoice",
                     "type": "number"
                 },
                 "amount_remaining": {
+                    "description": "amount_remaining is the amount still outstanding on this invoice",
                     "type": "number"
                 },
                 "billing_period": {
+                    "description": "billing_period is the period this invoice covers (e.g., \"monthly\", \"yearly\")",
                     "type": "string"
                 },
                 "billing_reason": {
+                    "description": "billing_reason indicates why this invoice was created (subscription_cycle, manual, etc.)",
                     "type": "string"
                 },
                 "billing_sequence": {
+                    "description": "billing_sequence is the optional sequence number for billing cycles",
                     "type": "integer"
                 },
                 "created_at": {
+                    "description": "created_at is the timestamp when this invoice was created",
                     "type": "string"
                 },
                 "created_by": {
+                    "description": "created_by is the identifier of the user who created this invoice",
                     "type": "string"
                 },
                 "currency": {
+                    "description": "currency is the three-letter ISO currency code (e.g., USD, EUR) for the invoice",
                     "type": "string"
                 },
                 "customer": {
-                    "$ref": "#/definitions/dto.CustomerResponse"
+                    "description": "customer contains the customer information associated with this invoice",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.CustomerResponse"
+                        }
+                    ]
                 },
                 "customer_id": {
+                    "description": "customer_id is the unique identifier of the customer this invoice belongs to",
                     "type": "string"
                 },
                 "description": {
+                    "description": "description is the optional text description of the invoice",
                     "type": "string"
                 },
                 "due_date": {
+                    "description": "due_date is the date by which payment is expected",
                     "type": "string"
                 },
                 "finalized_at": {
+                    "description": "finalized_at is the timestamp when this invoice was finalized",
                     "type": "string"
                 },
                 "id": {
+                    "description": "id is the unique identifier for this invoice",
                     "type": "string"
                 },
                 "idempotency_key": {
+                    "description": "idempotency_key is the optional key used to prevent duplicate invoice creation",
                     "type": "string"
                 },
                 "invoice_number": {
+                    "description": "invoice_number is the optional human-readable identifier for the invoice",
                     "type": "string"
                 },
                 "invoice_pdf_url": {
+                    "description": "invoice_pdf_url is the optional URL to the PDF version of this invoice",
                     "type": "string"
                 },
                 "invoice_status": {
-                    "$ref": "#/definitions/types.InvoiceStatus"
+                    "description": "invoice_status represents the current status of the invoice (draft, finalized, etc.)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceStatus"
+                        }
+                    ]
                 },
                 "invoice_type": {
-                    "$ref": "#/definitions/types.InvoiceType"
+                    "description": "invoice_type indicates the type of invoice (subscription, one_time, etc.)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceType"
+                        }
+                    ]
                 },
                 "line_items": {
+                    "description": "line_items contains the individual items that make up this invoice",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.InvoiceLineItemResponse"
                     }
                 },
                 "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
+                    "description": "metadata contains additional custom key-value pairs for storing extra information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Metadata"
+                        }
+                    ]
                 },
                 "paid_at": {
+                    "description": "paid_at is the timestamp when this invoice was paid",
                     "type": "string"
                 },
                 "payment_status": {
-                    "$ref": "#/definitions/types.PaymentStatus"
+                    "description": "payment_status represents the payment status of the invoice (unpaid, paid, etc.)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PaymentStatus"
+                        }
+                    ]
                 },
                 "period_end": {
+                    "description": "period_end is the end date of the billing period",
                     "type": "string"
                 },
                 "period_start": {
+                    "description": "period_start is the start date of the billing period",
                     "type": "string"
                 },
                 "status": {
+                    "description": "status represents the current status of this invoice",
                     "type": "string"
                 },
                 "subscription": {
-                    "$ref": "#/definitions/dto.SubscriptionResponse"
+                    "description": "subscription contains the associated subscription information if requested",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.SubscriptionResponse"
+                        }
+                    ]
                 },
                 "subscription_id": {
+                    "description": "subscription_id is the optional unique identifier of the subscription associated with this invoice",
                     "type": "string"
                 },
                 "subtotal": {
+                    "description": "subtotal is the amount before taxes and discounts are applied",
                     "type": "number"
                 },
                 "tenant_id": {
+                    "description": "tenant_id is the unique identifier of the tenant this invoice belongs to",
                     "type": "string"
                 },
                 "total": {
+                    "description": "total is the total amount of the invoice including taxes and discounts",
                     "type": "number"
                 },
                 "updated_at": {
+                    "description": "updated_at is the timestamp when this invoice was last updated",
                     "type": "string"
                 },
                 "updated_by": {
+                    "description": "updated_by is the identifier of the user who last updated this invoice",
                     "type": "string"
                 },
                 "version": {
+                    "description": "version is the version number of this invoice",
                     "type": "integer"
                 },
                 "voided_at": {
+                    "description": "voided_at is the timestamp when this invoice was voided",
                     "type": "string"
                 }
             }
@@ -10954,10 +11312,16 @@ const docTemplate = `{
             ],
             "properties": {
                 "amount": {
+                    "description": "amount is the optional payment amount to record",
                     "type": "number"
                 },
                 "payment_status": {
-                    "$ref": "#/definitions/types.PaymentStatus"
+                    "description": "payment_status is the new payment status to set for the invoice (paid, unpaid, etc.)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PaymentStatus"
+                        }
+                    ]
                 }
             }
         },
@@ -12192,7 +12556,6 @@ const docTemplate = `{
                     }
                 },
                 "filters": {
-                    "description": "filters allows complex filtering based on multiple fields",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/types.FilterCondition"
@@ -12748,7 +13111,7 @@ const docTemplate = `{
                 "SUBSCRIPTION_CREDIT_GRANT",
                 "PURCHASED_CREDIT_INVOICED",
                 "PURCHASED_CREDIT_DIRECT",
-                "INVOICE_REFUND",
+                "CREDIT_NOTE",
                 "CREDIT_EXPIRED",
                 "WALLET_TERMINATION"
             ],
@@ -12758,7 +13121,7 @@ const docTemplate = `{
                 "TransactionReasonSubscriptionCredit",
                 "TransactionReasonPurchasedCreditInvoiced",
                 "TransactionReasonPurchasedCreditDirect",
-                "TransactionReasonInvoiceRefund",
+                "TransactionReasonCreditNote",
                 "TransactionReasonCreditExpired",
                 "TransactionReasonWalletTermination"
             ]
