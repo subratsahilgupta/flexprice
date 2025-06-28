@@ -412,6 +412,25 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 			Mark(ierr.ErrValidation)
 	}
 
+	// Validate that there shouldnt be any payments for this invoice
+	paymentService := NewPaymentService(s.ServiceParams)
+	filter := types.NewNoLimitPaymentFilter()
+	filter.DestinationID = lo.ToPtr(id)
+	filter.Status = lo.ToPtr(types.StatusPublished)
+	filter.PaymentStatus = lo.ToPtr(string(types.PaymentStatusSucceeded))
+	filter.DestinationType = lo.ToPtr(string(types.PaymentDestinationTypeInvoice))
+	filter.Limit = lo.ToPtr(1)
+	payments, err := paymentService.ListPayments(ctx, filter)
+	if err != nil {
+		return err
+	}
+
+	if len(payments.Items) > 0 {
+		return ierr.NewError("invoice has active payment records").
+			WithHint("Manual payment status updates are disabled for payment-based invoices.").
+			Mark(ierr.ErrInvalidOperation)
+	}
+
 	// Validate the payment status transition
 	if err := s.validatePaymentStatusTransition(inv.PaymentStatus, status); err != nil {
 		return err
