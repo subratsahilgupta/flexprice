@@ -92,6 +92,7 @@ func (s *InvoiceServiceSuite) setupService() {
 		WebhookPublisher:           s.GetWebhookPublisher(),
 		CreditGrantRepo:            s.GetStores().CreditGrantRepo,
 		CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+		CreditNoteLineItemRepo:     s.GetStores().CreditNoteLineItemRepo,
 	})
 }
 
