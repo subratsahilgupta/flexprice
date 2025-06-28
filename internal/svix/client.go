@@ -2,6 +2,7 @@ package svix
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 
@@ -90,9 +91,32 @@ func (c *Client) SendMessage(ctx context.Context, applicationID string, eventTyp
 		return nil // Return nil if Svix is not enabled
 	}
 
-	payloadMap, ok := payload.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("payload must be a map[string]interface{}")
+	var payloadMap map[string]interface{}
+
+	// Handle different payload types
+	switch p := payload.(type) {
+	case map[string]interface{}:
+		// If it's already a map, use it directly
+		payloadMap = p
+	case []byte:
+		// If it's a byte slice (like json.RawMessage), unmarshal it
+		if err := json.Unmarshal(p, &payloadMap); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
+	case json.RawMessage:
+		// If it's a json.RawMessage, unmarshal it
+		if err := json.Unmarshal(p, &payloadMap); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
+	default:
+		// For any other type, try to marshal and then unmarshal it
+		data, err := json.Marshal(p)
+		if err != nil {
+			return fmt.Errorf("failed to marshal payload: %w", err)
+		}
+		if err := json.Unmarshal(data, &payloadMap); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
 	}
 
 	_, err := c.client.Message.Create(ctx, applicationID, models.MessageIn{

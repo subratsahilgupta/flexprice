@@ -40,7 +40,7 @@ Integrate Svix to reliably send webhooks from our system to customer endpointsâ€
 ### 1.2 Core Building Blocks
 
 * **Applications**: a per-customer wrapper isolating their endpoints and data streams.
-Applications (aka consumer applications) are where messages are sent to. You would usually have one application for each one of your customers , which depending on your product would mean you will have dozens, hundreds of thousands, or more applications in your account. Applications are isolated between one another, ensuring that your customers only have access to their subscriptions and data.
+Applications (aka consumer applications) are where messages are sent to. You would usually have one application for each one of your customers, which depending on your product would mean you will have dozens, hundreds of thousands, or more applications in your account. Applications are isolated between one another, ensuring that your customers only have access to their subscriptions and data.
 
 
 * **Endpoints**: URLs where webhooks are delivered; each Customer App can have multiple endpoints, with event filtering rules.
