@@ -694,7 +694,7 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatusWithPayments() {
 		SubscriptionID:  &s.testData.subscription.ID,
 		InvoiceType:     types.InvoiceTypeSubscription,
 		InvoiceStatus:   types.InvoiceStatusFinalized,
-		PaymentStatus:   types.PaymentStatusSucceeded,
+		PaymentStatus:   types.PaymentStatusPending,
 		Currency:        "usd",
 		AmountDue:       decimal.NewFromFloat(100),
 		AmountPaid:      decimal.Zero,
@@ -763,7 +763,7 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatusWithPayments() {
 					WebhookPublisher: s.GetWebhookPublisher(),
 				})
 
-				// Create a payment record
+				// Create a payment record and process it to succeeded status
 				payment, err := paymentService.CreatePayment(s.GetContext(), &dto.CreatePaymentRequest{
 					Amount:            decimal.NewFromFloat(100),
 					Currency:          "usd",
@@ -771,6 +771,7 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatusWithPayments() {
 					DestinationType:   types.PaymentDestinationTypeInvoice,
 					DestinationID:     testInvoice.ID,
 					IdempotencyKey:    "test_payment_for_invoice",
+					ProcessPayment:    true, // Process payment to succeed status
 					Metadata: types.Metadata{
 						"test": "payment_for_invoice",
 					},
