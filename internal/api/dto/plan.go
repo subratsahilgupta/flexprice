@@ -81,6 +81,26 @@ func (r *CreatePlanRequest) validateCreditGrantForPlan(cg CreateCreditGrantReque
 			Mark(errors.ErrValidation)
 	}
 
+	// Ensure subscription_id is not provided for plan-scoped grants
+	if cg.SubscriptionID != nil && *cg.SubscriptionID != "" {
+		return errors.NewError("subscription_id should not be provided for plan-scoped credit grants").
+			WithHint("Credit grants in plan creation should not include subscription_id").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": *cg.SubscriptionID,
+			}).
+			Mark(errors.ErrValidation)
+	}
+
+	// Ensure plan_id is not provided in the request (it will be set automatically)
+	if cg.PlanID != nil && *cg.PlanID != "" {
+		return errors.NewError("plan_id should not be provided for credit grants in plan creation").
+			WithHint("The plan_id will be set automatically when creating the plan").
+			WithReportableDetails(map[string]interface{}{
+				"plan_id": *cg.PlanID,
+			}).
+			Mark(errors.ErrValidation)
+	}
+
 	if cg.Credits.LessThanOrEqual(decimal.Zero) {
 		return errors.NewError("credits must be greater than zero").
 			WithHint("Please provide a positive credits").

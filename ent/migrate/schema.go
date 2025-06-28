@@ -171,14 +171,20 @@ var (
 				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[2]},
 			},
 			{
-				Name:    "creditgrant_tenant_id_environment_id_scope_plan_id",
+				Name:    "idx_plan_id_not_null",
 				Unique:  false,
 				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[9], CreditGrantsColumns[20]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "plan_id IS NOT NULL",
+				},
 			},
 			{
-				Name:    "creditgrant_tenant_id_environment_id_scope_subscription_id",
+				Name:    "idx_subscription_id_not_null",
 				Unique:  false,
 				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[9], CreditGrantsColumns[21]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "subscription_id IS NOT NULL",
+				},
 			},
 		},
 	}

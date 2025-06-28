@@ -112,6 +112,8 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 				creditGrant := creditGrantReq.ToCreditGrant(ctx)
 				creditGrant.PlanID = &plan.ID
 				creditGrant.Scope = types.CreditGrantScopePlan
+				// Clear subscription_id for plan-scoped credit grants
+				creditGrant.SubscriptionID = nil
 				creditGrants[i] = creditGrant
 			}
 
@@ -120,6 +122,9 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 				if err := creditGrant.Validate(); err != nil {
 					return ierr.WithError(err).
 						WithHint("Invalid credit grant data provided").
+						WithReportableDetails(map[string]any{
+							"credit_grant": creditGrant,
+						}).
 						Mark(ierr.ErrValidation)
 				}
 			}
@@ -517,6 +522,8 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 					createReq.PlanID = &plan.ID
 
 					newCreditGrant := createReq.ToCreditGrant(ctx)
+					// Clear subscription_id for plan-scoped credit grants
+					newCreditGrant.SubscriptionID = nil
 					newCreditGrants = append(newCreditGrants, newCreditGrant)
 				}
 			}

@@ -380,12 +380,13 @@ func (s *PlanServiceSuite) TestCreatePlanWithCreditGrants() {
 			Description: "A plan with a single one-time credit grant",
 			CreditGrants: []dto.CreateCreditGrantRequest{
 				{
-					Name:     "Welcome Credits",
-					Scope:    types.CreditGrantScopePlan,
-					Credits:  decimal.NewFromInt(100),
-					Currency: "usd",
-					Cadence:  types.CreditGrantCadenceOneTime,
-					Priority: lo.ToPtr(1),
+					Name:           "Welcome Credits",
+					Scope:          types.CreditGrantScopePlan,
+					Credits:        decimal.NewFromInt(100),
+					Currency:       "usd",
+					Cadence:        types.CreditGrantCadenceOneTime,
+					ExpirationType: types.CreditGrantExpiryTypeNever,
+					Priority:       lo.ToPtr(1),
 					Metadata: types.Metadata{
 						"description": "Welcome bonus credits",
 						"category":    "bonus",
@@ -408,6 +409,7 @@ func (s *PlanServiceSuite) TestCreatePlanWithCreditGrants() {
 		s.Equal(decimal.NewFromInt(100), creditGrants[0].Credits)
 		s.Equal("usd", creditGrants[0].Currency)
 		s.Equal(types.CreditGrantCadenceOneTime, creditGrants[0].Cadence)
+		s.Equal(types.CreditGrantExpiryTypeNever, creditGrants[0].ExpirationType)
 		s.Equal(1, *creditGrants[0].Priority)
 	})
 
@@ -417,14 +419,15 @@ func (s *PlanServiceSuite) TestCreatePlanWithCreditGrants() {
 			Description: "A plan with multiple credit grants",
 			CreditGrants: []dto.CreateCreditGrantRequest{
 				{
-					Name:        "Monthly Credits",
-					Scope:       types.CreditGrantScopePlan,
-					Credits:     decimal.NewFromInt(50),
-					Currency:    "usd",
-					Cadence:     types.CreditGrantCadenceRecurring,
-					Period:      lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
-					PeriodCount: lo.ToPtr(1),
-					Priority:    lo.ToPtr(2),
+					Name:           "Monthly Credits",
+					Scope:          types.CreditGrantScopePlan,
+					Credits:        decimal.NewFromInt(50),
+					Currency:       "usd",
+					Cadence:        types.CreditGrantCadenceRecurring,
+					Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
+					PeriodCount:    lo.ToPtr(1),
+					ExpirationType: types.CreditGrantExpiryTypeNever,
+					Priority:       lo.ToPtr(2),
 					Metadata: types.Metadata{
 						"description": "Monthly recurring credits",
 					},
@@ -466,6 +469,7 @@ func (s *PlanServiceSuite) TestCreatePlanWithCreditGrants() {
 				s.Equal(types.CreditGrantCadenceRecurring, cg.Cadence)
 				s.Equal(types.CREDIT_GRANT_PERIOD_MONTHLY, *cg.Period)
 				s.Equal(1, *cg.PeriodCount)
+				s.Equal(types.CreditGrantExpiryTypeNever, cg.ExpirationType)
 				s.Equal(2, *cg.Priority)
 			} else if cg.Name == "Bonus Credits" {
 				s.Equal(decimal.NewFromInt(200), cg.Credits)
@@ -484,14 +488,15 @@ func (s *PlanServiceSuite) TestCreatePlanWithCreditGrants() {
 			Description: "A plan with a recurring credit grant",
 			CreditGrants: []dto.CreateCreditGrantRequest{
 				{
-					Name:        "Yearly Credits",
-					Scope:       types.CreditGrantScopePlan,
-					Credits:     decimal.NewFromInt(1000),
-					Currency:    "usd",
-					Cadence:     types.CreditGrantCadenceRecurring,
-					Period:      lo.ToPtr(types.CREDIT_GRANT_PERIOD_ANNUAL),
-					PeriodCount: lo.ToPtr(1),
-					Priority:    lo.ToPtr(1),
+					Name:           "Yearly Credits",
+					Scope:          types.CreditGrantScopePlan,
+					Credits:        decimal.NewFromInt(1000),
+					Currency:       "usd",
+					Cadence:        types.CreditGrantCadenceRecurring,
+					Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_ANNUAL),
+					PeriodCount:    lo.ToPtr(1),
+					ExpirationType: types.CreditGrantExpiryTypeNever,
+					Priority:       lo.ToPtr(1),
 					Metadata: types.Metadata{
 						"description": "Annual credit allocation",
 						"renewal":     "automatic",
@@ -512,19 +517,23 @@ func (s *PlanServiceSuite) TestCreatePlanWithCreditGrants() {
 		s.Equal(types.CreditGrantCadenceRecurring, creditGrants[0].Cadence)
 		s.Equal(types.CREDIT_GRANT_PERIOD_ANNUAL, *creditGrants[0].Period)
 		s.Equal(1, *creditGrants[0].PeriodCount)
+		s.Equal(types.CreditGrantExpiryTypeNever, creditGrants[0].ExpirationType)
 	})
 
 	s.Run("Invalid Credit Grant Missing Required Fields", func() {
+		s.ClearStores() // Clear all stores before test
+
 		req := dto.CreatePlanRequest{
 			Name:        "Invalid Credit Grant Plan",
 			Description: "A plan with invalid credit grant",
 			CreditGrants: []dto.CreateCreditGrantRequest{
 				{
-					Name:     "", // Missing name
-					Scope:    types.CreditGrantScopePlan,
-					Credits:  decimal.Zero, // Invalid credits
-					Currency: "usd",
-					Cadence:  types.CreditGrantCadenceOneTime,
+					Name:           "", // Missing name
+					Scope:          types.CreditGrantScopePlan,
+					Credits:        decimal.Zero, // Invalid credits (must be > 0)
+					Currency:       "usd",
+					Cadence:        types.CreditGrantCadenceOneTime,
+					ExpirationType: types.CreditGrantExpiryTypeNever,
 				},
 			},
 		}
@@ -546,12 +555,78 @@ func (s *PlanServiceSuite) TestCreatePlanWithCreditGrants() {
 			Description: "A plan with invalid recurring credit grant",
 			CreditGrants: []dto.CreateCreditGrantRequest{
 				{
-					Name:     "Invalid Recurring Credits",
-					Scope:    types.CreditGrantScopePlan,
-					Credits:  decimal.NewFromInt(100),
-					Currency: "usd",
-					Cadence:  types.CreditGrantCadenceRecurring,
-					// Missing Period and PeriodCount
+					Name:           "Invalid Recurring Credits",
+					Scope:          types.CreditGrantScopePlan,
+					Credits:        decimal.NewFromInt(100),
+					Currency:       "usd",
+					Cadence:        types.CreditGrantCadenceRecurring,
+					ExpirationType: types.CreditGrantExpiryTypeNever,
+					// Missing Period and PeriodCount - these are required for recurring cadence
+				},
+			},
+		}
+
+		resp, err := s.service.CreatePlan(s.GetContext(), req)
+		s.Error(err)
+		s.Nil(resp)
+	})
+
+	s.Run("Invalid Credit Grant with Plan ID provided", func() {
+		req := dto.CreatePlanRequest{
+			Name:        "Invalid Credit Grant Plan",
+			Description: "A plan with credit grant that provides plan_id",
+			CreditGrants: []dto.CreateCreditGrantRequest{
+				{
+					Name:           "Invalid Credits",
+					Scope:          types.CreditGrantScopePlan,
+					PlanID:         lo.ToPtr("some-plan-id"), // This should not be provided
+					Credits:        decimal.NewFromInt(100),
+					Currency:       "usd",
+					Cadence:        types.CreditGrantCadenceOneTime,
+					ExpirationType: types.CreditGrantExpiryTypeNever,
+				},
+			},
+		}
+
+		resp, err := s.service.CreatePlan(s.GetContext(), req)
+		s.Error(err)
+		s.Nil(resp)
+	})
+
+	s.Run("Invalid Credit Grant with Subscription ID provided", func() {
+		req := dto.CreatePlanRequest{
+			Name:        "Invalid Credit Grant Plan",
+			Description: "A plan with credit grant that provides subscription_id",
+			CreditGrants: []dto.CreateCreditGrantRequest{
+				{
+					Name:           "Invalid Credits",
+					Scope:          types.CreditGrantScopePlan,
+					SubscriptionID: lo.ToPtr("some-subscription-id"), // This should not be provided
+					Credits:        decimal.NewFromInt(100),
+					Currency:       "usd",
+					Cadence:        types.CreditGrantCadenceOneTime,
+					ExpirationType: types.CreditGrantExpiryTypeNever,
+				},
+			},
+		}
+
+		resp, err := s.service.CreatePlan(s.GetContext(), req)
+		s.Error(err)
+		s.Nil(resp)
+	})
+
+	s.Run("Invalid Credit Grant with Non-Plan Scope", func() {
+		req := dto.CreatePlanRequest{
+			Name:        "Invalid Credit Grant Plan",
+			Description: "A plan with credit grant that has non-plan scope",
+			CreditGrants: []dto.CreateCreditGrantRequest{
+				{
+					Name:           "Invalid Credits",
+					Scope:          types.CreditGrantScopeSubscription, // Only PLAN scope allowed in plan creation
+					Credits:        decimal.NewFromInt(100),
+					Currency:       "usd",
+					Cadence:        types.CreditGrantCadenceOneTime,
+					ExpirationType: types.CreditGrantExpiryTypeNever,
 				},
 			},
 		}
@@ -631,14 +706,17 @@ func (s *PlanServiceSuite) TestUpdatePlanWithCreditGrants() {
 
 	// Create existing credit grant
 	existingCreditGrant := &creditgrant.CreditGrant{
-		ID:        "cg-1",
-		Name:      "Existing Credits",
-		Scope:     types.CreditGrantScopePlan,
-		PlanID:    &testPlan.ID,
-		Credits:   decimal.NewFromInt(50),
-		Currency:  "usd",
-		Cadence:   types.CreditGrantCadenceOneTime,
-		Priority:  lo.ToPtr(1),
+		ID:       "cg-1",
+		Name:     "Existing Credits",
+		Scope:    types.CreditGrantScopePlan,
+		PlanID:   &testPlan.ID,
+		Credits:  decimal.NewFromInt(50),
+		Currency: "usd",
+		Cadence:  types.CreditGrantCadenceOneTime,
+		Priority: lo.ToPtr(1),
+		Metadata: types.Metadata{
+			"original": "value",
+		},
 		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
 	}
 	_, err = s.GetStores().CreditGrantRepo.Create(s.GetContext(), existingCreditGrant)
@@ -650,14 +728,16 @@ func (s *PlanServiceSuite) TestUpdatePlanWithCreditGrants() {
 				{
 					ID: existingCreditGrant.ID,
 					CreateCreditGrantRequest: &dto.CreateCreditGrantRequest{
-						Name:     "Updated Credits",
-						Scope:    types.CreditGrantScopePlan,
-						Credits:  decimal.NewFromInt(100),
-						Currency: "usd",
-						Cadence:  types.CreditGrantCadenceOneTime,
-						Priority: lo.ToPtr(2),
+						Name:           "Updated Credits",
+						Scope:          types.CreditGrantScopePlan,
+						Credits:        decimal.NewFromInt(50), // Credits field is not actually updated
+						Currency:       "usd",
+						Cadence:        types.CreditGrantCadenceOneTime,
+						ExpirationType: types.CreditGrantExpiryTypeNever,
+						Priority:       lo.ToPtr(1), // Priority field is not actually updated
 						Metadata: types.Metadata{
 							"updated": "true",
+							"new":     "metadata",
 						},
 					},
 				},
@@ -668,13 +748,18 @@ func (s *PlanServiceSuite) TestUpdatePlanWithCreditGrants() {
 		s.NoError(err)
 		s.NotNil(resp)
 
-		// Verify the credit grant was updated
+		// Verify the credit grant was updated (only Name and Metadata are actually updated)
 		updatedCreditGrant, err := s.GetStores().CreditGrantRepo.Get(s.GetContext(), existingCreditGrant.ID)
 		s.NoError(err)
 		s.Equal("Updated Credits", updatedCreditGrant.Name)
-		s.Equal(decimal.NewFromInt(100), updatedCreditGrant.Credits)
-		s.Equal(2, *updatedCreditGrant.Priority)
+		// Credits and Priority should remain unchanged
+		s.Equal(decimal.NewFromInt(50), updatedCreditGrant.Credits)
+		s.Equal(1, *updatedCreditGrant.Priority)
+		// Metadata should be updated
 		s.Equal("true", updatedCreditGrant.Metadata["updated"])
+		s.Equal("metadata", updatedCreditGrant.Metadata["new"])
+		// Original metadata should be preserved
+		s.Equal("value", updatedCreditGrant.Metadata["original"])
 	})
 
 	s.Run("Add New Credit Grant via Update", func() {
@@ -689,14 +774,15 @@ func (s *PlanServiceSuite) TestUpdatePlanWithCreditGrants() {
 				{
 					// No ID means this is a new credit grant
 					CreateCreditGrantRequest: &dto.CreateCreditGrantRequest{
-						Name:        "New Credits",
-						Scope:       types.CreditGrantScopePlan,
-						Credits:     decimal.NewFromInt(200),
-						Currency:    "usd",
-						Cadence:     types.CreditGrantCadenceRecurring,
-						Period:      lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
-						PeriodCount: lo.ToPtr(1),
-						Priority:    lo.ToPtr(1),
+						Name:           "New Credits",
+						Scope:          types.CreditGrantScopePlan,
+						Credits:        decimal.NewFromInt(200),
+						Currency:       "usd",
+						Cadence:        types.CreditGrantCadenceRecurring,
+						Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
+						PeriodCount:    lo.ToPtr(1),
+						ExpirationType: types.CreditGrantExpiryTypeNever,
+						Priority:       lo.ToPtr(1),
 						Metadata: types.Metadata{
 							"newly_added": "true",
 						},
@@ -735,12 +821,13 @@ func (s *PlanServiceSuite) TestUpdatePlanWithCreditGrants() {
 					// Update existing credit grant
 					ID: existingCreditGrant.ID,
 					CreateCreditGrantRequest: &dto.CreateCreditGrantRequest{
-						Name:     "Updated Existing Credits",
-						Scope:    types.CreditGrantScopePlan,
-						Credits:  decimal.NewFromInt(75),
-						Currency: "usd",
-						Cadence:  types.CreditGrantCadenceOneTime,
-						Priority: lo.ToPtr(3),
+						Name:           "Updated Existing Credits",
+						Scope:          types.CreditGrantScopePlan,
+						Credits:        decimal.NewFromInt(50), // This won't actually change
+						Currency:       "usd",
+						Cadence:        types.CreditGrantCadenceOneTime,
+						ExpirationType: types.CreditGrantExpiryTypeNever,
+						Priority:       lo.ToPtr(1), // This won't actually change
 						Metadata: types.Metadata{
 							"updated": "true",
 						},
@@ -749,12 +836,13 @@ func (s *PlanServiceSuite) TestUpdatePlanWithCreditGrants() {
 				{
 					// Add new credit grant
 					CreateCreditGrantRequest: &dto.CreateCreditGrantRequest{
-						Name:     "Additional Credits",
-						Scope:    types.CreditGrantScopePlan,
-						Credits:  decimal.NewFromInt(150),
-						Currency: "usd",
-						Cadence:  types.CreditGrantCadenceOneTime,
-						Priority: lo.ToPtr(1),
+						Name:           "Additional Credits",
+						Scope:          types.CreditGrantScopePlan,
+						Credits:        decimal.NewFromInt(150),
+						Currency:       "usd",
+						Cadence:        types.CreditGrantCadenceOneTime,
+						ExpirationType: types.CreditGrantExpiryTypeNever,
+						Priority:       lo.ToPtr(1),
 						Metadata: types.Metadata{
 							"newly_added": "true",
 						},
@@ -777,9 +865,12 @@ func (s *PlanServiceSuite) TestUpdatePlanWithCreditGrants() {
 			s.Equal(testPlan.ID, *cg.PlanID)
 			if cg.ID == existingCreditGrant.ID {
 				s.Equal("Updated Existing Credits", cg.Name)
-				s.Equal(decimal.NewFromInt(75), cg.Credits)
-				s.Equal(3, *cg.Priority)
+				// Credits and Priority should remain unchanged from original
+				s.Equal(decimal.NewFromInt(50), cg.Credits)
+				s.Equal(1, *cg.Priority)
 				s.Equal("true", cg.Metadata["updated"])
+				// Original metadata should be preserved
+				s.Equal("value", cg.Metadata["original"])
 			} else {
 				s.Equal("Additional Credits", cg.Name)
 				s.Equal(decimal.NewFromInt(150), cg.Credits)
@@ -800,11 +891,40 @@ func (s *PlanServiceSuite) TestUpdatePlanWithCreditGrants() {
 			CreditGrants: []dto.UpdatePlanCreditGrantRequest{
 				{
 					CreateCreditGrantRequest: &dto.CreateCreditGrantRequest{
-						Name:     "", // Invalid empty name
-						Scope:    types.CreditGrantScopePlan,
-						Credits:  decimal.Zero, // Invalid zero credits
-						Currency: "usd",
-						Cadence:  types.CreditGrantCadenceOneTime,
+						Name:           "", // Invalid empty name
+						Scope:          types.CreditGrantScopePlan,
+						Credits:        decimal.Zero, // Invalid zero credits
+						Currency:       "usd",
+						Cadence:        types.CreditGrantCadenceOneTime,
+						ExpirationType: types.CreditGrantExpiryTypeNever,
+					},
+				},
+			},
+		}
+
+		resp, err := s.service.UpdatePlan(s.GetContext(), testPlan.ID, req)
+		s.Error(err)
+		s.Nil(resp)
+	})
+
+	s.Run("Invalid New Credit Grant Missing Required Fields for Recurring", func() {
+		s.ClearStores() // Clear all stores before test
+
+		// Recreate the plan
+		err = s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		req := dto.UpdatePlanRequest{
+			CreditGrants: []dto.UpdatePlanCreditGrantRequest{
+				{
+					CreateCreditGrantRequest: &dto.CreateCreditGrantRequest{
+						Name:           "Invalid Recurring Credits",
+						Scope:          types.CreditGrantScopePlan,
+						Credits:        decimal.NewFromInt(100),
+						Currency:       "usd",
+						Cadence:        types.CreditGrantCadenceRecurring,
+						ExpirationType: types.CreditGrantExpiryTypeNever,
+						// Missing Period and PeriodCount for recurring cadence
 					},
 				},
 			},
