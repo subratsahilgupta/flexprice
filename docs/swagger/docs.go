@@ -7995,6 +7995,12 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "credit_grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreateCreditGrantRequest"
+                    }
+                },
                 "description": {
                     "type": "string"
                 },
@@ -9876,6 +9882,12 @@ const docTemplate = `{
                 "created_by": {
                     "type": "string"
                 },
+                "credit_grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreditGrantResponse"
+                    }
+                },
                 "description": {
                     "type": "string"
                 },
@@ -10949,6 +10961,64 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdatePlanCreditGrantRequest": {
+            "type": "object",
+            "required": [
+                "cadence",
+                "credits",
+                "currency",
+                "name",
+                "scope"
+            ],
+            "properties": {
+                "cadence": {
+                    "$ref": "#/definitions/types.CreditGrantCadence"
+                },
+                "credits": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "expiration_duration": {
+                    "type": "integer"
+                },
+                "expiration_duration_unit": {
+                    "$ref": "#/definitions/types.CreditGrantExpiryDurationUnit"
+                },
+                "expiration_type": {
+                    "$ref": "#/definitions/types.CreditGrantExpiryType"
+                },
+                "id": {
+                    "description": "The ID of the credit grant to update (present if the credit grant is being updated)",
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "period": {
+                    "$ref": "#/definitions/types.CreditGrantPeriod"
+                },
+                "period_count": {
+                    "type": "integer"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "scope": {
+                    "$ref": "#/definitions/types.CreditGrantScope"
+                },
+                "subscription_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.UpdatePlanEntitlementRequest": {
             "type": "object",
             "required": [
@@ -11074,6 +11144,12 @@ const docTemplate = `{
         "dto.UpdatePlanRequest": {
             "type": "object",
             "properties": {
+                "credit_grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.UpdatePlanCreditGrantRequest"
+                    }
+                },
                 "description": {
                     "type": "string"
                 },

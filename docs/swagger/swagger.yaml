@@ -594,6 +594,10 @@ definitions:
     type: object
   dto.CreatePlanRequest:
     properties:
+      credit_grants:
+        items:
+          $ref: '#/definitions/dto.CreateCreditGrantRequest'
+        type: array
       description:
         type: string
       entitlements:
@@ -1898,6 +1902,10 @@ definitions:
         type: string
       created_by:
         type: string
+      credit_grants:
+        items:
+          $ref: '#/definitions/dto.CreditGrantResponse'
+        type: array
       description:
         type: string
       entitlements:
@@ -2664,6 +2672,47 @@ definitions:
     required:
     - payment_status
     type: object
+  dto.UpdatePlanCreditGrantRequest:
+    properties:
+      cadence:
+        $ref: '#/definitions/types.CreditGrantCadence'
+      credits:
+        type: number
+      currency:
+        type: string
+      expiration_duration:
+        type: integer
+      expiration_duration_unit:
+        $ref: '#/definitions/types.CreditGrantExpiryDurationUnit'
+      expiration_type:
+        $ref: '#/definitions/types.CreditGrantExpiryType'
+      id:
+        description: The ID of the credit grant to update (present if the credit grant
+          is being updated)
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      name:
+        type: string
+      period:
+        $ref: '#/definitions/types.CreditGrantPeriod'
+      period_count:
+        type: integer
+      plan_id:
+        type: string
+      priority:
+        type: integer
+      scope:
+        $ref: '#/definitions/types.CreditGrantScope'
+      subscription_id:
+        type: string
+    required:
+    - cadence
+    - credits
+    - currency
+    - name
+    - scope
+    type: object
   dto.UpdatePlanEntitlementRequest:
     properties:
       feature_id:
@@ -2752,6 +2801,10 @@ definitions:
     type: object
   dto.UpdatePlanRequest:
     properties:
+      credit_grants:
+        items:
+          $ref: '#/definitions/dto.UpdatePlanCreditGrantRequest'
+        type: array
       description:
         type: string
       entitlements:
