@@ -748,6 +748,7 @@ var (
 		{Name: "succeeded_at", Type: field.TypeTime, Nullable: true},
 		{Name: "failed_at", Type: field.TypeTime, Nullable: true},
 		{Name: "refunded_at", Type: field.TypeTime, Nullable: true},
+		{Name: "recorded_at", Type: field.TypeTime, Nullable: true},
 		{Name: "error_message", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 	}
 	// PaymentsTable holds the schema information for the "payments" table.
