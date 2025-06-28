@@ -417,6 +417,7 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 	filter := types.NewNoLimitPaymentFilter()
 	filter.DestinationID = lo.ToPtr(id)
 	filter.Status = lo.ToPtr(types.StatusPublished)
+	filter.PaymentStatus = lo.ToPtr(string(types.PaymentStatusSucceeded))
 	filter.DestinationType = lo.ToPtr(string(types.PaymentDestinationTypeInvoice))
 	filter.Limit = lo.ToPtr(1)
 	payments, err := paymentService.ListPayments(ctx, filter)
