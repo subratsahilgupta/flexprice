@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/flexprice/flexprice/internal/config"
 	svix "github.com/svix/svix-webhooks/go"
 	"github.com/svix/svix-webhooks/go/models"
 )
@@ -18,19 +19,19 @@ type Client struct {
 }
 
 // NewClient creates a new Svix client
-func NewClient(authToken string, baseURL string, enabled bool) (*Client, error) {
-	if !enabled {
+func NewClient(config *config.Configuration) (*Client, error) {
+	if !config.Webhook.Svix.Enabled {
 		return &Client{
 			enabled: false,
 		}, nil
 	}
 
-	serverURL, err := url.Parse(baseURL)
+	serverURL, err := url.Parse(config.Webhook.Svix.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
 
-	svixClient, err := svix.New(authToken, &svix.SvixOptions{
+	svixClient, err := svix.New(config.Webhook.Svix.AuthToken, &svix.SvixOptions{
 		ServerUrl: serverURL,
 	})
 	if err != nil {
@@ -39,7 +40,7 @@ func NewClient(authToken string, baseURL string, enabled bool) (*Client, error) 
 
 	return &Client{
 		client:  svixClient,
-		baseURL: baseURL,
+		baseURL: config.Webhook.Svix.BaseURL,
 		enabled: true,
 	}, nil
 }
