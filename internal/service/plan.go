@@ -491,8 +491,8 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 					// Update existing credit grant using the UpdateCreditGrant method
 					if reqCreditGrant.CreateCreditGrantRequest != nil {
 						updateReq := dto.UpdateCreditGrantRequest{
-							Name:     &reqCreditGrant.CreateCreditGrantRequest.Name,
-							Metadata: &reqCreditGrant.CreateCreditGrantRequest.Metadata,
+							Name:     lo.ToPtr(reqCreditGrant.Name),
+							Metadata: lo.ToPtr(reqCreditGrant.Metadata),
 						}
 						updateReq.UpdateCreditGrant(cg.CreditGrant, ctx)
 					}
