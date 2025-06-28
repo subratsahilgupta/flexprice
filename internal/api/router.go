@@ -37,6 +37,7 @@ type Handlers struct {
 	CostSheet         *v1.CostSheetHandler
 	CreditNote        *v1.CreditNoteHandler
 
+	Webhook *v1.WebhookHandler
 	// Portal handlers
 	Onboarding *v1.OnboardingHandler
 	// Cron jobs : TODO: move crons out of API based architecture
@@ -321,6 +322,12 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 				onboarding.POST("/events", handlers.Onboarding.GenerateEvents)
 				onboarding.POST("/setup", handlers.Onboarding.SetupDemo)
 			}
+		}
+
+		// Webhook routes
+		webhookGroup := v1Private.Group("/webhooks")
+		{
+			webhookGroup.GET("/dashboard", handlers.Webhook.GetDashboardURL)
 		}
 	}
 

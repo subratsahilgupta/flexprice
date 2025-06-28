@@ -80,3 +80,11 @@ func providePubSub(
 	}
 	return nil
 }
+
+// // provideSvixService creates a new Svix service with error handling
+// func provideSvixService(
+// 	cfg *config.Configuration,
+// 	logger *logger.Logger,
+// ) (service.SvixService, error) {
+// 	return service.NewSvixService(cfg, logger)
+// }

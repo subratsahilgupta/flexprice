@@ -26,6 +26,7 @@ import (
 	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/svix"
 	"github.com/flexprice/flexprice/internal/temporal"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/typst"
@@ -107,6 +108,9 @@ func main() {
 
 			// HTTP Client
 			httpclient.NewDefaultClient,
+
+			// Svix
+			svix.NewClient,
 
 			// Repositories
 			repository.NewEventRepository,
@@ -227,6 +231,7 @@ func provideHandlers(
 	creditGrantService service.CreditGrantService,
 	costSheetService service.CostSheetService,
 	creditNoteService service.CreditNoteService,
+	svixClient *svix.Client,
 ) api.Handlers {
 	return api.Handlers{
 		Events:            v1.NewEventsHandler(eventService, eventPostProcessingService, logger),
@@ -255,6 +260,7 @@ func provideHandlers(
 		CostSheet:         v1.NewCostSheetHandler(costSheetService, logger),
 		CronCreditGrant:   cron.NewCreditGrantCronHandler(creditGrantService, logger),
 		CreditNote:        v1.NewCreditNoteHandler(creditNoteService, logger),
+		Webhook:           v1.NewWebhookHandler(cfg, svixClient, logger),
 	}
 }
 
