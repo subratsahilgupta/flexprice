@@ -259,8 +259,39 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			return err
 		}
 
-		// Create credit grants
-		err = s.handleCreditGrants(ctx, sub, req.CreditGrants)
+		// handle if plan has credit grants
+		planCreditGrants, err := s.CreditGrantRepo.GetByPlan(ctx, plan.ID)
+		if err != nil {
+			return err
+		}
+
+		// add credit grants from request to the list
+		creditGrantRequests := make([]dto.CreateCreditGrantRequest, 0)
+		creditGrantRequests = append(creditGrantRequests, req.CreditGrants...)
+
+		// if plan has credit grants, add them to the request
+		if len(planCreditGrants) > 0 {
+			for _, cg := range planCreditGrants {
+				creditGrantRequests = append(creditGrantRequests, dto.CreateCreditGrantRequest{
+					Name:                   cg.Name,
+					Scope:                  types.CreditGrantScopeSubscription,
+					Credits:                cg.Credits,
+					Currency:               cg.Currency,
+					Cadence:                cg.Cadence,
+					ExpirationType:         cg.ExpirationType,
+					Priority:               cg.Priority,
+					SubscriptionID:         lo.ToPtr(sub.ID),
+					Period:                 cg.Period,
+					ExpirationDuration:     cg.ExpirationDuration,
+					ExpirationDurationUnit: cg.ExpirationDurationUnit,
+					Metadata:               cg.Metadata,
+					PeriodCount:            cg.PeriodCount,
+				})
+			}
+		}
+
+		// handle credit grants
+		err = s.handleCreditGrants(ctx, sub, creditGrantRequests)
 		if err != nil {
 			return err
 		}
