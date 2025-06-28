@@ -694,7 +694,7 @@ func (s *InvoiceServiceSuite) TestUpdatePaymentStatusWithPayments() {
 		SubscriptionID:  &s.testData.subscription.ID,
 		InvoiceType:     types.InvoiceTypeSubscription,
 		InvoiceStatus:   types.InvoiceStatusFinalized,
-		PaymentStatus:   types.PaymentStatusPending,
+		PaymentStatus:   types.PaymentStatusSucceeded,
 		Currency:        "usd",
 		AmountDue:       decimal.NewFromFloat(100),
 		AmountPaid:      decimal.Zero,
