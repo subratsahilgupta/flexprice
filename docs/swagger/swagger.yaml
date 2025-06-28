@@ -133,8 +133,6 @@ definitions:
         description: SubscriptionID is required to get subscription details
         type: string
     required:
-    - meter_id
-    - price_id
     - subscription_id
     type: object
   dto.CostBreakdownItem:
@@ -208,10 +206,6 @@ definitions:
         type: string
       price_id:
         description: PriceID references the price configuration
-        type: string
-      subscription_id:
-        description: SubscriptionID to get the time period from if not provided in
-          context
         type: string
     required:
     - meter_id
@@ -814,6 +808,11 @@ definitions:
         type: string
       external_customer_id:
         type: string
+      initial_credits_expiry_date_utc:
+        description: |-
+          initial_credits_expiry_date_utc is the expiry date in UTC timezone (optional to set nil means no expiry)
+          ex 2025-01-01 00:00:00 UTC
+        type: string
       initial_credits_to_load:
         default: 0
         description: |-
@@ -1412,6 +1411,8 @@ definitions:
             type: string
           type: array
         type: object
+      multiplier:
+        type: integer
       property_name:
         description: will be empty/ignored in case of COUNT
         example: request_size
@@ -3041,6 +3042,12 @@ definitions:
           Field is the key in $event.properties on which the aggregation is to be applied
           For ex if the aggregation type is sum for API usage, the field could be "duration_ms"
         type: string
+      multiplier:
+        description: |-
+          Multiplier is the multiplier for the aggregation
+          For ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000
+          to scale up by a factor of 1000
+        type: integer
       type:
         $ref: '#/definitions/types.AggregationType'
     type: object
@@ -3311,12 +3318,18 @@ definitions:
     - SUM
     - AVG
     - COUNT_UNIQUE
+    - LATEST
+    - SUM_WITH_MULTIPLIER
     type: string
+    x-enum-comments:
+      AggregationSumWithMultiplier: Sum with a multiplier - [sum(value) * multiplier]
     x-enum-varnames:
     - AggregationCount
     - AggregationSum
     - AggregationAvg
     - AggregationCountUnique
+    - AggregationLatest
+    - AggregationSumWithMultiplier
   types.AutoTopupTrigger:
     enum:
     - disabled
@@ -3375,16 +3388,6 @@ definitions:
     x-enum-varnames:
     - BILLING_TIER_VOLUME
     - BILLING_TIER_SLAB
-  types.CostsheetStatus:
-    enum:
-    - published
-    - draft
-    - archived
-    type: string
-    x-enum-varnames:
-    - CostsheetStatusPublished
-    - CostsheetStatusDraft
-    - CostsheetStatusArchived
   types.CreditGrantCadence:
     enum:
     - ONETIME
@@ -3425,12 +3428,12 @@ definitions:
     - HALF_YEARLY
     type: string
     x-enum-varnames:
-    - CreditGrantPeriodDaily
-    - CreditGrantPeriodWeekly
-    - CreditGrantPeriodMonthly
-    - CreditGrantPeriodAnnual
-    - CreditGrantPeriodQuarter
-    - CreditGrantPeriodHalfYear
+    - CREDIT_GRANT_PERIOD_DAILY
+    - CREDIT_GRANT_PERIOD_WEEKLY
+    - CREDIT_GRANT_PERIOD_MONTHLY
+    - CREDIT_GRANT_PERIOD_ANNUAL
+    - CREDIT_GRANT_PERIOD_QUARTER
+    - CREDIT_GRANT_PERIOD_HALF_YEARLY
   types.CreditGrantScope:
     enum:
     - PLAN
@@ -4103,15 +4106,15 @@ paths:
       - description: Status filters by costsheet status
         enum:
         - published
-        - draft
+        - deleted
         - archived
         in: query
         name: status
         type: string
         x-enum-varnames:
-        - CostsheetStatusPublished
-        - CostsheetStatusDraft
-        - CostsheetStatusArchived
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
       - description: TenantID filters by specific tenant ID
         in: query
         name: tenantID
@@ -4175,7 +4178,8 @@ paths:
     delete:
       consumes:
       - application/json
-      description: Delete a cost sheet
+      description: Delete a cost sheet. If status is published/draft, it will be archived.
+        If already archived, it will be deleted from database.
       parameters:
       - description: Cost Sheet ID
         in: path
@@ -4193,10 +4197,6 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
         "404":
           description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "409":
-          description: Conflict
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
         "500":
@@ -6132,6 +6132,9 @@ paths:
         type: string
       - in: query
         name: expand
+        type: string
+      - in: query
+        name: external_customer_id
         type: string
       - collectionFormat: csv
         in: query
