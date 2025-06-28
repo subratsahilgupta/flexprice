@@ -695,7 +695,6 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 			UsageCharges: make([]dto.CreateInvoiceLineItemRequest, 0),
 		}
 	}
-
 	// Create invoice request
 	req := &dto.CreateInvoiceRequest{
 		CustomerID:     sub.CustomerID,
@@ -705,6 +704,8 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 		PaymentStatus:  lo.ToPtr(types.PaymentStatusPending),
 		Currency:       sub.Currency,
 		AmountDue:      result.TotalAmount,
+		Total:          result.TotalAmount,
+		Subtotal:       result.TotalAmount,
 		Description:    description,
 		DueDate:        lo.ToPtr(invoiceDueDate),
 		BillingPeriod:  lo.ToPtr(string(sub.BillingPeriod)),

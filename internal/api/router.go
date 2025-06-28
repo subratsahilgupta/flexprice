@@ -35,6 +35,8 @@ type Handlers struct {
 	Task              *v1.TaskHandler
 	Secret            *v1.SecretHandler
 	CostSheet         *v1.CostSheetHandler
+	CreditNote        *v1.CreditNoteHandler
+
 	// Portal handlers
 	Onboarding *v1.OnboardingHandler
 	// Cron jobs : TODO: move crons out of API based architecture
@@ -293,6 +295,15 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			costSheet.DELETE("/:id", handlers.CostSheet.DeleteCostSheet)
 			costSheet.GET("/breakdown/:subscription_id", handlers.CostSheet.GetCostBreakDown)
 			costSheet.POST("/roi", handlers.CostSheet.CalculateROI)
+		}
+		// Credit note routes
+		creditNotes := v1Private.Group("/creditnotes")
+		{
+			creditNotes.POST("", handlers.CreditNote.CreateCreditNote)
+			creditNotes.GET("", handlers.CreditNote.ListCreditNotes)
+			creditNotes.GET("/:id", handlers.CreditNote.GetCreditNote)
+			creditNotes.POST("/:id/void", handlers.CreditNote.VoidCreditNote)
+			creditNotes.POST("/:id/finalize", handlers.CreditNote.FinalizeCreditNote)
 		}
 
 		// Admin routes (API Key only)

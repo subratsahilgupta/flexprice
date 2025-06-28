@@ -87,6 +87,7 @@ func (s *InvoiceServiceSuite) setupService() {
 		AuthRepo:         s.GetStores().AuthRepo,
 		WalletRepo:       s.GetStores().WalletRepo,
 		PaymentRepo:      s.GetStores().PaymentRepo,
+		CreditNoteRepo:   s.GetStores().CreditNoteRepo,
 		EventPublisher:   s.GetPublisher(),
 		WebhookPublisher: s.GetWebhookPublisher(),
 	})

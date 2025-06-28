@@ -468,6 +468,11 @@ func (o *SubscriptionQueryOptions) applyEntityQueryOptions(_ context.Context, f 
 		return query
 	}
 
+	// Apply subscription IDs filter
+	if len(f.SubscriptionIDs) > 0 {
+		query = query.Where(subscription.IDIn(f.SubscriptionIDs...))
+	}
+
 	// Apply customer filter
 	if f.CustomerID != "" {
 		query = query.Where(subscription.CustomerID(f.CustomerID))

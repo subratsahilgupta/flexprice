@@ -19,6 +19,10 @@ const (
 	ExpandPlans        ExpandableField = "plans"
 	ExpandEntitlements ExpandableField = "entitlements"
 	ExpandSchedule     ExpandableField = "schedule"
+	ExpandInvoice      ExpandableField = "invoice"
+	ExpandSubscription ExpandableField = "subscription"
+	ExpandCustomer     ExpandableField = "customer"
+	ExpandCreditNote   ExpandableField = "credit_note"
 )
 
 // ExpandConfig defines which fields can be expanded and their nested expansions
@@ -62,6 +66,16 @@ var (
 		AllowedFields: []ExpandableField{ExpandFeatures},
 		NestedExpands: map[ExpandableField][]ExpandableField{
 			ExpandFeatures: {}},
+	}
+
+	// CreditNoteExpandConfig defines what can be expanded on a credit note
+	CreditNoteExpandConfig = ExpandConfig{
+		AllowedFields: []ExpandableField{ExpandInvoice, ExpandSubscription, ExpandCustomer},
+		NestedExpands: map[ExpandableField][]ExpandableField{
+			ExpandInvoice:      {},
+			ExpandSubscription: {},
+			ExpandCustomer:     {},
+		},
 	}
 )
 
