@@ -37,7 +37,7 @@ var Module = fx.Options(
 		NewWebhookService,
 
 		// Svix service
-		service.NewSvixService,
+		provideSvixService,
 	),
 )
 
@@ -82,4 +82,12 @@ func providePubSub(
 		logger.Fatalw("unsupported webhook pubsub type", "type", cfg.Webhook.PubSub)
 	}
 	return nil
+}
+
+// provideSvixService creates a new Svix service with error handling
+func provideSvixService(
+	cfg *config.Configuration,
+	logger *logger.Logger,
+) (service.SvixService, error) {
+	return service.NewSvixService(cfg, logger)
 }
