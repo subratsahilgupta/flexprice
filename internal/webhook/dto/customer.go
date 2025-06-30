@@ -8,7 +8,7 @@ type InternalCustomerEvent struct {
 }
 
 type CustomerWebhookPayload struct {
-	Customer *dto.CustomerResponse
+	Customer *dto.CustomerResponse `json:"customer"`
 }
 
 func NewCustomerWebhookPayload(customer *dto.CustomerResponse) *CustomerWebhookPayload {

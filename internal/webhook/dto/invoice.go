@@ -8,7 +8,7 @@ type InternalInvoiceEvent struct {
 }
 
 type InvoiceWebhookPayload struct {
-	Invoice *dto.InvoiceResponse
+	Invoice *dto.InvoiceResponse `json:"invoice"`
 }
 
 func NewInvoiceWebhookPayload(invoice *dto.InvoiceResponse) *InvoiceWebhookPayload {
