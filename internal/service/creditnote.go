@@ -142,9 +142,11 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 		return nil, err
 	}
 
-	// Finalize the credit note
-	if err := s.FinalizeCreditNote(ctx, creditNote.ID); err != nil {
-		return nil, err
+	// Finalize the credit note if the flag is set
+	if req.ProcessCreditNote {
+		if err := s.FinalizeCreditNote(ctx, creditNote.ID); err != nil {
+			return nil, err
+		}
 	}
 
 	// Get the updated credit note after processing
@@ -363,8 +365,8 @@ func (s *creditNoteService) ListCreditNotes(ctx context.Context, filter *types.C
 
 func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error {
 	if id == "" {
-		return ierr.NewError("credit note id is required").
-			WithHint("Credit note ID cannot be empty").
+		return ierr.NewError("missing credit note ID").
+			WithHint("Please provide a valid credit note ID to void.").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -375,8 +377,8 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 
 	// Only draft and finalized credit notes can be voided
 	if cn.CreditNoteStatus != types.CreditNoteStatusDraft && cn.CreditNoteStatus != types.CreditNoteStatusFinalized {
-		return ierr.NewError("credit note status is not allowed").
-			WithHintf("Credit note status - %s is not allowed for voiding. Only draft or finalized credit notes can be voided", cn.CreditNoteStatus).
+		return ierr.NewError("cannot void this credit note").
+			WithHintf("This credit note is %s and cannot be voided. You can only void draft or finalized credit notes.", cn.CreditNoteStatus).
 			WithReportableDetails(map[string]any{
 				"current_status": cn.CreditNoteStatus,
 				"allowed_statuses": []types.CreditNoteStatus{
@@ -389,8 +391,8 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 
 	// Check if this is a refund type credit note that has already been processed
 	if cn.CreditNoteType == types.CreditNoteTypeRefund && cn.CreditNoteStatus == types.CreditNoteStatusFinalized {
-		return ierr.NewError("refund credit note cannot be voided").
-			WithHint("Finalized refund credit note cannot be voided").
+		return ierr.NewError("cannot void completed refund").
+			WithHint("This refund has already been processed and money has been added to the customer's wallet. Refunds cannot be voided once completed.").
 			WithReportableDetails(map[string]any{
 				"credit_note_status": cn.CreditNoteStatus,
 				"credit_note_type":   cn.CreditNoteType,
@@ -398,32 +400,39 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 			Mark(ierr.ErrValidation)
 	}
 
+	// Store original status for logging
+	originalStatus := cn.CreditNoteStatus
+
+	// Update credit note status to voided
 	cn.CreditNoteStatus = types.CreditNoteStatusVoided
 
 	if err := s.CreditNoteRepo.Update(ctx, cn); err != nil {
 		return err
 	}
 
-	// Recalculate invoice amounts
-	invoiceService := NewInvoiceService(s.ServiceParams)
-	if err := invoiceService.RecalculateInvoiceAmounts(ctx, cn.InvoiceID); err != nil {
-		s.Logger.Errorw("failed to recalculate invoice amounts after credit note voiding",
-			"error", err,
-			"credit_note_id", id,
-			"invoice_id", cn.InvoiceID)
+	// Recalculate invoice amounts after credit note void
+	// This is needed to update the adjustment and refunded amounts
+	if originalStatus == types.CreditNoteStatusFinalized {
+		invoiceService := NewInvoiceService(s.ServiceParams)
+		if err := invoiceService.RecalculateInvoiceAmounts(ctx, cn.InvoiceID); err != nil {
+			s.Logger.Errorw("failed to recalculate invoice amounts after credit note void",
+				"error", err,
+				"credit_note_id", cn.ID,
+				"invoice_id", cn.InvoiceID)
+		}
 	}
 
 	s.Logger.Infow("credit note voided successfully",
 		"credit_note_id", id,
-		"previous_status", cn.CreditNoteStatus)
+		"previous_status", originalStatus)
 
 	return nil
 }
 
 func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) error {
 	if id == "" {
-		return ierr.NewError("credit note id is required").
-			WithHint("Credit note ID cannot be empty").
+		return ierr.NewError("missing credit note ID").
+			WithHint("Please provide a valid credit note ID to finalize.").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -433,8 +442,8 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 	}
 
 	if cn.CreditNoteStatus != types.CreditNoteStatusDraft {
-		return ierr.NewError("credit note is not in draft status").
-			WithHint("credit note must be in draft status to be processed").
+		return ierr.NewError("credit note already processed").
+			WithHintf("This credit note is %s and cannot be processed again. Only draft credit notes can be finalized.", cn.CreditNoteStatus).
 			WithReportableDetails(map[string]any{
 				"current_status":  cn.CreditNoteStatus,
 				"required_status": types.CreditNoteStatusDraft,
@@ -444,15 +453,14 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 
 	// Additional validation before processing
 	if cn.TotalAmount.IsZero() || cn.TotalAmount.IsNegative() {
-		return ierr.NewError("invalid credit note amount").
-			WithHint("Credit note total amount must be positive").
+		return ierr.NewError("credit note has no amount").
+			WithHintf("This credit note has an amount of %s, but credit notes must have a positive amount to be processed.", cn.TotalAmount).
 			WithReportableDetails(map[string]any{
 				"total_amount": cn.TotalAmount,
 			}).
 			Mark(ierr.ErrValidation)
 	}
 
-	invoiceService := NewInvoiceService(s.ServiceParams)
 	walletService := NewWalletService(s.ServiceParams)
 
 	// Process the credit note in transaction
@@ -463,7 +471,7 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			return err
 		}
 
-		// Handle refund credit notes
+		// Handle refund credit notes (wallet top-up logic)
 		if cn.CreditNoteType == types.CreditNoteTypeRefund {
 			// Get invoice using transaction context
 			inv, err := s.InvoiceRepo.Get(tx, cn.InvoiceID)
@@ -522,17 +530,15 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 		return err
 	}
 
-	// Recalculate invoice amounts AFTER transaction is committed
-	// This ensures the finalized credit note is visible to the recalculation query
-	if cn.CreditNoteType == types.CreditNoteTypeAdjustment {
-		err = invoiceService.RecalculateInvoiceAmounts(ctx, cn.InvoiceID)
-		if err != nil {
-			s.Logger.Errorw("failed to recalculate invoice amounts after credit note processing",
-				"error", err,
-				"credit_note_id", id,
-				"invoice_id", cn.InvoiceID)
-			return err
-		}
+	// Recalculate invoice amounts after credit note finalization
+	// This is needed to update the adjustment and refunded amounts
+	// TODO: Need to think about this how to retry this
+	invoiceService := NewInvoiceService(s.ServiceParams)
+	if err := invoiceService.RecalculateInvoiceAmounts(ctx, cn.InvoiceID); err != nil {
+		s.Logger.Errorw("failed to recalculate invoice amounts after credit note finalization",
+			"error", err,
+			"credit_note_id", cn.ID,
+			"invoice_id", cn.InvoiceID)
 	}
 
 	s.Logger.Infow("credit note processed successfully",
@@ -566,8 +572,8 @@ func (s *creditNoteService) validateInvoiceEligibility(ctx context.Context, invo
 
 	// validate invoice status
 	if inv.InvoiceStatus != types.InvoiceStatusFinalized {
-		return nil, ierr.NewError("invoice status is not allowed").
-			WithHintf("Invoice must be finalized to issue a credit note").
+		return nil, ierr.NewError("invoice not ready for credit note").
+			WithHintf("You can only create credit notes for finalized invoices. This invoice is currently %s.", inv.InvoiceStatus).
 			WithReportableDetails(map[string]any{
 				"invoice_status": inv.InvoiceStatus,
 			}).
@@ -576,8 +582,8 @@ func (s *creditNoteService) validateInvoiceEligibility(ctx context.Context, invo
 
 	// validate invoice payment status
 	if inv.PaymentStatus == types.PaymentStatusRefunded {
-		return nil, ierr.NewError("invoice payment status is not allowed").
-			WithHintf("Credit note cannot be issued for a refunded invoice").
+		return nil, ierr.NewError("cannot create credit note for fully refunded invoice").
+			WithHintf("This invoice has already been fully refunded, so no additional credit notes can be created.").
 			WithReportableDetails(map[string]any{
 				"invoice_payment_status": inv.PaymentStatus,
 			}).
@@ -603,15 +609,27 @@ func (s *creditNoteService) validateCreditNoteAmounts(ctx context.Context, req *
 
 	// Check if total amount exceeds max creditable amount
 	if totalCreditNoteAmount.GreaterThan(maxCreditableAmount) {
-		return ierr.NewError("total credit note amount is greater than max creditable amount").
+		// Determine credit note type for better messaging
+		creditNoteType, _ := s.getCreditNoteType(inv)
+
+		var messageTemplate string
+		if creditNoteType == types.CreditNoteTypeRefund {
+			messageTemplate = "You can only refund up to %s for this invoice. You're trying to refund %s, but only %s is available based on payments received."
+		} else if creditNoteType == types.CreditNoteTypeAdjustment {
+			messageTemplate = "You can only credit up to %s for this invoice. You're trying to credit %s, but only %s is available after accounting for payments and existing credits."
+		}
+
+		return ierr.NewError("credit amount exceeds available limit").
 			WithHintf(
-				"Credit note amount %s exceeds the available limit of %s. %s has already been credited against this invoice.",
-				totalCreditNoteAmount, maxCreditableAmount, maxCreditableAmount.Sub(totalCreditNoteAmount),
+				messageTemplate,
+				maxCreditableAmount, totalCreditNoteAmount, maxCreditableAmount,
 			).
 			WithReportableDetails(map[string]any{
-				"total_credit_note_amount":    totalCreditNoteAmount,
-				"max_creditable_amount":       maxCreditableAmount,
-				"available_creditable_amount": maxCreditableAmount.Sub(totalCreditNoteAmount),
+				"requested_amount":    totalCreditNoteAmount,
+				"maximum_allowed":     maxCreditableAmount,
+				"credit_note_type":    creditNoteType,
+				"invoice_total":       inv.Total,
+				"invoice_amount_paid": inv.AmountPaid,
 			}).
 			Mark(ierr.ErrValidation)
 	}
@@ -619,40 +637,40 @@ func (s *creditNoteService) validateCreditNoteAmounts(ctx context.Context, req *
 	return nil
 }
 
-// calculateMaxCreditableAmount calculates the maximum amount that can be credited
+// calculateMaxCreditableAmount calculates the maximum amount that can be credited using stored amounts
 func (s *creditNoteService) calculateMaxCreditableAmount(ctx context.Context, inv *invoice.Invoice) (decimal.Decimal, error) {
 	creditNoteType, err := s.getCreditNoteType(inv)
 	if err != nil {
 		return decimal.Zero, err
 	}
 
-	// Get existing non-voided credit notes for this invoice in a single query
-	creditNoteFilter := &types.CreditNoteFilter{
-		InvoiceID:        inv.ID,
-		CreditNoteType:   creditNoteType,
-		CreditNoteStatus: []types.CreditNoteStatus{types.CreditNoteStatusFinalized},
-	}
-
-	creditNotes, err := s.CreditNoteRepo.List(ctx, creditNoteFilter)
-	if err != nil {
-		return decimal.Zero, err
-	}
-
-	// Calculate already credited amount (no need to filter for voided since query excludes them)
-	alreadyCreditedAmount := decimal.Zero
-	for _, creditNote := range creditNotes {
-		alreadyCreditedAmount = alreadyCreditedAmount.Add(creditNote.TotalAmount)
-	}
-
-	// Calculate max creditable amount based on credit note type
+	// Calculate max creditable amount based on credit note type using stored amounts
 	var maxCreditableAmount decimal.Decimal
 	if creditNoteType == types.CreditNoteTypeRefund {
-		maxCreditableAmount = inv.AmountPaid.Sub(alreadyCreditedAmount)
+		// For refunds: max = amount_paid - already_refunded
+		// Example: Invoice total=$100, paid=$100, refunded=$30 → max refund=$70
+		maxCreditableAmount = inv.AmountPaid.Sub(inv.RefundedAmount)
+	} else if creditNoteType == types.CreditNoteTypeAdjustment {
+		// For adjustments: max = total - already_adjusted - amount_paid
+		// Example: Invoice total=$100, paid=$40, adjusted=$0 → max adjustment=$60
+		// This prevents over-crediting: customer paid $40, max adjustment is $60,
+		// resulting in effective invoice amount of $40 (which matches what was paid)
+		maxCreditableAmount = inv.Total.Sub(inv.AdjustmentAmount).Sub(inv.AmountPaid)
 	}
 
-	if creditNoteType == types.CreditNoteTypeAdjustment {
-		maxCreditableAmount = inv.Total.Sub(alreadyCreditedAmount)
+	// Ensure max creditable amount is not negative
+	if maxCreditableAmount.LessThan(decimal.Zero) {
+		maxCreditableAmount = decimal.Zero
 	}
+
+	s.Logger.Debugw("calculated max creditable amount using stored fields",
+		"invoice_id", inv.ID,
+		"credit_note_type", creditNoteType,
+		"invoice_total", inv.Total,
+		"invoice_amount_paid", inv.AmountPaid,
+		"invoice_adjustment_amount", inv.AdjustmentAmount,
+		"invoice_refunded_amount", inv.RefundedAmount,
+		"max_creditable_amount", maxCreditableAmount)
 
 	return maxCreditableAmount, nil
 }
@@ -671,15 +689,15 @@ func (s *creditNoteService) validateLineItems(req *dto.CreateCreditNoteRequest, 
 		invLineItem, ok := invoiceLineItemMap[creditNoteLineItem.InvoiceLineItemID]
 
 		if !ok {
-			return decimal.Zero, ierr.NewError("invoice line item not found").
-				WithHintf("Invoice line item - %s not found", creditNoteLineItem.InvoiceLineItemID).
+			return decimal.Zero, ierr.NewError("invalid line item selected").
+				WithHintf("The line item you're trying to credit (%s) doesn't exist on this invoice.", creditNoteLineItem.InvoiceLineItemID).
 				Mark(ierr.ErrValidation)
 		}
 
 		// Validate line item amount
 		if creditNoteLineItem.Amount.GreaterThan(invLineItem.Amount) {
-			return decimal.Zero, ierr.NewError("credit note line item amount is greater than invoice line item amount").
-				WithHintf("Credit note line item amount - %s is greater than invoice line item amount - %s", creditNoteLineItem.Amount, invLineItem.Amount).
+			return decimal.Zero, ierr.NewError("credit amount too high for line item").
+				WithHintf("You're trying to credit %s for this line item, but it was only charged %s on the original invoice.", creditNoteLineItem.Amount, invLineItem.Amount).
 				WithReportableDetails(map[string]any{
 					"credit_note_line_item_id":     creditNoteLineItem.InvoiceLineItemID,
 					"credit_note_line_item_amount": creditNoteLineItem.Amount,

@@ -98,6 +98,14 @@ type Invoice struct {
 	// environment_id is the ID of the environment this invoice belongs to (for multi-environment setups)
 	EnvironmentID string `json:"environment_id"`
 
+	// adjustment_amount is the total sum of credit notes of type "adjustment".
+	// These are non-cash reductions applied to the invoice (e.g. goodwill credit, billing correction).
+	AdjustmentAmount decimal.Decimal `json:"adjustment_amount"`
+
+	// refunded_amount is the total sum of credit notes of type "refund".
+	// These are actual refunds issued to the customer.
+	RefundedAmount decimal.Decimal `json:"refunded_amount"`
+
 	// common fields including tenant information, creation/update timestamps, and status
 	types.BaseModel
 }
@@ -118,35 +126,37 @@ func FromEnt(e *ent.Invoice) *Invoice {
 	}
 
 	return &Invoice{
-		ID:              e.ID,
-		CustomerID:      e.CustomerID,
-		SubscriptionID:  e.SubscriptionID,
-		InvoiceType:     types.InvoiceType(e.InvoiceType),
-		InvoiceStatus:   types.InvoiceStatus(e.InvoiceStatus),
-		PaymentStatus:   types.PaymentStatus(e.PaymentStatus),
-		Currency:        e.Currency,
-		AmountDue:       e.AmountDue,
-		AmountPaid:      e.AmountPaid,
-		Subtotal:        e.Subtotal,
-		Total:           e.Total,
-		AmountRemaining: e.AmountRemaining,
-		InvoiceNumber:   e.InvoiceNumber,
-		IdempotencyKey:  e.IdempotencyKey,
-		BillingSequence: e.BillingSequence,
-		Description:     e.Description,
-		DueDate:         e.DueDate,
-		PaidAt:          e.PaidAt,
-		VoidedAt:        e.VoidedAt,
-		FinalizedAt:     e.FinalizedAt,
-		BillingPeriod:   e.BillingPeriod,
-		PeriodStart:     e.PeriodStart,
-		PeriodEnd:       e.PeriodEnd,
-		InvoicePDFURL:   e.InvoicePdfURL,
-		BillingReason:   e.BillingReason,
-		Metadata:        e.Metadata,
-		LineItems:       lineItems,
-		Version:         e.Version,
-		EnvironmentID:   e.EnvironmentID,
+		ID:               e.ID,
+		CustomerID:       e.CustomerID,
+		SubscriptionID:   e.SubscriptionID,
+		InvoiceType:      types.InvoiceType(e.InvoiceType),
+		InvoiceStatus:    types.InvoiceStatus(e.InvoiceStatus),
+		PaymentStatus:    types.PaymentStatus(e.PaymentStatus),
+		Currency:         e.Currency,
+		AmountDue:        e.AmountDue,
+		AmountPaid:       e.AmountPaid,
+		Subtotal:         e.Subtotal,
+		Total:            e.Total,
+		AmountRemaining:  e.AmountRemaining,
+		AdjustmentAmount: e.AdjustmentAmount,
+		RefundedAmount:   e.RefundedAmount,
+		InvoiceNumber:    e.InvoiceNumber,
+		IdempotencyKey:   e.IdempotencyKey,
+		BillingSequence:  e.BillingSequence,
+		Description:      e.Description,
+		DueDate:          e.DueDate,
+		PaidAt:           e.PaidAt,
+		VoidedAt:         e.VoidedAt,
+		FinalizedAt:      e.FinalizedAt,
+		BillingPeriod:    e.BillingPeriod,
+		PeriodStart:      e.PeriodStart,
+		PeriodEnd:        e.PeriodEnd,
+		InvoicePDFURL:    e.InvoicePdfURL,
+		BillingReason:    e.BillingReason,
+		Metadata:         e.Metadata,
+		LineItems:        lineItems,
+		Version:          e.Version,
+		EnvironmentID:    e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

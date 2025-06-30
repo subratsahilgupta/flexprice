@@ -34,6 +34,9 @@ type CreateCreditNoteRequest struct {
 
 	// idempotency_key is an optional key used to prevent duplicate credit note creation
 	IdempotencyKey *string `json:"idempotency_key" validate:"omitempty"`
+
+	// process_credit_note is a flag to process the credit note after creation
+	ProcessCreditNote bool `json:"process_credit_note" validate:"omitempty"`
 }
 
 func (r *CreateCreditNoteRequest) Validate() error {
