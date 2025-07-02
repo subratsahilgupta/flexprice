@@ -460,14 +460,14 @@ func (a *SumWithMultiAggregator) GetQuery(ctx context.Context, params *events.Us
 	filterConditions := buildFilterConditions(params.Filters)
 	timeConditions := buildTimeConditions(params)
 
-	multiplier := int64(1)
+	multiplier := float64(1.00)
 	if params.Multiplier != nil {
 		multiplier = *params.Multiplier
 	}
 
 	return fmt.Sprintf(`
         SELECT 
-            %s (sum(value) * %d) as total
+            %s (sum(value) * %f) as total
         FROM (
             SELECT
                 %s anyLast(JSONExtractFloat(assumeNotNull(properties), '%s')) as value

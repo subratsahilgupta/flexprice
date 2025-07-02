@@ -61,7 +61,7 @@ type Aggregation struct {
 	// Multiplier is the multiplier for the aggregation
 	// For ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000
 	// to scale up by a factor of 1000
-	Multiplier int64 `json:"multiplier,omitempty"`
+	Multiplier float64 `json:"multiplier,omitempty"`
 }
 
 // FromEnt converts an Ent Meter to a domain Meter

@@ -79,5 +79,5 @@ type MeterFilter struct {
 type MeterAggregation struct {
 	Type       types.AggregationType `json:"type"`
 	Field      string                `json:"field,omitempty"`
-	Multiplier int64                 `json:"multiplier,omitempty"`
+	Multiplier float64               `json:"multiplier,omitempty"`
 }
