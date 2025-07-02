@@ -523,22 +523,25 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			}
 		}
 
+		// Recalculate invoice amounts after credit note finalization
+		// This is needed to update the adjustment and refunded amounts
+		inv, err := s.InvoiceRepo.Get(ctx, cn.InvoiceID)
+		if err != nil {
+			return err
+		}
+
+		if err := s.RecalculateInvoiceAmountsForCreditNote(ctx, inv, cn); err != nil {
+			s.Logger.Errorw("failed to recalculate invoice amounts after credit note finalization",
+				"error", err,
+				"credit_note_id", cn.ID,
+				"invoice_id", cn.InvoiceID)
+		}
+
 		return nil
 	})
 
 	if err != nil {
 		return err
-	}
-
-	// Recalculate invoice amounts after credit note finalization
-	// This is needed to update the adjustment and refunded amounts
-	// TODO: Need to think about this how to retry this
-	invoiceService := NewInvoiceService(s.ServiceParams)
-	if err := invoiceService.RecalculateInvoiceAmounts(ctx, cn.InvoiceID); err != nil {
-		s.Logger.Errorw("failed to recalculate invoice amounts after credit note finalization",
-			"error", err,
-			"credit_note_id", cn.ID,
-			"invoice_id", cn.InvoiceID)
 	}
 
 	s.Logger.Infow("credit note processed successfully",
@@ -736,4 +739,48 @@ func (s *creditNoteService) getCreditNoteType(inv *invoice.Invoice) (types.Credi
 			}).
 			Mark(ierr.ErrValidation)
 	}
+}
+
+func (c *creditNoteService) RecalculateInvoiceAmountsForCreditNote(ctx context.Context, inv *invoice.Invoice, cn *creditnote.CreditNote) error {
+	// Validate invoice status
+	if inv.InvoiceStatus != types.InvoiceStatusFinalized {
+		c.Logger.Infow("invoice is not finalized, skipping recalculation", "invoice_id", inv.ID)
+		return nil
+	}
+
+	// Update amounts and payment status based on credit note type
+	if cn.CreditNoteType == types.CreditNoteTypeRefund {
+		inv.RefundedAmount = inv.RefundedAmount.Add(cn.TotalAmount)
+
+		// Update payment status based on refund amount
+		if inv.RefundedAmount.Equal(inv.AmountPaid) {
+			inv.PaymentStatus = types.PaymentStatusRefunded
+		} else if inv.RefundedAmount.GreaterThan(decimal.Zero) {
+			inv.PaymentStatus = types.PaymentStatusPartiallyRefunded
+		}
+
+	} else if cn.CreditNoteType == types.CreditNoteTypeAdjustment {
+		inv.AdjustmentAmount = inv.AdjustmentAmount.Add(cn.TotalAmount)
+		inv.AmountDue = inv.Total.Sub(inv.AdjustmentAmount)
+
+		// Recalculate remaining amount (ensure it doesn't go negative)
+		inv.AmountRemaining = decimal.Max(inv.AmountDue.Sub(inv.AmountPaid), decimal.Zero)
+
+		// Update payment status if invoice is now fully satisfied
+		if inv.AmountRemaining.Equal(decimal.Zero) {
+			inv.PaymentStatus = types.PaymentStatusSucceeded
+		}
+	}
+
+	if err := c.InvoiceRepo.Update(ctx, inv); err != nil {
+		return err
+	}
+
+	// Log the changes made
+	c.Logger.Infow("invoice amounts recalculated after credit note",
+		"invoice_id", inv.ID,
+		"credit_note_id", cn.ID,
+	)
+
+	return nil
 }
