@@ -95,6 +95,21 @@ func (Invoice) Fields() []ent.Field {
 			Optional().
 			Default(decimal.Zero),
 
+		// adjustment_amount is the total sum of credit notes of type "adjustment".
+		field.Other("adjustment_amount", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(20,8)",
+			}).
+			Optional().
+			Default(decimal.Zero),
+
+		field.Other("refunded_amount", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(20,8)",
+			}).
+			Optional().
+			Default(decimal.Zero),
+
 		field.Other("total", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,8)",

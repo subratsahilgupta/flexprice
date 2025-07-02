@@ -49,6 +49,10 @@ const (
 	FieldAmountRemaining = "amount_remaining"
 	// FieldSubtotal holds the string denoting the subtotal field in the database.
 	FieldSubtotal = "subtotal"
+	// FieldAdjustmentAmount holds the string denoting the adjustment_amount field in the database.
+	FieldAdjustmentAmount = "adjustment_amount"
+	// FieldRefundedAmount holds the string denoting the refunded_amount field in the database.
+	FieldRefundedAmount = "refunded_amount"
 	// FieldTotal holds the string denoting the total field in the database.
 	FieldTotal = "total"
 	// FieldDescription holds the string denoting the description field in the database.
@@ -114,6 +118,8 @@ var Columns = []string{
 	FieldAmountPaid,
 	FieldAmountRemaining,
 	FieldSubtotal,
+	FieldAdjustmentAmount,
+	FieldRefundedAmount,
 	FieldTotal,
 	FieldDescription,
 	FieldDueDate,
@@ -173,6 +179,10 @@ var (
 	DefaultAmountRemaining decimal.Decimal
 	// DefaultSubtotal holds the default value on creation for the "subtotal" field.
 	DefaultSubtotal decimal.Decimal
+	// DefaultAdjustmentAmount holds the default value on creation for the "adjustment_amount" field.
+	DefaultAdjustmentAmount decimal.Decimal
+	// DefaultRefundedAmount holds the default value on creation for the "refunded_amount" field.
+	DefaultRefundedAmount decimal.Decimal
 	// DefaultTotal holds the default value on creation for the "total" field.
 	DefaultTotal decimal.Decimal
 	// DefaultVersion holds the default value on creation for the "version" field.
@@ -270,6 +280,16 @@ func ByAmountRemaining(opts ...sql.OrderTermOption) OrderOption {
 // BySubtotal orders the results by the subtotal field.
 func BySubtotal(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubtotal, opts...).ToFunc()
+}
+
+// ByAdjustmentAmount orders the results by the adjustment_amount field.
+func ByAdjustmentAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAdjustmentAmount, opts...).ToFunc()
+}
+
+// ByRefundedAmount orders the results by the refunded_amount field.
+func ByRefundedAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRefundedAmount, opts...).ToFunc()
 }
 
 // ByTotal orders the results by the total field.

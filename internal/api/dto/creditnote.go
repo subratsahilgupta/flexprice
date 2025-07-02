@@ -17,7 +17,7 @@ type CreateCreditNoteRequest struct {
 	// credit_note_number is an optional human-readable identifier for the credit note
 	CreditNoteNumber string `json:"credit_note_number" validate:"omitempty"`
 
-	// invoice_id is the unique identifier of the invoice this credit note is applied to
+// invoice_id is the unique identifier of the invoice this credit note is applied to
 	InvoiceID string `json:"invoice_id" validate:"required"`
 
 	// memo is an optional free-text field for additional notes about the credit note
@@ -34,6 +34,9 @@ type CreateCreditNoteRequest struct {
 
 	// idempotency_key is an optional key used to prevent duplicate credit note creation
 	IdempotencyKey *string `json:"idempotency_key" validate:"omitempty"`
+
+	// process_credit_note is a flag to process the credit note after creation
+	ProcessCreditNote bool `json:"process_credit_note" validate:"omitempty" default:"true"`
 }
 
 func (r *CreateCreditNoteRequest) Validate() error {
