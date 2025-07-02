@@ -80,12 +80,16 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetVersion(inv.Version).
 		SetStatus(string(inv.Status)).
 		SetCreatedAt(inv.CreatedAt).
+		SetTotal(inv.Total).
+		SetSubtotal(inv.Subtotal).
 		SetUpdatedAt(inv.UpdatedAt).
 		SetCreatedBy(inv.CreatedBy).
 		SetUpdatedBy(inv.UpdatedBy).
 		SetNillablePeriodStart(inv.PeriodStart).
 		SetNillablePeriodEnd(inv.PeriodEnd).
 		SetEnvironmentID(inv.EnvironmentID).
+		SetAdjustmentAmount(inv.AdjustmentAmount).
+		SetRefundedAmount(inv.RefundedAmount).
 		Save(ctx)
 
 	if err != nil {
@@ -179,7 +183,11 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			SetCreatedAt(inv.CreatedAt).
 			SetUpdatedAt(inv.UpdatedAt).
 			SetCreatedBy(inv.CreatedBy).
+			SetTotal(inv.Total).
+			SetSubtotal(inv.Subtotal).
 			SetUpdatedBy(inv.UpdatedBy).
+			SetAdjustmentAmount(inv.AdjustmentAmount).
+			SetRefundedAmount(inv.RefundedAmount).
 			SetNillablePeriodStart(inv.PeriodStart).
 			SetNillablePeriodEnd(inv.PeriodEnd).
 			SetEnvironmentID(inv.EnvironmentID).
@@ -377,7 +385,9 @@ func (r *invoiceRepository) Get(ctx context.Context, id string) (*domainInvoice.
 			invoice.TenantID(types.GetTenantID(ctx)),
 			invoice.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
-		WithLineItems().
+		WithLineItems(func(q *ent.InvoiceLineItemQuery) {
+			q.Where(invoicelineitem.Status(string(types.StatusPublished)))
+		}).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -430,6 +440,8 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetNillableInvoicePdfURL(inv.InvoicePDFURL).
 		SetBillingReason(string(inv.BillingReason)).
 		SetMetadata(inv.Metadata).
+		SetAdjustmentAmount(inv.AdjustmentAmount).
+		SetRefundedAmount(inv.RefundedAmount).
 		SetUpdatedAt(time.Now()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		AddVersion(1) // Increment version atomically
@@ -519,7 +531,9 @@ func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilte
 
 	client := r.client.Querier(ctx)
 	query := client.Invoice.Query().
-		WithLineItems()
+		WithLineItems(func(q *ent.InvoiceLineItemQuery) {
+			q.Where(invoicelineitem.Status(string(types.StatusPublished)))
+		})
 
 	// Apply common query options
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
