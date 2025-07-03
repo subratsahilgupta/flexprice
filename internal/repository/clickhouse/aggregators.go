@@ -8,6 +8,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 )
 
 func GetAggregator(aggregationType types.AggregationType) events.Aggregator {
@@ -460,7 +461,7 @@ func (a *SumWithMultiAggregator) GetQuery(ctx context.Context, params *events.Us
 	filterConditions := buildFilterConditions(params.Filters)
 	timeConditions := buildTimeConditions(params)
 
-	multiplier := float64(1.00)
+	multiplier := decimal.NewFromInt(1)
 	if params.Multiplier != nil {
 		multiplier = *params.Multiplier
 	}
@@ -484,7 +485,7 @@ func (a *SumWithMultiAggregator) GetQuery(ctx context.Context, params *events.Us
         %s
     `,
 		selectClause,
-		multiplier,
+		multiplier.InexactFloat64(),
 		windowClause,
 		params.PropertyName,
 		types.GetTenantID(ctx),
