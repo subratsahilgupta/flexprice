@@ -228,6 +228,34 @@ func (ic *InvoiceCreate) SetNillableSubtotal(d *decimal.Decimal) *InvoiceCreate 
 	return ic
 }
 
+// SetAdjustmentAmount sets the "adjustment_amount" field.
+func (ic *InvoiceCreate) SetAdjustmentAmount(d decimal.Decimal) *InvoiceCreate {
+	ic.mutation.SetAdjustmentAmount(d)
+	return ic
+}
+
+// SetNillableAdjustmentAmount sets the "adjustment_amount" field if the given value is not nil.
+func (ic *InvoiceCreate) SetNillableAdjustmentAmount(d *decimal.Decimal) *InvoiceCreate {
+	if d != nil {
+		ic.SetAdjustmentAmount(*d)
+	}
+	return ic
+}
+
+// SetRefundedAmount sets the "refunded_amount" field.
+func (ic *InvoiceCreate) SetRefundedAmount(d decimal.Decimal) *InvoiceCreate {
+	ic.mutation.SetRefundedAmount(d)
+	return ic
+}
+
+// SetNillableRefundedAmount sets the "refunded_amount" field if the given value is not nil.
+func (ic *InvoiceCreate) SetNillableRefundedAmount(d *decimal.Decimal) *InvoiceCreate {
+	if d != nil {
+		ic.SetRefundedAmount(*d)
+	}
+	return ic
+}
+
 // SetTotal sets the "total" field.
 func (ic *InvoiceCreate) SetTotal(d decimal.Decimal) *InvoiceCreate {
 	ic.mutation.SetTotal(d)
@@ -540,6 +568,14 @@ func (ic *InvoiceCreate) defaults() {
 		v := invoice.DefaultSubtotal
 		ic.mutation.SetSubtotal(v)
 	}
+	if _, ok := ic.mutation.AdjustmentAmount(); !ok {
+		v := invoice.DefaultAdjustmentAmount
+		ic.mutation.SetAdjustmentAmount(v)
+	}
+	if _, ok := ic.mutation.RefundedAmount(); !ok {
+		v := invoice.DefaultRefundedAmount
+		ic.mutation.SetRefundedAmount(v)
+	}
 	if _, ok := ic.mutation.Total(); !ok {
 		v := invoice.DefaultTotal
 		ic.mutation.SetTotal(v)
@@ -713,6 +749,14 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 	if value, ok := ic.mutation.Subtotal(); ok {
 		_spec.SetField(invoice.FieldSubtotal, field.TypeOther, value)
 		_node.Subtotal = value
+	}
+	if value, ok := ic.mutation.AdjustmentAmount(); ok {
+		_spec.SetField(invoice.FieldAdjustmentAmount, field.TypeOther, value)
+		_node.AdjustmentAmount = value
+	}
+	if value, ok := ic.mutation.RefundedAmount(); ok {
+		_spec.SetField(invoice.FieldRefundedAmount, field.TypeOther, value)
+		_node.RefundedAmount = value
 	}
 	if value, ok := ic.mutation.Total(); ok {
 		_spec.SetField(invoice.FieldTotal, field.TypeOther, value)

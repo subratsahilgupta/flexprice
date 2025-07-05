@@ -151,6 +151,16 @@ func Subtotal(v decimal.Decimal) predicate.Invoice {
 	return predicate.Invoice(sql.FieldEQ(FieldSubtotal, v))
 }
 
+// AdjustmentAmount applies equality check predicate on the "adjustment_amount" field. It's identical to AdjustmentAmountEQ.
+func AdjustmentAmount(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldAdjustmentAmount, v))
+}
+
+// RefundedAmount applies equality check predicate on the "refunded_amount" field. It's identical to RefundedAmountEQ.
+func RefundedAmount(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldRefundedAmount, v))
+}
+
 // Total applies equality check predicate on the "total" field. It's identical to TotalEQ.
 func Total(v decimal.Decimal) predicate.Invoice {
 	return predicate.Invoice(sql.FieldEQ(FieldTotal, v))
@@ -1229,6 +1239,106 @@ func SubtotalIsNil() predicate.Invoice {
 // SubtotalNotNil applies the NotNil predicate on the "subtotal" field.
 func SubtotalNotNil() predicate.Invoice {
 	return predicate.Invoice(sql.FieldNotNull(FieldSubtotal))
+}
+
+// AdjustmentAmountEQ applies the EQ predicate on the "adjustment_amount" field.
+func AdjustmentAmountEQ(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldAdjustmentAmount, v))
+}
+
+// AdjustmentAmountNEQ applies the NEQ predicate on the "adjustment_amount" field.
+func AdjustmentAmountNEQ(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNEQ(FieldAdjustmentAmount, v))
+}
+
+// AdjustmentAmountIn applies the In predicate on the "adjustment_amount" field.
+func AdjustmentAmountIn(vs ...decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldIn(FieldAdjustmentAmount, vs...))
+}
+
+// AdjustmentAmountNotIn applies the NotIn predicate on the "adjustment_amount" field.
+func AdjustmentAmountNotIn(vs ...decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotIn(FieldAdjustmentAmount, vs...))
+}
+
+// AdjustmentAmountGT applies the GT predicate on the "adjustment_amount" field.
+func AdjustmentAmountGT(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGT(FieldAdjustmentAmount, v))
+}
+
+// AdjustmentAmountGTE applies the GTE predicate on the "adjustment_amount" field.
+func AdjustmentAmountGTE(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGTE(FieldAdjustmentAmount, v))
+}
+
+// AdjustmentAmountLT applies the LT predicate on the "adjustment_amount" field.
+func AdjustmentAmountLT(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLT(FieldAdjustmentAmount, v))
+}
+
+// AdjustmentAmountLTE applies the LTE predicate on the "adjustment_amount" field.
+func AdjustmentAmountLTE(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLTE(FieldAdjustmentAmount, v))
+}
+
+// AdjustmentAmountIsNil applies the IsNil predicate on the "adjustment_amount" field.
+func AdjustmentAmountIsNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldIsNull(FieldAdjustmentAmount))
+}
+
+// AdjustmentAmountNotNil applies the NotNil predicate on the "adjustment_amount" field.
+func AdjustmentAmountNotNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotNull(FieldAdjustmentAmount))
+}
+
+// RefundedAmountEQ applies the EQ predicate on the "refunded_amount" field.
+func RefundedAmountEQ(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldRefundedAmount, v))
+}
+
+// RefundedAmountNEQ applies the NEQ predicate on the "refunded_amount" field.
+func RefundedAmountNEQ(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNEQ(FieldRefundedAmount, v))
+}
+
+// RefundedAmountIn applies the In predicate on the "refunded_amount" field.
+func RefundedAmountIn(vs ...decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldIn(FieldRefundedAmount, vs...))
+}
+
+// RefundedAmountNotIn applies the NotIn predicate on the "refunded_amount" field.
+func RefundedAmountNotIn(vs ...decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotIn(FieldRefundedAmount, vs...))
+}
+
+// RefundedAmountGT applies the GT predicate on the "refunded_amount" field.
+func RefundedAmountGT(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGT(FieldRefundedAmount, v))
+}
+
+// RefundedAmountGTE applies the GTE predicate on the "refunded_amount" field.
+func RefundedAmountGTE(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGTE(FieldRefundedAmount, v))
+}
+
+// RefundedAmountLT applies the LT predicate on the "refunded_amount" field.
+func RefundedAmountLT(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLT(FieldRefundedAmount, v))
+}
+
+// RefundedAmountLTE applies the LTE predicate on the "refunded_amount" field.
+func RefundedAmountLTE(v decimal.Decimal) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLTE(FieldRefundedAmount, v))
+}
+
+// RefundedAmountIsNil applies the IsNil predicate on the "refunded_amount" field.
+func RefundedAmountIsNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldIsNull(FieldRefundedAmount))
+}
+
+// RefundedAmountNotNil applies the NotNil predicate on the "refunded_amount" field.
+func RefundedAmountNotNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotNull(FieldRefundedAmount))
 }
 
 // TotalEQ applies the EQ predicate on the "total" field.

@@ -1060,7 +1060,6 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 	// Get all adjustment credit notes for the invoice
 	filter := &types.CreditNoteFilter{
 		InvoiceID:        inv.ID,
-		CreditNoteType:   types.CreditNoteTypeAdjustment,
 		CreditNoteStatus: []types.CreditNoteStatus{types.CreditNoteStatusFinalized},
 		QueryFilter:      types.NewNoLimitPublishedQueryFilter(),
 	}
@@ -1070,13 +1069,20 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 		return err
 	}
 
-	// Calculate total adjustment credits
-	totalAdjustmentCredits := decimal.Zero
+	totalAdjustmentAmount := decimal.Zero
+	totalRefundAmount := decimal.Zero
 	for _, creditNote := range creditNotes {
-		totalAdjustmentCredits = totalAdjustmentCredits.Add(creditNote.TotalAmount)
+		if creditNote.CreditNoteType == types.CreditNoteTypeRefund {
+			totalRefundAmount = totalRefundAmount.Add(creditNote.TotalAmount)
+		} else {
+			totalAdjustmentAmount = totalAdjustmentAmount.Add(creditNote.TotalAmount)
+		}
 	}
 
-	inv.AmountDue = inv.Total.Sub(totalAdjustmentCredits)
+	// Calculate total adjustment credits
+	inv.AdjustmentAmount = totalAdjustmentAmount
+	inv.RefundedAmount = totalRefundAmount
+	inv.AmountDue = inv.Total.Sub(totalAdjustmentAmount)
 	remaining := inv.AmountDue.Sub(inv.AmountPaid)
 	if remaining.IsPositive() {
 		inv.AmountRemaining = remaining
