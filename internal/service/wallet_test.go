@@ -190,7 +190,7 @@ func (s *WalletServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_TIERED,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
-		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		InvoiceCadence:     types.InvoiceCadenceArrear,
 		TierMode:           types.BILLING_TIER_SLAB,
 		MeterID:            s.testData.meters.apiCalls.ID,
 		Tiers: []price.PriceTier{
@@ -212,7 +212,7 @@ func (s *WalletServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
-		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		InvoiceCadence:     types.InvoiceCadenceArrear,
 		MeterID:            s.testData.meters.storage.ID,
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 	}
@@ -228,7 +228,7 @@ func (s *WalletServiceSuite) setupTestData() {
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
-		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		InvoiceCadence:     types.InvoiceCadenceArrear,
 		MeterID:            s.testData.meters.storageArchive.ID,
 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 	}
@@ -293,6 +293,7 @@ func (s *WalletServiceSuite) setupTestData() {
 				DisplayName:      s.testData.meters.storage.Name,
 				Quantity:         decimal.NewFromInt(0),
 				BillingPeriod:    types.BILLING_PERIOD_MONTHLY,
+				InvoiceCadence:   types.InvoiceCadenceArrear,
 				StartDate:        s.testData.now.Add(-24 * time.Hour),
 				EndDate:          s.testData.now.Add(6 * 24 * time.Hour),
 				Metadata:         map[string]string{},
@@ -309,6 +310,7 @@ func (s *WalletServiceSuite) setupTestData() {
 				DisplayName:      s.testData.meters.storageArchive.Name,
 				Quantity:         decimal.NewFromInt(0),
 				BillingPeriod:    types.BILLING_PERIOD_MONTHLY,
+				InvoiceCadence:   types.InvoiceCadenceArrear,
 				StartDate:        s.testData.now.Add(-24 * time.Hour),
 				EndDate:          s.testData.now.Add(6 * 24 * time.Hour),
 				Metadata:         map[string]string{},
@@ -325,6 +327,7 @@ func (s *WalletServiceSuite) setupTestData() {
 				DisplayName:      s.testData.meters.apiCalls.Name,
 				Quantity:         decimal.NewFromInt(0),
 				BillingPeriod:    types.BILLING_PERIOD_MONTHLY,
+				InvoiceCadence:   types.InvoiceCadenceArrear,
 				StartDate:        s.testData.now.Add(-24 * time.Hour),
 				EndDate:          s.testData.now.Add(6 * 24 * time.Hour),
 				Metadata:         map[string]string{},
@@ -388,6 +391,8 @@ func (s *WalletServiceSuite) setupTestData() {
 			StartDate:          s.testData.now.Add(-24 * time.Hour),
 			CurrentPeriodStart: s.testData.now.Add(-24 * time.Hour),
 			CurrentPeriodEnd:   s.testData.now.Add(6 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 		},
 		{
@@ -399,6 +404,8 @@ func (s *WalletServiceSuite) setupTestData() {
 			StartDate:          s.testData.now.Add(-24 * time.Hour),
 			CurrentPeriodStart: s.testData.now.Add(-24 * time.Hour),
 			CurrentPeriodEnd:   s.testData.now.Add(6 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 		},
 		{
@@ -410,6 +417,8 @@ func (s *WalletServiceSuite) setupTestData() {
 			StartDate:          s.testData.now.Add(-24 * time.Hour),
 			CurrentPeriodStart: s.testData.now.Add(-24 * time.Hour),
 			CurrentPeriodEnd:   s.testData.now.Add(6 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 		},
 	}
@@ -426,6 +435,7 @@ func (s *WalletServiceSuite) setupTestData() {
 			DisplayName:      s.testData.meters.storage.Name,
 			Quantity:         decimal.NewFromInt(0),
 			BillingPeriod:    types.BILLING_PERIOD_MONTHLY,
+			InvoiceCadence:   types.InvoiceCadenceArrear,
 			StartDate:        s.testData.now.Add(-24 * time.Hour),
 			EndDate:          s.testData.now.Add(6 * 24 * time.Hour),
 			Metadata:         map[string]string{},
@@ -442,6 +452,7 @@ func (s *WalletServiceSuite) setupTestData() {
 			DisplayName:      s.testData.meters.storageArchive.Name,
 			Quantity:         decimal.NewFromInt(0),
 			BillingPeriod:    types.BILLING_PERIOD_MONTHLY,
+			InvoiceCadence:   types.InvoiceCadenceArrear,
 			StartDate:        s.testData.now.Add(-24 * time.Hour),
 			EndDate:          s.testData.now.Add(6 * 24 * time.Hour),
 			Metadata:         map[string]string{},
@@ -458,6 +469,7 @@ func (s *WalletServiceSuite) setupTestData() {
 			DisplayName:      s.testData.meters.apiCalls.Name,
 			Quantity:         decimal.NewFromInt(0),
 			BillingPeriod:    types.BILLING_PERIOD_MONTHLY,
+			InvoiceCadence:   types.InvoiceCadenceArrear,
 			StartDate:        s.testData.now.Add(-24 * time.Hour),
 			EndDate:          s.testData.now.Add(6 * 24 * time.Hour),
 			Metadata:         map[string]string{},
@@ -766,14 +778,14 @@ func (s *WalletServiceSuite) TestGetWalletBalance() {
 		expectedError           bool
 		expectedRealTimeBalance decimal.Decimal
 		expectedUnpaidAmount    decimal.Decimal
-		expectedCurrentUsage    decimal.Decimal
+		expectedUpcomingTotal   decimal.Decimal
 	}{
 		{
 			name:                    "Success - Active wallet with matching currency",
 			walletID:                s.testData.wallet.ID,
-			expectedRealTimeBalance: decimal.NewFromInt(705), // 1000 - 250 - 45
-			expectedUnpaidAmount:    decimal.NewFromInt(250), // 100 + 150 (USD invoices only)
-			expectedCurrentUsage:    decimal.NewFromInt(45),  // Total usage amount from billing service
+			expectedRealTimeBalance: decimal.NewFromInt(705), // Initial balance (1000) - Unpaid invoices (250) - Upcoming invoices (45)
+			expectedUnpaidAmount:    decimal.NewFromInt(250), // Sum of unpaid finalized invoices in USD
+			expectedUpcomingTotal:   decimal.NewFromInt(45),  // Total upcoming invoice amount
 		},
 		{
 			name:          "Error - Invalid wallet ID",
@@ -785,7 +797,7 @@ func (s *WalletServiceSuite) TestGetWalletBalance() {
 			walletID:                "wallet_inactive",
 			expectedRealTimeBalance: decimal.NewFromInt(0),
 			expectedUnpaidAmount:    decimal.NewFromInt(0),
-			expectedCurrentUsage:    decimal.NewFromInt(0),
+			expectedUpcomingTotal:   decimal.NewFromInt(0),
 			expectedError:           false,
 		},
 	}
@@ -821,9 +833,9 @@ func (s *WalletServiceSuite) TestGetWalletBalance() {
 			s.True(tc.expectedUnpaidAmount.Equal(lo.FromPtr(resp.UnpaidInvoiceAmount)),
 				"UnpaidInvoiceAmount mismatch: expected %s, got %s",
 				tc.expectedUnpaidAmount, lo.FromPtr(resp.UnpaidInvoiceAmount))
-			s.True(tc.expectedCurrentUsage.Equal(lo.FromPtr(resp.CurrentPeriodUsage)),
-				"CurrentPeriodUsage mismatch: expected %s, got %s",
-				tc.expectedCurrentUsage, lo.FromPtr(resp.CurrentPeriodUsage))
+			s.True(tc.expectedUpcomingTotal.Equal(lo.FromPtr(resp.UpcomingInvoiceTotal)),
+				"UpcomingInvoiceTotal mismatch: expected %s, got %s",
+				tc.expectedUpcomingTotal, lo.FromPtr(resp.UpcomingInvoiceTotal))
 			s.NotZero(resp.BalanceUpdatedAt)
 			s.NotNil(resp.Wallet)
 		})
@@ -1528,7 +1540,7 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 		setupFunc               func()
 		expectedRealTimeBalance decimal.Decimal
 		expectedUnpaidAmount    decimal.Decimal
-		expectedCurrentUsage    decimal.Decimal
+		expectedUpcomingTotal   decimal.Decimal
 		wantErr                 bool
 	}{
 		{
@@ -1548,9 +1560,9 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 				_, err := s.GetStores().EntitlementRepo.Create(s.GetContext(), entitlement)
 				s.NoError(err)
 			},
-			expectedRealTimeBalance: decimal.NewFromInt(750), // 1000 - 250 - 0
-			expectedUnpaidAmount:    decimal.NewFromInt(250), // 100 + 150 (USD invoices)
-			expectedCurrentUsage:    decimal.NewFromInt(0),   // No usage charges due to entitlement
+			expectedRealTimeBalance: decimal.NewFromInt(750), // Initial balance (1000) - Unpaid invoices (250)
+			expectedUnpaidAmount:    decimal.NewFromInt(250), // Sum of unpaid finalized invoices
+			expectedUpcomingTotal:   decimal.Zero,            // No upcoming invoices due to entitlement
 			wantErr:                 false,
 		},
 		{
@@ -1570,9 +1582,9 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 				_, err := s.GetStores().EntitlementRepo.Create(s.GetContext(), entitlement)
 				s.NoError(err)
 			},
-			expectedRealTimeBalance: decimal.NewFromInt(750), // 1000 - 250 - 0
-			expectedUnpaidAmount:    decimal.NewFromInt(250), // 100 + 150 (USD invoices)
-			expectedCurrentUsage:    decimal.NewFromInt(0),   // No usage charges due to entitlement
+			expectedRealTimeBalance: decimal.NewFromInt(750), // Initial balance (1000) - Unpaid invoices (250)
+			expectedUnpaidAmount:    decimal.NewFromInt(250), // Sum of unpaid finalized invoices
+			expectedUpcomingTotal:   decimal.Zero,            // No upcoming invoices due to entitlement
 			wantErr:                 false,
 		},
 		{
@@ -1592,9 +1604,9 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 				_, err := s.GetStores().EntitlementRepo.Create(s.GetContext(), entitlement)
 				s.NoError(err)
 			},
-			expectedRealTimeBalance: decimal.NewFromInt(750), // 1000 - 250 - 0
-			expectedUnpaidAmount:    decimal.NewFromInt(250), // 100 + 150 (USD invoices)
-			expectedCurrentUsage:    decimal.NewFromInt(0),   // No usage charges due to entitlement
+			expectedRealTimeBalance: decimal.NewFromInt(750), // Initial balance (1000) - Unpaid invoices (250)
+			expectedUnpaidAmount:    decimal.NewFromInt(250), // Sum of unpaid finalized invoices
+			expectedUpcomingTotal:   decimal.Zero,            // No upcoming invoices due to entitlement
 			wantErr:                 false,
 		},
 		{
@@ -1614,9 +1626,9 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 				_, err := s.GetStores().EntitlementRepo.Create(s.GetContext(), entitlement)
 				s.NoError(err)
 			},
-			expectedRealTimeBalance: decimal.NewFromInt(750), // 1000 - 250 - 0
-			expectedUnpaidAmount:    decimal.NewFromInt(250), // 100 + 150 (USD invoices)
-			expectedCurrentUsage:    decimal.NewFromInt(0),   // No usage charges due to entitlement
+			expectedRealTimeBalance: decimal.NewFromInt(750), // Initial balance (1000) - Unpaid invoices (250)
+			expectedUnpaidAmount:    decimal.NewFromInt(250), // Sum of unpaid finalized invoices
+			expectedUpcomingTotal:   decimal.Zero,            // No upcoming invoices since it's handled at invoice calculation level
 			wantErr:                 false,
 		},
 	}
@@ -1640,9 +1652,9 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 			s.True(tt.expectedUnpaidAmount.Equal(lo.FromPtr(resp.UnpaidInvoiceAmount)),
 				"UnpaidInvoiceAmount mismatch: expected %s, got %s",
 				tt.expectedUnpaidAmount, lo.FromPtr(resp.UnpaidInvoiceAmount))
-			s.True(tt.expectedCurrentUsage.Equal(lo.FromPtr(resp.CurrentPeriodUsage)),
-				"CurrentPeriodUsage mismatch: expected %s, got %s",
-				tt.expectedCurrentUsage, lo.FromPtr(resp.CurrentPeriodUsage))
+			s.True(tt.expectedUpcomingTotal.Equal(lo.FromPtr(resp.UpcomingInvoiceTotal)),
+				"UpcomingInvoiceTotal mismatch: expected %s, got %s",
+				tt.expectedUpcomingTotal, lo.FromPtr(resp.UpcomingInvoiceTotal))
 		})
 	}
 }
