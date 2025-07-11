@@ -260,18 +260,22 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		// handle if plan has credit grants
-		planCreditGrants, err := s.CreditGrantRepo.GetByPlan(ctx, plan.ID)
+		creditGrantService := NewCreditGrantService(s.ServiceParams)
+		filter := types.NewNoLimitCreditGrantFilter()
+		filter.PlanIDs = []string{plan.ID}
+		planCreditGrants, err := creditGrantService.ListCreditGrants(ctx, filter)
 		if err != nil {
 			return err
 		}
+		s.Logger.Infow("plan has credit grants", "plan_id", plan.ID, "credit_grants_count", len(planCreditGrants.Items))
 
 		// add credit grants from request to the list
 		creditGrantRequests := make([]dto.CreateCreditGrantRequest, 0)
 		creditGrantRequests = append(creditGrantRequests, req.CreditGrants...)
 
 		// if plan has credit grants, add them to the request
-		if len(planCreditGrants) > 0 {
-			for _, cg := range planCreditGrants {
+		if len(planCreditGrants.Items) > 0 {
+			for _, cg := range planCreditGrants.Items {
 				creditGrantRequests = append(creditGrantRequests, dto.CreateCreditGrantRequest{
 					Name:                   cg.Name,
 					Scope:                  types.CreditGrantScopeSubscription,
