@@ -61,14 +61,7 @@ func (c *CreditGrant) Validate() error {
 				}).
 				Mark(ierr.ErrValidation)
 		}
-		if c.PlanID == nil || *c.PlanID == "" {
-			return ierr.NewError("plan_id is required for SUBSCRIPTION-scoped grants").
-				WithHint("Please provide a valid plan ID").
-				WithReportableDetails(map[string]interface{}{
-					"scope": c.Scope,
-				}).
-				Mark(ierr.ErrValidation)
-		}
+
 	default:
 		return ierr.NewError("invalid scope").
 			WithHint("Scope must be either PLAN or SUBSCRIPTION").

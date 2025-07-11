@@ -278,14 +278,16 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			if len(planCreditGrants.Items) > 0 {
 				for _, cg := range planCreditGrants.Items {
 					creditGrantRequests = append(creditGrantRequests, dto.CreateCreditGrantRequest{
-						Name:                   cg.Name,
-						Scope:                  types.CreditGrantScopeSubscription,
-						Credits:                cg.Credits,
-						Cadence:                cg.Cadence,
-						ExpirationType:         cg.ExpirationType,
-						Priority:               cg.Priority,
-						SubscriptionID:         lo.ToPtr(sub.ID),
-						Period:                 cg.Period,
+						Name:           cg.Name,
+						Scope:          types.CreditGrantScopeSubscription,
+						Credits:        cg.Credits,
+						Cadence:        cg.Cadence,
+						ExpirationType: cg.ExpirationType,
+						Priority:       cg.Priority,
+						SubscriptionID: lo.ToPtr(sub.ID),
+						Period:         cg.Period,
+						// While inheriting the credit grants from subscription we need to set its plan id to null
+						PlanID:                 nil,
 						ExpirationDuration:     cg.ExpirationDuration,
 						ExpirationDurationUnit: cg.ExpirationDurationUnit,
 						Metadata:               cg.Metadata,
@@ -352,7 +354,6 @@ func (s *subscriptionService) handleCreditGrants(
 		// Ensure subscription ID is set and scope is SUBSCRIPTION
 		grantReq.SubscriptionID = &subscription.ID
 		grantReq.Scope = types.CreditGrantScopeSubscription
-		grantReq.PlanID = &subscription.PlanID
 
 		// Create credit grant in DB
 		createdGrant, err := creditGrantService.CreateCreditGrant(ctx, grantReq)
