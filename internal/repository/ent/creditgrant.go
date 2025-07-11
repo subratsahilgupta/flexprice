@@ -56,7 +56,6 @@ func (r *creditGrantRepository) Create(ctx context.Context, cg *domainCreditGran
 		SetName(cg.Name).
 		SetScope(cg.Scope).
 		SetCredits(cg.Credits).
-		SetCurrency(cg.Currency).
 		SetCadence(cg.Cadence).
 		SetNillablePlanID(cg.PlanID).
 		SetNillableSubscriptionID(cg.SubscriptionID).
@@ -139,7 +138,6 @@ func (r *creditGrantRepository) CreateBulk(ctx context.Context, creditGrants []*
 			SetName(cg.Name).
 			SetScope(cg.Scope).
 			SetCredits(cg.Credits).
-			SetCurrency(cg.Currency).
 			SetCadence(cg.Cadence).
 			SetNillablePlanID(cg.PlanID).
 			SetNillableSubscriptionID(cg.SubscriptionID).

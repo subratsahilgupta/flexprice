@@ -15,7 +15,6 @@ type CreditGrant struct {
 	PlanID                 *string                              `json:"plan_id,omitempty"`
 	SubscriptionID         *string                              `json:"subscription_id,omitempty"`
 	Credits                decimal.Decimal                      `json:"credits"`
-	Currency               string                               `json:"currency"`
 	Cadence                types.CreditGrantCadence             `json:"cadence"`
 	Period                 *types.CreditGrantPeriod             `json:"period,omitempty"`
 	PeriodCount            *int                                 `json:"period_count,omitempty"`
@@ -88,12 +87,6 @@ func (c *CreditGrant) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if c.Currency == "" {
-		return ierr.NewError("currency is required").
-			WithHint("Please provide a valid currency code").
-			Mark(ierr.ErrValidation)
-	}
-
 	if c.Cadence == "" {
 		return ierr.NewError("cadence is required").
 			WithHint("Please specify the cadence (ONETIME or RECURRING)").
@@ -134,7 +127,6 @@ func FromEnt(c *ent.CreditGrant) *CreditGrant {
 		PlanID:                 c.PlanID,
 		SubscriptionID:         c.SubscriptionID,
 		Credits:                c.Credits,
-		Currency:               c.Currency,
 		Cadence:                types.CreditGrantCadence(c.Cadence),
 		Period:                 period,
 		PeriodCount:            c.PeriodCount,

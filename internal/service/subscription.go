@@ -259,38 +259,39 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			return err
 		}
 
-		// handle if plan has credit grants
-		creditGrantService := NewCreditGrantService(s.ServiceParams)
-		filter := types.NewNoLimitCreditGrantFilter()
-		filter.PlanIDs = []string{plan.ID}
-		planCreditGrants, err := creditGrantService.ListCreditGrants(ctx, filter)
-		if err != nil {
-			return err
-		}
-		s.Logger.Infow("plan has credit grants", "plan_id", plan.ID, "credit_grants_count", len(planCreditGrants.Items))
-
-		// add credit grants from request to the list
 		creditGrantRequests := make([]dto.CreateCreditGrantRequest, 0)
-		creditGrantRequests = append(creditGrantRequests, req.CreditGrants...)
 
-		// if plan has credit grants, add them to the request
-		if len(planCreditGrants.Items) > 0 {
-			for _, cg := range planCreditGrants.Items {
-				creditGrantRequests = append(creditGrantRequests, dto.CreateCreditGrantRequest{
-					Name:                   cg.Name,
-					Scope:                  types.CreditGrantScopeSubscription,
-					Credits:                cg.Credits,
-					Currency:               cg.Currency,
-					Cadence:                cg.Cadence,
-					ExpirationType:         cg.ExpirationType,
-					Priority:               cg.Priority,
-					SubscriptionID:         lo.ToPtr(sub.ID),
-					Period:                 cg.Period,
-					ExpirationDuration:     cg.ExpirationDuration,
-					ExpirationDurationUnit: cg.ExpirationDurationUnit,
-					Metadata:               cg.Metadata,
-					PeriodCount:            cg.PeriodCount,
-				})
+		// check if user has overidden the plan credit grants, if so add them to the request
+		if req.CreditGrants != nil {
+			creditGrantRequests = append(creditGrantRequests, *req.CreditGrants...)
+		} else {
+			// if user has not overidden the plan credit grants, add the plan credit grants to the request
+			creditGrantService := NewCreditGrantService(s.ServiceParams)
+			filter := types.NewNoLimitCreditGrantFilter()
+			filter.PlanIDs = []string{plan.ID}
+			planCreditGrants, err := creditGrantService.ListCreditGrants(ctx, filter)
+			if err != nil {
+				return err
+			}
+			s.Logger.Infow("plan has credit grants", "plan_id", plan.ID, "credit_grants_count", len(planCreditGrants.Items))
+			// if plan has credit grants, add them to the request
+			if len(planCreditGrants.Items) > 0 {
+				for _, cg := range planCreditGrants.Items {
+					creditGrantRequests = append(creditGrantRequests, dto.CreateCreditGrantRequest{
+						Name:                   cg.Name,
+						Scope:                  types.CreditGrantScopeSubscription,
+						Credits:                cg.Credits,
+						Cadence:                cg.Cadence,
+						ExpirationType:         cg.ExpirationType,
+						Priority:               cg.Priority,
+						SubscriptionID:         lo.ToPtr(sub.ID),
+						Period:                 cg.Period,
+						ExpirationDuration:     cg.ExpirationDuration,
+						ExpirationDurationUnit: cg.ExpirationDurationUnit,
+						Metadata:               cg.Metadata,
+						PeriodCount:            cg.PeriodCount,
+					})
+				}
 			}
 		}
 
@@ -1941,7 +1942,6 @@ func (s *subscriptionService) CreateSubscriptionSchedule(ctx context.Context, re
 				Scope:                  grant.Scope,
 				PlanID:                 grant.PlanID,
 				Credits:                grant.Credits,
-				Currency:               grant.Currency,
 				Cadence:                grant.Cadence,
 				Period:                 grant.Period,
 				PeriodCount:            grant.PeriodCount,
@@ -2103,7 +2103,6 @@ func (s *subscriptionService) createScheduleFromPhases(ctx context.Context, sub 
 				Scope:                  grant.Scope,
 				PlanID:                 grant.PlanID,
 				Credits:                grant.Credits,
-				Currency:               grant.Currency,
 				Cadence:                grant.Cadence,
 				Period:                 grant.Period,
 				PeriodCount:            grant.PeriodCount,
@@ -2268,7 +2267,6 @@ func (s *subscriptionService) AddSchedulePhase(ctx context.Context, scheduleID s
 				Scope:                  grant.Scope,
 				PlanID:                 grant.PlanID,
 				Credits:                grant.Credits,
-				Currency:               grant.Currency,
 				Cadence:                grant.Cadence,
 				Period:                 grant.Period,
 				PeriodCount:            grant.PeriodCount,

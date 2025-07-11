@@ -18,7 +18,6 @@ type CreateCreditGrantRequest struct {
 	PlanID                 *string                              `json:"plan_id,omitempty"`
 	SubscriptionID         *string                              `json:"subscription_id,omitempty"`
 	Credits                decimal.Decimal                      `json:"credits" binding:"required"`
-	Currency               string                               `json:"currency" binding:"required"`
 	Cadence                types.CreditGrantCadence             `json:"cadence" binding:"required"`
 	Period                 *types.CreditGrantPeriod             `json:"period,omitempty"`
 	PeriodCount            *int                                 `json:"period_count,omitempty"`
@@ -105,12 +104,6 @@ func (r *CreateCreditGrantRequest) Validate() error {
 			Mark(errors.ErrValidation)
 	}
 
-	if r.Currency == "" {
-		return errors.NewError("currency is required").
-			WithHint("Please provide a valid currency code").
-			Mark(errors.ErrValidation)
-	}
-
 	if err := r.Cadence.Validate(); err != nil {
 		return err
 	}
@@ -186,7 +179,6 @@ func (r *CreateCreditGrantRequest) ToCreditGrant(ctx context.Context) *creditgra
 		PlanID:                 r.PlanID,
 		SubscriptionID:         r.SubscriptionID,
 		Credits:                r.Credits,
-		Currency:               r.Currency,
 		Cadence:                r.Cadence,
 		Period:                 r.Period,
 		PeriodCount:            r.PeriodCount,
