@@ -67,7 +67,6 @@ func (r *creditGrantRepository) Create(ctx context.Context, cg *domainCreditGran
 		SetExpirationDurationUnit(lo.FromPtr(cg.ExpirationDurationUnit)).
 		SetNillablePriority(cg.Priority).
 		SetTenantID(cg.TenantID).
-		SetSubscriptionID(lo.FromPtr(cg.SubscriptionID)).
 		SetStatus(string(cg.Status)).
 		SetCreatedAt(cg.CreatedAt).
 		SetUpdatedAt(cg.UpdatedAt).
