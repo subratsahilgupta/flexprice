@@ -570,12 +570,20 @@ func init() {
 	invoiceDescSubtotal := invoiceFields[10].Descriptor()
 	// invoice.DefaultSubtotal holds the default value on creation for the subtotal field.
 	invoice.DefaultSubtotal = invoiceDescSubtotal.Default.(decimal.Decimal)
+	// invoiceDescAdjustmentAmount is the schema descriptor for adjustment_amount field.
+	invoiceDescAdjustmentAmount := invoiceFields[11].Descriptor()
+	// invoice.DefaultAdjustmentAmount holds the default value on creation for the adjustment_amount field.
+	invoice.DefaultAdjustmentAmount = invoiceDescAdjustmentAmount.Default.(decimal.Decimal)
+	// invoiceDescRefundedAmount is the schema descriptor for refunded_amount field.
+	invoiceDescRefundedAmount := invoiceFields[12].Descriptor()
+	// invoice.DefaultRefundedAmount holds the default value on creation for the refunded_amount field.
+	invoice.DefaultRefundedAmount = invoiceDescRefundedAmount.Default.(decimal.Decimal)
 	// invoiceDescTotal is the schema descriptor for total field.
-	invoiceDescTotal := invoiceFields[11].Descriptor()
+	invoiceDescTotal := invoiceFields[13].Descriptor()
 	// invoice.DefaultTotal holds the default value on creation for the total field.
 	invoice.DefaultTotal = invoiceDescTotal.Default.(decimal.Decimal)
 	// invoiceDescVersion is the schema descriptor for version field.
-	invoiceDescVersion := invoiceFields[23].Descriptor()
+	invoiceDescVersion := invoiceFields[25].Descriptor()
 	// invoice.DefaultVersion holds the default value on creation for the version field.
 	invoice.DefaultVersion = invoiceDescVersion.Default.(int)
 	invoicelineitemMixin := schema.InvoiceLineItem{}.Mixin()

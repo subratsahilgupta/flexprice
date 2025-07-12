@@ -18,12 +18,12 @@ type InternalTransactionEvent struct {
 
 // WalletWebhookPayload represents the detailed payload for wallet webhooks
 type WalletWebhookPayload struct {
-	Wallet *dto.WalletResponse
+	Wallet *dto.WalletResponse `json:"wallet"`
 }
 
 type TransactionWebhookPayload struct {
-	Transaction *dto.WalletTransactionResponse
-	Wallet      *dto.WalletResponse
+	Transaction *dto.WalletTransactionResponse `json:"transaction"`
+	Wallet      *dto.WalletResponse            `json:"wallet"`
 }
 
 func NewWalletWebhookPayload(wallet *dto.WalletResponse) *WalletWebhookPayload {

@@ -23,6 +23,7 @@ const (
 	ExpandSubscription ExpandableField = "subscription"
 	ExpandCustomer     ExpandableField = "customer"
 	ExpandCreditNote   ExpandableField = "credit_note"
+	ExpandCreditGrant  ExpandableField = "credit_grant"
 )
 
 // ExpandConfig defines which fields can be expanded and their nested expansions
@@ -37,10 +38,11 @@ type ExpandConfig struct {
 var (
 	// PlanExpandConfig defines what can be expanded on a plan
 	PlanExpandConfig = ExpandConfig{
-		AllowedFields: []ExpandableField{ExpandPrices, ExpandMeters, ExpandEntitlements},
+		AllowedFields: []ExpandableField{ExpandPrices, ExpandMeters, ExpandEntitlements, ExpandCreditGrant},
 		NestedExpands: map[ExpandableField][]ExpandableField{
 			ExpandPrices:       {ExpandMeters},
 			ExpandEntitlements: {ExpandFeatures},
+			ExpandCreditGrant:  {ExpandFeatures},
 		},
 	}
 

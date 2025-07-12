@@ -86,6 +86,31 @@ func (s *InMemoryCreditGrantStore) Create(ctx context.Context, cg *creditgrant.C
 	return copyCreditGrant(cg), nil
 }
 
+// CreateBulk creates multiple credit grants
+func (s *InMemoryCreditGrantStore) CreateBulk(ctx context.Context, creditGrants []*creditgrant.CreditGrant) ([]*creditgrant.CreditGrant, error) {
+	var result []*creditgrant.CreditGrant
+
+	for _, cg := range creditGrants {
+		if err := cg.Validate(); err != nil {
+			return nil, err
+		}
+
+		// Set environment ID from context if not already set
+		if cg.EnvironmentID == "" {
+			cg.EnvironmentID = types.GetEnvironmentID(ctx)
+		}
+
+		err := s.InMemoryStore.Create(ctx, cg.ID, copyCreditGrant(cg))
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, copyCreditGrant(cg))
+	}
+
+	return result, nil
+}
+
 // Get retrieves a credit grant by ID
 func (s *InMemoryCreditGrantStore) Get(ctx context.Context, id string) (*creditgrant.CreditGrant, error) {
 	cg, err := s.InMemoryStore.Get(ctx, id)
@@ -162,6 +187,16 @@ func (s *InMemoryCreditGrantStore) Delete(ctx context.Context, id string) error 
 	// Soft delete by setting status to archived
 	cg.Status = types.StatusArchived
 	return s.InMemoryStore.Update(ctx, id, cg)
+}
+
+// DeleteBulk deletes multiple credit grants by IDs (soft delete by setting status to archived)
+func (s *InMemoryCreditGrantStore) DeleteBulk(ctx context.Context, ids []string) error {
+	for _, id := range ids {
+		if err := s.Delete(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetByPlan retrieves credit grants for a specific plan

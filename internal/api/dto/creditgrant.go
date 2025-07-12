@@ -144,6 +144,10 @@ func (r *CreateCreditGrantRequest) Validate() error {
 		}
 	}
 
+	if err := r.ExpirationType.Validate(); err != nil {
+		return err
+	}
+
 	if r.ExpirationType == types.CreditGrantExpiryTypeDuration {
 
 		if r.ExpirationDurationUnit == nil {

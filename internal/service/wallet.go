@@ -139,6 +139,7 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 				CreditsToAdd:      req.InitialCreditsToLoad,
 				TransactionReason: types.TransactionReasonFreeCredit,
 				ExpiryDate:        req.InitialCreditsToLoadExpiryDate,
+				ExpiryDateUTC:     req.InitialCreditsExpiryDateUTC,
 			})
 
 			if err != nil {

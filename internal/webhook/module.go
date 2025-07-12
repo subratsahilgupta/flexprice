@@ -35,9 +35,6 @@ var Module = fx.Options(
 
 		// Main webhook service
 		NewWebhookService,
-
-		// Svix service
-		service.NewSvixService,
 	),
 )
 
@@ -51,6 +48,7 @@ func providePayloadBuilderFactory(
 	subscriptionService service.SubscriptionService,
 	walletService service.WalletService,
 	customerService service.CustomerService,
+	paymentService service.PaymentService,
 ) payload.PayloadBuilderFactory {
 	services := payload.NewServices(
 		invoiceService,
@@ -61,6 +59,7 @@ func providePayloadBuilderFactory(
 		subscriptionService,
 		walletService,
 		customerService,
+		paymentService,
 	)
 	return payload.NewPayloadBuilderFactory(services)
 }
@@ -83,3 +82,11 @@ func providePubSub(
 	}
 	return nil
 }
+
+// // provideSvixService creates a new Svix service with error handling
+// func provideSvixService(
+// 	cfg *config.Configuration,
+// 	logger *logger.Logger,
+// ) (service.SvixService, error) {
+// 	return service.NewSvixService(cfg, logger)
+// }

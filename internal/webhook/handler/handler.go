@@ -11,7 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/pubsub"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/sentry"
-	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/svix"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/webhook/payload"
 )
@@ -23,13 +23,13 @@ type Handler interface {
 
 // handler implements handler.Handler using watermill's gochannel
 type handler struct {
-	pubSub      pubsub.PubSub
-	config      *config.Webhook
-	factory     payload.PayloadBuilderFactory
-	client      httpclient.Client
-	logger      *logger.Logger
-	sentry      *sentry.Service
-	svixService service.SvixService
+	pubSub     pubsub.PubSub
+	config     *config.Webhook
+	factory    payload.PayloadBuilderFactory
+	client     httpclient.Client
+	logger     *logger.Logger
+	sentry     *sentry.Service
+	svixClient *svix.Client
 }
 
 // NewHandler creates a new memory-based handler
@@ -40,16 +40,16 @@ func NewHandler(
 	client httpclient.Client,
 	logger *logger.Logger,
 	sentry *sentry.Service,
-	svixService service.SvixService,
+	svixClient *svix.Client,
 ) (Handler, error) {
 	return &handler{
-		pubSub:      pubSub,
-		config:      &cfg.Webhook,
-		factory:     factory,
-		client:      client,
-		logger:      logger,
-		sentry:      sentry,
-		svixService: svixService,
+		pubSub:     pubSub,
+		config:     &cfg.Webhook,
+		factory:    factory,
+		client:     client,
+		logger:     logger,
+		sentry:     sentry,
+		svixClient: svixClient,
 	}, nil
 }
 
@@ -81,6 +81,11 @@ func (h *handler) processMessage(msg *message.Message) error {
 		return nil // Don't retry on unmarshal errors
 	}
 
+	// set tenant_id in context
+	ctx = context.WithValue(ctx, types.CtxTenantID, event.TenantID)
+	ctx = context.WithValue(ctx, types.CtxEnvironmentID, event.EnvironmentID)
+	ctx = context.WithValue(ctx, types.CtxUserID, event.UserID)
+
 	if h.config.Svix.Enabled {
 		return h.processMessageSvix(ctx, &event, msg.UUID)
 	}
@@ -91,7 +96,7 @@ func (h *handler) processMessage(msg *message.Message) error {
 // processMessageSvix processes a webhook message using Svix
 func (h *handler) processMessageSvix(ctx context.Context, event *types.WebhookEvent, messageUUID string) error {
 	// Get or create Svix application
-	appID, err := h.svixService.GetOrCreateApplication(ctx, event.TenantID, event.EnvironmentID)
+	appID, err := h.svixClient.GetOrCreateApplication(ctx, event.TenantID, event.EnvironmentID)
 	if err != nil {
 		// If error indicates no application exists, silently continue
 		if err.Error() == "application not found" {
@@ -121,7 +126,7 @@ func (h *handler) processMessageSvix(ctx context.Context, event *types.WebhookEv
 	}
 
 	// Send to Svix
-	if err := h.svixService.SendMessage(ctx, appID, event.EventName, json.RawMessage(webHookPayload)); err != nil {
+	if err := h.svixClient.SendMessage(ctx, appID, event.EventName, json.RawMessage(webHookPayload)); err != nil {
 		h.logger.Errorw("failed to send webhook via Svix",
 			"error", err,
 			"message_uuid", messageUUID,

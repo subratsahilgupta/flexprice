@@ -12,7 +12,7 @@ type InternalSubscriptionEvent struct {
 
 // SubscriptionWebhookPayload represents the detailed payload for subscription payment webhooks
 type SubscriptionWebhookPayload struct {
-	Subscription *dto.SubscriptionResponse
+	Subscription *dto.SubscriptionResponse `json:"subscription"`
 }
 
 func NewSubscriptionWebhookPayload(subscription *dto.SubscriptionResponse) *SubscriptionWebhookPayload {

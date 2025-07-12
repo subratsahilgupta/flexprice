@@ -96,6 +96,42 @@ func (s *creditGrantService) CreateCreditGrant(ctx context.Context, req dto.Crea
 				}).
 				Mark(ierr.ErrNotFound)
 		}
+
+		// check if subscription is cancelled
+		if sub.SubscriptionStatus == types.SubscriptionStatusCancelled {
+			return nil, ierr.NewError("subscription is cancelled").
+				WithHint("Subscription is cancelled").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": *req.SubscriptionID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	// plan validation if plan_id is provided
+	if req.PlanID != nil && *req.PlanID != "" {
+		plan, err := s.PlanRepo.Get(ctx, *req.PlanID)
+		if err != nil {
+			return nil, err
+		}
+		if plan == nil {
+			return nil, ierr.NewError("plan not found").
+				WithHint(fmt.Sprintf("Plan with ID %s does not exist", *req.PlanID)).
+				WithReportableDetails(map[string]interface{}{
+					"plan_id": *req.PlanID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+
+		// check if plan is published
+		if plan.Status != types.StatusPublished {
+			return nil, ierr.NewError("plan is not published").
+				WithHint("Plan is not published").
+				WithReportableDetails(map[string]interface{}{
+					"plan_id": *req.PlanID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 
 	// Create credit grant

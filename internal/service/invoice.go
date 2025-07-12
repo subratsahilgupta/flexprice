@@ -412,6 +412,25 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 			Mark(ierr.ErrValidation)
 	}
 
+	// Validate that there shouldnt be any payments for this invoice
+	paymentService := NewPaymentService(s.ServiceParams)
+	filter := types.NewNoLimitPaymentFilter()
+	filter.DestinationID = lo.ToPtr(id)
+	filter.Status = lo.ToPtr(types.StatusPublished)
+	filter.PaymentStatus = lo.ToPtr(string(types.PaymentStatusSucceeded))
+	filter.DestinationType = lo.ToPtr(string(types.PaymentDestinationTypeInvoice))
+	filter.Limit = lo.ToPtr(1)
+	payments, err := paymentService.ListPayments(ctx, filter)
+	if err != nil {
+		return err
+	}
+
+	if len(payments.Items) > 0 {
+		return ierr.NewError("invoice has active payment records").
+			WithHint("Manual payment status updates are disabled for payment-based invoices.").
+			Mark(ierr.ErrInvalidOperation)
+	}
+
 	// Validate the payment status transition
 	if err := s.validatePaymentStatusTransition(inv.PaymentStatus, status); err != nil {
 		return err
@@ -1041,7 +1060,6 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 	// Get all adjustment credit notes for the invoice
 	filter := &types.CreditNoteFilter{
 		InvoiceID:        inv.ID,
-		CreditNoteType:   types.CreditNoteTypeAdjustment,
 		CreditNoteStatus: []types.CreditNoteStatus{types.CreditNoteStatusFinalized},
 		QueryFilter:      types.NewNoLimitPublishedQueryFilter(),
 	}
@@ -1051,13 +1069,20 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 		return err
 	}
 
-	// Calculate total adjustment credits
-	totalAdjustmentCredits := decimal.Zero
+	totalAdjustmentAmount := decimal.Zero
+	totalRefundAmount := decimal.Zero
 	for _, creditNote := range creditNotes {
-		totalAdjustmentCredits = totalAdjustmentCredits.Add(creditNote.TotalAmount)
+		if creditNote.CreditNoteType == types.CreditNoteTypeRefund {
+			totalRefundAmount = totalRefundAmount.Add(creditNote.TotalAmount)
+		} else {
+			totalAdjustmentAmount = totalAdjustmentAmount.Add(creditNote.TotalAmount)
+		}
 	}
 
-	inv.AmountDue = inv.Total.Sub(totalAdjustmentCredits)
+	// Calculate total adjustment credits
+	inv.AdjustmentAmount = totalAdjustmentAmount
+	inv.RefundedAmount = totalRefundAmount
+	inv.AmountDue = inv.Total.Sub(totalAdjustmentAmount)
 	remaining := inv.AmountDue.Sub(inv.AmountPaid)
 	if remaining.IsPositive() {
 		inv.AmountRemaining = remaining

@@ -88,6 +88,8 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetNillablePeriodStart(inv.PeriodStart).
 		SetNillablePeriodEnd(inv.PeriodEnd).
 		SetEnvironmentID(inv.EnvironmentID).
+		SetAdjustmentAmount(inv.AdjustmentAmount).
+		SetRefundedAmount(inv.RefundedAmount).
 		Save(ctx)
 
 	if err != nil {
@@ -184,6 +186,8 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			SetTotal(inv.Total).
 			SetSubtotal(inv.Subtotal).
 			SetUpdatedBy(inv.UpdatedBy).
+			SetAdjustmentAmount(inv.AdjustmentAmount).
+			SetRefundedAmount(inv.RefundedAmount).
 			SetNillablePeriodStart(inv.PeriodStart).
 			SetNillablePeriodEnd(inv.PeriodEnd).
 			SetEnvironmentID(inv.EnvironmentID).
@@ -436,6 +440,8 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetNillableInvoicePdfURL(inv.InvoicePDFURL).
 		SetBillingReason(string(inv.BillingReason)).
 		SetMetadata(inv.Metadata).
+		SetAdjustmentAmount(inv.AdjustmentAmount).
+		SetRefundedAmount(inv.RefundedAmount).
 		SetUpdatedAt(time.Now()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		AddVersion(1) // Increment version atomically

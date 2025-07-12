@@ -13185,6 +13185,8 @@ type InvoiceMutation struct {
 	amount_paid         *decimal.Decimal
 	amount_remaining    *decimal.Decimal
 	subtotal            *decimal.Decimal
+	adjustment_amount   *decimal.Decimal
+	refunded_amount     *decimal.Decimal
 	total               *decimal.Decimal
 	description         *string
 	due_date            *time.Time
@@ -13991,6 +13993,104 @@ func (m *InvoiceMutation) SubtotalCleared() bool {
 func (m *InvoiceMutation) ResetSubtotal() {
 	m.subtotal = nil
 	delete(m.clearedFields, invoice.FieldSubtotal)
+}
+
+// SetAdjustmentAmount sets the "adjustment_amount" field.
+func (m *InvoiceMutation) SetAdjustmentAmount(d decimal.Decimal) {
+	m.adjustment_amount = &d
+}
+
+// AdjustmentAmount returns the value of the "adjustment_amount" field in the mutation.
+func (m *InvoiceMutation) AdjustmentAmount() (r decimal.Decimal, exists bool) {
+	v := m.adjustment_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAdjustmentAmount returns the old "adjustment_amount" field's value of the Invoice entity.
+// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceMutation) OldAdjustmentAmount(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAdjustmentAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAdjustmentAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAdjustmentAmount: %w", err)
+	}
+	return oldValue.AdjustmentAmount, nil
+}
+
+// ClearAdjustmentAmount clears the value of the "adjustment_amount" field.
+func (m *InvoiceMutation) ClearAdjustmentAmount() {
+	m.adjustment_amount = nil
+	m.clearedFields[invoice.FieldAdjustmentAmount] = struct{}{}
+}
+
+// AdjustmentAmountCleared returns if the "adjustment_amount" field was cleared in this mutation.
+func (m *InvoiceMutation) AdjustmentAmountCleared() bool {
+	_, ok := m.clearedFields[invoice.FieldAdjustmentAmount]
+	return ok
+}
+
+// ResetAdjustmentAmount resets all changes to the "adjustment_amount" field.
+func (m *InvoiceMutation) ResetAdjustmentAmount() {
+	m.adjustment_amount = nil
+	delete(m.clearedFields, invoice.FieldAdjustmentAmount)
+}
+
+// SetRefundedAmount sets the "refunded_amount" field.
+func (m *InvoiceMutation) SetRefundedAmount(d decimal.Decimal) {
+	m.refunded_amount = &d
+}
+
+// RefundedAmount returns the value of the "refunded_amount" field in the mutation.
+func (m *InvoiceMutation) RefundedAmount() (r decimal.Decimal, exists bool) {
+	v := m.refunded_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundedAmount returns the old "refunded_amount" field's value of the Invoice entity.
+// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceMutation) OldRefundedAmount(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundedAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundedAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundedAmount: %w", err)
+	}
+	return oldValue.RefundedAmount, nil
+}
+
+// ClearRefundedAmount clears the value of the "refunded_amount" field.
+func (m *InvoiceMutation) ClearRefundedAmount() {
+	m.refunded_amount = nil
+	m.clearedFields[invoice.FieldRefundedAmount] = struct{}{}
+}
+
+// RefundedAmountCleared returns if the "refunded_amount" field was cleared in this mutation.
+func (m *InvoiceMutation) RefundedAmountCleared() bool {
+	_, ok := m.clearedFields[invoice.FieldRefundedAmount]
+	return ok
+}
+
+// ResetRefundedAmount resets all changes to the "refunded_amount" field.
+func (m *InvoiceMutation) ResetRefundedAmount() {
+	m.refunded_amount = nil
+	delete(m.clearedFields, invoice.FieldRefundedAmount)
 }
 
 // SetTotal sets the "total" field.
@@ -14893,7 +14993,7 @@ func (m *InvoiceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceMutation) Fields() []string {
-	fields := make([]string, 0, 33)
+	fields := make([]string, 0, 35)
 	if m.tenant_id != nil {
 		fields = append(fields, invoice.FieldTenantID)
 	}
@@ -14944,6 +15044,12 @@ func (m *InvoiceMutation) Fields() []string {
 	}
 	if m.subtotal != nil {
 		fields = append(fields, invoice.FieldSubtotal)
+	}
+	if m.adjustment_amount != nil {
+		fields = append(fields, invoice.FieldAdjustmentAmount)
+	}
+	if m.refunded_amount != nil {
+		fields = append(fields, invoice.FieldRefundedAmount)
 	}
 	if m.total != nil {
 		fields = append(fields, invoice.FieldTotal)
@@ -15035,6 +15141,10 @@ func (m *InvoiceMutation) Field(name string) (ent.Value, bool) {
 		return m.AmountRemaining()
 	case invoice.FieldSubtotal:
 		return m.Subtotal()
+	case invoice.FieldAdjustmentAmount:
+		return m.AdjustmentAmount()
+	case invoice.FieldRefundedAmount:
+		return m.RefundedAmount()
 	case invoice.FieldTotal:
 		return m.Total()
 	case invoice.FieldDescription:
@@ -15110,6 +15220,10 @@ func (m *InvoiceMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldAmountRemaining(ctx)
 	case invoice.FieldSubtotal:
 		return m.OldSubtotal(ctx)
+	case invoice.FieldAdjustmentAmount:
+		return m.OldAdjustmentAmount(ctx)
+	case invoice.FieldRefundedAmount:
+		return m.OldRefundedAmount(ctx)
 	case invoice.FieldTotal:
 		return m.OldTotal(ctx)
 	case invoice.FieldDescription:
@@ -15269,6 +15383,20 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSubtotal(v)
+		return nil
+	case invoice.FieldAdjustmentAmount:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAdjustmentAmount(v)
+		return nil
+	case invoice.FieldRefundedAmount:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundedAmount(v)
 		return nil
 	case invoice.FieldTotal:
 		v, ok := value.(decimal.Decimal)
@@ -15454,6 +15582,12 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	if m.FieldCleared(invoice.FieldSubtotal) {
 		fields = append(fields, invoice.FieldSubtotal)
 	}
+	if m.FieldCleared(invoice.FieldAdjustmentAmount) {
+		fields = append(fields, invoice.FieldAdjustmentAmount)
+	}
+	if m.FieldCleared(invoice.FieldRefundedAmount) {
+		fields = append(fields, invoice.FieldRefundedAmount)
+	}
 	if m.FieldCleared(invoice.FieldTotal) {
 		fields = append(fields, invoice.FieldTotal)
 	}
@@ -15527,6 +15661,12 @@ func (m *InvoiceMutation) ClearField(name string) error {
 		return nil
 	case invoice.FieldSubtotal:
 		m.ClearSubtotal()
+		return nil
+	case invoice.FieldAdjustmentAmount:
+		m.ClearAdjustmentAmount()
+		return nil
+	case invoice.FieldRefundedAmount:
+		m.ClearRefundedAmount()
 		return nil
 	case invoice.FieldTotal:
 		m.ClearTotal()
@@ -15631,6 +15771,12 @@ func (m *InvoiceMutation) ResetField(name string) error {
 		return nil
 	case invoice.FieldSubtotal:
 		m.ResetSubtotal()
+		return nil
+	case invoice.FieldAdjustmentAmount:
+		m.ResetAdjustmentAmount()
+		return nil
+	case invoice.FieldRefundedAmount:
+		m.ResetRefundedAmount()
 		return nil
 	case invoice.FieldTotal:
 		m.ResetTotal()
