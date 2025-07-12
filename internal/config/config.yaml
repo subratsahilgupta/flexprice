@@ -92,6 +92,10 @@ webhook:
     enabled: false
     auth_token: "svix_auth_token"
     base_url: "https://api.svix.com"
+  svix_config:
+    enabled: false
+    auth_token: "svix_auth_token"
+    base_url: "https://api.svix.com"
     
 
 temporal:
