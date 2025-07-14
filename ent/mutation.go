@@ -2842,7 +2842,7 @@ func (m *CreditGrantMutation) Currency() (r string, exists bool) {
 // OldCurrency returns the old "currency" field's value of the CreditGrant entity.
 // If the CreditGrant object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CreditGrantMutation) OldCurrency(ctx context.Context) (v string, err error) {
+func (m *CreditGrantMutation) OldCurrency(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCurrency is only allowed on UpdateOne operations")
 	}
@@ -2856,9 +2856,22 @@ func (m *CreditGrantMutation) OldCurrency(ctx context.Context) (v string, err er
 	return oldValue.Currency, nil
 }
 
+// ClearCurrency clears the value of the "currency" field.
+func (m *CreditGrantMutation) ClearCurrency() {
+	m.currency = nil
+	m.clearedFields[creditgrant.FieldCurrency] = struct{}{}
+}
+
+// CurrencyCleared returns if the "currency" field was cleared in this mutation.
+func (m *CreditGrantMutation) CurrencyCleared() bool {
+	_, ok := m.clearedFields[creditgrant.FieldCurrency]
+	return ok
+}
+
 // ResetCurrency resets all changes to the "currency" field.
 func (m *CreditGrantMutation) ResetCurrency() {
 	m.currency = nil
+	delete(m.clearedFields, creditgrant.FieldCurrency)
 }
 
 // SetCadence sets the "cadence" field.
@@ -3783,6 +3796,9 @@ func (m *CreditGrantMutation) ClearedFields() []string {
 	if m.FieldCleared(creditgrant.FieldSubscriptionID) {
 		fields = append(fields, creditgrant.FieldSubscriptionID)
 	}
+	if m.FieldCleared(creditgrant.FieldCurrency) {
+		fields = append(fields, creditgrant.FieldCurrency)
+	}
 	if m.FieldCleared(creditgrant.FieldPeriod) {
 		fields = append(fields, creditgrant.FieldPeriod)
 	}
@@ -3829,6 +3845,9 @@ func (m *CreditGrantMutation) ClearField(name string) error {
 		return nil
 	case creditgrant.FieldSubscriptionID:
 		m.ClearSubscriptionID()
+		return nil
+	case creditgrant.FieldCurrency:
+		m.ClearCurrency()
 		return nil
 	case creditgrant.FieldPeriod:
 		m.ClearPeriod()
@@ -8467,30 +8486,31 @@ func (m *CreditNoteLineItemMutation) ResetEdge(name string) error {
 // CustomerMutation represents an operation that mutates the Customer nodes in the graph.
 type CustomerMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *string
-	tenant_id           *string
-	status              *string
-	created_at          *time.Time
-	updated_at          *time.Time
-	created_by          *string
-	updated_by          *string
-	environment_id      *string
-	external_id         *string
-	name                *string
-	email               *string
-	address_line1       *string
-	address_line2       *string
-	address_city        *string
-	address_state       *string
-	address_postal_code *string
-	address_country     *string
-	metadata            *map[string]string
-	clearedFields       map[string]struct{}
-	done                bool
-	oldValue            func(context.Context) (*Customer, error)
-	predicates          []predicate.Customer
+	op                    Op
+	typ                   string
+	id                    *string
+	tenant_id             *string
+	status                *string
+	created_at            *time.Time
+	updated_at            *time.Time
+	created_by            *string
+	updated_by            *string
+	environment_id        *string
+	external_id           *string
+	name                  *string
+	email                 *string
+	address_line1         *string
+	address_line2         *string
+	address_city          *string
+	address_state         *string
+	address_postal_code   *string
+	address_country       *string
+	metadata              *map[string]string
+	auto_cancel_on_unpaid *bool
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*Customer, error)
+	predicates            []predicate.Customer
 }
 
 var _ ent.Mutation = (*CustomerMutation)(nil)
@@ -9352,6 +9372,42 @@ func (m *CustomerMutation) ResetMetadata() {
 	delete(m.clearedFields, customer.FieldMetadata)
 }
 
+// SetAutoCancelOnUnpaid sets the "auto_cancel_on_unpaid" field.
+func (m *CustomerMutation) SetAutoCancelOnUnpaid(b bool) {
+	m.auto_cancel_on_unpaid = &b
+}
+
+// AutoCancelOnUnpaid returns the value of the "auto_cancel_on_unpaid" field in the mutation.
+func (m *CustomerMutation) AutoCancelOnUnpaid() (r bool, exists bool) {
+	v := m.auto_cancel_on_unpaid
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAutoCancelOnUnpaid returns the old "auto_cancel_on_unpaid" field's value of the Customer entity.
+// If the Customer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CustomerMutation) OldAutoCancelOnUnpaid(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAutoCancelOnUnpaid is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAutoCancelOnUnpaid requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAutoCancelOnUnpaid: %w", err)
+	}
+	return oldValue.AutoCancelOnUnpaid, nil
+}
+
+// ResetAutoCancelOnUnpaid resets all changes to the "auto_cancel_on_unpaid" field.
+func (m *CustomerMutation) ResetAutoCancelOnUnpaid() {
+	m.auto_cancel_on_unpaid = nil
+}
+
 // Where appends a list predicates to the CustomerMutation builder.
 func (m *CustomerMutation) Where(ps ...predicate.Customer) {
 	m.predicates = append(m.predicates, ps...)
@@ -9386,7 +9442,7 @@ func (m *CustomerMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CustomerMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 18)
 	if m.tenant_id != nil {
 		fields = append(fields, customer.FieldTenantID)
 	}
@@ -9438,6 +9494,9 @@ func (m *CustomerMutation) Fields() []string {
 	if m.metadata != nil {
 		fields = append(fields, customer.FieldMetadata)
 	}
+	if m.auto_cancel_on_unpaid != nil {
+		fields = append(fields, customer.FieldAutoCancelOnUnpaid)
+	}
 	return fields
 }
 
@@ -9480,6 +9539,8 @@ func (m *CustomerMutation) Field(name string) (ent.Value, bool) {
 		return m.AddressCountry()
 	case customer.FieldMetadata:
 		return m.Metadata()
+	case customer.FieldAutoCancelOnUnpaid:
+		return m.AutoCancelOnUnpaid()
 	}
 	return nil, false
 }
@@ -9523,6 +9584,8 @@ func (m *CustomerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldAddressCountry(ctx)
 	case customer.FieldMetadata:
 		return m.OldMetadata(ctx)
+	case customer.FieldAutoCancelOnUnpaid:
+		return m.OldAutoCancelOnUnpaid(ctx)
 	}
 	return nil, fmt.Errorf("unknown Customer field %s", name)
 }
@@ -9650,6 +9713,13 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMetadata(v)
+		return nil
+	case customer.FieldAutoCancelOnUnpaid:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAutoCancelOnUnpaid(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)
@@ -9819,6 +9889,9 @@ func (m *CustomerMutation) ResetField(name string) error {
 		return nil
 	case customer.FieldMetadata:
 		m.ResetMetadata()
+		return nil
+	case customer.FieldAutoCancelOnUnpaid:
+		m.ResetAutoCancelOnUnpaid()
 		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)
@@ -13165,53 +13238,54 @@ func (m *FeatureMutation) ResetEdge(name string) error {
 // InvoiceMutation represents an operation that mutates the Invoice nodes in the graph.
 type InvoiceMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *string
-	tenant_id           *string
-	status              *string
-	created_at          *time.Time
-	updated_at          *time.Time
-	created_by          *string
-	updated_by          *string
-	environment_id      *string
-	customer_id         *string
-	subscription_id     *string
-	invoice_type        *string
-	invoice_status      *string
-	payment_status      *string
-	currency            *string
-	amount_due          *decimal.Decimal
-	amount_paid         *decimal.Decimal
-	amount_remaining    *decimal.Decimal
-	subtotal            *decimal.Decimal
-	adjustment_amount   *decimal.Decimal
-	refunded_amount     *decimal.Decimal
-	total               *decimal.Decimal
-	description         *string
-	due_date            *time.Time
-	paid_at             *time.Time
-	voided_at           *time.Time
-	finalized_at        *time.Time
-	billing_period      *string
-	period_start        *time.Time
-	period_end          *time.Time
-	invoice_pdf_url     *string
-	billing_reason      *string
-	metadata            *map[string]string
-	version             *int
-	addversion          *int
-	invoice_number      *string
-	billing_sequence    *int
-	addbilling_sequence *int
-	idempotency_key     *string
-	clearedFields       map[string]struct{}
-	line_items          map[string]struct{}
-	removedline_items   map[string]struct{}
-	clearedline_items   bool
-	done                bool
-	oldValue            func(context.Context) (*Invoice, error)
-	predicates          []predicate.Invoice
+	op                    Op
+	typ                   string
+	id                    *string
+	tenant_id             *string
+	status                *string
+	created_at            *time.Time
+	updated_at            *time.Time
+	created_by            *string
+	updated_by            *string
+	environment_id        *string
+	customer_id           *string
+	subscription_id       *string
+	invoice_type          *string
+	invoice_status        *string
+	payment_status        *string
+	currency              *string
+	amount_due            *decimal.Decimal
+	amount_paid           *decimal.Decimal
+	amount_remaining      *decimal.Decimal
+	subtotal              *decimal.Decimal
+	adjustment_amount     *decimal.Decimal
+	refunded_amount       *decimal.Decimal
+	total                 *decimal.Decimal
+	description           *string
+	due_date              *time.Time
+	paid_at               *time.Time
+	voided_at             *time.Time
+	finalized_at          *time.Time
+	billing_period        *string
+	period_start          *time.Time
+	period_end            *time.Time
+	invoice_pdf_url       *string
+	billing_reason        *string
+	metadata              *map[string]string
+	version               *int
+	addversion            *int
+	invoice_number        *string
+	billing_sequence      *int
+	addbilling_sequence   *int
+	idempotency_key       *string
+	grace_period_end_time *time.Time
+	clearedFields         map[string]struct{}
+	line_items            map[string]struct{}
+	removedline_items     map[string]struct{}
+	clearedline_items     bool
+	done                  bool
+	oldValue              func(context.Context) (*Invoice, error)
+	predicates            []predicate.Invoice
 }
 
 var _ ent.Mutation = (*InvoiceMutation)(nil)
@@ -14905,6 +14979,55 @@ func (m *InvoiceMutation) ResetIdempotencyKey() {
 	delete(m.clearedFields, invoice.FieldIdempotencyKey)
 }
 
+// SetGracePeriodEndTime sets the "grace_period_end_time" field.
+func (m *InvoiceMutation) SetGracePeriodEndTime(t time.Time) {
+	m.grace_period_end_time = &t
+}
+
+// GracePeriodEndTime returns the value of the "grace_period_end_time" field in the mutation.
+func (m *InvoiceMutation) GracePeriodEndTime() (r time.Time, exists bool) {
+	v := m.grace_period_end_time
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGracePeriodEndTime returns the old "grace_period_end_time" field's value of the Invoice entity.
+// If the Invoice object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceMutation) OldGracePeriodEndTime(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGracePeriodEndTime is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGracePeriodEndTime requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGracePeriodEndTime: %w", err)
+	}
+	return oldValue.GracePeriodEndTime, nil
+}
+
+// ClearGracePeriodEndTime clears the value of the "grace_period_end_time" field.
+func (m *InvoiceMutation) ClearGracePeriodEndTime() {
+	m.grace_period_end_time = nil
+	m.clearedFields[invoice.FieldGracePeriodEndTime] = struct{}{}
+}
+
+// GracePeriodEndTimeCleared returns if the "grace_period_end_time" field was cleared in this mutation.
+func (m *InvoiceMutation) GracePeriodEndTimeCleared() bool {
+	_, ok := m.clearedFields[invoice.FieldGracePeriodEndTime]
+	return ok
+}
+
+// ResetGracePeriodEndTime resets all changes to the "grace_period_end_time" field.
+func (m *InvoiceMutation) ResetGracePeriodEndTime() {
+	m.grace_period_end_time = nil
+	delete(m.clearedFields, invoice.FieldGracePeriodEndTime)
+}
+
 // AddLineItemIDs adds the "line_items" edge to the InvoiceLineItem entity by ids.
 func (m *InvoiceMutation) AddLineItemIDs(ids ...string) {
 	if m.line_items == nil {
@@ -14993,7 +15116,7 @@ func (m *InvoiceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceMutation) Fields() []string {
-	fields := make([]string, 0, 35)
+	fields := make([]string, 0, 36)
 	if m.tenant_id != nil {
 		fields = append(fields, invoice.FieldTenantID)
 	}
@@ -15099,6 +15222,9 @@ func (m *InvoiceMutation) Fields() []string {
 	if m.idempotency_key != nil {
 		fields = append(fields, invoice.FieldIdempotencyKey)
 	}
+	if m.grace_period_end_time != nil {
+		fields = append(fields, invoice.FieldGracePeriodEndTime)
+	}
 	return fields
 }
 
@@ -15177,6 +15303,8 @@ func (m *InvoiceMutation) Field(name string) (ent.Value, bool) {
 		return m.BillingSequence()
 	case invoice.FieldIdempotencyKey:
 		return m.IdempotencyKey()
+	case invoice.FieldGracePeriodEndTime:
+		return m.GracePeriodEndTime()
 	}
 	return nil, false
 }
@@ -15256,6 +15384,8 @@ func (m *InvoiceMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldBillingSequence(ctx)
 	case invoice.FieldIdempotencyKey:
 		return m.OldIdempotencyKey(ctx)
+	case invoice.FieldGracePeriodEndTime:
+		return m.OldGracePeriodEndTime(ctx)
 	}
 	return nil, fmt.Errorf("unknown Invoice field %s", name)
 }
@@ -15510,6 +15640,13 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetIdempotencyKey(v)
 		return nil
+	case invoice.FieldGracePeriodEndTime:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGracePeriodEndTime(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Invoice field %s", name)
 }
@@ -15633,6 +15770,9 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	if m.FieldCleared(invoice.FieldIdempotencyKey) {
 		fields = append(fields, invoice.FieldIdempotencyKey)
 	}
+	if m.FieldCleared(invoice.FieldGracePeriodEndTime) {
+		fields = append(fields, invoice.FieldGracePeriodEndTime)
+	}
 	return fields
 }
 
@@ -15712,6 +15852,9 @@ func (m *InvoiceMutation) ClearField(name string) error {
 		return nil
 	case invoice.FieldIdempotencyKey:
 		m.ClearIdempotencyKey()
+		return nil
+	case invoice.FieldGracePeriodEndTime:
+		m.ClearGracePeriodEndTime()
 		return nil
 	}
 	return fmt.Errorf("unknown Invoice nullable field %s", name)
@@ -15825,6 +15968,9 @@ func (m *InvoiceMutation) ResetField(name string) error {
 		return nil
 	case invoice.FieldIdempotencyKey:
 		m.ResetIdempotencyKey()
+		return nil
+	case invoice.FieldGracePeriodEndTime:
+		m.ResetGracePeriodEndTime()
 		return nil
 	}
 	return fmt.Errorf("unknown Invoice field %s", name)

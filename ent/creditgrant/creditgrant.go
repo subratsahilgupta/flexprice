@@ -135,8 +135,6 @@ var (
 	ScopeValidator func(string) error
 	// DefaultCredits holds the default value on creation for the "credits" field.
 	DefaultCredits decimal.Decimal
-	// CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
-	CurrencyValidator func(string) error
 	// CadenceValidator is a validator for the "cadence" field. It is called by the builders before save.
 	CadenceValidator func(string) error
 	// DefaultExpirationType holds the default value on creation for the "expiration_type" field.

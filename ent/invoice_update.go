@@ -480,6 +480,26 @@ func (iu *InvoiceUpdate) ClearIdempotencyKey() *InvoiceUpdate {
 	return iu
 }
 
+// SetGracePeriodEndTime sets the "grace_period_end_time" field.
+func (iu *InvoiceUpdate) SetGracePeriodEndTime(t time.Time) *InvoiceUpdate {
+	iu.mutation.SetGracePeriodEndTime(t)
+	return iu
+}
+
+// SetNillableGracePeriodEndTime sets the "grace_period_end_time" field if the given value is not nil.
+func (iu *InvoiceUpdate) SetNillableGracePeriodEndTime(t *time.Time) *InvoiceUpdate {
+	if t != nil {
+		iu.SetGracePeriodEndTime(*t)
+	}
+	return iu
+}
+
+// ClearGracePeriodEndTime clears the value of the "grace_period_end_time" field.
+func (iu *InvoiceUpdate) ClearGracePeriodEndTime() *InvoiceUpdate {
+	iu.mutation.ClearGracePeriodEndTime()
+	return iu
+}
+
 // AddLineItemIDs adds the "line_items" edge to the InvoiceLineItem entity by IDs.
 func (iu *InvoiceUpdate) AddLineItemIDs(ids ...string) *InvoiceUpdate {
 	iu.mutation.AddLineItemIDs(ids...)
@@ -712,6 +732,12 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if iu.mutation.IdempotencyKeyCleared() {
 		_spec.ClearField(invoice.FieldIdempotencyKey, field.TypeString)
+	}
+	if value, ok := iu.mutation.GracePeriodEndTime(); ok {
+		_spec.SetField(invoice.FieldGracePeriodEndTime, field.TypeTime, value)
+	}
+	if iu.mutation.GracePeriodEndTimeCleared() {
+		_spec.ClearField(invoice.FieldGracePeriodEndTime, field.TypeTime)
 	}
 	if iu.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1228,6 +1254,26 @@ func (iuo *InvoiceUpdateOne) ClearIdempotencyKey() *InvoiceUpdateOne {
 	return iuo
 }
 
+// SetGracePeriodEndTime sets the "grace_period_end_time" field.
+func (iuo *InvoiceUpdateOne) SetGracePeriodEndTime(t time.Time) *InvoiceUpdateOne {
+	iuo.mutation.SetGracePeriodEndTime(t)
+	return iuo
+}
+
+// SetNillableGracePeriodEndTime sets the "grace_period_end_time" field if the given value is not nil.
+func (iuo *InvoiceUpdateOne) SetNillableGracePeriodEndTime(t *time.Time) *InvoiceUpdateOne {
+	if t != nil {
+		iuo.SetGracePeriodEndTime(*t)
+	}
+	return iuo
+}
+
+// ClearGracePeriodEndTime clears the value of the "grace_period_end_time" field.
+func (iuo *InvoiceUpdateOne) ClearGracePeriodEndTime() *InvoiceUpdateOne {
+	iuo.mutation.ClearGracePeriodEndTime()
+	return iuo
+}
+
 // AddLineItemIDs adds the "line_items" edge to the InvoiceLineItem entity by IDs.
 func (iuo *InvoiceUpdateOne) AddLineItemIDs(ids ...string) *InvoiceUpdateOne {
 	iuo.mutation.AddLineItemIDs(ids...)
@@ -1490,6 +1536,12 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	}
 	if iuo.mutation.IdempotencyKeyCleared() {
 		_spec.ClearField(invoice.FieldIdempotencyKey, field.TypeString)
+	}
+	if value, ok := iuo.mutation.GracePeriodEndTime(); ok {
+		_spec.SetField(invoice.FieldGracePeriodEndTime, field.TypeTime, value)
+	}
+	if iuo.mutation.GracePeriodEndTimeCleared() {
+		_spec.ClearField(invoice.FieldGracePeriodEndTime, field.TypeTime)
 	}
 	if iuo.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{

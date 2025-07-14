@@ -66,7 +66,8 @@ func (CreditGrant) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(3)",
 			}).
-			NotEmpty().
+			Optional().
+			Nillable().
 			Immutable(),
 		field.String("cadence").
 			GoType(types.CreditGrantCadence(types.CreditGrantCadenceOneTime)).

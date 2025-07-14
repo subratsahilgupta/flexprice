@@ -265,6 +265,9 @@ func (cgu *CreditGrantUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := cgu.mutation.Scope(); ok {
 		_spec.SetField(creditgrant.FieldScope, field.TypeString, value)
 	}
+	if cgu.mutation.CurrencyCleared() {
+		_spec.ClearField(creditgrant.FieldCurrency, field.TypeString)
+	}
 	if cgu.mutation.PeriodCleared() {
 		_spec.ClearField(creditgrant.FieldPeriod, field.TypeString)
 	}
@@ -627,6 +630,9 @@ func (cguo *CreditGrantUpdateOne) sqlSave(ctx context.Context) (_node *CreditGra
 	}
 	if value, ok := cguo.mutation.Scope(); ok {
 		_spec.SetField(creditgrant.FieldScope, field.TypeString, value)
+	}
+	if cguo.mutation.CurrencyCleared() {
+		_spec.ClearField(creditgrant.FieldCurrency, field.TypeString)
 	}
 	if cguo.mutation.PeriodCleared() {
 		_spec.ClearField(creditgrant.FieldPeriod, field.TypeString)

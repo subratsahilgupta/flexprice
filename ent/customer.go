@@ -51,8 +51,10 @@ type Customer struct {
 	// AddressCountry holds the value of the "address_country" field.
 	AddressCountry string `json:"address_country,omitempty"`
 	// Metadata holds the value of the "metadata" field.
-	Metadata     map[string]string `json:"metadata,omitempty"`
-	selectValues sql.SelectValues
+	Metadata map[string]string `json:"metadata,omitempty"`
+	// AutoCancelOnUnpaid holds the value of the "auto_cancel_on_unpaid" field.
+	AutoCancelOnUnpaid bool `json:"auto_cancel_on_unpaid,omitempty"`
+	selectValues       sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -62,6 +64,8 @@ func (*Customer) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case customer.FieldMetadata:
 			values[i] = new([]byte)
+		case customer.FieldAutoCancelOnUnpaid:
+			values[i] = new(sql.NullBool)
 		case customer.FieldID, customer.FieldTenantID, customer.FieldStatus, customer.FieldCreatedBy, customer.FieldUpdatedBy, customer.FieldEnvironmentID, customer.FieldExternalID, customer.FieldName, customer.FieldEmail, customer.FieldAddressLine1, customer.FieldAddressLine2, customer.FieldAddressCity, customer.FieldAddressState, customer.FieldAddressPostalCode, customer.FieldAddressCountry:
 			values[i] = new(sql.NullString)
 		case customer.FieldCreatedAt, customer.FieldUpdatedAt:
@@ -191,6 +195,12 @@ func (c *Customer) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field metadata: %w", err)
 				}
 			}
+		case customer.FieldAutoCancelOnUnpaid:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field auto_cancel_on_unpaid", values[i])
+			} else if value.Valid {
+				c.AutoCancelOnUnpaid = value.Bool
+			}
 		default:
 			c.selectValues.Set(columns[i], values[i])
 		}
@@ -277,6 +287,9 @@ func (c *Customer) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("metadata=")
 	builder.WriteString(fmt.Sprintf("%v", c.Metadata))
+	builder.WriteString(", ")
+	builder.WriteString("auto_cancel_on_unpaid=")
+	builder.WriteString(fmt.Sprintf("%v", c.AutoCancelOnUnpaid))
 	builder.WriteByte(')')
 	return builder.String()
 }

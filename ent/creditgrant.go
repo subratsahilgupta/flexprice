@@ -47,7 +47,7 @@ type CreditGrant struct {
 	// Credits holds the value of the "credits" field.
 	Credits decimal.Decimal `json:"credits,omitempty"`
 	// Currency holds the value of the "currency" field.
-	Currency string `json:"currency,omitempty"`
+	Currency *string `json:"currency,omitempty"`
 	// Cadence holds the value of the "cadence" field.
 	Cadence types.CreditGrantCadence `json:"cadence,omitempty"`
 	// Period holds the value of the "period" field.
@@ -217,7 +217,8 @@ func (cg *CreditGrant) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field currency", values[i])
 			} else if value.Valid {
-				cg.Currency = value.String
+				cg.Currency = new(string)
+				*cg.Currency = value.String
 			}
 		case creditgrant.FieldCadence:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -360,8 +361,10 @@ func (cg *CreditGrant) String() string {
 	builder.WriteString("credits=")
 	builder.WriteString(fmt.Sprintf("%v", cg.Credits))
 	builder.WriteString(", ")
-	builder.WriteString("currency=")
-	builder.WriteString(cg.Currency)
+	if v := cg.Currency; v != nil {
+		builder.WriteString("currency=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("cadence=")
 	builder.WriteString(fmt.Sprintf("%v", cg.Cadence))

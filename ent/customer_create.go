@@ -226,6 +226,20 @@ func (cc *CustomerCreate) SetMetadata(m map[string]string) *CustomerCreate {
 	return cc
 }
 
+// SetAutoCancelOnUnpaid sets the "auto_cancel_on_unpaid" field.
+func (cc *CustomerCreate) SetAutoCancelOnUnpaid(b bool) *CustomerCreate {
+	cc.mutation.SetAutoCancelOnUnpaid(b)
+	return cc
+}
+
+// SetNillableAutoCancelOnUnpaid sets the "auto_cancel_on_unpaid" field if the given value is not nil.
+func (cc *CustomerCreate) SetNillableAutoCancelOnUnpaid(b *bool) *CustomerCreate {
+	if b != nil {
+		cc.SetAutoCancelOnUnpaid(*b)
+	}
+	return cc
+}
+
 // SetID sets the "id" field.
 func (cc *CustomerCreate) SetID(s string) *CustomerCreate {
 	cc.mutation.SetID(s)
@@ -283,6 +297,10 @@ func (cc *CustomerCreate) defaults() {
 		v := customer.DefaultEnvironmentID
 		cc.mutation.SetEnvironmentID(v)
 	}
+	if _, ok := cc.mutation.AutoCancelOnUnpaid(); !ok {
+		v := customer.DefaultAutoCancelOnUnpaid
+		cc.mutation.SetAutoCancelOnUnpaid(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -319,6 +337,9 @@ func (cc *CustomerCreate) check() error {
 		if err := customer.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Customer.name": %w`, err)}
 		}
+	}
+	if _, ok := cc.mutation.AutoCancelOnUnpaid(); !ok {
+		return &ValidationError{Name: "auto_cancel_on_unpaid", err: errors.New(`ent: missing required field "Customer.auto_cancel_on_unpaid"`)}
 	}
 	return nil
 }
@@ -422,6 +443,10 @@ func (cc *CustomerCreate) createSpec() (*Customer, *sqlgraph.CreateSpec) {
 	if value, ok := cc.mutation.Metadata(); ok {
 		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
 		_node.Metadata = value
+	}
+	if value, ok := cc.mutation.AutoCancelOnUnpaid(); ok {
+		_spec.SetField(customer.FieldAutoCancelOnUnpaid, field.TypeBool, value)
+		_node.AutoCancelOnUnpaid = value
 	}
 	return _node, _spec
 }

@@ -15,6 +15,7 @@ type SubscriptionStatus string
 
 const (
 	SubscriptionStatusActive            SubscriptionStatus = "active"
+	SubscriptionStatusPending           SubscriptionStatus = "pending"
 	SubscriptionStatusPaused            SubscriptionStatus = "paused"
 	SubscriptionStatusCancelled         SubscriptionStatus = "cancelled"
 	SubscriptionStatusIncomplete        SubscriptionStatus = "incomplete"
@@ -31,6 +32,7 @@ func (s SubscriptionStatus) String() string {
 func (s SubscriptionStatus) Validate() error {
 	allowed := []SubscriptionStatus{
 		SubscriptionStatusActive,
+		SubscriptionStatusPending,
 		SubscriptionStatusPaused,
 		SubscriptionStatusCancelled,
 		SubscriptionStatusIncomplete,

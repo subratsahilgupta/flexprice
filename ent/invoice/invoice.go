@@ -85,6 +85,8 @@ const (
 	FieldBillingSequence = "billing_sequence"
 	// FieldIdempotencyKey holds the string denoting the idempotency_key field in the database.
 	FieldIdempotencyKey = "idempotency_key"
+	// FieldGracePeriodEndTime holds the string denoting the grace_period_end_time field in the database.
+	FieldGracePeriodEndTime = "grace_period_end_time"
 	// EdgeLineItems holds the string denoting the line_items edge name in mutations.
 	EdgeLineItems = "line_items"
 	// Table holds the table name of the invoice in the database.
@@ -136,6 +138,7 @@ var Columns = []string{
 	FieldInvoiceNumber,
 	FieldBillingSequence,
 	FieldIdempotencyKey,
+	FieldGracePeriodEndTime,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -365,6 +368,11 @@ func ByBillingSequence(opts ...sql.OrderTermOption) OrderOption {
 // ByIdempotencyKey orders the results by the idempotency_key field.
 func ByIdempotencyKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldIdempotencyKey, opts...).ToFunc()
+}
+
+// ByGracePeriodEndTime orders the results by the grace_period_end_time field.
+func ByGracePeriodEndTime(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGracePeriodEndTime, opts...).ToFunc()
 }
 
 // ByLineItemsCount orders the results by line_items count.

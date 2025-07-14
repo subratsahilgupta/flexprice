@@ -47,6 +47,8 @@ const (
 	FieldAddressCountry = "address_country"
 	// FieldMetadata holds the string denoting the metadata field in the database.
 	FieldMetadata = "metadata"
+	// FieldAutoCancelOnUnpaid holds the string denoting the auto_cancel_on_unpaid field in the database.
+	FieldAutoCancelOnUnpaid = "auto_cancel_on_unpaid"
 	// Table holds the table name of the customer in the database.
 	Table = "customers"
 )
@@ -71,6 +73,7 @@ var Columns = []string{
 	FieldAddressPostalCode,
 	FieldAddressCountry,
 	FieldMetadata,
+	FieldAutoCancelOnUnpaid,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -100,6 +103,8 @@ var (
 	ExternalIDValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// DefaultAutoCancelOnUnpaid holds the default value on creation for the "auto_cancel_on_unpaid" field.
+	DefaultAutoCancelOnUnpaid bool
 )
 
 // OrderOption defines the ordering options for the Customer queries.
@@ -188,4 +193,9 @@ func ByAddressPostalCode(opts ...sql.OrderTermOption) OrderOption {
 // ByAddressCountry orders the results by the address_country field.
 func ByAddressCountry(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAddressCountry, opts...).ToFunc()
+}
+
+// ByAutoCancelOnUnpaid orders the results by the auto_cancel_on_unpaid field.
+func ByAutoCancelOnUnpaid(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAutoCancelOnUnpaid, opts...).ToFunc()
 }

@@ -81,6 +81,8 @@ func (Customer) Fields() []ent.Field {
 		// Metadata as JSON field
 		field.JSON("metadata", map[string]string{}).
 			Optional(),
+		field.Bool("auto_cancel_on_unpaid").
+			Default(false), // Whether to automatically cancel subscription if invoice is unpaid after grace period
 	}
 }
 
@@ -97,5 +99,8 @@ func (Customer) Indexes() []ent.Index {
 			Annotations(entsql.IndexWhere("(external_id IS NOT NULL AND external_id != '') AND status = 'published'")).
 			StorageKey(Idx_tenant_environment_external_id_unique),
 		index.Fields("tenant_id", "environment_id"),
+		index.Fields("auto_cancel_on_unpaid", "status").
+			StorageKey("idx_auto_cancel_status").
+			Annotations(entsql.IndexWhere("status = 'published'")),
 	}
 }
