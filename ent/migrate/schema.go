@@ -133,7 +133,7 @@ var (
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "scope", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "credits", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
-		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(3)"}},
+		{Name: "currency", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(3)"}},
 		{Name: "cadence", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "period", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "period_count", Type: field.TypeInt, Nullable: true},
@@ -345,6 +345,7 @@ var (
 		{Name: "address_postal_code", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "address_country", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(2)"}},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "auto_cancel_on_unpaid", Type: field.TypeBool, Default: false},
 	}
 	// CustomersTable holds the schema information for the "customers" table.
 	CustomersTable = &schema.Table{
@@ -364,6 +365,14 @@ var (
 				Name:    "customer_tenant_id_environment_id",
 				Unique:  false,
 				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7]},
+			},
+			{
+				Name:    "idx_auto_cancel_status",
+				Unique:  false,
+				Columns: []*schema.Column{CustomersColumns[18], CustomersColumns[2]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published'",
+				},
 			},
 		},
 	}
@@ -551,6 +560,7 @@ var (
 		{Name: "invoice_number", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "billing_sequence", Type: field.TypeInt, Nullable: true, SchemaType: map[string]string{"postgres": "integer"}},
 		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(100)"}},
+		{Name: "grace_period_end_time", Type: field.TypeTime, Nullable: true},
 	}
 	// InvoicesTable holds the schema information for the "invoices" table.
 	InvoicesTable = &schema.Table{
@@ -580,6 +590,14 @@ var (
 				Name:    "idx_tenant_due_date_status",
 				Unique:  false,
 				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[22], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
+			},
+			{
+				Name:    "idx_grace_period_payment_status",
+				Unique:  false,
+				Columns: []*schema.Column{InvoicesColumns[36], InvoicesColumns[12], InvoicesColumns[2]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published' AND grace_period_end_time IS NOT NULL",
+				},
 			},
 			{
 				Name:    "idx_tenant_environment_invoice_number_unique",

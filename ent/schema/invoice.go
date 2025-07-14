@@ -175,6 +175,10 @@ func (Invoice) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Key for ensuring idempotent invoice creation"),
+		field.Time("grace_period_end_time").
+			Optional().
+			Nillable().
+			Comment("The time after which unpaid invoice will trigger subscription cancellation"),
 	}
 }
 
@@ -197,6 +201,9 @@ func (Invoice) Indexes() []ent.Index {
 			StorageKey("idx_tenant_type_status"),
 		index.Fields("tenant_id", "environment_id", "due_date", "invoice_status", "payment_status", "status").
 			StorageKey("idx_tenant_due_date_status"),
+		index.Fields("grace_period_end_time", "payment_status", "status").
+			StorageKey("idx_grace_period_payment_status").
+			Annotations(entsql.IndexWhere("status = 'published' AND grace_period_end_time IS NOT NULL")),
 
 		// Invoice number is unique per tenant and environment
 		index.Fields("tenant_id", "environment_id", "invoice_number").

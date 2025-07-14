@@ -144,6 +144,11 @@ func AddressCountry(v string) predicate.Customer {
 	return predicate.Customer(sql.FieldEQ(FieldAddressCountry, v))
 }
 
+// AutoCancelOnUnpaid applies equality check predicate on the "auto_cancel_on_unpaid" field. It's identical to AutoCancelOnUnpaidEQ.
+func AutoCancelOnUnpaid(v bool) predicate.Customer {
+	return predicate.Customer(sql.FieldEQ(FieldAutoCancelOnUnpaid, v))
+}
+
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.Customer {
 	return predicate.Customer(sql.FieldEQ(FieldTenantID, v))
@@ -1242,6 +1247,16 @@ func MetadataIsNil() predicate.Customer {
 // MetadataNotNil applies the NotNil predicate on the "metadata" field.
 func MetadataNotNil() predicate.Customer {
 	return predicate.Customer(sql.FieldNotNull(FieldMetadata))
+}
+
+// AutoCancelOnUnpaidEQ applies the EQ predicate on the "auto_cancel_on_unpaid" field.
+func AutoCancelOnUnpaidEQ(v bool) predicate.Customer {
+	return predicate.Customer(sql.FieldEQ(FieldAutoCancelOnUnpaid, v))
+}
+
+// AutoCancelOnUnpaidNEQ applies the NEQ predicate on the "auto_cancel_on_unpaid" field.
+func AutoCancelOnUnpaidNEQ(v bool) predicate.Customer {
+	return predicate.Customer(sql.FieldNEQ(FieldAutoCancelOnUnpaid, v))
 }
 
 // And groups predicates with the AND operator between them.

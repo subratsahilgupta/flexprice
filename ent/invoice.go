@@ -89,6 +89,8 @@ type Invoice struct {
 	BillingSequence *int `json:"billing_sequence,omitempty"`
 	// Key for ensuring idempotent invoice creation
 	IdempotencyKey *string `json:"idempotency_key,omitempty"`
+	// The time after which unpaid invoice will trigger subscription cancellation
+	GracePeriodEndTime *time.Time `json:"grace_period_end_time,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the InvoiceQuery when eager-loading is set.
 	Edges        InvoiceEdges `json:"edges"`
@@ -126,7 +128,7 @@ func (*Invoice) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case invoice.FieldID, invoice.FieldTenantID, invoice.FieldStatus, invoice.FieldCreatedBy, invoice.FieldUpdatedBy, invoice.FieldEnvironmentID, invoice.FieldCustomerID, invoice.FieldSubscriptionID, invoice.FieldInvoiceType, invoice.FieldInvoiceStatus, invoice.FieldPaymentStatus, invoice.FieldCurrency, invoice.FieldDescription, invoice.FieldBillingPeriod, invoice.FieldInvoicePdfURL, invoice.FieldBillingReason, invoice.FieldInvoiceNumber, invoice.FieldIdempotencyKey:
 			values[i] = new(sql.NullString)
-		case invoice.FieldCreatedAt, invoice.FieldUpdatedAt, invoice.FieldDueDate, invoice.FieldPaidAt, invoice.FieldVoidedAt, invoice.FieldFinalizedAt, invoice.FieldPeriodStart, invoice.FieldPeriodEnd:
+		case invoice.FieldCreatedAt, invoice.FieldUpdatedAt, invoice.FieldDueDate, invoice.FieldPaidAt, invoice.FieldVoidedAt, invoice.FieldFinalizedAt, invoice.FieldPeriodStart, invoice.FieldPeriodEnd, invoice.FieldGracePeriodEndTime:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -373,6 +375,13 @@ func (i *Invoice) assignValues(columns []string, values []any) error {
 				i.IdempotencyKey = new(string)
 				*i.IdempotencyKey = value.String
 			}
+		case invoice.FieldGracePeriodEndTime:
+			if value, ok := values[j].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field grace_period_end_time", values[j])
+			} else if value.Valid {
+				i.GracePeriodEndTime = new(time.Time)
+				*i.GracePeriodEndTime = value.Time
+			}
 		default:
 			i.selectValues.Set(columns[j], values[j])
 		}
@@ -541,6 +550,11 @@ func (i *Invoice) String() string {
 	if v := i.IdempotencyKey; v != nil {
 		builder.WriteString("idempotency_key=")
 		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := i.GracePeriodEndTime; v != nil {
+		builder.WriteString("grace_period_end_time=")
+		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteByte(')')
 	return builder.String()

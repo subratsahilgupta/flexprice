@@ -472,6 +472,20 @@ func (ic *InvoiceCreate) SetNillableIdempotencyKey(s *string) *InvoiceCreate {
 	return ic
 }
 
+// SetGracePeriodEndTime sets the "grace_period_end_time" field.
+func (ic *InvoiceCreate) SetGracePeriodEndTime(t time.Time) *InvoiceCreate {
+	ic.mutation.SetGracePeriodEndTime(t)
+	return ic
+}
+
+// SetNillableGracePeriodEndTime sets the "grace_period_end_time" field if the given value is not nil.
+func (ic *InvoiceCreate) SetNillableGracePeriodEndTime(t *time.Time) *InvoiceCreate {
+	if t != nil {
+		ic.SetGracePeriodEndTime(*t)
+	}
+	return ic
+}
+
 // SetID sets the "id" field.
 func (ic *InvoiceCreate) SetID(s string) *InvoiceCreate {
 	ic.mutation.SetID(s)
@@ -821,6 +835,10 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 	if value, ok := ic.mutation.IdempotencyKey(); ok {
 		_spec.SetField(invoice.FieldIdempotencyKey, field.TypeString, value)
 		_node.IdempotencyKey = &value
+	}
+	if value, ok := ic.mutation.GracePeriodEndTime(); ok {
+		_spec.SetField(invoice.FieldGracePeriodEndTime, field.TypeTime, value)
+		_node.GracePeriodEndTime = &value
 	}
 	if nodes := ic.mutation.LineItemsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

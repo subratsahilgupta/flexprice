@@ -248,6 +248,20 @@ func (cu *CustomerUpdate) ClearMetadata() *CustomerUpdate {
 	return cu
 }
 
+// SetAutoCancelOnUnpaid sets the "auto_cancel_on_unpaid" field.
+func (cu *CustomerUpdate) SetAutoCancelOnUnpaid(b bool) *CustomerUpdate {
+	cu.mutation.SetAutoCancelOnUnpaid(b)
+	return cu
+}
+
+// SetNillableAutoCancelOnUnpaid sets the "auto_cancel_on_unpaid" field if the given value is not nil.
+func (cu *CustomerUpdate) SetNillableAutoCancelOnUnpaid(b *bool) *CustomerUpdate {
+	if b != nil {
+		cu.SetAutoCancelOnUnpaid(*b)
+	}
+	return cu
+}
+
 // Mutation returns the CustomerMutation object of the builder.
 func (cu *CustomerUpdate) Mutation() *CustomerMutation {
 	return cu.mutation
@@ -387,6 +401,9 @@ func (cu *CustomerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if cu.mutation.MetadataCleared() {
 		_spec.ClearField(customer.FieldMetadata, field.TypeJSON)
+	}
+	if value, ok := cu.mutation.AutoCancelOnUnpaid(); ok {
+		_spec.SetField(customer.FieldAutoCancelOnUnpaid, field.TypeBool, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, cu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -628,6 +645,20 @@ func (cuo *CustomerUpdateOne) ClearMetadata() *CustomerUpdateOne {
 	return cuo
 }
 
+// SetAutoCancelOnUnpaid sets the "auto_cancel_on_unpaid" field.
+func (cuo *CustomerUpdateOne) SetAutoCancelOnUnpaid(b bool) *CustomerUpdateOne {
+	cuo.mutation.SetAutoCancelOnUnpaid(b)
+	return cuo
+}
+
+// SetNillableAutoCancelOnUnpaid sets the "auto_cancel_on_unpaid" field if the given value is not nil.
+func (cuo *CustomerUpdateOne) SetNillableAutoCancelOnUnpaid(b *bool) *CustomerUpdateOne {
+	if b != nil {
+		cuo.SetAutoCancelOnUnpaid(*b)
+	}
+	return cuo
+}
+
 // Mutation returns the CustomerMutation object of the builder.
 func (cuo *CustomerUpdateOne) Mutation() *CustomerMutation {
 	return cuo.mutation
@@ -797,6 +828,9 @@ func (cuo *CustomerUpdateOne) sqlSave(ctx context.Context) (_node *Customer, err
 	}
 	if cuo.mutation.MetadataCleared() {
 		_spec.ClearField(customer.FieldMetadata, field.TypeJSON)
+	}
+	if value, ok := cuo.mutation.AutoCancelOnUnpaid(); ok {
+		_spec.SetField(customer.FieldAutoCancelOnUnpaid, field.TypeBool, value)
 	}
 	_node = &Customer{config: cuo.config}
 	_spec.Assign = _node.assignValues

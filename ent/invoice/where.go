@@ -236,6 +236,11 @@ func IdempotencyKey(v string) predicate.Invoice {
 	return predicate.Invoice(sql.FieldEQ(FieldIdempotencyKey, v))
 }
 
+// GracePeriodEndTime applies equality check predicate on the "grace_period_end_time" field. It's identical to GracePeriodEndTimeEQ.
+func GracePeriodEndTime(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldGracePeriodEndTime, v))
+}
+
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.Invoice {
 	return predicate.Invoice(sql.FieldEQ(FieldTenantID, v))
@@ -2239,6 +2244,56 @@ func IdempotencyKeyEqualFold(v string) predicate.Invoice {
 // IdempotencyKeyContainsFold applies the ContainsFold predicate on the "idempotency_key" field.
 func IdempotencyKeyContainsFold(v string) predicate.Invoice {
 	return predicate.Invoice(sql.FieldContainsFold(FieldIdempotencyKey, v))
+}
+
+// GracePeriodEndTimeEQ applies the EQ predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeEQ(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldEQ(FieldGracePeriodEndTime, v))
+}
+
+// GracePeriodEndTimeNEQ applies the NEQ predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeNEQ(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNEQ(FieldGracePeriodEndTime, v))
+}
+
+// GracePeriodEndTimeIn applies the In predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeIn(vs ...time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldIn(FieldGracePeriodEndTime, vs...))
+}
+
+// GracePeriodEndTimeNotIn applies the NotIn predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeNotIn(vs ...time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotIn(FieldGracePeriodEndTime, vs...))
+}
+
+// GracePeriodEndTimeGT applies the GT predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeGT(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGT(FieldGracePeriodEndTime, v))
+}
+
+// GracePeriodEndTimeGTE applies the GTE predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeGTE(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldGTE(FieldGracePeriodEndTime, v))
+}
+
+// GracePeriodEndTimeLT applies the LT predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeLT(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLT(FieldGracePeriodEndTime, v))
+}
+
+// GracePeriodEndTimeLTE applies the LTE predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeLTE(v time.Time) predicate.Invoice {
+	return predicate.Invoice(sql.FieldLTE(FieldGracePeriodEndTime, v))
+}
+
+// GracePeriodEndTimeIsNil applies the IsNil predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeIsNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldIsNull(FieldGracePeriodEndTime))
+}
+
+// GracePeriodEndTimeNotNil applies the NotNil predicate on the "grace_period_end_time" field.
+func GracePeriodEndTimeNotNil() predicate.Invoice {
+	return predicate.Invoice(sql.FieldNotNull(FieldGracePeriodEndTime))
 }
 
 // HasLineItems applies the HasEdge predicate on the "line_items" edge.

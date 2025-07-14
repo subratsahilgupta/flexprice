@@ -170,10 +170,6 @@ func init() {
 	creditgrantDescCredits := creditgrantFields[5].Descriptor()
 	// creditgrant.DefaultCredits holds the default value on creation for the credits field.
 	creditgrant.DefaultCredits = creditgrantDescCredits.Default.(decimal.Decimal)
-	// creditgrantDescCurrency is the schema descriptor for currency field.
-	creditgrantDescCurrency := creditgrantFields[6].Descriptor()
-	// creditgrant.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
-	creditgrant.CurrencyValidator = creditgrantDescCurrency.Validators[0].(func(string) error)
 	// creditgrantDescCadence is the schema descriptor for cadence field.
 	creditgrantDescCadence := creditgrantFields[7].Descriptor()
 	// creditgrant.CadenceValidator is a validator for the "cadence" field. It is called by the builders before save.
@@ -384,6 +380,10 @@ func init() {
 	customerDescName := customerFields[2].Descriptor()
 	// customer.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	customer.NameValidator = customerDescName.Validators[0].(func(string) error)
+	// customerDescAutoCancelOnUnpaid is the schema descriptor for auto_cancel_on_unpaid field.
+	customerDescAutoCancelOnUnpaid := customerFields[11].Descriptor()
+	// customer.DefaultAutoCancelOnUnpaid holds the default value on creation for the auto_cancel_on_unpaid field.
+	customer.DefaultAutoCancelOnUnpaid = customerDescAutoCancelOnUnpaid.Default.(bool)
 	entitlementMixin := schema.Entitlement{}.Mixin()
 	entitlementMixinFields0 := entitlementMixin[0].Fields()
 	_ = entitlementMixinFields0

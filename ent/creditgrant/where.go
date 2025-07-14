@@ -1001,6 +1001,16 @@ func CurrencyHasSuffix(v string) predicate.CreditGrant {
 	return predicate.CreditGrant(sql.FieldHasSuffix(FieldCurrency, v))
 }
 
+// CurrencyIsNil applies the IsNil predicate on the "currency" field.
+func CurrencyIsNil() predicate.CreditGrant {
+	return predicate.CreditGrant(sql.FieldIsNull(FieldCurrency))
+}
+
+// CurrencyNotNil applies the NotNil predicate on the "currency" field.
+func CurrencyNotNil() predicate.CreditGrant {
+	return predicate.CreditGrant(sql.FieldNotNull(FieldCurrency))
+}
+
 // CurrencyEqualFold applies the EqualFold predicate on the "currency" field.
 func CurrencyEqualFold(v string) predicate.CreditGrant {
 	return predicate.CreditGrant(sql.FieldEqualFold(FieldCurrency, v))
