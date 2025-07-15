@@ -262,8 +262,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		creditGrantRequests := make([]dto.CreateCreditGrantRequest, 0)
 
 		// check if user has overidden the plan credit grants, if so add them to the request
-		if req.CreditGrants != nil {
-			creditGrantRequests = append(creditGrantRequests, *req.CreditGrants...)
+		if len(req.CreditGrants) > 0 {
+			creditGrantRequests = append(creditGrantRequests, req.CreditGrants...)
 		} else {
 			// if user has not overidden the plan credit grants, add the plan credit grants to the request
 			creditGrantService := NewCreditGrantService(s.ServiceParams)
