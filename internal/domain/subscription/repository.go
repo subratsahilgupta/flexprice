@@ -63,3 +63,18 @@ type SubscriptionScheduleRepository interface {
 	// CreateWithPhases creates a schedule with all its phases in one transaction
 	CreateWithPhases(ctx context.Context, schedule *SubscriptionSchedule, phases []*SchedulePhase) error
 }
+
+// SubscriptionLifecycleConfigRepository provides access to subscription lifecycle configuration
+type SubscriptionLifecycleConfigRepository interface {
+	// GetConfig retrieves a configuration value by key
+	GetConfig(ctx context.Context, tenantID, environmentID, key string) (*SubscriptionLifecycleConfig, error)
+
+	// SetConfig creates or updates a configuration value
+	SetConfig(ctx context.Context, config *SubscriptionLifecycleConfig) error
+
+	// GetConfigAudit retrieves audit logs for a configuration key
+	GetConfigAudit(ctx context.Context, tenantID, environmentID, key string) ([]*SubscriptionLifecycleConfigAudit, error)
+
+	// CreateConfigAudit creates a new audit log entry
+	CreateConfigAudit(ctx context.Context, audit *SubscriptionLifecycleConfigAudit) error
+}
