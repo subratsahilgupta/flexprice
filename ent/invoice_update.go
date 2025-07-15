@@ -180,6 +180,46 @@ func (iu *InvoiceUpdate) ClearSubtotal() *InvoiceUpdate {
 	return iu
 }
 
+// SetAdjustmentAmount sets the "adjustment_amount" field.
+func (iu *InvoiceUpdate) SetAdjustmentAmount(d decimal.Decimal) *InvoiceUpdate {
+	iu.mutation.SetAdjustmentAmount(d)
+	return iu
+}
+
+// SetNillableAdjustmentAmount sets the "adjustment_amount" field if the given value is not nil.
+func (iu *InvoiceUpdate) SetNillableAdjustmentAmount(d *decimal.Decimal) *InvoiceUpdate {
+	if d != nil {
+		iu.SetAdjustmentAmount(*d)
+	}
+	return iu
+}
+
+// ClearAdjustmentAmount clears the value of the "adjustment_amount" field.
+func (iu *InvoiceUpdate) ClearAdjustmentAmount() *InvoiceUpdate {
+	iu.mutation.ClearAdjustmentAmount()
+	return iu
+}
+
+// SetRefundedAmount sets the "refunded_amount" field.
+func (iu *InvoiceUpdate) SetRefundedAmount(d decimal.Decimal) *InvoiceUpdate {
+	iu.mutation.SetRefundedAmount(d)
+	return iu
+}
+
+// SetNillableRefundedAmount sets the "refunded_amount" field if the given value is not nil.
+func (iu *InvoiceUpdate) SetNillableRefundedAmount(d *decimal.Decimal) *InvoiceUpdate {
+	if d != nil {
+		iu.SetRefundedAmount(*d)
+	}
+	return iu
+}
+
+// ClearRefundedAmount clears the value of the "refunded_amount" field.
+func (iu *InvoiceUpdate) ClearRefundedAmount() *InvoiceUpdate {
+	iu.mutation.ClearRefundedAmount()
+	return iu
+}
+
 // SetTotal sets the "total" field.
 func (iu *InvoiceUpdate) SetTotal(d decimal.Decimal) *InvoiceUpdate {
 	iu.mutation.SetTotal(d)
@@ -571,6 +611,18 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if iu.mutation.SubtotalCleared() {
 		_spec.ClearField(invoice.FieldSubtotal, field.TypeOther)
 	}
+	if value, ok := iu.mutation.AdjustmentAmount(); ok {
+		_spec.SetField(invoice.FieldAdjustmentAmount, field.TypeOther, value)
+	}
+	if iu.mutation.AdjustmentAmountCleared() {
+		_spec.ClearField(invoice.FieldAdjustmentAmount, field.TypeOther)
+	}
+	if value, ok := iu.mutation.RefundedAmount(); ok {
+		_spec.SetField(invoice.FieldRefundedAmount, field.TypeOther, value)
+	}
+	if iu.mutation.RefundedAmountCleared() {
+		_spec.ClearField(invoice.FieldRefundedAmount, field.TypeOther)
+	}
 	if value, ok := iu.mutation.Total(); ok {
 		_spec.SetField(invoice.FieldTotal, field.TypeOther, value)
 	}
@@ -873,6 +925,46 @@ func (iuo *InvoiceUpdateOne) SetNillableSubtotal(d *decimal.Decimal) *InvoiceUpd
 // ClearSubtotal clears the value of the "subtotal" field.
 func (iuo *InvoiceUpdateOne) ClearSubtotal() *InvoiceUpdateOne {
 	iuo.mutation.ClearSubtotal()
+	return iuo
+}
+
+// SetAdjustmentAmount sets the "adjustment_amount" field.
+func (iuo *InvoiceUpdateOne) SetAdjustmentAmount(d decimal.Decimal) *InvoiceUpdateOne {
+	iuo.mutation.SetAdjustmentAmount(d)
+	return iuo
+}
+
+// SetNillableAdjustmentAmount sets the "adjustment_amount" field if the given value is not nil.
+func (iuo *InvoiceUpdateOne) SetNillableAdjustmentAmount(d *decimal.Decimal) *InvoiceUpdateOne {
+	if d != nil {
+		iuo.SetAdjustmentAmount(*d)
+	}
+	return iuo
+}
+
+// ClearAdjustmentAmount clears the value of the "adjustment_amount" field.
+func (iuo *InvoiceUpdateOne) ClearAdjustmentAmount() *InvoiceUpdateOne {
+	iuo.mutation.ClearAdjustmentAmount()
+	return iuo
+}
+
+// SetRefundedAmount sets the "refunded_amount" field.
+func (iuo *InvoiceUpdateOne) SetRefundedAmount(d decimal.Decimal) *InvoiceUpdateOne {
+	iuo.mutation.SetRefundedAmount(d)
+	return iuo
+}
+
+// SetNillableRefundedAmount sets the "refunded_amount" field if the given value is not nil.
+func (iuo *InvoiceUpdateOne) SetNillableRefundedAmount(d *decimal.Decimal) *InvoiceUpdateOne {
+	if d != nil {
+		iuo.SetRefundedAmount(*d)
+	}
+	return iuo
+}
+
+// ClearRefundedAmount clears the value of the "refunded_amount" field.
+func (iuo *InvoiceUpdateOne) ClearRefundedAmount() *InvoiceUpdateOne {
+	iuo.mutation.ClearRefundedAmount()
 	return iuo
 }
 
@@ -1296,6 +1388,18 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	}
 	if iuo.mutation.SubtotalCleared() {
 		_spec.ClearField(invoice.FieldSubtotal, field.TypeOther)
+	}
+	if value, ok := iuo.mutation.AdjustmentAmount(); ok {
+		_spec.SetField(invoice.FieldAdjustmentAmount, field.TypeOther, value)
+	}
+	if iuo.mutation.AdjustmentAmountCleared() {
+		_spec.ClearField(invoice.FieldAdjustmentAmount, field.TypeOther)
+	}
+	if value, ok := iuo.mutation.RefundedAmount(); ok {
+		_spec.SetField(invoice.FieldRefundedAmount, field.TypeOther, value)
+	}
+	if iuo.mutation.RefundedAmountCleared() {
+		_spec.ClearField(invoice.FieldRefundedAmount, field.TypeOther)
 	}
 	if value, ok := iuo.mutation.Total(); ok {
 		_spec.SetField(invoice.FieldTotal, field.TypeOther, value)
