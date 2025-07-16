@@ -48,7 +48,7 @@ type CreditGrantService interface {
 	// This method handles both one-time and recurring credit grants
 	ApplyCreditGrant(ctx context.Context, grant *creditgrant.CreditGrant, subscription *subscription.Subscription, metadata types.Metadata) error
 
-	// CancelFutureCreditGrantApplications cancels all future applications for this grant and subscription
+	// CancelFutureCreditGrantsOfSubscription cancels all future credit grants for this subscription
 	CancelFutureCreditGrantsOfSubscription(ctx context.Context, subscriptionID string) error
 }
 
