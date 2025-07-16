@@ -56,7 +56,6 @@ func (r *creditGrantRepository) Create(ctx context.Context, cg *domainCreditGran
 		SetName(cg.Name).
 		SetScope(cg.Scope).
 		SetCredits(cg.Credits).
-		SetCurrency(cg.Currency).
 		SetCadence(cg.Cadence).
 		SetNillablePlanID(cg.PlanID).
 		SetNillableSubscriptionID(cg.SubscriptionID).
@@ -67,7 +66,6 @@ func (r *creditGrantRepository) Create(ctx context.Context, cg *domainCreditGran
 		SetExpirationDurationUnit(lo.FromPtr(cg.ExpirationDurationUnit)).
 		SetNillablePriority(cg.Priority).
 		SetTenantID(cg.TenantID).
-		SetSubscriptionID(lo.FromPtr(cg.SubscriptionID)).
 		SetStatus(string(cg.Status)).
 		SetCreatedAt(cg.CreatedAt).
 		SetUpdatedAt(cg.UpdatedAt).
@@ -140,7 +138,6 @@ func (r *creditGrantRepository) CreateBulk(ctx context.Context, creditGrants []*
 			SetName(cg.Name).
 			SetScope(cg.Scope).
 			SetCredits(cg.Credits).
-			SetCurrency(cg.Currency).
 			SetCadence(cg.Cadence).
 			SetNillablePlanID(cg.PlanID).
 			SetNillableSubscriptionID(cg.SubscriptionID).
@@ -468,11 +465,10 @@ func (r *creditGrantRepository) GetByPlan(ctx context.Context, planID string) ([
 	r.log.Debugw("listing credit grants by plan ID", "plan_id", planID)
 
 	// Create a filter with plan ID
-	filter := &types.CreditGrantFilter{
-		QueryFilter: types.NewNoLimitQueryFilter(),
-		PlanIDs:     []string{planID},
-	}
-	filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+	filter := types.NewNoLimitCreditGrantFilter()
+	filter.PlanIDs = []string{planID}
+	filter.Status = lo.ToPtr(types.StatusPublished)
+	filter.Scope = lo.ToPtr(types.CreditGrantScopePlan)
 
 	// Use the existing List method
 	return r.List(ctx, filter)
@@ -491,11 +487,10 @@ func (r *creditGrantRepository) GetBySubscription(ctx context.Context, subscript
 		return []*domainCreditGrant.CreditGrant{}, nil
 	}
 
-	filter := &types.CreditGrantFilter{
-		QueryFilter:     types.NewNoLimitQueryFilter(),
-		SubscriptionIDs: []string{subscriptionID},
-	}
-	filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+	filter := types.NewNoLimitCreditGrantFilter()
+	filter.SubscriptionIDs = []string{subscriptionID}
+	filter.Status = lo.ToPtr(types.StatusPublished)
+	filter.Scope = lo.ToPtr(types.CreditGrantScopeSubscription)
 
 	return r.List(ctx, filter)
 }
@@ -565,6 +560,11 @@ func (o CreditGrantQueryOptions) applyEntityQueryOptions(_ context.Context, f *t
 	// Apply subscription IDs filter if specified
 	if len(f.SubscriptionIDs) > 0 {
 		query = query.Where(creditgrant.SubscriptionIDIn(f.SubscriptionIDs...))
+	}
+
+	// Apply scope filter if specified
+	if f.Scope != nil {
+		query = query.Where(creditgrant.Scope(lo.FromPtr(f.Scope)))
 	}
 
 	// Apply time range filters if specified

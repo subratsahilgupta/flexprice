@@ -835,9 +835,6 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 		return err
 	}
 
-	// TODO: Implement a retry mechanism or handle the error appropriately.
-	s.publishInternalTransactionWebhookEvent(ctx, types.WebhookEventWalletTransactionPaymentSuccess, tx.ID)
-
 	return nil
 }
 

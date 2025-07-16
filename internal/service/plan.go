@@ -44,10 +44,10 @@ type planService struct {
 }
 
 func NewPlanService(
-	serviceParams ServiceParams,
+	params ServiceParams,
 ) PlanService {
 	return &planService{
-		ServiceParams: serviceParams,
+		ServiceParams: params,
 	}
 }
 
@@ -159,7 +159,7 @@ func (s *planService) GetPlan(ctx context.Context, id string) (*dto.PlanResponse
 	}
 
 	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
-	entitlementService := NewEntitlementService(s.EntitlementRepo, s.PlanRepo, s.FeatureRepo, s.MeterRepo, s.Logger)
+	entitlementService := NewEntitlementService(s.ServiceParams)
 
 	pricesResponse, err := priceService.GetPricesByPlanID(ctx, plan.ID)
 	if err != nil {
@@ -173,8 +173,7 @@ func (s *planService) GetPlan(ctx context.Context, id string) (*dto.PlanResponse
 		return nil, err
 	}
 
-	creditGrantService := NewCreditGrantService(s.ServiceParams)
-	creditGrants, err := creditGrantService.GetCreditGrantsByPlan(ctx, plan.ID)
+	creditGrants, err := NewCreditGrantService(s.ServiceParams).GetCreditGrantsByPlan(ctx, plan.ID)
 	if err != nil {
 		s.Logger.Errorw("failed to fetch credit grants for plan", "plan_id", plan.ID, "error", err)
 		return nil, err
@@ -241,8 +240,7 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 	creditGrantsByPlanID := make(map[string][]*dto.CreditGrantResponse)
 
 	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
-	entitlementService := NewEntitlementService(s.EntitlementRepo, s.PlanRepo, s.FeatureRepo, s.MeterRepo, s.Logger)
-	creditGrantService := NewCreditGrantService(s.ServiceParams)
+	entitlementService := NewEntitlementService(s.ServiceParams)
 
 	// If prices or entitlements expansion is requested, fetch them in bulk
 	// Fetch prices if requested
@@ -289,18 +287,15 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 
 	// Fetch credit grants if requested
 	if filter.GetExpand().Has(types.ExpandCreditGrant) {
-		creditGrantFilter := types.NewNoLimitCreditGrantFilter().
-			WithPlanIDs(planIDs).
-			WithStatus(types.StatusPublished)
 
-		creditGrants, err := creditGrantService.ListCreditGrants(ctx, creditGrantFilter)
-		if err != nil {
-			return nil, err
-		}
+		for _, planID := range planIDs {
+			creditGrants, err := s.CreditGrantRepo.GetByPlan(ctx, planID)
+			if err != nil {
+				return nil, err
+			}
 
-		for _, cg := range creditGrants.Items {
-			if cg.PlanID != nil {
-				creditGrantsByPlanID[*cg.PlanID] = append(creditGrantsByPlanID[*cg.PlanID], cg)
+			for _, cg := range creditGrants {
+				creditGrantsByPlanID[lo.FromPtr(cg.PlanID)] = append(creditGrantsByPlanID[lo.FromPtr(cg.PlanID)], &dto.CreditGrantResponse{CreditGrant: cg})
 			}
 		}
 	}

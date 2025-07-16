@@ -260,6 +260,16 @@ func creditGrantFilterFn(ctx context.Context, cg *creditgrant.CreditGrant, filte
 		}
 	}
 
+	// Check scope filter
+	if f.Scope != nil {
+		if *f.Scope == types.CreditGrantScopeSubscription && cg.SubscriptionID == nil {
+			return false
+		}
+		if *f.Scope == types.CreditGrantScopePlan && cg.SubscriptionID != nil {
+			return false
+		}
+	}
+
 	return true
 }
 

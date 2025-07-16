@@ -175,18 +175,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	// Validate credit grants if provided
 	if len(r.CreditGrants) > 0 {
 		for i, grant := range r.CreditGrants {
-			// Ensure currency matches subscription currency
-			if grant.Currency != r.Currency {
-				return ierr.NewError("credit grant currency mismatch").
-					WithHintf("Credit grant currency '%s' must match subscription currency '%s'",
-						grant.Currency, r.Currency).
-					WithReportableDetails(map[string]interface{}{
-						"grant_currency":        grant.Currency,
-						"subscription_currency": r.Currency,
-						"grant_index":           i,
-					}).
-					Mark(ierr.ErrValidation)
-			}
 
 			// Force scope to SUBSCRIPTION for all grants added this way
 			if grant.Scope != types.CreditGrantScopeSubscription {
@@ -229,22 +217,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 						"error": err.Error(),
 					}).
 					Mark(ierr.ErrValidation)
-			}
-
-			// Validate currency consistency
-			for j, grant := range phase.CreditGrants {
-				if grant.Currency != r.Currency {
-					return ierr.NewError("credit grant currency mismatch in phase").
-						WithHint(fmt.Sprintf("Credit grant currency '%s' must match subscription currency '%s'",
-							grant.Currency, r.Currency)).
-						WithReportableDetails(map[string]interface{}{
-							"phase_index":           i,
-							"grant_index":           j,
-							"grant_currency":        grant.Currency,
-							"subscription_currency": r.Currency,
-						}).
-						Mark(ierr.ErrValidation)
-				}
 			}
 
 			// Validate phase continuity
