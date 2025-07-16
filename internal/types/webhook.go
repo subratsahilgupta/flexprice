@@ -16,15 +16,9 @@ type WebhookEvent struct {
 	Payload       json.RawMessage `json:"payload"`
 }
 
-// Common webhook event names
+// invoice event names
 const (
-	WebhookEventInvoiceCreateDraft          = "invoice.create.drafted"
-	WebhookEventInvoiceUpdateFinalized      = "invoice.update.finalized"
-	WebhookEventInvoiceUpdatePayment        = "invoice.updated.payment"
-	WebhookEventInvoiceUpdateVoided         = "invoice.update.voided"
-	WebhookEventInvoiceAmountsRecalculated  = "invoice.amounts.recalculated"
-	WebhookEventInvoicePaymentOverdue       = "invoice.payment.overdue"
-	WebhookEventInvoicePaymentStatusChanged = "invoice.payment.status.changed"
+	WebhookEventInvoiceCreateDraft = "invoice.create.drafted"
 )
 
 // subscription event names
@@ -52,26 +46,19 @@ const (
 
 // wallet event names
 const (
-	WebhookEventWalletCreated                   = "wallet.created"
-	WebhookEventWalletUpdated                   = "wallet.updated"
-	WebhookEventWalletTerminated                = "wallet.terminated"
-	WebhookEventWalletDepletedOngoingBalance    = "wallet.depleted_ongoing_balance"
-	WebhookEventWalletTransactionCreated        = "wallet.transaction.created"
-	WebhookEventWalletTransactionUpdated        = "wallet.transaction.updated"
-	WebhookEventWalletTransactionPaymentFailure = "wallet.transaction.payment_failure"
-	WebhookEventWalletTransactionPaymentSuccess = "wallet.transaction.payment_success"
-	WebhookEventWalletTransactionPaymentFailed  = "wallet.transaction.payment_failed"
+	WebhookEventWalletCreated            = "wallet.created"
+	WebhookEventWalletUpdated            = "wallet.updated"
+	WebhookEventWalletTerminated         = "wallet.terminated"
+	WebhookEventWalletTransactionCreated = "wallet.transaction.created"
 )
 
 // payment event names
 const (
-	WebhookEventPaymentCreated  = "payment.created"
-	WebhookEventPaymentUpdated  = "payment.updated"
-	WebhookEventPaymentFailed   = "payment.failed"
-	WebhookEventPaymentSuccess  = "payment.success"
-	WebhookEventPaymentPending  = "payment.pending"
-	WebhookEventPaymentDeclined = "payment.declined"
-	WebhookEventPaymentReversed = "payment.reversed"
+	WebhookEventPaymentCreated = "payment.created"
+	WebhookEventPaymentUpdated = "payment.updated"
+	WebhookEventPaymentFailed  = "payment.failed"
+	WebhookEventPaymentSuccess = "payment.success"
+	WebhookEventPaymentPending = "payment.pending"
 )
 
 // customer event names
@@ -79,4 +66,13 @@ const (
 	WebhookEventCustomerCreated = "customer.created"
 	WebhookEventCustomerUpdated = "customer.updated"
 	WebhookEventCustomerDeleted = "customer.deleted"
+)
+
+// TODO: Below events should be cron triggered webhook event names
+const (
+	WebhookEventInvoiceUpdateFinalized = "invoice.update.finalized"
+	WebhookEventInvoiceUpdatePayment   = "invoice.update.payment"
+	WebhookEventInvoiceUpdateVoided    = "invoice.update.voided"
+
+	WebhookEventInvoicePaymentOverdue = "invoice.payment.overdue"
 )

@@ -304,9 +304,16 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 }
 
 func (s *entitlementService) DeleteEntitlement(ctx context.Context, id string) error {
-	// Publish webhook event before deletion
+
+	err := s.EntitlementRepo.Delete(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Publish webhook event after successful deletion
 	s.publishWebhookEvent(ctx, types.WebhookEventEntitlementDeleted, id)
-	return s.EntitlementRepo.Delete(ctx, id)
+
+	return nil
 }
 
 func (s *entitlementService) GetPlanEntitlements(ctx context.Context, planID string) (*dto.ListEntitlementsResponse, error) {

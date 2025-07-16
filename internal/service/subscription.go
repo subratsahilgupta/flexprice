@@ -419,7 +419,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 	}
 
 	// expand plan
-	planService := NewPlanService(s.ServiceParams, s.DB)
+	planService := NewPlanService(s.ServiceParams)
 
 	plan, err := planService.GetPlan(ctx, subscription.PlanID)
 	if err != nil {
@@ -481,7 +481,7 @@ func (s *subscriptionService) CancelSubscription(ctx context.Context, id string,
 }
 
 func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *types.SubscriptionFilter) (*dto.ListSubscriptionsResponse, error) {
-	planService := NewPlanService(s.ServiceParams, s.DB)
+	planService := NewPlanService(s.ServiceParams)
 
 	if filter == nil {
 		filter = types.NewSubscriptionFilter()

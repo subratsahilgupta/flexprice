@@ -473,7 +473,6 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 
 	// Publish webhook events
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceUpdatePayment, inv.ID)
-	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoicePaymentStatusChanged, inv.ID)
 
 	return nil
 }
@@ -1105,9 +1104,6 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
 		return err
 	}
-
-	// Publish webhook event
-	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceAmountsRecalculated, inv.ID)
 
 	return nil
 }

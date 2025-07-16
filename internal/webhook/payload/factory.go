@@ -36,15 +36,6 @@ func NewPayloadBuilderFactory(services *Services) PayloadBuilderFactory {
 	f.builders[types.WebhookEventInvoiceUpdatePayment] = func() PayloadBuilder {
 		return NewInvoicePayloadBuilder(f.services)
 	}
-	f.builders[types.WebhookEventInvoiceAmountsRecalculated] = func() PayloadBuilder {
-		return NewInvoicePayloadBuilder(f.services)
-	}
-	f.builders[types.WebhookEventInvoicePaymentOverdue] = func() PayloadBuilder {
-		return NewInvoicePayloadBuilder(f.services)
-	}
-	f.builders[types.WebhookEventInvoicePaymentStatusChanged] = func() PayloadBuilder {
-		return NewInvoicePayloadBuilder(f.services)
-	}
 	// Register subscription builders
 	f.builders[types.WebhookEventSubscriptionCreated] = func() PayloadBuilder {
 		return NewSubscriptionPayloadBuilder(f.services)
@@ -94,22 +85,9 @@ func NewPayloadBuilderFactory(services *Services) PayloadBuilderFactory {
 	f.builders[types.WebhookEventWalletTerminated] = func() PayloadBuilder {
 		return NewWalletPayloadBuilder(f.services)
 	}
-	f.builders[types.WebhookEventWalletDepletedOngoingBalance] = func() PayloadBuilder {
-		return NewWalletPayloadBuilder(f.services)
-	}
 	f.builders[types.WebhookEventWalletTransactionCreated] = func() PayloadBuilder {
 		return NewTransactionPayloadBuilder(f.services)
 	}
-	f.builders[types.WebhookEventWalletTransactionUpdated] = func() PayloadBuilder {
-		return NewTransactionPayloadBuilder(f.services)
-	}
-	f.builders[types.WebhookEventWalletTransactionPaymentFailure] = func() PayloadBuilder {
-		return NewTransactionPayloadBuilder(f.services)
-	}
-	f.builders[types.WebhookEventWalletTransactionPaymentSuccess] = func() PayloadBuilder {
-		return NewTransactionPayloadBuilder(f.services)
-	}
-
 	// customer builders
 	f.builders[types.WebhookEventCustomerCreated] = func() PayloadBuilder {
 		return NewCustomerPayloadBuilder(f.services)
@@ -136,6 +114,9 @@ func NewPayloadBuilderFactory(services *Services) PayloadBuilderFactory {
 	}
 	f.builders[types.WebhookEventPaymentPending] = func() PayloadBuilder {
 		return NewPaymentPayloadBuilder(f.services)
+	}
+	f.builders[types.WebhookEventInvoicePaymentOverdue] = func() PayloadBuilder {
+		return NewInvoicePayloadBuilder(f.services)
 	}
 
 	return f

@@ -130,14 +130,7 @@ func (s *billingService) CalculateUsageCharges(
 	periodStart,
 	periodEnd time.Time,
 ) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal, error) {
-	entitlementService := NewEntitlementService(ServiceParams{
-		EntitlementRepo:  s.EntitlementRepo,
-		PlanRepo:         s.PlanRepo,
-		FeatureRepo:      s.FeatureRepo,
-		MeterRepo:        s.MeterRepo,
-		Logger:           s.Logger,
-		WebhookPublisher: s.WebhookPublisher,
-	})
+	entitlementService := NewEntitlementService(s.ServiceParams)
 
 	if usage == nil {
 		return nil, decimal.Zero, nil

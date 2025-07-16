@@ -9,7 +9,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
-	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -20,7 +19,6 @@ import (
 type PlanServiceSuite struct {
 	testutil.BaseServiceTestSuite
 	service PlanService
-	db      postgres.IClient
 	params  ServiceParams
 }
 
@@ -30,10 +28,30 @@ func TestPlanService(t *testing.T) {
 
 func (s *PlanServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
-	s.service = NewPlanService(
-		s.params,
-		s.db,
-	)
+	s.params = ServiceParams{
+		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
+		SubRepo:          s.GetStores().SubscriptionRepo,
+		PlanRepo:         s.GetStores().PlanRepo,
+		PriceRepo:        s.GetStores().PriceRepo,
+		EventRepo:        s.GetStores().EventRepo,
+		MeterRepo:        s.GetStores().MeterRepo,
+		CustomerRepo:     s.GetStores().CustomerRepo,
+		InvoiceRepo:      s.GetStores().InvoiceRepo,
+		EntitlementRepo:  s.GetStores().EntitlementRepo,
+		EnvironmentRepo:  s.GetStores().EnvironmentRepo,
+		FeatureRepo:      s.GetStores().FeatureRepo,
+		TenantRepo:       s.GetStores().TenantRepo,
+		UserRepo:         s.GetStores().UserRepo,
+		AuthRepo:         s.GetStores().AuthRepo,
+		WalletRepo:       s.GetStores().WalletRepo,
+		PaymentRepo:      s.GetStores().PaymentRepo,
+		CreditGrantRepo:  s.GetStores().CreditGrantRepo,
+		EventPublisher:   s.GetPublisher(),
+		WebhookPublisher: s.GetWebhookPublisher(),
+	}
+	s.service = NewPlanService(s.params)
 }
 
 func (s *PlanServiceSuite) TestCreatePlan() {
