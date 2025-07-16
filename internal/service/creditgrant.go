@@ -846,7 +846,7 @@ func (s *creditGrantService) cancelFutureCreditGrantApplications(
 
 func (s *creditGrantService) CancelFutureCreditGrantsOfSubscription(ctx context.Context, subscriptionID string) error {
 
-	// get subscripion
+	// get subscription
 	subscription, err := s.SubRepo.Get(ctx, subscriptionID)
 	if err != nil {
 		s.Logger.Errorw("Failed to fetch subscription", "error", err)
@@ -860,25 +860,59 @@ func (s *creditGrantService) CancelFutureCreditGrantsOfSubscription(ctx context.
 		return err
 	}
 
-	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
-		// cancel all future applications for this subscription
-		for _, creditGrant := range creditGrants {
+	// Collect all applications to cancel
+	applicationsToCancel := make([]*domainCreditGrantApplication.CreditGrantApplication, 0)
 
-			err = s.cancelFutureCreditGrantApplications(ctx, creditGrant, subscription, nil)
-			if err != nil {
-				s.Logger.Errorw("Failed to cancel future credit grant applications", "error", err)
-				return err
-			}
-
-			// archive the credit grant
-			err = s.CreditGrantRepo.Delete(ctx, creditGrant.ID)
-			if err != nil {
-				s.Logger.Errorw("Failed to archive credit grant", "error", err)
-				return err
-			}
-
+	for _, creditGrant := range creditGrants {
+		// get all pending future applications for this credit grant
+		pendingFilter := &types.CreditGrantApplicationFilter{
+			CreditGrantIDs:  []string{creditGrant.ID},
+			SubscriptionIDs: []string{subscription.ID},
+			ApplicationStatuses: []types.ApplicationStatus{
+				types.ApplicationStatusPending,
+				types.ApplicationStatusFailed,
+			},
+			QueryFilter: types.NewNoLimitQueryFilter(),
 		}
 
+		applications, err := s.CreditGrantApplicationRepo.List(ctx, pendingFilter)
+		if err != nil {
+			s.Logger.Errorw("Failed to fetch pending future applications", "error", err)
+			return err
+		}
+
+		applicationsToCancel = append(applicationsToCancel, applications...)
+
+		// finally archive the credit grant
+		err = s.CreditGrantRepo.Delete(ctx, creditGrant.ID)
+		if err != nil {
+			s.Logger.Errorw("Failed to archive credit grant", "error", err)
+			return err
+		}
+	}
+
+	// Cancel all applications within a transaction
+	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		for _, app := range applicationsToCancel {
+			app.ApplicationStatus = types.ApplicationStatusCancelled
+			app.Status = types.StatusArchived
+
+			err := s.CreditGrantApplicationRepo.Update(txCtx, app)
+			if err != nil {
+				s.Logger.Errorw("Failed to cancel application",
+					"application_id", app.ID,
+					"grant_id", app.CreditGrantID,
+					"subscription_id", app.SubscriptionID,
+					"error", err)
+				return err
+			}
+
+			s.Logger.Infow("Cancelled credit grant application",
+				"application_id", app.ID,
+				"grant_id", app.CreditGrantID,
+				"subscription_id", app.SubscriptionID,
+				"scheduled_for", app.ScheduledFor)
+		}
 		return nil
 	})
 
@@ -886,5 +920,11 @@ func (s *creditGrantService) CancelFutureCreditGrantsOfSubscription(ctx context.
 		s.Logger.Errorw("Failed to cancel future credit grant applications", "error", err)
 		return err
 	}
+
+	s.Logger.Infow("Successfully cancelled all future credit grant applications for subscription",
+		"subscription_id", subscriptionID,
+		"cancelled_count", len(applicationsToCancel),
+		"subscription_status", subscription.SubscriptionStatus)
+
 	return nil
 }
