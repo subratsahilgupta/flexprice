@@ -263,16 +263,15 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 		// check if user has overidden the plan credit grants, if so add them to the request
 		if req.CreditGrants != nil {
-			creditGrantRequests = append(creditGrantRequests, *req.CreditGrants...)
+			creditGrantRequests = append(creditGrantRequests, req.CreditGrants...)
 		} else {
 			// if user has not overidden the plan credit grants, add the plan credit grants to the request
 			creditGrantService := NewCreditGrantService(s.ServiceParams)
-			filter := types.NewNoLimitCreditGrantFilter()
-			filter.PlanIDs = []string{plan.ID}
-			planCreditGrants, err := creditGrantService.ListCreditGrants(ctx, filter)
+			planCreditGrants, err := creditGrantService.GetCreditGrantsByPlan(ctx, plan.ID)
 			if err != nil {
 				return err
 			}
+
 			s.Logger.Infow("plan has credit grants", "plan_id", plan.ID, "credit_grants_count", len(planCreditGrants.Items))
 			// if plan has credit grants, add them to the request
 			if len(planCreditGrants.Items) > 0 {

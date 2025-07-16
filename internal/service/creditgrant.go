@@ -230,6 +230,7 @@ func (s *creditGrantService) GetCreditGrantsByPlan(ctx context.Context, planID s
 	filter := types.NewNoLimitCreditGrantFilter()
 	filter.PlanIDs = []string{planID}
 	filter.WithStatus(types.StatusPublished)
+	filter.Scope = lo.ToPtr(types.CreditGrantScopePlan)
 
 	// Use the standard list function to get the credit grants with expansion
 	return s.ListCreditGrants(ctx, filter)
@@ -240,6 +241,7 @@ func (s *creditGrantService) GetCreditGrantsBySubscription(ctx context.Context, 
 	filter := types.NewNoLimitCreditGrantFilter()
 	filter.SubscriptionIDs = []string{subscriptionID}
 	filter.WithStatus(types.StatusPublished)
+	filter.Scope = lo.ToPtr(types.CreditGrantScopeSubscription)
 
 	// Use the standard list function to get the credit grants with expansion
 	resp, err := s.ListCreditGrants(ctx, filter)
