@@ -47,6 +47,9 @@ type CreditGrantService interface {
 	// ApplyCreditGrant applies a credit grant to a subscription and creates CGA tracking records
 	// This method handles both one-time and recurring credit grants
 	ApplyCreditGrant(ctx context.Context, grant *creditgrant.CreditGrant, subscription *subscription.Subscription, metadata types.Metadata) error
+
+	// CancelFutureCreditGrantApplications cancels all future applications for this grant and subscription
+	CancelFutureCreditGrantsOfSubscription(ctx context.Context, subscriptionID string) error
 }
 
 type creditGrantService struct {
@@ -811,27 +814,77 @@ func (s *creditGrantService) cancelFutureCreditGrantApplications(
 		return err
 	}
 
-	// Cancel each future application
-	for _, app := range applications {
-		app.ApplicationStatus = types.ApplicationStatusCancelled
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// Cancel each future application
+		// Cancel each future application
+		for _, app := range applications {
+			app.ApplicationStatus = types.ApplicationStatusCancelled
 
-		err := s.CreditGrantApplicationRepo.Update(ctx, app)
-		if err != nil {
-			s.Logger.Errorw("Failed to cancel future application", "application_id", app.ID, "error", err)
-			// Continue with other applications even if one fails
-			// As even if one fails to update when it gets picked up by the scheduler it will be retried and cancelled
-			continue
+			err := s.CreditGrantApplicationRepo.Update(ctx, app)
+			if err != nil {
+				s.Logger.Errorw("Failed to cancel future application", "application_id", app.ID, "error", err)
+				// Continue with other applications even if one fails
+				// As even if one fails to update when it gets picked up by the scheduler it will be retried and cancelled
+				continue
+			}
+
+			s.Logger.Infow("Cancelled future credit grant application",
+				"application_id", app.ID,
+				"scheduled_for", app.ScheduledFor)
 		}
 
-		s.Logger.Infow("Cancelled future credit grant application",
-			"application_id", app.ID,
-			"scheduled_for", app.ScheduledFor)
-	}
+		return nil
+	})
 
 	s.Logger.Infow("Successfully cancelled future credit grant applications",
 		"grant_id", grant.ID,
 		"subscription_id", subscription.ID,
 		"cancelled_count", len(applications))
 
+	return nil
+}
+
+func (s *creditGrantService) CancelFutureCreditGrantsOfSubscription(ctx context.Context, subscriptionID string) error {
+
+	// get subscripion
+	subscription, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		s.Logger.Errorw("Failed to fetch subscription", "error", err)
+		return err
+	}
+
+	// get all credit grants for this subscription
+	creditGrants, err := s.CreditGrantRepo.GetBySubscription(ctx, subscriptionID)
+	if err != nil {
+		s.Logger.Errorw("Failed to fetch credit grants", "error", err)
+		return err
+	}
+
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// cancel all future applications for this subscription
+		for _, creditGrant := range creditGrants {
+
+			err = s.cancelFutureCreditGrantApplications(ctx, creditGrant, subscription, nil)
+			if err != nil {
+				s.Logger.Errorw("Failed to cancel future credit grant applications", "error", err)
+				return err
+			}
+
+			// archive the credit grant
+			err = s.CreditGrantRepo.Delete(ctx, creditGrant.ID)
+			if err != nil {
+				s.Logger.Errorw("Failed to archive credit grant", "error", err)
+				return err
+			}
+
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		s.Logger.Errorw("Failed to cancel future credit grant applications", "error", err)
+		return err
+	}
 	return nil
 }
