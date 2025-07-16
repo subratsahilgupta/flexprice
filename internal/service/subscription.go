@@ -277,16 +277,15 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			if len(planCreditGrants.Items) > 0 {
 				for _, cg := range planCreditGrants.Items {
 					creditGrantRequests = append(creditGrantRequests, dto.CreateCreditGrantRequest{
-						Name:           cg.Name,
-						Scope:          types.CreditGrantScopeSubscription,
-						Credits:        cg.Credits,
-						Cadence:        cg.Cadence,
-						ExpirationType: cg.ExpirationType,
-						Priority:       cg.Priority,
-						SubscriptionID: lo.ToPtr(sub.ID),
-						Period:         cg.Period,
-						// While inheriting the credit grants from subscription we need to set its plan id to null
-						PlanID:                 nil,
+						Name:                   cg.Name,
+						Scope:                  types.CreditGrantScopeSubscription,
+						Credits:                cg.Credits,
+						Cadence:                cg.Cadence,
+						ExpirationType:         cg.ExpirationType,
+						Priority:               cg.Priority,
+						SubscriptionID:         lo.ToPtr(sub.ID),
+						Period:                 cg.Period,
+						PlanID:                 &plan.ID,
 						ExpirationDuration:     cg.ExpirationDuration,
 						ExpirationDurationUnit: cg.ExpirationDurationUnit,
 						Metadata:               cg.Metadata,
@@ -469,9 +468,22 @@ func (s *subscriptionService) CancelSubscription(ctx context.Context, id string,
 		subscription.CancelAt = nil
 	}
 
-	if err := s.SubRepo.Update(ctx, subscription); err != nil {
-		return err
-	}
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+
+		// cancel future credit grant applications
+		creditGrantService := NewCreditGrantService(s.ServiceParams)
+		err = creditGrantService.CancelFutureCreditGrantsOfSubscription(ctx, subscription.ID)
+		if err != nil {
+			return err
+		}
+
+		err = s.SubRepo.Update(ctx, subscription)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
 
 	// Publish webhook event
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionUpdated, subscription.ID)
