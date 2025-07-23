@@ -146,6 +146,15 @@ func (r *CreateInvoiceRequest) Validate() error {
 		}
 	}
 
+	// url validation if url is provided
+	if r.InvoicePDFURL != nil {
+		if err := validator.ValidateURL(r.InvoicePDFURL); err != nil {
+			return ierr.WithError(err).
+				WithHint("invalid invoice_pdf_url").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	return nil
 }
 
