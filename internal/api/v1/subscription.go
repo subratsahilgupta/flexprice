@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 )
 
 type SubscriptionHandler struct {
@@ -206,6 +207,50 @@ func (h *SubscriptionHandler) AddSubscriptionPhase(c *gin.Context) {
 	resp, err := h.service.AddSubscriptionPhase(c.Request.Context(), id, &req)
 	if err != nil {
 		h.log.Error("Failed to add subscription phase", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// ListSubscriptionsByFilter godoc
+// @Summary List subscriptions by filter
+// @Description List subscriptions by filter
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param filter body types.SubscriptionFilter true "Filter"
+// @Success 200 {object} dto.ListSubscriptionsResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /subscriptions/search [post]
+func (h *SubscriptionHandler) ListSubscriptionsByFilter(c *gin.Context) {
+	var filter types.SubscriptionFilter
+	if err := c.ShouldBindJSON(&filter); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid filter parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	if filter.GetLimit() == 0 {
+		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
+	}
+
+	if err := filter.Validate(); err != nil {
+		h.log.Error("Invalid filter parameters", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Please provide valid filter parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.ListSubscriptions(c.Request.Context(), &filter)
+	if err != nil {
+		h.log.Error("Failed to list subscriptions", "error", err)
 		c.Error(err)
 		return
 	}
