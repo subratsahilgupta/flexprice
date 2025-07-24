@@ -242,6 +242,9 @@ type CreateInvoiceLineItemRequest struct {
 	// price_unit is the optional 3-digit ISO code of the price unit associated with this line item
 	PriceUnit *string `json:"price_unit,omitempty"`
 
+	// price_unit_amount is the optional amount converted to the price unit currency
+	PriceUnitAmount *decimal.Decimal `json:"price_unit_amount,omitempty"`
+
 	// display_name is the optional human-readable name for this line item
 	DisplayName *string `json:"display_name,omitempty"`
 
@@ -311,6 +314,7 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		MeterDisplayName: r.MeterDisplayName,
 		PriceUnitID:      r.PriceUnitID,
 		PriceUnit:        r.PriceUnit,
+		PriceUnitAmount:  r.PriceUnitAmount,
 		DisplayName:      r.DisplayName,
 		Amount:           r.Amount,
 		Quantity:         r.Quantity,
@@ -360,6 +364,9 @@ type InvoiceLineItemResponse struct {
 
 	// price_unit is the optional 3-digit ISO code of the price unit associated with this line item
 	PriceUnit *string `json:"price_unit,omitempty"`
+
+	// price_unit_amount is the optional amount converted to the price unit currency
+	PriceUnitAmount *decimal.Decimal `json:"price_unit_amount,omitempty"`
 
 	// display_name is the optional human-readable name for this line item
 	DisplayName *string `json:"display_name,omitempty"`
@@ -419,6 +426,7 @@ func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemR
 		MeterDisplayName: item.MeterDisplayName,
 		PriceUnitID:      item.PriceUnitID,
 		PriceUnit:        item.PriceUnit,
+		PriceUnitAmount:  item.PriceUnitAmount,
 		DisplayName:      item.DisplayName,
 		Amount:           item.Amount,
 		Quantity:         item.Quantity,
