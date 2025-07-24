@@ -246,6 +246,8 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 					SetNillablePriceID(item.PriceID).
 					SetNillableMeterID(item.MeterID).
 					SetNillableMeterDisplayName(item.MeterDisplayName).
+					SetNillablePriceUnitID(item.PriceUnitID).
+					SetNillablePriceUnit(item.PriceUnit).
 					SetNillableDisplayName(item.DisplayName).
 					SetAmount(item.Amount).
 					SetQuantity(item.Quantity).
@@ -307,6 +309,8 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 				SetNillablePriceID(item.PriceID).
 				SetNillableMeterID(item.MeterID).
 				SetNillableMeterDisplayName(item.MeterDisplayName).
+				SetNillablePriceUnitID(item.PriceUnitID).
+				SetNillablePriceUnit(item.PriceUnit).
 				SetNillableDisplayName(item.DisplayName).
 				SetAmount(item.Amount).
 				SetQuantity(item.Quantity).
