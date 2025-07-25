@@ -540,7 +540,7 @@ func (o EntitlementQueryOptions) GetFieldName(field string) string {
 func (o EntitlementQueryOptions) GetFieldResolver(field string) (string, error) {
 	fieldName := o.GetFieldName(field)
 	if fieldName == "" {
-		return "", ierr.NewErrorf("unknown field name '%s' in subscription query", field).
+		return "", ierr.NewErrorf("unknown field name '%s' in entitlement query", field).
 			Mark(ierr.ErrValidation)
 	}
 	return fieldName, nil
