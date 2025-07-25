@@ -808,15 +808,24 @@ func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *
 }
 
 func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string) (string, error) {
+
+	// get invoice
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return "", err
+	}
+
+	if inv.InvoicePDFURL != nil {
+		return lo.FromPtr(inv.InvoicePDFURL), nil
+	}
+
 	if s.S3 == nil {
 		return "", ierr.NewError("s3 is not enabled").
 			WithHint("s3 is not enabled but is required to generate invoice pdf url.").
 			Mark(ierr.ErrSystem)
 	}
 
-	tenantId := types.GetTenantID(ctx)
-
-	key := fmt.Sprintf("%s/%s", tenantId, id)
+	key := fmt.Sprintf("%s/%s", inv.TenantID, id)
 
 	exists, err := s.S3.Exists(ctx, key, s3.DocumentTypeInvoice)
 	if err != nil {
