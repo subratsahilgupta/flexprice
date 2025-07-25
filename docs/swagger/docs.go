@@ -579,19 +579,6 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "enum": [
-                            "PLAN",
-                            "SUBSCRIPTION"
-                        ],
-                        "type": "string",
-                        "x-enum-varnames": [
-                            "CreditGrantScopePlan",
-                            "CreditGrantScopeSubscription"
-                        ],
-                        "name": "scope",
-                        "in": "query"
-                    },
-                    {
                         "type": "string",
                         "name": "sort",
                         "in": "query"
@@ -4364,6 +4351,11 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "name": "start_time",
                         "in": "query"
                     },
@@ -4437,57 +4429,6 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/dto.PlanResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/plans/search": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "List plans by filter",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Plans"
-                ],
-                "summary": "List plans by filter",
-                "parameters": [
-                    {
-                        "description": "Filter",
-                        "name": "filter",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/types.PlanFilter"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.ListPlansResponse"
                         }
                     },
                     "400": {
@@ -7585,6 +7526,7 @@ const docTemplate = `{
             "required": [
                 "cadence",
                 "credits",
+                "currency",
                 "name",
                 "scope"
             ],
@@ -7594,6 +7536,9 @@ const docTemplate = `{
                 },
                 "credits": {
                     "type": "number"
+                },
+                "currency": {
+                    "type": "string"
                 },
                 "expiration_duration": {
                     "type": "integer"
@@ -7696,11 +7641,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/types.Metadata"
                         }
                     ]
-                },
-                "process_credit_note": {
-                    "description": "process_credit_note is a flag to process the credit note after creation",
-                    "type": "boolean",
-                    "default": true
                 },
                 "reason": {
                     "description": "reason specifies the reason for creating this credit note (duplicate, fraudulent, order_change, product_unsatisfactory)",
@@ -8568,6 +8508,9 @@ const docTemplate = `{
                 },
                 "credits": {
                     "type": "number"
+                },
+                "currency": {
+                    "type": "string"
                 },
                 "environment_id": {
                     "type": "string"
@@ -9483,7 +9426,7 @@ const docTemplate = `{
                     }
                 },
                 "multiplier": {
-                    "type": "number"
+                    "type": "integer"
                 },
                 "property_name": {
                     "description": "will be empty/ignored in case of COUNT",
@@ -11387,6 +11330,7 @@ const docTemplate = `{
             "required": [
                 "cadence",
                 "credits",
+                "currency",
                 "name",
                 "scope"
             ],
@@ -11396,6 +11340,9 @@ const docTemplate = `{
                 },
                 "credits": {
                     "type": "number"
+                },
+                "currency": {
+                    "type": "string"
                 },
                 "expiration_duration": {
                     "type": "integer"
@@ -12006,7 +11953,7 @@ const docTemplate = `{
                 },
                 "multiplier": {
                     "description": "Multiplier is the multiplier for the aggregation\nFor ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000\nto scale up by a factor of 1000",
-                    "type": "number"
+                    "type": "integer"
                 },
                 "type": {
                     "$ref": "#/definitions/types.AggregationType"
@@ -12382,9 +12329,6 @@ const docTemplate = `{
             "x-enum-comments": {
                 "AggregationSumWithMultiplier": "Sum with a multiplier - [sum(value) * multiplier]"
             },
-            "x-enum-descriptions": [
-                "Sum with a multiplier - [sum(value) * multiplier]"
-            ],
             "x-enum-varnames": [
                 "AggregationCount",
                 "AggregationSum",
@@ -12948,58 +12892,6 @@ const docTemplate = `{
                 "PaymentStatusRefunded",
                 "PaymentStatusPartiallyRefunded"
             ]
-        },
-        "types.PlanFilter": {
-            "type": "object",
-            "properties": {
-                "end_time": {
-                    "type": "string"
-                },
-                "expand": {
-                    "type": "string"
-                },
-                "filters": {
-                    "description": "filters allows complex filtering based on multiple fields",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.FilterCondition"
-                    }
-                },
-                "limit": {
-                    "type": "integer",
-                    "maximum": 1000,
-                    "minimum": 1
-                },
-                "offset": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "order": {
-                    "type": "string",
-                    "enum": [
-                        "asc",
-                        "desc"
-                    ]
-                },
-                "plan_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "sort": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.SortCondition"
-                    }
-                },
-                "start_time": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                }
-            }
         },
         "types.PriceType": {
             "type": "string",
