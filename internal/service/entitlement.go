@@ -126,6 +126,10 @@ func (s *entitlementService) ListEntitlements(ctx context.Context, filter *types
 		filter.QueryFilter = types.NewDefaultQueryFilter()
 	}
 
+	if filter.GetLimit() == 0 {
+		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
+	}
+
 	// Set default sort order if not specified
 	if filter.QueryFilter.Sort == nil {
 		filter.QueryFilter.Sort = lo.ToPtr("created_at")

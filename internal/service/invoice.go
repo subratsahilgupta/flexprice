@@ -238,7 +238,9 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 }
 
 func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error) {
-
+	if filter.GetLimit() == 0 {
+		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
+	}
 	if filter.ExternalCustomerID != "" {
 		customer, err := s.CustomerRepo.GetByLookupKey(ctx, filter.ExternalCustomerID)
 		if err != nil {

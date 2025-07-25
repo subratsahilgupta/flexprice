@@ -9,7 +9,6 @@ import (
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
-	"github.com/samber/lo"
 )
 
 type SubscriptionHandler struct {
@@ -234,10 +233,6 @@ func (h *SubscriptionHandler) ListSubscriptionsByFilter(c *gin.Context) {
 			WithHint("Invalid filter parameters").
 			Mark(ierr.ErrValidation))
 		return
-	}
-
-	if filter.GetLimit() == 0 {
-		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
 	}
 
 	if err := filter.Validate(); err != nil {

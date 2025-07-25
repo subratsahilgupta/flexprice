@@ -435,10 +435,6 @@ func (h *InvoiceHandler) ListInvoicesByFilter(c *gin.Context) {
 		return
 	}
 
-	if filter.GetLimit() == 0 {
-		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
-	}
-
 	if err := filter.Validate(); err != nil {
 		h.logger.Error("Invalid filter parameters", "error", err)
 		c.Error(ierr.WithError(err).WithHint("invalid filter parameters").Mark(ierr.ErrValidation))
