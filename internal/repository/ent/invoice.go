@@ -544,7 +544,7 @@ func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilte
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
-			WithHint("Failed to list invoices").
+			WithHint("Failed to apply query options").
 			Mark(ierr.ErrDatabase)
 	}
 
