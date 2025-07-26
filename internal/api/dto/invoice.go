@@ -76,6 +76,9 @@ type CreateInvoiceRequest struct {
 
 	// environment_id is the unique identifier of the environment this invoice belongs to
 	EnvironmentID string `json:"environment_id,omitempty"`
+
+	// invoice_pdf_url is the URL where customers can download the PDF version of this invoice
+	InvoicePDFURL *string `json:"invoice_pdf_url,omitempty"`
 }
 
 func (r *CreateInvoiceRequest) Validate() error {
@@ -143,6 +146,15 @@ func (r *CreateInvoiceRequest) Validate() error {
 		}
 	}
 
+	// url validation if url is provided
+	if r.InvoicePDFURL != nil {
+		if err := validator.ValidateURL(r.InvoicePDFURL); err != nil {
+			return ierr.WithError(err).
+				WithHint("invalid invoice_pdf_url").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	return nil
 }
 
@@ -169,6 +181,7 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 		PeriodEnd:       r.PeriodEnd,
 		BillingReason:   string(r.BillingReason),
 		Metadata:        r.Metadata,
+		InvoicePDFURL:   r.InvoicePDFURL,
 		BaseModel:       types.GetDefaultBaseModel(ctx),
 		AmountRemaining: decimal.Zero,
 	}

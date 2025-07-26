@@ -1,6 +1,9 @@
 package validator
 
 import (
+	"errors"
+	"net/url"
+	"strings"
 	"sync"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -45,5 +48,30 @@ func ValidateRequest(req interface{}) error {
 			WithReportableDetails(details).
 			Mark(ierr.ErrValidation)
 	}
+	return nil
+}
+
+func ValidateURL(raw *string) error {
+	if raw == nil {
+		return nil
+	}
+
+	if strings.TrimSpace(*raw) == "" {
+		return nil
+	}
+
+	u, err := url.ParseRequestURI(*raw)
+	if err != nil {
+		return errors.New("url must be a valid URL")
+	}
+
+	if u.Scheme != "https" {
+		return errors.New("url must start with https://")
+	}
+
+	if u.Host == "" {
+		return errors.New("url must have a valid host")
+	}
+
 	return nil
 }

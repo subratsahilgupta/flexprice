@@ -36,8 +36,7 @@ type Handlers struct {
 	Secret            *v1.SecretHandler
 	CostSheet         *v1.CostSheetHandler
 	CreditNote        *v1.CreditNoteHandler
-
-	Webhook *v1.WebhookHandler
+	Webhook           *v1.WebhookHandler
 	// Portal handlers
 	Onboarding *v1.OnboardingHandler
 	// Cron jobs : TODO: move crons out of API based architecture
@@ -158,6 +157,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		plan := v1Private.Group("/plans")
 		{
+			// list plans by filter
+			plan.POST("/search", handlers.Plan.ListPlansByFilter)
+
 			plan.POST("", handlers.Plan.CreatePlan)
 			plan.GET("", handlers.Plan.GetPlans)
 			plan.GET("/:id", handlers.Plan.GetPlan)
@@ -172,6 +174,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		subscription := v1Private.Group("/subscriptions")
 		{
+			subscription.POST("/search", handlers.Subscription.ListSubscriptionsByFilter)
 			subscription.POST("", handlers.Subscription.CreateSubscription)
 			subscription.GET("", handlers.Subscription.GetSubscriptions)
 			subscription.GET("/:id", handlers.Subscription.GetSubscription)
@@ -205,6 +208,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		invoices := v1Private.Group("/invoices")
 		{
+			invoices.POST("/search", handlers.Invoice.ListInvoicesByFilter)
 			invoices.POST("", handlers.Invoice.CreateInvoice)
 			invoices.GET("", handlers.Invoice.ListInvoices)
 			invoices.GET("/:id", handlers.Invoice.GetInvoice)
@@ -230,6 +234,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		entitlement := v1Private.Group("/entitlements")
 		{
+			entitlement.POST("/search", handlers.Entitlement.ListEntitlementsByFilter)
 			entitlement.POST("", handlers.Entitlement.CreateEntitlement)
 			entitlement.GET("", handlers.Entitlement.ListEntitlements)
 			entitlement.GET("/:id", handlers.Entitlement.GetEntitlement)

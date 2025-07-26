@@ -414,3 +414,39 @@ func (h *InvoiceHandler) RecalculateInvoice(c *gin.Context) {
 
 	c.JSON(http.StatusOK, invoice)
 }
+
+// ListInvoicesByFilter godoc
+// @Summary List invoices by filter
+// @Description List invoices by filter
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param filter body types.InvoiceFilter true "Filter"
+// @Success 200 {object} dto.ListInvoicesResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /invoices/search [post]
+func (h *InvoiceHandler) ListInvoicesByFilter(c *gin.Context) {
+	var filter types.InvoiceFilter
+	if err := c.ShouldBindJSON(&filter); err != nil {
+		h.logger.Error("Failed to bind request body", "error", err)
+		c.Error(ierr.WithError(err).WithHint("invalid request body").Mark(ierr.ErrValidation))
+		return
+	}
+
+	if err := filter.Validate(); err != nil {
+		h.logger.Error("Invalid filter parameters", "error", err)
+		c.Error(ierr.WithError(err).WithHint("invalid filter parameters").Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.invoiceService.ListInvoices(c.Request.Context(), &filter)
+	if err != nil {
+		h.logger.Error("Failed to list invoices", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}

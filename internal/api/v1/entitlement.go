@@ -185,3 +185,35 @@ func (h *EntitlementHandler) DeleteEntitlement(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "entitlement deleted successfully"})
 }
+
+// ListEntitlementsByFilter godoc
+// @Summary List entitlements by filter
+// @Description List entitlements by filter
+// @Tags Entitlements
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param filter body types.EntitlementFilter true "Filter"
+// @Success 200 {object} dto.ListEntitlementsResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /entitlements/search [post]
+func (h *EntitlementHandler) ListEntitlementsByFilter(c *gin.Context) {
+	var filter types.EntitlementFilter
+	if err := c.ShouldBindJSON(&filter); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid filter parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.ListEntitlements(c.Request.Context(), &filter)
+	if err != nil {
+		h.log.Error("Failed to list entitlements", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
