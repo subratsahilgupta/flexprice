@@ -499,6 +499,10 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 		filter = types.NewSubscriptionFilter()
 	}
 
+	if filter.GetLimit() == 0 {
+		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
+	}
+
 	if filter.QueryFilter == nil {
 		filter.QueryFilter = types.NewDefaultQueryFilter()
 	}
