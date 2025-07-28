@@ -1033,7 +1033,11 @@ type TaxCalculationResult struct {
 func (s *taxService) ApplyTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice, taxRates []*dto.TaxRateResponse) (*TaxCalculationResult, error) {
 	if len(taxRates) == 0 {
 		s.Logger.Infow("no tax rates to apply to invoice", "invoice_id", inv.ID)
-		return s.createEmptyTaxCalculationResult(taxRates), nil
+		return &TaxCalculationResult{
+			TotalTaxAmount:    decimal.Zero,
+			TaxAppliedRecords: []*dto.TaxAppliedResponse{},
+			TaxRates:          taxRates,
+		}, nil
 	}
 
 	s.Logger.Infow("applying taxes to invoice",
@@ -1070,15 +1074,6 @@ func (s *taxService) ApplyTaxesOnInvoice(ctx context.Context, inv *invoice.Invoi
 		TaxAppliedRecords: taxAppliedRecords,
 		TaxRates:          taxRates,
 	}, nil
-}
-
-// createEmptyTaxCalculationResult creates an empty tax calculation result
-func (s *taxService) createEmptyTaxCalculationResult(taxRates []*dto.TaxRateResponse) *TaxCalculationResult {
-	return &TaxCalculationResult{
-		TotalTaxAmount:    decimal.Zero,
-		TaxAppliedRecords: []*dto.TaxAppliedResponse{},
-		TaxRates:          taxRates,
-	}
 }
 
 // calculateTaxAmount calculates the tax amount for a given tax rate and taxable amount
