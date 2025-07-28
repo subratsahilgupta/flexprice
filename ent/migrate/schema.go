@@ -72,6 +72,49 @@ var (
 			},
 		},
 	}
+	// ConnectionsColumns holds the columns for the "connections" table.
+	ConnectionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "connection_code", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(100)"}},
+		{Name: "provider_type", Type: field.TypeEnum, Enums: []string{"flexprice", "stripe", "razorpay"}, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "secret_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+	}
+	// ConnectionsTable holds the schema information for the "connections" table.
+	ConnectionsTable = &schema.Table{
+		Name:       "connections",
+		Columns:    ConnectionsColumns,
+		PrimaryKey: []*schema.Column{ConnectionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_tenant_environment_connection_code_unique",
+				Unique:  true,
+				Columns: []*schema.Column{ConnectionsColumns[1], ConnectionsColumns[7], ConnectionsColumns[10]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published'",
+				},
+			},
+			{
+				Name:    "connection_tenant_id_environment_id",
+				Unique:  false,
+				Columns: []*schema.Column{ConnectionsColumns[1], ConnectionsColumns[7]},
+			},
+			{
+				Name:    "connection_provider_type",
+				Unique:  false,
+				Columns: []*schema.Column{ConnectionsColumns[11]},
+			},
+		},
+	}
 	// CostsheetColumns holds the columns for the "costsheet" table.
 	CostsheetColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -1478,6 +1521,7 @@ var (
 	Tables = []*schema.Table{
 		AuthsTable,
 		BillingSequencesTable,
+		ConnectionsTable,
 		CostsheetTable,
 		CreditGrantsTable,
 		CreditGrantApplicationsTable,

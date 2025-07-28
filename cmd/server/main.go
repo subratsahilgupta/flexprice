@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
+	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/dynamodb"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/kafka"
@@ -23,6 +24,7 @@ import (
 	"github.com/flexprice/flexprice/internal/publisher"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/repository"
+	ent "github.com/flexprice/flexprice/internal/repository/ent"
 	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
@@ -137,6 +139,7 @@ func main() {
 			repository.NewCreditGrantApplicationRepository,
 			repository.NewCreditNoteRepository,
 			repository.NewCreditNoteLineItemRepository,
+			ent.NewConnectionRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -156,25 +159,22 @@ func main() {
 			service.NewServiceParams,
 
 			// Core services
-			service.NewTenantService,
+			service.NewEnvironmentService,
 			service.NewAuthService,
 			service.NewUserService,
-			service.NewEnvAccessService,
-			service.NewEnvironmentService,
-
-			// Business services
-			service.NewMeterService,
-			service.NewEventService,
-			service.NewEventPostProcessingService,
 			service.NewPriceService,
-			service.NewCustomerService,
 			service.NewPlanService,
 			service.NewSubscriptionService,
 			service.NewWalletService,
+			service.NewTenantService,
 			service.NewInvoiceService,
+			service.NewEventService,
+			service.NewEventPostProcessingService,
+			service.NewMeterService,
 			service.NewFeatureService,
 			service.NewEntitlementService,
 			service.NewPaymentService,
+			service.NewEnvAccessService,
 			service.NewPaymentProcessorService,
 			service.NewTaskService,
 			service.NewSecretService,
@@ -183,6 +183,18 @@ func main() {
 			service.NewCreditGrantService,
 			service.NewCostSheetService,
 			service.NewCreditNoteService,
+			service.NewConnectionService,
+			// Create StripeService without CustomerService for now
+			func(connectionRepo connection.Repository) *service.StripeService {
+				return service.NewStripeService(connectionRepo)
+			},
+			// Create CustomerService with StripeService
+			func(params service.ServiceParams, stripeService *service.StripeService) service.CustomerService {
+				customerService := service.NewCustomerService(params, stripeService)
+				// Wire up the circular dependency
+				stripeService.SetCustomerService(customerService)
+				return customerService
+			},
 		),
 	)
 
@@ -231,6 +243,8 @@ func provideHandlers(
 	creditGrantService service.CreditGrantService,
 	costSheetService service.CostSheetService,
 	creditNoteService service.CreditNoteService,
+	stripeService *service.StripeService,
+	connectionService service.ConnectionService,
 	svixClient *svix.Client,
 ) api.Handlers {
 	return api.Handlers{
@@ -260,7 +274,8 @@ func provideHandlers(
 		CostSheet:         v1.NewCostSheetHandler(costSheetService, logger),
 		CronCreditGrant:   cron.NewCreditGrantCronHandler(creditGrantService, logger),
 		CreditNote:        v1.NewCreditNoteHandler(creditNoteService, logger),
-		Webhook:           v1.NewWebhookHandler(cfg, svixClient, logger),
+		Connection:        v1.NewConnectionHandler(connectionService, logger),
+		Webhook:           v1.NewWebhookHandler(cfg, svixClient, logger, stripeService),
 	}
 }
 

@@ -24,10 +24,22 @@ type CustomerService interface {
 
 type customerService struct {
 	ServiceParams
+	stripeService *StripeService
 }
 
-func NewCustomerService(params ServiceParams) CustomerService {
-	return &customerService{ServiceParams: params}
+func NewCustomerService(params ServiceParams, stripeService *StripeService) CustomerService {
+	return &customerService{
+		ServiceParams: params,
+		stripeService: stripeService,
+	}
+}
+
+// NewCustomerServiceLegacy creates a customer service without Stripe integration (for backward compatibility)
+func NewCustomerServiceLegacy(params ServiceParams) CustomerService {
+	return &customerService{
+		ServiceParams: params,
+		stripeService: nil,
+	}
 }
 
 func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCustomerRequest) (*dto.CustomerResponse, error) {
@@ -48,7 +60,30 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 		// No need to wrap the error as the repository already returns properly formatted errors
 		return nil, err
 	}
+	
+	// Publish webhook event for customer creation
 	s.publishWebhookEvent(ctx, types.WebhookEventCustomerCreated, cust.ID)
+	
+	// Create customer in Stripe if we have a Stripe service
+	if s.stripeService != nil {
+		// Use go routine to avoid blocking the response
+		go func() {
+			// Create a new context with tenant and environment IDs
+			stripeCtx := types.SetTenantID(context.Background(), types.GetTenantID(ctx))
+			stripeCtx = types.SetEnvironmentID(stripeCtx, types.GetEnvironmentID(ctx))
+			stripeCtx = types.SetUserID(stripeCtx, types.GetUserID(ctx))
+			
+			if err := s.stripeService.CreateCustomerInStripe(stripeCtx, cust.ID); err != nil {
+				s.Logger.Errorw("failed to create customer in Stripe", 
+					"customer_id", cust.ID, 
+					"error", err)
+			} else {
+				s.Logger.Infow("customer created in Stripe successfully", 
+					"customer_id", cust.ID)
+			}
+		}()
+	}
+	
 	return &dto.CustomerResponse{Customer: cust}, nil
 }
 

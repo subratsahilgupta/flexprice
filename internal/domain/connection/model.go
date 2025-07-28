@@ -1,0 +1,79 @@
+package connection
+
+import (
+	"github.com/flexprice/flexprice/ent"
+	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/types"
+)
+
+// Connection represents an integration connection in the system
+type Connection struct {
+	ID             string                 `db:"id" json:"id"`
+	Name           string                 `db:"name" json:"name"`
+	Description    string                 `db:"description" json:"description"`
+	ConnectionCode string                 `db:"connection_code" json:"connection_code"`
+	ProviderType   types.SecretProvider   `db:"provider_type" json:"provider_type"`
+	Metadata       map[string]interface{} `db:"metadata" json:"metadata"`
+	SecretID       string                 `db:"secret_id" json:"secret_id"`
+	EnvironmentID  string                 `db:"environment_id" json:"environment_id"`
+	types.BaseModel
+}
+
+// StripeConnection represents Stripe-specific connection metadata
+type StripeConnection struct {
+	PublishableKey string `json:"publishable_key"`
+	SecretKey      string `json:"secret_key"`
+	WebhookSecret  string `json:"webhook_secret"`
+	AccountID      string `json:"account_id,omitempty"`
+}
+
+// GetStripeConfig extracts Stripe configuration from connection metadata
+func (c *Connection) GetStripeConfig() (*StripeConnection, error) {
+	if c.ProviderType != types.SecretProviderStripe {
+		return nil, ierr.NewError("connection is not a Stripe connection").
+			WithHint("Connection provider type must be Stripe").
+			Mark(ierr.ErrValidation)
+	}
+
+	config := &StripeConnection{}
+	if pk, ok := c.Metadata["publishable_key"].(string); ok {
+		config.PublishableKey = pk
+	}
+	if sk, ok := c.Metadata["secret_key"].(string); ok {
+		config.SecretKey = sk
+	}
+	if ws, ok := c.Metadata["webhook_secret"].(string); ok {
+		config.WebhookSecret = ws
+	}
+	if aid, ok := c.Metadata["account_id"].(string); ok {
+		config.AccountID = aid
+	}
+
+	return config, nil
+}
+
+// FromEnt converts an ent.Connection to domain Connection
+func FromEnt(entConn *ent.Connection) *Connection {
+	if entConn == nil {
+		return nil
+	}
+
+	return &Connection{
+		ID:             entConn.ID,
+		Name:           entConn.Name,
+		Description:    entConn.Description,
+		ConnectionCode: entConn.ConnectionCode,
+		ProviderType:   types.SecretProvider(entConn.ProviderType),
+		Metadata:       entConn.Metadata,
+		SecretID:       entConn.SecretID,
+		EnvironmentID:  entConn.EnvironmentID,
+		BaseModel: types.BaseModel{
+			TenantID:  entConn.TenantID,
+			Status:    types.Status(entConn.Status),
+			CreatedAt: entConn.CreatedAt,
+			UpdatedAt: entConn.UpdatedAt,
+			CreatedBy: entConn.CreatedBy,
+			UpdatedBy: entConn.UpdatedBy,
+		},
+	}
+}
