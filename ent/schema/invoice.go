@@ -182,6 +182,8 @@ func (Invoice) Fields() []ent.Field {
 func (Invoice) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("line_items", InvoiceLineItem.Type),
+		edge.To("redemptions", Redemption.Type).
+			Comment("Invoice can have multiple coupon redemptions"),
 	}
 }
 
