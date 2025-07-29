@@ -54,9 +54,9 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 	// Publish webhook event for customer creation
 	s.publishWebhookEvent(ctx, types.WebhookEventCustomerCreated, cust.ID)
 
-	// Create customer in Stripe if we have a Stripe service
-	stripeService := NewStripeService(s.ServiceParams)
-	if stripeService != nil {
+	// Create customer in Stripe if we have a Stripe service and ConnectionRepo is available
+	if s.ConnectionRepo != nil {
+		stripeService := NewStripeService(s.ServiceParams)
 		// Use go routine to avoid blocking the response
 		go func() {
 			// Create a new context with tenant and environment IDs
