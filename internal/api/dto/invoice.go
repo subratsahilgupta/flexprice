@@ -236,9 +236,6 @@ type CreateInvoiceLineItemRequest struct {
 	// meter_display_name is the optional human-readable name of the meter
 	MeterDisplayName *string `json:"meter_display_name,omitempty"`
 
-	// price_unit_id is the optional unique identifier of the price unit associated with this line item
-	PriceUnitID *string `json:"price_unit_id,omitempty"`
-
 	// price_unit is the optional 3-digit ISO code of the price unit associated with this line item
 	PriceUnit *string `json:"price_unit,omitempty"`
 
@@ -312,7 +309,6 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		PriceType:        r.PriceType,
 		MeterID:          r.MeterID,
 		MeterDisplayName: r.MeterDisplayName,
-		PriceUnitID:      r.PriceUnitID,
 		PriceUnit:        r.PriceUnit,
 		PriceUnitAmount:  r.PriceUnitAmount,
 		DisplayName:      r.DisplayName,
