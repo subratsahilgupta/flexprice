@@ -74,6 +74,8 @@ type Price struct {
 	TierMode *string `json:"tier_mode,omitempty"`
 	// Tiers holds the value of the "tiers" field.
 	Tiers []schema.PriceTier `json:"tiers,omitempty"`
+	// PriceUnitTiers holds the value of the "price_unit_tiers" field.
+	PriceUnitTiers []schema.PriceTier `json:"price_unit_tiers,omitempty"`
 	// TransformQuantity holds the value of the "transform_quantity" field.
 	TransformQuantity schema.TransformQuantity `json:"transform_quantity,omitempty"`
 	// LookupKey holds the value of the "lookup_key" field.
@@ -124,7 +126,7 @@ func (*Price) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case price.FieldFilterValues, price.FieldTiers, price.FieldTransformQuantity, price.FieldMetadata:
+		case price.FieldFilterValues, price.FieldTiers, price.FieldPriceUnitTiers, price.FieldTransformQuantity, price.FieldMetadata:
 			values[i] = new([]byte)
 		case price.FieldAmount, price.FieldPriceUnitAmount, price.FieldConversionRate:
 			values[i] = new(sql.NullFloat64)
@@ -323,6 +325,14 @@ func (pr *Price) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field tiers: %w", err)
 				}
 			}
+		case price.FieldPriceUnitTiers:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field price_unit_tiers", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &pr.PriceUnitTiers); err != nil {
+					return fmt.Errorf("unmarshal field price_unit_tiers: %w", err)
+				}
+			}
 		case price.FieldTransformQuantity:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field transform_quantity", values[i])
@@ -481,6 +491,9 @@ func (pr *Price) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("tiers=")
 	builder.WriteString(fmt.Sprintf("%v", pr.Tiers))
+	builder.WriteString(", ")
+	builder.WriteString("price_unit_tiers=")
+	builder.WriteString(fmt.Sprintf("%v", pr.PriceUnitTiers))
 	builder.WriteString(", ")
 	builder.WriteString("transform_quantity=")
 	builder.WriteString(fmt.Sprintf("%v", pr.TransformQuantity))

@@ -128,6 +128,8 @@ func (Price) Fields() []ent.Field {
 			Nillable(),
 		field.JSON("tiers", []PriceTier{}).
 			Optional(),
+		field.JSON("price_unit_tiers", []PriceTier{}).
+			Optional(),
 		field.JSON("transform_quantity", TransformQuantity{}).
 			Optional(),
 		field.String("lookup_key").

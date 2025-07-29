@@ -305,6 +305,12 @@ func (pc *PriceCreate) SetTiers(st []schema.PriceTier) *PriceCreate {
 	return pc
 }
 
+// SetPriceUnitTiers sets the "price_unit_tiers" field.
+func (pc *PriceCreate) SetPriceUnitTiers(st []schema.PriceTier) *PriceCreate {
+	pc.mutation.SetPriceUnitTiers(st)
+	return pc
+}
+
 // SetTransformQuantity sets the "transform_quantity" field.
 func (pc *PriceCreate) SetTransformQuantity(sq schema.TransformQuantity) *PriceCreate {
 	pc.mutation.SetTransformQuantity(sq)
@@ -677,6 +683,10 @@ func (pc *PriceCreate) createSpec() (*Price, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.Tiers(); ok {
 		_spec.SetField(price.FieldTiers, field.TypeJSON, value)
 		_node.Tiers = value
+	}
+	if value, ok := pc.mutation.PriceUnitTiers(); ok {
+		_spec.SetField(price.FieldPriceUnitTiers, field.TypeJSON, value)
+		_node.PriceUnitTiers = value
 	}
 	if value, ok := pc.mutation.TransformQuantity(); ok {
 		_spec.SetField(price.FieldTransformQuantity, field.TypeJSON, value)

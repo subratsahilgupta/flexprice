@@ -86,6 +86,9 @@ type Price struct {
 
 	Tiers JSONBTiers `db:"tiers,jsonb" json:"tiers"`
 
+	// PriceUnitTiers are the tiers for the price unit
+	PriceUnitTiers JSONBTiers `db:"price_unit_tiers,jsonb" json:"price_unit_tiers"`
+
 	// MeterID is the id of the meter for usage based pricing
 	MeterID string `db:"meter_id" json:"meter_id"`
 
@@ -315,7 +318,7 @@ func FromEnt(e *ent.Price) *Price {
 		return nil
 	}
 
-	// Convert tiers from rent model to price tiers
+	// Convert tiers from ent model to price tiers
 	var tiers JSONBTiers
 	if len(e.Tiers) > 0 {
 		tiers = make(JSONBTiers, len(e.Tiers))
@@ -331,28 +334,44 @@ func FromEnt(e *ent.Price) *Price {
 		}
 	}
 
+	// Convert price unit tiers from ent model to price tiers
+	var priceUnitTiers JSONBTiers
+	if len(e.PriceUnitTiers) > 0 {
+		priceUnitTiers = make(JSONBTiers, len(e.PriceUnitTiers))
+		for i, tier := range e.PriceUnitTiers {
+			priceUnitTiers[i] = PriceTier{
+				UpTo:       tier.UpTo,
+				UnitAmount: tier.UnitAmount,
+			}
+			if tier.FlatAmount != nil {
+				flatAmount := tier.FlatAmount
+				priceUnitTiers[i].FlatAmount = flatAmount
+			}
+		}
+	}
+
 	return &Price{
-		ID:                 e.ID,
-		Amount:             decimal.NewFromFloat(e.Amount),
-		Currency:           e.Currency,
-		DisplayAmount:      e.DisplayAmount,
-		PlanID:             e.PlanID,
-		Type:               types.PriceType(e.Type),
-		BillingPeriod:      types.BillingPeriod(e.BillingPeriod),
-		BillingPeriodCount: e.BillingPeriodCount,
-		BillingModel:       types.BillingModel(e.BillingModel),
-		BillingCadence:     types.BillingCadence(e.BillingCadence),
-		InvoiceCadence:     types.InvoiceCadence(e.InvoiceCadence),
-		TrialPeriod:        e.TrialPeriod,
-		TierMode:           types.BillingTier(lo.FromPtr(e.TierMode)),
-		Tiers:              tiers,
-		MeterID:            lo.FromPtr(e.MeterID),
-		LookupKey:          e.LookupKey,
-		Description:        e.Description,
-		TransformQuantity:  JSONBTransformQuantity(e.TransformQuantity),
-		Metadata:           JSONBMetadata(e.Metadata),
-		EnvironmentID:      e.EnvironmentID,
-		// Price unit fields
+		ID:                     e.ID,
+		Amount:                 decimal.NewFromFloat(e.Amount),
+		Currency:               e.Currency,
+		DisplayAmount:          e.DisplayAmount,
+		PlanID:                 e.PlanID,
+		Type:                   types.PriceType(e.Type),
+		BillingPeriod:          types.BillingPeriod(e.BillingPeriod),
+		BillingPeriodCount:     e.BillingPeriodCount,
+		BillingModel:           types.BillingModel(e.BillingModel),
+		BillingCadence:         types.BillingCadence(e.BillingCadence),
+		InvoiceCadence:         types.InvoiceCadence(e.InvoiceCadence),
+		TrialPeriod:            e.TrialPeriod,
+		TierMode:               types.BillingTier(lo.FromPtr(e.TierMode)),
+		Tiers:                  tiers,
+		PriceUnitTiers:         priceUnitTiers,
+		MeterID:                lo.FromPtr(e.MeterID),
+		LookupKey:              e.LookupKey,
+		Description:            e.Description,
+		TransformQuantity:      JSONBTransformQuantity(e.TransformQuantity),
+		Metadata:               JSONBMetadata(e.Metadata),
+		EnvironmentID:          e.EnvironmentID,
 		PriceUnitID:            e.PriceUnitID,
 		PriceUnit:              e.PriceUnit,
 		PriceUnitAmount:        decimal.NewFromFloat(e.PriceUnitAmount),
@@ -381,20 +400,35 @@ func FromEntList(list []*ent.Price) []*Price {
 	return prices
 }
 
-// ToEntTiers converts domain PriceTiers to Ent PriceTiers
+// ToEntTiers converts domain tiers to ent tiers
 func (p *Price) ToEntTiers() []schema.PriceTier {
 	if len(p.Tiers) == 0 {
 		return nil
 	}
+
 	tiers := make([]schema.PriceTier, len(p.Tiers))
 	for i, tier := range p.Tiers {
 		tiers[i] = schema.PriceTier{
 			UpTo:       tier.UpTo,
 			UnitAmount: tier.UnitAmount,
+			FlatAmount: tier.FlatAmount,
 		}
-		if tier.FlatAmount != nil {
-			flatAmount := tier.FlatAmount
-			tiers[i].FlatAmount = flatAmount
+	}
+	return tiers
+}
+
+// ToPriceUnitTiers converts domain price unit tiers to ent tiers
+func (p *Price) ToPriceUnitTiers() []schema.PriceTier {
+	if len(p.PriceUnitTiers) == 0 {
+		return nil
+	}
+
+	tiers := make([]schema.PriceTier, len(p.PriceUnitTiers))
+	for i, tier := range p.PriceUnitTiers {
+		tiers[i] = schema.PriceTier{
+			UpTo:       tier.UpTo,
+			UnitAmount: tier.UnitAmount,
+			FlatAmount: tier.FlatAmount,
 		}
 	}
 	return tiers

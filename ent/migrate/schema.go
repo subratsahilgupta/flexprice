@@ -902,6 +902,7 @@ var (
 		{Name: "filter_values", Type: field.TypeJSON, Nullable: true},
 		{Name: "tier_mode", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "tiers", Type: field.TypeJSON, Nullable: true},
+		{Name: "price_unit_tiers", Type: field.TypeJSON, Nullable: true},
 		{Name: "transform_quantity", Type: field.TypeJSON, Nullable: true},
 		{Name: "lookup_key", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
@@ -916,7 +917,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "prices_price_unit_price_unit_edge",
-				Columns:    []*schema.Column{PricesColumns[31]},
+				Columns:    []*schema.Column{PricesColumns[32]},
 				RefColumns: []*schema.Column{PriceUnitColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -925,7 +926,7 @@ var (
 			{
 				Name:    "price_tenant_id_environment_id_lookup_key",
 				Unique:  true,
-				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7], PricesColumns[28]},
+				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7], PricesColumns[29]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status = 'published' AND lookup_key IS NOT NULL AND lookup_key != ''",
 				},

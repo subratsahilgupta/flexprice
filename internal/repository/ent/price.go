@@ -74,6 +74,7 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetTrialPeriod(p.TrialPeriod).
 		SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 		SetTiers(p.ToEntTiers()).
+		SetPriceUnitTiers(p.ToPriceUnitTiers()).
 		SetTransformQuantity(schema.TransformQuantity(p.TransformQuantity)).
 		SetLookupKey(p.LookupKey).
 		SetDescription(p.Description).
@@ -83,14 +84,23 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetUpdatedAt(p.UpdatedAt).
 		SetCreatedBy(p.CreatedBy).
 		SetUpdatedBy(p.UpdatedBy).
-		SetEnvironmentID(p.EnvironmentID).
-		// Price unit fields
-		SetNillablePriceUnitID(lo.ToPtr(p.PriceUnitID)).
-		SetNillablePriceUnit(lo.ToPtr(p.PriceUnit)).
-		SetNillablePriceUnitAmount(lo.ToPtr(p.PriceUnitAmount.InexactFloat64())).
-		SetNillableDisplayPriceUnitAmount(lo.ToPtr(p.DisplayPriceUnitAmount))
+		SetEnvironmentID(p.EnvironmentID)
 
-	priceBuilder.SetConversionRate(p.ConversionRate.InexactFloat64())
+	if p.PriceUnitID != "" {
+		priceBuilder.SetPriceUnitID(p.PriceUnitID)
+	}
+	if p.PriceUnit != "" {
+		priceBuilder.SetPriceUnit(p.PriceUnit)
+	}
+	if !p.PriceUnitAmount.IsZero() {
+		priceBuilder.SetPriceUnitAmount(p.PriceUnitAmount.InexactFloat64())
+	}
+	if p.DisplayPriceUnitAmount != "" {
+		priceBuilder.SetDisplayPriceUnitAmount(p.DisplayPriceUnitAmount)
+	}
+	if !p.ConversionRate.IsZero() {
+		priceBuilder.SetConversionRate(p.ConversionRate.InexactFloat64())
+	}
 
 	price, err := priceBuilder.Save(ctx)
 
@@ -276,6 +286,7 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price) erro
 		SetNillableMeterID(lo.ToPtr(p.MeterID)).
 		SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 		SetTiers(p.ToEntTiers()).
+		SetPriceUnitTiers(p.ToPriceUnitTiers()).
 		SetTransformQuantity(schema.TransformQuantity(p.TransformQuantity)).
 		SetLookupKey(p.LookupKey).
 		SetDescription(p.Description).
@@ -392,6 +403,7 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 			SetNillableMeterID(lo.ToPtr(p.MeterID)).
 			SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 			SetTiers(p.ToEntTiers()).
+			SetPriceUnitTiers(p.ToEntTiers()).
 			SetTransformQuantity(schema.TransformQuantity(p.TransformQuantity)).
 			SetLookupKey(p.LookupKey).
 			SetDescription(p.Description).
