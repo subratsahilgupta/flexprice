@@ -62,7 +62,7 @@ func (h *PriceHandler) CreatePrice(c *gin.Context) {
 // @Failure 500 {object} ierr.ErrorResponse
 // @Router /prices/config [post]
 func (h *PriceHandler) CreatePriceWithUnitConfig(c *gin.Context) {
-	var req dto.CreatePriceWithUnitConfigRequest
+	var req dto.CreatePriceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(ierr.WithError(err).
 			WithHint("Invalid request format").

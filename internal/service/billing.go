@@ -104,7 +104,7 @@ func (s *billingService) CalculateFixedCharges(
 
 		// Calculate price unit amount if price unit is available
 		var priceUnitAmount *decimal.Decimal
-		if item.PriceUnit != "" && item.PriceUnitID != "" {
+		if item.PriceUnit != "" {
 			convertedAmount, err := s.PriceUnitRepo.ConvertToPriceUnit(ctx, item.PriceUnit, types.GetTenantID(ctx), types.GetEnvironmentID(ctx), amount)
 			if err != nil {
 				s.Logger.Warnw("failed to convert amount to price unit",
@@ -121,7 +121,6 @@ func (s *billingService) CalculateFixedCharges(
 			PlanDisplayName: lo.ToPtr(item.PlanDisplayName),
 			PriceID:         lo.ToPtr(item.PriceID),
 			PriceType:       lo.ToPtr(string(item.PriceType)),
-			PriceUnitID:     lo.ToPtr(item.PriceUnitID),
 			PriceUnit:       lo.ToPtr(item.PriceUnit),
 			PriceUnitAmount: priceUnitAmount,
 			DisplayName:     lo.ToPtr(item.DisplayName),
@@ -267,7 +266,7 @@ func (s *billingService) CalculateUsageCharges(
 
 			// Calculate price unit amount if price unit is available
 			var priceUnitAmount *decimal.Decimal
-			if item.PriceUnit != "" && item.PriceUnitID != "" {
+			if item.PriceUnit != "" {
 				convertedAmount, err := s.PriceUnitRepo.ConvertToPriceUnit(ctx, item.PriceUnit, types.GetTenantID(ctx), types.GetEnvironmentID(ctx), lineItemAmount)
 				if err != nil {
 					s.Logger.Warnw("failed to convert amount to price unit",
@@ -286,7 +285,6 @@ func (s *billingService) CalculateUsageCharges(
 				PriceID:          lo.ToPtr(item.PriceID),
 				MeterID:          lo.ToPtr(item.MeterID),
 				MeterDisplayName: lo.ToPtr(item.MeterDisplayName),
-				PriceUnitID:      lo.ToPtr(item.PriceUnitID),
 				PriceUnit:        lo.ToPtr(item.PriceUnit),
 				PriceUnitAmount:  priceUnitAmount,
 				DisplayName:      displayName,
