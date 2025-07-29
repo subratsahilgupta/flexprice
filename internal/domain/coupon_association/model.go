@@ -1,4 +1,4 @@
-package discount
+package coupon_association
 
 import (
 	"time"
@@ -6,8 +6,8 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-// Discount represents a coupon association with a subscription or subscription line item
-type Discount struct {
+// CouponAssociation represents a coupon association with a subscription or subscription line item
+type CouponAssociation struct {
 	ID                     string       `json:"id" db:"id"`
 	CouponID               string       `json:"coupon_id" db:"coupon_id"`
 	SubscriptionID         *string      `json:"subscription_id,omitempty" db:"subscription_id"`
@@ -21,20 +21,20 @@ type Discount struct {
 	EnvironmentID          string       `json:"environment_id" db:"environment_id"`
 }
 
-// IsSubscriptionLevel returns true if the discount is applied at subscription level
-func (d *Discount) IsSubscriptionLevel() bool {
-	return d.SubscriptionID != nil && d.SubscriptionLineItemID == nil
+// IsSubscriptionLevel returns true if the coupon association is applied at subscription level
+func (ca *CouponAssociation) IsSubscriptionLevel() bool {
+	return ca.SubscriptionID != nil && ca.SubscriptionLineItemID == nil
 }
 
-// IsLineItemLevel returns true if the discount is applied at subscription line item level
-func (d *Discount) IsLineItemLevel() bool {
-	return d.SubscriptionLineItemID != nil
+// IsLineItemLevel returns true if the coupon association is applied at subscription line item level
+func (ca *CouponAssociation) IsLineItemLevel() bool {
+	return ca.SubscriptionLineItemID != nil
 }
 
-// GetTargetID returns the ID of the target (subscription or line item) for this discount
-func (d *Discount) GetTargetID() string {
-	if d.IsLineItemLevel() {
-		return *d.SubscriptionLineItemID
+// GetTargetID returns the ID of the target (subscription or line item) for this coupon association
+func (ca *CouponAssociation) GetTargetID() string {
+	if ca.IsLineItemLevel() {
+		return *ca.SubscriptionLineItemID
 	}
-	return *d.SubscriptionID
+	return *ca.SubscriptionID
 }

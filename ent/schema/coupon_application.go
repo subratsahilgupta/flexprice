@@ -11,21 +11,21 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Redemption holds the schema definition for the Redemption entity.
-type Redemption struct {
+// CouponApplication holds the schema definition for the CouponApplication entity.
+type CouponApplication struct {
 	ent.Schema
 }
 
-// Mixin of the Redemption.
-func (Redemption) Mixin() []ent.Mixin {
+// Mixin of the CouponApplication.
+func (CouponApplication) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
 		baseMixin.EnvironmentMixin{},
 	}
 }
 
-// Fields of the Redemption.
-func (Redemption) Fields() []ent.Field {
+// Fields of the CouponApplication.
+func (CouponApplication) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("id").
 			SchemaType(map[string]string{
@@ -39,7 +39,7 @@ func (Redemption) Fields() []ent.Field {
 			}).
 			NotEmpty().
 			Immutable(),
-		field.String("discount_id").
+		field.String("coupon_association_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
@@ -57,7 +57,7 @@ func (Redemption) Fields() []ent.Field {
 			}).
 			Optional().
 			Nillable(),
-		field.Time("redeemed_at").
+		field.Time("applied_at").
 			Default(time.Now).
 			Immutable(),
 		field.Other("original_price", decimal.Decimal{}).
@@ -92,40 +92,41 @@ func (Redemption) Fields() []ent.Field {
 			NotEmpty(),
 		field.JSON("coupon_snapshot", map[string]interface{}{}).
 			Optional().
-			Comment("Frozen coupon configuration at time of redemption"),
+			Comment("Frozen coupon configuration at time of application"),
 	}
 }
 
-// Edges of the Redemption.
-func (Redemption) Edges() []ent.Edge {
+// Edges of the CouponApplication.
+func (CouponApplication) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("coupon", Coupon.Type).
-			Ref("redemptions").
+			Ref("coupon_applications").
 			Field("coupon_id").
 			Unique().
 			Required(),
-		edge.From("discount", Discount.Type).
-			Ref("redemptions").
-			Field("discount_id").
+		edge.From("coupon_association", CouponAssociation.Type).
+			Ref("coupon_applications").
+			Field("coupon_association_id").
 			Unique().
 			Required(),
 		edge.From("invoice", Invoice.Type).
-			Ref("redemptions").
+			Ref("coupon_applications").
 			Field("invoice_id").
 			Unique().
 			Required(),
 		edge.From("invoice_line_item", InvoiceLineItem.Type).
-			Ref("redemptions").
+			Ref("coupon_applications").
 			Field("invoice_line_item_id").
 			Unique(),
 	}
 }
 
-// Indexes of the Redemption.
-func (Redemption) Indexes() []ent.Index {
+// Indexes of the CouponApplication.
+func (CouponApplication) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "environment_id"),
 		index.Fields("tenant_id", "environment_id", "coupon_id"),
 		index.Fields("tenant_id", "environment_id", "invoice_id"),
+		index.Fields("tenant_id", "environment_id", "invoice_id", "invoice_line_item_id"),
 	}
 }

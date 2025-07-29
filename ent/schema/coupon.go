@@ -45,14 +45,14 @@ func (Coupon) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Coupon redeem before date"),
-		field.Int("max_redemptions").
+		field.Int("max_applications").
 			Optional().
 			Nillable().
-			Comment("Coupon max redemptions"),
-		field.Int("total_redemptions").
+			Comment("Coupon max applications"),
+		field.Int("total_applications").
 			Optional().
 			Default(0).
-			Comment("Coupon total redemptions"),
+			Comment("Coupon total applications"),
 		field.JSON("rules", map[string]interface{}{}).
 			Optional().
 			Comment("Rule engine configuration for discount application"),
@@ -97,10 +97,10 @@ func (Coupon) Fields() []ent.Field {
 // Edges of the Coupon.
 func (Coupon) Edges() []ent.Edge {
 	return []ent.Edge{
-		edge.To("discounts", Discount.Type).
-			Comment("Coupon can be associated with multiple discounts"),
-		edge.To("redemptions", Redemption.Type).
-			Comment("Coupon can have multiple redemptions"),
+		edge.To("coupon_associations", CouponAssociation.Type).
+			Comment("Coupon can be associated with multiple coupon associations"),
+		edge.To("coupon_applications", CouponApplication.Type).
+			Comment("Coupon can have multiple coupon applications"),
 	}
 }
 

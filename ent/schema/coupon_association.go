@@ -8,21 +8,21 @@ import (
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
 )
 
-// Discount holds the schema definition for the Discount entity.
-type Discount struct {
+// CouponAssociation holds the schema definition for the CouponAssociation entity.
+type CouponAssociation struct {
 	ent.Schema
 }
 
-// Mixin of the Discount.
-func (Discount) Mixin() []ent.Mixin {
+// Mixin of the CouponAssociation.
+func (CouponAssociation) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
 		baseMixin.EnvironmentMixin{},
 	}
 }
 
-// Fields of the Discount.
-func (Discount) Fields() []ent.Field {
+// Fields of the CouponAssociation.
+func (CouponAssociation) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("id").
 			SchemaType(map[string]string{
@@ -51,32 +51,33 @@ func (Discount) Fields() []ent.Field {
 	}
 }
 
-// Edges of the Discount.
-func (Discount) Edges() []ent.Edge {
+// Edges of the CouponAssociation.
+func (CouponAssociation) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.From("coupon", Coupon.Type).
-			Ref("discounts").
+			Ref("coupon_associations").
 			Field("coupon_id").
 			Unique().
 			Required(),
 		edge.From("subscription", Subscription.Type).
-			Ref("discounts").
+			Ref("coupon_associations").
 			Field("subscription_id").
 			Unique(),
 		edge.From("subscription_line_item", SubscriptionLineItem.Type).
-			Ref("discounts").
+			Ref("coupon_associations").
 			Field("subscription_line_item_id").
 			Unique(),
-		edge.To("redemptions", Redemption.Type).
-			Comment("Discount can have multiple redemptions"),
+		edge.To("coupon_applications", CouponApplication.Type).
+			Comment("CouponAssociation can have multiple coupon applications"),
 	}
 }
 
-// Indexes of the Discount.
-func (Discount) Indexes() []ent.Index {
+// Indexes of the CouponAssociation.
+func (CouponAssociation) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "environment_id"),
 		index.Fields("tenant_id", "environment_id", "coupon_id"),
 		index.Fields("tenant_id", "environment_id", "subscription_id"),
+		index.Fields("tenant_id", "environment_id", "subscription_id", "subscription_line_item_id"),
 	}
 }

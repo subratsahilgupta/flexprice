@@ -6,15 +6,15 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-// CreateDiscountRequest represents the request to create a new discount
-type CreateDiscountRequest struct {
+// CreateCouponAssociationRequest represents the request to create a new coupon association
+type CreateCouponAssociationRequest struct {
 	CouponID               string  `json:"coupon_id" validate:"required"`
 	SubscriptionID         *string `json:"subscription_id,omitempty"`
 	SubscriptionLineItemID *string `json:"subscription_line_item_id,omitempty"`
 }
 
-// DiscountResponse represents the response for discount data
-type DiscountResponse struct {
+// CouponAssociationResponse represents the response for coupon association data
+type CouponAssociationResponse struct {
 	ID                     string       `json:"id"`
 	CouponID               string       `json:"coupon_id"`
 	SubscriptionID         *string      `json:"subscription_id,omitempty"`
@@ -28,17 +28,17 @@ type DiscountResponse struct {
 	EnvironmentID          string       `json:"environment_id"`
 }
 
-// ListDiscountsRequest represents the request to list discounts
-type ListDiscountsRequest struct {
+// ListCouponAssociationsRequest represents the request to list coupon associations
+type ListCouponAssociationsRequest struct {
 	CouponID               *string                  `json:"coupon_id,omitempty"`
 	SubscriptionID         *string                  `json:"subscription_id,omitempty"`
 	SubscriptionLineItemID *string                  `json:"subscription_line_item_id,omitempty"`
 	Pagination             types.PaginationResponse `json:"pagination"`
 }
 
-// ListDiscountsResponse represents the response for listing discounts
-type ListDiscountsResponse struct {
-	Discounts  []*DiscountResponse      `json:"discounts"`
-	Pagination types.PaginationResponse `json:"pagination"`
-	TotalCount int                      `json:"total_count"`
+// ListCouponAssociationsResponse represents the response for listing coupon associations
+type ListCouponAssociationsResponse struct {
+	CouponAssociations []*CouponAssociationResponse `json:"coupon_associations"`
+	Pagination         types.PaginationResponse     `json:"pagination"`
+	TotalCount         int                          `json:"total_count"`
 }
