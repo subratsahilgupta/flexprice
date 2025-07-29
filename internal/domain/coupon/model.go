@@ -20,7 +20,6 @@ type Coupon struct {
 	PercentageOff    decimal.Decimal        `json:"percentage_off" db:"percentage_off"`
 	Type             types.DiscountType     `json:"type" db:"type"`
 	Cadence          types.DiscountCadence  `json:"cadence" db:"cadence"`
-	IsActive         bool                   `json:"is_active" db:"is_active"`
 	Currency         string                 `json:"currency" db:"currency"`
 	TenantID         string                 `json:"tenant_id" db:"tenant_id"`
 	Status           types.Status           `json:"status" db:"status"`
@@ -33,10 +32,6 @@ type Coupon struct {
 
 // IsValid checks if the coupon is valid for redemption
 func (c *Coupon) IsValid() bool {
-	if !c.IsActive {
-		return false
-	}
-
 	now := time.Now()
 
 	// Check if coupon is within valid date range
