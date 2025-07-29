@@ -138,10 +138,6 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	switch event.Type {
 	case "customer.created":
 		h.handleCustomerCreated(c, event, environmentID)
-	case "customer.updated":
-		h.handleCustomerUpdated(c, event, environmentID)
-	case "customer.deleted":
-		h.handleCustomerDeleted(c, event, environmentID)
 	default:
 		h.logger.Infow("unhandled Stripe webhook event type", "type", event.Type)
 		c.JSON(http.StatusOK, gin.H{
@@ -166,70 +162,20 @@ func (h *WebhookHandler) handleCustomerCreated(c *gin.Context, event *stripe.Eve
 		return
 	}
 
-	if err := h.stripeService.SyncCustomerFromStripe(c.Request.Context(), &customer, environmentID); err != nil {
-		h.logger.Errorw("failed to sync customer from Stripe",
+	if err := h.stripeService.CreateCustomerFromStripe(c.Request.Context(), &customer, environmentID); err != nil {
+		h.logger.Errorw("failed to create customer from Stripe",
 			"error", err,
 			"stripe_customer_id", customer.ID,
 			"environment_id", environmentID,
 		)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to sync customer",
+			"error": "Failed to create customer",
 		})
 		return
 	}
 
-	h.logger.Infow("successfully synced customer from Stripe",
+	h.logger.Infow("successfully created customer from Stripe",
 		"stripe_customer_id", customer.ID,
 		"environment_id", environmentID,
 	)
-}
-
-func (h *WebhookHandler) handleCustomerUpdated(c *gin.Context, event *stripe.Event, environmentID string) {
-	var customer stripe.Customer
-	err := json.Unmarshal(event.Data.Raw, &customer)
-	if err != nil {
-		h.logger.Errorw("failed to parse customer from webhook", "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Failed to parse customer data",
-		})
-		return
-	}
-
-	if err := h.stripeService.SyncCustomerFromStripe(c.Request.Context(), &customer, environmentID); err != nil {
-		h.logger.Errorw("failed to sync updated customer from Stripe",
-			"error", err,
-			"stripe_customer_id", customer.ID,
-			"environment_id", environmentID,
-		)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to sync customer",
-		})
-		return
-	}
-
-	h.logger.Infow("successfully synced updated customer from Stripe",
-		"stripe_customer_id", customer.ID,
-		"environment_id", environmentID,
-	)
-}
-
-func (h *WebhookHandler) handleCustomerDeleted(c *gin.Context, event *stripe.Event, environmentID string) {
-	var customer stripe.Customer
-	err := json.Unmarshal(event.Data.Raw, &customer)
-	if err != nil {
-		h.logger.Errorw("failed to parse customer from webhook", "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Failed to parse customer data",
-		})
-		return
-	}
-
-	// For customer deletion, we might want to mark as inactive rather than delete
-	// This depends on your business logic
-	h.logger.Infow("customer deleted in Stripe",
-		"stripe_customer_id", customer.ID,
-		"environment_id", environmentID,
-	)
-
-	// TODO: Implement customer deactivation logic if needed
 }

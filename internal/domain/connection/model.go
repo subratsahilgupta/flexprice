@@ -8,14 +8,11 @@ import (
 
 // Connection represents an integration connection in the system
 type Connection struct {
-	ID             string                 `db:"id" json:"id"`
-	Name           string                 `db:"name" json:"name"`
-	Description    string                 `db:"description" json:"description"`
-	ConnectionCode string                 `db:"connection_code" json:"connection_code"`
-	ProviderType   types.SecretProvider   `db:"provider_type" json:"provider_type"`
-	Metadata       map[string]interface{} `db:"metadata" json:"metadata"`
-	SecretID       string                 `db:"secret_id" json:"secret_id"`
-	EnvironmentID  string                 `db:"environment_id" json:"environment_id"`
+	ID            string                 `db:"id" json:"id"`
+	Name          string                 `db:"name" json:"name"`
+	ProviderType  types.SecretProvider   `db:"provider_type" json:"provider_type"`
+	Metadata      map[string]interface{} `db:"metadata" json:"metadata"`
+	EnvironmentID string                 `db:"environment_id" json:"environment_id"`
 	types.BaseModel
 }
 
@@ -59,14 +56,11 @@ func FromEnt(entConn *ent.Connection) *Connection {
 	}
 
 	return &Connection{
-		ID:             entConn.ID,
-		Name:           entConn.Name,
-		Description:    entConn.Description,
-		ConnectionCode: entConn.ConnectionCode,
-		ProviderType:   types.SecretProvider(entConn.ProviderType),
-		Metadata:       entConn.Metadata,
-		SecretID:       entConn.SecretID,
-		EnvironmentID:  entConn.EnvironmentID,
+		ID:            entConn.ID,
+		Name:          entConn.Name,
+		ProviderType:  types.SecretProvider(entConn.ProviderType),
+		Metadata:      entConn.Metadata,
+		EnvironmentID: entConn.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  entConn.TenantID,
 			Status:    types.Status(entConn.Status),

@@ -14,7 +14,6 @@ import (
 type ConnectionService interface {
 	CreateConnection(ctx context.Context, req dto.CreateConnectionRequest) (*dto.ConnectionResponse, error)
 	GetConnection(ctx context.Context, id string) (*dto.ConnectionResponse, error)
-	GetConnectionByCode(ctx context.Context, connectionCode string) (*dto.ConnectionResponse, error)
 	GetConnections(ctx context.Context, filter *types.ConnectionFilter) (*dto.ListConnectionsResponse, error)
 	UpdateConnection(ctx context.Context, id string, req dto.UpdateConnectionRequest) (*dto.ConnectionResponse, error)
 	DeleteConnection(ctx context.Context, id string) error
@@ -35,7 +34,7 @@ func NewConnectionService(repo connection.Repository, log *logger.Logger) Connec
 
 func (s *connectionService) CreateConnection(ctx context.Context, req dto.CreateConnectionRequest) (*dto.ConnectionResponse, error) {
 	s.log.Debugw("creating connection",
-		"connection_code", req.ConnectionCode,
+		"name", req.Name,
 		"provider_type", req.ProviderType,
 	)
 
@@ -46,7 +45,7 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 
 	// Convert DTO to domain model
 	conn := req.ToConnection()
-	
+
 	// Set required fields
 	conn.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CONNECTION)
 	conn.TenantID = types.GetTenantID(ctx)
@@ -79,34 +78,12 @@ func (s *connectionService) GetConnection(ctx context.Context, id string) (*dto.
 	return dto.ToConnectionResponse(conn), nil
 }
 
-func (s *connectionService) GetConnectionByCode(ctx context.Context, connectionCode string) (*dto.ConnectionResponse, error) {
-	s.log.Debugw("getting connection by code", "connection_code", connectionCode)
-
-	conn, err := s.repo.GetByConnectionCode(ctx, connectionCode)
-	if err != nil {
-		s.log.Errorw("failed to get connection by code", "error", err, "connection_code", connectionCode)
-		return nil, err
-	}
-
-	return dto.ToConnectionResponse(conn), nil
-}
-
 func (s *connectionService) GetConnections(ctx context.Context, filter *types.ConnectionFilter) (*dto.ListConnectionsResponse, error) {
 	s.log.Debugw("getting connections", "filter", filter)
 
-	if filter == nil {
-		filter = types.NewConnectionFilter()
-	}
-
-	// Validate the filter
-	if err := filter.Validate(); err != nil {
-		return nil, err
-	}
-
-	// Get connections and count
 	connections, err := s.repo.List(ctx, filter)
 	if err != nil {
-		s.log.Errorw("failed to list connections", "error", err)
+		s.log.Errorw("failed to get connections", "error", err)
 		return nil, err
 	}
 
@@ -116,8 +93,9 @@ func (s *connectionService) GetConnections(ctx context.Context, filter *types.Co
 		return nil, err
 	}
 
+	responses := dto.ToConnectionResponses(connections)
 	return &dto.ListConnectionsResponse{
-		Connections: dto.ToConnectionResponses(connections),
+		Connections: responses,
 		Total:       total,
 		Limit:       filter.GetLimit(),
 		Offset:      filter.GetOffset(),
@@ -138,36 +116,23 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 	if req.Name != "" {
 		conn.Name = req.Name
 	}
-	if req.Description != "" {
-		conn.Description = req.Description
-	}
-	if req.ConnectionCode != "" {
-		conn.ConnectionCode = req.ConnectionCode
-	}
 	if req.ProviderType != "" {
-		if err := req.ProviderType.Validate(); err != nil {
-			return nil, err
-		}
 		conn.ProviderType = req.ProviderType
 	}
 	if req.Metadata != nil {
 		conn.Metadata = req.Metadata
 	}
-	if req.SecretID != "" {
-		conn.SecretID = req.SecretID
-	}
 
-	// Update metadata
 	conn.UpdatedAt = time.Now()
 	conn.UpdatedBy = types.GetUserID(ctx)
 
-	// Save the updated connection
+	// Update the connection
 	if err := s.repo.Update(ctx, conn); err != nil {
 		s.log.Errorw("failed to update connection", "error", err, "connection_id", id)
 		return nil, err
 	}
 
-	s.log.Infow("connection updated successfully", "connection_id", id)
+	s.log.Infow("connection updated successfully", "connection_id", conn.ID)
 	return dto.ToConnectionResponse(conn), nil
 }
 
@@ -181,16 +146,15 @@ func (s *connectionService) DeleteConnection(ctx context.Context, id string) err
 		return err
 	}
 
-	// Update metadata for soft delete
 	conn.UpdatedAt = time.Now()
 	conn.UpdatedBy = types.GetUserID(ctx)
 
-	// Delete the connection (soft delete)
+	// Delete the connection
 	if err := s.repo.Delete(ctx, conn); err != nil {
 		s.log.Errorw("failed to delete connection", "error", err, "connection_id", id)
 		return err
 	}
 
-	s.log.Infow("connection deleted successfully", "connection_id", id)
+	s.log.Infow("connection deleted successfully", "connection_id", conn.ID)
 	return nil
 }

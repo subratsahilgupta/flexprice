@@ -1267,26 +1267,23 @@ func (m *BillingSequenceMutation) ResetEdge(name string) error {
 // ConnectionMutation represents an operation that mutates the Connection nodes in the graph.
 type ConnectionMutation struct {
 	config
-	op              Op
-	typ             string
-	id              *string
-	tenant_id       *string
-	status          *string
-	created_at      *time.Time
-	updated_at      *time.Time
-	created_by      *string
-	updated_by      *string
-	environment_id  *string
-	name            *string
-	description     *string
-	connection_code *string
-	provider_type   *connection.ProviderType
-	metadata        *map[string]interface{}
-	secret_id       *string
-	clearedFields   map[string]struct{}
-	done            bool
-	oldValue        func(context.Context) (*Connection, error)
-	predicates      []predicate.Connection
+	op             Op
+	typ            string
+	id             *string
+	tenant_id      *string
+	status         *string
+	created_at     *time.Time
+	updated_at     *time.Time
+	created_by     *string
+	updated_by     *string
+	environment_id *string
+	name           *string
+	provider_type  *connection.ProviderType
+	metadata       *map[string]interface{}
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*Connection, error)
+	predicates     []predicate.Connection
 }
 
 var _ ent.Mutation = (*ConnectionMutation)(nil)
@@ -1720,91 +1717,6 @@ func (m *ConnectionMutation) ResetName() {
 	m.name = nil
 }
 
-// SetDescription sets the "description" field.
-func (m *ConnectionMutation) SetDescription(s string) {
-	m.description = &s
-}
-
-// Description returns the value of the "description" field in the mutation.
-func (m *ConnectionMutation) Description() (r string, exists bool) {
-	v := m.description
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldDescription returns the old "description" field's value of the Connection entity.
-// If the Connection object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ConnectionMutation) OldDescription(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldDescription requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
-	}
-	return oldValue.Description, nil
-}
-
-// ClearDescription clears the value of the "description" field.
-func (m *ConnectionMutation) ClearDescription() {
-	m.description = nil
-	m.clearedFields[connection.FieldDescription] = struct{}{}
-}
-
-// DescriptionCleared returns if the "description" field was cleared in this mutation.
-func (m *ConnectionMutation) DescriptionCleared() bool {
-	_, ok := m.clearedFields[connection.FieldDescription]
-	return ok
-}
-
-// ResetDescription resets all changes to the "description" field.
-func (m *ConnectionMutation) ResetDescription() {
-	m.description = nil
-	delete(m.clearedFields, connection.FieldDescription)
-}
-
-// SetConnectionCode sets the "connection_code" field.
-func (m *ConnectionMutation) SetConnectionCode(s string) {
-	m.connection_code = &s
-}
-
-// ConnectionCode returns the value of the "connection_code" field in the mutation.
-func (m *ConnectionMutation) ConnectionCode() (r string, exists bool) {
-	v := m.connection_code
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldConnectionCode returns the old "connection_code" field's value of the Connection entity.
-// If the Connection object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ConnectionMutation) OldConnectionCode(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldConnectionCode is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldConnectionCode requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldConnectionCode: %w", err)
-	}
-	return oldValue.ConnectionCode, nil
-}
-
-// ResetConnectionCode resets all changes to the "connection_code" field.
-func (m *ConnectionMutation) ResetConnectionCode() {
-	m.connection_code = nil
-}
-
 // SetProviderType sets the "provider_type" field.
 func (m *ConnectionMutation) SetProviderType(ct connection.ProviderType) {
 	m.provider_type = &ct
@@ -1890,55 +1802,6 @@ func (m *ConnectionMutation) ResetMetadata() {
 	delete(m.clearedFields, connection.FieldMetadata)
 }
 
-// SetSecretID sets the "secret_id" field.
-func (m *ConnectionMutation) SetSecretID(s string) {
-	m.secret_id = &s
-}
-
-// SecretID returns the value of the "secret_id" field in the mutation.
-func (m *ConnectionMutation) SecretID() (r string, exists bool) {
-	v := m.secret_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldSecretID returns the old "secret_id" field's value of the Connection entity.
-// If the Connection object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ConnectionMutation) OldSecretID(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSecretID is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSecretID requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSecretID: %w", err)
-	}
-	return oldValue.SecretID, nil
-}
-
-// ClearSecretID clears the value of the "secret_id" field.
-func (m *ConnectionMutation) ClearSecretID() {
-	m.secret_id = nil
-	m.clearedFields[connection.FieldSecretID] = struct{}{}
-}
-
-// SecretIDCleared returns if the "secret_id" field was cleared in this mutation.
-func (m *ConnectionMutation) SecretIDCleared() bool {
-	_, ok := m.clearedFields[connection.FieldSecretID]
-	return ok
-}
-
-// ResetSecretID resets all changes to the "secret_id" field.
-func (m *ConnectionMutation) ResetSecretID() {
-	m.secret_id = nil
-	delete(m.clearedFields, connection.FieldSecretID)
-}
-
 // Where appends a list predicates to the ConnectionMutation builder.
 func (m *ConnectionMutation) Where(ps ...predicate.Connection) {
 	m.predicates = append(m.predicates, ps...)
@@ -1973,7 +1836,7 @@ func (m *ConnectionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ConnectionMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 10)
 	if m.tenant_id != nil {
 		fields = append(fields, connection.FieldTenantID)
 	}
@@ -1998,20 +1861,11 @@ func (m *ConnectionMutation) Fields() []string {
 	if m.name != nil {
 		fields = append(fields, connection.FieldName)
 	}
-	if m.description != nil {
-		fields = append(fields, connection.FieldDescription)
-	}
-	if m.connection_code != nil {
-		fields = append(fields, connection.FieldConnectionCode)
-	}
 	if m.provider_type != nil {
 		fields = append(fields, connection.FieldProviderType)
 	}
 	if m.metadata != nil {
 		fields = append(fields, connection.FieldMetadata)
-	}
-	if m.secret_id != nil {
-		fields = append(fields, connection.FieldSecretID)
 	}
 	return fields
 }
@@ -2037,16 +1891,10 @@ func (m *ConnectionMutation) Field(name string) (ent.Value, bool) {
 		return m.EnvironmentID()
 	case connection.FieldName:
 		return m.Name()
-	case connection.FieldDescription:
-		return m.Description()
-	case connection.FieldConnectionCode:
-		return m.ConnectionCode()
 	case connection.FieldProviderType:
 		return m.ProviderType()
 	case connection.FieldMetadata:
 		return m.Metadata()
-	case connection.FieldSecretID:
-		return m.SecretID()
 	}
 	return nil, false
 }
@@ -2072,16 +1920,10 @@ func (m *ConnectionMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldEnvironmentID(ctx)
 	case connection.FieldName:
 		return m.OldName(ctx)
-	case connection.FieldDescription:
-		return m.OldDescription(ctx)
-	case connection.FieldConnectionCode:
-		return m.OldConnectionCode(ctx)
 	case connection.FieldProviderType:
 		return m.OldProviderType(ctx)
 	case connection.FieldMetadata:
 		return m.OldMetadata(ctx)
-	case connection.FieldSecretID:
-		return m.OldSecretID(ctx)
 	}
 	return nil, fmt.Errorf("unknown Connection field %s", name)
 }
@@ -2147,20 +1989,6 @@ func (m *ConnectionMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetName(v)
 		return nil
-	case connection.FieldDescription:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetDescription(v)
-		return nil
-	case connection.FieldConnectionCode:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetConnectionCode(v)
-		return nil
 	case connection.FieldProviderType:
 		v, ok := value.(connection.ProviderType)
 		if !ok {
@@ -2174,13 +2002,6 @@ func (m *ConnectionMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMetadata(v)
-		return nil
-	case connection.FieldSecretID:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetSecretID(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Connection field %s", name)
@@ -2221,14 +2042,8 @@ func (m *ConnectionMutation) ClearedFields() []string {
 	if m.FieldCleared(connection.FieldEnvironmentID) {
 		fields = append(fields, connection.FieldEnvironmentID)
 	}
-	if m.FieldCleared(connection.FieldDescription) {
-		fields = append(fields, connection.FieldDescription)
-	}
 	if m.FieldCleared(connection.FieldMetadata) {
 		fields = append(fields, connection.FieldMetadata)
-	}
-	if m.FieldCleared(connection.FieldSecretID) {
-		fields = append(fields, connection.FieldSecretID)
 	}
 	return fields
 }
@@ -2253,14 +2068,8 @@ func (m *ConnectionMutation) ClearField(name string) error {
 	case connection.FieldEnvironmentID:
 		m.ClearEnvironmentID()
 		return nil
-	case connection.FieldDescription:
-		m.ClearDescription()
-		return nil
 	case connection.FieldMetadata:
 		m.ClearMetadata()
-		return nil
-	case connection.FieldSecretID:
-		m.ClearSecretID()
 		return nil
 	}
 	return fmt.Errorf("unknown Connection nullable field %s", name)
@@ -2294,20 +2103,11 @@ func (m *ConnectionMutation) ResetField(name string) error {
 	case connection.FieldName:
 		m.ResetName()
 		return nil
-	case connection.FieldDescription:
-		m.ResetDescription()
-		return nil
-	case connection.FieldConnectionCode:
-		m.ResetConnectionCode()
-		return nil
 	case connection.FieldProviderType:
 		m.ResetProviderType()
 		return nil
 	case connection.FieldMetadata:
 		m.ResetMetadata()
-		return nil
-	case connection.FieldSecretID:
-		m.ResetSecretID()
 		return nil
 	}
 	return fmt.Errorf("unknown Connection field %s", name)

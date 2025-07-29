@@ -295,7 +295,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			connections.GET("/:id", handlers.Connection.GetConnection)
 			connections.PUT("/:id", handlers.Connection.UpdateConnection)
 			connections.DELETE("/:id", handlers.Connection.DeleteConnection)
-			connections.GET("/code/:connection_code", handlers.Connection.GetConnectionByCode)
 			connections.POST("/search", handlers.Connection.ListConnectionsByFilter)
 		}
 

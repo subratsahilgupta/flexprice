@@ -30,16 +30,10 @@ const (
 	FieldEnvironmentID = "environment_id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
-	// FieldDescription holds the string denoting the description field in the database.
-	FieldDescription = "description"
-	// FieldConnectionCode holds the string denoting the connection_code field in the database.
-	FieldConnectionCode = "connection_code"
 	// FieldProviderType holds the string denoting the provider_type field in the database.
 	FieldProviderType = "provider_type"
 	// FieldMetadata holds the string denoting the metadata field in the database.
 	FieldMetadata = "metadata"
-	// FieldSecretID holds the string denoting the secret_id field in the database.
-	FieldSecretID = "secret_id"
 	// Table holds the table name of the connection in the database.
 	Table = "connections"
 )
@@ -55,11 +49,8 @@ var Columns = []string{
 	FieldUpdatedBy,
 	FieldEnvironmentID,
 	FieldName,
-	FieldDescription,
-	FieldConnectionCode,
 	FieldProviderType,
 	FieldMetadata,
-	FieldSecretID,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -87,8 +78,6 @@ var (
 	DefaultEnvironmentID string
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
-	// ConnectionCodeValidator is a validator for the "connection_code" field. It is called by the builders before save.
-	ConnectionCodeValidator func(string) error
 )
 
 // ProviderType defines the type for the "provider_type" enum field.
@@ -163,22 +152,7 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldName, opts...).ToFunc()
 }
 
-// ByDescription orders the results by the description field.
-func ByDescription(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldDescription, opts...).ToFunc()
-}
-
-// ByConnectionCode orders the results by the connection_code field.
-func ByConnectionCode(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldConnectionCode, opts...).ToFunc()
-}
-
 // ByProviderType orders the results by the provider_type field.
 func ByProviderType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProviderType, opts...).ToFunc()
-}
-
-// BySecretID orders the results by the secret_id field.
-func BySecretID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSecretID, opts...).ToFunc()
 }

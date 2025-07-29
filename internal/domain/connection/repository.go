@@ -10,7 +10,6 @@ import (
 type Repository interface {
 	Create(ctx context.Context, connection *Connection) error
 	Get(ctx context.Context, id string) (*Connection, error)
-	GetByConnectionCode(ctx context.Context, connectionCode string) (*Connection, error)
 	GetByEnvironmentAndProvider(ctx context.Context, environmentID string, provider types.SecretProvider) (*Connection, error)
 	List(ctx context.Context, filter *types.ConnectionFilter) ([]*Connection, error)
 	Count(ctx context.Context, filter *types.ConnectionFilter) (int, error)

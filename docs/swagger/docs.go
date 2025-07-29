@@ -115,20 +115,6 @@ const docTemplate = `{
                 "summary": "Get connections",
                 "parameters": [
                     {
-                        "type": "string",
-                        "name": "connection_code",
-                        "in": "query"
-                    },
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "collectionFormat": "csv",
-                        "name": "connection_codes",
-                        "in": "query"
-                    },
-                    {
                         "type": "array",
                         "items": {
                             "type": "string"
@@ -263,61 +249,6 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/connections/code/{connection_code}": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Get a connection by connection code",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Connections"
-                ],
-                "summary": "Get a connection by code",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Connection Code",
-                        "name": "connection_code",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.ConnectionResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -7879,16 +7810,10 @@ const docTemplate = `{
         "dto.ConnectionResponse": {
             "type": "object",
             "properties": {
-                "connection_code": {
-                    "type": "string"
-                },
                 "created_at": {
                     "type": "string"
                 },
                 "created_by": {
-                    "type": "string"
-                },
-                "description": {
                     "type": "string"
                 },
                 "environment_id": {
@@ -7906,9 +7831,6 @@ const docTemplate = `{
                 },
                 "provider_type": {
                     "$ref": "#/definitions/types.SecretProvider"
-                },
-                "secret_id": {
-                    "type": "string"
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
@@ -8022,19 +7944,10 @@ const docTemplate = `{
         "dto.CreateConnectionRequest": {
             "type": "object",
             "required": [
-                "connection_code",
                 "name",
                 "provider_type"
             ],
             "properties": {
-                "connection_code": {
-                    "type": "string",
-                    "maxLength": 100
-                },
-                "description": {
-                    "type": "string",
-                    "maxLength": 1000
-                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": true
@@ -8045,10 +7958,6 @@ const docTemplate = `{
                 },
                 "provider_type": {
                     "$ref": "#/definitions/types.SecretProvider"
-                },
-                "secret_id": {
-                    "type": "string",
-                    "maxLength": 50
                 }
             }
         },
@@ -11736,14 +11645,6 @@ const docTemplate = `{
         "dto.UpdateConnectionRequest": {
             "type": "object",
             "properties": {
-                "connection_code": {
-                    "type": "string",
-                    "maxLength": 100
-                },
-                "description": {
-                    "type": "string",
-                    "maxLength": 1000
-                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": true
@@ -11754,10 +11655,6 @@ const docTemplate = `{
                 },
                 "provider_type": {
                     "$ref": "#/definitions/types.SecretProvider"
-                },
-                "secret_id": {
-                    "type": "string",
-                    "maxLength": 50
                 }
             }
         },
@@ -12920,6 +12817,11 @@ const docTemplate = `{
                 "AggregationSumWithMultiplier": "Sum with a multiplier - [sum(value) * multiplier]"
             },
             "x-enum-descriptions": [
+                "",
+                "",
+                "",
+                "",
+                "",
                 "Sum with a multiplier - [sum(value) * multiplier]"
             ],
             "x-enum-varnames": [
@@ -13010,15 +12912,6 @@ const docTemplate = `{
         "types.ConnectionFilter": {
             "type": "object",
             "properties": {
-                "connection_code": {
-                    "type": "string"
-                },
-                "connection_codes": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "connection_ids": {
                     "type": "array",
                     "items": {

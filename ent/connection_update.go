@@ -82,40 +82,6 @@ func (cu *ConnectionUpdate) SetNillableName(s *string) *ConnectionUpdate {
 	return cu
 }
 
-// SetDescription sets the "description" field.
-func (cu *ConnectionUpdate) SetDescription(s string) *ConnectionUpdate {
-	cu.mutation.SetDescription(s)
-	return cu
-}
-
-// SetNillableDescription sets the "description" field if the given value is not nil.
-func (cu *ConnectionUpdate) SetNillableDescription(s *string) *ConnectionUpdate {
-	if s != nil {
-		cu.SetDescription(*s)
-	}
-	return cu
-}
-
-// ClearDescription clears the value of the "description" field.
-func (cu *ConnectionUpdate) ClearDescription() *ConnectionUpdate {
-	cu.mutation.ClearDescription()
-	return cu
-}
-
-// SetConnectionCode sets the "connection_code" field.
-func (cu *ConnectionUpdate) SetConnectionCode(s string) *ConnectionUpdate {
-	cu.mutation.SetConnectionCode(s)
-	return cu
-}
-
-// SetNillableConnectionCode sets the "connection_code" field if the given value is not nil.
-func (cu *ConnectionUpdate) SetNillableConnectionCode(s *string) *ConnectionUpdate {
-	if s != nil {
-		cu.SetConnectionCode(*s)
-	}
-	return cu
-}
-
 // SetProviderType sets the "provider_type" field.
 func (cu *ConnectionUpdate) SetProviderType(ct connection.ProviderType) *ConnectionUpdate {
 	cu.mutation.SetProviderType(ct)
@@ -139,26 +105,6 @@ func (cu *ConnectionUpdate) SetMetadata(m map[string]interface{}) *ConnectionUpd
 // ClearMetadata clears the value of the "metadata" field.
 func (cu *ConnectionUpdate) ClearMetadata() *ConnectionUpdate {
 	cu.mutation.ClearMetadata()
-	return cu
-}
-
-// SetSecretID sets the "secret_id" field.
-func (cu *ConnectionUpdate) SetSecretID(s string) *ConnectionUpdate {
-	cu.mutation.SetSecretID(s)
-	return cu
-}
-
-// SetNillableSecretID sets the "secret_id" field if the given value is not nil.
-func (cu *ConnectionUpdate) SetNillableSecretID(s *string) *ConnectionUpdate {
-	if s != nil {
-		cu.SetSecretID(*s)
-	}
-	return cu
-}
-
-// ClearSecretID clears the value of the "secret_id" field.
-func (cu *ConnectionUpdate) ClearSecretID() *ConnectionUpdate {
-	cu.mutation.ClearSecretID()
 	return cu
 }
 
@@ -210,11 +156,6 @@ func (cu *ConnectionUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Connection.name": %w`, err)}
 		}
 	}
-	if v, ok := cu.mutation.ConnectionCode(); ok {
-		if err := connection.ConnectionCodeValidator(v); err != nil {
-			return &ValidationError{Name: "connection_code", err: fmt.Errorf(`ent: validator failed for field "Connection.connection_code": %w`, err)}
-		}
-	}
 	if v, ok := cu.mutation.ProviderType(); ok {
 		if err := connection.ProviderTypeValidator(v); err != nil {
 			return &ValidationError{Name: "provider_type", err: fmt.Errorf(`ent: validator failed for field "Connection.provider_type": %w`, err)}
@@ -256,15 +197,6 @@ func (cu *ConnectionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := cu.mutation.Name(); ok {
 		_spec.SetField(connection.FieldName, field.TypeString, value)
 	}
-	if value, ok := cu.mutation.Description(); ok {
-		_spec.SetField(connection.FieldDescription, field.TypeString, value)
-	}
-	if cu.mutation.DescriptionCleared() {
-		_spec.ClearField(connection.FieldDescription, field.TypeString)
-	}
-	if value, ok := cu.mutation.ConnectionCode(); ok {
-		_spec.SetField(connection.FieldConnectionCode, field.TypeString, value)
-	}
 	if value, ok := cu.mutation.ProviderType(); ok {
 		_spec.SetField(connection.FieldProviderType, field.TypeEnum, value)
 	}
@@ -273,12 +205,6 @@ func (cu *ConnectionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if cu.mutation.MetadataCleared() {
 		_spec.ClearField(connection.FieldMetadata, field.TypeJSON)
-	}
-	if value, ok := cu.mutation.SecretID(); ok {
-		_spec.SetField(connection.FieldSecretID, field.TypeString, value)
-	}
-	if cu.mutation.SecretIDCleared() {
-		_spec.ClearField(connection.FieldSecretID, field.TypeString)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, cu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -354,40 +280,6 @@ func (cuo *ConnectionUpdateOne) SetNillableName(s *string) *ConnectionUpdateOne 
 	return cuo
 }
 
-// SetDescription sets the "description" field.
-func (cuo *ConnectionUpdateOne) SetDescription(s string) *ConnectionUpdateOne {
-	cuo.mutation.SetDescription(s)
-	return cuo
-}
-
-// SetNillableDescription sets the "description" field if the given value is not nil.
-func (cuo *ConnectionUpdateOne) SetNillableDescription(s *string) *ConnectionUpdateOne {
-	if s != nil {
-		cuo.SetDescription(*s)
-	}
-	return cuo
-}
-
-// ClearDescription clears the value of the "description" field.
-func (cuo *ConnectionUpdateOne) ClearDescription() *ConnectionUpdateOne {
-	cuo.mutation.ClearDescription()
-	return cuo
-}
-
-// SetConnectionCode sets the "connection_code" field.
-func (cuo *ConnectionUpdateOne) SetConnectionCode(s string) *ConnectionUpdateOne {
-	cuo.mutation.SetConnectionCode(s)
-	return cuo
-}
-
-// SetNillableConnectionCode sets the "connection_code" field if the given value is not nil.
-func (cuo *ConnectionUpdateOne) SetNillableConnectionCode(s *string) *ConnectionUpdateOne {
-	if s != nil {
-		cuo.SetConnectionCode(*s)
-	}
-	return cuo
-}
-
 // SetProviderType sets the "provider_type" field.
 func (cuo *ConnectionUpdateOne) SetProviderType(ct connection.ProviderType) *ConnectionUpdateOne {
 	cuo.mutation.SetProviderType(ct)
@@ -411,26 +303,6 @@ func (cuo *ConnectionUpdateOne) SetMetadata(m map[string]interface{}) *Connectio
 // ClearMetadata clears the value of the "metadata" field.
 func (cuo *ConnectionUpdateOne) ClearMetadata() *ConnectionUpdateOne {
 	cuo.mutation.ClearMetadata()
-	return cuo
-}
-
-// SetSecretID sets the "secret_id" field.
-func (cuo *ConnectionUpdateOne) SetSecretID(s string) *ConnectionUpdateOne {
-	cuo.mutation.SetSecretID(s)
-	return cuo
-}
-
-// SetNillableSecretID sets the "secret_id" field if the given value is not nil.
-func (cuo *ConnectionUpdateOne) SetNillableSecretID(s *string) *ConnectionUpdateOne {
-	if s != nil {
-		cuo.SetSecretID(*s)
-	}
-	return cuo
-}
-
-// ClearSecretID clears the value of the "secret_id" field.
-func (cuo *ConnectionUpdateOne) ClearSecretID() *ConnectionUpdateOne {
-	cuo.mutation.ClearSecretID()
 	return cuo
 }
 
@@ -495,11 +367,6 @@ func (cuo *ConnectionUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Connection.name": %w`, err)}
 		}
 	}
-	if v, ok := cuo.mutation.ConnectionCode(); ok {
-		if err := connection.ConnectionCodeValidator(v); err != nil {
-			return &ValidationError{Name: "connection_code", err: fmt.Errorf(`ent: validator failed for field "Connection.connection_code": %w`, err)}
-		}
-	}
 	if v, ok := cuo.mutation.ProviderType(); ok {
 		if err := connection.ProviderTypeValidator(v); err != nil {
 			return &ValidationError{Name: "provider_type", err: fmt.Errorf(`ent: validator failed for field "Connection.provider_type": %w`, err)}
@@ -558,15 +425,6 @@ func (cuo *ConnectionUpdateOne) sqlSave(ctx context.Context) (_node *Connection,
 	if value, ok := cuo.mutation.Name(); ok {
 		_spec.SetField(connection.FieldName, field.TypeString, value)
 	}
-	if value, ok := cuo.mutation.Description(); ok {
-		_spec.SetField(connection.FieldDescription, field.TypeString, value)
-	}
-	if cuo.mutation.DescriptionCleared() {
-		_spec.ClearField(connection.FieldDescription, field.TypeString)
-	}
-	if value, ok := cuo.mutation.ConnectionCode(); ok {
-		_spec.SetField(connection.FieldConnectionCode, field.TypeString, value)
-	}
 	if value, ok := cuo.mutation.ProviderType(); ok {
 		_spec.SetField(connection.FieldProviderType, field.TypeEnum, value)
 	}
@@ -575,12 +433,6 @@ func (cuo *ConnectionUpdateOne) sqlSave(ctx context.Context) (_node *Connection,
 	}
 	if cuo.mutation.MetadataCleared() {
 		_spec.ClearField(connection.FieldMetadata, field.TypeJSON)
-	}
-	if value, ok := cuo.mutation.SecretID(); ok {
-		_spec.SetField(connection.FieldSecretID, field.TypeString, value)
-	}
-	if cuo.mutation.SecretIDCleared() {
-		_spec.ClearField(connection.FieldSecretID, field.TypeString)
 	}
 	_node = &Connection{config: cuo.config}
 	_spec.Assign = _node.assignValues

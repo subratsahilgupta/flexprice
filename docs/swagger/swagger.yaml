@@ -191,13 +191,9 @@ definitions:
     type: object
   dto.ConnectionResponse:
     properties:
-      connection_code:
-        type: string
       created_at:
         type: string
       created_by:
-        type: string
-      description:
         type: string
       environment_id:
         type: string
@@ -210,8 +206,6 @@ definitions:
         type: string
       provider_type:
         $ref: '#/definitions/types.SecretProvider'
-      secret_id:
-        type: string
       status:
         $ref: '#/definitions/types.Status'
       tenant_id:
@@ -287,12 +281,6 @@ definitions:
     type: object
   dto.CreateConnectionRequest:
     properties:
-      connection_code:
-        maxLength: 100
-        type: string
-      description:
-        maxLength: 1000
-        type: string
       metadata:
         additionalProperties: true
         type: object
@@ -301,11 +289,7 @@ definitions:
         type: string
       provider_type:
         $ref: '#/definitions/types.SecretProvider'
-      secret_id:
-        maxLength: 50
-        type: string
     required:
-    - connection_code
     - name
     - provider_type
     type: object
@@ -2974,12 +2958,6 @@ definitions:
     type: object
   dto.UpdateConnectionRequest:
     properties:
-      connection_code:
-        maxLength: 100
-        type: string
-      description:
-        maxLength: 1000
-        type: string
       metadata:
         additionalProperties: true
         type: object
@@ -2988,9 +2966,6 @@ definitions:
         type: string
       provider_type:
         $ref: '#/definitions/types.SecretProvider'
-      secret_id:
-        maxLength: 50
-        type: string
     type: object
   dto.UpdateCostSheetRequest:
     properties:
@@ -3799,6 +3774,11 @@ definitions:
     x-enum-comments:
       AggregationSumWithMultiplier: Sum with a multiplier - [sum(value) * multiplier]
     x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
     - Sum with a multiplier - [sum(value) * multiplier]
     x-enum-varnames:
     - AggregationCount
@@ -3867,12 +3847,6 @@ definitions:
     - BILLING_TIER_SLAB
   types.ConnectionFilter:
     properties:
-      connection_code:
-        type: string
-      connection_codes:
-        items:
-          type: string
-        type: array
       connection_ids:
         items:
           type: string
@@ -4597,15 +4571,6 @@ paths:
       - application/json
       description: Get a list of connections
       parameters:
-      - in: query
-        name: connection_code
-        type: string
-      - collectionFormat: csv
-        in: query
-        items:
-          type: string
-        name: connection_codes
-        type: array
       - collectionFormat: csv
         in: query
         items:
@@ -4814,41 +4779,6 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Update a connection
-      tags:
-      - Connections
-  /connections/code/{connection_code}:
-    get:
-      consumes:
-      - application/json
-      description: Get a connection by connection code
-      parameters:
-      - description: Connection Code
-        in: path
-        name: connection_code
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.ConnectionResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Get a connection by code
       tags:
       - Connections
   /connections/search:

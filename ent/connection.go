@@ -34,16 +34,10 @@ type Connection struct {
 	EnvironmentID string `json:"environment_id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
-	// Description holds the value of the "description" field.
-	Description string `json:"description,omitempty"`
-	// ConnectionCode holds the value of the "connection_code" field.
-	ConnectionCode string `json:"connection_code,omitempty"`
 	// ProviderType holds the value of the "provider_type" field.
 	ProviderType connection.ProviderType `json:"provider_type,omitempty"`
 	// Metadata holds the value of the "metadata" field.
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
-	// SecretID holds the value of the "secret_id" field.
-	SecretID     string `json:"secret_id,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -54,7 +48,7 @@ func (*Connection) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case connection.FieldMetadata:
 			values[i] = new([]byte)
-		case connection.FieldID, connection.FieldTenantID, connection.FieldStatus, connection.FieldCreatedBy, connection.FieldUpdatedBy, connection.FieldEnvironmentID, connection.FieldName, connection.FieldDescription, connection.FieldConnectionCode, connection.FieldProviderType, connection.FieldSecretID:
+		case connection.FieldID, connection.FieldTenantID, connection.FieldStatus, connection.FieldCreatedBy, connection.FieldUpdatedBy, connection.FieldEnvironmentID, connection.FieldName, connection.FieldProviderType:
 			values[i] = new(sql.NullString)
 		case connection.FieldCreatedAt, connection.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -127,18 +121,6 @@ func (c *Connection) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				c.Name = value.String
 			}
-		case connection.FieldDescription:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field description", values[i])
-			} else if value.Valid {
-				c.Description = value.String
-			}
-		case connection.FieldConnectionCode:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field connection_code", values[i])
-			} else if value.Valid {
-				c.ConnectionCode = value.String
-			}
 		case connection.FieldProviderType:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field provider_type", values[i])
@@ -152,12 +134,6 @@ func (c *Connection) assignValues(columns []string, values []any) error {
 				if err := json.Unmarshal(*value, &c.Metadata); err != nil {
 					return fmt.Errorf("unmarshal field metadata: %w", err)
 				}
-			}
-		case connection.FieldSecretID:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field secret_id", values[i])
-			} else if value.Valid {
-				c.SecretID = value.String
 			}
 		default:
 			c.selectValues.Set(columns[i], values[i])
@@ -219,20 +195,11 @@ func (c *Connection) String() string {
 	builder.WriteString("name=")
 	builder.WriteString(c.Name)
 	builder.WriteString(", ")
-	builder.WriteString("description=")
-	builder.WriteString(c.Description)
-	builder.WriteString(", ")
-	builder.WriteString("connection_code=")
-	builder.WriteString(c.ConnectionCode)
-	builder.WriteString(", ")
 	builder.WriteString("provider_type=")
 	builder.WriteString(fmt.Sprintf("%v", c.ProviderType))
 	builder.WriteString(", ")
 	builder.WriteString("metadata=")
 	builder.WriteString(fmt.Sprintf("%v", c.Metadata))
-	builder.WriteString(", ")
-	builder.WriteString("secret_id=")
-	builder.WriteString(c.SecretID)
 	builder.WriteByte(')')
 	return builder.String()
 }

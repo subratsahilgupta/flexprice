@@ -10,12 +10,10 @@ type ConnectionFilter struct {
 	*TimeRangeFilter
 	// filters allows complex filtering based on multiple fields
 
-	Filters         []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
-	Sort            []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
-	ConnectionIDs   []string           `json:"connection_ids,omitempty" form:"connection_ids" validate:"omitempty"`
-	ConnectionCodes []string           `json:"connection_codes,omitempty" form:"connection_codes" validate:"omitempty"`
-	ConnectionCode  string             `json:"connection_code,omitempty" form:"connection_code" validate:"omitempty"`
-	ProviderType    SecretProvider     `json:"provider_type,omitempty" form:"provider_type" validate:"omitempty"`
+	Filters       []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
+	Sort          []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
+	ConnectionIDs []string           `json:"connection_ids,omitempty" form:"connection_ids" validate:"omitempty"`
+	ProviderType  SecretProvider     `json:"provider_type,omitempty" form:"provider_type" validate:"omitempty"`
 }
 
 // NewConnectionFilter creates a new ConnectionFilter with default values
@@ -95,17 +93,10 @@ func (f *ConnectionFilter) GetStatus() string {
 	return f.QueryFilter.GetStatus()
 }
 
-// GetExpand implements BaseFilter interface
-func (f *ConnectionFilter) GetExpand() Expand {
-	if f.QueryFilter == nil {
-		return NewDefaultQueryFilter().GetExpand()
-	}
-	return f.QueryFilter.GetExpand()
-}
-
+// IsUnlimited implements BaseFilter interface
 func (f *ConnectionFilter) IsUnlimited() bool {
 	if f.QueryFilter == nil {
-		return NewDefaultQueryFilter().IsUnlimited()
+		return false
 	}
 	return f.QueryFilter.IsUnlimited()
 }

@@ -116,26 +116,6 @@ func (cc *ConnectionCreate) SetName(s string) *ConnectionCreate {
 	return cc
 }
 
-// SetDescription sets the "description" field.
-func (cc *ConnectionCreate) SetDescription(s string) *ConnectionCreate {
-	cc.mutation.SetDescription(s)
-	return cc
-}
-
-// SetNillableDescription sets the "description" field if the given value is not nil.
-func (cc *ConnectionCreate) SetNillableDescription(s *string) *ConnectionCreate {
-	if s != nil {
-		cc.SetDescription(*s)
-	}
-	return cc
-}
-
-// SetConnectionCode sets the "connection_code" field.
-func (cc *ConnectionCreate) SetConnectionCode(s string) *ConnectionCreate {
-	cc.mutation.SetConnectionCode(s)
-	return cc
-}
-
 // SetProviderType sets the "provider_type" field.
 func (cc *ConnectionCreate) SetProviderType(ct connection.ProviderType) *ConnectionCreate {
 	cc.mutation.SetProviderType(ct)
@@ -145,20 +125,6 @@ func (cc *ConnectionCreate) SetProviderType(ct connection.ProviderType) *Connect
 // SetMetadata sets the "metadata" field.
 func (cc *ConnectionCreate) SetMetadata(m map[string]interface{}) *ConnectionCreate {
 	cc.mutation.SetMetadata(m)
-	return cc
-}
-
-// SetSecretID sets the "secret_id" field.
-func (cc *ConnectionCreate) SetSecretID(s string) *ConnectionCreate {
-	cc.mutation.SetSecretID(s)
-	return cc
-}
-
-// SetNillableSecretID sets the "secret_id" field if the given value is not nil.
-func (cc *ConnectionCreate) SetNillableSecretID(s *string) *ConnectionCreate {
-	if s != nil {
-		cc.SetSecretID(*s)
-	}
 	return cc
 }
 
@@ -248,14 +214,6 @@ func (cc *ConnectionCreate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Connection.name": %w`, err)}
 		}
 	}
-	if _, ok := cc.mutation.ConnectionCode(); !ok {
-		return &ValidationError{Name: "connection_code", err: errors.New(`ent: missing required field "Connection.connection_code"`)}
-	}
-	if v, ok := cc.mutation.ConnectionCode(); ok {
-		if err := connection.ConnectionCodeValidator(v); err != nil {
-			return &ValidationError{Name: "connection_code", err: fmt.Errorf(`ent: validator failed for field "Connection.connection_code": %w`, err)}
-		}
-	}
 	if _, ok := cc.mutation.ProviderType(); !ok {
 		return &ValidationError{Name: "provider_type", err: errors.New(`ent: missing required field "Connection.provider_type"`)}
 	}
@@ -331,14 +289,6 @@ func (cc *ConnectionCreate) createSpec() (*Connection, *sqlgraph.CreateSpec) {
 		_spec.SetField(connection.FieldName, field.TypeString, value)
 		_node.Name = value
 	}
-	if value, ok := cc.mutation.Description(); ok {
-		_spec.SetField(connection.FieldDescription, field.TypeString, value)
-		_node.Description = value
-	}
-	if value, ok := cc.mutation.ConnectionCode(); ok {
-		_spec.SetField(connection.FieldConnectionCode, field.TypeString, value)
-		_node.ConnectionCode = value
-	}
 	if value, ok := cc.mutation.ProviderType(); ok {
 		_spec.SetField(connection.FieldProviderType, field.TypeEnum, value)
 		_node.ProviderType = value
@@ -346,10 +296,6 @@ func (cc *ConnectionCreate) createSpec() (*Connection, *sqlgraph.CreateSpec) {
 	if value, ok := cc.mutation.Metadata(); ok {
 		_spec.SetField(connection.FieldMetadata, field.TypeJSON, value)
 		_node.Metadata = value
-	}
-	if value, ok := cc.mutation.SecretID(); ok {
-		_spec.SetField(connection.FieldSecretID, field.TypeString, value)
-		_node.SecretID = value
 	}
 	return _node, _spec
 }

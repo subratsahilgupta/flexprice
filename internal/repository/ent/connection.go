@@ -2,12 +2,10 @@ package ent
 
 import (
 	"context"
-	"errors"
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/connection"
 	"github.com/flexprice/flexprice/ent/predicate"
-	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainConnection "github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/dsl"
@@ -15,7 +13,6 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/lib/pq"
 )
 
 type connectionRepository struct {
@@ -40,13 +37,13 @@ func (r *connectionRepository) Create(ctx context.Context, c *domainConnection.C
 	r.log.Debugw("creating connection",
 		"connection_id", c.ID,
 		"tenant_id", c.TenantID,
-		"connection_code", c.ConnectionCode,
+		"name", c.Name,
 	)
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "connection", "create", map[string]interface{}{
-		"connection_id":   c.ID,
-		"connection_code": c.ConnectionCode,
+		"connection_id": c.ID,
+		"name":          c.Name,
 	})
 	defer FinishSpan(span)
 
@@ -59,11 +56,8 @@ func (r *connectionRepository) Create(ctx context.Context, c *domainConnection.C
 		SetID(c.ID).
 		SetTenantID(c.TenantID).
 		SetName(c.Name).
-		SetDescription(c.Description).
-		SetConnectionCode(c.ConnectionCode).
 		SetProviderType(connection.ProviderType(c.ProviderType)).
 		SetMetadata(c.Metadata).
-		SetNillableSecretID(&c.SecretID).
 		SetStatus(string(c.Status)).
 		SetCreatedAt(c.CreatedAt).
 		SetUpdatedAt(c.UpdatedAt).
@@ -76,22 +70,11 @@ func (r *connectionRepository) Create(ctx context.Context, c *domainConnection.C
 		SetSpanError(span, err)
 
 		if ent.IsConstraintError(err) {
-			var pqErr *pq.Error
-			if errors.As(err, &pqErr) {
-				if pqErr.Constraint == schema.Idx_tenant_environment_connection_code_unique {
-					return ierr.WithError(err).
-						WithHint("A connection with this code already exists").
-						WithReportableDetails(map[string]any{
-							"connection_code": c.ConnectionCode,
-						}).
-						Mark(ierr.ErrAlreadyExists)
-				}
-			}
 			return ierr.WithError(err).
 				WithHint("Failed to create connection").
 				WithReportableDetails(map[string]any{
-					"connection_code": c.ConnectionCode,
-					"provider_type":   c.ProviderType,
+					"name":          c.Name,
+					"provider_type": c.ProviderType,
 				}).
 				Mark(ierr.ErrAlreadyExists)
 		}
@@ -153,54 +136,6 @@ func (r *connectionRepository) Get(ctx context.Context, id string) (*domainConne
 	return domainConn, nil
 }
 
-func (r *connectionRepository) GetByConnectionCode(ctx context.Context, connectionCode string) (*domainConnection.Connection, error) {
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "connection", "get_by_code", map[string]interface{}{
-		"connection_code": connectionCode,
-	})
-	defer FinishSpan(span)
-
-	// Try to get from cache first
-	if cachedConnection := r.GetCache(ctx, connectionCode); cachedConnection != nil {
-		return cachedConnection, nil
-	}
-
-	client := r.client.Querier(ctx)
-	r.log.Debugw("getting connection by code", "connection_code", connectionCode)
-
-	c, err := client.Connection.Query().
-		Where(
-			connection.ConnectionCode(connectionCode),
-			connection.TenantID(types.GetTenantID(ctx)),
-			connection.EnvironmentID(types.GetEnvironmentID(ctx)),
-		).
-		Only(ctx)
-
-	if err != nil {
-		SetSpanError(span, err)
-
-		if ent.IsNotFound(err) {
-			return nil, ierr.WithError(err).
-				WithHintf("Connection with code %s was not found", connectionCode).
-				WithReportableDetails(map[string]any{
-					"connection_code": connectionCode,
-				}).
-				Mark(ierr.ErrNotFound)
-		}
-		return nil, ierr.WithError(err).
-			WithHint("Failed to get connection by code").
-			Mark(ierr.ErrDatabase)
-	}
-
-	SetSpanSuccess(span)
-	domainConn := domainConnection.FromEnt(c)
-
-	// Cache the result
-	r.SetCache(ctx, domainConn)
-
-	return domainConn, nil
-}
-
 func (r *connectionRepository) GetByEnvironmentAndProvider(ctx context.Context, environmentID string, provider types.SecretProvider) (*domainConnection.Connection, error) {
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "connection", "get_by_env_provider", map[string]interface{}{
@@ -210,8 +145,8 @@ func (r *connectionRepository) GetByEnvironmentAndProvider(ctx context.Context, 
 	defer FinishSpan(span)
 
 	client := r.client.Querier(ctx)
-	r.log.Debugw("getting connection by environment and provider", 
-		"environment_id", environmentID, 
+	r.log.Debugw("getting connection by environment and provider",
+		"environment_id", environmentID,
 		"provider_type", provider)
 
 	c, err := client.Connection.Query().
@@ -319,11 +254,8 @@ func (r *connectionRepository) Update(ctx context.Context, c *domainConnection.C
 			connection.EnvironmentID(c.EnvironmentID),
 		).
 		SetName(c.Name).
-		SetDescription(c.Description).
-		SetConnectionCode(c.ConnectionCode).
 		SetProviderType(connection.ProviderType(c.ProviderType)).
 		SetMetadata(c.Metadata).
-		SetNillableSecretID(&c.SecretID).
 		SetStatus(string(c.Status)).
 		SetUpdatedAt(c.UpdatedAt).
 		SetUpdatedBy(c.UpdatedBy).
@@ -341,23 +273,6 @@ func (r *connectionRepository) Update(ctx context.Context, c *domainConnection.C
 				Mark(ierr.ErrNotFound)
 		}
 
-		if ent.IsConstraintError(err) {
-			var pqErr *pq.Error
-			if errors.As(err, &pqErr) {
-				if pqErr.Constraint == schema.Idx_tenant_environment_connection_code_unique {
-					return ierr.WithError(err).
-						WithHint("A connection with this code already exists").
-						WithReportableDetails(map[string]any{
-							"connection_code": c.ConnectionCode,
-						}).
-						Mark(ierr.ErrAlreadyExists)
-				}
-			}
-			return ierr.WithError(err).
-				WithHint("Failed to update connection").
-				Mark(ierr.ErrAlreadyExists)
-		}
-
 		return ierr.WithError(err).
 			WithHint("Failed to update connection").
 			Mark(ierr.ErrDatabase)
@@ -372,52 +287,49 @@ func (r *connectionRepository) Update(ctx context.Context, c *domainConnection.C
 	return nil
 }
 
-func (r *connectionRepository) Delete(ctx context.Context, domainConnection *domainConnection.Connection) error {
+func (r *connectionRepository) Delete(ctx context.Context, c *domainConnection.Connection) error {
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("deleting connection",
-		"connection_id", domainConnection.ID,
-		"tenant_id", domainConnection.TenantID,
+		"connection_id", c.ID,
+		"tenant_id", c.TenantID,
 	)
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "connection", "delete", map[string]interface{}{
-		"connection_id": domainConnection.ID,
+		"connection_id": c.ID,
 	})
 	defer FinishSpan(span)
 
-	err := client.Connection.UpdateOneID(domainConnection.ID).
+	_, err := client.Connection.Update().
 		Where(
-			connection.TenantID(domainConnection.TenantID),
-			connection.EnvironmentID(domainConnection.EnvironmentID),
+			connection.ID(c.ID),
+			connection.TenantID(c.TenantID),
+			connection.EnvironmentID(c.EnvironmentID),
 		).
-		SetStatus(string(types.StatusDeleted)).
-		SetUpdatedAt(domainConnection.UpdatedAt).
-		SetUpdatedBy(domainConnection.UpdatedBy).
-		Exec(ctx)
+		SetStatus(string(types.StatusArchived)).
+		SetUpdatedAt(c.UpdatedAt).
+		SetUpdatedBy(c.UpdatedBy).
+		Save(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
 
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
-				WithHintf("Connection with ID %s was not found", domainConnection.ID).
+				WithHintf("Connection with ID %s was not found", c.ID).
 				WithReportableDetails(map[string]any{
-					"connection_id": domainConnection.ID,
+					"connection_id": c.ID,
 				}).
 				Mark(ierr.ErrNotFound)
 		}
-
 		return ierr.WithError(err).
 			WithHint("Failed to delete connection").
 			Mark(ierr.ErrDatabase)
 	}
 
 	SetSpanSuccess(span)
-
-	// Delete from cache
-	r.DeleteCache(ctx, domainConnection)
-
+	r.DeleteCache(ctx, c)
 	return nil
 }
 
@@ -428,41 +340,31 @@ type ConnectionQuery = *ent.ConnectionQuery
 type ConnectionQueryOptions struct{}
 
 func (o ConnectionQueryOptions) ApplyTenantFilter(ctx context.Context, query ConnectionQuery) ConnectionQuery {
-	return query.Where(connection.TenantID(types.GetTenantID(ctx)))
+	return query.Where(connection.TenantIDEQ(types.GetTenantID(ctx)))
 }
 
 func (o ConnectionQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query ConnectionQuery) ConnectionQuery {
 	environmentID := types.GetEnvironmentID(ctx)
 	if environmentID != "" {
-		return query.Where(connection.EnvironmentID(environmentID))
+		return query.Where(connection.EnvironmentIDEQ(environmentID))
 	}
 	return query
 }
 
 func (o ConnectionQueryOptions) ApplyStatusFilter(query ConnectionQuery, status string) ConnectionQuery {
-	if status != "" {
-		return query.Where(connection.Status(status))
+	if status == "" {
+		return query.Where(connection.StatusNotIn(string(types.StatusDeleted)))
 	}
-	return query
+	return query.Where(connection.Status(status))
 }
 
 func (o ConnectionQueryOptions) ApplySortFilter(query ConnectionQuery, field string, order string) ConnectionQuery {
-	switch field {
-	case "created_at":
-		if order == "desc" {
-			return query.Order(ent.Desc(connection.FieldCreatedAt))
+	if field != "" {
+		if order == types.OrderDesc {
+			query = query.Order(ent.Desc(o.GetFieldName(field)))
+		} else {
+			query = query.Order(ent.Asc(o.GetFieldName(field)))
 		}
-		return query.Order(ent.Asc(connection.FieldCreatedAt))
-	case "updated_at":
-		if order == "desc" {
-			return query.Order(ent.Desc(connection.FieldUpdatedAt))
-		}
-		return query.Order(ent.Asc(connection.FieldUpdatedAt))
-	case "name":
-		if order == "desc" {
-			return query.Order(ent.Desc(connection.FieldName))
-		}
-		return query.Order(ent.Asc(connection.FieldName))
 	}
 	return query
 }
@@ -485,8 +387,6 @@ func (o ConnectionQueryOptions) GetFieldName(field string) string {
 		return connection.FieldUpdatedAt
 	case "name":
 		return connection.FieldName
-	case "connection_code":
-		return connection.FieldConnectionCode
 	case "provider_type":
 		return connection.FieldProviderType
 	case "status":
@@ -512,20 +412,12 @@ func (o ConnectionQueryOptions) applyEntityQueryOptions(_ context.Context, f *ty
 		return query, nil
 	}
 
-	if f.ConnectionCode != "" {
-		query = query.Where(connection.ConnectionCode(f.ConnectionCode))
-	}
-
 	if f.ProviderType != "" {
 		query = query.Where(connection.ProviderTypeEQ(connection.ProviderType(f.ProviderType)))
 	}
 
 	if len(f.ConnectionIDs) > 0 {
 		query = query.Where(connection.IDIn(f.ConnectionIDs...))
-	}
-
-	if len(f.ConnectionCodes) > 0 {
-		query = query.Where(connection.ConnectionCodeIn(f.ConnectionCodes...))
 	}
 
 	if f.Filters != nil {
@@ -565,19 +457,17 @@ func (r *connectionRepository) SetCache(ctx context.Context, connection *domainC
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
-	// Set both ID and connection code based cache entries
-	connIdKey := cache.GenerateKey(cache.PrefixConnection, tenantID, environmentID, connection.ID)
-	codeKey := cache.GenerateKey(cache.PrefixConnection, tenantID, environmentID, connection.ConnectionCode)
+	// Set ID based cache entry
+	cacheKey := cache.GenerateKey(cache.PrefixConnection, tenantID, environmentID, connection.ID)
 
-	r.cache.Set(ctx, connIdKey, connection, cache.ExpiryDefaultInMemory)
-	r.cache.Set(ctx, codeKey, connection, cache.ExpiryDefaultInMemory)
+	r.cache.Set(ctx, cacheKey, connection, cache.ExpiryDefaultInMemory)
 
-	r.log.Debugw("cache set", "id_key", connIdKey, "code_key", codeKey)
+	r.log.Debugw("cache set", "key", cacheKey)
 }
 
 func (r *connectionRepository) GetCache(ctx context.Context, key string) *domainConnection.Connection {
 	span := cache.StartCacheSpan(ctx, "connection", "get", map[string]interface{}{
-		"connection_key": key,
+		"connection_id": key,
 	})
 	defer cache.FinishSpan(span)
 
@@ -600,10 +490,8 @@ func (r *connectionRepository) DeleteCache(ctx context.Context, connection *doma
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
-	// Delete ID-based cache first
-	connIdKey := cache.GenerateKey(cache.PrefixConnection, tenantID, environmentID, connection.ID)
-	codeKey := cache.GenerateKey(cache.PrefixConnection, tenantID, environmentID, connection.ConnectionCode)
-	r.cache.Delete(ctx, connIdKey)
-	r.cache.Delete(ctx, codeKey)
-	r.log.Debugw("cache deleted", "id_key", connIdKey, "code_key", codeKey)
+	// Delete ID-based cache
+	cacheKey := cache.GenerateKey(cache.PrefixConnection, tenantID, environmentID, connection.ID)
+	r.cache.Delete(ctx, cacheKey)
+	r.log.Debugw("cache deleted", "key", cacheKey)
 }

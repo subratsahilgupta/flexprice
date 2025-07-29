@@ -109,24 +109,21 @@ func (s *StripeService) CreateCustomerInStripe(ctx context.Context, customerID s
 	return nil
 }
 
-// SyncCustomerFromStripe creates or updates our customer from Stripe webhook data
-func (s *StripeService) SyncCustomerFromStripe(ctx context.Context, stripeCustomer *stripe.Customer, environmentID string) error {
-	// Check if customer already exists by Stripe ID
-	existingCustomer, err := s.findCustomerByStripeID(ctx, environmentID, stripeCustomer.ID)
-	if err == nil && existingCustomer != nil {
-		// Customer exists, update if needed
-		return s.updateExistingCustomer(ctx, existingCustomer, stripeCustomer)
-	}
-
-	// Customer doesn't exist, create new one
-	return s.createCustomerFromStripe(ctx, stripeCustomer, environmentID)
-}
-
-func (s *StripeService) createCustomerFromStripe(ctx context.Context, stripeCustomer *stripe.Customer, environmentID string) error {
+// CreateCustomerFromStripe creates a customer in our system from Stripe webhook data
+func (s *StripeService) CreateCustomerFromStripe(ctx context.Context, stripeCustomer *stripe.Customer, environmentID string) error {
 	// Create customer service instance
 	customerService := NewCustomerService(s.ServiceParams)
 
-	// Check for duplicate by external ID if present
+	// Check if customer already exists by Stripe ID
+	existingCustomer, err := s.findCustomerByStripeID(ctx, environmentID, stripeCustomer.ID)
+	if err == nil && existingCustomer != nil {
+		// Customer already exists, no need to create
+		return ierr.NewError("customer already exists").
+			WithHint("Customer with this Stripe ID already exists in our system").
+			Mark(ierr.ErrAlreadyExists)
+	}
+
+	// Check for existing customer by external ID if flexprice_customer_id is present
 	var externalID string
 	if flexpriceID, exists := stripeCustomer.Metadata["flexprice_customer_id"]; exists {
 		externalID = flexpriceID
@@ -173,63 +170,8 @@ func (s *StripeService) createCustomerFromStripe(ctx context.Context, stripeCust
 		createReq.AddressCountry = stripeCustomer.Address.Country
 	}
 
-	_, err := customerService.CreateCustomer(ctx, createReq)
+	_, err = customerService.CreateCustomer(ctx, createReq)
 	return err
-}
-
-func (s *StripeService) updateExistingCustomer(ctx context.Context, existingCustomer *dto.CustomerResponse, stripeCustomer *stripe.Customer) error {
-	// Create customer service instance
-	customerService := NewCustomerService(s.ServiceParams)
-
-	updateReq := dto.UpdateCustomerRequest{}
-	needsUpdate := false
-
-	// Update name if different
-	if stripeCustomer.Name != existingCustomer.Name {
-		updateReq.Name = &stripeCustomer.Name
-		needsUpdate = true
-	}
-
-	// Update email if different
-	if stripeCustomer.Email != existingCustomer.Email {
-		updateReq.Email = &stripeCustomer.Email
-		needsUpdate = true
-	}
-
-	// Update address if different
-	if stripeCustomer.Address != nil {
-		if stripeCustomer.Address.Line1 != existingCustomer.AddressLine1 {
-			updateReq.AddressLine1 = &stripeCustomer.Address.Line1
-			needsUpdate = true
-		}
-		if stripeCustomer.Address.Line2 != existingCustomer.AddressLine2 {
-			updateReq.AddressLine2 = &stripeCustomer.Address.Line2
-			needsUpdate = true
-		}
-		if stripeCustomer.Address.City != existingCustomer.AddressCity {
-			updateReq.AddressCity = &stripeCustomer.Address.City
-			needsUpdate = true
-		}
-		if stripeCustomer.Address.State != existingCustomer.AddressState {
-			updateReq.AddressState = &stripeCustomer.Address.State
-			needsUpdate = true
-		}
-		if stripeCustomer.Address.PostalCode != existingCustomer.AddressPostalCode {
-			updateReq.AddressPostalCode = &stripeCustomer.Address.PostalCode
-			needsUpdate = true
-		}
-		if stripeCustomer.Address.Country != existingCustomer.AddressCountry {
-			updateReq.AddressCountry = &stripeCustomer.Address.Country
-			needsUpdate = true
-		}
-	}
-
-	if needsUpdate {
-		_, err := customerService.UpdateCustomer(ctx, existingCustomer.ID, updateReq)
-		return err
-	}
-
-	return nil
 }
 
 // ParseWebhookEvent parses a Stripe webhook event
@@ -244,6 +186,8 @@ func (s *StripeService) ParseWebhookEvent(payload []byte) (*stripe.Event, error)
 }
 
 // findCustomerByStripeID finds a customer by Stripe customer ID in metadata
+// TODO: This method fetches all customers and filters in memory, which is not scalable.
+// Consider adding a database index on metadata->>'stripe_customer_id' for better performance.
 func (s *StripeService) findCustomerByStripeID(ctx context.Context, environmentID, stripeCustomerID string) (*dto.CustomerResponse, error) {
 	// Use customer filter to search by metadata
 	filter := &types.CustomerFilter{
@@ -268,25 +212,8 @@ func (s *StripeService) findCustomerByStripeID(ctx context.Context, environmentI
 	return nil, ierr.NewError("customer not found").Mark(ierr.ErrNotFound)
 }
 
-// findCustomerByExternalID finds a customer by external ID
+// findCustomerByExternalID finds a customer by external ID using efficient lookup
 func (s *StripeService) findCustomerByExternalID(ctx context.Context, environmentID, externalID string) (*dto.CustomerResponse, error) {
-	// Use customer filter to search by external ID
-	filter := &types.CustomerFilter{
-		QueryFilter: types.NewNoLimitQueryFilter(),
-	}
-
 	customerService := NewCustomerService(s.ServiceParams)
-	customers, err := customerService.GetCustomers(ctx, filter)
-	if err != nil {
-		return nil, err
-	}
-
-	// Search through customers for matching external ID
-	for _, customer := range customers.Items {
-		if customer.ExternalID == externalID {
-			return customer, nil
-		}
-	}
-
-	return nil, ierr.NewError("customer not found").Mark(ierr.ErrNotFound)
+	return customerService.GetCustomerByLookupKey(ctx, externalID)
 }

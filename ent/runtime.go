@@ -126,10 +126,6 @@ func init() {
 	connectionDescName := connectionFields[1].Descriptor()
 	// connection.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	connection.NameValidator = connectionDescName.Validators[0].(func(string) error)
-	// connectionDescConnectionCode is the schema descriptor for connection_code field.
-	connectionDescConnectionCode := connectionFields[3].Descriptor()
-	// connection.ConnectionCodeValidator is a validator for the "connection_code" field. It is called by the builders before save.
-	connection.ConnectionCodeValidator = connectionDescConnectionCode.Validators[0].(func(string) error)
 	costsheetMixin := schema.Costsheet{}.Mixin()
 	costsheetMixinFields0 := costsheetMixin[0].Fields()
 	_ = costsheetMixinFields0

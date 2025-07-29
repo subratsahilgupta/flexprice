@@ -170,36 +170,6 @@ func (h *ConnectionHandler) DeleteConnection(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// @Summary Get a connection by code
-// @Description Get a connection by connection code
-// @Tags Connections
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param connection_code path string true "Connection Code"
-// @Success 200 {object} dto.ConnectionResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /connections/code/{connection_code} [get]
-func (h *ConnectionHandler) GetConnectionByCode(c *gin.Context) {
-	connectionCode := c.Param("connection_code")
-	if connectionCode == "" {
-		c.Error(ierr.NewError("connection code is required").
-			WithHint("Connection code is required").
-			Mark(ierr.ErrValidation))
-		return
-	}
-
-	resp, err := h.service.GetConnectionByCode(c.Request.Context(), connectionCode)
-	if err != nil {
-		c.Error(err)
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
-}
-
 // @Summary List connections by filter
 // @Description List connections by filter
 // @Tags Connections
