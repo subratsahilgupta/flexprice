@@ -34,6 +34,8 @@ const (
 	FieldCurrency = "currency"
 	// FieldDisplayAmount holds the string denoting the display_amount field in the database.
 	FieldDisplayAmount = "display_amount"
+	// FieldPriceUnitType holds the string denoting the price_unit_type field in the database.
+	FieldPriceUnitType = "price_unit_type"
 	// FieldPriceUnitID holds the string denoting the price_unit_id field in the database.
 	FieldPriceUnitID = "price_unit_id"
 	// FieldPriceUnit holds the string denoting the price_unit field in the database.
@@ -113,6 +115,7 @@ var Columns = []string{
 	FieldAmount,
 	FieldCurrency,
 	FieldDisplayAmount,
+	FieldPriceUnitType,
 	FieldPriceUnitID,
 	FieldPriceUnit,
 	FieldPriceUnitAmount,
@@ -164,6 +167,8 @@ var (
 	CurrencyValidator func(string) error
 	// DisplayAmountValidator is a validator for the "display_amount" field. It is called by the builders before save.
 	DisplayAmountValidator func(string) error
+	// PriceUnitTypeValidator is a validator for the "price_unit_type" field. It is called by the builders before save.
+	PriceUnitTypeValidator func(string) error
 	// PlanIDValidator is a validator for the "plan_id" field. It is called by the builders before save.
 	PlanIDValidator func(string) error
 	// TypeValidator is a validator for the "type" field. It is called by the builders before save.
@@ -236,6 +241,11 @@ func ByCurrency(opts ...sql.OrderTermOption) OrderOption {
 // ByDisplayAmount orders the results by the display_amount field.
 func ByDisplayAmount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDisplayAmount, opts...).ToFunc()
+}
+
+// ByPriceUnitType orders the results by the price_unit_type field.
+func ByPriceUnitType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceUnitType, opts...).ToFunc()
 }
 
 // ByPriceUnitID orders the results by the price_unit_id field.

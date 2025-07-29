@@ -43,6 +43,9 @@ type Price struct {
 	// Currency 3 digit ISO currency code in lowercase ex usd, eur, gbp
 	Currency string `db:"currency" json:"currency"`
 
+	// PriceUnitType is the type of the price unit- Fiat, Custom, Crypto
+	PriceUnitType types.PriceUnitType `db:"price_unit_type" json:"price_unit_type"`
+
 	// PriceUnitID is the id of the price unit
 	PriceUnitID string `db:"price_unit_id" json:"price_unit_id,omitempty"`
 
@@ -355,6 +358,7 @@ func FromEnt(e *ent.Price) *Price {
 		Amount:                 decimal.NewFromFloat(e.Amount),
 		Currency:               e.Currency,
 		DisplayAmount:          e.DisplayAmount,
+		PriceUnitType:          types.PriceUnitType(e.PriceUnitType),
 		PlanID:                 e.PlanID,
 		Type:                   types.PriceType(e.Type),
 		BillingPeriod:          types.BillingPeriod(e.BillingPeriod),
