@@ -108,6 +108,5 @@ func (Coupon) Edges() []ent.Edge {
 func (Coupon) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "environment_id"),
-		index.Fields("tenant_id", "environment_id", "is_active"),
 	}
 }

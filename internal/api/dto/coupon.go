@@ -48,7 +48,6 @@ type CouponResponse struct {
 	PercentageOff    decimal.Decimal        `json:"percentage_off"`
 	Type             types.DiscountType     `json:"type"`
 	Cadence          types.DiscountCadence  `json:"cadence"`
-	IsActive         bool                   `json:"is_active"`
 	Currency         string                 `json:"currency"`
 	Status           types.Status           `json:"status"`
 	TenantID         string                 `json:"tenant_id"`
@@ -61,7 +60,6 @@ type CouponResponse struct {
 
 // ListCouponsRequest represents the request to list coupons
 type ListCouponsRequest struct {
-	IsActive   *bool                    `json:"is_active,omitempty"`
 	Type       *types.DiscountType      `json:"type,omitempty"`
 	Cadence    *types.DiscountCadence   `json:"cadence,omitempty"`
 	Pagination types.PaginationResponse `json:"pagination"`
