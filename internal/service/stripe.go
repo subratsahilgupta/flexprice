@@ -2,13 +2,14 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/stripe/stripe-go/v79"
 	"github.com/stripe/stripe-go/v79/client"
+	"github.com/stripe/stripe-go/v79/webhook"
 )
 
 // StripeService handles Stripe integration operations
@@ -174,15 +175,32 @@ func (s *StripeService) CreateCustomerFromStripe(ctx context.Context, stripeCust
 	return err
 }
 
-// ParseWebhookEvent parses a Stripe webhook event
-func (s *StripeService) ParseWebhookEvent(payload []byte) (*stripe.Event, error) {
-	var event stripe.Event
-	if err := json.Unmarshal(payload, &event); err != nil {
-		return nil, ierr.NewError("failed to parse webhook event").
-			WithHint("Invalid webhook payload").
+// ParseWebhookEvent parses a Stripe webhook event with signature verification
+func (s *StripeService) ParseWebhookEvent(payload []byte, signature string, webhookSecret string) (*stripe.Event, error) {
+	// Verify the webhook signature, ignoring API version mismatch
+	options := webhook.ConstructEventOptions{
+		IgnoreAPIVersionMismatch: true,
+	}
+	event, err := webhook.ConstructEventWithOptions(payload, signature, webhookSecret, options)
+	if err != nil {
+		// Log the original error for debugging
+		fmt.Printf("Stripe webhook verification error: %v\n", err)
+		return nil, ierr.NewError("failed to verify webhook signature").
+			WithHint("Invalid webhook signature or payload").
 			Mark(ierr.ErrValidation)
 	}
 	return &event, nil
+}
+
+// VerifyWebhookSignature verifies the Stripe webhook signature
+func (s *StripeService) VerifyWebhookSignature(payload []byte, signature string, webhookSecret string) error {
+	_, err := webhook.ConstructEvent(payload, signature, webhookSecret)
+	if err != nil {
+		return ierr.NewError("failed to verify webhook signature").
+			WithHint("Invalid webhook signature or payload").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
 }
 
 // findCustomerByStripeID finds a customer by Stripe customer ID in metadata

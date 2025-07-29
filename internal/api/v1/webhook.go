@@ -3,6 +3,7 @@ package v1
 import (
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/config"
@@ -124,12 +125,60 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	ctx = types.SetEnvironmentID(ctx, environmentID)
 	c.Request = c.Request.WithContext(ctx)
 
-	// Parse the webhook event
-	event, err := h.stripeService.ParseWebhookEvent(body)
+	// Get Stripe connection to retrieve webhook secret
+	conn, err := h.stripeService.ConnectionRepo.GetByEnvironmentAndProvider(ctx, environmentID, types.SecretProviderStripe)
 	if err != nil {
-		h.logger.Errorw("failed to parse Stripe webhook event", "error", err)
+		h.logger.Errorw("failed to get Stripe connection for webhook verification",
+			"error", err,
+			"environment_id", environmentID,
+		)
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Failed to parse webhook event",
+			"error": "Stripe connection not configured for this environment",
+		})
+		return
+	}
+
+	// Get Stripe configuration including webhook secret
+	stripeConfig, err := conn.GetStripeConfig()
+	if err != nil {
+		h.logger.Errorw("failed to get Stripe configuration",
+			"error", err,
+			"environment_id", environmentID,
+		)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid Stripe configuration",
+		})
+		return
+	}
+
+	// Verify webhook secret is configured
+	if stripeConfig.WebhookSecret == "" {
+		h.logger.Errorw("webhook secret not configured for Stripe connection",
+			"environment_id", environmentID,
+		)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Webhook secret not configured",
+		})
+		return
+	}
+
+	// Debug logging for troubleshooting
+	h.logger.Infow("webhook verification details",
+		"environment_id", environmentID,
+		"tenant_id", tenantID,
+		"webhook_secret_length", len(stripeConfig.WebhookSecret),
+		"webhook_secret_prefix", stripeConfig.WebhookSecret[:int(math.Min(float64(len(stripeConfig.WebhookSecret)), 10))]+"...",
+		"signature_header", signature,
+		"payload_length", len(body),
+		"payload_preview", string(body[:int(math.Min(float64(len(body)), 100))]),
+	)
+
+	// Parse and verify the webhook event
+	event, err := h.stripeService.ParseWebhookEvent(body, signature, stripeConfig.WebhookSecret)
+	if err != nil {
+		h.logger.Errorw("failed to parse/verify Stripe webhook event", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Failed to verify webhook signature",
 		})
 		return
 	}
