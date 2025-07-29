@@ -40,6 +40,8 @@ type Price struct {
 	Currency string `json:"currency,omitempty"`
 	// DisplayAmount holds the value of the "display_amount" field.
 	DisplayAmount string `json:"display_amount,omitempty"`
+	// PriceUnitType holds the value of the "price_unit_type" field.
+	PriceUnitType string `json:"price_unit_type,omitempty"`
 	// PriceUnitID holds the value of the "price_unit_id" field.
 	PriceUnitID string `json:"price_unit_id,omitempty"`
 	// PriceUnit holds the value of the "price_unit" field.
@@ -132,7 +134,7 @@ func (*Price) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case price.FieldBillingPeriodCount, price.FieldTrialPeriod:
 			values[i] = new(sql.NullInt64)
-		case price.FieldID, price.FieldTenantID, price.FieldStatus, price.FieldCreatedBy, price.FieldUpdatedBy, price.FieldEnvironmentID, price.FieldCurrency, price.FieldDisplayAmount, price.FieldPriceUnitID, price.FieldPriceUnit, price.FieldDisplayPriceUnitAmount, price.FieldPlanID, price.FieldType, price.FieldBillingPeriod, price.FieldBillingModel, price.FieldBillingCadence, price.FieldInvoiceCadence, price.FieldMeterID, price.FieldTierMode, price.FieldLookupKey, price.FieldDescription:
+		case price.FieldID, price.FieldTenantID, price.FieldStatus, price.FieldCreatedBy, price.FieldUpdatedBy, price.FieldEnvironmentID, price.FieldCurrency, price.FieldDisplayAmount, price.FieldPriceUnitType, price.FieldPriceUnitID, price.FieldPriceUnit, price.FieldDisplayPriceUnitAmount, price.FieldPlanID, price.FieldType, price.FieldBillingPeriod, price.FieldBillingModel, price.FieldBillingCadence, price.FieldInvoiceCadence, price.FieldMeterID, price.FieldTierMode, price.FieldLookupKey, price.FieldDescription:
 			values[i] = new(sql.NullString)
 		case price.FieldCreatedAt, price.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -216,6 +218,12 @@ func (pr *Price) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field display_amount", values[i])
 			} else if value.Valid {
 				pr.DisplayAmount = value.String
+			}
+		case price.FieldPriceUnitType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field price_unit_type", values[i])
+			} else if value.Valid {
+				pr.PriceUnitType = value.String
 			}
 		case price.FieldPriceUnitID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -436,6 +444,9 @@ func (pr *Price) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("display_amount=")
 	builder.WriteString(pr.DisplayAmount)
+	builder.WriteString(", ")
+	builder.WriteString("price_unit_type=")
+	builder.WriteString(pr.PriceUnitType)
 	builder.WriteString(", ")
 	builder.WriteString("price_unit_id=")
 	builder.WriteString(pr.PriceUnitID)

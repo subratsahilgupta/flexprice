@@ -46,6 +46,12 @@ func (Price) Fields() []ent.Field {
 				"postgres": "varchar(255)",
 			}).
 			NotEmpty(),
+		// price_unit_type is the type of the price unit- Fiat, Custom
+		field.String("price_unit_type").
+			SchemaType(map[string]string{
+				"postgres": "varchar(20)",
+			}).
+			NotEmpty(),
 		// price_unit_id is the id of the price unit
 		field.String("price_unit_id").
 			SchemaType(map[string]string{

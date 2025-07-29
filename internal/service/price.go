@@ -246,6 +246,7 @@ func (s *priceService) CreatePriceWithUnitConfig(
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 		Amount:             baseAmount,
 		Currency:           req.Currency,
+		PriceUnitType:      req.PriceUnitType,
 		PlanID:             req.PlanID,
 		Type:               req.Type,
 		BillingPeriod:      req.BillingPeriod,

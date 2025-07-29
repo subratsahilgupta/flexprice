@@ -16,6 +16,7 @@ type CreatePriceRequest struct {
 	Currency           string                   `json:"currency" validate:"required,len=3"`
 	PlanID             string                   `json:"plan_id,omitempty"`
 	Type               types.PriceType          `json:"type" validate:"required"`
+	PriceUnitType      types.PriceUnitType      `json:"price_unit_type" validate:"required"`
 	BillingPeriod      types.BillingPeriod      `json:"billing_period" validate:"required"`
 	BillingPeriodCount int                      `json:"billing_period_count" validate:"required,min=1"`
 	BillingModel       types.BillingModel       `json:"billing_model" validate:"required"`
@@ -60,6 +61,26 @@ func (r *CreatePriceRequest) Validate() error {
 				}).
 				Mark(ierr.ErrValidation)
 		}
+	}
+
+	// Validate price unit type
+	err = r.PriceUnitType.Validate()
+	if err != nil {
+		return err
+	}
+
+	// If price unit type is CUSTOM, price unit config is required
+	if r.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM && r.PriceUnitConfig == nil {
+		return ierr.NewError("price_unit_config is required when price_unit_type is CUSTOM").
+			WithHint("Please provide price unit configuration for custom pricing").
+			Mark(ierr.ErrValidation)
+	}
+
+	// If price unit type is FIAT, price unit config should not be provided
+	if r.PriceUnitType == types.PRICE_UNIT_TYPE_FIAT && r.PriceUnitConfig != nil {
+		return ierr.NewError("price_unit_config should not be provided when price_unit_type is FIAT").
+			WithHint("Price unit configuration is only allowed for custom pricing").
+			Mark(ierr.ErrValidation)
 	}
 
 	// If price unit config is provided, main amount can be empty (will be calculated from price unit)
@@ -506,6 +527,7 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*price.Price, error) 
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 		Amount:             amount,
 		Currency:           r.Currency,
+		PriceUnitType:      r.PriceUnitType,
 		PlanID:             r.PlanID,
 		Type:               r.Type,
 		BillingPeriod:      r.BillingPeriod,

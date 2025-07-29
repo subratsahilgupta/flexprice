@@ -131,6 +131,12 @@ func (pc *PriceCreate) SetDisplayAmount(s string) *PriceCreate {
 	return pc
 }
 
+// SetPriceUnitType sets the "price_unit_type" field.
+func (pc *PriceCreate) SetPriceUnitType(s string) *PriceCreate {
+	pc.mutation.SetPriceUnitType(s)
+	return pc
+}
+
 // SetPriceUnitID sets the "price_unit_id" field.
 func (pc *PriceCreate) SetPriceUnitID(s string) *PriceCreate {
 	pc.mutation.SetPriceUnitID(s)
@@ -494,6 +500,14 @@ func (pc *PriceCreate) check() error {
 			return &ValidationError{Name: "display_amount", err: fmt.Errorf(`ent: validator failed for field "Price.display_amount": %w`, err)}
 		}
 	}
+	if _, ok := pc.mutation.PriceUnitType(); !ok {
+		return &ValidationError{Name: "price_unit_type", err: errors.New(`ent: missing required field "Price.price_unit_type"`)}
+	}
+	if v, ok := pc.mutation.PriceUnitType(); ok {
+		if err := price.PriceUnitTypeValidator(v); err != nil {
+			return &ValidationError{Name: "price_unit_type", err: fmt.Errorf(`ent: validator failed for field "Price.price_unit_type": %w`, err)}
+		}
+	}
 	if _, ok := pc.mutation.PlanID(); !ok {
 		return &ValidationError{Name: "plan_id", err: errors.New(`ent: missing required field "Price.plan_id"`)}
 	}
@@ -619,6 +633,10 @@ func (pc *PriceCreate) createSpec() (*Price, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.DisplayAmount(); ok {
 		_spec.SetField(price.FieldDisplayAmount, field.TypeString, value)
 		_node.DisplayAmount = value
+	}
+	if value, ok := pc.mutation.PriceUnitType(); ok {
+		_spec.SetField(price.FieldPriceUnitType, field.TypeString, value)
+		_node.PriceUnitType = value
 	}
 	if value, ok := pc.mutation.PriceUnit(); ok {
 		_spec.SetField(price.FieldPriceUnit, field.TypeString, value)

@@ -115,6 +115,11 @@ func DisplayAmount(v string) predicate.Price {
 	return predicate.Price(sql.FieldEQ(FieldDisplayAmount, v))
 }
 
+// PriceUnitType applies equality check predicate on the "price_unit_type" field. It's identical to PriceUnitTypeEQ.
+func PriceUnitType(v string) predicate.Price {
+	return predicate.Price(sql.FieldEQ(FieldPriceUnitType, v))
+}
+
 // PriceUnitID applies equality check predicate on the "price_unit_id" field. It's identical to PriceUnitIDEQ.
 func PriceUnitID(v string) predicate.Price {
 	return predicate.Price(sql.FieldEQ(FieldPriceUnitID, v))
@@ -803,6 +808,71 @@ func DisplayAmountEqualFold(v string) predicate.Price {
 // DisplayAmountContainsFold applies the ContainsFold predicate on the "display_amount" field.
 func DisplayAmountContainsFold(v string) predicate.Price {
 	return predicate.Price(sql.FieldContainsFold(FieldDisplayAmount, v))
+}
+
+// PriceUnitTypeEQ applies the EQ predicate on the "price_unit_type" field.
+func PriceUnitTypeEQ(v string) predicate.Price {
+	return predicate.Price(sql.FieldEQ(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeNEQ applies the NEQ predicate on the "price_unit_type" field.
+func PriceUnitTypeNEQ(v string) predicate.Price {
+	return predicate.Price(sql.FieldNEQ(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeIn applies the In predicate on the "price_unit_type" field.
+func PriceUnitTypeIn(vs ...string) predicate.Price {
+	return predicate.Price(sql.FieldIn(FieldPriceUnitType, vs...))
+}
+
+// PriceUnitTypeNotIn applies the NotIn predicate on the "price_unit_type" field.
+func PriceUnitTypeNotIn(vs ...string) predicate.Price {
+	return predicate.Price(sql.FieldNotIn(FieldPriceUnitType, vs...))
+}
+
+// PriceUnitTypeGT applies the GT predicate on the "price_unit_type" field.
+func PriceUnitTypeGT(v string) predicate.Price {
+	return predicate.Price(sql.FieldGT(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeGTE applies the GTE predicate on the "price_unit_type" field.
+func PriceUnitTypeGTE(v string) predicate.Price {
+	return predicate.Price(sql.FieldGTE(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeLT applies the LT predicate on the "price_unit_type" field.
+func PriceUnitTypeLT(v string) predicate.Price {
+	return predicate.Price(sql.FieldLT(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeLTE applies the LTE predicate on the "price_unit_type" field.
+func PriceUnitTypeLTE(v string) predicate.Price {
+	return predicate.Price(sql.FieldLTE(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeContains applies the Contains predicate on the "price_unit_type" field.
+func PriceUnitTypeContains(v string) predicate.Price {
+	return predicate.Price(sql.FieldContains(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeHasPrefix applies the HasPrefix predicate on the "price_unit_type" field.
+func PriceUnitTypeHasPrefix(v string) predicate.Price {
+	return predicate.Price(sql.FieldHasPrefix(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeHasSuffix applies the HasSuffix predicate on the "price_unit_type" field.
+func PriceUnitTypeHasSuffix(v string) predicate.Price {
+	return predicate.Price(sql.FieldHasSuffix(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeEqualFold applies the EqualFold predicate on the "price_unit_type" field.
+func PriceUnitTypeEqualFold(v string) predicate.Price {
+	return predicate.Price(sql.FieldEqualFold(FieldPriceUnitType, v))
+}
+
+// PriceUnitTypeContainsFold applies the ContainsFold predicate on the "price_unit_type" field.
+func PriceUnitTypeContainsFold(v string) predicate.Price {
+	return predicate.Price(sql.FieldContainsFold(FieldPriceUnitType, v))
 }
 
 // PriceUnitIDEQ applies the EQ predicate on the "price_unit_id" field.
