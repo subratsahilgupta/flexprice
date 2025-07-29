@@ -63,6 +63,7 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetAmount(p.Amount.InexactFloat64()).
 		SetCurrency(p.Currency).
 		SetDisplayAmount(p.DisplayAmount).
+		SetPriceUnitType(string(p.PriceUnitType)).
 		SetPlanID(p.PlanID).
 		SetType(string(p.Type)).
 		SetBillingPeriod(string(p.BillingPeriod)).
@@ -278,6 +279,7 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price) erro
 		).
 		SetAmount(p.Amount.InexactFloat64()).
 		SetDisplayAmount(p.DisplayAmount).
+		SetPriceUnitType(string(p.PriceUnitType)).
 		SetType(string(p.Type)).
 		SetBillingPeriod(string(p.BillingPeriod)).
 		SetBillingPeriodCount(p.BillingPeriodCount).
