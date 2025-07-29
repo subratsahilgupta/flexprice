@@ -139,10 +139,12 @@ func (s *priceService) CreatePriceWithUnitConfig(
 	}
 
 	var tiers price.JSONBTiers
-	if req.PriceUnitConfig != nil && req.PriceUnitConfig.Tiers != nil {
+	var priceUnitTiers price.JSONBTiers
+	if req.PriceUnitConfig != nil && req.PriceUnitConfig.PriceUnitTiers != nil {
 		// Process price unit tiers - convert amounts from price unit to base currency
-		priceTiers := make([]price.PriceTier, len(req.PriceUnitConfig.Tiers))
-		for i, tier := range req.PriceUnitConfig.Tiers {
+		priceTiers := make([]price.PriceTier, len(req.PriceUnitConfig.PriceUnitTiers))
+		priceUnitTiers = make(price.JSONBTiers, len(req.PriceUnitConfig.PriceUnitTiers))
+		for i, tier := range req.PriceUnitConfig.PriceUnitTiers {
 			// Parse the tier unit amount (in price unit currency)
 			unitAmount, err := decimal.NewFromString(tier.UnitAmount)
 			if err != nil {
@@ -150,6 +152,12 @@ func (s *priceService) CreatePriceWithUnitConfig(
 					WithHint("Tier unit amount must be a valid decimal number").
 					WithReportableDetails(map[string]interface{}{"unit_amount": tier.UnitAmount}).
 					Mark(ierr.ErrValidation)
+			}
+
+			// Store original price unit tier
+			priceUnitTiers[i] = price.PriceTier{
+				UpTo:       tier.UpTo,
+				UnitAmount: unitAmount,
 			}
 
 			// Convert tier unit amount from price unit to base currency
@@ -166,6 +174,7 @@ func (s *priceService) CreatePriceWithUnitConfig(
 			}
 
 			var flatAmount *decimal.Decimal
+			var priceUnitFlatAmount *decimal.Decimal
 			if tier.FlatAmount != nil {
 				// Parse the tier flat amount (in price unit currency)
 				parsed, err := decimal.NewFromString(*tier.FlatAmount)
@@ -175,6 +184,10 @@ func (s *priceService) CreatePriceWithUnitConfig(
 						WithReportableDetails(map[string]interface{}{"flat_amount": tier.FlatAmount}).
 						Mark(ierr.ErrValidation)
 				}
+
+				// Store original price unit flat amount
+				priceUnitFlatAmount = &parsed
+				priceUnitTiers[i].FlatAmount = priceUnitFlatAmount
 
 				// Convert tier flat amount from price unit to base currency
 				convertedFlatAmount, err := s.priceUnitRepo.ConvertToBaseCurrency(ctx, req.PriceUnitConfig.PriceUnit, tenantID, envID, parsed)
@@ -247,6 +260,7 @@ func (s *priceService) CreatePriceWithUnitConfig(
 		Metadata:           metadata,
 		TierMode:           req.TierMode,
 		Tiers:              tiers,
+		PriceUnitTiers:     priceUnitTiers,
 		TransformQuantity:  transformQuantity,
 		EnvironmentID:      envID,
 		BaseModel:          types.GetDefaultBaseModel(ctx),
