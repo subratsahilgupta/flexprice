@@ -44,23 +44,23 @@ type Price struct {
 	Currency string `db:"currency" json:"currency"`
 
 	// PriceUnitID is the id of the price unit
-	PriceUnitID string `db:"price_unit_id" json:"price_unit_id"`
+	PriceUnitID string `db:"price_unit_id" json:"price_unit_id,omitempty"`
 
 	// PriceUnitAmount is the amount stored in price unit
 	// For BTC: 0.00000001 means 0.00000001 BTC
-	PriceUnitAmount decimal.Decimal `db:"price_unit_amount" json:"price_unit_amount"`
+	PriceUnitAmount decimal.Decimal `db:"price_unit_amount" json:"price_unit_amount,omitempty"`
 
 	// DisplayPriceUnitAmount is the formatted amount with price unit symbol
 	// For BTC: 0.00000001 BTC
-	DisplayPriceUnitAmount string `db:"display_price_unit_amount" json:"display_price_unit_amount"`
+	DisplayPriceUnitAmount string `db:"display_price_unit_amount" json:"display_price_unit_amount,omitempty"`
 
 	// PriceUnit 3 digit ISO currency code in lowercase ex btc
 	// For BTC: btc
-	PriceUnit string `db:"price_unit" json:"price_unit"`
+	PriceUnit string `db:"price_unit" json:"price_unit,omitempty"`
 
 	// ConversionRate is the rate of the price unit to the base currency
 	// For BTC: 1 BTC = 100000000 USD
-	ConversionRate decimal.Decimal `db:"conversion_rate" json:"conversion_rate"`
+	ConversionRate decimal.Decimal `db:"conversion_rate" json:"conversion_rate,omitempty"`
 
 	// PlanID is the id of the plan for plan based pricing
 	PlanID string `db:"plan_id" json:"plan_id"`
