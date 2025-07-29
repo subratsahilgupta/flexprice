@@ -14,7 +14,6 @@ import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/dynamodb"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/kafka"
@@ -24,7 +23,6 @@ import (
 	"github.com/flexprice/flexprice/internal/publisher"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/repository"
-	ent "github.com/flexprice/flexprice/internal/repository/ent"
 	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
@@ -139,7 +137,7 @@ func main() {
 			repository.NewCreditGrantApplicationRepository,
 			repository.NewCreditNoteRepository,
 			repository.NewCreditNoteLineItemRepository,
-			ent.NewConnectionRepository,
+			repository.NewConnectionRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -184,17 +182,8 @@ func main() {
 			service.NewCostSheetService,
 			service.NewCreditNoteService,
 			service.NewConnectionService,
-			// Create StripeService without CustomerService for now
-			func(connectionRepo connection.Repository) *service.StripeService {
-				return service.NewStripeService(connectionRepo)
-			},
-			// Create CustomerService with StripeService
-			func(params service.ServiceParams, stripeService *service.StripeService) service.CustomerService {
-				customerService := service.NewCustomerService(params, stripeService)
-				// Wire up the circular dependency
-				stripeService.SetCustomerService(customerService)
-				return customerService
-			},
+			service.NewCustomerService,
+			service.NewStripeService,
 		),
 	)
 
@@ -268,13 +257,13 @@ func provideHandlers(
 		Task:              v1.NewTaskHandler(taskService, logger),
 		Secret:            v1.NewSecretHandler(secretService, logger),
 		Onboarding:        v1.NewOnboardingHandler(onboardingService, logger),
-		CronSubscription:  cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
-		CronWallet:        cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService),
 		CreditGrant:       v1.NewCreditGrantHandler(creditGrantService, logger),
 		CostSheet:         v1.NewCostSheetHandler(costSheetService, logger),
-		CronCreditGrant:   cron.NewCreditGrantCronHandler(creditGrantService, logger),
 		CreditNote:        v1.NewCreditNoteHandler(creditNoteService, logger),
 		Connection:        v1.NewConnectionHandler(connectionService, logger),
+		CronWallet:        cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService),
+		CronSubscription:  cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
+		CronCreditGrant:   cron.NewCreditGrantCronHandler(creditGrantService, logger),
 		Webhook:           v1.NewWebhookHandler(cfg, svixClient, logger, stripeService),
 	}
 }

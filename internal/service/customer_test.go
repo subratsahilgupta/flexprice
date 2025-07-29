@@ -29,7 +29,7 @@ func TestCustomerService(t *testing.T) {
 func (s *CustomerServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
 	s.ctx = context.Background()
-	s.service = NewCustomerServiceLegacy(ServiceParams{
+	s.service = NewCustomerService(ServiceParams{
 		Logger:           s.GetLogger(),
 		Config:           s.GetConfig(),
 		DB:               s.GetDB(),

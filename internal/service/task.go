@@ -533,7 +533,7 @@ func (s *taskService) processCustomers(ctx context.Context, t *task.Task, tracke
 		customerID := ""
 
 		// Process customer
-		customerSvc := NewCustomerServiceLegacy(s.ServiceParams)
+		customerSvc := NewCustomerService(s.ServiceParams)
 
 		// Map standard fields
 		for i, header := range standardHeaders {

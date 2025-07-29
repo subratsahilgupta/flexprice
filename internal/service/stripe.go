@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/connection"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/stripe/stripe-go/v79"
@@ -14,33 +13,28 @@ import (
 
 // StripeService handles Stripe integration operations
 type StripeService struct {
-	customerService CustomerService
-	connectionRepo  connection.Repository
+	ServiceParams
 }
 
 // NewStripeService creates a new Stripe service instance
-func NewStripeService(connectionRepo connection.Repository) *StripeService {
+func NewStripeService(params ServiceParams) *StripeService {
 	return &StripeService{
-		connectionRepo: connectionRepo,
+		ServiceParams: params,
 	}
-}
-
-// SetCustomerService sets the customer service (used to break circular dependency)
-func (s *StripeService) SetCustomerService(customerService CustomerService) {
-	s.customerService = customerService
 }
 
 // CreateCustomerInStripe creates a customer in Stripe and updates our customer with Stripe ID
 func (s *StripeService) CreateCustomerInStripe(ctx context.Context, customerID string) error {
 	// Get our customer
-	ourCustomerResp, err := s.customerService.GetCustomer(ctx, customerID)
+	customerService := NewCustomerService(s.ServiceParams)
+	ourCustomerResp, err := customerService.GetCustomer(ctx, customerID)
 	if err != nil {
 		return err
 	}
 	ourCustomer := ourCustomerResp.Customer
 
 	// Get Stripe connection for this environment
-	conn, err := s.connectionRepo.GetByEnvironmentAndProvider(ctx, ourCustomer.EnvironmentID, types.SecretProviderStripe)
+	conn, err := s.ConnectionRepo.GetByEnvironmentAndProvider(ctx, ourCustomer.EnvironmentID, types.SecretProviderStripe)
 	if err != nil {
 		return ierr.NewError("failed to get Stripe connection").
 			WithHint("Stripe connection not configured for this environment").
@@ -107,7 +101,7 @@ func (s *StripeService) CreateCustomerInStripe(ctx context.Context, customerID s
 		}
 	}
 
-	_, err = s.customerService.UpdateCustomer(ctx, ourCustomer.ID, updateReq)
+	_, err = customerService.UpdateCustomer(ctx, ourCustomer.ID, updateReq)
 	if err != nil {
 		return err
 	}
@@ -129,6 +123,9 @@ func (s *StripeService) SyncCustomerFromStripe(ctx context.Context, stripeCustom
 }
 
 func (s *StripeService) createCustomerFromStripe(ctx context.Context, stripeCustomer *stripe.Customer, environmentID string) error {
+	// Create customer service instance
+	customerService := NewCustomerService(s.ServiceParams)
+
 	// Check for duplicate by external ID if present
 	var externalID string
 	if flexpriceID, exists := stripeCustomer.Metadata["flexprice_customer_id"]; exists {
@@ -148,7 +145,7 @@ func (s *StripeService) createCustomerFromStripe(ctx context.Context, stripeCust
 					updateReq.Metadata[k] = v
 				}
 			}
-			_, err = s.customerService.UpdateCustomer(ctx, existing.ID, updateReq)
+			_, err = customerService.UpdateCustomer(ctx, existing.ID, updateReq)
 			return err
 		}
 	} else {
@@ -176,11 +173,14 @@ func (s *StripeService) createCustomerFromStripe(ctx context.Context, stripeCust
 		createReq.AddressCountry = stripeCustomer.Address.Country
 	}
 
-	_, err := s.customerService.CreateCustomer(ctx, createReq)
+	_, err := customerService.CreateCustomer(ctx, createReq)
 	return err
 }
 
 func (s *StripeService) updateExistingCustomer(ctx context.Context, existingCustomer *dto.CustomerResponse, stripeCustomer *stripe.Customer) error {
+	// Create customer service instance
+	customerService := NewCustomerService(s.ServiceParams)
+
 	updateReq := dto.UpdateCustomerRequest{}
 	needsUpdate := false
 
@@ -225,7 +225,7 @@ func (s *StripeService) updateExistingCustomer(ctx context.Context, existingCust
 	}
 
 	if needsUpdate {
-		_, err := s.customerService.UpdateCustomer(ctx, existingCustomer.ID, updateReq)
+		_, err := customerService.UpdateCustomer(ctx, existingCustomer.ID, updateReq)
 		return err
 	}
 
@@ -250,7 +250,8 @@ func (s *StripeService) findCustomerByStripeID(ctx context.Context, environmentI
 		QueryFilter: types.NewNoLimitQueryFilter(),
 	}
 
-	customers, err := s.customerService.GetCustomers(ctx, filter)
+	customerService := NewCustomerService(s.ServiceParams)
+	customers, err := customerService.GetCustomers(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +275,8 @@ func (s *StripeService) findCustomerByExternalID(ctx context.Context, environmen
 		QueryFilter: types.NewNoLimitQueryFilter(),
 	}
 
-	customers, err := s.customerService.GetCustomers(ctx, filter)
+	customerService := NewCustomerService(s.ServiceParams)
+	customers, err := customerService.GetCustomers(ctx, filter)
 	if err != nil {
 		return nil, err
 	}

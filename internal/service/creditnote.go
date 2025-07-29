@@ -168,7 +168,7 @@ func (s *creditNoteService) GetCreditNote(ctx context.Context, id string) (*dto.
 
 	invoiceService := NewInvoiceService(s.ServiceParams)
 	subscriptionService := NewSubscriptionService(s.ServiceParams)
-	customerService := NewCustomerServiceLegacy(s.ServiceParams)
+	customerService := NewCustomerService(s.ServiceParams)
 
 	invoiceResponse, err := invoiceService.GetInvoice(ctx, cn.InvoiceID)
 	if err != nil {
@@ -229,7 +229,7 @@ func (s *creditNoteService) ListCreditNotes(ctx context.Context, filter *types.C
 	// Initialize service instances for expansion
 	invoiceService := NewInvoiceService(s.ServiceParams)
 	subscriptionService := NewSubscriptionService(s.ServiceParams)
-	customerService := NewCustomerServiceLegacy(s.ServiceParams)
+	customerService := NewCustomerService(s.ServiceParams)
 
 	// If invoices are requested to be expanded, fetch all invoices in one query
 	var invoicesByID map[string]*dto.InvoiceResponse
