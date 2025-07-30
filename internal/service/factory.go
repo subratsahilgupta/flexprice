@@ -157,13 +157,3 @@ func NewServiceParams(
 		CouponApplicationRepo:      couponApplicationRepo,
 	}
 }
-
-func NewCouponServiceFromParams(params ServiceParams) CouponService {
-	return NewCouponService(
-		params,
-		params.CouponRepo,
-		params.CouponAssociationRepo,
-		params.CouponApplicationRepo,
-		params.Logger,
-	)
-}
