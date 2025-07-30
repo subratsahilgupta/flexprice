@@ -39,6 +39,7 @@ import (
 	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
 	_ "github.com/flexprice/flexprice/docs/swagger"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/security"
 	"github.com/gin-gonic/gin"
 )
 
@@ -72,6 +73,9 @@ func main() {
 
 			// Logger
 			logger.NewLogger,
+
+			// Security
+			security.NewEncryptionService,
 
 			// storage
 			s3.NewService,

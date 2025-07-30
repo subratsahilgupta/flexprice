@@ -139,7 +139,7 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	}
 
 	// Get Stripe configuration including webhook secret
-	stripeConfig, err := conn.GetStripeConfig()
+	stripeConfig, err := h.stripeService.GetDecryptedStripeConfig(conn)
 	if err != nil {
 		h.logger.Errorw("failed to get Stripe configuration",
 			"error", err,

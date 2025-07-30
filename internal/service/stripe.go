@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/connection"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/security"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/stripe/stripe-go/v79"
 	"github.com/stripe/stripe-go/v79/client"
@@ -15,13 +18,76 @@ import (
 // StripeService handles Stripe integration operations
 type StripeService struct {
 	ServiceParams
+	encryptionService security.EncryptionService
 }
 
 // NewStripeService creates a new Stripe service instance
 func NewStripeService(params ServiceParams) *StripeService {
-	return &StripeService{
-		ServiceParams: params,
+	encryptionService, err := security.NewEncryptionService(params.Config, params.Logger)
+	if err != nil {
+		params.Logger.Fatalw("failed to create encryption service", "error", err)
 	}
+
+	return &StripeService{
+		ServiceParams:     params,
+		encryptionService: encryptionService,
+	}
+}
+
+// decryptConnectionMetadata decrypts the connection metadata if it's encrypted
+func (s *StripeService) decryptConnectionMetadata(metadata map[string]interface{}) (map[string]interface{}, error) {
+	if metadata == nil {
+		return nil, nil
+	}
+
+	decryptedMetadata := make(map[string]interface{})
+
+	// Traverse metadata by key-value pairs
+	for key, value := range metadata {
+		// Check if the value is encrypted (string)
+		if encryptedValue, ok := value.(string); ok {
+			// Decrypt the JSON string
+			decryptedJSON, err := s.encryptionService.Decrypt(encryptedValue)
+			if err != nil {
+				return nil, err
+			}
+
+			// Deserialize back to original type
+			var decryptedValue interface{}
+			if err := json.Unmarshal([]byte(decryptedJSON), &decryptedValue); err != nil {
+				return nil, err
+			}
+
+			decryptedMetadata[key] = decryptedValue
+		} else {
+			// If value is not encrypted (for backward compatibility), keep as-is
+			decryptedMetadata[key] = value
+		}
+	}
+
+	return decryptedMetadata, nil
+}
+
+// GetDecryptedStripeConfig gets the decrypted Stripe configuration from a connection
+func (s *StripeService) GetDecryptedStripeConfig(conn *connection.Connection) (*connection.StripeConnection, error) {
+	// Decrypt metadata if needed
+	decryptedMetadata, err := s.decryptConnectionMetadata(conn.Metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a temporary connection with decrypted metadata
+	tempConn := &connection.Connection{
+		ID:            conn.ID,
+		Name:          conn.Name,
+		ProviderType:  conn.ProviderType,
+		Metadata:      decryptedMetadata,
+		EnvironmentID: conn.EnvironmentID,
+		BaseModel:     conn.BaseModel,
+	}
+
+	// Now call GetStripeConfig on the decrypted connection
+	return tempConn.GetStripeConfig()
 }
 
 // CreateCustomerInStripe creates a customer in Stripe and updates our customer with Stripe ID
@@ -42,7 +108,7 @@ func (s *StripeService) CreateCustomerInStripe(ctx context.Context, customerID s
 			Mark(ierr.ErrNotFound)
 	}
 
-	stripeConfig, err := conn.GetStripeConfig()
+	stripeConfig, err := s.GetDecryptedStripeConfig(conn)
 	if err != nil {
 		return ierr.NewError("failed to get Stripe configuration").
 			WithHint("Invalid Stripe configuration").

@@ -32,17 +32,20 @@ func (c *Connection) GetStripeConfig() (*StripeConnection, error) {
 			Mark(ierr.ErrValidation)
 	}
 
+	// Use the metadata directly since it should already be decrypted by the service layer
+	metadata := c.Metadata
+
 	config := &StripeConnection{}
-	if pk, ok := c.Metadata["publishable_key"].(string); ok {
+	if pk, ok := metadata["publishable_key"].(string); ok {
 		config.PublishableKey = pk
 	}
-	if sk, ok := c.Metadata["secret_key"].(string); ok {
+	if sk, ok := metadata["secret_key"].(string); ok {
 		config.SecretKey = sk
 	}
-	if ws, ok := c.Metadata["webhook_secret"].(string); ok {
+	if ws, ok := metadata["webhook_secret"].(string); ok {
 		config.WebhookSecret = ws
 	}
-	if aid, ok := c.Metadata["account_id"].(string); ok {
+	if aid, ok := metadata["account_id"].(string); ok {
 		config.AccountID = aid
 	}
 

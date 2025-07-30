@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/connection"
-	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/security"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -20,20 +20,83 @@ type ConnectionService interface {
 }
 
 type connectionService struct {
-	repo connection.Repository
-	log  *logger.Logger
+	ServiceParams
+	encryptionService security.EncryptionService
 }
 
 // NewConnectionService creates a new connection service
-func NewConnectionService(repo connection.Repository, log *logger.Logger) ConnectionService {
+func NewConnectionService(params ServiceParams, encryptionService security.EncryptionService) ConnectionService {
 	return &connectionService{
-		repo: repo,
-		log:  log,
+		ServiceParams:     params,
+		encryptionService: encryptionService,
 	}
 }
 
+// encryptMetadata encrypts the metadata map by traversing key-value pairs and only encrypting values
+func (s *connectionService) encryptMetadata(metadata map[string]interface{}) (map[string]interface{}, error) {
+	if metadata == nil {
+		return nil, nil
+	}
+
+	encryptedMetadata := make(map[string]interface{})
+
+	// Traverse metadata by key-value pairs
+	for key, value := range metadata {
+		// Serialize the value to JSON
+		jsonData, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+
+		// Encrypt the JSON string
+		encryptedJSON, err := s.encryptionService.Encrypt(string(jsonData))
+		if err != nil {
+			return nil, err
+		}
+
+		// Store encrypted value with original key
+		encryptedMetadata[key] = encryptedJSON
+	}
+
+	return encryptedMetadata, nil
+}
+
+// decryptMetadata decrypts the metadata map by traversing key-value pairs and only decrypting values
+func (s *connectionService) decryptMetadata(metadata map[string]interface{}) (map[string]interface{}, error) {
+	if metadata == nil {
+		return nil, nil
+	}
+
+	decryptedMetadata := make(map[string]interface{})
+
+	// Traverse metadata by key-value pairs
+	for key, value := range metadata {
+		// Check if the value is encrypted (string)
+		if encryptedValue, ok := value.(string); ok {
+			// Decrypt the JSON string
+			decryptedJSON, err := s.encryptionService.Decrypt(encryptedValue)
+			if err != nil {
+				return nil, err
+			}
+
+			// Deserialize back to original type
+			var decryptedValue interface{}
+			if err := json.Unmarshal([]byte(decryptedJSON), &decryptedValue); err != nil {
+				return nil, err
+			}
+
+			decryptedMetadata[key] = decryptedValue
+		} else {
+			// If value is not encrypted (for backward compatibility), keep as-is
+			decryptedMetadata[key] = value
+		}
+	}
+
+	return decryptedMetadata, nil
+}
+
 func (s *connectionService) CreateConnection(ctx context.Context, req dto.CreateConnectionRequest) (*dto.ConnectionResponse, error) {
-	s.log.Debugw("creating connection",
+	s.Logger.Debugw("creating connection",
 		"name", req.Name,
 		"provider_type", req.ProviderType,
 	)
@@ -56,40 +119,72 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 	conn.CreatedBy = types.GetUserID(ctx)
 	conn.UpdatedBy = types.GetUserID(ctx)
 
+	// Encrypt metadata
+	if conn.Metadata != nil {
+		encryptedMetadata, err := s.encryptMetadata(conn.Metadata)
+		if err != nil {
+			s.Logger.Errorw("failed to encrypt metadata", "error", err)
+			return nil, err
+		}
+		conn.Metadata = encryptedMetadata
+	}
+
 	// Create the connection
-	if err := s.repo.Create(ctx, conn); err != nil {
-		s.log.Errorw("failed to create connection", "error", err)
+	if err := s.ConnectionRepo.Create(ctx, conn); err != nil {
+		s.Logger.Errorw("failed to create connection", "error", err)
 		return nil, err
 	}
 
-	s.log.Infow("connection created successfully", "connection_id", conn.ID)
+	s.Logger.Infow("connection created successfully", "connection_id", conn.ID)
 	return dto.ToConnectionResponse(conn), nil
 }
 
 func (s *connectionService) GetConnection(ctx context.Context, id string) (*dto.ConnectionResponse, error) {
-	s.log.Debugw("getting connection", "connection_id", id)
+	s.Logger.Debugw("getting connection", "connection_id", id)
 
-	conn, err := s.repo.Get(ctx, id)
+	conn, err := s.ConnectionRepo.Get(ctx, id)
 	if err != nil {
-		s.log.Errorw("failed to get connection", "error", err, "connection_id", id)
+		s.Logger.Errorw("failed to get connection", "error", err, "connection_id", id)
 		return nil, err
+	}
+
+	// Decrypt metadata
+	if conn.Metadata != nil {
+		decryptedMetadata, err := s.decryptMetadata(conn.Metadata)
+		if err != nil {
+			s.Logger.Errorw("failed to decrypt metadata", "error", err)
+			return nil, err
+		}
+		conn.Metadata = decryptedMetadata
 	}
 
 	return dto.ToConnectionResponse(conn), nil
 }
 
 func (s *connectionService) GetConnections(ctx context.Context, filter *types.ConnectionFilter) (*dto.ListConnectionsResponse, error) {
-	s.log.Debugw("getting connections", "filter", filter)
+	s.Logger.Debugw("getting connections", "filter", filter)
 
-	connections, err := s.repo.List(ctx, filter)
+	connections, err := s.ConnectionRepo.List(ctx, filter)
 	if err != nil {
-		s.log.Errorw("failed to get connections", "error", err)
+		s.Logger.Errorw("failed to get connections", "error", err)
 		return nil, err
 	}
 
-	total, err := s.repo.Count(ctx, filter)
+	// Decrypt metadata for all connections
+	for _, conn := range connections {
+		if conn.Metadata != nil {
+			decryptedMetadata, err := s.decryptMetadata(conn.Metadata)
+			if err != nil {
+				s.Logger.Errorw("failed to decrypt metadata for connection", "error", err, "connection_id", conn.ID)
+				return nil, err
+			}
+			conn.Metadata = decryptedMetadata
+		}
+	}
+
+	total, err := s.ConnectionRepo.Count(ctx, filter)
 	if err != nil {
-		s.log.Errorw("failed to count connections", "error", err)
+		s.Logger.Errorw("failed to count connections", "error", err)
 		return nil, err
 	}
 
@@ -103,12 +198,12 @@ func (s *connectionService) GetConnections(ctx context.Context, filter *types.Co
 }
 
 func (s *connectionService) UpdateConnection(ctx context.Context, id string, req dto.UpdateConnectionRequest) (*dto.ConnectionResponse, error) {
-	s.log.Debugw("updating connection", "connection_id", id)
+	s.Logger.Debugw("updating connection", "connection_id", id)
 
 	// Get existing connection
-	conn, err := s.repo.Get(ctx, id)
+	conn, err := s.ConnectionRepo.Get(ctx, id)
 	if err != nil {
-		s.log.Errorw("failed to get connection for update", "error", err, "connection_id", id)
+		s.Logger.Errorw("failed to get connection for update", "error", err, "connection_id", id)
 		return nil, err
 	}
 
@@ -120,29 +215,44 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 		conn.ProviderType = req.ProviderType
 	}
 	if req.Metadata != nil {
-		conn.Metadata = req.Metadata
+		encryptedMetadata, err := s.encryptMetadata(req.Metadata)
+		if err != nil {
+			s.Logger.Errorw("failed to encrypt metadata during update", "error", err)
+			return nil, err
+		}
+		conn.Metadata = encryptedMetadata
 	}
 
 	conn.UpdatedAt = time.Now()
 	conn.UpdatedBy = types.GetUserID(ctx)
 
 	// Update the connection
-	if err := s.repo.Update(ctx, conn); err != nil {
-		s.log.Errorw("failed to update connection", "error", err, "connection_id", id)
+	if err := s.ConnectionRepo.Update(ctx, conn); err != nil {
+		s.Logger.Errorw("failed to update connection", "error", err, "connection_id", id)
 		return nil, err
 	}
 
-	s.log.Infow("connection updated successfully", "connection_id", conn.ID)
+	// Decrypt metadata for response
+	if conn.Metadata != nil {
+		decryptedMetadata, err := s.decryptMetadata(conn.Metadata)
+		if err != nil {
+			s.Logger.Errorw("failed to decrypt metadata after update", "error", err)
+			return nil, err
+		}
+		conn.Metadata = decryptedMetadata
+	}
+
+	s.Logger.Infow("connection updated successfully", "connection_id", conn.ID)
 	return dto.ToConnectionResponse(conn), nil
 }
 
 func (s *connectionService) DeleteConnection(ctx context.Context, id string) error {
-	s.log.Debugw("deleting connection", "connection_id", id)
+	s.Logger.Debugw("deleting connection", "connection_id", id)
 
 	// Get existing connection
-	conn, err := s.repo.Get(ctx, id)
+	conn, err := s.ConnectionRepo.Get(ctx, id)
 	if err != nil {
-		s.log.Errorw("failed to get connection for deletion", "error", err, "connection_id", id)
+		s.Logger.Errorw("failed to get connection for deletion", "error", err, "connection_id", id)
 		return err
 	}
 
@@ -150,11 +260,11 @@ func (s *connectionService) DeleteConnection(ctx context.Context, id string) err
 	conn.UpdatedBy = types.GetUserID(ctx)
 
 	// Delete the connection
-	if err := s.repo.Delete(ctx, conn); err != nil {
-		s.log.Errorw("failed to delete connection", "error", err, "connection_id", id)
+	if err := s.ConnectionRepo.Delete(ctx, conn); err != nil {
+		s.Logger.Errorw("failed to delete connection", "error", err, "connection_id", id)
 		return err
 	}
 
-	s.log.Infow("connection deleted successfully", "connection_id", conn.ID)
+	s.Logger.Infow("connection deleted successfully", "connection_id", conn.ID)
 	return nil
 }
