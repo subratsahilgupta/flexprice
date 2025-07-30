@@ -3,7 +3,6 @@ package v1
 import (
 	"encoding/json"
 	"io"
-	"math"
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/config"
@@ -162,15 +161,11 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 		return
 	}
 
-	// Debug logging for troubleshooting
-	h.logger.Infow("webhook verification details",
+	// Log webhook processing (without sensitive data)
+	h.logger.Debugw("processing webhook",
 		"environment_id", environmentID,
 		"tenant_id", tenantID,
-		"webhook_secret_length", len(stripeConfig.WebhookSecret),
-		"webhook_secret_prefix", stripeConfig.WebhookSecret[:int(math.Min(float64(len(stripeConfig.WebhookSecret)), 10))]+"...",
-		"signature_header", signature,
 		"payload_length", len(body),
-		"payload_preview", string(body[:int(math.Min(float64(len(body)), 100))]),
 	)
 
 	// Parse and verify the webhook event

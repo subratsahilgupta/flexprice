@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/connection"
@@ -249,8 +248,8 @@ func (s *StripeService) ParseWebhookEvent(payload []byte, signature string, webh
 	}
 	event, err := webhook.ConstructEventWithOptions(payload, signature, webhookSecret, options)
 	if err != nil {
-		// Log the original error for debugging
-		fmt.Printf("Stripe webhook verification error: %v\n", err)
+		// Log the error using structured logging
+		s.Logger.Errorw("Stripe webhook verification failed", "error", err)
 		return nil, ierr.NewError("failed to verify webhook signature").
 			WithHint("Invalid webhook signature or payload").
 			Mark(ierr.ErrValidation)
