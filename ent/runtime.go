@@ -877,6 +877,8 @@ func init() {
 	price.DisplayAmountValidator = priceDescDisplayAmount.Validators[0].(func(string) error)
 	// priceDescPriceUnitType is the schema descriptor for price_unit_type field.
 	priceDescPriceUnitType := priceFields[4].Descriptor()
+	// price.DefaultPriceUnitType holds the default value on creation for the price_unit_type field.
+	price.DefaultPriceUnitType = priceDescPriceUnitType.Default.(string)
 	// price.PriceUnitTypeValidator is a validator for the "price_unit_type" field. It is called by the builders before save.
 	price.PriceUnitTypeValidator = priceDescPriceUnitType.Validators[0].(func(string) error)
 	// priceDescPlanID is the schema descriptor for plan_id field.

@@ -49,6 +49,12 @@ type CreatePriceTier struct {
 // TODO : add all price validations
 func (r *CreatePriceRequest) Validate() error {
 	var err error
+
+	// Set default price unit type to FIAT if not provided
+	if r.PriceUnitType == "" {
+		r.PriceUnitType = types.PRICE_UNIT_TYPE_FIAT
+	}
+
 	// Base validations
 	amount := decimal.Zero
 	if r.Amount != "" {
@@ -423,6 +429,11 @@ func (r *CreatePriceRequest) Validate() error {
 }
 
 func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*price.Price, error) {
+	// Ensure price unit type is set to FIAT if not provided
+	if r.PriceUnitType == "" {
+		r.PriceUnitType = types.PRICE_UNIT_TYPE_FIAT
+	}
+
 	amount := decimal.Zero
 	if r.Amount != "" {
 		var err error

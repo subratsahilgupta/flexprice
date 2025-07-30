@@ -7,6 +7,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -51,7 +52,8 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
-			NotEmpty(),
+			NotEmpty().
+			Default(string(types.PRICE_UNIT_TYPE_FIAT)),
 		// price_unit_id is the id of the price unit
 		field.String("price_unit_id").
 			SchemaType(map[string]string{

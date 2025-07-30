@@ -167,6 +167,8 @@ var (
 	CurrencyValidator func(string) error
 	// DisplayAmountValidator is a validator for the "display_amount" field. It is called by the builders before save.
 	DisplayAmountValidator func(string) error
+	// DefaultPriceUnitType holds the default value on creation for the "price_unit_type" field.
+	DefaultPriceUnitType string
 	// PriceUnitTypeValidator is a validator for the "price_unit_type" field. It is called by the builders before save.
 	PriceUnitTypeValidator func(string) error
 	// PlanIDValidator is a validator for the "plan_id" field. It is called by the builders before save.

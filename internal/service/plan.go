@@ -71,13 +71,38 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 		// 2. Create prices in bulk if present
 		if len(req.Prices) > 0 {
 			prices := make([]*price.Price, len(req.Prices))
-			for i, priceReq := range req.Prices {
-				price, err := priceReq.ToPrice(ctx)
-				if err != nil {
-					return ierr.WithError(err).
-						WithHint("Failed to create price").
+			for i, planPriceReq := range req.Prices {
+				var price *price.Price
+				var err error
+
+				// Skip if the price request is nil
+				if planPriceReq.CreatePriceRequest == nil {
+					return ierr.NewError("price request cannot be nil").
+						WithHint("Please provide valid price configuration").
 						Mark(ierr.ErrValidation)
 				}
+
+				// If price unit config is provided, use price unit handling logic
+				if planPriceReq.PriceUnitConfig != nil {
+					// Create a price service instance for price unit handling
+					priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+					priceResp, err := priceService.CreatePriceWithUnitConfig(ctx, *planPriceReq.CreatePriceRequest)
+					if err != nil {
+						return ierr.WithError(err).
+							WithHint("Failed to create price with unit config").
+							Mark(ierr.ErrValidation)
+					}
+					price = priceResp.Price
+				} else {
+					// For regular prices without unit config, use ToPrice
+					price, err = planPriceReq.CreatePriceRequest.ToPrice(ctx)
+					if err != nil {
+						return ierr.WithError(err).
+							WithHint("Failed to create price").
+							Mark(ierr.ErrValidation)
+					}
+				}
+
 				price.PlanID = plan.ID
 				prices[i] = price
 			}
@@ -395,21 +420,51 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 
 			// Create new prices
 			newPrices := make([]*price.Price, 0)
+			bulkCreatePrices := make([]*price.Price, 0) // Separate slice for bulk creation
+
 			for _, reqPrice := range req.Prices {
 				if reqPrice.ID == "" {
-					newPrice, err := reqPrice.ToPrice(ctx)
-					if err != nil {
-						return ierr.WithError(err).
-							WithHint("Failed to create price").
-							Mark(ierr.ErrValidation)
+					var newPrice *price.Price
+					var err error
+
+					// If price unit config is provided, use CreatePriceWithUnitConfig
+					if reqPrice.PriceUnitConfig != nil {
+						// Set plan ID before creating price
+						reqPrice.CreatePriceRequest.PlanID = plan.ID
+
+						priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+						priceResp, err := priceService.CreatePriceWithUnitConfig(ctx, *reqPrice.CreatePriceRequest)
+						if err != nil {
+							return ierr.WithError(err).
+								WithHint("Failed to create price with unit config").
+								Mark(ierr.ErrValidation)
+						}
+						newPrice = priceResp.Price
+						// Add to newPrices but not to bulkCreatePrices since it's already created
+						newPrices = append(newPrices, newPrice)
+					} else {
+						// For regular prices without unit config, use ToPrice
+						// Ensure price unit type is set, default to FIAT if not provided
+						if reqPrice.PriceUnitType == "" {
+							reqPrice.PriceUnitType = types.PRICE_UNIT_TYPE_FIAT
+						}
+						newPrice, err = reqPrice.ToPrice(ctx)
+						if err != nil {
+							return ierr.WithError(err).
+								WithHint("Failed to create price").
+								Mark(ierr.ErrValidation)
+						}
+						newPrice.PlanID = plan.ID
+						// Add to both slices since this needs bulk creation
+						newPrices = append(newPrices, newPrice)
+						bulkCreatePrices = append(bulkCreatePrices, newPrice)
 					}
-					newPrice.PlanID = plan.ID
-					newPrices = append(newPrices, newPrice)
 				}
 			}
 
-			if len(newPrices) > 0 {
-				if err := s.PriceRepo.CreateBulk(ctx, newPrices); err != nil {
+			// Only bulk create prices that weren't created by CreatePriceWithUnitConfig
+			if len(bulkCreatePrices) > 0 {
+				if err := s.PriceRepo.CreateBulk(ctx, bulkCreatePrices); err != nil {
 					return err
 				}
 			}
