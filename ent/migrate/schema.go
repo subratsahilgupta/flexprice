@@ -396,6 +396,14 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7]},
 			},
+			{
+				Name:    "idx_customer_tenant_environment_email",
+				Unique:  false,
+				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7], CustomersColumns[10]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "email IS NOT NULL AND email != '' AND status = 'published'",
+				},
+			},
 		},
 	}
 	// EntitlementsColumns holds the columns for the "entitlements" table.
