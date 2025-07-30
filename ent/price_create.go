@@ -137,6 +137,14 @@ func (pc *PriceCreate) SetPriceUnitType(s string) *PriceCreate {
 	return pc
 }
 
+// SetNillablePriceUnitType sets the "price_unit_type" field if the given value is not nil.
+func (pc *PriceCreate) SetNillablePriceUnitType(s *string) *PriceCreate {
+	if s != nil {
+		pc.SetPriceUnitType(*s)
+	}
+	return pc
+}
+
 // SetPriceUnitID sets the "price_unit_id" field.
 func (pc *PriceCreate) SetPriceUnitID(s string) *PriceCreate {
 	pc.mutation.SetPriceUnitID(s)
@@ -455,6 +463,10 @@ func (pc *PriceCreate) defaults() {
 	if _, ok := pc.mutation.EnvironmentID(); !ok {
 		v := price.DefaultEnvironmentID
 		pc.mutation.SetEnvironmentID(v)
+	}
+	if _, ok := pc.mutation.PriceUnitType(); !ok {
+		v := price.DefaultPriceUnitType
+		pc.mutation.SetPriceUnitType(v)
 	}
 	if _, ok := pc.mutation.TrialPeriod(); !ok {
 		v := price.DefaultTrialPeriod
