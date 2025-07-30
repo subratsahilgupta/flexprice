@@ -458,6 +458,29 @@ definitions:
     - feature_id
     - feature_type
     type: object
+  dto.CreateEntityIntegrationMappingRequest:
+    properties:
+      entity_id:
+        maxLength: 255
+        type: string
+      entity_type:
+        maxLength: 50
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      provider_entity_id:
+        maxLength: 255
+        type: string
+      provider_type:
+        maxLength: 50
+        type: string
+    required:
+    - entity_id
+    - entity_type
+    - provider_entity_id
+    - provider_type
+    type: object
   dto.CreateEnvironmentRequest:
     properties:
       name:
@@ -1365,6 +1388,47 @@ definitions:
       usage_limit:
         type: integer
     type: object
+  dto.EntityIntegrationMappingResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      entity_id:
+        description: EntityID is the FlexPrice entity ID (e.g., customer_id, plan_id,
+          etc.)
+        type: string
+      entity_type:
+        description: EntityType is the type of entity (e.g., customer, plan, invoice,
+          subscription, etc.)
+        type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier
+        type: string
+      id:
+        description: ID is the unique identifier for the mapping
+        type: string
+      metadata:
+        additionalProperties: true
+        description: Metadata contains provider-specific data
+        type: object
+      provider_entity_id:
+        description: ProviderEntityID is the provider's entity ID (e.g., stripe_customer_id,
+          etc.)
+        type: string
+      provider_type:
+        description: ProviderType is the payment provider type (e.g., stripe, razorpay,
+          etc.)
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   dto.EnvironmentResponse:
     properties:
       created_at:
@@ -2035,6 +2099,15 @@ definitions:
       items:
         items:
           $ref: '#/definitions/dto.EntitlementResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
+  dto.ListEntityIntegrationMappingsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
         type: array
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
@@ -3027,6 +3100,24 @@ definitions:
         type: integer
       usage_reset_period:
         $ref: '#/definitions/types.BillingPeriod'
+    type: object
+  dto.UpdateEntityIntegrationMappingRequest:
+    properties:
+      entity_id:
+        maxLength: 255
+        type: string
+      entity_type:
+        maxLength: 50
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      provider_entity_id:
+        maxLength: 255
+        type: string
+      provider_type:
+        maxLength: 50
+        type: string
     type: object
   dto.UpdateEnvironmentRequest:
     properties:
@@ -6259,6 +6350,312 @@ paths:
       summary: Update an entitlement
       tags:
       - Entitlements
+  /entity-integration-mappings:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a list of entity integration mappings with optional filtering
+      parameters:
+      - description: Filter by FlexPrice entity ID
+        in: query
+        name: entity_id
+        type: string
+      - description: Filter by entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: Filter by provider type
+        in: query
+        name: provider_type
+        type: string
+      - description: Filter by provider entity ID
+        in: query
+        name: provider_entity_id
+        type: string
+      - description: 'Number of results to return (default: 20, max: 100)'
+        in: query
+        name: limit
+        type: integer
+      - description: 'Pagination offset (default: 0)'
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListEntityIntegrationMappingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List entity integration mappings
+      tags:
+      - Entity Integration Mappings
+    post:
+      consumes:
+      - application/json
+      description: Create a new entity integration mapping
+      parameters:
+      - description: Entity integration mapping data
+        in: body
+        name: entity_integration_mapping
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateEntityIntegrationMappingRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create entity integration mapping
+      tags:
+      - Entity Integration Mappings
+  /entity-integration-mappings/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an entity integration mapping
+      parameters:
+      - description: Entity integration mapping ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete entity integration mapping
+      tags:
+      - Entity Integration Mappings
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a specific entity integration mapping by ID
+      parameters:
+      - description: Entity integration mapping ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get entity integration mapping
+      tags:
+      - Entity Integration Mappings
+    put:
+      consumes:
+      - application/json
+      description: Update an existing entity integration mapping
+      parameters:
+      - description: Entity integration mapping ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Entity integration mapping data
+        in: body
+        name: entity_integration_mapping
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateEntityIntegrationMappingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update entity integration mapping
+      tags:
+      - Entity Integration Mappings
+  /entity-integration-mappings/by-entity-and-provider:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve an entity integration mapping by FlexPrice entity and
+        provider
+      parameters:
+      - description: FlexPrice entity ID
+        in: query
+        name: entity_id
+        required: true
+        type: string
+      - description: Entity type
+        in: query
+        name: entity_type
+        required: true
+        type: string
+      - description: Provider type
+        in: query
+        name: provider_type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get entity integration mapping by entity and provider
+      tags:
+      - Entity Integration Mappings
+  /entity-integration-mappings/by-provider-entity:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve an entity integration mapping by provider entity ID
+      parameters:
+      - description: Provider type
+        in: query
+        name: provider_type
+        required: true
+        type: string
+      - description: Provider entity ID
+        in: query
+        name: provider_entity_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get entity integration mapping by provider entity
+      tags:
+      - Entity Integration Mappings
   /environments:
     get:
       consumes:

@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
@@ -43,31 +44,32 @@ type ServiceParams struct {
 	S3           s3.Service
 
 	// Repositories
-	AuthRepo                   auth.Repository
-	UserRepo                   user.Repository
-	EventRepo                  events.Repository
-	ProcessedEventRepo         events.ProcessedEventRepository
-	MeterRepo                  meter.Repository
-	PriceRepo                  price.Repository
-	CustomerRepo               customer.Repository
-	PlanRepo                   plan.Repository
-	SubRepo                    subscription.Repository
-	SubscriptionScheduleRepo   subscription.SubscriptionScheduleRepository
-	WalletRepo                 wallet.Repository
-	TenantRepo                 tenant.Repository
-	InvoiceRepo                invoice.Repository
-	FeatureRepo                feature.Repository
-	EntitlementRepo            entitlement.Repository
-	PaymentRepo                payment.Repository
-	SecretRepo                 secret.Repository
-	EnvironmentRepo            environment.Repository
-	TaskRepo                   task.Repository
-	CreditGrantRepo            creditgrant.Repository
-	CostSheetRepo              costsheet.Repository
-	CreditNoteRepo             creditnote.Repository
-	CreditNoteLineItemRepo     creditnote.CreditNoteLineItemRepository
-	CreditGrantApplicationRepo creditgrantapplication.Repository
-	ConnectionRepo             connection.Repository
+	AuthRepo                     auth.Repository
+	UserRepo                     user.Repository
+	EventRepo                    events.Repository
+	ProcessedEventRepo           events.ProcessedEventRepository
+	MeterRepo                    meter.Repository
+	PriceRepo                    price.Repository
+	CustomerRepo                 customer.Repository
+	PlanRepo                     plan.Repository
+	SubRepo                      subscription.Repository
+	SubscriptionScheduleRepo     subscription.SubscriptionScheduleRepository
+	WalletRepo                   wallet.Repository
+	TenantRepo                   tenant.Repository
+	InvoiceRepo                  invoice.Repository
+	FeatureRepo                  feature.Repository
+	EntitlementRepo              entitlement.Repository
+	PaymentRepo                  payment.Repository
+	SecretRepo                   secret.Repository
+	EnvironmentRepo              environment.Repository
+	TaskRepo                     task.Repository
+	CreditGrantRepo              creditgrant.Repository
+	CostSheetRepo                costsheet.Repository
+	CreditNoteRepo               creditnote.Repository
+	CreditNoteLineItemRepo       creditnote.CreditNoteLineItemRepository
+	CreditGrantApplicationRepo   creditgrantapplication.Repository
+	ConnectionRepo               connection.Repository
+	EntityIntegrationMappingRepo entityintegrationmapping.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -112,40 +114,42 @@ func NewServiceParams(
 	taskRepo task.Repository,
 	costSheetRepo costsheet.Repository,
 	connectionRepo connection.Repository,
+	entityIntegrationMappingRepo entityintegrationmapping.Repository,
 ) ServiceParams {
 	return ServiceParams{
-		Logger:                     logger,
-		Config:                     config,
-		DB:                         db,
-		PDFGenerator:               pdfGenerator,
-		AuthRepo:                   authRepo,
-		UserRepo:                   userRepo,
-		EventRepo:                  eventRepo,
-		ProcessedEventRepo:         processedEventRepo,
-		MeterRepo:                  meterRepo,
-		PriceRepo:                  priceRepo,
-		CustomerRepo:               customerRepo,
-		PlanRepo:                   planRepo,
-		SubRepo:                    subRepo,
-		SubscriptionScheduleRepo:   subscriptionScheduleRepo,
-		WalletRepo:                 walletRepo,
-		TenantRepo:                 tenantRepo,
-		InvoiceRepo:                invoiceRepo,
-		FeatureRepo:                featureRepo,
-		EntitlementRepo:            entitlementRepo,
-		PaymentRepo:                paymentRepo,
-		SecretRepo:                 secretRepo,
-		EnvironmentRepo:            environmentRepo,
-		CreditGrantRepo:            creditGrantRepo,
-		CreditGrantApplicationRepo: creditGrantApplicationRepo,
-		EventPublisher:             eventPublisher,
-		WebhookPublisher:           webhookPublisher,
-		S3:                         s3Service,
-		Client:                     client,
-		TaskRepo:                   taskRepo,
-		CostSheetRepo:              costSheetRepo,
-		CreditNoteRepo:             creditNoteRepo,
-		CreditNoteLineItemRepo:     creditNoteLineItemRepo,
-		ConnectionRepo:             connectionRepo,
+		Logger:                       logger,
+		Config:                       config,
+		DB:                           db,
+		PDFGenerator:                 pdfGenerator,
+		AuthRepo:                     authRepo,
+		UserRepo:                     userRepo,
+		EventRepo:                    eventRepo,
+		ProcessedEventRepo:           processedEventRepo,
+		MeterRepo:                    meterRepo,
+		PriceRepo:                    priceRepo,
+		CustomerRepo:                 customerRepo,
+		PlanRepo:                     planRepo,
+		SubRepo:                      subRepo,
+		SubscriptionScheduleRepo:     subscriptionScheduleRepo,
+		WalletRepo:                   walletRepo,
+		TenantRepo:                   tenantRepo,
+		InvoiceRepo:                  invoiceRepo,
+		FeatureRepo:                  featureRepo,
+		EntitlementRepo:              entitlementRepo,
+		PaymentRepo:                  paymentRepo,
+		SecretRepo:                   secretRepo,
+		EnvironmentRepo:              environmentRepo,
+		CreditGrantRepo:              creditGrantRepo,
+		CreditGrantApplicationRepo:   creditGrantApplicationRepo,
+		EventPublisher:               eventPublisher,
+		WebhookPublisher:             webhookPublisher,
+		S3:                           s3Service,
+		Client:                       client,
+		TaskRepo:                     taskRepo,
+		CostSheetRepo:                costSheetRepo,
+		CreditNoteRepo:               creditNoteRepo,
+		CreditNoteLineItemRepo:       creditNoteLineItemRepo,
+		ConnectionRepo:               connectionRepo,
+		EntityIntegrationMappingRepo: entityIntegrationMappingRepo,
 	}
 }

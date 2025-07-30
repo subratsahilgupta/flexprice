@@ -14,29 +14,30 @@ import (
 )
 
 type Handlers struct {
-	Events            *v1.EventsHandler
-	Meter             *v1.MeterHandler
-	Auth              *v1.AuthHandler
-	User              *v1.UserHandler
-	Environment       *v1.EnvironmentHandler
-	Health            *v1.HealthHandler
-	Price             *v1.PriceHandler
-	Customer          *v1.CustomerHandler
-	Connection        *v1.ConnectionHandler
-	Plan              *v1.PlanHandler
-	Subscription      *v1.SubscriptionHandler
-	SubscriptionPause *v1.SubscriptionPauseHandler
-	Wallet            *v1.WalletHandler
-	Tenant            *v1.TenantHandler
-	Invoice           *v1.InvoiceHandler
-	Feature           *v1.FeatureHandler
-	Entitlement       *v1.EntitlementHandler
-	CreditGrant       *v1.CreditGrantHandler
-	Payment           *v1.PaymentHandler
-	Task              *v1.TaskHandler
-	Secret            *v1.SecretHandler
-	CostSheet         *v1.CostSheetHandler
-	CreditNote        *v1.CreditNoteHandler
+	Events                   *v1.EventsHandler
+	Meter                    *v1.MeterHandler
+	Auth                     *v1.AuthHandler
+	User                     *v1.UserHandler
+	Environment              *v1.EnvironmentHandler
+	Health                   *v1.HealthHandler
+	Price                    *v1.PriceHandler
+	Customer                 *v1.CustomerHandler
+	Connection               *v1.ConnectionHandler
+	Plan                     *v1.PlanHandler
+	Subscription             *v1.SubscriptionHandler
+	SubscriptionPause        *v1.SubscriptionPauseHandler
+	Wallet                   *v1.WalletHandler
+	Tenant                   *v1.TenantHandler
+	Invoice                  *v1.InvoiceHandler
+	Feature                  *v1.FeatureHandler
+	Entitlement              *v1.EntitlementHandler
+	CreditGrant              *v1.CreditGrantHandler
+	Payment                  *v1.PaymentHandler
+	Task                     *v1.TaskHandler
+	Secret                   *v1.SecretHandler
+	CostSheet                *v1.CostSheetHandler
+	CreditNote               *v1.CreditNoteHandler
+	EntityIntegrationMapping *v1.EntityIntegrationMappingHandler
 
 	Webhook *v1.WebhookHandler
 	// Portal handlers
@@ -317,6 +318,18 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			creditNotes.GET("/:id", handlers.CreditNote.GetCreditNote)
 			creditNotes.POST("/:id/void", handlers.CreditNote.VoidCreditNote)
 			creditNotes.POST("/:id/finalize", handlers.CreditNote.FinalizeCreditNote)
+		}
+
+		// Entity Integration Mapping routes
+		entityIntegrationMappings := v1Private.Group("/entity-integration-mappings")
+		{
+			entityIntegrationMappings.POST("", handlers.EntityIntegrationMapping.CreateEntityIntegrationMapping)
+			entityIntegrationMappings.GET("", handlers.EntityIntegrationMapping.ListEntityIntegrationMappings)
+			entityIntegrationMappings.GET("/:id", handlers.EntityIntegrationMapping.GetEntityIntegrationMapping)
+			entityIntegrationMappings.PUT("/:id", handlers.EntityIntegrationMapping.UpdateEntityIntegrationMapping)
+			entityIntegrationMappings.DELETE("/:id", handlers.EntityIntegrationMapping.DeleteEntityIntegrationMapping)
+			entityIntegrationMappings.GET("/by-entity-and-provider", handlers.EntityIntegrationMapping.GetEntityIntegrationMappingByEntityAndProvider)
+			entityIntegrationMappings.GET("/by-provider-entity", handlers.EntityIntegrationMapping.GetEntityIntegrationMappingByProviderEntity)
 		}
 
 		// Admin routes (API Key only)

@@ -2724,6 +2724,479 @@
                 }
             }
         },
+        "/entity-integration-mappings": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieve a list of entity integration mappings with optional filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entity Integration Mappings"
+                ],
+                "summary": "List entity integration mappings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by FlexPrice entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by provider type",
+                        "name": "provider_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by provider entity ID",
+                        "name": "provider_entity_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of results to return (default: 20, max: 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Pagination offset (default: 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListEntityIntegrationMappingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a new entity integration mapping",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entity Integration Mappings"
+                ],
+                "summary": "Create entity integration mapping",
+                "parameters": [
+                    {
+                        "description": "Entity integration mapping data",
+                        "name": "entity_integration_mapping",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateEntityIntegrationMappingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.EntityIntegrationMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/entity-integration-mappings/by-entity-and-provider": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieve an entity integration mapping by FlexPrice entity and provider",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entity Integration Mappings"
+                ],
+                "summary": "Get entity integration mapping by entity and provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "FlexPrice entity ID",
+                        "name": "entity_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity type",
+                        "name": "entity_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider type",
+                        "name": "provider_type",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.EntityIntegrationMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/entity-integration-mappings/by-provider-entity": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieve an entity integration mapping by provider entity ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entity Integration Mappings"
+                ],
+                "summary": "Get entity integration mapping by provider entity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Provider type",
+                        "name": "provider_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider entity ID",
+                        "name": "provider_entity_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.EntityIntegrationMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/entity-integration-mappings/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieve a specific entity integration mapping by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entity Integration Mappings"
+                ],
+                "summary": "Get entity integration mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity integration mapping ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.EntityIntegrationMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update an existing entity integration mapping",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entity Integration Mappings"
+                ],
+                "summary": "Update entity integration mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity integration mapping ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Entity integration mapping data",
+                        "name": "entity_integration_mapping",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateEntityIntegrationMappingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.EntityIntegrationMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Delete an entity integration mapping",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entity Integration Mappings"
+                ],
+                "summary": "Delete entity integration mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity integration mapping ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/environments": {
             "get": {
                 "security": [
@@ -8174,6 +8647,37 @@
                 }
             }
         },
+        "dto.CreateEntityIntegrationMappingRequest": {
+            "type": "object",
+            "required": [
+                "entity_id",
+                "entity_type",
+                "provider_entity_id",
+                "provider_type"
+            ],
+            "properties": {
+                "entity_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "entity_type": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "provider_entity_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "provider_type": {
+                    "type": "string",
+                    "maxLength": 50
+                }
+            }
+        },
         "dto.CreateEnvironmentRequest": {
             "type": "object",
             "required": [
@@ -9348,6 +9852,58 @@
                 }
             }
         },
+        "dto.EntityIntegrationMappingResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "description": "EntityID is the FlexPrice entity ID (e.g., customer_id, plan_id, etc.)",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "description": "EntityType is the type of entity (e.g., customer, plan, invoice, subscription, etc.)",
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the mapping",
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata contains provider-specific data",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "provider_entity_id": {
+                    "description": "ProviderEntityID is the provider's entity ID (e.g., stripe_customer_id, etc.)",
+                    "type": "string"
+                },
+                "provider_type": {
+                    "description": "ProviderType is the payment provider type (e.g., stripe, razorpay, etc.)",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.EnvironmentResponse": {
             "type": "object",
             "properties": {
@@ -10230,6 +10786,20 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.EntitlementResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "dto.ListEntityIntegrationMappingsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EntityIntegrationMappingResponse"
                     }
                 },
                 "pagination": {
@@ -11630,6 +12200,31 @@
                 },
                 "usage_reset_period": {
                     "$ref": "#/definitions/types.BillingPeriod"
+                }
+            }
+        },
+        "dto.UpdateEntityIntegrationMappingRequest": {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "entity_type": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "provider_entity_id": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "provider_type": {
+                    "type": "string",
+                    "maxLength": 50
                 }
             }
         },

@@ -451,6 +451,55 @@ var (
 			},
 		},
 	}
+	// EntityIntegrationMappingsColumns holds the columns for the "entity_integration_mappings" table.
+	EntityIntegrationMappingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "entity_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "entity_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "provider_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "provider_entity_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// EntityIntegrationMappingsTable holds the schema information for the "entity_integration_mappings" table.
+	EntityIntegrationMappingsTable = &schema.Table{
+		Name:       "entity_integration_mappings",
+		Columns:    EntityIntegrationMappingsColumns,
+		PrimaryKey: []*schema.Column{EntityIntegrationMappingsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_entity_integration_mapping_unique",
+				Unique:  true,
+				Columns: []*schema.Column{EntityIntegrationMappingsColumns[8], EntityIntegrationMappingsColumns[9], EntityIntegrationMappingsColumns[10], EntityIntegrationMappingsColumns[7]},
+			},
+			{
+				Name:    "entityintegrationmapping_tenant_id_environment_id",
+				Unique:  false,
+				Columns: []*schema.Column{EntityIntegrationMappingsColumns[1], EntityIntegrationMappingsColumns[7]},
+			},
+			{
+				Name:    "entityintegrationmapping_entity_id_entity_type",
+				Unique:  false,
+				Columns: []*schema.Column{EntityIntegrationMappingsColumns[8], EntityIntegrationMappingsColumns[9]},
+			},
+			{
+				Name:    "entityintegrationmapping_provider_type_provider_entity_id",
+				Unique:  false,
+				Columns: []*schema.Column{EntityIntegrationMappingsColumns[10], EntityIntegrationMappingsColumns[11]},
+			},
+			{
+				Name:    "entityintegrationmapping_status",
+				Unique:  false,
+				Columns: []*schema.Column{EntityIntegrationMappingsColumns[2]},
+			},
+		},
+	}
 	// EnvironmentsColumns holds the columns for the "environments" table.
 	EnvironmentsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -1518,6 +1567,7 @@ var (
 		CreditNoteLineItemsTable,
 		CustomersTable,
 		EntitlementsTable,
+		EntityIntegrationMappingsTable,
 		EnvironmentsTable,
 		FeaturesTable,
 		InvoicesTable,

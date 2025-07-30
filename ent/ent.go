@@ -22,6 +22,7 @@ import (
 	"github.com/flexprice/flexprice/ent/creditnotelineitem"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/entitlement"
+	"github.com/flexprice/flexprice/ent/entityintegrationmapping"
 	"github.com/flexprice/flexprice/ent/environment"
 	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/invoice"
@@ -113,6 +114,7 @@ func checkColumn(table, column string) error {
 			creditnotelineitem.Table:        creditnotelineitem.ValidColumn,
 			customer.Table:                  customer.ValidColumn,
 			entitlement.Table:               entitlement.ValidColumn,
+			entityintegrationmapping.Table:  entityintegrationmapping.ValidColumn,
 			environment.Table:               environment.ValidColumn,
 			feature.Table:                   feature.ValidColumn,
 			invoice.Table:                   invoice.ValidColumn,

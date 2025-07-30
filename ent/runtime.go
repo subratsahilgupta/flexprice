@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/ent/creditnotelineitem"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/entitlement"
+	"github.com/flexprice/flexprice/ent/entityintegrationmapping"
 	"github.com/flexprice/flexprice/ent/environment"
 	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/invoice"
@@ -467,6 +468,51 @@ func init() {
 	entitlementDescID := entitlementFields[0].Descriptor()
 	// entitlement.IDValidator is a validator for the "id" field. It is called by the builders before save.
 	entitlement.IDValidator = entitlementDescID.Validators[0].(func(string) error)
+	entityintegrationmappingMixin := schema.EntityIntegrationMapping{}.Mixin()
+	entityintegrationmappingMixinFields0 := entityintegrationmappingMixin[0].Fields()
+	_ = entityintegrationmappingMixinFields0
+	entityintegrationmappingMixinFields1 := entityintegrationmappingMixin[1].Fields()
+	_ = entityintegrationmappingMixinFields1
+	entityintegrationmappingFields := schema.EntityIntegrationMapping{}.Fields()
+	_ = entityintegrationmappingFields
+	// entityintegrationmappingDescTenantID is the schema descriptor for tenant_id field.
+	entityintegrationmappingDescTenantID := entityintegrationmappingMixinFields0[0].Descriptor()
+	// entityintegrationmapping.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	entityintegrationmapping.TenantIDValidator = entityintegrationmappingDescTenantID.Validators[0].(func(string) error)
+	// entityintegrationmappingDescStatus is the schema descriptor for status field.
+	entityintegrationmappingDescStatus := entityintegrationmappingMixinFields0[1].Descriptor()
+	// entityintegrationmapping.DefaultStatus holds the default value on creation for the status field.
+	entityintegrationmapping.DefaultStatus = entityintegrationmappingDescStatus.Default.(string)
+	// entityintegrationmappingDescCreatedAt is the schema descriptor for created_at field.
+	entityintegrationmappingDescCreatedAt := entityintegrationmappingMixinFields0[2].Descriptor()
+	// entityintegrationmapping.DefaultCreatedAt holds the default value on creation for the created_at field.
+	entityintegrationmapping.DefaultCreatedAt = entityintegrationmappingDescCreatedAt.Default.(func() time.Time)
+	// entityintegrationmappingDescUpdatedAt is the schema descriptor for updated_at field.
+	entityintegrationmappingDescUpdatedAt := entityintegrationmappingMixinFields0[3].Descriptor()
+	// entityintegrationmapping.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	entityintegrationmapping.DefaultUpdatedAt = entityintegrationmappingDescUpdatedAt.Default.(func() time.Time)
+	// entityintegrationmapping.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	entityintegrationmapping.UpdateDefaultUpdatedAt = entityintegrationmappingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// entityintegrationmappingDescEnvironmentID is the schema descriptor for environment_id field.
+	entityintegrationmappingDescEnvironmentID := entityintegrationmappingMixinFields1[0].Descriptor()
+	// entityintegrationmapping.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	entityintegrationmapping.DefaultEnvironmentID = entityintegrationmappingDescEnvironmentID.Default.(string)
+	// entityintegrationmappingDescEntityID is the schema descriptor for entity_id field.
+	entityintegrationmappingDescEntityID := entityintegrationmappingFields[1].Descriptor()
+	// entityintegrationmapping.EntityIDValidator is a validator for the "entity_id" field. It is called by the builders before save.
+	entityintegrationmapping.EntityIDValidator = entityintegrationmappingDescEntityID.Validators[0].(func(string) error)
+	// entityintegrationmappingDescEntityType is the schema descriptor for entity_type field.
+	entityintegrationmappingDescEntityType := entityintegrationmappingFields[2].Descriptor()
+	// entityintegrationmapping.EntityTypeValidator is a validator for the "entity_type" field. It is called by the builders before save.
+	entityintegrationmapping.EntityTypeValidator = entityintegrationmappingDescEntityType.Validators[0].(func(string) error)
+	// entityintegrationmappingDescProviderType is the schema descriptor for provider_type field.
+	entityintegrationmappingDescProviderType := entityintegrationmappingFields[3].Descriptor()
+	// entityintegrationmapping.ProviderTypeValidator is a validator for the "provider_type" field. It is called by the builders before save.
+	entityintegrationmapping.ProviderTypeValidator = entityintegrationmappingDescProviderType.Validators[0].(func(string) error)
+	// entityintegrationmappingDescProviderEntityID is the schema descriptor for provider_entity_id field.
+	entityintegrationmappingDescProviderEntityID := entityintegrationmappingFields[4].Descriptor()
+	// entityintegrationmapping.ProviderEntityIDValidator is a validator for the "provider_entity_id" field. It is called by the builders before save.
+	entityintegrationmapping.ProviderEntityIDValidator = entityintegrationmappingDescProviderEntityID.Validators[0].(func(string) error)
 	environmentMixin := schema.Environment{}.Mixin()
 	environmentMixinFields0 := environmentMixin[0].Fields()
 	_ = environmentMixinFields0

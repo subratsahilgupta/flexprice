@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
@@ -39,28 +40,29 @@ import (
 
 // Stores holds all the repository interfaces for testing
 type Stores struct {
-	CreditGrantRepo            creditgrant.Repository
-	CreditGrantApplicationRepo creditgrantapplication.Repository
-	SubscriptionRepo           subscription.Repository
-	EventRepo                  events.Repository
-	PlanRepo                   plan.Repository
-	PriceRepo                  price.Repository
-	MeterRepo                  meter.Repository
-	CustomerRepo               customer.Repository
-	InvoiceRepo                invoice.Repository
-	WalletRepo                 wallet.Repository
-	PaymentRepo                payment.Repository
-	AuthRepo                   auth.Repository
-	UserRepo                   user.Repository
-	TenantRepo                 tenant.Repository
-	EnvironmentRepo            environment.Repository
-	EntitlementRepo            entitlement.Repository
-	FeatureRepo                feature.Repository
-	TaskRepo                   task.Repository
-	SecretRepo                 secret.Repository
-	CreditNoteRepo             creditnote.Repository
-	CreditNoteLineItemRepo     creditnote.CreditNoteLineItemRepository
-	ConnectionRepo             connection.Repository
+	CreditGrantRepo              creditgrant.Repository
+	CreditGrantApplicationRepo   creditgrantapplication.Repository
+	SubscriptionRepo             subscription.Repository
+	EventRepo                    events.Repository
+	PlanRepo                     plan.Repository
+	PriceRepo                    price.Repository
+	MeterRepo                    meter.Repository
+	CustomerRepo                 customer.Repository
+	InvoiceRepo                  invoice.Repository
+	WalletRepo                   wallet.Repository
+	PaymentRepo                  payment.Repository
+	AuthRepo                     auth.Repository
+	UserRepo                     user.Repository
+	TenantRepo                   tenant.Repository
+	EnvironmentRepo              environment.Repository
+	EntitlementRepo              entitlement.Repository
+	FeatureRepo                  feature.Repository
+	TaskRepo                     task.Repository
+	SecretRepo                   secret.Repository
+	CreditNoteRepo               creditnote.Repository
+	CreditNoteLineItemRepo       creditnote.CreditNoteLineItemRepository
+	ConnectionRepo               connection.Repository
+	EntityIntegrationMappingRepo entityintegrationmapping.Repository
 }
 
 // BaseServiceTestSuite provides common functionality for all service test suites
@@ -123,28 +125,29 @@ func (s *BaseServiceTestSuite) setupContext() {
 
 func (s *BaseServiceTestSuite) setupStores() {
 	s.stores = Stores{
-		SubscriptionRepo:           NewInMemorySubscriptionStore(),
-		EventRepo:                  NewInMemoryEventStore(),
-		PlanRepo:                   NewInMemoryPlanStore(),
-		PriceRepo:                  NewInMemoryPriceStore(),
-		MeterRepo:                  NewInMemoryMeterStore(),
-		CustomerRepo:               NewInMemoryCustomerStore(),
-		InvoiceRepo:                NewInMemoryInvoiceStore(),
-		WalletRepo:                 NewInMemoryWalletStore(),
-		PaymentRepo:                NewInMemoryPaymentStore(),
-		AuthRepo:                   NewInMemoryAuthRepository(),
-		UserRepo:                   NewInMemoryUserStore(),
-		TenantRepo:                 NewInMemoryTenantStore(),
-		EnvironmentRepo:            NewInMemoryEnvironmentStore(),
-		EntitlementRepo:            NewInMemoryEntitlementStore(),
-		FeatureRepo:                NewInMemoryFeatureStore(),
-		TaskRepo:                   NewInMemoryTaskStore(),
-		SecretRepo:                 NewInMemorySecretStore(),
-		CreditGrantRepo:            NewInMemoryCreditGrantStore(),
-		CreditGrantApplicationRepo: NewInMemoryCreditGrantApplicationStore(),
-		CreditNoteRepo:             NewInMemoryCreditNoteStore(),
-		CreditNoteLineItemRepo:     NewInMemoryCreditNoteLineItemStore(),
-		ConnectionRepo:             NewInMemoryConnectionStore(),
+		SubscriptionRepo:             NewInMemorySubscriptionStore(),
+		EventRepo:                    NewInMemoryEventStore(),
+		PlanRepo:                     NewInMemoryPlanStore(),
+		PriceRepo:                    NewInMemoryPriceStore(),
+		MeterRepo:                    NewInMemoryMeterStore(),
+		CustomerRepo:                 NewInMemoryCustomerStore(),
+		InvoiceRepo:                  NewInMemoryInvoiceStore(),
+		WalletRepo:                   NewInMemoryWalletStore(),
+		PaymentRepo:                  NewInMemoryPaymentStore(),
+		AuthRepo:                     NewInMemoryAuthRepository(),
+		UserRepo:                     NewInMemoryUserStore(),
+		TenantRepo:                   NewInMemoryTenantStore(),
+		EnvironmentRepo:              NewInMemoryEnvironmentStore(),
+		EntitlementRepo:              NewInMemoryEntitlementStore(),
+		FeatureRepo:                  NewInMemoryFeatureStore(),
+		TaskRepo:                     NewInMemoryTaskStore(),
+		SecretRepo:                   NewInMemorySecretStore(),
+		CreditGrantRepo:              NewInMemoryCreditGrantStore(),
+		CreditGrantApplicationRepo:   NewInMemoryCreditGrantApplicationStore(),
+		CreditNoteRepo:               NewInMemoryCreditNoteStore(),
+		CreditNoteLineItemRepo:       NewInMemoryCreditNoteLineItemStore(),
+		ConnectionRepo:               NewInMemoryConnectionStore(),
+		EntityIntegrationMappingRepo: NewInMemoryEntityIntegrationMappingStore(),
 	}
 
 	s.db = NewMockPostgresClient(s.logger)

@@ -25,6 +25,7 @@ import (
 	"github.com/flexprice/flexprice/ent/creditnotelineitem"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/entitlement"
+	"github.com/flexprice/flexprice/ent/entityintegrationmapping"
 	"github.com/flexprice/flexprice/ent/environment"
 	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/invoice"
@@ -75,6 +76,8 @@ type Client struct {
 	Customer *CustomerClient
 	// Entitlement is the client for interacting with the Entitlement builders.
 	Entitlement *EntitlementClient
+	// EntityIntegrationMapping is the client for interacting with the EntityIntegrationMapping builders.
+	EntityIntegrationMapping *EntityIntegrationMappingClient
 	// Environment is the client for interacting with the Environment builders.
 	Environment *EnvironmentClient
 	// Feature is the client for interacting with the Feature builders.
@@ -138,6 +141,7 @@ func (c *Client) init() {
 	c.CreditNoteLineItem = NewCreditNoteLineItemClient(c.config)
 	c.Customer = NewCustomerClient(c.config)
 	c.Entitlement = NewEntitlementClient(c.config)
+	c.EntityIntegrationMapping = NewEntityIntegrationMappingClient(c.config)
 	c.Environment = NewEnvironmentClient(c.config)
 	c.Feature = NewFeatureClient(c.config)
 	c.Invoice = NewInvoiceClient(c.config)
@@ -261,6 +265,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		CreditNoteLineItem:        NewCreditNoteLineItemClient(cfg),
 		Customer:                  NewCustomerClient(cfg),
 		Entitlement:               NewEntitlementClient(cfg),
+		EntityIntegrationMapping:  NewEntityIntegrationMappingClient(cfg),
 		Environment:               NewEnvironmentClient(cfg),
 		Feature:                   NewFeatureClient(cfg),
 		Invoice:                   NewInvoiceClient(cfg),
@@ -311,6 +316,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		CreditNoteLineItem:        NewCreditNoteLineItemClient(cfg),
 		Customer:                  NewCustomerClient(cfg),
 		Entitlement:               NewEntitlementClient(cfg),
+		EntityIntegrationMapping:  NewEntityIntegrationMappingClient(cfg),
 		Environment:               NewEnvironmentClient(cfg),
 		Feature:                   NewFeatureClient(cfg),
 		Invoice:                   NewInvoiceClient(cfg),
@@ -363,11 +369,11 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.Auth, c.BillingSequence, c.Connection, c.Costsheet, c.CreditGrant,
 		c.CreditGrantApplication, c.CreditNote, c.CreditNoteLineItem, c.Customer,
-		c.Entitlement, c.Environment, c.Feature, c.Invoice, c.InvoiceLineItem,
-		c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt, c.Plan, c.Price,
-		c.Secret, c.Subscription, c.SubscriptionLineItem, c.SubscriptionPause,
-		c.SubscriptionSchedule, c.SubscriptionSchedulePhase, c.Task, c.Tenant, c.User,
-		c.Wallet, c.WalletTransaction,
+		c.Entitlement, c.EntityIntegrationMapping, c.Environment, c.Feature, c.Invoice,
+		c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt,
+		c.Plan, c.Price, c.Secret, c.Subscription, c.SubscriptionLineItem,
+		c.SubscriptionPause, c.SubscriptionSchedule, c.SubscriptionSchedulePhase,
+		c.Task, c.Tenant, c.User, c.Wallet, c.WalletTransaction,
 	} {
 		n.Use(hooks...)
 	}
@@ -379,11 +385,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.Auth, c.BillingSequence, c.Connection, c.Costsheet, c.CreditGrant,
 		c.CreditGrantApplication, c.CreditNote, c.CreditNoteLineItem, c.Customer,
-		c.Entitlement, c.Environment, c.Feature, c.Invoice, c.InvoiceLineItem,
-		c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt, c.Plan, c.Price,
-		c.Secret, c.Subscription, c.SubscriptionLineItem, c.SubscriptionPause,
-		c.SubscriptionSchedule, c.SubscriptionSchedulePhase, c.Task, c.Tenant, c.User,
-		c.Wallet, c.WalletTransaction,
+		c.Entitlement, c.EntityIntegrationMapping, c.Environment, c.Feature, c.Invoice,
+		c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt,
+		c.Plan, c.Price, c.Secret, c.Subscription, c.SubscriptionLineItem,
+		c.SubscriptionPause, c.SubscriptionSchedule, c.SubscriptionSchedulePhase,
+		c.Task, c.Tenant, c.User, c.Wallet, c.WalletTransaction,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -412,6 +418,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Customer.mutate(ctx, m)
 	case *EntitlementMutation:
 		return c.Entitlement.mutate(ctx, m)
+	case *EntityIntegrationMappingMutation:
+		return c.EntityIntegrationMapping.mutate(ctx, m)
 	case *EnvironmentMutation:
 		return c.Environment.mutate(ctx, m)
 	case *FeatureMutation:
@@ -1898,6 +1906,139 @@ func (c *EntitlementClient) mutate(ctx context.Context, m *EntitlementMutation) 
 		return (&EntitlementDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Entitlement mutation op: %q", m.Op())
+	}
+}
+
+// EntityIntegrationMappingClient is a client for the EntityIntegrationMapping schema.
+type EntityIntegrationMappingClient struct {
+	config
+}
+
+// NewEntityIntegrationMappingClient returns a client for the EntityIntegrationMapping from the given config.
+func NewEntityIntegrationMappingClient(c config) *EntityIntegrationMappingClient {
+	return &EntityIntegrationMappingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `entityintegrationmapping.Hooks(f(g(h())))`.
+func (c *EntityIntegrationMappingClient) Use(hooks ...Hook) {
+	c.hooks.EntityIntegrationMapping = append(c.hooks.EntityIntegrationMapping, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `entityintegrationmapping.Intercept(f(g(h())))`.
+func (c *EntityIntegrationMappingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.EntityIntegrationMapping = append(c.inters.EntityIntegrationMapping, interceptors...)
+}
+
+// Create returns a builder for creating a EntityIntegrationMapping entity.
+func (c *EntityIntegrationMappingClient) Create() *EntityIntegrationMappingCreate {
+	mutation := newEntityIntegrationMappingMutation(c.config, OpCreate)
+	return &EntityIntegrationMappingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of EntityIntegrationMapping entities.
+func (c *EntityIntegrationMappingClient) CreateBulk(builders ...*EntityIntegrationMappingCreate) *EntityIntegrationMappingCreateBulk {
+	return &EntityIntegrationMappingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *EntityIntegrationMappingClient) MapCreateBulk(slice any, setFunc func(*EntityIntegrationMappingCreate, int)) *EntityIntegrationMappingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &EntityIntegrationMappingCreateBulk{err: fmt.Errorf("calling to EntityIntegrationMappingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*EntityIntegrationMappingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &EntityIntegrationMappingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for EntityIntegrationMapping.
+func (c *EntityIntegrationMappingClient) Update() *EntityIntegrationMappingUpdate {
+	mutation := newEntityIntegrationMappingMutation(c.config, OpUpdate)
+	return &EntityIntegrationMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *EntityIntegrationMappingClient) UpdateOne(eim *EntityIntegrationMapping) *EntityIntegrationMappingUpdateOne {
+	mutation := newEntityIntegrationMappingMutation(c.config, OpUpdateOne, withEntityIntegrationMapping(eim))
+	return &EntityIntegrationMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *EntityIntegrationMappingClient) UpdateOneID(id string) *EntityIntegrationMappingUpdateOne {
+	mutation := newEntityIntegrationMappingMutation(c.config, OpUpdateOne, withEntityIntegrationMappingID(id))
+	return &EntityIntegrationMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for EntityIntegrationMapping.
+func (c *EntityIntegrationMappingClient) Delete() *EntityIntegrationMappingDelete {
+	mutation := newEntityIntegrationMappingMutation(c.config, OpDelete)
+	return &EntityIntegrationMappingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *EntityIntegrationMappingClient) DeleteOne(eim *EntityIntegrationMapping) *EntityIntegrationMappingDeleteOne {
+	return c.DeleteOneID(eim.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *EntityIntegrationMappingClient) DeleteOneID(id string) *EntityIntegrationMappingDeleteOne {
+	builder := c.Delete().Where(entityintegrationmapping.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &EntityIntegrationMappingDeleteOne{builder}
+}
+
+// Query returns a query builder for EntityIntegrationMapping.
+func (c *EntityIntegrationMappingClient) Query() *EntityIntegrationMappingQuery {
+	return &EntityIntegrationMappingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeEntityIntegrationMapping},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a EntityIntegrationMapping entity by its id.
+func (c *EntityIntegrationMappingClient) Get(ctx context.Context, id string) (*EntityIntegrationMapping, error) {
+	return c.Query().Where(entityintegrationmapping.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *EntityIntegrationMappingClient) GetX(ctx context.Context, id string) *EntityIntegrationMapping {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *EntityIntegrationMappingClient) Hooks() []Hook {
+	return c.hooks.EntityIntegrationMapping
+}
+
+// Interceptors returns the client interceptors.
+func (c *EntityIntegrationMappingClient) Interceptors() []Interceptor {
+	return c.inters.EntityIntegrationMapping
+}
+
+func (c *EntityIntegrationMappingClient) mutate(ctx context.Context, m *EntityIntegrationMappingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&EntityIntegrationMappingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&EntityIntegrationMappingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&EntityIntegrationMappingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&EntityIntegrationMappingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown EntityIntegrationMapping mutation op: %q", m.Op())
 	}
 }
 
@@ -4971,18 +5112,18 @@ type (
 	hooks struct {
 		Auth, BillingSequence, Connection, Costsheet, CreditGrant,
 		CreditGrantApplication, CreditNote, CreditNoteLineItem, Customer, Entitlement,
-		Environment, Feature, Invoice, InvoiceLineItem, InvoiceSequence, Meter,
-		Payment, PaymentAttempt, Plan, Price, Secret, Subscription,
-		SubscriptionLineItem, SubscriptionPause, SubscriptionSchedule,
+		EntityIntegrationMapping, Environment, Feature, Invoice, InvoiceLineItem,
+		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, Secret,
+		Subscription, SubscriptionLineItem, SubscriptionPause, SubscriptionSchedule,
 		SubscriptionSchedulePhase, Task, Tenant, User, Wallet,
 		WalletTransaction []ent.Hook
 	}
 	inters struct {
 		Auth, BillingSequence, Connection, Costsheet, CreditGrant,
 		CreditGrantApplication, CreditNote, CreditNoteLineItem, Customer, Entitlement,
-		Environment, Feature, Invoice, InvoiceLineItem, InvoiceSequence, Meter,
-		Payment, PaymentAttempt, Plan, Price, Secret, Subscription,
-		SubscriptionLineItem, SubscriptionPause, SubscriptionSchedule,
+		EntityIntegrationMapping, Environment, Feature, Invoice, InvoiceLineItem,
+		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, Secret,
+		Subscription, SubscriptionLineItem, SubscriptionPause, SubscriptionSchedule,
 		SubscriptionSchedulePhase, Task, Tenant, User, Wallet,
 		WalletTransaction []ent.Interceptor
 	}
