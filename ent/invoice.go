@@ -99,9 +99,11 @@ type Invoice struct {
 type InvoiceEdges struct {
 	// LineItems holds the value of the line_items edge.
 	LineItems []*InvoiceLineItem `json:"line_items,omitempty"`
+	// Invoice can have multiple coupon applications
+	CouponApplications []*CouponApplication `json:"coupon_applications,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // LineItemsOrErr returns the LineItems value or an error if the edge
@@ -111,6 +113,15 @@ func (e InvoiceEdges) LineItemsOrErr() ([]*InvoiceLineItem, error) {
 		return e.LineItems, nil
 	}
 	return nil, &NotLoadedError{edge: "line_items"}
+}
+
+// CouponApplicationsOrErr returns the CouponApplications value or an error if the edge
+// was not loaded in eager-loading.
+func (e InvoiceEdges) CouponApplicationsOrErr() ([]*CouponApplication, error) {
+	if e.loadedTypes[1] {
+		return e.CouponApplications, nil
+	}
+	return nil, &NotLoadedError{edge: "coupon_applications"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -389,6 +400,11 @@ func (i *Invoice) Value(name string) (ent.Value, error) {
 // QueryLineItems queries the "line_items" edge of the Invoice entity.
 func (i *Invoice) QueryLineItems() *InvoiceLineItemQuery {
 	return NewInvoiceClient(i.config).QueryLineItems(i)
+}
+
+// QueryCouponApplications queries the "coupon_applications" edge of the Invoice entity.
+func (i *Invoice) QueryCouponApplications() *CouponApplicationQuery {
+	return NewInvoiceClient(i.config).QueryCouponApplications(i)
 }
 
 // Update returns a builder for updating this Invoice.

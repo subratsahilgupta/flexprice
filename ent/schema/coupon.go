@@ -84,6 +84,10 @@ func (Coupon) Fields() []ent.Field {
 			NotEmpty().
 			Default("once").
 			Comment("Coupon cadence: once, repeated, forever"),
+		field.Int("duration_in_periods").
+			Optional().
+			Nillable().
+			Comment("Coupon duration in periods"),
 		field.String("currency").
 			SchemaType(map[string]string{
 				"postgres": "varchar(10)",
@@ -91,6 +95,9 @@ func (Coupon) Fields() []ent.Field {
 			NotEmpty().
 			Default("usd").
 			Comment("Coupon currency"),
+		field.JSON("metadata", map[string]string{}).
+			Optional().
+			Comment("Additional metadata for coupon"),
 	}
 }
 

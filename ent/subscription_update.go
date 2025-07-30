@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/creditgrant"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/subscription"
@@ -420,6 +421,21 @@ func (su *SubscriptionUpdate) SetSchedule(s *SubscriptionSchedule) *Subscription
 	return su.SetScheduleID(s.ID)
 }
 
+// AddCouponAssociationIDs adds the "coupon_associations" edge to the CouponAssociation entity by IDs.
+func (su *SubscriptionUpdate) AddCouponAssociationIDs(ids ...string) *SubscriptionUpdate {
+	su.mutation.AddCouponAssociationIDs(ids...)
+	return su
+}
+
+// AddCouponAssociations adds the "coupon_associations" edges to the CouponAssociation entity.
+func (su *SubscriptionUpdate) AddCouponAssociations(c ...*CouponAssociation) *SubscriptionUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.AddCouponAssociationIDs(ids...)
+}
+
 // Mutation returns the SubscriptionMutation object of the builder.
 func (su *SubscriptionUpdate) Mutation() *SubscriptionMutation {
 	return su.mutation
@@ -492,6 +508,27 @@ func (su *SubscriptionUpdate) RemoveCreditGrants(c ...*CreditGrant) *Subscriptio
 func (su *SubscriptionUpdate) ClearSchedule() *SubscriptionUpdate {
 	su.mutation.ClearSchedule()
 	return su
+}
+
+// ClearCouponAssociations clears all "coupon_associations" edges to the CouponAssociation entity.
+func (su *SubscriptionUpdate) ClearCouponAssociations() *SubscriptionUpdate {
+	su.mutation.ClearCouponAssociations()
+	return su
+}
+
+// RemoveCouponAssociationIDs removes the "coupon_associations" edge to CouponAssociation entities by IDs.
+func (su *SubscriptionUpdate) RemoveCouponAssociationIDs(ids ...string) *SubscriptionUpdate {
+	su.mutation.RemoveCouponAssociationIDs(ids...)
+	return su
+}
+
+// RemoveCouponAssociations removes "coupon_associations" edges to CouponAssociation entities.
+func (su *SubscriptionUpdate) RemoveCouponAssociations(c ...*CouponAssociation) *SubscriptionUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.RemoveCouponAssociationIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -795,6 +832,51 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionschedule.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.CouponAssociationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponAssociationsTable,
+			Columns: []string{subscription.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedCouponAssociationsIDs(); len(nodes) > 0 && !su.mutation.CouponAssociationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponAssociationsTable,
+			Columns: []string{subscription.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.CouponAssociationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponAssociationsTable,
+			Columns: []string{subscription.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
@@ -1209,6 +1291,21 @@ func (suo *SubscriptionUpdateOne) SetSchedule(s *SubscriptionSchedule) *Subscrip
 	return suo.SetScheduleID(s.ID)
 }
 
+// AddCouponAssociationIDs adds the "coupon_associations" edge to the CouponAssociation entity by IDs.
+func (suo *SubscriptionUpdateOne) AddCouponAssociationIDs(ids ...string) *SubscriptionUpdateOne {
+	suo.mutation.AddCouponAssociationIDs(ids...)
+	return suo
+}
+
+// AddCouponAssociations adds the "coupon_associations" edges to the CouponAssociation entity.
+func (suo *SubscriptionUpdateOne) AddCouponAssociations(c ...*CouponAssociation) *SubscriptionUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.AddCouponAssociationIDs(ids...)
+}
+
 // Mutation returns the SubscriptionMutation object of the builder.
 func (suo *SubscriptionUpdateOne) Mutation() *SubscriptionMutation {
 	return suo.mutation
@@ -1281,6 +1378,27 @@ func (suo *SubscriptionUpdateOne) RemoveCreditGrants(c ...*CreditGrant) *Subscri
 func (suo *SubscriptionUpdateOne) ClearSchedule() *SubscriptionUpdateOne {
 	suo.mutation.ClearSchedule()
 	return suo
+}
+
+// ClearCouponAssociations clears all "coupon_associations" edges to the CouponAssociation entity.
+func (suo *SubscriptionUpdateOne) ClearCouponAssociations() *SubscriptionUpdateOne {
+	suo.mutation.ClearCouponAssociations()
+	return suo
+}
+
+// RemoveCouponAssociationIDs removes the "coupon_associations" edge to CouponAssociation entities by IDs.
+func (suo *SubscriptionUpdateOne) RemoveCouponAssociationIDs(ids ...string) *SubscriptionUpdateOne {
+	suo.mutation.RemoveCouponAssociationIDs(ids...)
+	return suo
+}
+
+// RemoveCouponAssociations removes "coupon_associations" edges to CouponAssociation entities.
+func (suo *SubscriptionUpdateOne) RemoveCouponAssociations(c ...*CouponAssociation) *SubscriptionUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.RemoveCouponAssociationIDs(ids...)
 }
 
 // Where appends a list predicates to the SubscriptionUpdate builder.
@@ -1614,6 +1732,51 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionschedule.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.CouponAssociationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponAssociationsTable,
+			Columns: []string{subscription.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedCouponAssociationsIDs(); len(nodes) > 0 && !suo.mutation.CouponAssociationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponAssociationsTable,
+			Columns: []string{subscription.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.CouponAssociationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponAssociationsTable,
+			Columns: []string{subscription.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

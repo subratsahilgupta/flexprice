@@ -93,6 +93,9 @@ func (CouponApplication) Fields() []ent.Field {
 		field.JSON("coupon_snapshot", map[string]interface{}{}).
 			Optional().
 			Comment("Frozen coupon configuration at time of application"),
+		field.JSON("metadata", map[string]string{}).
+			Optional().
+			Comment("Additional metadata for coupon application"),
 	}
 }
 
@@ -103,16 +106,19 @@ func (CouponApplication) Edges() []ent.Edge {
 			Ref("coupon_applications").
 			Field("coupon_id").
 			Unique().
+			Immutable().
 			Required(),
 		edge.From("coupon_association", CouponAssociation.Type).
 			Ref("coupon_applications").
 			Field("coupon_association_id").
 			Unique().
+			Immutable().
 			Required(),
 		edge.From("invoice", Invoice.Type).
 			Ref("coupon_applications").
 			Field("invoice_id").
 			Unique().
+			Immutable().
 			Required(),
 		edge.From("invoice_line_item", InvoiceLineItem.Type).
 			Ref("coupon_applications").

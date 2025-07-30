@@ -87,6 +87,8 @@ const (
 	EdgeCreditGrants = "credit_grants"
 	// EdgeSchedule holds the string denoting the schedule edge name in mutations.
 	EdgeSchedule = "schedule"
+	// EdgeCouponAssociations holds the string denoting the coupon_associations edge name in mutations.
+	EdgeCouponAssociations = "coupon_associations"
 	// Table holds the table name of the subscription in the database.
 	Table = "subscriptions"
 	// LineItemsTable is the table that holds the line_items relation/edge.
@@ -117,6 +119,13 @@ const (
 	ScheduleInverseTable = "subscription_schedules"
 	// ScheduleColumn is the table column denoting the schedule relation/edge.
 	ScheduleColumn = "subscription_id"
+	// CouponAssociationsTable is the table that holds the coupon_associations relation/edge.
+	CouponAssociationsTable = "coupon_associations"
+	// CouponAssociationsInverseTable is the table name for the CouponAssociation entity.
+	// It exists in this package in order to avoid circular dependency with the "couponassociation" package.
+	CouponAssociationsInverseTable = "coupon_associations"
+	// CouponAssociationsColumn is the table column denoting the coupon_associations relation/edge.
+	CouponAssociationsColumn = "subscription_id"
 )
 
 // Columns holds all SQL columns for subscription fields.
@@ -426,6 +435,20 @@ func ByScheduleField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newScheduleStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByCouponAssociationsCount orders the results by coupon_associations count.
+func ByCouponAssociationsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCouponAssociationsStep(), opts...)
+	}
+}
+
+// ByCouponAssociations orders the results by coupon_associations terms.
+func ByCouponAssociations(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCouponAssociationsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newLineItemsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -452,5 +475,12 @@ func newScheduleStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ScheduleInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2O, false, ScheduleTable, ScheduleColumn),
+	)
+}
+func newCouponAssociationsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CouponAssociationsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CouponAssociationsTable, CouponAssociationsColumn),
 	)
 }

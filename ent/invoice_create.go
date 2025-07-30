@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/couponapplication"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/shopspring/decimal"
@@ -493,6 +494,21 @@ func (ic *InvoiceCreate) AddLineItems(i ...*InvoiceLineItem) *InvoiceCreate {
 	return ic.AddLineItemIDs(ids...)
 }
 
+// AddCouponApplicationIDs adds the "coupon_applications" edge to the CouponApplication entity by IDs.
+func (ic *InvoiceCreate) AddCouponApplicationIDs(ids ...string) *InvoiceCreate {
+	ic.mutation.AddCouponApplicationIDs(ids...)
+	return ic
+}
+
+// AddCouponApplications adds the "coupon_applications" edges to the CouponApplication entity.
+func (ic *InvoiceCreate) AddCouponApplications(c ...*CouponApplication) *InvoiceCreate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return ic.AddCouponApplicationIDs(ids...)
+}
+
 // Mutation returns the InvoiceMutation object of the builder.
 func (ic *InvoiceCreate) Mutation() *InvoiceMutation {
 	return ic.mutation
@@ -831,6 +847,22 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := ic.mutation.CouponApplicationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoice.CouponApplicationsTable,
+			Columns: []string{invoice.CouponApplicationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

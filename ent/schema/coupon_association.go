@@ -40,14 +40,17 @@ func (CouponAssociation) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			Optional().
-			Nillable(),
+			NotEmpty().
+			Immutable(),
 		field.String("subscription_line_item_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
 			Optional().
 			Nillable(),
+		field.JSON("metadata", map[string]string{}).
+			Optional().
+			Comment("Additional metadata for coupon association"),
 	}
 }
 
@@ -58,11 +61,14 @@ func (CouponAssociation) Edges() []ent.Edge {
 			Ref("coupon_associations").
 			Field("coupon_id").
 			Unique().
+			Immutable().
 			Required(),
 		edge.From("subscription", Subscription.Type).
 			Ref("coupon_associations").
 			Field("subscription_id").
-			Unique(),
+			Unique().
+			Immutable().
+			Required(),
 		edge.From("subscription_line_item", SubscriptionLineItem.Type).
 			Ref("coupon_associations").
 			Field("subscription_line_item_id").

@@ -9,25 +9,27 @@ import (
 
 // Coupon represents a discount coupon entity
 type Coupon struct {
-	ID               string                 `json:"id" db:"id"`
-	Name             string                 `json:"name" db:"name"`
-	RedeemAfter      *time.Time             `json:"redeem_after,omitempty" db:"redeem_after"`
-	RedeemBefore     *time.Time             `json:"redeem_before,omitempty" db:"redeem_before"`
-	MaxRedemptions   *int                   `json:"max_redemptions,omitempty" db:"max_redemptions"`
-	TotalRedemptions int                    `json:"total_redemptions" db:"total_redemptions"`
-	Rules            map[string]interface{} `json:"rules,omitempty" db:"rules"`
-	AmountOff        decimal.Decimal        `json:"amount_off" db:"amount_off"`
-	PercentageOff    decimal.Decimal        `json:"percentage_off" db:"percentage_off"`
-	Type             types.DiscountType     `json:"type" db:"type"`
-	Cadence          types.DiscountCadence  `json:"cadence" db:"cadence"`
-	Currency         string                 `json:"currency" db:"currency"`
-	TenantID         string                 `json:"tenant_id" db:"tenant_id"`
-	Status           types.Status           `json:"status" db:"status"`
-	CreatedAt        time.Time              `json:"created_at" db:"created_at"`
-	UpdatedAt        time.Time              `json:"updated_at" db:"updated_at"`
-	CreatedBy        string                 `json:"created_by" db:"created_by"`
-	UpdatedBy        string                 `json:"updated_by" db:"updated_by"`
-	EnvironmentID    string                 `json:"environment_id" db:"environment_id"`
+	ID                string                 `json:"id" db:"id"`
+	Name              string                 `json:"name" db:"name"`
+	RedeemAfter       *time.Time             `json:"redeem_after,omitempty" db:"redeem_after"`
+	RedeemBefore      *time.Time             `json:"redeem_before,omitempty" db:"redeem_before"`
+	MaxRedemptions    *int                   `json:"max_redemptions,omitempty" db:"max_redemptions"`
+	TotalRedemptions  int                    `json:"total_redemptions" db:"total_redemptions"`
+	Rules             map[string]interface{} `json:"rules,omitempty" db:"rules"`
+	AmountOff         decimal.Decimal        `json:"amount_off" db:"amount_off"`
+	PercentageOff     decimal.Decimal        `json:"percentage_off" db:"percentage_off"`
+	Type              types.CouponType       `json:"type" db:"type"`
+	Cadence           types.CouponCadence    `json:"cadence" db:"cadence"`
+	DurationInPeriods *int                   `json:"duration_in_periods,omitempty" db:"duration_in_periods"`
+	Currency          string                 `json:"currency" db:"currency"`
+	Metadata          map[string]string      `json:"metadata,omitempty" db:"metadata"`
+	TenantID          string                 `json:"tenant_id" db:"tenant_id"`
+	Status            types.Status           `json:"status" db:"status"`
+	CreatedAt         time.Time              `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time              `json:"updated_at" db:"updated_at"`
+	CreatedBy         string                 `json:"created_by" db:"created_by"`
+	UpdatedBy         string                 `json:"updated_by" db:"updated_by"`
+	EnvironmentID     string                 `json:"environment_id" db:"environment_id"`
 }
 
 // IsValid checks if the coupon is valid for redemption
@@ -54,9 +56,9 @@ func (c *Coupon) IsValid() bool {
 // CalculateDiscount calculates the discount amount for a given price
 func (c *Coupon) CalculateDiscount(originalPrice decimal.Decimal) decimal.Decimal {
 	switch c.Type {
-	case types.DiscountTypeFixed:
+	case types.CouponTypeFixed:
 		return c.AmountOff
-	case types.DiscountTypePercentage:
+	case types.CouponTypePercentage:
 		return originalPrice.Mul(c.PercentageOff).Div(decimal.NewFromInt(100))
 	default:
 		return decimal.Zero
@@ -75,3 +77,45 @@ func (c *Coupon) ApplyDiscount(originalPrice decimal.Decimal) decimal.Decimal {
 
 	return finalPrice
 }
+
+// TODO: Add FromEnt and FromEntList methods after ent code generation
+// FromEnt converts ent.Coupon to domain Coupon
+// func FromEnt(e *ent.Coupon) *Coupon {
+// 	if e == nil {
+// 		return nil
+// 	}
+//
+// 	return &Coupon{
+// 		ID:               e.ID,
+// 		Name:             e.Name,
+// 		RedeemAfter:      e.RedeemAfter,
+// 		RedeemBefore:     e.RedeemBefore,
+// 		MaxRedemptions:   e.MaxApplications,
+// 		TotalRedemptions: e.TotalApplications,
+// 		Rules:            e.Rules,
+// 		AmountOff:        e.AmountOff,
+// 		PercentageOff:    e.PercentageOff,
+// 		Type:             types.DiscountType(e.Type),
+// 		Cadence:          types.DiscountCadence(e.Cadence),
+// 		Currency:         e.Currency,
+// 		TenantID:         e.TenantID,
+// 		Status:           types.Status(e.Status),
+// 		CreatedAt:        e.CreatedAt,
+// 		UpdatedAt:        e.UpdatedAt,
+// 		CreatedBy:        e.CreatedBy,
+// 		UpdatedBy:        e.UpdatedBy,
+// 		EnvironmentID:    e.EnvironmentID,
+// 	}
+// }
+//
+// // FromEntList converts a list of ent.Coupon to domain Coupons
+// func FromEntList(list []*ent.Coupon) []*Coupon {
+// 	if list == nil {
+// 		return nil
+// 	}
+// 	coupons := make([]*Coupon, len(list))
+// 	for i, item := range list {
+// 		coupons[i] = FromEnt(item)
+// 	}
+// 	return coupons
+// }

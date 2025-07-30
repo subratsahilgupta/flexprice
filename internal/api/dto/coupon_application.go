@@ -1,8 +1,8 @@
 package dto
 
 import (
-	"time"
-
+	coupon_application "github.com/flexprice/flexprice/internal/domain/coupon_application"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -16,49 +16,64 @@ type CreateCouponApplicationRequest struct {
 	OriginalPrice       decimal.Decimal        `json:"original_price" validate:"required"`
 	FinalPrice          decimal.Decimal        `json:"final_price" validate:"required"`
 	DiscountedAmount    decimal.Decimal        `json:"discounted_amount" validate:"required"`
-	DiscountType        types.DiscountType     `json:"discount_type" validate:"required"`
+	DiscountType        types.CouponType       `json:"discount_type" validate:"required"`
 	DiscountPercentage  *decimal.Decimal       `json:"discount_percentage,omitempty"`
 	Currency            string                 `json:"currency" validate:"required"`
 	CouponSnapshot      map[string]interface{} `json:"coupon_snapshot,omitempty"`
+	Metadata            map[string]string      `json:"metadata,omitempty"`
 }
 
 // CouponApplicationResponse represents the response for coupon application data
 type CouponApplicationResponse struct {
-	ID                  string                 `json:"id"`
-	CouponID            string                 `json:"coupon_id"`
-	CouponAssociationID string                 `json:"coupon_association_id"`
-	InvoiceID           string                 `json:"invoice_id"`
-	InvoiceLineItemID   *string                `json:"invoice_line_item_id,omitempty"`
-	AppliedAt           time.Time              `json:"applied_at"`
-	OriginalPrice       decimal.Decimal        `json:"original_price"`
-	FinalPrice          decimal.Decimal        `json:"final_price"`
-	DiscountedAmount    decimal.Decimal        `json:"discounted_amount"`
-	DiscountType        types.DiscountType     `json:"discount_type"`
-	DiscountPercentage  *decimal.Decimal       `json:"discount_percentage,omitempty"`
-	Currency            string                 `json:"currency"`
-	CouponSnapshot      map[string]interface{} `json:"coupon_snapshot,omitempty"`
-	TenantID            string                 `json:"tenant_id"`
-	Status              types.Status           `json:"status"`
-	CreatedAt           time.Time              `json:"created_at"`
-	UpdatedAt           time.Time              `json:"updated_at"`
-	CreatedBy           string                 `json:"created_by"`
-	UpdatedBy           string                 `json:"updated_by"`
-	EnvironmentID       string                 `json:"environment_id"`
-}
-
-// ListCouponApplicationsRequest represents the request to list coupon applications
-type ListCouponApplicationsRequest struct {
-	CouponID            *string                  `json:"coupon_id,omitempty"`
-	CouponAssociationID *string                  `json:"coupon_association_id,omitempty"`
-	InvoiceID           *string                  `json:"invoice_id,omitempty"`
-	InvoiceLineItemID   *string                  `json:"invoice_line_item_id,omitempty"`
-	DiscountType        *types.DiscountType      `json:"discount_type,omitempty"`
-	Pagination          types.PaginationResponse `json:"pagination"`
+	*coupon_application.CouponApplication `json:",inline"`
 }
 
 // ListCouponApplicationsResponse represents the response for listing coupon applications
-type ListCouponApplicationsResponse struct {
-	CouponApplications []*CouponApplicationResponse `json:"coupon_applications"`
-	Pagination         types.PaginationResponse     `json:"pagination"`
-	TotalCount         int                          `json:"total_count"`
+type ListCouponApplicationsResponse = types.ListResponse[*CouponApplicationResponse]
+
+// Validate validates the CreateCouponApplicationRequest
+func (r *CreateCouponApplicationRequest) Validate() error {
+	if r.CouponID == "" {
+		return ierr.NewError("coupon_id is required").
+			WithHint("Please provide a valid coupon ID").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.CouponAssociationID == "" {
+		return ierr.NewError("coupon_association_id is required").
+			WithHint("Please provide a valid coupon association ID").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.InvoiceID == "" {
+		return ierr.NewError("invoice_id is required").
+			WithHint("Please provide a valid invoice ID").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.OriginalPrice.LessThanOrEqual(decimal.Zero) {
+		return ierr.NewError("original_price must be greater than zero").
+			WithHint("Please provide a valid original price").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.FinalPrice.LessThan(decimal.Zero) {
+		return ierr.NewError("final_price cannot be negative").
+			WithHint("Please provide a valid final price").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.DiscountedAmount.LessThan(decimal.Zero) {
+		return ierr.NewError("discounted_amount cannot be negative").
+			WithHint("Please provide a valid discounted amount").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.Currency == "" {
+		return ierr.NewError("currency is required").
+			WithHint("Please provide a currency code").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }

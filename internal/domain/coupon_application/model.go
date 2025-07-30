@@ -18,10 +18,11 @@ type CouponApplication struct {
 	OriginalPrice       decimal.Decimal        `json:"original_price" db:"original_price"`
 	FinalPrice          decimal.Decimal        `json:"final_price" db:"final_price"`
 	DiscountedAmount    decimal.Decimal        `json:"discounted_amount" db:"discounted_amount"`
-	DiscountType        types.DiscountType     `json:"discount_type" db:"discount_type"`
+	DiscountType        types.CouponType       `json:"discount_type" db:"discount_type"`
 	DiscountPercentage  *decimal.Decimal       `json:"discount_percentage,omitempty" db:"discount_percentage"`
 	Currency            string                 `json:"currency" db:"currency"`
 	CouponSnapshot      map[string]interface{} `json:"coupon_snapshot,omitempty" db:"coupon_snapshot"`
+	Metadata            map[string]string      `json:"metadata,omitempty" db:"metadata"`
 	TenantID            string                 `json:"tenant_id" db:"tenant_id"`
 	Status              types.Status           `json:"status" db:"status"`
 	CreatedAt           time.Time              `json:"created_at" db:"created_at"`
@@ -51,7 +52,7 @@ func (ca *CouponApplication) GetDiscountPercentage() decimal.Decimal {
 
 // GetDiscountRate returns the discount rate as a decimal (e.g., 0.10 for 10%)
 func (ca *CouponApplication) GetDiscountRate() decimal.Decimal {
-	if ca.DiscountType == types.DiscountTypePercentage {
+	if ca.DiscountType == types.CouponTypePercentage {
 		return ca.GetDiscountPercentage().Div(decimal.NewFromInt(100))
 	}
 	return decimal.Zero
