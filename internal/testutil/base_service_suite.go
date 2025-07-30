@@ -87,6 +87,9 @@ func (s *BaseServiceTestSuite) SetupSuite() {
 		Logging: config.LoggingConfig{
 			Level: types.LogLevelInfo,
 		},
+		Secrets: config.SecretsConfig{
+			EncryptionKey: "test-encryption-key-for-unit-tests-only",
+		},
 	}
 	var err error
 	s.config = cfg
