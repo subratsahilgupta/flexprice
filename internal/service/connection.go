@@ -207,15 +207,36 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 		return nil, err
 	}
 
-	// Update fields if provided
+	// Update simple fields if provided
 	if req.Name != "" {
 		conn.Name = req.Name
 	}
 	if req.ProviderType != "" {
 		conn.ProviderType = req.ProviderType
 	}
+
+	// Only handle metadata if it's being updated
 	if req.Metadata != nil {
-		encryptedMetadata, err := s.encryptMetadata(req.Metadata)
+		// Decrypt existing metadata first
+		var existingMetadata map[string]interface{}
+		if conn.Metadata != nil {
+			decryptedMetadata, err := s.decryptMetadata(conn.Metadata)
+			if err != nil {
+				s.Logger.Errorw("failed to decrypt existing metadata", "error", err)
+				return nil, err
+			}
+			existingMetadata = decryptedMetadata
+		} else {
+			existingMetadata = make(map[string]interface{})
+		}
+
+		// Merge with new metadata
+		for k, v := range req.Metadata {
+			existingMetadata[k] = v
+		}
+
+		// Encrypt the merged metadata
+		encryptedMetadata, err := s.encryptMetadata(existingMetadata)
 		if err != nil {
 			s.Logger.Errorw("failed to encrypt metadata during update", "error", err)
 			return nil, err
@@ -232,8 +253,8 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 		return nil, err
 	}
 
-	// Decrypt metadata for response
-	if conn.Metadata != nil {
+	// Decrypt metadata for response ONLY if metadata was updated
+	if req.Metadata != nil && conn.Metadata != nil {
 		decryptedMetadata, err := s.decryptMetadata(conn.Metadata)
 		if err != nil {
 			s.Logger.Errorw("failed to decrypt metadata after update", "error", err)
