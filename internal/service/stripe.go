@@ -180,21 +180,12 @@ func (s *StripeService) CreateCustomerFromStripe(ctx context.Context, stripeCust
 	// Create customer service instance
 	customerService := NewCustomerService(s.ServiceParams)
 
-	// Check if customer already exists by Stripe ID
-	existingCustomer, err := s.findCustomerByStripeID(ctx, environmentID, stripeCustomer.ID)
-	if err == nil && existingCustomer != nil {
-		// Customer already exists, no need to create
-		return ierr.NewError("customer already exists").
-			WithHint("Customer with this Stripe ID already exists in our system").
-			Mark(ierr.ErrAlreadyExists)
-	}
-
 	// Check for existing customer by external ID if flexprice_customer_id is present
 	var externalID string
 	if flexpriceID, exists := stripeCustomer.Metadata["flexprice_customer_id"]; exists {
 		externalID = flexpriceID
 		// Check if customer with this external ID already exists
-		existing, err := s.findCustomerByExternalID(ctx, environmentID, externalID)
+		existing, err := customerService.GetCustomerByLookupKey(ctx, externalID)
 		if err == nil && existing != nil {
 			// Customer exists with this external ID, update with Stripe ID
 			updateReq := dto.UpdateCustomerRequest{
@@ -203,12 +194,12 @@ func (s *StripeService) CreateCustomerFromStripe(ctx context.Context, stripeCust
 				},
 			}
 			// Merge with existing metadata
-			if existing.Metadata != nil {
-				for k, v := range existing.Metadata {
+			if existing.Customer.Metadata != nil {
+				for k, v := range existing.Customer.Metadata {
 					updateReq.Metadata[k] = v
 				}
 			}
-			_, err = customerService.UpdateCustomer(ctx, existing.ID, updateReq)
+			_, err = customerService.UpdateCustomer(ctx, existing.Customer.ID, updateReq)
 			return err
 		}
 	} else {
@@ -236,7 +227,7 @@ func (s *StripeService) CreateCustomerFromStripe(ctx context.Context, stripeCust
 		createReq.AddressCountry = stripeCustomer.Address.Country
 	}
 
-	_, err = customerService.CreateCustomer(ctx, createReq)
+	_, err := customerService.CreateCustomer(ctx, createReq)
 	return err
 }
 
@@ -266,37 +257,4 @@ func (s *StripeService) VerifyWebhookSignature(payload []byte, signature string,
 			Mark(ierr.ErrValidation)
 	}
 	return nil
-}
-
-// findCustomerByStripeID finds a customer by Stripe customer ID in metadata
-// TODO: This method fetches all customers and filters in memory, which is not scalable.
-// Consider adding a database index on metadata->>'stripe_customer_id' for better performance.
-func (s *StripeService) findCustomerByStripeID(ctx context.Context, environmentID, stripeCustomerID string) (*dto.CustomerResponse, error) {
-	// Use customer filter to search by metadata
-	filter := &types.CustomerFilter{
-		QueryFilter: types.NewNoLimitQueryFilter(),
-	}
-
-	customerService := NewCustomerService(s.ServiceParams)
-	customers, err := customerService.GetCustomers(ctx, filter)
-	if err != nil {
-		return nil, err
-	}
-
-	// Search through customers for matching Stripe ID
-	for _, customer := range customers.Items {
-		if customer.Metadata != nil {
-			if stripeID, exists := customer.Metadata["stripe_customer_id"]; exists && stripeID == stripeCustomerID {
-				return customer, nil
-			}
-		}
-	}
-
-	return nil, ierr.NewError("customer not found").Mark(ierr.ErrNotFound)
-}
-
-// findCustomerByExternalID finds a customer by external ID using efficient lookup
-func (s *StripeService) findCustomerByExternalID(ctx context.Context, environmentID, externalID string) (*dto.CustomerResponse, error) {
-	customerService := NewCustomerService(s.ServiceParams)
-	return customerService.GetCustomerByLookupKey(ctx, externalID)
 }

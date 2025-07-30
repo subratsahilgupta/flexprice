@@ -54,22 +54,22 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 	// Publish webhook event for customer creation
 	s.publishWebhookEvent(ctx, types.WebhookEventCustomerCreated, cust.ID)
 
-	// Create customer in Stripe if we have a Stripe service and ConnectionRepo is available
+	// Sync customer to all available providers if ConnectionRepo is available
 	if s.ConnectionRepo != nil {
-		stripeService := NewStripeService(s.ServiceParams)
+		integrationService := NewIntegrationService(s.ServiceParams)
 		// Use go routine to avoid blocking the response
 		go func() {
 			// Create a new context with tenant and environment IDs
-			stripeCtx := types.SetTenantID(context.Background(), types.GetTenantID(ctx))
-			stripeCtx = types.SetEnvironmentID(stripeCtx, types.GetEnvironmentID(ctx))
-			stripeCtx = types.SetUserID(stripeCtx, types.GetUserID(ctx))
+			syncCtx := types.SetTenantID(context.Background(), types.GetTenantID(ctx))
+			syncCtx = types.SetEnvironmentID(syncCtx, types.GetEnvironmentID(ctx))
+			syncCtx = types.SetUserID(syncCtx, types.GetUserID(ctx))
 
-			if err := stripeService.CreateCustomerInStripe(stripeCtx, cust.ID); err != nil {
-				s.Logger.Errorw("failed to create customer in Stripe",
+			if err := integrationService.SyncCustomerToProviders(syncCtx, cust.ID); err != nil {
+				s.Logger.Errorw("failed to sync customer to providers",
 					"customer_id", cust.ID,
 					"error", err)
 			} else {
-				s.Logger.Infow("customer created in Stripe successfully",
+				s.Logger.Infow("customer synced to providers successfully",
 					"customer_id", cust.ID)
 			}
 		}()

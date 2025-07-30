@@ -190,6 +190,7 @@ func main() {
 			service.NewCustomerService,
 			service.NewStripeService,
 			service.NewEntityIntegrationMappingService,
+			service.NewIntegrationService,
 		),
 	)
 
@@ -241,6 +242,7 @@ func provideHandlers(
 	stripeService *service.StripeService,
 	connectionService service.ConnectionService,
 	entityIntegrationMappingService service.EntityIntegrationMappingService,
+	integrationService service.IntegrationService,
 	svixClient *svix.Client,
 ) api.Handlers {
 	return api.Handlers{
@@ -269,6 +271,7 @@ func provideHandlers(
 		CreditNote:               v1.NewCreditNoteHandler(creditNoteService, logger),
 		Connection:               v1.NewConnectionHandler(connectionService, logger),
 		EntityIntegrationMapping: v1.NewEntityIntegrationMappingHandler(entityIntegrationMappingService, logger),
+		Integration:              v1.NewIntegrationHandler(integrationService, logger),
 		CronWallet:               cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService),
 		CronSubscription:         cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
 		CronCreditGrant:          cron.NewCreditGrantCronHandler(creditGrantService, logger),

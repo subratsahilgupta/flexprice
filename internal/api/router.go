@@ -38,6 +38,7 @@ type Handlers struct {
 	CostSheet                *v1.CostSheetHandler
 	CreditNote               *v1.CreditNoteHandler
 	EntityIntegrationMapping *v1.EntityIntegrationMappingHandler
+	Integration              *v1.IntegrationHandler
 
 	Webhook *v1.WebhookHandler
 	// Portal handlers
@@ -330,6 +331,13 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			entityIntegrationMappings.DELETE("/:id", handlers.EntityIntegrationMapping.DeleteEntityIntegrationMapping)
 			entityIntegrationMappings.GET("/by-entity-and-provider", handlers.EntityIntegrationMapping.GetEntityIntegrationMappingByEntityAndProvider)
 			entityIntegrationMappings.GET("/by-provider-entity", handlers.EntityIntegrationMapping.GetEntityIntegrationMappingByProviderEntity)
+		}
+
+		// Integration routes
+		integration := v1Private.Group("/integration")
+		{
+			integration.POST("/sync-customer/:customer_id", handlers.Integration.SyncCustomerToProviders)
+			integration.GET("/providers", handlers.Integration.GetAvailableProviders)
 		}
 
 		// Admin routes (API Key only)

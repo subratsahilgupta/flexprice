@@ -206,19 +206,47 @@ func (h *WebhookHandler) handleCustomerCreated(c *gin.Context, event *stripe.Eve
 		return
 	}
 
-	if err := h.stripeService.CreateCustomerFromStripe(c.Request.Context(), &customer, environmentID); err != nil {
-		h.logger.Errorw("failed to create customer from Stripe",
+	// Convert Stripe customer to generic customer data
+	customerData := map[string]interface{}{
+		"name":  customer.Name,
+		"email": customer.Email,
+	}
+
+	// Add address if available
+	if customer.Address != nil {
+		customerData["address"] = map[string]interface{}{
+			"line1":       customer.Address.Line1,
+			"line2":       customer.Address.Line2,
+			"city":        customer.Address.City,
+			"state":       customer.Address.State,
+			"postal_code": customer.Address.PostalCode,
+			"country":     customer.Address.Country,
+		}
+	}
+
+	// Add metadata if available (with nil checks)
+	if customer.Metadata != nil {
+		for k, v := range customer.Metadata {
+			// Add all metadata values since they are strings and can't be nil
+			customerData[k] = v
+		}
+	}
+
+	// Use integration service to sync customer from Stripe
+	integrationService := service.NewIntegrationService(h.stripeService.ServiceParams)
+	if err := integrationService.SyncCustomerFromProvider(c.Request.Context(), "stripe", customer.ID, customerData); err != nil {
+		h.logger.Errorw("failed to sync customer from Stripe",
 			"error", err,
 			"stripe_customer_id", customer.ID,
 			"environment_id", environmentID,
 		)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to create customer",
+			"error": "Failed to sync customer from Stripe",
 		})
 		return
 	}
 
-	h.logger.Infow("successfully created customer from Stripe",
+	h.logger.Infow("successfully synced customer from Stripe",
 		"stripe_customer_id", customer.ID,
 		"environment_id", environmentID,
 	)
