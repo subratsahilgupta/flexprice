@@ -1191,6 +1191,16 @@ func CurrencyHasSuffix(v string) predicate.CouponApplication {
 	return predicate.CouponApplication(sql.FieldHasSuffix(FieldCurrency, v))
 }
 
+// CurrencyIsNil applies the IsNil predicate on the "currency" field.
+func CurrencyIsNil() predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldIsNull(FieldCurrency))
+}
+
+// CurrencyNotNil applies the NotNil predicate on the "currency" field.
+func CurrencyNotNil() predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldNotNull(FieldCurrency))
+}
+
 // CurrencyEqualFold applies the EqualFold predicate on the "currency" field.
 func CurrencyEqualFold(v string) predicate.CouponApplication {
 	return predicate.CouponApplication(sql.FieldEqualFold(FieldCurrency, v))

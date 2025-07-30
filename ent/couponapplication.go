@@ -58,7 +58,7 @@ type CouponApplication struct {
 	// Percentage value, only for percentage discounts
 	DiscountPercentage *decimal.Decimal `json:"discount_percentage,omitempty"`
 	// Currency holds the value of the "currency" field.
-	Currency string `json:"currency,omitempty"`
+	Currency *string `json:"currency,omitempty"`
 	// Frozen coupon configuration at time of application
 	CouponSnapshot map[string]interface{} `json:"coupon_snapshot,omitempty"`
 	// Additional metadata for coupon application
@@ -272,7 +272,8 @@ func (ca *CouponApplication) assignValues(columns []string, values []any) error 
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field currency", values[i])
 			} else if value.Valid {
-				ca.Currency = value.String
+				ca.Currency = new(string)
+				*ca.Currency = value.String
 			}
 		case couponapplication.FieldCouponSnapshot:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -401,8 +402,10 @@ func (ca *CouponApplication) String() string {
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
-	builder.WriteString("currency=")
-	builder.WriteString(ca.Currency)
+	if v := ca.Currency; v != nil {
+		builder.WriteString("currency=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("coupon_snapshot=")
 	builder.WriteString(fmt.Sprintf("%v", ca.CouponSnapshot))

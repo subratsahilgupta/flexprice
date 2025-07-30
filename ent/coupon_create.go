@@ -147,30 +147,30 @@ func (cc *CouponCreate) SetNillableRedeemBefore(t *time.Time) *CouponCreate {
 	return cc
 }
 
-// SetMaxApplications sets the "max_applications" field.
-func (cc *CouponCreate) SetMaxApplications(i int) *CouponCreate {
-	cc.mutation.SetMaxApplications(i)
+// SetMaxRedemptions sets the "max_redemptions" field.
+func (cc *CouponCreate) SetMaxRedemptions(i int) *CouponCreate {
+	cc.mutation.SetMaxRedemptions(i)
 	return cc
 }
 
-// SetNillableMaxApplications sets the "max_applications" field if the given value is not nil.
-func (cc *CouponCreate) SetNillableMaxApplications(i *int) *CouponCreate {
+// SetNillableMaxRedemptions sets the "max_redemptions" field if the given value is not nil.
+func (cc *CouponCreate) SetNillableMaxRedemptions(i *int) *CouponCreate {
 	if i != nil {
-		cc.SetMaxApplications(*i)
+		cc.SetMaxRedemptions(*i)
 	}
 	return cc
 }
 
-// SetTotalApplications sets the "total_applications" field.
-func (cc *CouponCreate) SetTotalApplications(i int) *CouponCreate {
-	cc.mutation.SetTotalApplications(i)
+// SetTotalRedemptions sets the "total_redemptions" field.
+func (cc *CouponCreate) SetTotalRedemptions(i int) *CouponCreate {
+	cc.mutation.SetTotalRedemptions(i)
 	return cc
 }
 
-// SetNillableTotalApplications sets the "total_applications" field if the given value is not nil.
-func (cc *CouponCreate) SetNillableTotalApplications(i *int) *CouponCreate {
+// SetNillableTotalRedemptions sets the "total_redemptions" field if the given value is not nil.
+func (cc *CouponCreate) SetNillableTotalRedemptions(i *int) *CouponCreate {
 	if i != nil {
-		cc.SetTotalApplications(*i)
+		cc.SetTotalRedemptions(*i)
 	}
 	return cc
 }
@@ -358,9 +358,9 @@ func (cc *CouponCreate) defaults() {
 		v := coupon.DefaultEnvironmentID
 		cc.mutation.SetEnvironmentID(v)
 	}
-	if _, ok := cc.mutation.TotalApplications(); !ok {
-		v := coupon.DefaultTotalApplications
-		cc.mutation.SetTotalApplications(v)
+	if _, ok := cc.mutation.TotalRedemptions(); !ok {
+		v := coupon.DefaultTotalRedemptions
+		cc.mutation.SetTotalRedemptions(v)
 	}
 	if _, ok := cc.mutation.AmountOff(); !ok {
 		v := coupon.DefaultAmountOff
@@ -377,10 +377,6 @@ func (cc *CouponCreate) defaults() {
 	if _, ok := cc.mutation.Cadence(); !ok {
 		v := coupon.DefaultCadence
 		cc.mutation.SetCadence(v)
-	}
-	if _, ok := cc.mutation.Currency(); !ok {
-		v := coupon.DefaultCurrency
-		cc.mutation.SetCurrency(v)
 	}
 }
 
@@ -411,6 +407,9 @@ func (cc *CouponCreate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Coupon.name": %w`, err)}
 		}
 	}
+	if _, ok := cc.mutation.TotalRedemptions(); !ok {
+		return &ValidationError{Name: "total_redemptions", err: errors.New(`ent: missing required field "Coupon.total_redemptions"`)}
+	}
 	if _, ok := cc.mutation.GetType(); !ok {
 		return &ValidationError{Name: "type", err: errors.New(`ent: missing required field "Coupon.type"`)}
 	}
@@ -425,14 +424,6 @@ func (cc *CouponCreate) check() error {
 	if v, ok := cc.mutation.Cadence(); ok {
 		if err := coupon.CadenceValidator(v); err != nil {
 			return &ValidationError{Name: "cadence", err: fmt.Errorf(`ent: validator failed for field "Coupon.cadence": %w`, err)}
-		}
-	}
-	if _, ok := cc.mutation.Currency(); !ok {
-		return &ValidationError{Name: "currency", err: errors.New(`ent: missing required field "Coupon.currency"`)}
-	}
-	if v, ok := cc.mutation.Currency(); ok {
-		if err := coupon.CurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "Coupon.currency": %w`, err)}
 		}
 	}
 	return nil
@@ -510,13 +501,13 @@ func (cc *CouponCreate) createSpec() (*Coupon, *sqlgraph.CreateSpec) {
 		_spec.SetField(coupon.FieldRedeemBefore, field.TypeTime, value)
 		_node.RedeemBefore = &value
 	}
-	if value, ok := cc.mutation.MaxApplications(); ok {
-		_spec.SetField(coupon.FieldMaxApplications, field.TypeInt, value)
-		_node.MaxApplications = &value
+	if value, ok := cc.mutation.MaxRedemptions(); ok {
+		_spec.SetField(coupon.FieldMaxRedemptions, field.TypeInt, value)
+		_node.MaxRedemptions = &value
 	}
-	if value, ok := cc.mutation.TotalApplications(); ok {
-		_spec.SetField(coupon.FieldTotalApplications, field.TypeInt, value)
-		_node.TotalApplications = value
+	if value, ok := cc.mutation.TotalRedemptions(); ok {
+		_spec.SetField(coupon.FieldTotalRedemptions, field.TypeInt, value)
+		_node.TotalRedemptions = value
 	}
 	if value, ok := cc.mutation.Rules(); ok {
 		_spec.SetField(coupon.FieldRules, field.TypeJSON, value)
@@ -544,7 +535,7 @@ func (cc *CouponCreate) createSpec() (*Coupon, *sqlgraph.CreateSpec) {
 	}
 	if value, ok := cc.mutation.Currency(); ok {
 		_spec.SetField(coupon.FieldCurrency, field.TypeString, value)
-		_node.Currency = value
+		_node.Currency = &value
 	}
 	if value, ok := cc.mutation.Metadata(); ok {
 		_spec.SetField(coupon.FieldMetadata, field.TypeJSON, value)

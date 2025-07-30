@@ -165,10 +165,10 @@ func init() {
 	couponDescName := couponFields[1].Descriptor()
 	// coupon.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	coupon.NameValidator = couponDescName.Validators[0].(func(string) error)
-	// couponDescTotalApplications is the schema descriptor for total_applications field.
-	couponDescTotalApplications := couponFields[5].Descriptor()
-	// coupon.DefaultTotalApplications holds the default value on creation for the total_applications field.
-	coupon.DefaultTotalApplications = couponDescTotalApplications.Default.(int)
+	// couponDescTotalRedemptions is the schema descriptor for total_redemptions field.
+	couponDescTotalRedemptions := couponFields[5].Descriptor()
+	// coupon.DefaultTotalRedemptions holds the default value on creation for the total_redemptions field.
+	coupon.DefaultTotalRedemptions = couponDescTotalRedemptions.Default.(int)
 	// couponDescAmountOff is the schema descriptor for amount_off field.
 	couponDescAmountOff := couponFields[7].Descriptor()
 	// coupon.DefaultAmountOff holds the default value on creation for the amount_off field.
@@ -189,12 +189,6 @@ func init() {
 	coupon.DefaultCadence = couponDescCadence.Default.(string)
 	// coupon.CadenceValidator is a validator for the "cadence" field. It is called by the builders before save.
 	coupon.CadenceValidator = couponDescCadence.Validators[0].(func(string) error)
-	// couponDescCurrency is the schema descriptor for currency field.
-	couponDescCurrency := couponFields[12].Descriptor()
-	// coupon.DefaultCurrency holds the default value on creation for the currency field.
-	coupon.DefaultCurrency = couponDescCurrency.Default.(string)
-	// coupon.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
-	coupon.CurrencyValidator = couponDescCurrency.Validators[0].(func(string) error)
 	couponapplicationMixin := schema.CouponApplication{}.Mixin()
 	couponapplicationMixinFields0 := couponapplicationMixin[0].Fields()
 	_ = couponapplicationMixinFields0
@@ -244,10 +238,6 @@ func init() {
 	couponapplicationDescDiscountType := couponapplicationFields[9].Descriptor()
 	// couponapplication.DiscountTypeValidator is a validator for the "discount_type" field. It is called by the builders before save.
 	couponapplication.DiscountTypeValidator = couponapplicationDescDiscountType.Validators[0].(func(string) error)
-	// couponapplicationDescCurrency is the schema descriptor for currency field.
-	couponapplicationDescCurrency := couponapplicationFields[11].Descriptor()
-	// couponapplication.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
-	couponapplication.CurrencyValidator = couponapplicationDescCurrency.Validators[0].(func(string) error)
 	couponassociationMixin := schema.CouponAssociation{}.Mixin()
 	couponassociationMixinFields0 := couponassociationMixin[0].Fields()
 	_ = couponassociationMixinFields0

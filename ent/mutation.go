@@ -2208,10 +2208,10 @@ type CouponMutation struct {
 	name                       *string
 	redeem_after               *time.Time
 	redeem_before              *time.Time
-	max_applications           *int
-	addmax_applications        *int
-	total_applications         *int
-	addtotal_applications      *int
+	max_redemptions            *int
+	addmax_redemptions         *int
+	total_redemptions          *int
+	addtotal_redemptions       *int
 	rules                      *map[string]interface{}
 	amount_off                 *decimal.Decimal
 	percentage_off             *decimal.Decimal
@@ -2762,144 +2762,130 @@ func (m *CouponMutation) ResetRedeemBefore() {
 	delete(m.clearedFields, coupon.FieldRedeemBefore)
 }
 
-// SetMaxApplications sets the "max_applications" field.
-func (m *CouponMutation) SetMaxApplications(i int) {
-	m.max_applications = &i
-	m.addmax_applications = nil
+// SetMaxRedemptions sets the "max_redemptions" field.
+func (m *CouponMutation) SetMaxRedemptions(i int) {
+	m.max_redemptions = &i
+	m.addmax_redemptions = nil
 }
 
-// MaxApplications returns the value of the "max_applications" field in the mutation.
-func (m *CouponMutation) MaxApplications() (r int, exists bool) {
-	v := m.max_applications
+// MaxRedemptions returns the value of the "max_redemptions" field in the mutation.
+func (m *CouponMutation) MaxRedemptions() (r int, exists bool) {
+	v := m.max_redemptions
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldMaxApplications returns the old "max_applications" field's value of the Coupon entity.
+// OldMaxRedemptions returns the old "max_redemptions" field's value of the Coupon entity.
 // If the Coupon object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CouponMutation) OldMaxApplications(ctx context.Context) (v *int, err error) {
+func (m *CouponMutation) OldMaxRedemptions(ctx context.Context) (v *int, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldMaxApplications is only allowed on UpdateOne operations")
+		return v, errors.New("OldMaxRedemptions is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldMaxApplications requires an ID field in the mutation")
+		return v, errors.New("OldMaxRedemptions requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldMaxApplications: %w", err)
+		return v, fmt.Errorf("querying old value for OldMaxRedemptions: %w", err)
 	}
-	return oldValue.MaxApplications, nil
+	return oldValue.MaxRedemptions, nil
 }
 
-// AddMaxApplications adds i to the "max_applications" field.
-func (m *CouponMutation) AddMaxApplications(i int) {
-	if m.addmax_applications != nil {
-		*m.addmax_applications += i
+// AddMaxRedemptions adds i to the "max_redemptions" field.
+func (m *CouponMutation) AddMaxRedemptions(i int) {
+	if m.addmax_redemptions != nil {
+		*m.addmax_redemptions += i
 	} else {
-		m.addmax_applications = &i
+		m.addmax_redemptions = &i
 	}
 }
 
-// AddedMaxApplications returns the value that was added to the "max_applications" field in this mutation.
-func (m *CouponMutation) AddedMaxApplications() (r int, exists bool) {
-	v := m.addmax_applications
+// AddedMaxRedemptions returns the value that was added to the "max_redemptions" field in this mutation.
+func (m *CouponMutation) AddedMaxRedemptions() (r int, exists bool) {
+	v := m.addmax_redemptions
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ClearMaxApplications clears the value of the "max_applications" field.
-func (m *CouponMutation) ClearMaxApplications() {
-	m.max_applications = nil
-	m.addmax_applications = nil
-	m.clearedFields[coupon.FieldMaxApplications] = struct{}{}
+// ClearMaxRedemptions clears the value of the "max_redemptions" field.
+func (m *CouponMutation) ClearMaxRedemptions() {
+	m.max_redemptions = nil
+	m.addmax_redemptions = nil
+	m.clearedFields[coupon.FieldMaxRedemptions] = struct{}{}
 }
 
-// MaxApplicationsCleared returns if the "max_applications" field was cleared in this mutation.
-func (m *CouponMutation) MaxApplicationsCleared() bool {
-	_, ok := m.clearedFields[coupon.FieldMaxApplications]
+// MaxRedemptionsCleared returns if the "max_redemptions" field was cleared in this mutation.
+func (m *CouponMutation) MaxRedemptionsCleared() bool {
+	_, ok := m.clearedFields[coupon.FieldMaxRedemptions]
 	return ok
 }
 
-// ResetMaxApplications resets all changes to the "max_applications" field.
-func (m *CouponMutation) ResetMaxApplications() {
-	m.max_applications = nil
-	m.addmax_applications = nil
-	delete(m.clearedFields, coupon.FieldMaxApplications)
+// ResetMaxRedemptions resets all changes to the "max_redemptions" field.
+func (m *CouponMutation) ResetMaxRedemptions() {
+	m.max_redemptions = nil
+	m.addmax_redemptions = nil
+	delete(m.clearedFields, coupon.FieldMaxRedemptions)
 }
 
-// SetTotalApplications sets the "total_applications" field.
-func (m *CouponMutation) SetTotalApplications(i int) {
-	m.total_applications = &i
-	m.addtotal_applications = nil
+// SetTotalRedemptions sets the "total_redemptions" field.
+func (m *CouponMutation) SetTotalRedemptions(i int) {
+	m.total_redemptions = &i
+	m.addtotal_redemptions = nil
 }
 
-// TotalApplications returns the value of the "total_applications" field in the mutation.
-func (m *CouponMutation) TotalApplications() (r int, exists bool) {
-	v := m.total_applications
+// TotalRedemptions returns the value of the "total_redemptions" field in the mutation.
+func (m *CouponMutation) TotalRedemptions() (r int, exists bool) {
+	v := m.total_redemptions
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldTotalApplications returns the old "total_applications" field's value of the Coupon entity.
+// OldTotalRedemptions returns the old "total_redemptions" field's value of the Coupon entity.
 // If the Coupon object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CouponMutation) OldTotalApplications(ctx context.Context) (v int, err error) {
+func (m *CouponMutation) OldTotalRedemptions(ctx context.Context) (v int, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldTotalApplications is only allowed on UpdateOne operations")
+		return v, errors.New("OldTotalRedemptions is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldTotalApplications requires an ID field in the mutation")
+		return v, errors.New("OldTotalRedemptions requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldTotalApplications: %w", err)
+		return v, fmt.Errorf("querying old value for OldTotalRedemptions: %w", err)
 	}
-	return oldValue.TotalApplications, nil
+	return oldValue.TotalRedemptions, nil
 }
 
-// AddTotalApplications adds i to the "total_applications" field.
-func (m *CouponMutation) AddTotalApplications(i int) {
-	if m.addtotal_applications != nil {
-		*m.addtotal_applications += i
+// AddTotalRedemptions adds i to the "total_redemptions" field.
+func (m *CouponMutation) AddTotalRedemptions(i int) {
+	if m.addtotal_redemptions != nil {
+		*m.addtotal_redemptions += i
 	} else {
-		m.addtotal_applications = &i
+		m.addtotal_redemptions = &i
 	}
 }
 
-// AddedTotalApplications returns the value that was added to the "total_applications" field in this mutation.
-func (m *CouponMutation) AddedTotalApplications() (r int, exists bool) {
-	v := m.addtotal_applications
+// AddedTotalRedemptions returns the value that was added to the "total_redemptions" field in this mutation.
+func (m *CouponMutation) AddedTotalRedemptions() (r int, exists bool) {
+	v := m.addtotal_redemptions
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// ClearTotalApplications clears the value of the "total_applications" field.
-func (m *CouponMutation) ClearTotalApplications() {
-	m.total_applications = nil
-	m.addtotal_applications = nil
-	m.clearedFields[coupon.FieldTotalApplications] = struct{}{}
-}
-
-// TotalApplicationsCleared returns if the "total_applications" field was cleared in this mutation.
-func (m *CouponMutation) TotalApplicationsCleared() bool {
-	_, ok := m.clearedFields[coupon.FieldTotalApplications]
-	return ok
-}
-
-// ResetTotalApplications resets all changes to the "total_applications" field.
-func (m *CouponMutation) ResetTotalApplications() {
-	m.total_applications = nil
-	m.addtotal_applications = nil
-	delete(m.clearedFields, coupon.FieldTotalApplications)
+// ResetTotalRedemptions resets all changes to the "total_redemptions" field.
+func (m *CouponMutation) ResetTotalRedemptions() {
+	m.total_redemptions = nil
+	m.addtotal_redemptions = nil
 }
 
 // SetRules sets the "rules" field.
@@ -3208,7 +3194,7 @@ func (m *CouponMutation) Currency() (r string, exists bool) {
 // OldCurrency returns the old "currency" field's value of the Coupon entity.
 // If the Coupon object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CouponMutation) OldCurrency(ctx context.Context) (v string, err error) {
+func (m *CouponMutation) OldCurrency(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCurrency is only allowed on UpdateOne operations")
 	}
@@ -3222,9 +3208,22 @@ func (m *CouponMutation) OldCurrency(ctx context.Context) (v string, err error) 
 	return oldValue.Currency, nil
 }
 
+// ClearCurrency clears the value of the "currency" field.
+func (m *CouponMutation) ClearCurrency() {
+	m.currency = nil
+	m.clearedFields[coupon.FieldCurrency] = struct{}{}
+}
+
+// CurrencyCleared returns if the "currency" field was cleared in this mutation.
+func (m *CouponMutation) CurrencyCleared() bool {
+	_, ok := m.clearedFields[coupon.FieldCurrency]
+	return ok
+}
+
 // ResetCurrency resets all changes to the "currency" field.
 func (m *CouponMutation) ResetCurrency() {
 	m.currency = nil
+	delete(m.clearedFields, coupon.FieldCurrency)
 }
 
 // SetMetadata sets the "metadata" field.
@@ -3449,11 +3448,11 @@ func (m *CouponMutation) Fields() []string {
 	if m.redeem_before != nil {
 		fields = append(fields, coupon.FieldRedeemBefore)
 	}
-	if m.max_applications != nil {
-		fields = append(fields, coupon.FieldMaxApplications)
+	if m.max_redemptions != nil {
+		fields = append(fields, coupon.FieldMaxRedemptions)
 	}
-	if m.total_applications != nil {
-		fields = append(fields, coupon.FieldTotalApplications)
+	if m.total_redemptions != nil {
+		fields = append(fields, coupon.FieldTotalRedemptions)
 	}
 	if m.rules != nil {
 		fields = append(fields, coupon.FieldRules)
@@ -3507,10 +3506,10 @@ func (m *CouponMutation) Field(name string) (ent.Value, bool) {
 		return m.RedeemAfter()
 	case coupon.FieldRedeemBefore:
 		return m.RedeemBefore()
-	case coupon.FieldMaxApplications:
-		return m.MaxApplications()
-	case coupon.FieldTotalApplications:
-		return m.TotalApplications()
+	case coupon.FieldMaxRedemptions:
+		return m.MaxRedemptions()
+	case coupon.FieldTotalRedemptions:
+		return m.TotalRedemptions()
 	case coupon.FieldRules:
 		return m.Rules()
 	case coupon.FieldAmountOff:
@@ -3556,10 +3555,10 @@ func (m *CouponMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldRedeemAfter(ctx)
 	case coupon.FieldRedeemBefore:
 		return m.OldRedeemBefore(ctx)
-	case coupon.FieldMaxApplications:
-		return m.OldMaxApplications(ctx)
-	case coupon.FieldTotalApplications:
-		return m.OldTotalApplications(ctx)
+	case coupon.FieldMaxRedemptions:
+		return m.OldMaxRedemptions(ctx)
+	case coupon.FieldTotalRedemptions:
+		return m.OldTotalRedemptions(ctx)
 	case coupon.FieldRules:
 		return m.OldRules(ctx)
 	case coupon.FieldAmountOff:
@@ -3655,19 +3654,19 @@ func (m *CouponMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRedeemBefore(v)
 		return nil
-	case coupon.FieldMaxApplications:
+	case coupon.FieldMaxRedemptions:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetMaxApplications(v)
+		m.SetMaxRedemptions(v)
 		return nil
-	case coupon.FieldTotalApplications:
+	case coupon.FieldTotalRedemptions:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetTotalApplications(v)
+		m.SetTotalRedemptions(v)
 		return nil
 	case coupon.FieldRules:
 		v, ok := value.(map[string]interface{})
@@ -3733,11 +3732,11 @@ func (m *CouponMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *CouponMutation) AddedFields() []string {
 	var fields []string
-	if m.addmax_applications != nil {
-		fields = append(fields, coupon.FieldMaxApplications)
+	if m.addmax_redemptions != nil {
+		fields = append(fields, coupon.FieldMaxRedemptions)
 	}
-	if m.addtotal_applications != nil {
-		fields = append(fields, coupon.FieldTotalApplications)
+	if m.addtotal_redemptions != nil {
+		fields = append(fields, coupon.FieldTotalRedemptions)
 	}
 	if m.addduration_in_periods != nil {
 		fields = append(fields, coupon.FieldDurationInPeriods)
@@ -3750,10 +3749,10 @@ func (m *CouponMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *CouponMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
-	case coupon.FieldMaxApplications:
-		return m.AddedMaxApplications()
-	case coupon.FieldTotalApplications:
-		return m.AddedTotalApplications()
+	case coupon.FieldMaxRedemptions:
+		return m.AddedMaxRedemptions()
+	case coupon.FieldTotalRedemptions:
+		return m.AddedTotalRedemptions()
 	case coupon.FieldDurationInPeriods:
 		return m.AddedDurationInPeriods()
 	}
@@ -3765,19 +3764,19 @@ func (m *CouponMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *CouponMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case coupon.FieldMaxApplications:
+	case coupon.FieldMaxRedemptions:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddMaxApplications(v)
+		m.AddMaxRedemptions(v)
 		return nil
-	case coupon.FieldTotalApplications:
+	case coupon.FieldTotalRedemptions:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.AddTotalApplications(v)
+		m.AddTotalRedemptions(v)
 		return nil
 	case coupon.FieldDurationInPeriods:
 		v, ok := value.(int)
@@ -3809,11 +3808,8 @@ func (m *CouponMutation) ClearedFields() []string {
 	if m.FieldCleared(coupon.FieldRedeemBefore) {
 		fields = append(fields, coupon.FieldRedeemBefore)
 	}
-	if m.FieldCleared(coupon.FieldMaxApplications) {
-		fields = append(fields, coupon.FieldMaxApplications)
-	}
-	if m.FieldCleared(coupon.FieldTotalApplications) {
-		fields = append(fields, coupon.FieldTotalApplications)
+	if m.FieldCleared(coupon.FieldMaxRedemptions) {
+		fields = append(fields, coupon.FieldMaxRedemptions)
 	}
 	if m.FieldCleared(coupon.FieldRules) {
 		fields = append(fields, coupon.FieldRules)
@@ -3826,6 +3822,9 @@ func (m *CouponMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(coupon.FieldDurationInPeriods) {
 		fields = append(fields, coupon.FieldDurationInPeriods)
+	}
+	if m.FieldCleared(coupon.FieldCurrency) {
+		fields = append(fields, coupon.FieldCurrency)
 	}
 	if m.FieldCleared(coupon.FieldMetadata) {
 		fields = append(fields, coupon.FieldMetadata)
@@ -3859,11 +3858,8 @@ func (m *CouponMutation) ClearField(name string) error {
 	case coupon.FieldRedeemBefore:
 		m.ClearRedeemBefore()
 		return nil
-	case coupon.FieldMaxApplications:
-		m.ClearMaxApplications()
-		return nil
-	case coupon.FieldTotalApplications:
-		m.ClearTotalApplications()
+	case coupon.FieldMaxRedemptions:
+		m.ClearMaxRedemptions()
 		return nil
 	case coupon.FieldRules:
 		m.ClearRules()
@@ -3876,6 +3872,9 @@ func (m *CouponMutation) ClearField(name string) error {
 		return nil
 	case coupon.FieldDurationInPeriods:
 		m.ClearDurationInPeriods()
+		return nil
+	case coupon.FieldCurrency:
+		m.ClearCurrency()
 		return nil
 	case coupon.FieldMetadata:
 		m.ClearMetadata()
@@ -3918,11 +3917,11 @@ func (m *CouponMutation) ResetField(name string) error {
 	case coupon.FieldRedeemBefore:
 		m.ResetRedeemBefore()
 		return nil
-	case coupon.FieldMaxApplications:
-		m.ResetMaxApplications()
+	case coupon.FieldMaxRedemptions:
+		m.ResetMaxRedemptions()
 		return nil
-	case coupon.FieldTotalApplications:
-		m.ResetTotalApplications()
+	case coupon.FieldTotalRedemptions:
+		m.ResetTotalRedemptions()
 		return nil
 	case coupon.FieldRules:
 		m.ResetRules()
@@ -4896,7 +4895,7 @@ func (m *CouponApplicationMutation) Currency() (r string, exists bool) {
 // OldCurrency returns the old "currency" field's value of the CouponApplication entity.
 // If the CouponApplication object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CouponApplicationMutation) OldCurrency(ctx context.Context) (v string, err error) {
+func (m *CouponApplicationMutation) OldCurrency(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCurrency is only allowed on UpdateOne operations")
 	}
@@ -4910,9 +4909,22 @@ func (m *CouponApplicationMutation) OldCurrency(ctx context.Context) (v string, 
 	return oldValue.Currency, nil
 }
 
+// ClearCurrency clears the value of the "currency" field.
+func (m *CouponApplicationMutation) ClearCurrency() {
+	m.currency = nil
+	m.clearedFields[couponapplication.FieldCurrency] = struct{}{}
+}
+
+// CurrencyCleared returns if the "currency" field was cleared in this mutation.
+func (m *CouponApplicationMutation) CurrencyCleared() bool {
+	_, ok := m.clearedFields[couponapplication.FieldCurrency]
+	return ok
+}
+
 // ResetCurrency resets all changes to the "currency" field.
 func (m *CouponApplicationMutation) ResetCurrency() {
 	m.currency = nil
+	delete(m.clearedFields, couponapplication.FieldCurrency)
 }
 
 // SetCouponSnapshot sets the "coupon_snapshot" field.
@@ -5507,6 +5519,9 @@ func (m *CouponApplicationMutation) ClearedFields() []string {
 	if m.FieldCleared(couponapplication.FieldDiscountPercentage) {
 		fields = append(fields, couponapplication.FieldDiscountPercentage)
 	}
+	if m.FieldCleared(couponapplication.FieldCurrency) {
+		fields = append(fields, couponapplication.FieldCurrency)
+	}
 	if m.FieldCleared(couponapplication.FieldCouponSnapshot) {
 		fields = append(fields, couponapplication.FieldCouponSnapshot)
 	}
@@ -5541,6 +5556,9 @@ func (m *CouponApplicationMutation) ClearField(name string) error {
 		return nil
 	case couponapplication.FieldDiscountPercentage:
 		m.ClearDiscountPercentage()
+		return nil
+	case couponapplication.FieldCurrency:
+		m.ClearCurrency()
 		return nil
 	case couponapplication.FieldCouponSnapshot:
 		m.ClearCouponSnapshot()

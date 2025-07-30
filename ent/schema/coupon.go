@@ -45,14 +45,13 @@ func (Coupon) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Coupon redeem before date"),
-		field.Int("max_applications").
+		field.Int("max_redemptions").
 			Optional().
 			Nillable().
-			Comment("Coupon max applications"),
-		field.Int("total_applications").
-			Optional().
+			Comment("Coupon max redemptions"),
+		field.Int("total_redemptions").
 			Default(0).
-			Comment("Coupon total applications"),
+			Comment("Coupon total redemptions"),
 		field.JSON("rules", map[string]interface{}{}).
 			Optional().
 			Comment("Rule engine configuration for discount application"),
@@ -65,7 +64,7 @@ func (Coupon) Fields() []ent.Field {
 			Comment("Coupon amount off"),
 		field.Other("percentage_off", decimal.Decimal{}).
 			SchemaType(map[string]string{
-				"postgres": "numeric(5,4)",
+				"postgres": "numeric(7,4)",
 			}).
 			Optional().
 			Default(decimal.Zero).
@@ -92,8 +91,8 @@ func (Coupon) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(10)",
 			}).
-			NotEmpty().
-			Default("usd").
+			Optional().
+			Nillable().
 			Comment("Coupon currency"),
 		field.JSON("metadata", map[string]string{}).
 			Optional().

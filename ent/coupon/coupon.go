@@ -35,10 +35,10 @@ const (
 	FieldRedeemAfter = "redeem_after"
 	// FieldRedeemBefore holds the string denoting the redeem_before field in the database.
 	FieldRedeemBefore = "redeem_before"
-	// FieldMaxApplications holds the string denoting the max_applications field in the database.
-	FieldMaxApplications = "max_applications"
-	// FieldTotalApplications holds the string denoting the total_applications field in the database.
-	FieldTotalApplications = "total_applications"
+	// FieldMaxRedemptions holds the string denoting the max_redemptions field in the database.
+	FieldMaxRedemptions = "max_redemptions"
+	// FieldTotalRedemptions holds the string denoting the total_redemptions field in the database.
+	FieldTotalRedemptions = "total_redemptions"
 	// FieldRules holds the string denoting the rules field in the database.
 	FieldRules = "rules"
 	// FieldAmountOff holds the string denoting the amount_off field in the database.
@@ -90,8 +90,8 @@ var Columns = []string{
 	FieldName,
 	FieldRedeemAfter,
 	FieldRedeemBefore,
-	FieldMaxApplications,
-	FieldTotalApplications,
+	FieldMaxRedemptions,
+	FieldTotalRedemptions,
 	FieldRules,
 	FieldAmountOff,
 	FieldPercentageOff,
@@ -127,8 +127,8 @@ var (
 	DefaultEnvironmentID string
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
-	// DefaultTotalApplications holds the default value on creation for the "total_applications" field.
-	DefaultTotalApplications int
+	// DefaultTotalRedemptions holds the default value on creation for the "total_redemptions" field.
+	DefaultTotalRedemptions int
 	// DefaultAmountOff holds the default value on creation for the "amount_off" field.
 	DefaultAmountOff decimal.Decimal
 	// DefaultPercentageOff holds the default value on creation for the "percentage_off" field.
@@ -141,10 +141,6 @@ var (
 	DefaultCadence string
 	// CadenceValidator is a validator for the "cadence" field. It is called by the builders before save.
 	CadenceValidator func(string) error
-	// DefaultCurrency holds the default value on creation for the "currency" field.
-	DefaultCurrency string
-	// CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
-	CurrencyValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the Coupon queries.
@@ -205,14 +201,14 @@ func ByRedeemBefore(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRedeemBefore, opts...).ToFunc()
 }
 
-// ByMaxApplications orders the results by the max_applications field.
-func ByMaxApplications(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldMaxApplications, opts...).ToFunc()
+// ByMaxRedemptions orders the results by the max_redemptions field.
+func ByMaxRedemptions(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMaxRedemptions, opts...).ToFunc()
 }
 
-// ByTotalApplications orders the results by the total_applications field.
-func ByTotalApplications(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTotalApplications, opts...).ToFunc()
+// ByTotalRedemptions orders the results by the total_redemptions field.
+func ByTotalRedemptions(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTotalRedemptions, opts...).ToFunc()
 }
 
 // ByAmountOff orders the results by the amount_off field.

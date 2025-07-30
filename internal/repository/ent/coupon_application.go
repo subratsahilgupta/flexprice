@@ -3,6 +3,7 @@ package ent
 import (
 	"context"
 
+	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainCouponApplication "github.com/flexprice/flexprice/internal/domain/coupon_application"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -58,6 +59,6 @@ func (r *couponApplicationRepository) GetByInvoiceLineItem(ctx context.Context, 
 }
 
 // CouponApplicationQueryOptions holds query options for coupon application operations
-type CouponApplicationQueryOptions struct {
-	// Add query options as needed
-}
+type CouponApplicationQuery = *ent.CouponApplicationQuery
+
+type CouponApplicationQueryOptions struct{}

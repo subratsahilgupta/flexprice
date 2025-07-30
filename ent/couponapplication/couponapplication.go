@@ -152,8 +152,6 @@ var (
 	DefaultAppliedAt func() time.Time
 	// DiscountTypeValidator is a validator for the "discount_type" field. It is called by the builders before save.
 	DiscountTypeValidator func(string) error
-	// CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
-	CurrencyValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the CouponApplication queries.

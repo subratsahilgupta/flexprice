@@ -125,57 +125,51 @@ func (cu *CouponUpdate) ClearRedeemBefore() *CouponUpdate {
 	return cu
 }
 
-// SetMaxApplications sets the "max_applications" field.
-func (cu *CouponUpdate) SetMaxApplications(i int) *CouponUpdate {
-	cu.mutation.ResetMaxApplications()
-	cu.mutation.SetMaxApplications(i)
+// SetMaxRedemptions sets the "max_redemptions" field.
+func (cu *CouponUpdate) SetMaxRedemptions(i int) *CouponUpdate {
+	cu.mutation.ResetMaxRedemptions()
+	cu.mutation.SetMaxRedemptions(i)
 	return cu
 }
 
-// SetNillableMaxApplications sets the "max_applications" field if the given value is not nil.
-func (cu *CouponUpdate) SetNillableMaxApplications(i *int) *CouponUpdate {
+// SetNillableMaxRedemptions sets the "max_redemptions" field if the given value is not nil.
+func (cu *CouponUpdate) SetNillableMaxRedemptions(i *int) *CouponUpdate {
 	if i != nil {
-		cu.SetMaxApplications(*i)
+		cu.SetMaxRedemptions(*i)
 	}
 	return cu
 }
 
-// AddMaxApplications adds i to the "max_applications" field.
-func (cu *CouponUpdate) AddMaxApplications(i int) *CouponUpdate {
-	cu.mutation.AddMaxApplications(i)
+// AddMaxRedemptions adds i to the "max_redemptions" field.
+func (cu *CouponUpdate) AddMaxRedemptions(i int) *CouponUpdate {
+	cu.mutation.AddMaxRedemptions(i)
 	return cu
 }
 
-// ClearMaxApplications clears the value of the "max_applications" field.
-func (cu *CouponUpdate) ClearMaxApplications() *CouponUpdate {
-	cu.mutation.ClearMaxApplications()
+// ClearMaxRedemptions clears the value of the "max_redemptions" field.
+func (cu *CouponUpdate) ClearMaxRedemptions() *CouponUpdate {
+	cu.mutation.ClearMaxRedemptions()
 	return cu
 }
 
-// SetTotalApplications sets the "total_applications" field.
-func (cu *CouponUpdate) SetTotalApplications(i int) *CouponUpdate {
-	cu.mutation.ResetTotalApplications()
-	cu.mutation.SetTotalApplications(i)
+// SetTotalRedemptions sets the "total_redemptions" field.
+func (cu *CouponUpdate) SetTotalRedemptions(i int) *CouponUpdate {
+	cu.mutation.ResetTotalRedemptions()
+	cu.mutation.SetTotalRedemptions(i)
 	return cu
 }
 
-// SetNillableTotalApplications sets the "total_applications" field if the given value is not nil.
-func (cu *CouponUpdate) SetNillableTotalApplications(i *int) *CouponUpdate {
+// SetNillableTotalRedemptions sets the "total_redemptions" field if the given value is not nil.
+func (cu *CouponUpdate) SetNillableTotalRedemptions(i *int) *CouponUpdate {
 	if i != nil {
-		cu.SetTotalApplications(*i)
+		cu.SetTotalRedemptions(*i)
 	}
 	return cu
 }
 
-// AddTotalApplications adds i to the "total_applications" field.
-func (cu *CouponUpdate) AddTotalApplications(i int) *CouponUpdate {
-	cu.mutation.AddTotalApplications(i)
-	return cu
-}
-
-// ClearTotalApplications clears the value of the "total_applications" field.
-func (cu *CouponUpdate) ClearTotalApplications() *CouponUpdate {
-	cu.mutation.ClearTotalApplications()
+// AddTotalRedemptions adds i to the "total_redemptions" field.
+func (cu *CouponUpdate) AddTotalRedemptions(i int) *CouponUpdate {
+	cu.mutation.AddTotalRedemptions(i)
 	return cu
 }
 
@@ -297,6 +291,12 @@ func (cu *CouponUpdate) SetNillableCurrency(s *string) *CouponUpdate {
 	if s != nil {
 		cu.SetCurrency(*s)
 	}
+	return cu
+}
+
+// ClearCurrency clears the value of the "currency" field.
+func (cu *CouponUpdate) ClearCurrency() *CouponUpdate {
+	cu.mutation.ClearCurrency()
 	return cu
 }
 
@@ -442,11 +442,6 @@ func (cu *CouponUpdate) check() error {
 			return &ValidationError{Name: "cadence", err: fmt.Errorf(`ent: validator failed for field "Coupon.cadence": %w`, err)}
 		}
 	}
-	if v, ok := cu.mutation.Currency(); ok {
-		if err := coupon.CurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "Coupon.currency": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -495,23 +490,20 @@ func (cu *CouponUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if cu.mutation.RedeemBeforeCleared() {
 		_spec.ClearField(coupon.FieldRedeemBefore, field.TypeTime)
 	}
-	if value, ok := cu.mutation.MaxApplications(); ok {
-		_spec.SetField(coupon.FieldMaxApplications, field.TypeInt, value)
+	if value, ok := cu.mutation.MaxRedemptions(); ok {
+		_spec.SetField(coupon.FieldMaxRedemptions, field.TypeInt, value)
 	}
-	if value, ok := cu.mutation.AddedMaxApplications(); ok {
-		_spec.AddField(coupon.FieldMaxApplications, field.TypeInt, value)
+	if value, ok := cu.mutation.AddedMaxRedemptions(); ok {
+		_spec.AddField(coupon.FieldMaxRedemptions, field.TypeInt, value)
 	}
-	if cu.mutation.MaxApplicationsCleared() {
-		_spec.ClearField(coupon.FieldMaxApplications, field.TypeInt)
+	if cu.mutation.MaxRedemptionsCleared() {
+		_spec.ClearField(coupon.FieldMaxRedemptions, field.TypeInt)
 	}
-	if value, ok := cu.mutation.TotalApplications(); ok {
-		_spec.SetField(coupon.FieldTotalApplications, field.TypeInt, value)
+	if value, ok := cu.mutation.TotalRedemptions(); ok {
+		_spec.SetField(coupon.FieldTotalRedemptions, field.TypeInt, value)
 	}
-	if value, ok := cu.mutation.AddedTotalApplications(); ok {
-		_spec.AddField(coupon.FieldTotalApplications, field.TypeInt, value)
-	}
-	if cu.mutation.TotalApplicationsCleared() {
-		_spec.ClearField(coupon.FieldTotalApplications, field.TypeInt)
+	if value, ok := cu.mutation.AddedTotalRedemptions(); ok {
+		_spec.AddField(coupon.FieldTotalRedemptions, field.TypeInt, value)
 	}
 	if value, ok := cu.mutation.Rules(); ok {
 		_spec.SetField(coupon.FieldRules, field.TypeJSON, value)
@@ -548,6 +540,9 @@ func (cu *CouponUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := cu.mutation.Currency(); ok {
 		_spec.SetField(coupon.FieldCurrency, field.TypeString, value)
+	}
+	if cu.mutation.CurrencyCleared() {
+		_spec.ClearField(coupon.FieldCurrency, field.TypeString)
 	}
 	if value, ok := cu.mutation.Metadata(); ok {
 		_spec.SetField(coupon.FieldMetadata, field.TypeJSON, value)
@@ -759,57 +754,51 @@ func (cuo *CouponUpdateOne) ClearRedeemBefore() *CouponUpdateOne {
 	return cuo
 }
 
-// SetMaxApplications sets the "max_applications" field.
-func (cuo *CouponUpdateOne) SetMaxApplications(i int) *CouponUpdateOne {
-	cuo.mutation.ResetMaxApplications()
-	cuo.mutation.SetMaxApplications(i)
+// SetMaxRedemptions sets the "max_redemptions" field.
+func (cuo *CouponUpdateOne) SetMaxRedemptions(i int) *CouponUpdateOne {
+	cuo.mutation.ResetMaxRedemptions()
+	cuo.mutation.SetMaxRedemptions(i)
 	return cuo
 }
 
-// SetNillableMaxApplications sets the "max_applications" field if the given value is not nil.
-func (cuo *CouponUpdateOne) SetNillableMaxApplications(i *int) *CouponUpdateOne {
+// SetNillableMaxRedemptions sets the "max_redemptions" field if the given value is not nil.
+func (cuo *CouponUpdateOne) SetNillableMaxRedemptions(i *int) *CouponUpdateOne {
 	if i != nil {
-		cuo.SetMaxApplications(*i)
+		cuo.SetMaxRedemptions(*i)
 	}
 	return cuo
 }
 
-// AddMaxApplications adds i to the "max_applications" field.
-func (cuo *CouponUpdateOne) AddMaxApplications(i int) *CouponUpdateOne {
-	cuo.mutation.AddMaxApplications(i)
+// AddMaxRedemptions adds i to the "max_redemptions" field.
+func (cuo *CouponUpdateOne) AddMaxRedemptions(i int) *CouponUpdateOne {
+	cuo.mutation.AddMaxRedemptions(i)
 	return cuo
 }
 
-// ClearMaxApplications clears the value of the "max_applications" field.
-func (cuo *CouponUpdateOne) ClearMaxApplications() *CouponUpdateOne {
-	cuo.mutation.ClearMaxApplications()
+// ClearMaxRedemptions clears the value of the "max_redemptions" field.
+func (cuo *CouponUpdateOne) ClearMaxRedemptions() *CouponUpdateOne {
+	cuo.mutation.ClearMaxRedemptions()
 	return cuo
 }
 
-// SetTotalApplications sets the "total_applications" field.
-func (cuo *CouponUpdateOne) SetTotalApplications(i int) *CouponUpdateOne {
-	cuo.mutation.ResetTotalApplications()
-	cuo.mutation.SetTotalApplications(i)
+// SetTotalRedemptions sets the "total_redemptions" field.
+func (cuo *CouponUpdateOne) SetTotalRedemptions(i int) *CouponUpdateOne {
+	cuo.mutation.ResetTotalRedemptions()
+	cuo.mutation.SetTotalRedemptions(i)
 	return cuo
 }
 
-// SetNillableTotalApplications sets the "total_applications" field if the given value is not nil.
-func (cuo *CouponUpdateOne) SetNillableTotalApplications(i *int) *CouponUpdateOne {
+// SetNillableTotalRedemptions sets the "total_redemptions" field if the given value is not nil.
+func (cuo *CouponUpdateOne) SetNillableTotalRedemptions(i *int) *CouponUpdateOne {
 	if i != nil {
-		cuo.SetTotalApplications(*i)
+		cuo.SetTotalRedemptions(*i)
 	}
 	return cuo
 }
 
-// AddTotalApplications adds i to the "total_applications" field.
-func (cuo *CouponUpdateOne) AddTotalApplications(i int) *CouponUpdateOne {
-	cuo.mutation.AddTotalApplications(i)
-	return cuo
-}
-
-// ClearTotalApplications clears the value of the "total_applications" field.
-func (cuo *CouponUpdateOne) ClearTotalApplications() *CouponUpdateOne {
-	cuo.mutation.ClearTotalApplications()
+// AddTotalRedemptions adds i to the "total_redemptions" field.
+func (cuo *CouponUpdateOne) AddTotalRedemptions(i int) *CouponUpdateOne {
+	cuo.mutation.AddTotalRedemptions(i)
 	return cuo
 }
 
@@ -931,6 +920,12 @@ func (cuo *CouponUpdateOne) SetNillableCurrency(s *string) *CouponUpdateOne {
 	if s != nil {
 		cuo.SetCurrency(*s)
 	}
+	return cuo
+}
+
+// ClearCurrency clears the value of the "currency" field.
+func (cuo *CouponUpdateOne) ClearCurrency() *CouponUpdateOne {
+	cuo.mutation.ClearCurrency()
 	return cuo
 }
 
@@ -1089,11 +1084,6 @@ func (cuo *CouponUpdateOne) check() error {
 			return &ValidationError{Name: "cadence", err: fmt.Errorf(`ent: validator failed for field "Coupon.cadence": %w`, err)}
 		}
 	}
-	if v, ok := cuo.mutation.Currency(); ok {
-		if err := coupon.CurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "Coupon.currency": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -1159,23 +1149,20 @@ func (cuo *CouponUpdateOne) sqlSave(ctx context.Context) (_node *Coupon, err err
 	if cuo.mutation.RedeemBeforeCleared() {
 		_spec.ClearField(coupon.FieldRedeemBefore, field.TypeTime)
 	}
-	if value, ok := cuo.mutation.MaxApplications(); ok {
-		_spec.SetField(coupon.FieldMaxApplications, field.TypeInt, value)
+	if value, ok := cuo.mutation.MaxRedemptions(); ok {
+		_spec.SetField(coupon.FieldMaxRedemptions, field.TypeInt, value)
 	}
-	if value, ok := cuo.mutation.AddedMaxApplications(); ok {
-		_spec.AddField(coupon.FieldMaxApplications, field.TypeInt, value)
+	if value, ok := cuo.mutation.AddedMaxRedemptions(); ok {
+		_spec.AddField(coupon.FieldMaxRedemptions, field.TypeInt, value)
 	}
-	if cuo.mutation.MaxApplicationsCleared() {
-		_spec.ClearField(coupon.FieldMaxApplications, field.TypeInt)
+	if cuo.mutation.MaxRedemptionsCleared() {
+		_spec.ClearField(coupon.FieldMaxRedemptions, field.TypeInt)
 	}
-	if value, ok := cuo.mutation.TotalApplications(); ok {
-		_spec.SetField(coupon.FieldTotalApplications, field.TypeInt, value)
+	if value, ok := cuo.mutation.TotalRedemptions(); ok {
+		_spec.SetField(coupon.FieldTotalRedemptions, field.TypeInt, value)
 	}
-	if value, ok := cuo.mutation.AddedTotalApplications(); ok {
-		_spec.AddField(coupon.FieldTotalApplications, field.TypeInt, value)
-	}
-	if cuo.mutation.TotalApplicationsCleared() {
-		_spec.ClearField(coupon.FieldTotalApplications, field.TypeInt)
+	if value, ok := cuo.mutation.AddedTotalRedemptions(); ok {
+		_spec.AddField(coupon.FieldTotalRedemptions, field.TypeInt, value)
 	}
 	if value, ok := cuo.mutation.Rules(); ok {
 		_spec.SetField(coupon.FieldRules, field.TypeJSON, value)
@@ -1212,6 +1199,9 @@ func (cuo *CouponUpdateOne) sqlSave(ctx context.Context) (_node *Coupon, err err
 	}
 	if value, ok := cuo.mutation.Currency(); ok {
 		_spec.SetField(coupon.FieldCurrency, field.TypeString, value)
+	}
+	if cuo.mutation.CurrencyCleared() {
+		_spec.ClearField(coupon.FieldCurrency, field.TypeString)
 	}
 	if value, ok := cuo.mutation.Metadata(); ok {
 		_spec.SetField(coupon.FieldMetadata, field.TypeJSON, value)

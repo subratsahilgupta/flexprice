@@ -21,6 +21,7 @@ type CouponService interface {
 	GetCoupon(ctx context.Context, id string) (*dto.CouponResponse, error)
 	UpdateCoupon(ctx context.Context, id string, req dto.UpdateCouponRequest) (*dto.CouponResponse, error)
 	DeleteCoupon(ctx context.Context, id string) error
+	ListCoupons(ctx context.Context, filter *types.CouponFilter) (*dto.ListCouponsResponse, error)
 
 	// Coupon association operations
 	CreateCouponAssociation(ctx context.Context, req dto.CreateCouponAssociationRequest) (*dto.CouponAssociationResponse, error)
@@ -136,13 +137,13 @@ func (s *couponService) UpdateCoupon(ctx context.Context, id string, req dto.Upd
 		c.MaxRedemptions = req.MaxRedemptions
 	}
 	if req.Rules != nil {
-		c.Rules = *req.Rules
+		c.Rules = req.Rules
 	}
 	if req.AmountOff != nil {
-		c.AmountOff = *req.AmountOff
+		c.AmountOff = req.AmountOff
 	}
 	if req.PercentageOff != nil {
-		c.PercentageOff = *req.PercentageOff
+		c.PercentageOff = req.PercentageOff
 	}
 	if req.Type != nil {
 		c.Type = *req.Type
@@ -151,7 +152,7 @@ func (s *couponService) UpdateCoupon(ctx context.Context, id string, req dto.Upd
 		c.Cadence = *req.Cadence
 	}
 	if req.Currency != nil {
-		c.Currency = *req.Currency
+		c.Currency = req.Currency
 	}
 
 	c.UpdatedAt = time.Now()
@@ -168,6 +169,37 @@ func (s *couponService) UpdateCoupon(ctx context.Context, id string, req dto.Upd
 // DeleteCoupon deletes a coupon
 func (s *couponService) DeleteCoupon(ctx context.Context, id string) error {
 	return s.couponRepo.Delete(ctx, id)
+}
+
+// ListCoupons lists coupons with filtering
+func (s *couponService) ListCoupons(ctx context.Context, filter *types.CouponFilter) (*dto.ListCouponsResponse, error) {
+	if filter == nil {
+		filter = types.NewCouponFilter()
+	}
+
+	if err := filter.Validate(); err != nil {
+		return nil, err
+	}
+
+	coupons, err := s.couponRepo.List(ctx, filter)
+	if err != nil {
+		s.logger.Error("failed to list coupons", "error", err)
+		return nil, err
+	}
+
+	total, err := s.couponRepo.Count(ctx, filter)
+	if err != nil {
+		s.logger.Error("failed to count coupons", "error", err)
+		return nil, err
+	}
+
+	responses := make([]*dto.CouponResponse, len(coupons))
+	for i, c := range coupons {
+		responses[i] = s.toCouponResponse(c)
+	}
+
+	listResponse := types.NewListResponse(responses, total, filter.GetLimit(), filter.GetOffset())
+	return &listResponse, nil
 }
 
 // CreateCouponAssociation creates a new coupon association
@@ -370,7 +402,7 @@ func (s *couponService) ApplyCouponToInvoice(ctx context.Context, couponID strin
 		FinalPrice:       finalPrice,
 		DiscountedAmount: discount,
 		DiscountType:     c.Type,
-		Currency:         c.Currency,
+		Currency:         *c.Currency,
 		CouponSnapshot: map[string]interface{}{
 			"name":           c.Name,
 			"type":           c.Type,
@@ -381,7 +413,7 @@ func (s *couponService) ApplyCouponToInvoice(ctx context.Context, couponID strin
 	}
 
 	if c.Type == types.CouponTypePercentage {
-		req.DiscountPercentage = &c.PercentageOff
+		req.DiscountPercentage = c.PercentageOff
 	}
 
 	return s.CreateCouponApplication(ctx, req)

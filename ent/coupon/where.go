@@ -116,14 +116,14 @@ func RedeemBefore(v time.Time) predicate.Coupon {
 	return predicate.Coupon(sql.FieldEQ(FieldRedeemBefore, v))
 }
 
-// MaxApplications applies equality check predicate on the "max_applications" field. It's identical to MaxApplicationsEQ.
-func MaxApplications(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldEQ(FieldMaxApplications, v))
+// MaxRedemptions applies equality check predicate on the "max_redemptions" field. It's identical to MaxRedemptionsEQ.
+func MaxRedemptions(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldEQ(FieldMaxRedemptions, v))
 }
 
-// TotalApplications applies equality check predicate on the "total_applications" field. It's identical to TotalApplicationsEQ.
-func TotalApplications(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldEQ(FieldTotalApplications, v))
+// TotalRedemptions applies equality check predicate on the "total_redemptions" field. It's identical to TotalRedemptionsEQ.
+func TotalRedemptions(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldEQ(FieldTotalRedemptions, v))
 }
 
 // AmountOff applies equality check predicate on the "amount_off" field. It's identical to AmountOffEQ.
@@ -756,104 +756,94 @@ func RedeemBeforeNotNil() predicate.Coupon {
 	return predicate.Coupon(sql.FieldNotNull(FieldRedeemBefore))
 }
 
-// MaxApplicationsEQ applies the EQ predicate on the "max_applications" field.
-func MaxApplicationsEQ(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldEQ(FieldMaxApplications, v))
+// MaxRedemptionsEQ applies the EQ predicate on the "max_redemptions" field.
+func MaxRedemptionsEQ(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldEQ(FieldMaxRedemptions, v))
 }
 
-// MaxApplicationsNEQ applies the NEQ predicate on the "max_applications" field.
-func MaxApplicationsNEQ(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldNEQ(FieldMaxApplications, v))
+// MaxRedemptionsNEQ applies the NEQ predicate on the "max_redemptions" field.
+func MaxRedemptionsNEQ(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldNEQ(FieldMaxRedemptions, v))
 }
 
-// MaxApplicationsIn applies the In predicate on the "max_applications" field.
-func MaxApplicationsIn(vs ...int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldIn(FieldMaxApplications, vs...))
+// MaxRedemptionsIn applies the In predicate on the "max_redemptions" field.
+func MaxRedemptionsIn(vs ...int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldIn(FieldMaxRedemptions, vs...))
 }
 
-// MaxApplicationsNotIn applies the NotIn predicate on the "max_applications" field.
-func MaxApplicationsNotIn(vs ...int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldNotIn(FieldMaxApplications, vs...))
+// MaxRedemptionsNotIn applies the NotIn predicate on the "max_redemptions" field.
+func MaxRedemptionsNotIn(vs ...int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldNotIn(FieldMaxRedemptions, vs...))
 }
 
-// MaxApplicationsGT applies the GT predicate on the "max_applications" field.
-func MaxApplicationsGT(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldGT(FieldMaxApplications, v))
+// MaxRedemptionsGT applies the GT predicate on the "max_redemptions" field.
+func MaxRedemptionsGT(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldGT(FieldMaxRedemptions, v))
 }
 
-// MaxApplicationsGTE applies the GTE predicate on the "max_applications" field.
-func MaxApplicationsGTE(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldGTE(FieldMaxApplications, v))
+// MaxRedemptionsGTE applies the GTE predicate on the "max_redemptions" field.
+func MaxRedemptionsGTE(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldGTE(FieldMaxRedemptions, v))
 }
 
-// MaxApplicationsLT applies the LT predicate on the "max_applications" field.
-func MaxApplicationsLT(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldLT(FieldMaxApplications, v))
+// MaxRedemptionsLT applies the LT predicate on the "max_redemptions" field.
+func MaxRedemptionsLT(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldLT(FieldMaxRedemptions, v))
 }
 
-// MaxApplicationsLTE applies the LTE predicate on the "max_applications" field.
-func MaxApplicationsLTE(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldLTE(FieldMaxApplications, v))
+// MaxRedemptionsLTE applies the LTE predicate on the "max_redemptions" field.
+func MaxRedemptionsLTE(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldLTE(FieldMaxRedemptions, v))
 }
 
-// MaxApplicationsIsNil applies the IsNil predicate on the "max_applications" field.
-func MaxApplicationsIsNil() predicate.Coupon {
-	return predicate.Coupon(sql.FieldIsNull(FieldMaxApplications))
+// MaxRedemptionsIsNil applies the IsNil predicate on the "max_redemptions" field.
+func MaxRedemptionsIsNil() predicate.Coupon {
+	return predicate.Coupon(sql.FieldIsNull(FieldMaxRedemptions))
 }
 
-// MaxApplicationsNotNil applies the NotNil predicate on the "max_applications" field.
-func MaxApplicationsNotNil() predicate.Coupon {
-	return predicate.Coupon(sql.FieldNotNull(FieldMaxApplications))
+// MaxRedemptionsNotNil applies the NotNil predicate on the "max_redemptions" field.
+func MaxRedemptionsNotNil() predicate.Coupon {
+	return predicate.Coupon(sql.FieldNotNull(FieldMaxRedemptions))
 }
 
-// TotalApplicationsEQ applies the EQ predicate on the "total_applications" field.
-func TotalApplicationsEQ(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldEQ(FieldTotalApplications, v))
+// TotalRedemptionsEQ applies the EQ predicate on the "total_redemptions" field.
+func TotalRedemptionsEQ(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldEQ(FieldTotalRedemptions, v))
 }
 
-// TotalApplicationsNEQ applies the NEQ predicate on the "total_applications" field.
-func TotalApplicationsNEQ(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldNEQ(FieldTotalApplications, v))
+// TotalRedemptionsNEQ applies the NEQ predicate on the "total_redemptions" field.
+func TotalRedemptionsNEQ(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldNEQ(FieldTotalRedemptions, v))
 }
 
-// TotalApplicationsIn applies the In predicate on the "total_applications" field.
-func TotalApplicationsIn(vs ...int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldIn(FieldTotalApplications, vs...))
+// TotalRedemptionsIn applies the In predicate on the "total_redemptions" field.
+func TotalRedemptionsIn(vs ...int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldIn(FieldTotalRedemptions, vs...))
 }
 
-// TotalApplicationsNotIn applies the NotIn predicate on the "total_applications" field.
-func TotalApplicationsNotIn(vs ...int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldNotIn(FieldTotalApplications, vs...))
+// TotalRedemptionsNotIn applies the NotIn predicate on the "total_redemptions" field.
+func TotalRedemptionsNotIn(vs ...int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldNotIn(FieldTotalRedemptions, vs...))
 }
 
-// TotalApplicationsGT applies the GT predicate on the "total_applications" field.
-func TotalApplicationsGT(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldGT(FieldTotalApplications, v))
+// TotalRedemptionsGT applies the GT predicate on the "total_redemptions" field.
+func TotalRedemptionsGT(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldGT(FieldTotalRedemptions, v))
 }
 
-// TotalApplicationsGTE applies the GTE predicate on the "total_applications" field.
-func TotalApplicationsGTE(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldGTE(FieldTotalApplications, v))
+// TotalRedemptionsGTE applies the GTE predicate on the "total_redemptions" field.
+func TotalRedemptionsGTE(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldGTE(FieldTotalRedemptions, v))
 }
 
-// TotalApplicationsLT applies the LT predicate on the "total_applications" field.
-func TotalApplicationsLT(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldLT(FieldTotalApplications, v))
+// TotalRedemptionsLT applies the LT predicate on the "total_redemptions" field.
+func TotalRedemptionsLT(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldLT(FieldTotalRedemptions, v))
 }
 
-// TotalApplicationsLTE applies the LTE predicate on the "total_applications" field.
-func TotalApplicationsLTE(v int) predicate.Coupon {
-	return predicate.Coupon(sql.FieldLTE(FieldTotalApplications, v))
-}
-
-// TotalApplicationsIsNil applies the IsNil predicate on the "total_applications" field.
-func TotalApplicationsIsNil() predicate.Coupon {
-	return predicate.Coupon(sql.FieldIsNull(FieldTotalApplications))
-}
-
-// TotalApplicationsNotNil applies the NotNil predicate on the "total_applications" field.
-func TotalApplicationsNotNil() predicate.Coupon {
-	return predicate.Coupon(sql.FieldNotNull(FieldTotalApplications))
+// TotalRedemptionsLTE applies the LTE predicate on the "total_redemptions" field.
+func TotalRedemptionsLTE(v int) predicate.Coupon {
+	return predicate.Coupon(sql.FieldLTE(FieldTotalRedemptions, v))
 }
 
 // RulesIsNil applies the IsNil predicate on the "rules" field.
@@ -1199,6 +1189,16 @@ func CurrencyHasPrefix(v string) predicate.Coupon {
 // CurrencyHasSuffix applies the HasSuffix predicate on the "currency" field.
 func CurrencyHasSuffix(v string) predicate.Coupon {
 	return predicate.Coupon(sql.FieldHasSuffix(FieldCurrency, v))
+}
+
+// CurrencyIsNil applies the IsNil predicate on the "currency" field.
+func CurrencyIsNil() predicate.Coupon {
+	return predicate.Coupon(sql.FieldIsNull(FieldCurrency))
+}
+
+// CurrencyNotNil applies the NotNil predicate on the "currency" field.
+func CurrencyNotNil() predicate.Coupon {
+	return predicate.Coupon(sql.FieldNotNull(FieldCurrency))
 }
 
 // CurrencyEqualFold applies the EqualFold predicate on the "currency" field.

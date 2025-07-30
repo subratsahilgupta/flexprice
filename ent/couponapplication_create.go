@@ -205,6 +205,14 @@ func (cac *CouponApplicationCreate) SetCurrency(s string) *CouponApplicationCrea
 	return cac
 }
 
+// SetNillableCurrency sets the "currency" field if the given value is not nil.
+func (cac *CouponApplicationCreate) SetNillableCurrency(s *string) *CouponApplicationCreate {
+	if s != nil {
+		cac.SetCurrency(*s)
+	}
+	return cac
+}
+
 // SetCouponSnapshot sets the "coupon_snapshot" field.
 func (cac *CouponApplicationCreate) SetCouponSnapshot(m map[string]interface{}) *CouponApplicationCreate {
 	cac.mutation.SetCouponSnapshot(m)
@@ -363,14 +371,6 @@ func (cac *CouponApplicationCreate) check() error {
 			return &ValidationError{Name: "discount_type", err: fmt.Errorf(`ent: validator failed for field "CouponApplication.discount_type": %w`, err)}
 		}
 	}
-	if _, ok := cac.mutation.Currency(); !ok {
-		return &ValidationError{Name: "currency", err: errors.New(`ent: missing required field "CouponApplication.currency"`)}
-	}
-	if v, ok := cac.mutation.Currency(); ok {
-		if err := couponapplication.CurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "CouponApplication.currency": %w`, err)}
-		}
-	}
 	if len(cac.mutation.CouponIDs()) == 0 {
 		return &ValidationError{Name: "coupon", err: errors.New(`ent: missing required edge "CouponApplication.coupon"`)}
 	}
@@ -469,7 +469,7 @@ func (cac *CouponApplicationCreate) createSpec() (*CouponApplication, *sqlgraph.
 	}
 	if value, ok := cac.mutation.Currency(); ok {
 		_spec.SetField(couponapplication.FieldCurrency, field.TypeString, value)
-		_node.Currency = value
+		_node.Currency = &value
 	}
 	if value, ok := cac.mutation.CouponSnapshot(); ok {
 		_spec.SetField(couponapplication.FieldCouponSnapshot, field.TypeJSON, value)

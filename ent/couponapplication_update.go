@@ -180,6 +180,12 @@ func (cau *CouponApplicationUpdate) SetNillableCurrency(s *string) *CouponApplic
 	return cau
 }
 
+// ClearCurrency clears the value of the "currency" field.
+func (cau *CouponApplicationUpdate) ClearCurrency() *CouponApplicationUpdate {
+	cau.mutation.ClearCurrency()
+	return cau
+}
+
 // SetCouponSnapshot sets the "coupon_snapshot" field.
 func (cau *CouponApplicationUpdate) SetCouponSnapshot(m map[string]interface{}) *CouponApplicationUpdate {
 	cau.mutation.SetCouponSnapshot(m)
@@ -263,11 +269,6 @@ func (cau *CouponApplicationUpdate) check() error {
 			return &ValidationError{Name: "discount_type", err: fmt.Errorf(`ent: validator failed for field "CouponApplication.discount_type": %w`, err)}
 		}
 	}
-	if v, ok := cau.mutation.Currency(); ok {
-		if err := couponapplication.CurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "CouponApplication.currency": %w`, err)}
-		}
-	}
 	if cau.mutation.CouponCleared() && len(cau.mutation.CouponIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "CouponApplication.coupon"`)
 	}
@@ -330,6 +331,9 @@ func (cau *CouponApplicationUpdate) sqlSave(ctx context.Context) (n int, err err
 	}
 	if value, ok := cau.mutation.Currency(); ok {
 		_spec.SetField(couponapplication.FieldCurrency, field.TypeString, value)
+	}
+	if cau.mutation.CurrencyCleared() {
+		_spec.ClearField(couponapplication.FieldCurrency, field.TypeString)
 	}
 	if value, ok := cau.mutation.CouponSnapshot(); ok {
 		_spec.SetField(couponapplication.FieldCouponSnapshot, field.TypeJSON, value)
@@ -542,6 +546,12 @@ func (cauo *CouponApplicationUpdateOne) SetNillableCurrency(s *string) *CouponAp
 	return cauo
 }
 
+// ClearCurrency clears the value of the "currency" field.
+func (cauo *CouponApplicationUpdateOne) ClearCurrency() *CouponApplicationUpdateOne {
+	cauo.mutation.ClearCurrency()
+	return cauo
+}
+
 // SetCouponSnapshot sets the "coupon_snapshot" field.
 func (cauo *CouponApplicationUpdateOne) SetCouponSnapshot(m map[string]interface{}) *CouponApplicationUpdateOne {
 	cauo.mutation.SetCouponSnapshot(m)
@@ -638,11 +648,6 @@ func (cauo *CouponApplicationUpdateOne) check() error {
 			return &ValidationError{Name: "discount_type", err: fmt.Errorf(`ent: validator failed for field "CouponApplication.discount_type": %w`, err)}
 		}
 	}
-	if v, ok := cauo.mutation.Currency(); ok {
-		if err := couponapplication.CurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "CouponApplication.currency": %w`, err)}
-		}
-	}
 	if cauo.mutation.CouponCleared() && len(cauo.mutation.CouponIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "CouponApplication.coupon"`)
 	}
@@ -722,6 +727,9 @@ func (cauo *CouponApplicationUpdateOne) sqlSave(ctx context.Context) (_node *Cou
 	}
 	if value, ok := cauo.mutation.Currency(); ok {
 		_spec.SetField(couponapplication.FieldCurrency, field.TypeString, value)
+	}
+	if cauo.mutation.CurrencyCleared() {
+		_spec.ClearField(couponapplication.FieldCurrency, field.TypeString)
 	}
 	if value, ok := cauo.mutation.CouponSnapshot(); ok {
 		_spec.SetField(couponapplication.FieldCouponSnapshot, field.TypeJSON, value)

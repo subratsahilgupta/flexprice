@@ -80,7 +80,7 @@ func (CouponApplication) Fields() []ent.Field {
 			Comment("Type of discount applied: fixed or percentage"),
 		field.Other("discount_percentage", decimal.Decimal{}).
 			SchemaType(map[string]string{
-				"postgres": "numeric(5,4)",
+				"postgres": "numeric(7,4)",
 			}).
 			Optional().
 			Nillable().
@@ -89,7 +89,8 @@ func (CouponApplication) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(10)",
 			}).
-			NotEmpty(),
+			Optional().
+			Nillable(),
 		field.JSON("coupon_snapshot", map[string]interface{}{}).
 			Optional().
 			Comment("Frozen coupon configuration at time of application"),

@@ -11,18 +11,18 @@ import (
 
 // CreateCouponRequest represents the request to create a new coupon
 type CreateCouponRequest struct {
-	Name              string                 `json:"name" validate:"required"`
-	RedeemAfter       *time.Time             `json:"redeem_after,omitempty"`
-	RedeemBefore      *time.Time             `json:"redeem_before,omitempty"`
-	MaxRedemptions    *int                   `json:"max_redemptions,omitempty"`
-	Rules             map[string]interface{} `json:"rules,omitempty"`
-	AmountOff         decimal.Decimal        `json:"amount_off"`
-	PercentageOff     decimal.Decimal        `json:"percentage_off"`
-	Type              types.CouponType       `json:"type" validate:"required,oneof=fixed percentage"`
-	Cadence           types.CouponCadence    `json:"cadence" validate:"required,oneof=once repeated forever"`
-	DurationInPeriods *int                   `json:"duration_in_periods,omitempty"`
-	Metadata          map[string]string      `json:"metadata,omitempty"`
-	Currency          string                 `json:"currency" validate:"required"`
+	Name              string                  `json:"name" validate:"required"`
+	RedeemAfter       *time.Time              `json:"redeem_after,omitempty"`
+	RedeemBefore      *time.Time              `json:"redeem_before,omitempty"`
+	MaxRedemptions    *int                    `json:"max_redemptions,omitempty"`
+	Rules             *map[string]interface{} `json:"rules,omitempty"`
+	AmountOff         *decimal.Decimal        `json:"amount_off,omitempty"`
+	PercentageOff     *decimal.Decimal        `json:"percentage_off,omitempty"`
+	Type              types.CouponType        `json:"type" validate:"required,oneof=fixed percentage"`
+	Cadence           types.CouponCadence     `json:"cadence" validate:"required,oneof=once repeated forever"`
+	DurationInPeriods *int                    `json:"duration_in_periods,omitempty"`
+	Metadata          *map[string]string      `json:"metadata,omitempty"`
+	Currency          *string                 `json:"currency,omitempty"`
 }
 
 // UpdateCouponRequest represents the request to update an existing coupon
@@ -55,27 +55,25 @@ func (r *CreateCouponRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.Cadence == "" {
-		return ierr.NewError("cadence is required").
-			WithHint("Please provide a discount cadence (once, repeated, or forever)").
-			Mark(ierr.ErrValidation)
-	}
-
-	if r.Currency == "" {
-		return ierr.NewError("currency is required").
-			WithHint("Please provide a currency code").
-			Mark(ierr.ErrValidation)
-	}
-
 	// Validate discount type specific fields
 	switch r.Type {
 	case types.CouponTypeFixed:
+		if r.AmountOff == nil {
+			return ierr.NewError("amount_off is required for fixed discount").
+				WithHint("Please provide a valid discount amount").
+				Mark(ierr.ErrValidation)
+		}
 		if r.AmountOff.LessThanOrEqual(decimal.Zero) {
 			return ierr.NewError("amount_off must be greater than zero for fixed discount").
 				WithHint("Please provide a valid discount amount").
 				Mark(ierr.ErrValidation)
 		}
 	case types.CouponTypePercentage:
+		if r.PercentageOff == nil {
+			return ierr.NewError("percentage_off is required for percentage discount").
+				WithHint("Please provide a valid discount percentage").
+				Mark(ierr.ErrValidation)
+		}
 		if r.PercentageOff.LessThanOrEqual(decimal.Zero) || r.PercentageOff.GreaterThan(decimal.NewFromInt(100)) {
 			return ierr.NewError("percentage_off must be between 0 and 100 for percentage discount").
 				WithHint("Please provide a valid percentage between 0 and 100").
@@ -107,11 +105,6 @@ func (r *CreateCouponRequest) Validate() error {
 		if *r.DurationInPeriods <= 0 {
 			return ierr.NewError("duration_in_periods must be greater than zero for repeated cadence").
 				WithHint("Please provide a valid number of billing periods").
-				Mark(ierr.ErrValidation)
-		}
-		if *r.DurationInPeriods > 120 {
-			return ierr.NewError("duration_in_periods is too high").
-				WithHint("Duration cannot exceed 120 billing periods (10 years)").
 				Mark(ierr.ErrValidation)
 		}
 	} else if r.DurationInPeriods != nil {

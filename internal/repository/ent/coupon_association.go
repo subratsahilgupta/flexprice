@@ -3,6 +3,7 @@ package ent
 import (
 	"context"
 
+	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainCouponAssociation "github.com/flexprice/flexprice/internal/domain/coupon_association"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -58,6 +59,6 @@ func (r *couponAssociationRepository) GetBySubscriptionLineItem(ctx context.Cont
 }
 
 // CouponAssociationQueryOptions holds query options for coupon association operations
-type CouponAssociationQueryOptions struct {
-	// Add query options as needed
-}
+type CouponAssociationQuery = *ent.CouponAssociationQuery
+
+type CouponAssociationQueryOptions struct{}

@@ -39,10 +39,10 @@ type Coupon struct {
 	RedeemAfter *time.Time `json:"redeem_after,omitempty"`
 	// Coupon redeem before date
 	RedeemBefore *time.Time `json:"redeem_before,omitempty"`
-	// Coupon max applications
-	MaxApplications *int `json:"max_applications,omitempty"`
-	// Coupon total applications
-	TotalApplications int `json:"total_applications,omitempty"`
+	// Coupon max redemptions
+	MaxRedemptions *int `json:"max_redemptions,omitempty"`
+	// Coupon total redemptions
+	TotalRedemptions int `json:"total_redemptions,omitempty"`
 	// Rule engine configuration for discount application
 	Rules map[string]interface{} `json:"rules,omitempty"`
 	// Coupon amount off
@@ -56,7 +56,7 @@ type Coupon struct {
 	// Coupon duration in periods
 	DurationInPeriods *int `json:"duration_in_periods,omitempty"`
 	// Coupon currency
-	Currency string `json:"currency,omitempty"`
+	Currency *string `json:"currency,omitempty"`
 	// Additional metadata for coupon
 	Metadata map[string]string `json:"metadata,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -103,7 +103,7 @@ func (*Coupon) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case coupon.FieldAmountOff, coupon.FieldPercentageOff:
 			values[i] = new(decimal.Decimal)
-		case coupon.FieldMaxApplications, coupon.FieldTotalApplications, coupon.FieldDurationInPeriods:
+		case coupon.FieldMaxRedemptions, coupon.FieldTotalRedemptions, coupon.FieldDurationInPeriods:
 			values[i] = new(sql.NullInt64)
 		case coupon.FieldID, coupon.FieldTenantID, coupon.FieldStatus, coupon.FieldCreatedBy, coupon.FieldUpdatedBy, coupon.FieldEnvironmentID, coupon.FieldName, coupon.FieldType, coupon.FieldCadence, coupon.FieldCurrency:
 			values[i] = new(sql.NullString)
@@ -192,18 +192,18 @@ func (c *Coupon) assignValues(columns []string, values []any) error {
 				c.RedeemBefore = new(time.Time)
 				*c.RedeemBefore = value.Time
 			}
-		case coupon.FieldMaxApplications:
+		case coupon.FieldMaxRedemptions:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field max_applications", values[i])
+				return fmt.Errorf("unexpected type %T for field max_redemptions", values[i])
 			} else if value.Valid {
-				c.MaxApplications = new(int)
-				*c.MaxApplications = int(value.Int64)
+				c.MaxRedemptions = new(int)
+				*c.MaxRedemptions = int(value.Int64)
 			}
-		case coupon.FieldTotalApplications:
+		case coupon.FieldTotalRedemptions:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field total_applications", values[i])
+				return fmt.Errorf("unexpected type %T for field total_redemptions", values[i])
 			} else if value.Valid {
-				c.TotalApplications = int(value.Int64)
+				c.TotalRedemptions = int(value.Int64)
 			}
 		case coupon.FieldRules:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -248,7 +248,8 @@ func (c *Coupon) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field currency", values[i])
 			} else if value.Valid {
-				c.Currency = value.String
+				c.Currency = new(string)
+				*c.Currency = value.String
 			}
 		case coupon.FieldMetadata:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -338,13 +339,13 @@ func (c *Coupon) String() string {
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
-	if v := c.MaxApplications; v != nil {
-		builder.WriteString("max_applications=")
+	if v := c.MaxRedemptions; v != nil {
+		builder.WriteString("max_redemptions=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
-	builder.WriteString("total_applications=")
-	builder.WriteString(fmt.Sprintf("%v", c.TotalApplications))
+	builder.WriteString("total_redemptions=")
+	builder.WriteString(fmt.Sprintf("%v", c.TotalRedemptions))
 	builder.WriteString(", ")
 	builder.WriteString("rules=")
 	builder.WriteString(fmt.Sprintf("%v", c.Rules))
@@ -366,8 +367,10 @@ func (c *Coupon) String() string {
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
-	builder.WriteString("currency=")
-	builder.WriteString(c.Currency)
+	if v := c.Currency; v != nil {
+		builder.WriteString("currency=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("metadata=")
 	builder.WriteString(fmt.Sprintf("%v", c.Metadata))
