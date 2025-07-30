@@ -173,15 +173,6 @@ func (s *integrationService) syncCustomerToStripe(ctx context.Context, customer 
 		return "", nil, err
 	}
 
-	// Check if customer already has Stripe ID
-	if stripeID, exists := customer.Metadata["stripe_customer_id"]; exists && stripeID != "" {
-		return stripeID, map[string]interface{}{
-			"stripe_customer_email": customer.Email,
-			"sync_direction":        "flexprice_to_provider",
-			"created_via":           "api",
-		}, nil
-	}
-
 	// Check if customer with same email already exists in Stripe
 	if customer.Email != "" {
 		existingStripeCustomer, err := s.findStripeCustomerByEmail(ctx, stripeConfig.SecretKey, customer.Email)
@@ -455,9 +446,10 @@ func (s *integrationService) findStripeCustomerByEmail(ctx context.Context, secr
 func (s *integrationService) findCustomerByEmail(ctx context.Context, email string) (*customer.Customer, error) {
 	customerService := NewCustomerService(s.ServiceParams)
 
-	// Use customer filter to search by email
+	// Use customer filter to search by email - optimized with database filtering
 	filter := &types.CustomerFilter{
 		QueryFilter: types.NewNoLimitQueryFilter(),
+		Email:       email, // Use database filtering instead of in-memory search
 	}
 
 	customers, err := customerService.GetCustomers(ctx, filter)
@@ -465,11 +457,9 @@ func (s *integrationService) findCustomerByEmail(ctx context.Context, email stri
 		return nil, err
 	}
 
-	// Search through customers for matching email
-	for _, customer := range customers.Items {
-		if customer.Customer.Email == email {
-			return customer.Customer, nil
-		}
+	// Return first matching customer (should be only one due to email uniqueness)
+	if len(customers.Items) > 0 {
+		return customers.Items[0].Customer, nil
 	}
 
 	return nil, nil // No customer found
