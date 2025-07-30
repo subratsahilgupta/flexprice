@@ -85,82 +85,91 @@ func (s *integrationService) SyncCustomerToProviders(ctx context.Context, custom
 
 // syncCustomerToProvider syncs a customer to a specific provider
 func (s *integrationService) syncCustomerToProvider(ctx context.Context, customer *customer.Customer, conn *connection.Connection) error {
-	// Check if mapping already exists for this customer_id, provider, tenant, and environment
-	entityMappingService := NewEntityIntegrationMappingService(s.ServiceParams)
-	existingMapping, err := entityMappingService.GetByEntityAndProvider(
-		ctx, customer.ID, "customer", string(conn.ProviderType))
+	// Use database transaction to prevent race conditions
+	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		// Check if mapping already exists for this customer_id, provider, tenant, and environment
+		// This check is now within the transaction, preventing race conditions
+		entityMappingService := NewEntityIntegrationMappingService(s.ServiceParams)
+		existingMapping, err := entityMappingService.GetByEntityAndProvider(
+			txCtx, customer.ID, "customer", string(conn.ProviderType))
 
-	if err == nil && existingMapping != nil {
-		// Mapping exists, customer already synced
-		s.Logger.Infow("customer already mapped to provider",
-			"customer_id", customer.ID,
-			"provider_type", conn.ProviderType,
-			"provider_entity_id", existingMapping.ProviderEntityID)
-		return nil
-	}
-
-	// Sync based on provider type
-	var providerEntityID string
-	var metadata map[string]interface{}
-
-	switch conn.ProviderType {
-	case types.SecretProviderStripe:
-		providerEntityID, metadata, err = s.syncCustomerToStripe(ctx, customer, conn)
-	// Add more providers as needed
-	default:
-		return ierr.NewError("unsupported provider type").
-			WithHint(fmt.Sprintf("Provider type %s is not supported", conn.ProviderType)).
-			Mark(ierr.ErrValidation)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	// Create entity mapping
-	mappingReq := dto.CreateEntityIntegrationMappingRequest{
-		EntityID:         customer.ID,
-		EntityType:       "customer",
-		ProviderType:     string(conn.ProviderType),
-		ProviderEntityID: providerEntityID,
-		Metadata:         metadata,
-	}
-
-	_, err = entityMappingService.CreateEntityIntegrationMapping(ctx, mappingReq)
-	if err != nil {
-		s.Logger.Errorw("failed to create entity mapping",
-			"customer_id", customer.ID,
-			"provider_type", conn.ProviderType,
-			"provider_entity_id", providerEntityID,
-			"error", err)
-		return err
-	}
-
-	// Update customer metadata with provider ID
-	updateReq := dto.UpdateCustomerRequest{
-		Metadata: map[string]string{
-			fmt.Sprintf("%s_customer_id", conn.ProviderType): providerEntityID,
-		},
-	}
-
-	// Merge with existing metadata
-	if customer.Metadata != nil {
-		for k, v := range customer.Metadata {
-			updateReq.Metadata[k] = v
+		if err == nil && existingMapping != nil {
+			// Mapping exists, customer already synced
+			s.Logger.Infow("customer already mapped to provider",
+				"customer_id", customer.ID,
+				"provider_type", conn.ProviderType,
+				"provider_entity_id", existingMapping.ProviderEntityID)
+			return nil
 		}
-	}
 
-	customerService := NewCustomerService(s.ServiceParams)
-	_, err = customerService.UpdateCustomer(ctx, customer.ID, updateReq)
-	if err != nil {
-		s.Logger.Errorw("failed to update customer metadata",
+		// Sync based on provider type (API calls outside transaction to avoid long-running transactions)
+		var providerEntityID string
+		var metadata map[string]interface{}
+
+		switch conn.ProviderType {
+		case types.SecretProviderStripe:
+			providerEntityID, metadata, err = s.syncCustomerToStripe(ctx, customer, conn)
+		// Add more providers as needed
+		default:
+			return ierr.NewError("unsupported provider type").
+				WithHint(fmt.Sprintf("Provider type %s is not supported", conn.ProviderType)).
+				Mark(ierr.ErrValidation)
+		}
+
+		if err != nil {
+			return err
+		}
+
+		// Create entity mapping (within transaction)
+		mappingReq := dto.CreateEntityIntegrationMappingRequest{
+			EntityID:         customer.ID,
+			EntityType:       "customer",
+			ProviderType:     string(conn.ProviderType),
+			ProviderEntityID: providerEntityID,
+			Metadata:         metadata,
+		}
+
+		_, err = entityMappingService.CreateEntityIntegrationMapping(txCtx, mappingReq)
+		if err != nil {
+			s.Logger.Errorw("failed to create entity mapping",
+				"customer_id", customer.ID,
+				"provider_type", conn.ProviderType,
+				"provider_entity_id", providerEntityID,
+				"error", err)
+			return err
+		}
+
+		// Update customer metadata with provider ID (within transaction)
+		updateReq := dto.UpdateCustomerRequest{
+			Metadata: map[string]string{
+				fmt.Sprintf("%s_customer_id", conn.ProviderType): providerEntityID,
+			},
+		}
+
+		// Merge with existing metadata
+		if customer.Metadata != nil {
+			for k, v := range customer.Metadata {
+				updateReq.Metadata[k] = v
+			}
+		}
+
+		customerService := NewCustomerService(s.ServiceParams)
+		_, err = customerService.UpdateCustomer(txCtx, customer.ID, updateReq)
+		if err != nil {
+			s.Logger.Errorw("failed to update customer metadata",
+				"customer_id", customer.ID,
+				"provider_type", conn.ProviderType,
+				"error", err)
+			return err
+		}
+
+		s.Logger.Infow("customer synced to provider successfully",
 			"customer_id", customer.ID,
 			"provider_type", conn.ProviderType,
-			"error", err)
-		return err
-	}
+			"provider_entity_id", providerEntityID)
 
-	return nil
+		return nil
+	})
 }
 
 // syncCustomerToStripe syncs a customer to Stripe
@@ -220,105 +229,127 @@ func (s *integrationService) syncCustomerToStripe(ctx context.Context, customer 
 
 // SyncCustomerFromProvider syncs a customer from a specific provider to FlexPrice
 func (s *integrationService) SyncCustomerFromProvider(ctx context.Context, providerType string, providerCustomerID string, customerData map[string]interface{}) error {
-	// Check if mapping already exists
-	entityMappingService := NewEntityIntegrationMappingService(s.ServiceParams)
-	existingMapping, err := entityMappingService.GetByProviderEntity(ctx, providerType, providerCustomerID)
+	// Use database transaction to prevent race conditions
+	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		// Check if mapping already exists (within transaction)
+		entityMappingService := NewEntityIntegrationMappingService(s.ServiceParams)
+		existingMapping, err := entityMappingService.GetByProviderEntity(txCtx, providerType, providerCustomerID)
 
-	if err == nil && existingMapping != nil {
-		// Mapping exists, customer already synced
-		s.Logger.Infow("customer already exists from provider",
-			"provider_type", providerType,
-			"provider_customer_id", providerCustomerID,
-			"flexprice_customer_id", existingMapping.EntityID)
-		return nil
-	}
-
-	// Check for existing customer by email in FlexPrice
-	if email, exists := customerData["email"].(string); exists && email != "" {
-		customerService := NewCustomerService(s.ServiceParams)
-		existingCustomer, err := s.findCustomerByEmail(ctx, email)
-		if err == nil && existingCustomer != nil {
-			// Customer with same email exists, update with provider ID
-			s.Logger.Infow("customer with same email already exists in FlexPrice",
-				"email", email,
-				"flexprice_customer_id", existingCustomer.ID,
+		if err == nil && existingMapping != nil {
+			// Mapping exists, customer already synced
+			s.Logger.Infow("customer already exists from provider",
 				"provider_type", providerType,
-				"provider_customer_id", providerCustomerID)
+				"provider_customer_id", providerCustomerID,
+				"flexprice_customer_id", existingMapping.EntityID)
+			return nil
+		}
 
-			// Update existing customer with provider ID
-			updateReq := dto.UpdateCustomerRequest{
-				Metadata: map[string]string{
-					fmt.Sprintf("%s_customer_id", providerType): providerCustomerID,
-				},
-			}
+		// Check for existing customer by email in FlexPrice (within transaction)
+		if email, exists := customerData["email"].(string); exists && email != "" {
+			customerService := NewCustomerService(s.ServiceParams)
+			existingCustomer, err := s.findCustomerByEmail(txCtx, email)
+			if err == nil && existingCustomer != nil {
+				// Customer with same email exists, update with provider ID
+				s.Logger.Infow("customer with same email already exists in FlexPrice",
+					"email", email,
+					"flexprice_customer_id", existingCustomer.ID,
+					"provider_type", providerType,
+					"provider_customer_id", providerCustomerID)
 
-			// Merge with existing metadata
-			if existingCustomer.Metadata != nil {
-				for k, v := range existingCustomer.Metadata {
-					updateReq.Metadata[k] = v
+				// Update existing customer with provider ID (within transaction)
+				updateReq := dto.UpdateCustomerRequest{
+					Metadata: map[string]string{
+						fmt.Sprintf("%s_customer_id", providerType): providerCustomerID,
+					},
 				}
-			}
 
-			_, err = customerService.UpdateCustomer(ctx, existingCustomer.ID, updateReq)
-			if err != nil {
-				return err
-			}
+				// Merge with existing metadata
+				if existingCustomer.Metadata != nil {
+					for k, v := range existingCustomer.Metadata {
+						updateReq.Metadata[k] = v
+					}
+				}
 
-			// Create entity mapping for existing customer
-			mappingReq := dto.CreateEntityIntegrationMappingRequest{
-				EntityID:         existingCustomer.ID,
-				EntityType:       "customer",
-				ProviderType:     providerType,
-				ProviderEntityID: providerCustomerID,
-				Metadata: map[string]interface{}{
-					"sync_direction": "provider_to_flexprice",
-					"created_via":    "webhook",
-					"found_existing": true,
-				},
-			}
+				_, err = customerService.UpdateCustomer(txCtx, existingCustomer.ID, updateReq)
+				if err != nil {
+					return err
+				}
 
-			_, err = entityMappingService.CreateEntityIntegrationMapping(ctx, mappingReq)
+				// Create entity mapping for existing customer (within transaction)
+				mappingReq := dto.CreateEntityIntegrationMappingRequest{
+					EntityID:         existingCustomer.ID,
+					EntityType:       "customer",
+					ProviderType:     providerType,
+					ProviderEntityID: providerCustomerID,
+					Metadata: map[string]interface{}{
+						"sync_direction": "provider_to_flexprice",
+						"created_via":    "webhook",
+						"found_existing": true,
+					},
+				}
+
+				_, err = entityMappingService.CreateEntityIntegrationMapping(txCtx, mappingReq)
+				if err != nil {
+					s.Logger.Errorw("failed to create entity mapping for existing customer",
+						"customer_id", existingCustomer.ID,
+						"provider_type", providerType,
+						"provider_customer_id", providerCustomerID,
+						"error", err)
+					return err
+				}
+
+				s.Logger.Infow("existing customer updated with provider mapping",
+					"customer_id", existingCustomer.ID,
+					"provider_type", providerType,
+					"provider_customer_id", providerCustomerID)
+
+				return nil
+			}
+		}
+
+		// Create customer based on provider type (outside transaction for API calls)
+		var customerID string
+		var metadata map[string]interface{}
+
+		switch providerType {
+		case "stripe":
+			customerID, metadata, err = s.createCustomerFromStripe(ctx, providerCustomerID, customerData)
+		default:
+			return ierr.NewError("unsupported provider type").
+				WithHint(fmt.Sprintf("Provider type %s is not supported", providerType)).
+				Mark(ierr.ErrValidation)
+		}
+
+		if err != nil {
 			return err
 		}
-	}
 
-	// Create customer based on provider type
-	var customerID string
-	var metadata map[string]interface{}
+		// Create entity mapping (within transaction)
+		mappingReq := dto.CreateEntityIntegrationMappingRequest{
+			EntityID:         customerID,
+			EntityType:       "customer",
+			ProviderType:     providerType,
+			ProviderEntityID: providerCustomerID,
+			Metadata:         metadata,
+		}
 
-	switch providerType {
-	case "stripe":
-		customerID, metadata, err = s.createCustomerFromStripe(ctx, providerCustomerID, customerData)
-	default:
-		return ierr.NewError("unsupported provider type").
-			WithHint(fmt.Sprintf("Provider type %s is not supported", providerType)).
-			Mark(ierr.ErrValidation)
-	}
+		_, err = entityMappingService.CreateEntityIntegrationMapping(txCtx, mappingReq)
+		if err != nil {
+			s.Logger.Errorw("failed to create entity mapping from provider",
+				"customer_id", customerID,
+				"provider_type", providerType,
+				"provider_customer_id", providerCustomerID,
+				"error", err)
+			return err
+		}
 
-	if err != nil {
-		return err
-	}
-
-	// Create entity mapping
-	mappingReq := dto.CreateEntityIntegrationMappingRequest{
-		EntityID:         customerID,
-		EntityType:       "customer",
-		ProviderType:     providerType,
-		ProviderEntityID: providerCustomerID,
-		Metadata:         metadata,
-	}
-
-	_, err = entityMappingService.CreateEntityIntegrationMapping(ctx, mappingReq)
-	if err != nil {
-		s.Logger.Errorw("failed to create entity mapping from provider",
+		s.Logger.Infow("customer created from provider successfully",
 			"customer_id", customerID,
 			"provider_type", providerType,
-			"provider_customer_id", providerCustomerID,
-			"error", err)
-		return err
-	}
+			"provider_customer_id", providerCustomerID)
 
-	return nil
+		return nil
+	})
 }
 
 // createCustomerFromStripe creates a customer in FlexPrice from Stripe webhook data
