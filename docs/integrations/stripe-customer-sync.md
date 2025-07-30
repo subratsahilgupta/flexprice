@@ -7,7 +7,7 @@ This document explains how to set up Stripe customer synchronization for your Fl
 The Stripe integration allows automatic bidirectional synchronization of customer data between your Stripe account and FlexPrice:
 
 - **From FlexPrice to Stripe**: When you create a customer in FlexPrice, it can be automatically created in Stripe
-- **From Stripe to FlexPrice**: When customers are created/updated in Stripe, they are automatically synced to FlexPrice via webhooks
+- **From Stripe to FlexPrice**: When customers are created in Stripe, they are automatically synced to FlexPrice via webhooks
 
 ## Prerequisites
 
@@ -38,8 +38,6 @@ The Stripe integration allows automatic bidirectional synchronization of custome
      - Replace `{environment_id}` with your FlexPrice environment ID
    - **Events to send**: Select the following events:
      - `customer.created`
-     - `customer.updated`
-     - `customer.deleted`
 5. Click **Add endpoint**
 6. Copy the **Signing secret** (whsec_...) and add it to your FlexPrice Stripe connection
 
@@ -68,21 +66,14 @@ https://api.flexprice.com/v1/webhooks/stripe/tenant_123/env_prod
 
 ## Supported Events
 
-The integration handles the following Stripe webhook events:
+The integration currently handles the following Stripe webhook events:
 
 ### customer.created
 - Creates a new customer in FlexPrice when a customer is created in Stripe
 - Maps Stripe customer data to FlexPrice customer fields
 - Stores Stripe customer ID in FlexPrice customer metadata
 
-### customer.updated
-- Updates existing FlexPrice customer when Stripe customer is modified
-- Syncs name, email, and address information
-- Maintains metadata associations
-
-### customer.deleted
-- Logs customer deletion event
-- Does not automatically delete FlexPrice customer (configurable)
+**Note**: `customer.updated` and `customer.deleted` events are not currently supported.
 
 ## Data Mapping
 
@@ -153,16 +144,9 @@ Monitor webhook delivery in your Stripe Dashboard:
 2. **HTTPS Required**: Webhook endpoints must use HTTPS
 3. **API Key Security**: Store Stripe API keys securely, never expose in client-side code
 4. **Environment Isolation**: Use separate Stripe accounts/keys for different environments
+5. **Encryption**: Connection metadata (including API keys) is encrypted at rest
 
 ## API Usage
-
-### Manually Sync Customer to Stripe
-
-```bash
-curl -X POST "https://api.flexprice.com/v1/customers/{customer_id}/sync-to-stripe" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json"
-```
 
 ### Get Customer Stripe Information
 
@@ -173,12 +157,14 @@ curl -X GET "https://api.flexprice.com/v1/customers/{customer_id}" \
 
 Check the `metadata.stripe_customer_id` field for the associated Stripe customer ID.
 
+**Note**: Manual sync endpoints are not currently available. Customer synchronization happens automatically when customers are created in FlexPrice.
+
 ## Troubleshooting
 
 ### Webhook Not Receiving Events
 
 1. Verify webhook URL is correct and accessible
-2. Check Stripe webhook event selection
+2. Check Stripe webhook event selection (only `customer.created` is supported)
 3. Ensure webhook secret matches configuration
 4. Review Stripe webhook delivery logs
 
