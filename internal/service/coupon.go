@@ -232,50 +232,62 @@ func (s *couponService) CreateCouponAssociation(ctx context.Context, req dto.Cre
 
 	// Use transaction for atomic operations
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		// Validate that the coupon exists and is valid
-		coupon, err := s.CouponRepo.Get(txCtx, req.CouponID)
-		if err != nil {
-			return ierr.WithError(err).
-				WithHint("Failed to get coupon for association").
-				WithReportableDetails(map[string]interface{}{
-					"coupon_id": req.CouponID,
-				}).
-				Mark(ierr.ErrNotFound)
-		}
-
-		// Validate coupon is active
-		if coupon.Status != types.StatusPublished {
-			return ierr.NewError("only active coupons can be associated").
-				WithHint("Please select an active coupon").
-				WithReportableDetails(map[string]interface{}{
-					"coupon_id": req.CouponID,
-					"status":    coupon.Status,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-
-		// Validate subscription exists if provided
+		// Use validation service for coupon-subscription validation
 		if req.SubscriptionID != nil {
-			subscription, err := s.SubRepo.Get(txCtx, *req.SubscriptionID)
-			if err != nil {
+			validationService := NewCouponValidationService(s.ServiceParams)
+			if err := validationService.ValidateCouponForSubscription(txCtx, req.CouponID, *req.SubscriptionID); err != nil {
 				return ierr.WithError(err).
-					WithHint("Failed to get subscription for association").
+					WithHint("Coupon validation failed for subscription association").
 					WithReportableDetails(map[string]interface{}{
+						"coupon_id":       req.CouponID,
 						"subscription_id": *req.SubscriptionID,
-					}).
-					Mark(ierr.ErrNotFound)
-			}
-
-			// Validate subscription is active
-			if subscription.SubscriptionStatus != types.SubscriptionStatusActive &&
-				subscription.SubscriptionStatus != types.SubscriptionStatusTrialing {
-				return ierr.NewError("coupons can only be associated with active or trialing subscriptions").
-					WithHint("Please ensure the subscription is active or trialing").
-					WithReportableDetails(map[string]interface{}{
-						"subscription_id": *req.SubscriptionID,
-						"status":          subscription.SubscriptionStatus,
 					}).
 					Mark(ierr.ErrValidation)
+			}
+		}
+
+		// Check for existing association to prevent duplicates
+		if req.SubscriptionID != nil {
+			existingAssociations, err := s.CouponAssociationRepo.GetBySubscription(txCtx, *req.SubscriptionID)
+			if err != nil {
+				s.Logger.Warnw("failed to check existing coupon associations",
+					"subscription_id", *req.SubscriptionID,
+					"error", err)
+				// Don't fail the operation for this check
+			} else {
+				for _, existing := range existingAssociations {
+					if existing.CouponID == req.CouponID {
+						return ierr.NewError("coupon is already associated with this subscription").
+							WithHint("This coupon is already applied to the subscription").
+							WithReportableDetails(map[string]interface{}{
+								"coupon_id":       req.CouponID,
+								"subscription_id": *req.SubscriptionID,
+							}).
+							Mark(ierr.ErrAlreadyExists)
+					}
+				}
+			}
+		}
+
+		if req.SubscriptionLineItemID != nil {
+			existingAssociations, err := s.CouponAssociationRepo.GetBySubscriptionLineItem(txCtx, *req.SubscriptionLineItemID)
+			if err != nil {
+				s.Logger.Warnw("failed to check existing coupon associations",
+					"subscription_line_item_id", *req.SubscriptionLineItemID,
+					"error", err)
+				// Don't fail the operation for this check
+			} else {
+				for _, existing := range existingAssociations {
+					if existing.CouponID == req.CouponID {
+						return ierr.NewError("coupon is already associated with this subscription line item").
+							WithHint("This coupon is already applied to the line item").
+							WithReportableDetails(map[string]interface{}{
+								"coupon_id":                 req.CouponID,
+								"subscription_line_item_id": *req.SubscriptionLineItemID,
+							}).
+							Mark(ierr.ErrAlreadyExists)
+					}
+				}
 			}
 		}
 
@@ -312,53 +324,6 @@ func (s *couponService) CreateCouponAssociation(ctx context.Context, req dto.Cre
 			}
 		}
 
-		// Check for existing association to prevent duplicates
-		// Note: This is a simplified check. In a production system, you might want to implement
-		// a more sophisticated duplicate detection mechanism
-		if req.SubscriptionID != nil {
-			existingAssociations, err := s.CouponAssociationRepo.GetBySubscription(txCtx, *req.SubscriptionID)
-			if err != nil {
-				s.Logger.Errorw("failed to check existing coupon associations",
-					"subscription_id", *req.SubscriptionID,
-					"error", err)
-				// Don't fail the operation for this check
-			} else {
-				for _, existing := range existingAssociations {
-					if existing.CouponID == req.CouponID {
-						return ierr.NewError("coupon is already associated with this subscription").
-							WithHint("This coupon is already applied to the subscription").
-							WithReportableDetails(map[string]interface{}{
-								"coupon_id":       req.CouponID,
-								"subscription_id": *req.SubscriptionID,
-							}).
-							Mark(ierr.ErrAlreadyExists)
-					}
-				}
-			}
-		}
-
-		if req.SubscriptionLineItemID != nil {
-			existingAssociations, err := s.CouponAssociationRepo.GetBySubscriptionLineItem(txCtx, *req.SubscriptionLineItemID)
-			if err != nil {
-				s.Logger.Errorw("failed to check existing coupon associations",
-					"subscription_line_item_id", *req.SubscriptionLineItemID,
-					"error", err)
-				// Don't fail the operation for this check
-			} else {
-				for _, existing := range existingAssociations {
-					if existing.CouponID == req.CouponID {
-						return ierr.NewError("coupon is already associated with this subscription line item").
-							WithHint("This coupon is already applied to the line item").
-							WithReportableDetails(map[string]interface{}{
-								"coupon_id":                 req.CouponID,
-								"subscription_line_item_id": *req.SubscriptionLineItemID,
-							}).
-							Mark(ierr.ErrAlreadyExists)
-					}
-				}
-			}
-		}
-
 		// Create the coupon association object properly
 		baseModel := types.GetDefaultBaseModel(txCtx)
 		ca := &coupon_association.CouponAssociation{
@@ -377,6 +342,21 @@ func (s *couponService) CreateCouponAssociation(ctx context.Context, req dto.Cre
 				WithReportableDetails(map[string]interface{}{
 					"coupon_id": req.CouponID,
 				}).
+				Mark(ierr.ErrInternal)
+		}
+
+		// Validate coupon redemption increment before incrementing
+		validationService := NewCouponValidationService(s.ServiceParams)
+		if err := validationService.ValidateCouponRedemptionIncrement(txCtx, req.CouponID); err != nil {
+			return ierr.WithError(err).
+				WithHint("Coupon redemption increment validation failed").
+				Mark(ierr.ErrValidation)
+		}
+
+		// Increment coupon redemptions within the same transaction
+		if err := s.CouponRepo.IncrementRedemptions(txCtx, req.CouponID); err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to increment coupon redemptions").
 				Mark(ierr.ErrInternal)
 		}
 
@@ -482,14 +462,6 @@ func (s *couponService) CreateCouponApplication(ctx context.Context, req dto.Cre
 			return ierr.WithError(err).
 				WithHint("Failed to create coupon application").
 				Mark(ierr.ErrInternal)
-		}
-
-		// Increment coupon redemptions within the same transaction
-		if err := s.CouponRepo.IncrementRedemptions(txCtx, req.CouponID); err != nil {
-			s.Logger.Errorw("failed to increment coupon redemptions",
-				"coupon_id", req.CouponID,
-				"error", err)
-			// Don't fail the entire operation if this fails, but log it
 		}
 
 		response = s.toCouponApplicationResponse(ca)
@@ -685,45 +657,8 @@ func (s *couponService) ApplyCouponToInvoice(ctx context.Context, couponID strin
 
 // ValidateCouponForSubscription validates if a coupon can be applied to a subscription
 func (s *couponService) ValidateCouponForSubscription(ctx context.Context, couponID string, subscriptionID string) error {
-	// Get the coupon
-	c, err := s.CouponRepo.Get(ctx, couponID)
-	if err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to get coupon for validation").
-			WithReportableDetails(map[string]interface{}{
-				"coupon_id":       couponID,
-				"subscription_id": subscriptionID,
-			}).
-			Mark(ierr.ErrNotFound)
-	}
-
-	// Check if coupon is active
-	if c.Status != types.StatusPublished {
-		return ierr.NewError("only active coupons can be applied").
-			WithHint("Please select an active coupon").
-			WithReportableDetails(map[string]interface{}{
-				"coupon_id":       couponID,
-				"subscription_id": subscriptionID,
-				"status":          c.Status,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Check if coupon is valid for redemption
-	if !c.IsValid() {
-		return ierr.NewError("coupon is not valid for redemption").
-			WithHint("Coupon may be expired, have reached maximum redemptions, or not yet available for redemption").
-			WithReportableDetails(map[string]interface{}{
-				"coupon_id":         couponID,
-				"subscription_id":   subscriptionID,
-				"redeem_after":      c.RedeemAfter,
-				"redeem_before":     c.RedeemBefore,
-				"total_redemptions": c.TotalRedemptions,
-				"max_redemptions":   c.MaxRedemptions,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-	return nil
+	validationService := NewCouponValidationService(s.ServiceParams)
+	return validationService.ValidateCouponForSubscription(ctx, couponID, subscriptionID)
 }
 
 // CalculateDiscount calculates the discount amount for a given coupon and price
@@ -814,8 +749,8 @@ func (s *couponService) ApplyCouponToSubscription(ctx context.Context, couponIDs
 		"coupon_count", len(couponIDs),
 		"coupon_ids", couponIDs)
 
-	// Get the subscription to validate it exists and is active
-	subscription, err := s.SubRepo.Get(ctx, subscriptionID)
+	// Validate that subscription exists (basic check)
+	_, err := s.SubRepo.Get(ctx, subscriptionID)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to get subscription for coupon application").
@@ -823,18 +758,6 @@ func (s *couponService) ApplyCouponToSubscription(ctx context.Context, couponIDs
 				"subscription_id": subscriptionID,
 			}).
 			Mark(ierr.ErrNotFound)
-	}
-
-	// Validate subscription status
-	if subscription.SubscriptionStatus != types.SubscriptionStatusActive &&
-		subscription.SubscriptionStatus != types.SubscriptionStatusTrialing {
-		return nil, ierr.NewError("coupons can only be applied to active or trialing subscriptions").
-			WithHint("Please ensure the subscription is active or trialing before applying coupons").
-			WithReportableDetails(map[string]interface{}{
-				"subscription_id": subscriptionID,
-				"status":          subscription.SubscriptionStatus,
-			}).
-			Mark(ierr.ErrValidation)
 	}
 
 	// Validate each coupon
@@ -914,7 +837,7 @@ func (s *couponService) ApplyCouponToSubscription(ctx context.Context, couponIDs
 	return lastAssociation, nil
 }
 
-// PrepareCouponsForInvoice prepares coupons for an invoice by fetching their current state
+// PrepareCouponsForInvoice prepares coupons for an invoice with optimized batch fetching
 func (s *couponService) PrepareCouponsForInvoice(ctx context.Context, req dto.CreateInvoiceRequest) ([]*CouponWithAssociation, error) {
 	// Only handle subscription invoices for now
 	if req.SubscriptionID == nil {
@@ -936,38 +859,18 @@ func (s *couponService) PrepareCouponsForInvoice(ctx context.Context, req dto.Cr
 			Mark(ierr.ErrInternal)
 	}
 
-	// Get full coupon details for each association
-	couponsWithAssociations := make([]*CouponWithAssociation, 0, len(associations))
-	for _, association := range associations {
-		coupon, err := s.GetCoupon(ctx, association.CouponID)
-		if err != nil {
-			s.Logger.Errorw("failed to get coupon details",
-				"coupon_id", association.CouponID,
-				"association_id", association.ID,
-				"error", err)
-			continue // Skip this coupon but continue with others
-		}
+	if len(associations) == 0 {
+		s.Logger.Debugw("no coupon associations found for subscription",
+			"subscription_id", *req.SubscriptionID)
+		return make([]*CouponWithAssociation, 0), nil
+	}
 
-		// Validate coupon is still valid
-		if coupon.Status != types.StatusPublished {
-			s.Logger.Warnw("skipping inactive coupon",
-				"coupon_id", association.CouponID,
-				"status", coupon.Status)
-			continue
-		}
-
-		if !coupon.IsValid() {
-			s.Logger.Warnw("skipping invalid coupon",
-				"coupon_id", association.CouponID,
-				"total_redemptions", coupon.TotalRedemptions,
-				"max_redemptions", coupon.MaxRedemptions)
-			continue
-		}
-
-		couponsWithAssociations = append(couponsWithAssociations, &CouponWithAssociation{
-			Coupon:      coupon,
-			Association: association,
-		})
+	// Batch fetch all coupon details to minimize database calls
+	couponsWithAssociations, err := s.batchFetchCouponsWithAssociations(ctx, associations)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to batch fetch coupons").
+			Mark(ierr.ErrInternal)
 	}
 
 	s.Logger.Infow("prepared coupons for invoice",
@@ -978,7 +881,65 @@ func (s *couponService) PrepareCouponsForInvoice(ctx context.Context, req dto.Cr
 	return couponsWithAssociations, nil
 }
 
-// ApplyCouponsOnInvoice applies coupons to an invoice and updates their redemptions
+// batchFetchCouponsWithAssociations fetches all coupons for associations in batch with validation
+func (s *couponService) batchFetchCouponsWithAssociations(ctx context.Context, associations []*dto.CouponAssociationResponse) ([]*CouponWithAssociation, error) {
+	if len(associations) == 0 {
+		return make([]*CouponWithAssociation, 0), nil
+	}
+
+	s.Logger.Debugw("batch fetching coupons for associations",
+		"association_count", len(associations))
+
+	// Extract coupon IDs for batch fetching
+	couponIDs := make([]string, len(associations))
+	associationMap := make(map[string]*dto.CouponAssociationResponse)
+
+	for i, association := range associations {
+		couponIDs[i] = association.CouponID
+		associationMap[association.CouponID] = association
+	}
+
+	// Batch fetch coupons using optimized repository method
+	domainCoupons, err := s.CouponRepo.GetBatch(ctx, couponIDs)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to batch fetch coupons from repository").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Convert domain coupons to DTO and create lookup map
+	coupons := make(map[string]*dto.CouponResponse, len(domainCoupons))
+	for _, domainCoupon := range domainCoupons {
+		coupons[domainCoupon.ID] = s.toCouponResponse(domainCoupon)
+	}
+
+	// Filter and combine valid coupons with their associations
+	couponsWithAssociations := make([]*CouponWithAssociation, 0, len(associations))
+
+	for _, association := range associations {
+		coupon, exists := coupons[association.CouponID]
+		if !exists {
+			continue // Coupon fetch failed, skip
+		}
+
+		// Note: Comprehensive validation will be performed later by the validation service
+		// No pre-filtering needed here to avoid duplicating validation logic
+
+		couponsWithAssociations = append(couponsWithAssociations, &CouponWithAssociation{
+			Coupon:      coupon,
+			Association: association,
+		})
+	}
+
+	s.Logger.Debugw("completed batch coupon fetch and validation",
+		"total_associations", len(associations),
+		"fetched_coupons", len(coupons),
+		"valid_coupons", len(couponsWithAssociations))
+
+	return couponsWithAssociations, nil
+}
+
+// ApplyCouponsOnInvoice applies coupons to an invoice with optimized batch processing
 func (s *couponService) ApplyCouponsOnInvoice(ctx context.Context, inv *invoice.Invoice, couponsWithAssociations []*CouponWithAssociation) (*CouponCalculationResult, error) {
 	if len(couponsWithAssociations) == 0 {
 		return &CouponCalculationResult{
@@ -998,12 +959,49 @@ func (s *couponService) ApplyCouponsOnInvoice(ctx context.Context, inv *invoice.
 
 	// Use transaction for atomic operations
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		totalDiscount := decimal.Zero
-		appliedCoupons := make([]*dto.CouponApplicationResponse, 0, len(couponsWithAssociations))
-		runningTotal := inv.Total // Track the running total as coupons are applied
+		// Validate all coupons using the same validation logic as subscription
+		validationResults, err := s.validateCouponsForInvoice(txCtx, inv, couponsWithAssociations)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to batch validate coupons").
+				Mark(ierr.ErrInternal)
+		}
 
-		// Apply each coupon to the invoice
-		for _, couponWithAssociation := range couponsWithAssociations {
+		// Filter out invalid coupons
+		validCouponsWithAssociations := make([]*CouponWithAssociation, 0, len(couponsWithAssociations))
+		for i, couponWithAssociation := range couponsWithAssociations {
+			if validationResults[i] == nil {
+				validCouponsWithAssociations = append(validCouponsWithAssociations, couponWithAssociation)
+			} else {
+				s.Logger.Warnw("coupon validation failed, skipping coupon",
+					"coupon_id", couponWithAssociation.Coupon.ID,
+					"association_id", couponWithAssociation.Association.ID,
+					"invoice_id", inv.ID,
+					"error", validationResults[i].Error())
+			}
+		}
+
+		if len(validCouponsWithAssociations) == 0 {
+			result = &CouponCalculationResult{
+				TotalDiscountAmount: decimal.Zero,
+				AppliedCoupons:      make([]*dto.CouponApplicationResponse, 0),
+				Currency:            inv.Currency,
+				Metadata: map[string]interface{}{
+					"total_coupons_processed": len(couponsWithAssociations),
+					"successful_applications": 0,
+					"validation_failures":     len(couponsWithAssociations),
+				},
+			}
+			return nil
+		}
+
+		// Process valid coupons and create applications in batch
+		totalDiscount := decimal.Zero
+		runningTotal := inv.Total
+		applicationRequests := make([]dto.CreateCouponApplicationRequest, 0, len(validCouponsWithAssociations))
+
+		// Calculate discounts for all valid coupons
+		for _, couponWithAssociation := range validCouponsWithAssociations {
 			coupon := couponWithAssociation.Coupon
 			association := couponWithAssociation.Association
 
@@ -1023,7 +1021,7 @@ func (s *couponService) ApplyCouponsOnInvoice(ctx context.Context, inv *invoice.
 				continue
 			}
 
-			// Create coupon application with association ID
+			// Create application request
 			req := dto.CreateCouponApplicationRequest{
 				CouponID:            coupon.ID,
 				CouponAssociationID: association.ID,
@@ -1046,28 +1044,17 @@ func (s *couponService) ApplyCouponsOnInvoice(ctx context.Context, inv *invoice.
 				req.DiscountPercentage = coupon.PercentageOff
 			}
 
-			application, err := s.CreateCouponApplication(txCtx, req)
-			if err != nil {
-				s.Logger.Errorw("failed to create coupon application",
-					"coupon_id", coupon.ID,
-					"association_id", association.ID,
-					"invoice_id", inv.ID,
-					"error", err)
-				continue // Skip this coupon but continue with others
-			}
-
-			appliedCoupons = append(appliedCoupons, application)
+			applicationRequests = append(applicationRequests, req)
 			totalDiscount = totalDiscount.Add(discount)
 			runningTotal = finalPrice // Update running total for next coupon
+		}
 
-			s.Logger.Infow("successfully applied coupon to invoice",
-				"coupon_id", coupon.ID,
-				"association_id", association.ID,
-				"invoice_id", inv.ID,
-				"application_id", application.ID,
-				"discount", discount,
-				"running_total_after", runningTotal,
-				"total_discount_so_far", totalDiscount)
+		// Batch create coupon applications
+		appliedCoupons, err := s.batchCreateCouponApplications(txCtx, applicationRequests)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to batch create coupon applications").
+				Mark(ierr.ErrInternal)
 		}
 
 		result = &CouponCalculationResult{
@@ -1077,6 +1064,7 @@ func (s *couponService) ApplyCouponsOnInvoice(ctx context.Context, inv *invoice.
 			Metadata: map[string]interface{}{
 				"total_coupons_processed": len(couponsWithAssociations),
 				"successful_applications": len(appliedCoupons),
+				"validation_failures":     len(couponsWithAssociations) - len(validCouponsWithAssociations),
 			},
 		}
 
@@ -1093,6 +1081,107 @@ func (s *couponService) ApplyCouponsOnInvoice(ctx context.Context, inv *invoice.
 		"applied_coupons", len(result.AppliedCoupons))
 
 	return result, nil
+}
+
+// validateCouponsForInvoice validates all coupons for an invoice using the same validation logic as subscription
+func (s *couponService) validateCouponsForInvoice(ctx context.Context, inv *invoice.Invoice, couponsWithAssociations []*CouponWithAssociation) ([]error, error) {
+	if len(couponsWithAssociations) == 0 {
+		return []error{}, nil
+	}
+
+	s.Logger.Debugw("validating coupons for invoice",
+		"invoice_id", inv.ID,
+		"coupon_count", len(couponsWithAssociations))
+
+	// Use the same validation service that's used for subscription validation
+	validationService := NewCouponValidationService(s.ServiceParams)
+
+	validationResults := make([]error, len(couponsWithAssociations))
+
+	// Only validate if invoice has subscription (same as subscription validation flow)
+	if inv.SubscriptionID != nil {
+		for i, cwa := range couponsWithAssociations {
+			// Use the exact same validation method as subscription
+			err := validationService.ValidateCouponForInvoice(ctx, cwa.Coupon.ID, inv.ID, *inv.SubscriptionID)
+			if err != nil {
+				validationResults[i] = err
+			}
+		}
+	}
+
+	return validationResults, nil
+}
+
+// batchCreateCouponApplications creates multiple coupon applications in a batch operation
+func (s *couponService) batchCreateCouponApplications(ctx context.Context, requests []dto.CreateCouponApplicationRequest) ([]*dto.CouponApplicationResponse, error) {
+	if len(requests) == 0 {
+		return []*dto.CouponApplicationResponse{}, nil
+	}
+
+	s.Logger.Debugw("batch creating coupon applications",
+		"application_count", len(requests))
+
+	responses := make([]*dto.CouponApplicationResponse, 0, len(requests))
+	baseModel := types.GetDefaultBaseModel(ctx)
+
+	// Create applications in batch using optimized approach
+	for _, req := range requests {
+		// Validate each request
+		if err := req.Validate(); err != nil {
+			s.Logger.Errorw("invalid coupon application request",
+				"coupon_id", req.CouponID,
+				"invoice_id", req.InvoiceID,
+				"error", err)
+			continue
+		}
+
+		// Create the application
+		ca := &coupon_application.CouponApplication{
+			ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_COUPON_APPLICATION),
+			CouponID:            req.CouponID,
+			CouponAssociationID: req.CouponAssociationID,
+			InvoiceID:           req.InvoiceID,
+			InvoiceLineItemID:   req.InvoiceLineItemID,
+			AppliedAt:           time.Now(),
+			OriginalPrice:       req.OriginalPrice,
+			FinalPrice:          req.FinalPrice,
+			DiscountedAmount:    req.DiscountedAmount,
+			DiscountType:        req.DiscountType,
+			DiscountPercentage:  req.DiscountPercentage,
+			Currency:            req.Currency,
+			CouponSnapshot:      req.CouponSnapshot,
+			Metadata:            req.Metadata,
+			TenantID:            baseModel.TenantID,
+			Status:              baseModel.Status,
+			CreatedAt:           baseModel.CreatedAt,
+			UpdatedAt:           baseModel.UpdatedAt,
+			CreatedBy:           baseModel.CreatedBy,
+			UpdatedBy:           baseModel.UpdatedBy,
+			EnvironmentID:       types.GetEnvironmentID(ctx),
+		}
+
+		if err := s.CouponApplicationRepo.Create(ctx, ca); err != nil {
+			s.Logger.Errorw("failed to create coupon application in batch",
+				"coupon_id", req.CouponID,
+				"invoice_id", req.InvoiceID,
+				"error", err)
+			continue
+		}
+
+		responses = append(responses, s.toCouponApplicationResponse(ca))
+
+		s.Logger.Debugw("successfully created coupon application",
+			"application_id", ca.ID,
+			"coupon_id", req.CouponID,
+			"invoice_id", req.InvoiceID,
+			"discount", req.DiscountedAmount)
+	}
+
+	s.Logger.Infow("completed batch coupon application creation",
+		"requested_count", len(requests),
+		"successful_count", len(responses))
+
+	return responses, nil
 }
 
 // Helper methods to convert domain models to DTOs
