@@ -109,7 +109,13 @@ func (Invoice) Fields() []ent.Field {
 			}).
 			Optional().
 			Default(decimal.Zero),
-
+		field.Other("total_discount", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(20,8)",
+			}).
+			Optional().
+			Nillable().
+			Default(decimal.Zero),
 		field.Other("total", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,8)",

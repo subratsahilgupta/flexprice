@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/ent"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -43,6 +44,9 @@ type Invoice struct {
 
 	// total is the final amount including taxes, fees, and discounts
 	Total decimal.Decimal `json:"total"`
+
+	// total_discount is the sum of all coupon discounts applied to the invoice
+	TotalDiscount decimal.Decimal `json:"total_discount"`
 
 	// amount_remaining is the outstanding amount still owed on this invoice (calculated as amount_due minus amount_paid)
 	AmountRemaining decimal.Decimal `json:"amount_remaining"`
@@ -137,6 +141,7 @@ func FromEnt(e *ent.Invoice) *Invoice {
 		AmountPaid:       e.AmountPaid,
 		Subtotal:         e.Subtotal,
 		Total:            e.Total,
+		TotalDiscount:    lo.FromPtrOr(e.TotalDiscount, decimal.Zero),
 		AmountRemaining:  e.AmountRemaining,
 		AdjustmentAmount: e.AdjustmentAmount,
 		RefundedAmount:   e.RefundedAmount,

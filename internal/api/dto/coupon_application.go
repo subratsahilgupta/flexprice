@@ -51,7 +51,7 @@ func (r *CreateCouponApplicationRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.OriginalPrice.LessThanOrEqual(decimal.Zero) {
+	if r.OriginalPrice.LessThan(decimal.Zero) {
 		return ierr.NewError("original_price must be greater than zero").
 			WithHint("Please provide a valid original price").
 			Mark(ierr.ErrValidation)

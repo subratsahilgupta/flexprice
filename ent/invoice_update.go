@@ -221,6 +221,26 @@ func (iu *InvoiceUpdate) ClearRefundedAmount() *InvoiceUpdate {
 	return iu
 }
 
+// SetTotalDiscount sets the "total_discount" field.
+func (iu *InvoiceUpdate) SetTotalDiscount(d decimal.Decimal) *InvoiceUpdate {
+	iu.mutation.SetTotalDiscount(d)
+	return iu
+}
+
+// SetNillableTotalDiscount sets the "total_discount" field if the given value is not nil.
+func (iu *InvoiceUpdate) SetNillableTotalDiscount(d *decimal.Decimal) *InvoiceUpdate {
+	if d != nil {
+		iu.SetTotalDiscount(*d)
+	}
+	return iu
+}
+
+// ClearTotalDiscount clears the value of the "total_discount" field.
+func (iu *InvoiceUpdate) ClearTotalDiscount() *InvoiceUpdate {
+	iu.mutation.ClearTotalDiscount()
+	return iu
+}
+
 // SetTotal sets the "total" field.
 func (iu *InvoiceUpdate) SetTotal(d decimal.Decimal) *InvoiceUpdate {
 	iu.mutation.SetTotal(d)
@@ -660,6 +680,12 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if iu.mutation.RefundedAmountCleared() {
 		_spec.ClearField(invoice.FieldRefundedAmount, field.TypeOther)
 	}
+	if value, ok := iu.mutation.TotalDiscount(); ok {
+		_spec.SetField(invoice.FieldTotalDiscount, field.TypeOther, value)
+	}
+	if iu.mutation.TotalDiscountCleared() {
+		_spec.ClearField(invoice.FieldTotalDiscount, field.TypeOther)
+	}
 	if value, ok := iu.mutation.Total(); ok {
 		_spec.SetField(invoice.FieldTotal, field.TypeOther, value)
 	}
@@ -1047,6 +1073,26 @@ func (iuo *InvoiceUpdateOne) SetNillableRefundedAmount(d *decimal.Decimal) *Invo
 // ClearRefundedAmount clears the value of the "refunded_amount" field.
 func (iuo *InvoiceUpdateOne) ClearRefundedAmount() *InvoiceUpdateOne {
 	iuo.mutation.ClearRefundedAmount()
+	return iuo
+}
+
+// SetTotalDiscount sets the "total_discount" field.
+func (iuo *InvoiceUpdateOne) SetTotalDiscount(d decimal.Decimal) *InvoiceUpdateOne {
+	iuo.mutation.SetTotalDiscount(d)
+	return iuo
+}
+
+// SetNillableTotalDiscount sets the "total_discount" field if the given value is not nil.
+func (iuo *InvoiceUpdateOne) SetNillableTotalDiscount(d *decimal.Decimal) *InvoiceUpdateOne {
+	if d != nil {
+		iuo.SetTotalDiscount(*d)
+	}
+	return iuo
+}
+
+// ClearTotalDiscount clears the value of the "total_discount" field.
+func (iuo *InvoiceUpdateOne) ClearTotalDiscount() *InvoiceUpdateOne {
+	iuo.mutation.ClearTotalDiscount()
 	return iuo
 }
 
@@ -1518,6 +1564,12 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	}
 	if iuo.mutation.RefundedAmountCleared() {
 		_spec.ClearField(invoice.FieldRefundedAmount, field.TypeOther)
+	}
+	if value, ok := iuo.mutation.TotalDiscount(); ok {
+		_spec.SetField(invoice.FieldTotalDiscount, field.TypeOther, value)
+	}
+	if iuo.mutation.TotalDiscountCleared() {
+		_spec.ClearField(invoice.FieldTotalDiscount, field.TypeOther)
 	}
 	if value, ok := iuo.mutation.Total(); ok {
 		_spec.SetField(invoice.FieldTotal, field.TypeOther, value)

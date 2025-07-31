@@ -43,7 +43,6 @@ type SubscriptionService interface {
 
 	// Coupon-related methods
 	ApplyCouponsToSubscription(ctx context.Context, subscriptionID string, couponIDs []string) error
-	ApplyCouponsToSubscriptionLineItem(ctx context.Context, subscriptionID string, lineItemID string, couponIDs []string) error
 	GetSubscriptionCouponAssociations(ctx context.Context, subscriptionID string) ([]*dto.CouponAssociationResponse, error)
 	RemoveCouponFromSubscription(ctx context.Context, subscriptionID string, couponID string) error
 }
@@ -320,17 +319,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			}
 		}
 
-		// handle coupons
-
-		for _, item := range lineItems {
-			if _, ok := req.SubscriptionLineItemCoupons[item.PriceID]; ok {
-				err = s.ApplyCouponsToSubscriptionLineItem(ctx, sub.ID, item.ID, req.SubscriptionLineItemCoupons[item.PriceID])
-				if err != nil {
-					return err
-				}
-			}
-		}
-
+		// Apply coupons to the subscription
 		err = s.ApplyCouponsToSubscription(ctx, sub.ID, req.SubscriptionCoupons)
 		if err != nil {
 			return err
@@ -2553,10 +2542,6 @@ func (s *subscriptionService) ApplyCouponsToSubscription(ctx context.Context, su
 	// Apply coupons to subscription
 	_, err := couponService.ApplyCouponToSubscription(ctx, couponIDs, subscriptionID)
 	if err != nil {
-		s.Logger.Errorw("failed to apply coupons to subscription",
-			"subscription_id", subscriptionID,
-			"coupon_ids", couponIDs,
-			"error", err)
 		return ierr.WithError(err).
 			WithHint("Failed to apply coupons to subscription").
 			WithReportableDetails(map[string]interface{}{
@@ -2568,46 +2553,6 @@ func (s *subscriptionService) ApplyCouponsToSubscription(ctx context.Context, su
 
 	s.Logger.Infow("successfully applied coupons to subscription",
 		"subscription_id", subscriptionID,
-		"coupon_count", len(couponIDs))
-
-	return nil
-}
-
-// ApplyCouponsToSubscriptionLineItem applies coupons to a specific subscription line item
-func (s *subscriptionService) ApplyCouponsToSubscriptionLineItem(ctx context.Context, subscriptionID string, lineItemID string, couponIDs []string) error {
-	if len(couponIDs) == 0 {
-		return nil
-	}
-
-	s.Logger.Infow("handling line-item-level coupon associations",
-		"subscription_id", subscriptionID,
-		"subscription_line_item_id", lineItemID,
-		"coupon_count", len(couponIDs))
-
-	// Create coupon service instance
-	couponService := NewCouponService(s.ServiceParams)
-
-	// Apply coupons to subscription line item
-	_, err := couponService.ApplyCouponToSubscriptionLineItem(ctx, couponIDs, subscriptionID, lineItemID)
-	if err != nil {
-		s.Logger.Errorw("failed to apply coupons to subscription line item",
-			"subscription_id", subscriptionID,
-			"subscription_line_item_id", lineItemID,
-			"coupon_ids", couponIDs,
-			"error", err)
-		return ierr.WithError(err).
-			WithHint("Failed to apply coupons to subscription line item").
-			WithReportableDetails(map[string]interface{}{
-				"subscription_id":           subscriptionID,
-				"subscription_line_item_id": lineItemID,
-				"coupon_ids":                couponIDs,
-			}).
-			Mark(ierr.ErrInternal)
-	}
-
-	s.Logger.Infow("successfully applied coupons to subscription line item",
-		"subscription_id", subscriptionID,
-		"subscription_line_item_id", lineItemID,
 		"coupon_count", len(couponIDs))
 
 	return nil

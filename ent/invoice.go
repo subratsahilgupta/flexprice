@@ -57,6 +57,8 @@ type Invoice struct {
 	AdjustmentAmount decimal.Decimal `json:"adjustment_amount,omitempty"`
 	// RefundedAmount holds the value of the "refunded_amount" field.
 	RefundedAmount decimal.Decimal `json:"refunded_amount,omitempty"`
+	// TotalDiscount holds the value of the "total_discount" field.
+	TotalDiscount *decimal.Decimal `json:"total_discount,omitempty"`
 	// Total holds the value of the "total" field.
 	Total decimal.Decimal `json:"total,omitempty"`
 	// Description holds the value of the "description" field.
@@ -129,6 +131,8 @@ func (*Invoice) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case invoice.FieldTotalDiscount:
+			values[i] = &sql.NullScanner{S: new(decimal.Decimal)}
 		case invoice.FieldMetadata:
 			values[i] = new([]byte)
 		case invoice.FieldAmountDue, invoice.FieldAmountPaid, invoice.FieldAmountRemaining, invoice.FieldSubtotal, invoice.FieldAdjustmentAmount, invoice.FieldRefundedAmount, invoice.FieldTotal:
@@ -274,6 +278,13 @@ func (i *Invoice) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field refunded_amount", values[j])
 			} else if value != nil {
 				i.RefundedAmount = *value
+			}
+		case invoice.FieldTotalDiscount:
+			if value, ok := values[j].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field total_discount", values[j])
+			} else if value.Valid {
+				i.TotalDiscount = new(decimal.Decimal)
+				*i.TotalDiscount = *value.S.(*decimal.Decimal)
 			}
 		case invoice.FieldTotal:
 			if value, ok := values[j].(*decimal.Decimal); !ok {
@@ -488,6 +499,11 @@ func (i *Invoice) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("refunded_amount=")
 	builder.WriteString(fmt.Sprintf("%v", i.RefundedAmount))
+	builder.WriteString(", ")
+	if v := i.TotalDiscount; v != nil {
+		builder.WriteString("total_discount=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("total=")
 	builder.WriteString(fmt.Sprintf("%v", i.Total))

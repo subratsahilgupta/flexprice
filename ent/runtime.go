@@ -720,12 +720,16 @@ func init() {
 	invoiceDescRefundedAmount := invoiceFields[12].Descriptor()
 	// invoice.DefaultRefundedAmount holds the default value on creation for the refunded_amount field.
 	invoice.DefaultRefundedAmount = invoiceDescRefundedAmount.Default.(decimal.Decimal)
+	// invoiceDescTotalDiscount is the schema descriptor for total_discount field.
+	invoiceDescTotalDiscount := invoiceFields[13].Descriptor()
+	// invoice.DefaultTotalDiscount holds the default value on creation for the total_discount field.
+	invoice.DefaultTotalDiscount = invoiceDescTotalDiscount.Default.(decimal.Decimal)
 	// invoiceDescTotal is the schema descriptor for total field.
-	invoiceDescTotal := invoiceFields[13].Descriptor()
+	invoiceDescTotal := invoiceFields[14].Descriptor()
 	// invoice.DefaultTotal holds the default value on creation for the total field.
 	invoice.DefaultTotal = invoiceDescTotal.Default.(decimal.Decimal)
 	// invoiceDescVersion is the schema descriptor for version field.
-	invoiceDescVersion := invoiceFields[25].Descriptor()
+	invoiceDescVersion := invoiceFields[26].Descriptor()
 	// invoice.DefaultVersion holds the default value on creation for the version field.
 	invoice.DefaultVersion = invoiceDescVersion.Default.(int)
 	invoicelineitemMixin := schema.InvoiceLineItem{}.Mixin()
