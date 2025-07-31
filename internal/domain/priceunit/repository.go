@@ -34,12 +34,6 @@ type Repository interface {
 	// GetByID fetches a pricing unit by its ID
 	GetByID(ctx context.Context, id string) (*PriceUnit, error)
 
-	// GetSymbol returns the symbol for a given code/tenant/env
-	GetSymbol(ctx context.Context, code, tenantID, environmentID string) (string, error)
-
-	// GetConversionRate returns the conversion rate for a given code/tenant/env
-	GetConversionRate(ctx context.Context, code, tenantID, environmentID string) (decimal.Decimal, error)
-
 	// Convert operations
 
 	// ConvertToBaseCurrency converts an amount from pricing unit to base currency

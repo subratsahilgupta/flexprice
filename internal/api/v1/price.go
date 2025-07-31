@@ -22,7 +22,7 @@ func NewPriceHandler(service service.PriceService, log *logger.Logger) *PriceHan
 }
 
 // @Summary Create a new price
-// @Description Create a new price with the specified configuration
+// @Description Create a new price with the specified configuration. Supports both regular and price unit configurations.
 // @Tags Prices
 // @Accept json
 // @Produce json
@@ -42,35 +42,6 @@ func (h *PriceHandler) CreatePrice(c *gin.Context) {
 	}
 
 	resp, err := h.service.CreatePrice(c.Request.Context(), req)
-	if err != nil {
-		c.Error(err)
-		return
-	}
-
-	c.JSON(http.StatusCreated, resp)
-}
-
-// @Summary Create a new price with a price unit config
-// @Description Create a new price with a price unit config
-// @Tags Prices
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param price body dto.CreatePriceWithUnitConfigRequest true "Price configuration"
-// @Success 201 {object} dto.PriceResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /prices/config [post]
-func (h *PriceHandler) CreatePriceWithUnitConfig(c *gin.Context) {
-	var req dto.CreatePriceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(ierr.WithError(err).
-			WithHint("Invalid request format").
-			Mark(ierr.ErrValidation))
-		return
-	}
-
-	resp, err := h.service.CreatePriceWithUnitConfig(c.Request.Context(), req)
 	if err != nil {
 		c.Error(err)
 		return
