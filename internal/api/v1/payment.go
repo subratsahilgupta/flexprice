@@ -216,3 +216,79 @@ func (h *PaymentHandler) ProcessPayment(c *gin.Context) {
 
 	c.JSON(http.StatusOK, dto.NewPaymentResponse(p))
 }
+
+// @Summary Create a Stripe payment link
+// @Description Create a Stripe payment link for an invoice
+// @Tags Payments
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param payment_link body dto.CreateStripePaymentLinkRequest true "Payment link configuration"
+// @Success 201 {object} dto.StripePaymentLinkResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /payments/stripe/link [post]
+func (h *PaymentHandler) CreateStripePaymentLink(c *gin.Context) {
+	var req dto.CreateStripePaymentLinkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		h.log.Error("Failed to validate request", "error", err)
+		c.Error(err)
+		return
+	}
+
+	resp, err := h.service.CreateStripePaymentLink(c.Request.Context(), &req)
+	if err != nil {
+		h.log.Error("Failed to create Stripe payment link", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, resp)
+}
+
+// @Summary Get Stripe payment status
+// @Description Get the payment status from Stripe checkout session
+// @Tags Payments
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param session_id path string true "Stripe Session ID"
+// @Param environment_id query string true "Environment ID"
+// @Success 200 {object} dto.PaymentStatusResponse
+// @Failure 400 {object} errors.ErrorResponse
+// @Failure 500 {object} errors.ErrorResponse
+// @Router /payments/stripe/status/{session_id} [get]
+func (h *PaymentHandler) GetStripePaymentStatus(c *gin.Context) {
+	sessionID := c.Param("session_id")
+	if sessionID == "" {
+		c.Error(ierr.NewError("session_id is required").
+			WithHint("Stripe Session ID is required").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	environmentID := c.Query("environment_id")
+	if environmentID == "" {
+		c.Error(ierr.NewError("environment_id is required").
+			WithHint("Environment ID is required").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.GetStripePaymentStatus(c.Request.Context(), sessionID, environmentID)
+	if err != nil {
+		h.log.Error("Failed to get Stripe payment status", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}

@@ -29,6 +29,7 @@ type InvoiceService interface {
 	VoidInvoice(ctx context.Context, id string) error
 	ProcessDraftInvoice(ctx context.Context, id string) error
 	UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
+	ReconcilePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
 	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetCustomerInvoiceSummary(ctx context.Context, customerID string, currency string) (*dto.CustomerInvoiceSummary, error)
@@ -412,7 +413,7 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 			Mark(ierr.ErrValidation)
 	}
 
-	// Validate that there shouldnt be any payments for this invoice
+	// Validate that there shouldnt be any payments for this invoice (for manual updates)
 	paymentService := NewPaymentService(s.ServiceParams)
 	filter := types.NewNoLimitPaymentFilter()
 	filter.DestinationID = lo.ToPtr(id)
@@ -459,6 +460,77 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 	case types.PaymentStatusFailed:
 		inv.AmountPaid = decimal.Zero
 		inv.AmountRemaining = inv.AmountDue
+		inv.PaidAt = nil
+	}
+
+	// Validate the final state
+	if err := inv.Validate(); err != nil {
+		return err
+	}
+
+	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
+		return err
+	}
+
+	// Publish webhook events
+	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceUpdatePayment, inv.ID)
+
+	return nil
+}
+
+// ReconcilePaymentStatus updates the invoice payment status and amounts for payment reconciliation
+// This method bypasses the payment record validation since it's called during payment processing
+func (s *invoiceService) ReconcilePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error {
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Validate the invoice status
+	allowedInvoiceStatuses := []types.InvoiceStatus{
+		types.InvoiceStatusDraft,
+		types.InvoiceStatusFinalized,
+	}
+	if !lo.Contains(allowedInvoiceStatuses, inv.InvoiceStatus) {
+		return ierr.NewError("invoice status is not allowed").
+			WithHintf("invoice status - %s is not allowed", inv.InvoiceStatus).
+			WithReportableDetails(map[string]any{
+				"allowed_statuses": allowedInvoiceStatuses,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate the payment status transition
+	if err := s.validatePaymentStatusTransition(inv.PaymentStatus, status); err != nil {
+		return err
+	}
+
+	// Validate the request amount
+	if amount != nil && amount.IsNegative() {
+		return ierr.NewError("amount must be non-negative").
+			WithHint("amount must be non-negative").
+			Mark(ierr.ErrValidation)
+	}
+
+	now := time.Now().UTC()
+	inv.PaymentStatus = status
+
+	switch status {
+	case types.PaymentStatusPending:
+		if amount != nil {
+			inv.AmountPaid = inv.AmountPaid.Add(*amount)
+			inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
+		}
+	case types.PaymentStatusSucceeded:
+		if amount != nil {
+			inv.AmountPaid = inv.AmountPaid.Add(*amount)
+		} else {
+			inv.AmountPaid = inv.AmountDue
+		}
+		inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
+		inv.PaidAt = &now
+	case types.PaymentStatusFailed:
+		// Don't change amount_paid for failed payments
 		inv.PaidAt = nil
 	}
 

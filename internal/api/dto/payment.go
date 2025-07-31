@@ -26,8 +26,14 @@ type CreatePaymentRequest struct {
 
 // UpdatePaymentRequest represents a request to update a payment
 type UpdatePaymentRequest struct {
-	PaymentStatus *string         `json:"payment_status,omitempty"`
-	Metadata      *types.Metadata `json:"metadata,omitempty"`
+	PaymentStatus    *string         `json:"payment_status,omitempty"`
+	PaymentGateway   *string         `json:"payment_gateway,omitempty"`
+	GatewayPaymentID *string         `json:"gateway_payment_id,omitempty"`
+	PaymentMethodID  *string         `json:"payment_method_id,omitempty"`
+	Metadata         *types.Metadata `json:"metadata,omitempty"`
+	SucceededAt      *time.Time      `json:"succeeded_at,omitempty"`
+	FailedAt         *time.Time      `json:"failed_at,omitempty"`
+	ErrorMessage     *string         `json:"error_message,omitempty"`
 }
 
 // PaymentResponse represents a payment response
@@ -42,6 +48,8 @@ type PaymentResponse struct {
 	Currency          string                       `json:"currency"`
 	PaymentStatus     types.PaymentStatus          `json:"payment_status"`
 	TrackAttempts     bool                         `json:"track_attempts"`
+	PaymentGateway    *string                      `json:"payment_gateway,omitempty"`
+	GatewayPaymentID  *string                      `json:"gateway_payment_id,omitempty"`
 	Metadata          types.Metadata               `json:"metadata,omitempty"`
 	SucceededAt       *time.Time                   `json:"succeeded_at,omitempty"`
 	FailedAt          *time.Time                   `json:"failed_at,omitempty"`
@@ -89,6 +97,8 @@ func NewPaymentResponse(p *payment.Payment) *PaymentResponse {
 		Currency:          p.Currency,
 		PaymentStatus:     p.PaymentStatus,
 		TrackAttempts:     p.TrackAttempts,
+		PaymentGateway:    p.PaymentGateway,
+		GatewayPaymentID:  p.GatewayPaymentID,
 		Metadata:          p.Metadata,
 		SucceededAt:       p.SucceededAt,
 		FailedAt:          p.FailedAt,
@@ -177,4 +187,80 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 	}
 
 	return p, nil
+}
+
+// CreateStripePaymentLinkRequest represents a request to create a Stripe payment link
+type CreateStripePaymentLinkRequest struct {
+	InvoiceID     string          `json:"invoice_id" binding:"required"`
+	CustomerID    string          `json:"customer_id" binding:"required"`
+	Amount        decimal.Decimal `json:"amount" binding:"required"`
+	Currency      string          `json:"currency" binding:"required"`
+	SuccessURL    string          `json:"success_url,omitempty"`
+	CancelURL     string          `json:"cancel_url,omitempty"`
+	EnvironmentID string          `json:"environment_id" binding:"required"`
+	Metadata      types.Metadata  `json:"metadata,omitempty"`
+}
+
+// StripePaymentLinkResponse represents a response from creating a Stripe payment link
+type StripePaymentLinkResponse struct {
+	ID              string          `json:"id"`
+	PaymentURL      string          `json:"payment_url"`
+	PaymentIntentID string          `json:"payment_intent_id"`
+	Amount          decimal.Decimal `json:"amount"`
+	Currency        string          `json:"currency"`
+	Status          string          `json:"status"`
+	CreatedAt       int64           `json:"created_at"`
+	PaymentID       string          `json:"payment_id,omitempty"`
+}
+
+// Validate validates the create Stripe payment link request
+func (r *CreateStripePaymentLinkRequest) Validate() error {
+	if r.InvoiceID == "" {
+		return ierr.NewError("invoice_id is required").
+			WithHint("Invoice ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.CustomerID == "" {
+		return ierr.NewError("customer_id is required").
+			WithHint("Customer ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.Amount.IsZero() || r.Amount.IsNegative() {
+		return ierr.NewError("invalid amount").
+			WithHint("Amount must be greater than 0").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.Currency == "" {
+		return ierr.NewError("currency is required").
+			WithHint("Currency is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if err := types.ValidateCurrencyCode(r.Currency); err != nil {
+		return err
+	}
+
+	if r.EnvironmentID == "" {
+		return ierr.NewError("environment_id is required").
+			WithHint("Environment ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// PaymentStatusResponse represents the payment status from Stripe
+type PaymentStatusResponse struct {
+	SessionID       string            `json:"session_id"`
+	PaymentIntentID string            `json:"payment_intent_id"`
+	Status          string            `json:"status"`
+	Amount          decimal.Decimal   `json:"amount"`
+	Currency        string            `json:"currency"`
+	CustomerID      string            `json:"customer_id"`
+	CreatedAt       int64             `json:"created_at"`
+	ExpiresAt       int64             `json:"expires_at"`
+	Metadata        map[string]string `json:"metadata"`
 }

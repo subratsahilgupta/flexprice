@@ -257,6 +257,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			payments.PUT("/:id", handlers.Payment.UpdatePayment)
 			payments.DELETE("/:id", handlers.Payment.DeletePayment)
 			payments.POST("/:id/process", handlers.Payment.ProcessPayment)
+			payments.POST("/stripe/link", handlers.Payment.CreateStripePaymentLink)
+			payments.GET("/stripe/status/:session_id", handlers.Payment.GetStripePaymentStatus)
 		}
 
 		tasks := v1Private.Group("/tasks")

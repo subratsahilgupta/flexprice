@@ -35,10 +35,10 @@ func NewIntegrationHandler(
 // @Security ApiKeyAuth
 // @Param customer_id path string true "Customer ID"
 // @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 401 {object} ierr.ErrorResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
+// @Failure 400 {object} errors.ErrorResponse
+// @Failure 401 {object} errors.ErrorResponse
+// @Failure 404 {object} errors.ErrorResponse
+// @Failure 500 {object} errors.ErrorResponse
 // @Router /integration/sync-customer/{customer_id} [post]
 func (h *IntegrationHandler) SyncCustomerToProviders(c *gin.Context) {
 	customerID := c.Param("customer_id")
@@ -75,8 +75,8 @@ func (h *IntegrationHandler) SyncCustomerToProviders(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} dto.ListConnectionsResponse
-// @Failure 401 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
+// @Failure 401 {object} errors.ErrorResponse
+// @Failure 500 {object} errors.ErrorResponse
 // @Router /integration/providers [get]
 func (h *IntegrationHandler) GetAvailableProviders(c *gin.Context) {
 	ctx := c.Request.Context()

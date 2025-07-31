@@ -45,10 +45,11 @@ func (s PaymentStatus) Validate() error {
 type PaymentMethodType string
 
 const (
-	PaymentMethodTypeCard    PaymentMethodType = "CARD"
-	PaymentMethodTypeACH     PaymentMethodType = "ACH"
-	PaymentMethodTypeOffline PaymentMethodType = "OFFLINE"
-	PaymentMethodTypeCredits PaymentMethodType = "CREDITS"
+	PaymentMethodTypeCard        PaymentMethodType = "CARD"
+	PaymentMethodTypeACH         PaymentMethodType = "ACH"
+	PaymentMethodTypeOffline     PaymentMethodType = "OFFLINE"
+	PaymentMethodTypeCredits     PaymentMethodType = "CREDITS"
+	PaymentMethodTypePaymentLink PaymentMethodType = "PAYMENT_LINK"
 )
 
 func (s PaymentMethodType) String() string {
@@ -61,6 +62,7 @@ func (s PaymentMethodType) Validate() error {
 		PaymentMethodTypeACH,
 		PaymentMethodTypeOffline,
 		PaymentMethodTypeCredits,
+		PaymentMethodTypePaymentLink,
 	}
 	if !lo.Contains(allowed, s) {
 		return ierr.NewError("invalid payment method type").

@@ -240,6 +240,7 @@ func (r *paymentRepository) Update(ctx context.Context, p *domainPayment.Payment
 			payment.TenantID(p.TenantID),
 		).
 		SetPaymentStatus(string(p.PaymentStatus)).
+		SetPaymentMethodID(p.PaymentMethodID).
 		SetNillablePaymentGateway(p.PaymentGateway).
 		SetNillableGatewayPaymentID(p.GatewayPaymentID).
 		SetTrackAttempts(p.TrackAttempts).

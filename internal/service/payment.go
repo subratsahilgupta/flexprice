@@ -23,6 +23,9 @@ type PaymentService interface {
 	UpdatePayment(ctx context.Context, id string, req dto.UpdatePaymentRequest) (*dto.PaymentResponse, error)
 	ListPayments(ctx context.Context, filter *types.PaymentFilter) (*dto.ListPaymentsResponse, error)
 	DeletePayment(ctx context.Context, id string) error
+	// Stripe payment link operations
+	CreateStripePaymentLink(ctx context.Context, req *dto.CreateStripePaymentLinkRequest) (*dto.StripePaymentLinkResponse, error)
+	GetStripePaymentStatus(ctx context.Context, sessionID string, environmentID string) (*dto.PaymentStatusResponse, error)
 }
 
 type paymentService struct {
@@ -253,6 +256,24 @@ func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.U
 	if req.PaymentStatus != nil {
 		p.PaymentStatus = types.PaymentStatus(*req.PaymentStatus)
 	}
+	if req.PaymentGateway != nil {
+		p.PaymentGateway = req.PaymentGateway
+	}
+	if req.GatewayPaymentID != nil {
+		p.GatewayPaymentID = req.GatewayPaymentID
+	}
+	if req.PaymentMethodID != nil {
+		p.PaymentMethodID = *req.PaymentMethodID
+	}
+	if req.SucceededAt != nil {
+		p.SucceededAt = req.SucceededAt
+	}
+	if req.FailedAt != nil {
+		p.FailedAt = req.FailedAt
+	}
+	if req.ErrorMessage != nil {
+		p.ErrorMessage = req.ErrorMessage
+	}
 	if req.Metadata != nil {
 		p.Metadata = *req.Metadata
 	}
@@ -340,6 +361,18 @@ func (s *paymentService) DeletePayment(ctx context.Context, id string) error {
 	}
 
 	return s.PaymentRepo.Delete(ctx, id) // Repository already using ierr
+}
+
+// CreateStripePaymentLink creates a Stripe payment link
+func (s *paymentService) CreateStripePaymentLink(ctx context.Context, req *dto.CreateStripePaymentLinkRequest) (*dto.StripePaymentLinkResponse, error) {
+	stripeService := NewStripeService(s.ServiceParams)
+	return stripeService.CreatePaymentLink(ctx, req)
+}
+
+// GetStripePaymentStatus gets the payment status from Stripe
+func (s *paymentService) GetStripePaymentStatus(ctx context.Context, sessionID string, environmentID string) (*dto.PaymentStatusResponse, error) {
+	stripeService := NewStripeService(s.ServiceParams)
+	return stripeService.GetPaymentStatus(ctx, sessionID, environmentID)
 }
 
 func (s *paymentService) publishWebhookEvent(ctx context.Context, eventName string, paymentID string) {
