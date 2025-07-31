@@ -12,7 +12,7 @@ import (
 )
 
 type CreatePriceRequest struct {
-	Amount             string                   `json:"amount"`
+	Amount             string                   `json:"amount,omitempty"`
 	Currency           string                   `json:"currency" validate:"required,len=3"`
 	PlanID             string                   `json:"plan_id,omitempty"`
 	Type               types.PriceType          `json:"type" validate:"required"`
@@ -91,7 +91,7 @@ func (r *CreatePriceRequest) Validate() error {
 
 	// If price unit config is provided, main amount can be empty (will be calculated from price unit)
 	// If no price unit config, main amount is required
-	if r.PriceUnitConfig == nil && amount.LessThanOrEqual(decimal.Zero) {
+	if r.PriceUnitConfig == nil && amount.LessThan(decimal.Zero) {
 		return ierr.NewError("amount must be greater than 0 when price_unit_config is not provided").
 			WithHint("Amount is required when not using price unit config").
 			Mark(ierr.ErrValidation)
@@ -350,10 +350,10 @@ func (r *CreatePriceRequest) Validate() error {
 				Mark(ierr.ErrValidation)
 		}
 
-		// Validate price unit amount is positive
-		if priceUnitAmount.LessThanOrEqual(decimal.Zero) {
-			return ierr.NewError("price unit amount must be greater than 0").
-				WithHint("Price unit amount cannot be zero or negative").
+		// Validate price unit amount is not negative
+		if priceUnitAmount.LessThan(decimal.Zero) {
+			return ierr.NewError("price unit amount cannot be negative").
+				WithHint("Price unit amount must be zero or greater").
 				WithReportableDetails(map[string]interface{}{
 					"amount": r.PriceUnitConfig.Amount,
 				}).

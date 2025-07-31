@@ -130,7 +130,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			price.GET("/:id", handlers.Price.GetPrice)
 			price.PUT("/:id", handlers.Price.UpdatePrice)
 			price.DELETE("/:id", handlers.Price.DeletePrice)
-			price.POST("/config", handlers.Price.CreatePriceWithUnitConfig)
 
 			priceUnit := price.Group("/units")
 			{

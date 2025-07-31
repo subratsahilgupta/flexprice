@@ -255,22 +255,6 @@ func (r *priceUnitRepository) GetByCode(ctx context.Context, code, tenantID, env
 	return domainPriceUnit.FromEnt(unit), nil
 }
 
-func (r *priceUnitRepository) GetConversionRate(ctx context.Context, code, tenantID, environmentID string) (decimal.Decimal, error) {
-	unit, err := r.GetByCode(ctx, code, tenantID, environmentID, string(types.StatusPublished))
-	if err != nil {
-		return decimal.Zero, err
-	}
-	return unit.ConversionRate, nil
-}
-
-func (r *priceUnitRepository) GetSymbol(ctx context.Context, code, tenantID, environmentID string) (string, error) {
-	unit, err := r.GetByCode(ctx, code, tenantID, environmentID, string(types.StatusPublished))
-	if err != nil {
-		return "", err
-	}
-	return unit.Symbol, nil
-}
-
 func (r *priceUnitRepository) ConvertToBaseCurrency(ctx context.Context, code, tenantID, environmentID string, priceUnitAmount decimal.Decimal) (decimal.Decimal, error) {
 	unit, err := r.GetByCode(ctx, code, tenantID, environmentID, string(types.StatusPublished))
 	if err != nil {

@@ -31,9 +31,6 @@ type PriceService interface {
 	// CalculateCostSheetPrice calculates the cost for a given price and quantity
 	// specifically for costsheet calculations
 	CalculateCostSheetPrice(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal
-
-	// CreatePriceWithUnitConfig creates a new price with a price unit config
-	CreatePriceWithUnitConfig(ctx context.Context, req dto.CreatePriceRequest) (*dto.PriceResponse, error)
 }
 
 type priceService struct {
@@ -58,6 +55,12 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 			Mark(ierr.ErrValidation)
 	}
 
+	// Handle price unit config case
+	if req.PriceUnitConfig != nil {
+		return s.createPriceWithUnitConfig(ctx, req)
+	}
+
+	// Handle regular price case
 	price, err := req.ToPrice(ctx)
 	if err != nil {
 		return nil, ierr.WithError(err).
@@ -72,9 +75,8 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 	return &dto.PriceResponse{Price: price}, nil
 }
 
-func (s *priceService) CreatePriceWithUnitConfig(
-	ctx context.Context,
-	req dto.CreatePriceRequest) (*dto.PriceResponse, error) {
+// createPriceWithUnitConfig- a private helper method to create a price with a price unit config
+func (s *priceService) createPriceWithUnitConfig(ctx context.Context, req dto.CreatePriceRequest) (*dto.PriceResponse, error) {
 
 	if err := req.Validate(); err != nil {
 		return nil, err

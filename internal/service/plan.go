@@ -86,7 +86,7 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 				if planPriceReq.PriceUnitConfig != nil {
 					// Create a price service instance for price unit handling
 					priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
-					priceResp, err := priceService.CreatePriceWithUnitConfig(ctx, *planPriceReq.CreatePriceRequest)
+					priceResp, err := priceService.CreatePrice(ctx, *planPriceReq.CreatePriceRequest)
 					if err != nil {
 						return ierr.WithError(err).
 							WithHint("Failed to create price with unit config").
@@ -427,13 +427,13 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 					var newPrice *price.Price
 					var err error
 
-					// If price unit config is provided, use CreatePriceWithUnitConfig
+					// If price unit config is provided, handle it through the price service
 					if reqPrice.PriceUnitConfig != nil {
 						// Set plan ID before creating price
 						reqPrice.CreatePriceRequest.PlanID = plan.ID
 
 						priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
-						priceResp, err := priceService.CreatePriceWithUnitConfig(ctx, *reqPrice.CreatePriceRequest)
+						priceResp, err := priceService.CreatePrice(ctx, *reqPrice.CreatePriceRequest)
 						if err != nil {
 							return ierr.WithError(err).
 								WithHint("Failed to create price with unit config").
@@ -462,7 +462,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 				}
 			}
 
-			// Only bulk create prices that weren't created by CreatePriceWithUnitConfig
+			// Only bulk create prices that weren't already created through the price service
 			if len(bulkCreatePrices) > 0 {
 				if err := s.PriceRepo.CreateBulk(ctx, bulkCreatePrices); err != nil {
 					return err
