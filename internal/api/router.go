@@ -33,6 +33,7 @@ type Handlers struct {
 	Entitlement              *v1.EntitlementHandler
 	CreditGrant              *v1.CreditGrantHandler
 	Payment                  *v1.PaymentHandler
+	PaymentGateway           *v1.PaymentGatewayHandler
 	Task                     *v1.TaskHandler
 	Secret                   *v1.SecretHandler
 	CostSheet                *v1.CostSheetHandler
@@ -257,6 +258,13 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			payments.PUT("/:id", handlers.Payment.UpdatePayment)
 			payments.DELETE("/:id", handlers.Payment.DeletePayment)
 			payments.POST("/:id/process", handlers.Payment.ProcessPayment)
+
+			// Generic payment gateway endpoints
+			payments.POST("/link", handlers.PaymentGateway.CreatePaymentLink)
+			payments.GET("/status/:session_id", handlers.PaymentGateway.GetPaymentStatus)
+			payments.GET("/gateways", handlers.PaymentGateway.GetSupportedGateways)
+
+			// Legacy Stripe endpoints (for backward compatibility)
 			payments.POST("/stripe/link", handlers.Payment.CreateStripePaymentLink)
 			payments.GET("/stripe/status/:session_id", handlers.Payment.GetStripePaymentStatus)
 		}

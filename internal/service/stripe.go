@@ -392,12 +392,12 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 	// Provide default URLs if not provided
 	successURL := req.SuccessURL
 	if successURL == "" {
-		successURL = "https://your-app.com/payment/success"
+		successURL = "https://i.pinimg.com/originals/93/7e/0f/937e0ff78860fd29a59a9f5d4242b4f7.gif"
 	}
 
 	cancelURL := req.CancelURL
 	if cancelURL == "" {
-		cancelURL = "https://your-app.com/payment/cancel"
+		cancelURL = "https://www.redbubble.com/i/mug/Game-over-Play-again-Yes-by-Bisams/69638823.9Q0AD?epik=dj0yJnU9MVczbWt6T1Rmc2RLWGstMDVzeXZ4eVBmVzBPd09ZSVEmcD0wJm49clVRc3FrMXhCaHByVmhPRy1FM2FzZyZ0PUFBQUFBR2lMZk1n"
 	}
 
 	// Create checkout session parameters

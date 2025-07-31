@@ -182,16 +182,16 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	}
 
 	// Handle different event types
-	switch event.Type {
-	case "customer.created":
+	switch string(event.Type) {
+	case string(types.WebhookEventTypeCustomerCreated):
 		h.handleCustomerCreated(c, event, environmentID)
-	case "checkout.session.completed":
+	case string(types.WebhookEventTypeCheckoutSessionCompleted):
 		h.handleCheckoutSessionCompleted(c, event, environmentID)
-	case "checkout.session.async_payment_succeeded":
+	case string(types.WebhookEventTypeCheckoutSessionAsyncPaymentSucceeded):
 		h.handleCheckoutSessionAsyncPaymentSucceeded(c, event, environmentID)
-	case "checkout.session.async_payment_failed":
+	case string(types.WebhookEventTypeCheckoutSessionAsyncPaymentFailed):
 		h.handleCheckoutSessionAsyncPaymentFailed(c, event, environmentID)
-	case "checkout.session.expired":
+	case string(types.WebhookEventTypeCheckoutSessionExpired):
 		h.handleCheckoutSessionExpired(c, event, environmentID)
 
 	default:

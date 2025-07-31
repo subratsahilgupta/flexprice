@@ -263,6 +263,7 @@ func provideHandlers(
 		Feature:                  v1.NewFeatureHandler(featureService, logger),
 		Entitlement:              v1.NewEntitlementHandler(entitlementService, logger),
 		Payment:                  v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
+		PaymentGateway:           v1.NewPaymentGatewayHandler(paymentService, logger),
 		Task:                     v1.NewTaskHandler(taskService, logger),
 		Secret:                   v1.NewSecretHandler(secretService, logger),
 		Onboarding:               v1.NewOnboardingHandler(onboardingService, logger),
