@@ -15,7 +15,7 @@ type EntityIntegrationMapping struct {
 	EntityID string `db:"entity_id" json:"entity_id"`
 
 	// EntityType is the type of entity (e.g., customer, plan, invoice, subscription, etc.)
-	EntityType string `db:"entity_type" json:"entity_type"`
+	EntityType types.IntegrationEntityType `db:"entity_type" json:"entity_type"`
 
 	// ProviderType is the payment provider type (e.g., stripe, razorpay, etc.)
 	ProviderType string `db:"provider_type" json:"provider_type"`
@@ -40,7 +40,7 @@ func FromEnt(e *ent.EntityIntegrationMapping) *EntityIntegrationMapping {
 	return &EntityIntegrationMapping{
 		ID:               e.ID,
 		EntityID:         e.EntityID,
-		EntityType:       e.EntityType,
+		EntityType:       types.IntegrationEntityType(e.EntityType),
 		ProviderType:     e.ProviderType,
 		ProviderEntityID: e.ProviderEntityID,
 		Metadata:         e.Metadata,
@@ -66,16 +66,8 @@ func FromEntList(mappings []*ent.EntityIntegrationMapping) []*EntityIntegrationM
 }
 
 // ValidateEntityType validates the entity type
-func ValidateEntityType(entityType string) bool {
-	validTypes := map[string]bool{
-		"customer":     true,
-		"plan":         true,
-		"invoice":      true,
-		"subscription": true,
-		"payment":      true,
-		"credit_note":  true,
-	}
-	return validTypes[entityType]
+func ValidateEntityType(entityType types.IntegrationEntityType) bool {
+	return entityType.Validate() == nil
 }
 
 // ValidateProviderType validates the provider type
@@ -102,10 +94,8 @@ func Validate(m *EntityIntegrationMapping) error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if !ValidateEntityType(m.EntityType) {
-		return ierr.NewError("invalid entity_type").
-			WithHint("Entity type must be one of: customer, plan, invoice, subscription, payment, credit_note").
-			Mark(ierr.ErrValidation)
+	if err := m.EntityType.Validate(); err != nil {
+		return err
 	}
 
 	if m.ProviderType == "" {
@@ -133,11 +123,7 @@ func Validate(m *EntityIntegrationMapping) error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if len(m.EntityType) > 50 {
-		return ierr.NewError("entity_type too long").
-			WithHint("Entity type must be less than 50 characters").
-			Mark(ierr.ErrValidation)
-	}
+	// EntityType length validation is handled by the enum validation
 
 	if len(m.ProviderType) > 50 {
 		return ierr.NewError("provider_type too long").

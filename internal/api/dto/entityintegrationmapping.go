@@ -9,19 +9,19 @@ import (
 )
 
 type CreateEntityIntegrationMappingRequest struct {
-	EntityID         string                 `json:"entity_id" validate:"required,max=255"`
-	EntityType       string                 `json:"entity_type" validate:"required,max=50"`
-	ProviderType     string                 `json:"provider_type" validate:"required,max=50"`
-	ProviderEntityID string                 `json:"provider_entity_id" validate:"required,max=255"`
-	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+	EntityID         string                      `json:"entity_id" validate:"required,max=255"`
+	EntityType       types.IntegrationEntityType `json:"entity_type" validate:"required"`
+	ProviderType     string                      `json:"provider_type" validate:"required,max=50"`
+	ProviderEntityID string                      `json:"provider_entity_id" validate:"required,max=255"`
+	Metadata         map[string]interface{}      `json:"metadata,omitempty"`
 }
 
 type UpdateEntityIntegrationMappingRequest struct {
-	EntityID         *string                `json:"entity_id" validate:"omitempty,max=255"`
-	EntityType       *string                `json:"entity_type" validate:"omitempty,max=50"`
-	ProviderType     *string                `json:"provider_type" validate:"omitempty,max=50"`
-	ProviderEntityID *string                `json:"provider_entity_id" validate:"omitempty,max=255"`
-	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+	EntityID         *string                      `json:"entity_id" validate:"omitempty,max=255"`
+	EntityType       *types.IntegrationEntityType `json:"entity_type" validate:"omitempty"`
+	ProviderType     *string                      `json:"provider_type" validate:"omitempty,max=50"`
+	ProviderEntityID *string                      `json:"provider_entity_id" validate:"omitempty,max=255"`
+	Metadata         map[string]interface{}       `json:"metadata,omitempty"`
 }
 
 type EntityIntegrationMappingResponse struct {

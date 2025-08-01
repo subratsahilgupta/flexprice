@@ -52,12 +52,15 @@ func (r *connectionRepository) Create(ctx context.Context, c *domainConnection.C
 		c.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
+	// Convert structured metadata to map format for database storage
+	metadataMap := convertConnectionMetadataToMap(c.Metadata)
+
 	connection, err := client.Connection.Create().
 		SetID(c.ID).
 		SetTenantID(c.TenantID).
 		SetName(c.Name).
 		SetProviderType(connection.ProviderType(c.ProviderType)).
-		SetMetadata(c.Metadata).
+		SetMetadata(metadataMap).
 		SetStatus(string(c.Status)).
 		SetCreatedAt(c.CreatedAt).
 		SetUpdatedAt(c.UpdatedAt).
@@ -144,43 +147,49 @@ func (r *connectionRepository) GetByEnvironmentAndProvider(ctx context.Context, 
 	})
 	defer FinishSpan(span)
 
-	client := r.client.Querier(ctx)
 	r.log.Debugw("getting connection by environment and provider",
 		"environment_id", environmentID,
 		"provider_type", provider)
 
-	c, err := client.Connection.Query().
-		Where(
-			connection.EnvironmentID(environmentID),
-			connection.ProviderTypeEQ(connection.ProviderType(provider)),
-			connection.TenantID(types.GetTenantID(ctx)),
-		).
-		Only(ctx)
+	// Create a filter to get connections by environment and provider
+	filter := &types.ConnectionFilter{
+		ProviderType: provider,
+	}
 
+	// Use the List function internally
+	connections, err := r.List(ctx, filter)
 	if err != nil {
 		SetSpanError(span, err)
+		return nil, err
+	}
 
-		if ent.IsNotFound(err) {
-			return nil, ierr.WithError(err).
-				WithHintf("Connection with environment ID %s and provider %s was not found", environmentID, provider).
-				WithReportableDetails(map[string]any{
-					"environment_id": environmentID,
-					"provider_type":  provider,
-				}).
-				Mark(ierr.ErrNotFound)
+	// Filter by environment ID since the List function applies environment filter automatically
+	// but we need to match the specific environment ID
+	var matchingConnection *domainConnection.Connection
+	for _, conn := range connections {
+		if conn.EnvironmentID == environmentID {
+			matchingConnection = conn
+			break
 		}
-		return nil, ierr.WithError(err).
-			WithHint("Failed to get connection by environment and provider").
-			Mark(ierr.ErrDatabase)
+	}
+
+	if matchingConnection == nil {
+		SetSpanError(span, ierr.ErrNotFound)
+		return nil, ierr.NewError("connection not found").
+			WithHintf("Connection with environment ID %s and provider %s was not found", environmentID, provider).
+			WithReportableDetails(map[string]any{
+				"environment_id": environmentID,
+				"provider_type":  provider,
+			}).
+			Mark(ierr.ErrNotFound)
 	}
 
 	SetSpanSuccess(span)
-	domainConn := domainConnection.FromEnt(c)
 
 	// Cache the result
-	r.SetCache(ctx, domainConn)
+	r.SetCache(ctx, matchingConnection)
 
-	return domainConn, nil
+	return matchingConnection, nil
 }
 
 func (r *connectionRepository) List(ctx context.Context, filter *types.ConnectionFilter) ([]*domainConnection.Connection, error) {
@@ -209,6 +218,44 @@ func (r *connectionRepository) List(ctx context.Context, filter *types.Connectio
 	}
 
 	return result, nil
+}
+
+// convertConnectionMetadataToMap converts structured metadata to map format for database storage
+func convertConnectionMetadataToMap(metadata types.ConnectionMetadata) map[string]interface{} {
+	switch metadata.Type {
+	case types.ConnectionMetadataTypeStripe:
+		if metadata.Stripe != nil {
+			return map[string]interface{}{
+				"publishable_key": metadata.Stripe.PublishableKey,
+				"secret_key":      metadata.Stripe.SecretKey,
+				"webhook_secret":  metadata.Stripe.WebhookSecret,
+				"account_id":      metadata.Stripe.AccountID,
+			}
+		}
+	case types.ConnectionMetadataTypeRazorpay:
+		if metadata.Razorpay != nil {
+			return map[string]interface{}{
+				"key_id":         metadata.Razorpay.KeyID,
+				"key_secret":     metadata.Razorpay.KeySecret,
+				"webhook_secret": metadata.Razorpay.WebhookSecret,
+				"account_id":     metadata.Razorpay.AccountID,
+			}
+		}
+	case types.ConnectionMetadataTypePayPal:
+		if metadata.PayPal != nil {
+			return map[string]interface{}{
+				"client_id":     metadata.PayPal.ClientID,
+				"client_secret": metadata.PayPal.ClientSecret,
+				"webhook_id":    metadata.PayPal.WebhookID,
+				"account_id":    metadata.PayPal.AccountID,
+			}
+		}
+	case types.ConnectionMetadataTypeGeneric:
+		if metadata.Generic != nil {
+			return metadata.Generic.Data
+		}
+	}
+	return make(map[string]interface{})
 }
 
 func (r *connectionRepository) Count(ctx context.Context, filter *types.ConnectionFilter) (int, error) {
@@ -248,6 +295,9 @@ func (r *connectionRepository) Update(ctx context.Context, c *domainConnection.C
 	})
 	defer FinishSpan(span)
 
+	// Convert structured metadata to map format for database storage
+	metadataMap := convertConnectionMetadataToMap(c.Metadata)
+
 	connection, err := client.Connection.UpdateOneID(c.ID).
 		Where(
 			connection.TenantID(c.TenantID),
@@ -255,7 +305,7 @@ func (r *connectionRepository) Update(ctx context.Context, c *domainConnection.C
 		).
 		SetName(c.Name).
 		SetProviderType(connection.ProviderType(c.ProviderType)).
-		SetMetadata(c.Metadata).
+		SetMetadata(metadataMap).
 		SetStatus(string(c.Status)).
 		SetUpdatedAt(c.UpdatedAt).
 		SetUpdatedBy(c.UpdatedBy).

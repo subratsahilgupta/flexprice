@@ -200,7 +200,7 @@ func (h *EntityIntegrationMappingHandler) ListEntityIntegrationMappings(c *gin.C
 		filter.EntityID = entityID
 	}
 	if entityType := c.Query("entity_type"); entityType != "" {
-		filter.EntityType = entityType
+		filter.EntityType = types.IntegrationEntityType(entityType)
 	}
 	if providerType := c.Query("provider_type"); providerType != "" {
 		filter.ProviderType = providerType
@@ -264,7 +264,7 @@ func (h *EntityIntegrationMappingHandler) GetEntityIntegrationMappingByEntityAnd
 		return
 	}
 
-	mapping, err := h.EntityIntegrationMappingService.GetByEntityAndProvider(c.Request.Context(), entityID, entityType, providerType)
+	mapping, err := h.EntityIntegrationMappingService.GetByEntityAndProvider(c.Request.Context(), entityID, types.IntegrationEntityType(entityType), providerType)
 	if err != nil {
 		h.logger.Errorw("failed to get entity integration mapping by entity and provider",
 			"error", err, "entity_id", entityID, "entity_type", entityType, "provider_type", providerType)

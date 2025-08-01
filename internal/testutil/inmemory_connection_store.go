@@ -155,16 +155,11 @@ func copyConnection(c *connection.Connection) *connection.Connection {
 		return nil
 	}
 
-	metadata := make(map[string]interface{})
-	for k, v := range c.Metadata {
-		metadata[k] = v
-	}
-
 	return &connection.Connection{
 		ID:            c.ID,
 		Name:          c.Name,
 		ProviderType:  c.ProviderType,
-		Metadata:      metadata,
+		Metadata:      c.Metadata, // Copy the structured metadata directly
 		EnvironmentID: c.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  c.TenantID,

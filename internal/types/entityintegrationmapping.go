@@ -2,7 +2,41 @@ package types
 
 import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/samber/lo"
 )
+
+// IntegrationEntityType represents the type of entity for integration mapping
+type IntegrationEntityType string
+
+const (
+	IntegrationEntityTypeCustomer     IntegrationEntityType = "customer"
+	IntegrationEntityTypePlan         IntegrationEntityType = "plan"
+	IntegrationEntityTypeInvoice      IntegrationEntityType = "invoice"
+	IntegrationEntityTypeSubscription IntegrationEntityType = "subscription"
+	IntegrationEntityTypePayment      IntegrationEntityType = "payment"
+	IntegrationEntityTypeCreditNote   IntegrationEntityType = "credit_note"
+)
+
+func (e IntegrationEntityType) String() string {
+	return string(e)
+}
+
+func (e IntegrationEntityType) Validate() error {
+	allowed := []IntegrationEntityType{
+		IntegrationEntityTypeCustomer,
+		IntegrationEntityTypePlan,
+		IntegrationEntityTypeInvoice,
+		IntegrationEntityTypeSubscription,
+		IntegrationEntityTypePayment,
+		IntegrationEntityTypeCreditNote,
+	}
+	if !lo.Contains(allowed, e) {
+		return ierr.NewError("invalid entity type").
+			WithHint("Entity type must be one of: customer, plan, invoice, subscription, payment, credit_note").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
 
 // EntityIntegrationMappingFilter represents filters for entity integration mapping queries
 type EntityIntegrationMappingFilter struct {
@@ -14,9 +48,9 @@ type EntityIntegrationMappingFilter struct {
 	Sort    []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
 
 	// Entity-specific filters
-	EntityIDs  []string `json:"entity_ids,omitempty" form:"entity_ids" validate:"omitempty"`
-	EntityType string   `json:"entity_type,omitempty" form:"entity_type" validate:"omitempty"`
-	EntityID   string   `json:"entity_id,omitempty" form:"entity_id" validate:"omitempty"`
+	EntityIDs  []string              `json:"entity_ids,omitempty" form:"entity_ids" validate:"omitempty"`
+	EntityType IntegrationEntityType `json:"entity_type,omitempty" form:"entity_type" validate:"omitempty"`
+	EntityID   string                `json:"entity_id,omitempty" form:"entity_id" validate:"omitempty"`
 
 	// Provider-specific filters
 	ProviderType      string   `json:"provider_type,omitempty" form:"provider_type" validate:"omitempty"`
@@ -55,18 +89,8 @@ func (f EntityIntegrationMappingFilter) Validate() error {
 
 	// Validate entity type if provided
 	if f.EntityType != "" {
-		validEntityTypes := map[string]bool{
-			"customer":     true,
-			"plan":         true,
-			"invoice":      true,
-			"subscription": true,
-			"payment":      true,
-			"credit_note":  true,
-		}
-		if !validEntityTypes[f.EntityType] {
-			return ierr.NewError("invalid entity_type").
-				WithHint("Entity type must be one of: customer, plan, invoice, subscription, payment, credit_note").
-				Mark(ierr.ErrValidation)
+		if err := f.EntityType.Validate(); err != nil {
+			return err
 		}
 	}
 

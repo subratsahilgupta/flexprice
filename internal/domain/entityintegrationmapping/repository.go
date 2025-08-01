@@ -17,8 +17,8 @@ type Repository interface {
 	Delete(ctx context.Context, mapping *EntityIntegrationMapping) error
 
 	// Provider-specific queries
-	GetByEntityAndProvider(ctx context.Context, entityID, entityType, providerType string) (*EntityIntegrationMapping, error)
+	GetByEntityAndProvider(ctx context.Context, entityID string, entityType types.IntegrationEntityType, providerType string) (*EntityIntegrationMapping, error)
 	GetByProviderEntity(ctx context.Context, providerType, providerEntityID string) (*EntityIntegrationMapping, error)
-	ListByEntity(ctx context.Context, entityID, entityType string) ([]*EntityIntegrationMapping, error)
+	ListByEntity(ctx context.Context, entityID string, entityType types.IntegrationEntityType) ([]*EntityIntegrationMapping, error)
 	ListByProvider(ctx context.Context, providerType string) ([]*EntityIntegrationMapping, error)
 }

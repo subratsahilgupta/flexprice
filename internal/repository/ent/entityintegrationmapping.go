@@ -64,7 +64,7 @@ func (r *entityIntegrationMappingRepository) Create(ctx context.Context, mapping
 		SetID(mapping.ID).
 		SetTenantID(mapping.TenantID).
 		SetEntityID(mapping.EntityID).
-		SetEntityType(mapping.EntityType).
+		SetEntityType(string(mapping.EntityType)).
 		SetProviderType(mapping.ProviderType).
 		SetProviderEntityID(mapping.ProviderEntityID).
 		SetMetadata(mapping.Metadata).
@@ -329,7 +329,7 @@ func (r *entityIntegrationMappingRepository) Update(ctx context.Context, mapping
 	// Update the mapping
 	updateQuery := client.EntityIntegrationMapping.UpdateOne(existingMapping).
 		SetEntityID(mapping.EntityID).
-		SetEntityType(mapping.EntityType).
+		SetEntityType(string(mapping.EntityType)).
 		SetProviderType(mapping.ProviderType).
 		SetProviderEntityID(mapping.ProviderEntityID).
 		SetMetadata(mapping.Metadata).
@@ -426,141 +426,99 @@ func (r *entityIntegrationMappingRepository) Delete(ctx context.Context, mapping
 
 // Provider-specific queries
 
-func (r *entityIntegrationMappingRepository) GetByEntityAndProvider(ctx context.Context, entityID, entityType, providerType string) (*domainEntityIntegrationMapping.EntityIntegrationMapping, error) {
-	client := r.client.Querier(ctx)
-
+func (r *entityIntegrationMappingRepository) GetByEntityAndProvider(ctx context.Context, entityID string, entityType types.IntegrationEntityType, providerType string) (*domainEntityIntegrationMapping.EntityIntegrationMapping, error) {
 	r.log.Debugw("getting entity integration mapping by entity and provider",
 		"entity_id", entityID,
 		"entity_type", entityType,
 		"provider_type", providerType,
 	)
 
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	mapping, err := client.EntityIntegrationMapping.Query().
-		Where(
-			entityintegrationmapping.EntityID(entityID),
-			entityintegrationmapping.EntityType(entityType),
-			entityintegrationmapping.ProviderType(providerType),
-			entityintegrationmapping.TenantID(tenantID),
-			entityintegrationmapping.EnvironmentID(environmentID),
-		).
-		Only(ctx)
-
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, ierr.NewError("entity integration mapping not found").
-				WithHint("No mapping found for the specified entity and provider").
-				WithReportableDetails(map[string]any{
-					"entity_id":     entityID,
-					"entity_type":   entityType,
-					"provider_type": providerType,
-				}).
-				Mark(ierr.ErrNotFound)
-		}
-
-		return nil, ierr.WithError(err).
-			WithHint("Failed to retrieve entity integration mapping").
-			Mark(ierr.ErrInternal)
+	// Create a filter to get mappings by entity and provider
+	filter := &types.EntityIntegrationMappingFilter{
+		EntityID:     entityID,
+		EntityType:   entityType,
+		ProviderType: providerType,
 	}
 
-	return domainEntityIntegrationMapping.FromEnt(mapping), nil
+	// Use the List function internally
+	mappings, err := r.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(mappings) == 0 {
+		return nil, ierr.NewError("entity integration mapping not found").
+			WithHint("No mapping found for the specified entity and provider").
+			WithReportableDetails(map[string]any{
+				"entity_id":     entityID,
+				"entity_type":   entityType,
+				"provider_type": providerType,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	return mappings[0], nil
 }
 
 func (r *entityIntegrationMappingRepository) GetByProviderEntity(ctx context.Context, providerType, providerEntityID string) (*domainEntityIntegrationMapping.EntityIntegrationMapping, error) {
-	client := r.client.Querier(ctx)
-
 	r.log.Debugw("getting entity integration mapping by provider entity",
 		"provider_type", providerType,
 		"provider_entity_id", providerEntityID,
 	)
 
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	mapping, err := client.EntityIntegrationMapping.Query().
-		Where(
-			entityintegrationmapping.ProviderType(providerType),
-			entityintegrationmapping.ProviderEntityID(providerEntityID),
-			entityintegrationmapping.TenantID(tenantID),
-			entityintegrationmapping.EnvironmentID(environmentID),
-		).
-		Only(ctx)
-
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, ierr.NewError("entity integration mapping not found").
-				WithHint("No mapping found for the specified provider entity").
-				WithReportableDetails(map[string]any{
-					"provider_type":      providerType,
-					"provider_entity_id": providerEntityID,
-				}).
-				Mark(ierr.ErrNotFound)
-		}
-
-		return nil, ierr.WithError(err).
-			WithHint("Failed to retrieve entity integration mapping").
-			Mark(ierr.ErrInternal)
+	// Create a filter to get mappings by provider entity
+	filter := &types.EntityIntegrationMappingFilter{
+		ProviderType:     providerType,
+		ProviderEntityID: providerEntityID,
 	}
 
-	return domainEntityIntegrationMapping.FromEnt(mapping), nil
+	// Use the List function internally
+	mappings, err := r.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(mappings) == 0 {
+		return nil, ierr.NewError("entity integration mapping not found").
+			WithHint("No mapping found for the specified provider entity").
+			WithReportableDetails(map[string]any{
+				"provider_type":      providerType,
+				"provider_entity_id": providerEntityID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	return mappings[0], nil
 }
 
-func (r *entityIntegrationMappingRepository) ListByEntity(ctx context.Context, entityID, entityType string) ([]*domainEntityIntegrationMapping.EntityIntegrationMapping, error) {
-	client := r.client.Querier(ctx)
-
+func (r *entityIntegrationMappingRepository) ListByEntity(ctx context.Context, entityID string, entityType types.IntegrationEntityType) ([]*domainEntityIntegrationMapping.EntityIntegrationMapping, error) {
 	r.log.Debugw("listing entity integration mappings by entity",
 		"entity_id", entityID,
 		"entity_type", entityType,
 	)
 
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	mappings, err := client.EntityIntegrationMapping.Query().
-		Where(
-			entityintegrationmapping.EntityID(entityID),
-			entityintegrationmapping.EntityType(entityType),
-			entityintegrationmapping.TenantID(tenantID),
-			entityintegrationmapping.EnvironmentID(environmentID),
-		).
-		All(ctx)
-
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to list entity integration mappings").
-			Mark(ierr.ErrInternal)
+	// Create a filter to get mappings by entity
+	filter := &types.EntityIntegrationMappingFilter{
+		EntityID:   entityID,
+		EntityType: entityType,
 	}
 
-	return domainEntityIntegrationMapping.FromEntList(mappings), nil
+	// Use the List function internally
+	return r.List(ctx, filter)
 }
 
 func (r *entityIntegrationMappingRepository) ListByProvider(ctx context.Context, providerType string) ([]*domainEntityIntegrationMapping.EntityIntegrationMapping, error) {
-	client := r.client.Querier(ctx)
-
 	r.log.Debugw("listing entity integration mappings by provider",
 		"provider_type", providerType,
 	)
 
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	mappings, err := client.EntityIntegrationMapping.Query().
-		Where(
-			entityintegrationmapping.ProviderType(providerType),
-			entityintegrationmapping.TenantID(tenantID),
-			entityintegrationmapping.EnvironmentID(environmentID),
-		).
-		All(ctx)
-
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to list entity integration mappings").
-			Mark(ierr.ErrInternal)
+	// Create a filter to get mappings by provider
+	filter := &types.EntityIntegrationMappingFilter{
+		ProviderType: providerType,
 	}
 
-	return domainEntityIntegrationMapping.FromEntList(mappings), nil
+	// Use the List function internally
+	return r.List(ctx, filter)
 }
 
 // Query options
@@ -653,7 +611,7 @@ func (o EntityIntegrationMappingQueryOptions) applyEntityQueryOptions(_ context.
 	}
 
 	if f.EntityType != "" {
-		query = query.Where(entityintegrationmapping.EntityType(f.EntityType))
+		query = query.Where(entityintegrationmapping.EntityType(string(f.EntityType)))
 	}
 
 	if len(f.EntityIDs) > 0 {

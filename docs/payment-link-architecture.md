@@ -145,7 +145,7 @@ POST /api/v1/webhooks/stripe/{tenant-id}/{environment-id}
 1. Customer uses declined card → Webhook: `payment_intent.payment_failed`
 2. Status: `FAILED`
 
-## Common Issues & Solutions
+## Common Issues & Solutions≠
 
 ### Payment Link Not Generated
 **Problem:** Status stuck at `INITIATED`

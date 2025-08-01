@@ -17,9 +17,9 @@ type EntityIntegrationMappingService interface {
 	DeleteEntityIntegrationMapping(ctx context.Context, id string) error
 
 	// Provider-specific queries
-	GetByEntityAndProvider(ctx context.Context, entityID, entityType, providerType string) (*dto.EntityIntegrationMappingResponse, error)
+	GetByEntityAndProvider(ctx context.Context, entityID string, entityType types.IntegrationEntityType, providerType string) (*dto.EntityIntegrationMappingResponse, error)
 	GetByProviderEntity(ctx context.Context, providerType, providerEntityID string) (*dto.EntityIntegrationMappingResponse, error)
-	ListByEntity(ctx context.Context, entityID, entityType string) (*dto.ListEntityIntegrationMappingsResponse, error)
+	ListByEntity(ctx context.Context, entityID string, entityType types.IntegrationEntityType) (*dto.ListEntityIntegrationMappingsResponse, error)
 	ListByProvider(ctx context.Context, providerType string) (*dto.ListEntityIntegrationMappingsResponse, error)
 }
 
@@ -129,7 +129,7 @@ func (s *entityIntegrationMappingService) UpdateEntityIntegrationMapping(ctx con
 		existingMapping.EntityID = *req.EntityID
 	}
 	if req.EntityType != nil && *req.EntityType != "" {
-		existingMapping.EntityType = *req.EntityType
+		existingMapping.EntityType = types.IntegrationEntityType(*req.EntityType)
 	}
 	if req.ProviderType != nil && *req.ProviderType != "" {
 		existingMapping.ProviderType = *req.ProviderType
@@ -179,16 +179,10 @@ func (s *entityIntegrationMappingService) DeleteEntityIntegrationMapping(ctx con
 
 // Provider-specific queries
 
-func (s *entityIntegrationMappingService) GetByEntityAndProvider(ctx context.Context, entityID, entityType, providerType string) (*dto.EntityIntegrationMappingResponse, error) {
+func (s *entityIntegrationMappingService) GetByEntityAndProvider(ctx context.Context, entityID string, entityType types.IntegrationEntityType, providerType string) (*dto.EntityIntegrationMappingResponse, error) {
 	if entityID == "" {
 		return nil, ierr.NewError("entity ID is required").
 			WithHint("Entity ID is required").
-			Mark(ierr.ErrValidation)
-	}
-
-	if entityType == "" {
-		return nil, ierr.NewError("entity type is required").
-			WithHint("Entity type is required").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -196,6 +190,11 @@ func (s *entityIntegrationMappingService) GetByEntityAndProvider(ctx context.Con
 		return nil, ierr.NewError("provider type is required").
 			WithHint("Provider type is required").
 			Mark(ierr.ErrValidation)
+	}
+
+	// Validate entity type
+	if err := entityType.Validate(); err != nil {
+		return nil, err
 	}
 
 	mapping, err := s.EntityIntegrationMappingRepo.GetByEntityAndProvider(ctx, entityID, entityType, providerType)
@@ -227,17 +226,16 @@ func (s *entityIntegrationMappingService) GetByProviderEntity(ctx context.Contex
 	return &dto.EntityIntegrationMappingResponse{EntityIntegrationMapping: mapping}, nil
 }
 
-func (s *entityIntegrationMappingService) ListByEntity(ctx context.Context, entityID, entityType string) (*dto.ListEntityIntegrationMappingsResponse, error) {
+func (s *entityIntegrationMappingService) ListByEntity(ctx context.Context, entityID string, entityType types.IntegrationEntityType) (*dto.ListEntityIntegrationMappingsResponse, error) {
 	if entityID == "" {
 		return nil, ierr.NewError("entity ID is required").
 			WithHint("Entity ID is required").
 			Mark(ierr.ErrValidation)
 	}
 
-	if entityType == "" {
-		return nil, ierr.NewError("entity type is required").
-			WithHint("Entity type is required").
-			Mark(ierr.ErrValidation)
+	// Validate entity type
+	if err := entityType.Validate(); err != nil {
+		return nil, err
 	}
 
 	mappings, err := s.EntityIntegrationMappingRepo.ListByEntity(ctx, entityID, entityType)

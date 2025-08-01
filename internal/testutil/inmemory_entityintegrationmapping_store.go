@@ -114,7 +114,7 @@ func (s *InMemoryEntityIntegrationMappingStore) Delete(ctx context.Context, mapp
 }
 
 // GetByEntityAndProvider retrieves an entity integration mapping by entity and provider
-func (s *InMemoryEntityIntegrationMappingStore) GetByEntityAndProvider(ctx context.Context, entityID, entityType, providerType string) (*entityintegrationmapping.EntityIntegrationMapping, error) {
+func (s *InMemoryEntityIntegrationMappingStore) GetByEntityAndProvider(ctx context.Context, entityID string, entityType types.IntegrationEntityType, providerType string) (*entityintegrationmapping.EntityIntegrationMapping, error) {
 	// Create a filter function that matches by entity and provider
 	filterFn := func(ctx context.Context, m *entityintegrationmapping.EntityIntegrationMapping, _ interface{}) bool {
 		return m.EntityID == entityID &&
@@ -178,7 +178,7 @@ func (s *InMemoryEntityIntegrationMappingStore) GetByProviderEntity(ctx context.
 }
 
 // ListByEntity retrieves entity integration mappings by entity
-func (s *InMemoryEntityIntegrationMappingStore) ListByEntity(ctx context.Context, entityID, entityType string) ([]*entityintegrationmapping.EntityIntegrationMapping, error) {
+func (s *InMemoryEntityIntegrationMappingStore) ListByEntity(ctx context.Context, entityID string, entityType types.IntegrationEntityType) ([]*entityintegrationmapping.EntityIntegrationMapping, error) {
 	// Create a filter function that matches by entity
 	filterFn := func(ctx context.Context, m *entityintegrationmapping.EntityIntegrationMapping, _ interface{}) bool {
 		return m.EntityID == entityID &&

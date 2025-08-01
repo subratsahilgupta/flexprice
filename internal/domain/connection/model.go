@@ -8,11 +8,11 @@ import (
 
 // Connection represents an integration connection in the system
 type Connection struct {
-	ID            string                 `db:"id" json:"id"`
-	Name          string                 `db:"name" json:"name"`
-	ProviderType  types.SecretProvider   `db:"provider_type" json:"provider_type"`
-	Metadata      map[string]interface{} `db:"metadata" json:"metadata"`
-	EnvironmentID string                 `db:"environment_id" json:"environment_id"`
+	ID            string                   `db:"id" json:"id"`
+	Name          string                   `db:"name" json:"name"`
+	ProviderType  types.SecretProvider     `db:"provider_type" json:"provider_type"`
+	Metadata      types.ConnectionMetadata `db:"metadata" json:"metadata"`
+	EnvironmentID string                   `db:"environment_id" json:"environment_id"`
 	types.BaseModel
 }
 
@@ -32,24 +32,76 @@ func (c *Connection) GetStripeConfig() (*StripeConnection, error) {
 			Mark(ierr.ErrValidation)
 	}
 
-	// Use the metadata directly since it should already be decrypted by the service layer
-	metadata := c.Metadata
+	if c.Metadata.Type != types.ConnectionMetadataTypeStripe {
+		return nil, ierr.NewError("connection metadata is not Stripe type").
+			WithHint("Connection metadata type must be stripe").
+			Mark(ierr.ErrValidation)
+	}
 
-	config := &StripeConnection{}
-	if pk, ok := metadata["publishable_key"].(string); ok {
-		config.PublishableKey = pk
+	if c.Metadata.Stripe == nil {
+		return nil, ierr.NewError("stripe metadata is not configured").
+			WithHint("Stripe metadata is required for Stripe connections").
+			Mark(ierr.ErrValidation)
 	}
-	if sk, ok := metadata["secret_key"].(string); ok {
-		config.SecretKey = sk
-	}
-	if ws, ok := metadata["webhook_secret"].(string); ok {
-		config.WebhookSecret = ws
-	}
-	if aid, ok := metadata["account_id"].(string); ok {
-		config.AccountID = aid
+
+	config := &StripeConnection{
+		PublishableKey: c.Metadata.Stripe.PublishableKey,
+		SecretKey:      c.Metadata.Stripe.SecretKey,
+		WebhookSecret:  c.Metadata.Stripe.WebhookSecret,
+		AccountID:      c.Metadata.Stripe.AccountID,
 	}
 
 	return config, nil
+}
+
+// convertMapToConnectionMetadata converts old map format to new structured format
+func convertMapToConnectionMetadata(metadata map[string]interface{}, providerType types.SecretProvider) types.ConnectionMetadata {
+	switch providerType {
+	case types.SecretProviderStripe:
+		stripeMetadata := &types.StripeConnectionMetadata{}
+		if pk, ok := metadata["publishable_key"].(string); ok {
+			stripeMetadata.PublishableKey = pk
+		}
+		if sk, ok := metadata["secret_key"].(string); ok {
+			stripeMetadata.SecretKey = sk
+		}
+		if ws, ok := metadata["webhook_secret"].(string); ok {
+			stripeMetadata.WebhookSecret = ws
+		}
+		if aid, ok := metadata["account_id"].(string); ok {
+			stripeMetadata.AccountID = aid
+		}
+		return types.ConnectionMetadata{
+			Type:   types.ConnectionMetadataTypeStripe,
+			Stripe: stripeMetadata,
+		}
+	case types.SecretProviderRazorpay:
+		razorpayMetadata := &types.RazorpayConnectionMetadata{}
+		if kid, ok := metadata["key_id"].(string); ok {
+			razorpayMetadata.KeyID = kid
+		}
+		if ks, ok := metadata["key_secret"].(string); ok {
+			razorpayMetadata.KeySecret = ks
+		}
+		if ws, ok := metadata["webhook_secret"].(string); ok {
+			razorpayMetadata.WebhookSecret = ws
+		}
+		if aid, ok := metadata["account_id"].(string); ok {
+			razorpayMetadata.AccountID = aid
+		}
+		return types.ConnectionMetadata{
+			Type:     types.ConnectionMetadataTypeRazorpay,
+			Razorpay: razorpayMetadata,
+		}
+	default:
+		// For other providers or unknown types, use generic format
+		return types.ConnectionMetadata{
+			Type: types.ConnectionMetadataTypeGeneric,
+			Generic: &types.GenericConnectionMetadata{
+				Data: metadata,
+			},
+		}
+	}
 }
 
 // FromEnt converts an ent.Connection to domain Connection
@@ -58,11 +110,17 @@ func FromEnt(entConn *ent.Connection) *Connection {
 		return nil
 	}
 
+	// Convert old map format to new structured format
+	var metadata types.ConnectionMetadata
+	if entConn.Metadata != nil {
+		metadata = convertMapToConnectionMetadata(entConn.Metadata, types.SecretProvider(entConn.ProviderType))
+	}
+
 	return &Connection{
 		ID:            entConn.ID,
 		Name:          entConn.Name,
 		ProviderType:  types.SecretProvider(entConn.ProviderType),
-		Metadata:      entConn.Metadata,
+		Metadata:      metadata,
 		EnvironmentID: entConn.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  entConn.TenantID,

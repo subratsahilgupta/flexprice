@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -36,33 +35,94 @@ func NewStripeService(params ServiceParams) *StripeService {
 }
 
 // decryptConnectionMetadata decrypts the connection metadata if it's encrypted
-func (s *StripeService) decryptConnectionMetadata(metadata map[string]interface{}) (map[string]interface{}, error) {
-	if metadata == nil {
-		return nil, nil
-	}
+func (s *StripeService) decryptConnectionMetadata(metadata types.ConnectionMetadata) (types.ConnectionMetadata, error) {
+	decryptedMetadata := metadata
 
-	decryptedMetadata := make(map[string]interface{})
-
-	// Traverse metadata by key-value pairs
-	for key, value := range metadata {
-		// Check if the value is encrypted (string)
-		if encryptedValue, ok := value.(string); ok {
-			// Decrypt the JSON string
-			decryptedJSON, err := s.encryptionService.Decrypt(encryptedValue)
+	switch metadata.Type {
+	case types.ConnectionMetadataTypeStripe:
+		if metadata.Stripe != nil {
+			decryptedPublishableKey, err := s.encryptionService.Decrypt(metadata.Stripe.PublishableKey)
 			if err != nil {
-				return nil, err
+				return types.ConnectionMetadata{}, err
+			}
+			decryptedSecretKey, err := s.encryptionService.Decrypt(metadata.Stripe.SecretKey)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+			decryptedWebhookSecret, err := s.encryptionService.Decrypt(metadata.Stripe.WebhookSecret)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
 			}
 
-			// Deserialize back to original type
-			var decryptedValue interface{}
-			if err := json.Unmarshal([]byte(decryptedJSON), &decryptedValue); err != nil {
-				return nil, err
+			decryptedMetadata.Stripe = &types.StripeConnectionMetadata{
+				PublishableKey: decryptedPublishableKey,
+				SecretKey:      decryptedSecretKey,
+				WebhookSecret:  decryptedWebhookSecret,
+				AccountID:      metadata.Stripe.AccountID, // Account ID is not sensitive
+			}
+		}
+	case types.ConnectionMetadataTypeRazorpay:
+		if metadata.Razorpay != nil {
+			decryptedKeyID, err := s.encryptionService.Decrypt(metadata.Razorpay.KeyID)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+			decryptedKeySecret, err := s.encryptionService.Decrypt(metadata.Razorpay.KeySecret)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+			decryptedWebhookSecret, err := s.encryptionService.Decrypt(metadata.Razorpay.WebhookSecret)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
 			}
 
-			decryptedMetadata[key] = decryptedValue
-		} else {
-			// If value is not encrypted (for backward compatibility), keep as-is
-			decryptedMetadata[key] = value
+			decryptedMetadata.Razorpay = &types.RazorpayConnectionMetadata{
+				KeyID:         decryptedKeyID,
+				KeySecret:     decryptedKeySecret,
+				WebhookSecret: decryptedWebhookSecret,
+				AccountID:     metadata.Razorpay.AccountID, // Account ID is not sensitive
+			}
+		}
+	case types.ConnectionMetadataTypePayPal:
+		if metadata.PayPal != nil {
+			decryptedClientID, err := s.encryptionService.Decrypt(metadata.PayPal.ClientID)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+			decryptedClientSecret, err := s.encryptionService.Decrypt(metadata.PayPal.ClientSecret)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+			decryptedWebhookID, err := s.encryptionService.Decrypt(metadata.PayPal.WebhookID)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+
+			decryptedMetadata.PayPal = &types.PayPalConnectionMetadata{
+				ClientID:     decryptedClientID,
+				ClientSecret: decryptedClientSecret,
+				WebhookID:    decryptedWebhookID,
+				AccountID:    metadata.PayPal.AccountID, // Account ID is not sensitive
+			}
+		}
+	case types.ConnectionMetadataTypeGeneric:
+		// For generic metadata, decrypt string values in the data map
+		if metadata.Generic != nil {
+			decryptedData := make(map[string]interface{})
+			for key, value := range metadata.Generic.Data {
+				if strValue, ok := value.(string); ok {
+					decryptedValue, err := s.encryptionService.Decrypt(strValue)
+					if err != nil {
+						return types.ConnectionMetadata{}, err
+					}
+					decryptedData[key] = decryptedValue
+				} else {
+					decryptedData[key] = value
+				}
+			}
+			decryptedMetadata.Generic = &types.GenericConnectionMetadata{
+				Data: decryptedData,
+			}
 		}
 	}
 

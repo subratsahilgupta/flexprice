@@ -7,31 +7,31 @@ import (
 
 // CreateConnectionRequest represents the request to create a connection
 type CreateConnectionRequest struct {
-	Name         string                 `json:"name" validate:"required,max=255"`
-	ProviderType types.SecretProvider   `json:"provider_type" validate:"required"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	Name         string                   `json:"name" validate:"required,max=255"`
+	ProviderType types.SecretProvider     `json:"provider_type" validate:"required"`
+	Metadata     types.ConnectionMetadata `json:"metadata,omitempty"`
 }
 
 // UpdateConnectionRequest represents the request to update a connection
 type UpdateConnectionRequest struct {
-	Name         string                 `json:"name,omitempty" validate:"omitempty,max=255"`
-	ProviderType types.SecretProvider   `json:"provider_type,omitempty"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	Name         string                   `json:"name,omitempty" validate:"omitempty,max=255"`
+	ProviderType types.SecretProvider     `json:"provider_type,omitempty"`
+	Metadata     types.ConnectionMetadata `json:"metadata,omitempty"`
 }
 
 // ConnectionResponse represents the response for connection operations
 type ConnectionResponse struct {
-	ID            string                 `json:"id"`
-	Name          string                 `json:"name"`
-	ProviderType  types.SecretProvider   `json:"provider_type"`
-	Metadata      map[string]interface{} `json:"metadata,omitempty"`
-	EnvironmentID string                 `json:"environment_id"`
-	TenantID      string                 `json:"tenant_id"`
-	Status        types.Status           `json:"status"`
-	CreatedAt     string                 `json:"created_at"`
-	UpdatedAt     string                 `json:"updated_at"`
-	CreatedBy     string                 `json:"created_by"`
-	UpdatedBy     string                 `json:"updated_by"`
+	ID            string                   `json:"id"`
+	Name          string                   `json:"name"`
+	ProviderType  types.SecretProvider     `json:"provider_type"`
+	Metadata      types.ConnectionMetadata `json:"metadata,omitempty"`
+	EnvironmentID string                   `json:"environment_id"`
+	TenantID      string                   `json:"tenant_id"`
+	Status        types.Status             `json:"status"`
+	CreatedAt     string                   `json:"created_at"`
+	UpdatedAt     string                   `json:"updated_at"`
+	CreatedBy     string                   `json:"created_by"`
+	UpdatedBy     string                   `json:"updated_by"`
 }
 
 // ListConnectionsResponse represents the response for listing connections
