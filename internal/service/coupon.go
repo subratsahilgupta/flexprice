@@ -42,13 +42,12 @@ type CouponService interface {
 	GetCouponAssociation(ctx context.Context, id string) (*dto.CouponAssociationResponse, error)
 	DeleteCouponAssociation(ctx context.Context, id string) error
 	GetCouponAssociationsBySubscription(ctx context.Context, subscriptionID string) ([]*dto.CouponAssociationResponse, error)
-	GetCouponAssociationsBySubscriptionLineItem(ctx context.Context, subscriptionLineItemID string) ([]*dto.CouponAssociationResponse, error)
 
 	// Coupon application operations
 	CreateCouponApplication(ctx context.Context, req dto.CreateCouponApplicationRequest) (*dto.CouponApplicationResponse, error)
 	GetCouponApplication(ctx context.Context, id string) (*dto.CouponApplicationResponse, error)
 	GetCouponApplicationsByInvoice(ctx context.Context, invoiceID string) ([]*dto.CouponApplicationResponse, error)
-	GetCouponApplicationsByInvoiceLineItem(ctx context.Context, invoiceLineItemID string) ([]*dto.CouponApplicationResponse, error)
+	GetCouponApplicationsBySubscription(ctx context.Context, subscriptionID string) ([]*dto.CouponApplicationResponse, error)
 
 	// Business logic operations
 	ApplyCouponToSubscription(ctx context.Context, couponIDs []string, subscriptionID string) (*dto.CouponAssociationResponse, error)
@@ -95,13 +94,8 @@ func (s *couponService) CreateCoupon(ctx context.Context, req dto.CreateCouponRe
 		Cadence:           req.Cadence,
 		DurationInPeriods: req.DurationInPeriods,
 		Metadata:          req.Metadata,
-		Currency:          req.Currency,
-		TenantID:          baseModel.TenantID,
-		Status:            baseModel.Status,
-		CreatedAt:         baseModel.CreatedAt,
-		UpdatedAt:         baseModel.UpdatedAt,
-		CreatedBy:         baseModel.CreatedBy,
-		UpdatedBy:         baseModel.UpdatedBy,
+		Currency:          *req.Currency,
+		BaseModel:         baseModel,
 		EnvironmentID:     types.GetEnvironmentID(ctx),
 	}
 
@@ -135,32 +129,9 @@ func (s *couponService) UpdateCoupon(ctx context.Context, id string, req dto.Upd
 	if req.Name != nil {
 		c.Name = *req.Name
 	}
-	if req.RedeemAfter != nil {
-		c.RedeemAfter = req.RedeemAfter
-	}
-	if req.RedeemBefore != nil {
-		c.RedeemBefore = req.RedeemBefore
-	}
-	if req.MaxRedemptions != nil {
-		c.MaxRedemptions = req.MaxRedemptions
-	}
-	if req.Rules != nil {
-		c.Rules = req.Rules
-	}
-	if req.AmountOff != nil {
-		c.AmountOff = req.AmountOff
-	}
-	if req.PercentageOff != nil {
-		c.PercentageOff = req.PercentageOff
-	}
-	if req.Type != nil {
-		c.Type = *req.Type
-	}
-	if req.Cadence != nil {
-		c.Cadence = *req.Cadence
-	}
-	if req.Currency != nil {
-		c.Currency = req.Currency
+
+	if req.Metadata != nil {
+		c.Metadata = req.Metadata
 	}
 
 	c.UpdatedAt = time.Now()
@@ -265,61 +236,6 @@ func (s *couponService) CreateCouponAssociation(ctx context.Context, req dto.Cre
 			}
 		}
 
-		if req.SubscriptionLineItemID != nil {
-			existingAssociations, err := s.CouponAssociationRepo.GetBySubscriptionLineItem(txCtx, *req.SubscriptionLineItemID)
-			if err != nil {
-				s.Logger.Warnw("failed to check existing coupon associations",
-					"subscription_line_item_id", *req.SubscriptionLineItemID,
-					"error", err)
-				// Don't fail the operation for this check
-			} else {
-				for _, existing := range existingAssociations {
-					if existing.CouponID == req.CouponID {
-						return ierr.NewError("coupon is already associated with this subscription line item").
-							WithHint("This coupon is already applied to the line item").
-							WithReportableDetails(map[string]interface{}{
-								"coupon_id":                 req.CouponID,
-								"subscription_line_item_id": *req.SubscriptionLineItemID,
-							}).
-							Mark(ierr.ErrAlreadyExists)
-					}
-				}
-			}
-		}
-
-		// Validate subscription line item exists if provided
-		if req.SubscriptionLineItemID != nil {
-			// Get subscription with line items to validate the line item exists
-			_, lineItems, err := s.SubRepo.GetWithLineItems(txCtx, req.SubscriptionID)
-			if err != nil {
-				return ierr.WithError(err).
-					WithHint("Failed to get subscription line items for validation").
-					WithReportableDetails(map[string]interface{}{
-						"subscription_id": req.SubscriptionID,
-					}).
-					Mark(ierr.ErrNotFound)
-			}
-
-			// Validate that the line item exists and belongs to this subscription
-			lineItemExists := false
-			for _, item := range lineItems {
-				if item.ID == *req.SubscriptionLineItemID {
-					lineItemExists = true
-					break
-				}
-			}
-
-			if !lineItemExists {
-				return ierr.NewError("subscription line item not found").
-					WithHint("The specified line item does not exist for this subscription").
-					WithReportableDetails(map[string]interface{}{
-						"subscription_id":           req.SubscriptionID,
-						"subscription_line_item_id": *req.SubscriptionLineItemID,
-					}).
-					Mark(ierr.ErrNotFound)
-			}
-		}
-
 		// Create the coupon association object properly
 		baseModel := types.GetDefaultBaseModel(txCtx)
 		ca := &coupon_association.CouponAssociation{
@@ -341,15 +257,6 @@ func (s *couponService) CreateCouponAssociation(ctx context.Context, req dto.Cre
 				Mark(ierr.ErrInternal)
 		}
 
-		// Validate coupon redemption increment before incrementing
-		validationService = NewCouponValidationService(s.ServiceParams)
-		if err := validationService.ValidateCouponRedemptionIncrement(txCtx, req.CouponID); err != nil {
-			return ierr.WithError(err).
-				WithHint("Coupon redemption increment validation failed").
-				Mark(ierr.ErrValidation)
-		}
-
-		// Increment coupon redemptions within the same transaction
 		if err := s.CouponRepo.IncrementRedemptions(txCtx, req.CouponID); err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to increment coupon redemptions").
@@ -404,21 +311,6 @@ func (s *couponService) GetCouponAssociationsBySubscription(ctx context.Context,
 	return responses, nil
 }
 
-// GetCouponAssociationsBySubscriptionLineItem retrieves coupon associations for a subscription line item
-func (s *couponService) GetCouponAssociationsBySubscriptionLineItem(ctx context.Context, subscriptionLineItemID string) ([]*dto.CouponAssociationResponse, error) {
-	associations, err := s.CouponAssociationRepo.GetBySubscriptionLineItem(ctx, subscriptionLineItemID)
-	if err != nil {
-		return nil, err
-	}
-
-	responses := make([]*dto.CouponAssociationResponse, len(associations))
-	for i, ca := range associations {
-		responses[i] = s.toCouponAssociationResponse(ca)
-	}
-
-	return responses, nil
-}
-
 // CreateCouponApplication creates a new coupon application
 func (s *couponService) CreateCouponApplication(ctx context.Context, req dto.CreateCouponApplicationRequest) (*dto.CouponApplicationResponse, error) {
 	if err := req.Validate(); err != nil {
@@ -436,6 +328,7 @@ func (s *couponService) CreateCouponApplication(ctx context.Context, req dto.Cre
 			CouponAssociationID: req.CouponAssociationID,
 			InvoiceID:           req.InvoiceID,
 			InvoiceLineItemID:   req.InvoiceLineItemID,
+			SubscriptionID:      req.SubscriptionID,
 			AppliedAt:           time.Now(),
 			OriginalPrice:       req.OriginalPrice,
 			FinalPrice:          req.FinalPrice,
@@ -491,9 +384,9 @@ func (s *couponService) GetCouponApplicationsByInvoice(ctx context.Context, invo
 	return responses, nil
 }
 
-// GetCouponApplicationsByInvoiceLineItem retrieves coupon applications for an invoice line item
-func (s *couponService) GetCouponApplicationsByInvoiceLineItem(ctx context.Context, invoiceLineItemID string) ([]*dto.CouponApplicationResponse, error) {
-	applications, err := s.CouponApplicationRepo.GetByInvoiceLineItem(ctx, invoiceLineItemID)
+// GetCouponApplicationsBySubscription retrieves coupon applications for a subscription
+func (s *couponService) GetCouponApplicationsBySubscription(ctx context.Context, subscriptionID string) ([]*dto.CouponApplicationResponse, error) {
+	applications, err := s.CouponApplicationRepo.GetBySubscription(ctx, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -521,7 +414,7 @@ func (s *couponService) ApplyCouponToInvoice(ctx context.Context, couponID strin
 			Mark(ierr.ErrValidation)
 	}
 
-	if originalPrice.LessThanOrEqual(decimal.Zero) {
+	if originalPrice.LessThan(decimal.Zero) {
 		return nil, ierr.NewError("original_price must be greater than zero").
 			WithHint("Please provide a valid original price").
 			WithReportableDetails(map[string]interface{}{
@@ -604,7 +497,7 @@ func (s *couponService) ApplyCouponToInvoice(ctx context.Context, couponID strin
 			FinalPrice:       finalPrice,
 			DiscountedAmount: discount,
 			DiscountType:     c.Type,
-			Currency:         *c.Currency,
+			Currency:         c.Currency,
 			CouponSnapshot: map[string]interface{}{
 				"name":           c.Name,
 				"type":           c.Type,
@@ -1128,9 +1021,13 @@ func (s *couponService) ApplyCouponsOnInvoice(ctx context.Context, inv *invoice.
 				req.DiscountPercentage = coupon.PercentageOff
 			}
 
+			if inv.SubscriptionID != nil {
+				req.SubscriptionID = inv.SubscriptionID
+			}
+
 			applicationRequests = append(applicationRequests, req)
 			totalDiscount = totalDiscount.Add(discount)
-			runningTotal = finalPrice // Update running total for next coupon
+			runningTotal = finalPrice
 		}
 
 		// Batch create coupon applications
@@ -1278,6 +1175,7 @@ func (s *couponService) batchCreateCouponApplications(ctx context.Context, reque
 			CouponAssociationID: req.CouponAssociationID,
 			InvoiceID:           req.InvoiceID,
 			InvoiceLineItemID:   req.InvoiceLineItemID,
+			SubscriptionID:      req.SubscriptionID,
 			AppliedAt:           time.Now(),
 			OriginalPrice:       req.OriginalPrice,
 			FinalPrice:          req.FinalPrice,

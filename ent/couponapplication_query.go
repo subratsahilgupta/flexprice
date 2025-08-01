@@ -18,6 +18,7 @@ import (
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/ent/subscription"
 )
 
 // CouponApplicationQuery is the builder for querying CouponApplication entities.
@@ -31,6 +32,7 @@ type CouponApplicationQuery struct {
 	withCouponAssociation *CouponAssociationQuery
 	withInvoice           *InvoiceQuery
 	withInvoiceLineItem   *InvoiceLineItemQuery
+	withSubscription      *SubscriptionQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -148,6 +150,28 @@ func (caq *CouponApplicationQuery) QueryInvoiceLineItem() *InvoiceLineItemQuery 
 			sqlgraph.From(couponapplication.Table, couponapplication.FieldID, selector),
 			sqlgraph.To(invoicelineitem.Table, invoicelineitem.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, couponapplication.InvoiceLineItemTable, couponapplication.InvoiceLineItemColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(caq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QuerySubscription chains the current query on the "subscription" edge.
+func (caq *CouponApplicationQuery) QuerySubscription() *SubscriptionQuery {
+	query := (&SubscriptionClient{config: caq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := caq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := caq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(couponapplication.Table, couponapplication.FieldID, selector),
+			sqlgraph.To(subscription.Table, subscription.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, couponapplication.SubscriptionTable, couponapplication.SubscriptionColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(caq.driver.Dialect(), step)
 		return fromU, nil
@@ -351,6 +375,7 @@ func (caq *CouponApplicationQuery) Clone() *CouponApplicationQuery {
 		withCouponAssociation: caq.withCouponAssociation.Clone(),
 		withInvoice:           caq.withInvoice.Clone(),
 		withInvoiceLineItem:   caq.withInvoiceLineItem.Clone(),
+		withSubscription:      caq.withSubscription.Clone(),
 		// clone intermediate query.
 		sql:  caq.sql.Clone(),
 		path: caq.path,
@@ -398,6 +423,17 @@ func (caq *CouponApplicationQuery) WithInvoiceLineItem(opts ...func(*InvoiceLine
 		opt(query)
 	}
 	caq.withInvoiceLineItem = query
+	return caq
+}
+
+// WithSubscription tells the query-builder to eager-load the nodes that are connected to
+// the "subscription" edge. The optional arguments are used to configure the query builder of the edge.
+func (caq *CouponApplicationQuery) WithSubscription(opts ...func(*SubscriptionQuery)) *CouponApplicationQuery {
+	query := (&SubscriptionClient{config: caq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	caq.withSubscription = query
 	return caq
 }
 
@@ -479,11 +515,12 @@ func (caq *CouponApplicationQuery) sqlAll(ctx context.Context, hooks ...queryHoo
 	var (
 		nodes       = []*CouponApplication{}
 		_spec       = caq.querySpec()
-		loadedTypes = [4]bool{
+		loadedTypes = [5]bool{
 			caq.withCoupon != nil,
 			caq.withCouponAssociation != nil,
 			caq.withInvoice != nil,
 			caq.withInvoiceLineItem != nil,
+			caq.withSubscription != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -528,6 +565,12 @@ func (caq *CouponApplicationQuery) sqlAll(ctx context.Context, hooks ...queryHoo
 	if query := caq.withInvoiceLineItem; query != nil {
 		if err := caq.loadInvoiceLineItem(ctx, query, nodes, nil,
 			func(n *CouponApplication, e *InvoiceLineItem) { n.Edges.InvoiceLineItem = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := caq.withSubscription; query != nil {
+		if err := caq.loadSubscription(ctx, query, nodes, nil,
+			func(n *CouponApplication, e *Subscription) { n.Edges.Subscription = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -685,6 +728,38 @@ func (caq *CouponApplicationQuery) loadInvoiceLineItem(ctx context.Context, quer
 	}
 	return nil
 }
+func (caq *CouponApplicationQuery) loadSubscription(ctx context.Context, query *SubscriptionQuery, nodes []*CouponApplication, init func(*CouponApplication), assign func(*CouponApplication, *Subscription)) error {
+	ids := make([]string, 0, len(nodes))
+	nodeids := make(map[string][]*CouponApplication)
+	for i := range nodes {
+		if nodes[i].SubscriptionID == nil {
+			continue
+		}
+		fk := *nodes[i].SubscriptionID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(subscription.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "subscription_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
 
 func (caq *CouponApplicationQuery) sqlCount(ctx context.Context) (int, error) {
 	_spec := caq.querySpec()
@@ -719,6 +794,9 @@ func (caq *CouponApplicationQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if caq.withInvoiceLineItem != nil {
 			_spec.Node.AddColumnOnce(couponapplication.FieldInvoiceLineItemID)
+		}
+		if caq.withSubscription != nil {
+			_spec.Node.AddColumnOnce(couponapplication.FieldSubscriptionID)
 		}
 	}
 	if ps := caq.predicates; len(ps) > 0 {

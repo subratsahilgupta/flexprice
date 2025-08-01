@@ -180,6 +180,7 @@ var (
 		{Name: "coupon_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "invoice_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "invoice_line_item_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "subscription_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// CouponApplicationsTable holds the schema information for the "coupon_applications" table.
 	CouponApplicationsTable = &schema.Table{
@@ -205,6 +206,12 @@ var (
 				RefColumns: []*schema.Column{InvoiceLineItemsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
+			{
+				Symbol:     "coupon_applications_subscriptions_coupon_applications",
+				Columns:    []*schema.Column{CouponApplicationsColumns[21]},
+				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
 		},
 		Indexes: []*schema.Index{
 			{
@@ -226,6 +233,11 @@ var (
 				Name:    "couponapplication_tenant_id_environment_id_invoice_id_invoice_line_item_id",
 				Unique:  false,
 				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7], CouponApplicationsColumns[19], CouponApplicationsColumns[20]},
+			},
+			{
+				Name:    "couponapplication_tenant_id_environment_id_subscription_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7], CouponApplicationsColumns[21]},
 			},
 		},
 	}
@@ -1721,6 +1733,7 @@ func init() {
 	CouponApplicationsTable.ForeignKeys[0].RefTable = CouponsTable
 	CouponApplicationsTable.ForeignKeys[1].RefTable = InvoicesTable
 	CouponApplicationsTable.ForeignKeys[2].RefTable = InvoiceLineItemsTable
+	CouponApplicationsTable.ForeignKeys[3].RefTable = SubscriptionsTable
 	CouponAssociationsTable.ForeignKeys[0].RefTable = CouponsTable
 	CouponAssociationsTable.ForeignKeys[1].RefTable = SubscriptionsTable
 	CouponAssociationsTable.ForeignKeys[2].RefTable = SubscriptionLineItemsTable

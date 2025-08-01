@@ -11,5 +11,7 @@ type Repository interface {
 	Update(ctx context.Context, couponApplication *CouponApplication) error
 	Delete(ctx context.Context, id string) error
 	GetByInvoice(ctx context.Context, invoiceID string) ([]*CouponApplication, error)
-	GetByInvoiceLineItem(ctx context.Context, invoiceLineItemID string) ([]*CouponApplication, error)
+	GetBySubscription(ctx context.Context, subscriptionID string) ([]*CouponApplication, error)
+	GetBySubscriptionAndCoupon(ctx context.Context, subscriptionID string, couponID string) ([]*CouponApplication, error)
+	CountBySubscriptionAndCoupon(ctx context.Context, subscriptionID string, couponID string) (int, error)
 }

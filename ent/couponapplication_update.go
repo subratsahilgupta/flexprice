@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/shopspring/decimal"
 )
 
@@ -211,6 +212,26 @@ func (cau *CouponApplicationUpdate) ClearMetadata() *CouponApplicationUpdate {
 	return cau
 }
 
+// SetSubscriptionID sets the "subscription_id" field.
+func (cau *CouponApplicationUpdate) SetSubscriptionID(s string) *CouponApplicationUpdate {
+	cau.mutation.SetSubscriptionID(s)
+	return cau
+}
+
+// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
+func (cau *CouponApplicationUpdate) SetNillableSubscriptionID(s *string) *CouponApplicationUpdate {
+	if s != nil {
+		cau.SetSubscriptionID(*s)
+	}
+	return cau
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (cau *CouponApplicationUpdate) ClearSubscriptionID() *CouponApplicationUpdate {
+	cau.mutation.ClearSubscriptionID()
+	return cau
+}
+
 // AddCouponAssociationIDs adds the "coupon_association" edge to the CouponAssociation entity by IDs.
 func (cau *CouponApplicationUpdate) AddCouponAssociationIDs(ids ...string) *CouponApplicationUpdate {
 	cau.mutation.AddCouponAssociationIDs(ids...)
@@ -229,6 +250,11 @@ func (cau *CouponApplicationUpdate) AddCouponAssociation(c ...*CouponAssociation
 // SetInvoiceLineItem sets the "invoice_line_item" edge to the InvoiceLineItem entity.
 func (cau *CouponApplicationUpdate) SetInvoiceLineItem(i *InvoiceLineItem) *CouponApplicationUpdate {
 	return cau.SetInvoiceLineItemID(i.ID)
+}
+
+// SetSubscription sets the "subscription" edge to the Subscription entity.
+func (cau *CouponApplicationUpdate) SetSubscription(s *Subscription) *CouponApplicationUpdate {
+	return cau.SetSubscriptionID(s.ID)
 }
 
 // Mutation returns the CouponApplicationMutation object of the builder.
@@ -260,6 +286,12 @@ func (cau *CouponApplicationUpdate) RemoveCouponAssociation(c ...*CouponAssociat
 // ClearInvoiceLineItem clears the "invoice_line_item" edge to the InvoiceLineItem entity.
 func (cau *CouponApplicationUpdate) ClearInvoiceLineItem() *CouponApplicationUpdate {
 	cau.mutation.ClearInvoiceLineItem()
+	return cau
+}
+
+// ClearSubscription clears the "subscription" edge to the Subscription entity.
+func (cau *CouponApplicationUpdate) ClearSubscription() *CouponApplicationUpdate {
+	cau.mutation.ClearSubscription()
 	return cau
 }
 
@@ -451,6 +483,35 @@ func (cau *CouponApplicationUpdate) sqlSave(ctx context.Context) (n int, err err
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if cau.mutation.SubscriptionCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   couponapplication.SubscriptionTable,
+			Columns: []string{couponapplication.SubscriptionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscription.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := cau.mutation.SubscriptionIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   couponapplication.SubscriptionTable,
+			Columns: []string{couponapplication.SubscriptionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscription.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
@@ -658,6 +719,26 @@ func (cauo *CouponApplicationUpdateOne) ClearMetadata() *CouponApplicationUpdate
 	return cauo
 }
 
+// SetSubscriptionID sets the "subscription_id" field.
+func (cauo *CouponApplicationUpdateOne) SetSubscriptionID(s string) *CouponApplicationUpdateOne {
+	cauo.mutation.SetSubscriptionID(s)
+	return cauo
+}
+
+// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
+func (cauo *CouponApplicationUpdateOne) SetNillableSubscriptionID(s *string) *CouponApplicationUpdateOne {
+	if s != nil {
+		cauo.SetSubscriptionID(*s)
+	}
+	return cauo
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (cauo *CouponApplicationUpdateOne) ClearSubscriptionID() *CouponApplicationUpdateOne {
+	cauo.mutation.ClearSubscriptionID()
+	return cauo
+}
+
 // AddCouponAssociationIDs adds the "coupon_association" edge to the CouponAssociation entity by IDs.
 func (cauo *CouponApplicationUpdateOne) AddCouponAssociationIDs(ids ...string) *CouponApplicationUpdateOne {
 	cauo.mutation.AddCouponAssociationIDs(ids...)
@@ -676,6 +757,11 @@ func (cauo *CouponApplicationUpdateOne) AddCouponAssociation(c ...*CouponAssocia
 // SetInvoiceLineItem sets the "invoice_line_item" edge to the InvoiceLineItem entity.
 func (cauo *CouponApplicationUpdateOne) SetInvoiceLineItem(i *InvoiceLineItem) *CouponApplicationUpdateOne {
 	return cauo.SetInvoiceLineItemID(i.ID)
+}
+
+// SetSubscription sets the "subscription" edge to the Subscription entity.
+func (cauo *CouponApplicationUpdateOne) SetSubscription(s *Subscription) *CouponApplicationUpdateOne {
+	return cauo.SetSubscriptionID(s.ID)
 }
 
 // Mutation returns the CouponApplicationMutation object of the builder.
@@ -707,6 +793,12 @@ func (cauo *CouponApplicationUpdateOne) RemoveCouponAssociation(c ...*CouponAsso
 // ClearInvoiceLineItem clears the "invoice_line_item" edge to the InvoiceLineItem entity.
 func (cauo *CouponApplicationUpdateOne) ClearInvoiceLineItem() *CouponApplicationUpdateOne {
 	cauo.mutation.ClearInvoiceLineItem()
+	return cauo
+}
+
+// ClearSubscription clears the "subscription" edge to the Subscription entity.
+func (cauo *CouponApplicationUpdateOne) ClearSubscription() *CouponApplicationUpdateOne {
+	cauo.mutation.ClearSubscription()
 	return cauo
 }
 
@@ -928,6 +1020,35 @@ func (cauo *CouponApplicationUpdateOne) sqlSave(ctx context.Context) (_node *Cou
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(invoicelineitem.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if cauo.mutation.SubscriptionCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   couponapplication.SubscriptionTable,
+			Columns: []string{couponapplication.SubscriptionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscription.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := cauo.mutation.SubscriptionIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   couponapplication.SubscriptionTable,
+			Columns: []string{couponapplication.SubscriptionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscription.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

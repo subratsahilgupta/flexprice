@@ -98,6 +98,13 @@ func (CouponApplication) Fields() []ent.Field {
 		field.JSON("metadata", map[string]string{}).
 			Optional().
 			Comment("Additional metadata for coupon application"),
+		field.String("subscription_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Optional().
+			Nillable().
+			Comment("Subscription ID this coupon application is associated with"),
 	}
 }
 
@@ -122,6 +129,10 @@ func (CouponApplication) Edges() []ent.Edge {
 			Ref("coupon_applications").
 			Field("invoice_line_item_id").
 			Unique(),
+		edge.From("subscription", Subscription.Type).
+			Ref("coupon_applications").
+			Field("subscription_id").
+			Unique(),
 	}
 }
 
@@ -132,5 +143,8 @@ func (CouponApplication) Indexes() []ent.Index {
 		index.Fields("tenant_id", "environment_id", "coupon_id"),
 		index.Fields("tenant_id", "environment_id", "invoice_id"),
 		index.Fields("tenant_id", "environment_id", "invoice_id", "invoice_line_item_id"),
+		index.Fields("tenant_id", "environment_id", "subscription_id"),
+		// Optimized index for subscription + coupon queries (used in cadence validation)
+		index.Fields("tenant_id", "environment_id", "subscription_id", "coupon_id"),
 	}
 }

@@ -3,6 +3,7 @@ package coupon_association
 import (
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/domain/coupon"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -19,22 +20,18 @@ type CouponAssociation struct {
 	types.BaseModel
 }
 
-// IsSubscriptionLevel returns true if the coupon association is applied at subscription level
-func (ca *CouponAssociation) IsSubscriptionLevel() bool {
-	return ca.SubscriptionLineItemID == nil
-}
+// Write a validate method for the coupon association
 
-// IsLineItemLevel returns true if the coupon association is applied at subscription line item level
-func (ca *CouponAssociation) IsLineItemLevel() bool {
-	return ca.SubscriptionLineItemID != nil
-}
-
-// GetTargetID returns the ID of the target (subscription or line item) for this coupon association
-func (ca *CouponAssociation) GetTargetID() string {
-	if ca.IsLineItemLevel() {
-		return *ca.SubscriptionLineItemID
+func (ca *CouponAssociation) Validate() error {
+	if ca.CouponID == "" {
+		return ierr.NewError("coupon validation failed").WithHint("coupon is required").Mark(ierr.ErrValidation)
 	}
-	return ca.SubscriptionID
+
+	if ca.SubscriptionID == "" {
+		return ierr.NewError("subscription_id is required").WithHint("subscription_id is required").Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }
 
 func FromEnt(e *ent.CouponAssociation) *CouponAssociation {

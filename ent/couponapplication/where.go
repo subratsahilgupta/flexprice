@@ -156,6 +156,11 @@ func Currency(v string) predicate.CouponApplication {
 	return predicate.CouponApplication(sql.FieldEQ(FieldCurrency, v))
 }
 
+// SubscriptionID applies equality check predicate on the "subscription_id" field. It's identical to SubscriptionIDEQ.
+func SubscriptionID(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldEQ(FieldSubscriptionID, v))
+}
+
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.CouponApplication {
 	return predicate.CouponApplication(sql.FieldEQ(FieldTenantID, v))
@@ -1241,6 +1246,81 @@ func MetadataNotNil() predicate.CouponApplication {
 	return predicate.CouponApplication(sql.FieldNotNull(FieldMetadata))
 }
 
+// SubscriptionIDEQ applies the EQ predicate on the "subscription_id" field.
+func SubscriptionIDEQ(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldEQ(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDNEQ applies the NEQ predicate on the "subscription_id" field.
+func SubscriptionIDNEQ(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldNEQ(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDIn applies the In predicate on the "subscription_id" field.
+func SubscriptionIDIn(vs ...string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldIn(FieldSubscriptionID, vs...))
+}
+
+// SubscriptionIDNotIn applies the NotIn predicate on the "subscription_id" field.
+func SubscriptionIDNotIn(vs ...string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldNotIn(FieldSubscriptionID, vs...))
+}
+
+// SubscriptionIDGT applies the GT predicate on the "subscription_id" field.
+func SubscriptionIDGT(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldGT(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDGTE applies the GTE predicate on the "subscription_id" field.
+func SubscriptionIDGTE(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldGTE(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDLT applies the LT predicate on the "subscription_id" field.
+func SubscriptionIDLT(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldLT(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDLTE applies the LTE predicate on the "subscription_id" field.
+func SubscriptionIDLTE(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldLTE(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDContains applies the Contains predicate on the "subscription_id" field.
+func SubscriptionIDContains(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldContains(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDHasPrefix applies the HasPrefix predicate on the "subscription_id" field.
+func SubscriptionIDHasPrefix(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldHasPrefix(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDHasSuffix applies the HasSuffix predicate on the "subscription_id" field.
+func SubscriptionIDHasSuffix(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldHasSuffix(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDIsNil applies the IsNil predicate on the "subscription_id" field.
+func SubscriptionIDIsNil() predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldIsNull(FieldSubscriptionID))
+}
+
+// SubscriptionIDNotNil applies the NotNil predicate on the "subscription_id" field.
+func SubscriptionIDNotNil() predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldNotNull(FieldSubscriptionID))
+}
+
+// SubscriptionIDEqualFold applies the EqualFold predicate on the "subscription_id" field.
+func SubscriptionIDEqualFold(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldEqualFold(FieldSubscriptionID, v))
+}
+
+// SubscriptionIDContainsFold applies the ContainsFold predicate on the "subscription_id" field.
+func SubscriptionIDContainsFold(v string) predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldContainsFold(FieldSubscriptionID, v))
+}
+
 // HasCoupon applies the HasEdge predicate on the "coupon" edge.
 func HasCoupon() predicate.CouponApplication {
 	return predicate.CouponApplication(func(s *sql.Selector) {
@@ -1325,6 +1405,29 @@ func HasInvoiceLineItem() predicate.CouponApplication {
 func HasInvoiceLineItemWith(preds ...predicate.InvoiceLineItem) predicate.CouponApplication {
 	return predicate.CouponApplication(func(s *sql.Selector) {
 		step := newInvoiceLineItemStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasSubscription applies the HasEdge predicate on the "subscription" edge.
+func HasSubscription() predicate.CouponApplication {
+	return predicate.CouponApplication(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionTable, SubscriptionColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSubscriptionWith applies the HasEdge predicate on the "subscription" edge with a given conditions (other predicates).
+func HasSubscriptionWith(preds ...predicate.Subscription) predicate.CouponApplication {
+	return predicate.CouponApplication(func(s *sql.Selector) {
+		step := newSubscriptionStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

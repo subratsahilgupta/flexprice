@@ -15,6 +15,7 @@ type CouponApplication struct {
 	CouponAssociationID string                 `json:"coupon_association_id" db:"coupon_association_id"`
 	InvoiceID           string                 `json:"invoice_id" db:"invoice_id"`
 	InvoiceLineItemID   *string                `json:"invoice_line_item_id,omitempty" db:"invoice_line_item_id"`
+	SubscriptionID      *string                `json:"subscription_id,omitempty" db:"subscription_id"`
 	AppliedAt           time.Time              `json:"applied_at" db:"applied_at"`
 	OriginalPrice       decimal.Decimal        `json:"original_price" db:"original_price"`
 	FinalPrice          decimal.Decimal        `json:"final_price" db:"final_price"`
@@ -60,17 +61,18 @@ func FromEnt(e *ent.CouponApplication) *CouponApplication {
 		return nil
 	}
 
-	return &CouponApplication{
+	ca := &CouponApplication{
 		ID:                 e.ID,
+		CouponID:           e.CouponID,
 		InvoiceID:          e.InvoiceID,
 		InvoiceLineItemID:  e.InvoiceLineItemID,
+		SubscriptionID:     e.SubscriptionID,
 		AppliedAt:          e.AppliedAt,
 		OriginalPrice:      e.OriginalPrice,
 		FinalPrice:         e.FinalPrice,
 		DiscountedAmount:   e.DiscountedAmount,
 		DiscountType:       types.CouponType(e.DiscountType),
 		DiscountPercentage: e.DiscountPercentage,
-		Currency:           *e.Currency,
 		CouponSnapshot:     e.CouponSnapshot,
 		Metadata:           e.Metadata,
 		EnvironmentID:      e.EnvironmentID,
@@ -83,6 +85,16 @@ func FromEnt(e *ent.CouponApplication) *CouponApplication {
 			UpdatedAt: e.UpdatedAt,
 		},
 	}
+
+	// Handle nullable fields
+	if e.CouponAssociationID != nil {
+		ca.CouponAssociationID = *e.CouponAssociationID
+	}
+	if e.Currency != nil {
+		ca.Currency = *e.Currency
+	}
+
+	return ca
 }
 
 // FromEntList converts a list of ent.Coupon to domain Coupons

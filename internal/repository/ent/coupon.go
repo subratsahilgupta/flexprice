@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
 
 type couponRepository struct {
@@ -64,38 +65,22 @@ func (r *couponRepository) Create(ctx context.Context, c *domainCoupon.Coupon) e
 		SetUpdatedAt(c.UpdatedAt).
 		SetCreatedBy(c.CreatedBy).
 		SetUpdatedBy(c.UpdatedBy).
-		SetEnvironmentID(c.EnvironmentID)
+		SetEnvironmentID(c.EnvironmentID).
+		SetCurrency(c.Currency).
+		SetNillableAmountOff(c.AmountOff).
+		SetNillablePercentageOff(c.PercentageOff).
+		SetNillableRedeemAfter(c.RedeemAfter).
+		SetNillableRedeemBefore(c.RedeemBefore).
+		SetNillableMaxRedemptions(c.MaxRedemptions).
+		SetNillableTotalRedemptions(lo.ToPtr(c.TotalRedemptions)).
+		SetNillableDurationInPeriods(c.DurationInPeriods)
 
 	// Handle optional fields
 	if c.Rules != nil {
 		createQuery = createQuery.SetRules(*c.Rules)
 	}
-	if c.AmountOff != nil {
-		createQuery = createQuery.SetAmountOff(*c.AmountOff)
-	}
-	if c.PercentageOff != nil {
-		createQuery = createQuery.SetPercentageOff(*c.PercentageOff)
-	}
 	if c.Metadata != nil {
 		createQuery = createQuery.SetMetadata(*c.Metadata)
-	}
-	if c.RedeemAfter != nil {
-		createQuery = createQuery.SetRedeemAfter(*c.RedeemAfter)
-	}
-	if c.RedeemBefore != nil {
-		createQuery = createQuery.SetRedeemBefore(*c.RedeemBefore)
-	}
-	if c.MaxRedemptions != nil {
-		createQuery = createQuery.SetMaxRedemptions(*c.MaxRedemptions)
-	}
-	if c.TotalRedemptions > 0 {
-		createQuery = createQuery.SetTotalRedemptions(c.TotalRedemptions)
-	}
-	if c.DurationInPeriods != nil {
-		createQuery = createQuery.SetDurationInPeriods(*c.DurationInPeriods)
-	}
-	if c.Currency != nil {
-		createQuery = createQuery.SetCurrency(*c.Currency)
 	}
 
 	coupon, err := createQuery.Save(ctx)
@@ -282,43 +267,12 @@ func (r *couponRepository) Update(ctx context.Context, c *domainCoupon.Coupon) e
 			coupon.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
 		SetName(c.Name).
-		SetType(string(c.Type)).
-		SetCadence(string(c.Cadence)).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx))
 
-	// Handle optional fields
-	if c.Rules != nil {
-		updateQuery = updateQuery.SetRules(*c.Rules)
-	}
-	if c.AmountOff != nil {
-		updateQuery = updateQuery.SetAmountOff(*c.AmountOff)
-	}
-	if c.PercentageOff != nil {
-		updateQuery = updateQuery.SetPercentageOff(*c.PercentageOff)
-	}
 	if c.Metadata != nil {
 		updateQuery = updateQuery.SetMetadata(*c.Metadata)
 	}
-	if c.RedeemAfter != nil {
-		updateQuery = updateQuery.SetRedeemAfter(*c.RedeemAfter)
-	}
-	if c.RedeemBefore != nil {
-		updateQuery = updateQuery.SetRedeemBefore(*c.RedeemBefore)
-	}
-	if c.MaxRedemptions != nil {
-		updateQuery = updateQuery.SetMaxRedemptions(*c.MaxRedemptions)
-	}
-	if c.TotalRedemptions > 0 {
-		updateQuery = updateQuery.SetTotalRedemptions(c.TotalRedemptions)
-	}
-	if c.DurationInPeriods != nil {
-		updateQuery = updateQuery.SetDurationInPeriods(*c.DurationInPeriods)
-	}
-	if c.Currency != nil {
-		updateQuery = updateQuery.SetCurrency(*c.Currency)
-	}
-
 	_, err := updateQuery.Save(ctx)
 
 	if err != nil {
@@ -454,6 +408,7 @@ func (r *couponRepository) List(ctx context.Context, filter *types.CouponFilter)
 	defer FinishSpan(span)
 
 	query := client.Coupon.Query()
+	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
 	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 	if err != nil {
 		SetSpanError(span, err)

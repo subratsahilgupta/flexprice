@@ -12,7 +12,6 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/shopspring/decimal"
 )
 
 type couponApplicationRepository struct {
@@ -71,15 +70,11 @@ func (r *couponApplicationRepository) Create(ctx context.Context, ca *domainCoup
 		SetCreatedBy(ca.CreatedBy).
 		SetUpdatedBy(ca.UpdatedBy).
 		SetTenantID(ca.TenantID).
-		SetEnvironmentID(ca.EnvironmentID)
+		SetEnvironmentID(ca.EnvironmentID).
+		SetNillableInvoiceLineItemID(ca.InvoiceLineItemID).
+		SetNillableSubscriptionID(ca.SubscriptionID).
+		SetNillableDiscountPercentage(ca.DiscountPercentage)
 
-	// Handle optional fields
-	if ca.InvoiceLineItemID != nil {
-		createQuery = createQuery.SetInvoiceLineItemID(*ca.InvoiceLineItemID)
-	}
-	if ca.DiscountPercentage != nil {
-		createQuery = createQuery.SetDiscountPercentage(*ca.DiscountPercentage)
-	}
 	if ca.CouponSnapshot != nil {
 		createQuery = createQuery.SetCouponSnapshot(ca.CouponSnapshot)
 	}
@@ -130,7 +125,14 @@ func (r *couponApplicationRepository) Get(ctx context.Context, id string) (*doma
 		return cached, nil
 	}
 
-	ca, err := client.CouponApplication.Get(ctx, id)
+	ca, err := client.CouponApplication.Query().
+		Where(
+			couponapplication.ID(id),
+			couponapplication.TenantID(types.GetTenantID(ctx)),
+			couponapplication.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
+		WithCoupon().
+		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			r.log.Debugw("coupon application not found",
@@ -185,16 +187,6 @@ func (r *couponApplicationRepository) Update(ctx context.Context, ca *domainCoup
 		SetUpdatedAt(ca.UpdatedAt).
 		SetUpdatedBy(ca.UpdatedBy)
 
-	// Handle optional fields that might be updated
-	if ca.DiscountedAmount != decimal.Zero {
-		updateQuery = updateQuery.SetDiscountedAmount(ca.DiscountedAmount)
-	}
-	if ca.FinalPrice != decimal.Zero {
-		updateQuery = updateQuery.SetFinalPrice(ca.FinalPrice)
-	}
-	if ca.Status != "" {
-		updateQuery = updateQuery.SetStatus(string(ca.Status))
-	}
 	if ca.Metadata != nil {
 		updateQuery = updateQuery.SetMetadata(ca.Metadata)
 	}
@@ -274,7 +266,12 @@ func (r *couponApplicationRepository) GetByInvoice(ctx context.Context, invoiceI
 	defer FinishSpan(span)
 
 	applications, err := client.CouponApplication.Query().
-		Where(couponapplication.InvoiceID(invoiceID)).
+		Where(
+			couponapplication.InvoiceID(invoiceID),
+			couponapplication.TenantID(types.GetTenantID(ctx)),
+			couponapplication.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
+		WithCoupon().
 		All(ctx)
 	if err != nil {
 		r.log.Errorw("failed to get coupon applications by invoice",
@@ -298,27 +295,32 @@ func (r *couponApplicationRepository) GetByInvoice(ctx context.Context, invoiceI
 	return domainApplications, nil
 }
 
-func (r *couponApplicationRepository) GetByInvoiceLineItem(ctx context.Context, invoiceLineItemID string) ([]*domainCouponApplication.CouponApplication, error) {
+func (r *couponApplicationRepository) GetBySubscription(ctx context.Context, subscriptionID string) ([]*domainCouponApplication.CouponApplication, error) {
 	client := r.client.Querier(ctx)
 
-	r.log.Debugw("getting coupon applications by invoice line item",
-		"invoice_line_item_id", invoiceLineItemID)
+	r.log.Debugw("getting coupon applications by subscription",
+		"subscription_id", subscriptionID)
 
 	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "coupon_application", "get_by_invoice_line_item", map[string]interface{}{
-		"invoice_line_item_id": invoiceLineItemID,
+	span := StartRepositorySpan(ctx, "coupon_application", "get_by_subscription", map[string]interface{}{
+		"subscription_id": subscriptionID,
 	})
 	defer FinishSpan(span)
 
 	applications, err := client.CouponApplication.Query().
-		Where(couponapplication.InvoiceLineItemID(invoiceLineItemID)).
+		Where(
+			couponapplication.SubscriptionID(subscriptionID),
+			couponapplication.TenantID(types.GetTenantID(ctx)),
+			couponapplication.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
+		WithCoupon().
 		All(ctx)
 	if err != nil {
-		r.log.Errorw("failed to get coupon applications by invoice line item",
-			"invoice_line_item_id", invoiceLineItemID,
+		r.log.Errorw("failed to get coupon applications by subscription",
+			"subscription_id", subscriptionID,
 			"error", err)
 		return nil, ierr.WithError(err).
-			WithHint("Failed to get coupon applications by invoice line item").
+			WithHint("Failed to get coupon applications by subscription").
 			Mark(ierr.ErrDatabase)
 	}
 
@@ -328,11 +330,98 @@ func (r *couponApplicationRepository) GetByInvoiceLineItem(ctx context.Context, 
 		domainApplications[i] = r.toDomainCouponApplication(app)
 	}
 
-	r.log.Debugw("successfully got coupon applications by invoice line item",
-		"invoice_line_item_id", invoiceLineItemID,
+	r.log.Debugw("successfully got coupon applications by subscription",
+		"subscription_id", subscriptionID,
 		"count", len(domainApplications))
 
 	return domainApplications, nil
+}
+
+func (r *couponApplicationRepository) GetBySubscriptionAndCoupon(ctx context.Context, subscriptionID string, couponID string) ([]*domainCouponApplication.CouponApplication, error) {
+	client := r.client.Querier(ctx)
+
+	r.log.Debugw("getting coupon applications by subscription and coupon",
+		"subscription_id", subscriptionID,
+		"coupon_id", couponID)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "coupon_application", "get_by_subscription_and_coupon", map[string]interface{}{
+		"subscription_id": subscriptionID,
+		"coupon_id":       couponID,
+	})
+	defer FinishSpan(span)
+
+	applications, err := client.CouponApplication.Query().
+		Where(
+			couponapplication.SubscriptionID(subscriptionID),
+			couponapplication.CouponID(couponID),
+			couponapplication.TenantID(types.GetTenantID(ctx)),
+			couponapplication.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
+		WithCoupon().
+		All(ctx)
+	if err != nil {
+		r.log.Errorw("failed to get coupon applications by subscription and coupon",
+			"subscription_id", subscriptionID,
+			"coupon_id", couponID,
+			"error", err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get coupon applications by subscription and coupon").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Convert to domain models
+	domainApplications := make([]*domainCouponApplication.CouponApplication, len(applications))
+	for i, app := range applications {
+		domainApplications[i] = r.toDomainCouponApplication(app)
+	}
+
+	r.log.Debugw("successfully got coupon applications by subscription and coupon",
+		"subscription_id", subscriptionID,
+		"coupon_id", couponID,
+		"count", len(domainApplications))
+
+	return domainApplications, nil
+}
+
+func (r *couponApplicationRepository) CountBySubscriptionAndCoupon(ctx context.Context, subscriptionID string, couponID string) (int, error) {
+	client := r.client.Querier(ctx)
+
+	r.log.Debugw("counting coupon applications by subscription and coupon",
+		"subscription_id", subscriptionID,
+		"coupon_id", couponID)
+
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "coupon_application", "count_by_subscription_and_coupon", map[string]interface{}{
+		"subscription_id": subscriptionID,
+		"coupon_id":       couponID,
+	})
+	defer FinishSpan(span)
+
+	count, err := client.CouponApplication.Query().
+		Where(
+			couponapplication.SubscriptionID(subscriptionID),
+			couponapplication.CouponID(couponID),
+			couponapplication.TenantID(types.GetTenantID(ctx)),
+			couponapplication.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
+		Count(ctx)
+	if err != nil {
+		r.log.Errorw("failed to count coupon applications by subscription and coupon",
+			"subscription_id", subscriptionID,
+			"coupon_id", couponID,
+			"error", err)
+		return 0, ierr.WithError(err).
+			WithHint("Failed to count coupon applications by subscription and coupon").
+			Mark(ierr.ErrDatabase)
+	}
+
+	r.log.Debugw("successfully counted coupon applications by subscription and coupon",
+		"subscription_id", subscriptionID,
+		"coupon_id", couponID,
+		"count", count)
+
+	return count, nil
 }
 
 // Helper method to convert ent.CouponApplication to domain.CouponApplication
@@ -362,6 +451,9 @@ func (r *couponApplicationRepository) toDomainCouponApplication(ca *ent.CouponAp
 	// Handle optional fields
 	if ca.InvoiceLineItemID != nil {
 		domainCA.InvoiceLineItemID = ca.InvoiceLineItemID
+	}
+	if ca.SubscriptionID != nil {
+		domainCA.SubscriptionID = ca.SubscriptionID
 	}
 	if ca.DiscountPercentage != nil {
 		domainCA.DiscountPercentage = ca.DiscountPercentage

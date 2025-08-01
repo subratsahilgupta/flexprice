@@ -27,18 +27,8 @@ type CreateCouponRequest struct {
 
 // UpdateCouponRequest represents the request to update an existing coupon
 type UpdateCouponRequest struct {
-	Name              *string                 `json:"name,omitempty"`
-	RedeemAfter       *time.Time              `json:"redeem_after,omitempty"`
-	RedeemBefore      *time.Time              `json:"redeem_before,omitempty"`
-	MaxRedemptions    *int                    `json:"max_redemptions,omitempty"`
-	Rules             *map[string]interface{} `json:"rules,omitempty"`
-	AmountOff         *decimal.Decimal        `json:"amount_off,omitempty"`
-	PercentageOff     *decimal.Decimal        `json:"percentage_off,omitempty"`
-	Type              *types.CouponType       `json:"type,omitempty" validate:"omitempty,oneof=fixed percentage"`
-	Cadence           *types.CouponCadence    `json:"cadence,omitempty" validate:"omitempty,oneof=once repeated forever"`
-	DurationInPeriods *int                    `json:"duration_in_periods,omitempty"`
-	Metadata          *map[string]string      `json:"metadata,omitempty"`
-	Currency          *string                 `json:"currency,omitempty"`
+	Name     *string            `json:"name,omitempty"`
+	Metadata *map[string]string `json:"metadata,omitempty"`
 }
 
 // Validate validates the CreateCouponRequest
@@ -119,55 +109,9 @@ func (r *CreateCouponRequest) Validate() error {
 
 // Validate validates the UpdateCouponRequest
 func (r *UpdateCouponRequest) Validate() error {
-	// If type is being updated, validate the corresponding discount fields
-	if r.Type != nil {
-		switch *r.Type {
-		case types.CouponTypeFixed:
-			if r.AmountOff == nil || r.AmountOff.LessThanOrEqual(decimal.Zero) {
-				return ierr.NewError("amount_off must be greater than zero for fixed discount").
-					WithHint("Please provide a valid discount amount").
-					Mark(ierr.ErrValidation)
-			}
-		case types.CouponTypePercentage:
-			if r.PercentageOff == nil || r.PercentageOff.LessThanOrEqual(decimal.Zero) || r.PercentageOff.GreaterThan(decimal.NewFromInt(100)) {
-				return ierr.NewError("percentage_off must be between 0 and 100 for percentage discount").
-					WithHint("Please provide a valid percentage between 0 and 100").
-					Mark(ierr.ErrValidation)
-			}
-		}
-	}
-
-	// If amount_off is being updated without type change, validate it's positive
-	if r.AmountOff != nil && r.Type == nil {
-		if r.AmountOff.LessThanOrEqual(decimal.Zero) {
-			return ierr.NewError("amount_off must be greater than zero").
-				WithHint("Please provide a valid discount amount").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	// If percentage_off is being updated without type change, validate it's in valid range
-	if r.PercentageOff != nil && r.Type == nil {
-		if r.PercentageOff.LessThanOrEqual(decimal.Zero) || r.PercentageOff.GreaterThan(decimal.NewFromInt(100)) {
-			return ierr.NewError("percentage_off must be between 0 and 100").
-				WithHint("Please provide a valid percentage between 0 and 100").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	// Validate date range if both dates are provided
-	if r.RedeemAfter != nil && r.RedeemBefore != nil {
-		if r.RedeemAfter.After(*r.RedeemBefore) {
-			return ierr.NewError("redeem_after must be before redeem_before").
-				WithHint("Please provide valid date range").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	// Validate max_redemptions if provided
-	if r.MaxRedemptions != nil && *r.MaxRedemptions <= 0 {
-		return ierr.NewError("max_redemptions must be greater than zero").
-			WithHint("Please provide a valid maximum redemption count").
+	if r.Name != nil && *r.Name == "" {
+		return ierr.NewError("name is required").
+			WithHint("Please provide a coupon name").
 			Mark(ierr.ErrValidation)
 	}
 

@@ -4094,6 +4094,8 @@ type CouponApplicationMutation struct {
 	clearedinvoice            bool
 	invoice_line_item         *string
 	clearedinvoice_line_item  bool
+	subscription              *string
+	clearedsubscription       bool
 	done                      bool
 	oldValue                  func(context.Context) (*CouponApplication, error)
 	predicates                []predicate.CouponApplication
@@ -5040,6 +5042,55 @@ func (m *CouponApplicationMutation) ResetMetadata() {
 	delete(m.clearedFields, couponapplication.FieldMetadata)
 }
 
+// SetSubscriptionID sets the "subscription_id" field.
+func (m *CouponApplicationMutation) SetSubscriptionID(s string) {
+	m.subscription = &s
+}
+
+// SubscriptionID returns the value of the "subscription_id" field in the mutation.
+func (m *CouponApplicationMutation) SubscriptionID() (r string, exists bool) {
+	v := m.subscription
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubscriptionID returns the old "subscription_id" field's value of the CouponApplication entity.
+// If the CouponApplication object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CouponApplicationMutation) OldSubscriptionID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubscriptionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubscriptionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubscriptionID: %w", err)
+	}
+	return oldValue.SubscriptionID, nil
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (m *CouponApplicationMutation) ClearSubscriptionID() {
+	m.subscription = nil
+	m.clearedFields[couponapplication.FieldSubscriptionID] = struct{}{}
+}
+
+// SubscriptionIDCleared returns if the "subscription_id" field was cleared in this mutation.
+func (m *CouponApplicationMutation) SubscriptionIDCleared() bool {
+	_, ok := m.clearedFields[couponapplication.FieldSubscriptionID]
+	return ok
+}
+
+// ResetSubscriptionID resets all changes to the "subscription_id" field.
+func (m *CouponApplicationMutation) ResetSubscriptionID() {
+	m.subscription = nil
+	delete(m.clearedFields, couponapplication.FieldSubscriptionID)
+}
+
 // ClearCoupon clears the "coupon" edge to the Coupon entity.
 func (m *CouponApplicationMutation) ClearCoupon() {
 	m.clearedcoupon = true
@@ -5175,6 +5226,33 @@ func (m *CouponApplicationMutation) ResetInvoiceLineItem() {
 	m.clearedinvoice_line_item = false
 }
 
+// ClearSubscription clears the "subscription" edge to the Subscription entity.
+func (m *CouponApplicationMutation) ClearSubscription() {
+	m.clearedsubscription = true
+	m.clearedFields[couponapplication.FieldSubscriptionID] = struct{}{}
+}
+
+// SubscriptionCleared reports if the "subscription" edge to the Subscription entity was cleared.
+func (m *CouponApplicationMutation) SubscriptionCleared() bool {
+	return m.SubscriptionIDCleared() || m.clearedsubscription
+}
+
+// SubscriptionIDs returns the "subscription" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SubscriptionID instead. It exists only for internal usage by the builders.
+func (m *CouponApplicationMutation) SubscriptionIDs() (ids []string) {
+	if id := m.subscription; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSubscription resets all changes to the "subscription" edge.
+func (m *CouponApplicationMutation) ResetSubscription() {
+	m.subscription = nil
+	m.clearedsubscription = false
+}
+
 // Where appends a list predicates to the CouponApplicationMutation builder.
 func (m *CouponApplicationMutation) Where(ps ...predicate.CouponApplication) {
 	m.predicates = append(m.predicates, ps...)
@@ -5209,7 +5287,7 @@ func (m *CouponApplicationMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CouponApplicationMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 21)
 	if m.tenant_id != nil {
 		fields = append(fields, couponapplication.FieldTenantID)
 	}
@@ -5270,6 +5348,9 @@ func (m *CouponApplicationMutation) Fields() []string {
 	if m.metadata != nil {
 		fields = append(fields, couponapplication.FieldMetadata)
 	}
+	if m.subscription != nil {
+		fields = append(fields, couponapplication.FieldSubscriptionID)
+	}
 	return fields
 }
 
@@ -5318,6 +5399,8 @@ func (m *CouponApplicationMutation) Field(name string) (ent.Value, bool) {
 		return m.CouponSnapshot()
 	case couponapplication.FieldMetadata:
 		return m.Metadata()
+	case couponapplication.FieldSubscriptionID:
+		return m.SubscriptionID()
 	}
 	return nil, false
 }
@@ -5367,6 +5450,8 @@ func (m *CouponApplicationMutation) OldField(ctx context.Context, name string) (
 		return m.OldCouponSnapshot(ctx)
 	case couponapplication.FieldMetadata:
 		return m.OldMetadata(ctx)
+	case couponapplication.FieldSubscriptionID:
+		return m.OldSubscriptionID(ctx)
 	}
 	return nil, fmt.Errorf("unknown CouponApplication field %s", name)
 }
@@ -5516,6 +5601,13 @@ func (m *CouponApplicationMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetMetadata(v)
 		return nil
+	case couponapplication.FieldSubscriptionID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubscriptionID(v)
+		return nil
 	}
 	return fmt.Errorf("unknown CouponApplication field %s", name)
 }
@@ -5573,6 +5665,9 @@ func (m *CouponApplicationMutation) ClearedFields() []string {
 	if m.FieldCleared(couponapplication.FieldMetadata) {
 		fields = append(fields, couponapplication.FieldMetadata)
 	}
+	if m.FieldCleared(couponapplication.FieldSubscriptionID) {
+		fields = append(fields, couponapplication.FieldSubscriptionID)
+	}
 	return fields
 }
 
@@ -5613,6 +5708,9 @@ func (m *CouponApplicationMutation) ClearField(name string) error {
 		return nil
 	case couponapplication.FieldMetadata:
 		m.ClearMetadata()
+		return nil
+	case couponapplication.FieldSubscriptionID:
+		m.ClearSubscriptionID()
 		return nil
 	}
 	return fmt.Errorf("unknown CouponApplication nullable field %s", name)
@@ -5682,13 +5780,16 @@ func (m *CouponApplicationMutation) ResetField(name string) error {
 	case couponapplication.FieldMetadata:
 		m.ResetMetadata()
 		return nil
+	case couponapplication.FieldSubscriptionID:
+		m.ResetSubscriptionID()
+		return nil
 	}
 	return fmt.Errorf("unknown CouponApplication field %s", name)
 }
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *CouponApplicationMutation) AddedEdges() []string {
-	edges := make([]string, 0, 4)
+	edges := make([]string, 0, 5)
 	if m.coupon != nil {
 		edges = append(edges, couponapplication.EdgeCoupon)
 	}
@@ -5700,6 +5801,9 @@ func (m *CouponApplicationMutation) AddedEdges() []string {
 	}
 	if m.invoice_line_item != nil {
 		edges = append(edges, couponapplication.EdgeInvoiceLineItem)
+	}
+	if m.subscription != nil {
+		edges = append(edges, couponapplication.EdgeSubscription)
 	}
 	return edges
 }
@@ -5726,13 +5830,17 @@ func (m *CouponApplicationMutation) AddedIDs(name string) []ent.Value {
 		if id := m.invoice_line_item; id != nil {
 			return []ent.Value{*id}
 		}
+	case couponapplication.EdgeSubscription:
+		if id := m.subscription; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *CouponApplicationMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 4)
+	edges := make([]string, 0, 5)
 	if m.removedcoupon_association != nil {
 		edges = append(edges, couponapplication.EdgeCouponAssociation)
 	}
@@ -5755,7 +5863,7 @@ func (m *CouponApplicationMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *CouponApplicationMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 4)
+	edges := make([]string, 0, 5)
 	if m.clearedcoupon {
 		edges = append(edges, couponapplication.EdgeCoupon)
 	}
@@ -5767,6 +5875,9 @@ func (m *CouponApplicationMutation) ClearedEdges() []string {
 	}
 	if m.clearedinvoice_line_item {
 		edges = append(edges, couponapplication.EdgeInvoiceLineItem)
+	}
+	if m.clearedsubscription {
+		edges = append(edges, couponapplication.EdgeSubscription)
 	}
 	return edges
 }
@@ -5783,6 +5894,8 @@ func (m *CouponApplicationMutation) EdgeCleared(name string) bool {
 		return m.clearedinvoice
 	case couponapplication.EdgeInvoiceLineItem:
 		return m.clearedinvoice_line_item
+	case couponapplication.EdgeSubscription:
+		return m.clearedsubscription
 	}
 	return false
 }
@@ -5799,6 +5912,9 @@ func (m *CouponApplicationMutation) ClearEdge(name string) error {
 		return nil
 	case couponapplication.EdgeInvoiceLineItem:
 		m.ClearInvoiceLineItem()
+		return nil
+	case couponapplication.EdgeSubscription:
+		m.ClearSubscription()
 		return nil
 	}
 	return fmt.Errorf("unknown CouponApplication unique edge %s", name)
@@ -5819,6 +5935,9 @@ func (m *CouponApplicationMutation) ResetEdge(name string) error {
 		return nil
 	case couponapplication.EdgeInvoiceLineItem:
 		m.ResetInvoiceLineItem()
+		return nil
+	case couponapplication.EdgeSubscription:
+		m.ResetSubscription()
 		return nil
 	}
 	return fmt.Errorf("unknown CouponApplication edge %s", name)
@@ -32146,6 +32265,9 @@ type SubscriptionMutation struct {
 	coupon_associations        map[string]struct{}
 	removedcoupon_associations map[string]struct{}
 	clearedcoupon_associations bool
+	coupon_applications        map[string]struct{}
+	removedcoupon_applications map[string]struct{}
+	clearedcoupon_applications bool
 	done                       bool
 	oldValue                   func(context.Context) (*Subscription, error)
 	predicates                 []predicate.Subscription
@@ -33871,6 +33993,60 @@ func (m *SubscriptionMutation) ResetCouponAssociations() {
 	m.removedcoupon_associations = nil
 }
 
+// AddCouponApplicationIDs adds the "coupon_applications" edge to the CouponApplication entity by ids.
+func (m *SubscriptionMutation) AddCouponApplicationIDs(ids ...string) {
+	if m.coupon_applications == nil {
+		m.coupon_applications = make(map[string]struct{})
+	}
+	for i := range ids {
+		m.coupon_applications[ids[i]] = struct{}{}
+	}
+}
+
+// ClearCouponApplications clears the "coupon_applications" edge to the CouponApplication entity.
+func (m *SubscriptionMutation) ClearCouponApplications() {
+	m.clearedcoupon_applications = true
+}
+
+// CouponApplicationsCleared reports if the "coupon_applications" edge to the CouponApplication entity was cleared.
+func (m *SubscriptionMutation) CouponApplicationsCleared() bool {
+	return m.clearedcoupon_applications
+}
+
+// RemoveCouponApplicationIDs removes the "coupon_applications" edge to the CouponApplication entity by IDs.
+func (m *SubscriptionMutation) RemoveCouponApplicationIDs(ids ...string) {
+	if m.removedcoupon_applications == nil {
+		m.removedcoupon_applications = make(map[string]struct{})
+	}
+	for i := range ids {
+		delete(m.coupon_applications, ids[i])
+		m.removedcoupon_applications[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedCouponApplications returns the removed IDs of the "coupon_applications" edge to the CouponApplication entity.
+func (m *SubscriptionMutation) RemovedCouponApplicationsIDs() (ids []string) {
+	for id := range m.removedcoupon_applications {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// CouponApplicationsIDs returns the "coupon_applications" edge IDs in the mutation.
+func (m *SubscriptionMutation) CouponApplicationsIDs() (ids []string) {
+	for id := range m.coupon_applications {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetCouponApplications resets all changes to the "coupon_applications" edge.
+func (m *SubscriptionMutation) ResetCouponApplications() {
+	m.coupon_applications = nil
+	m.clearedcoupon_applications = false
+	m.removedcoupon_applications = nil
+}
+
 // Where appends a list predicates to the SubscriptionMutation builder.
 func (m *SubscriptionMutation) Where(ps ...predicate.Subscription) {
 	m.predicates = append(m.predicates, ps...)
@@ -34639,7 +34815,7 @@ func (m *SubscriptionMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *SubscriptionMutation) AddedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.line_items != nil {
 		edges = append(edges, subscription.EdgeLineItems)
 	}
@@ -34654,6 +34830,9 @@ func (m *SubscriptionMutation) AddedEdges() []string {
 	}
 	if m.coupon_associations != nil {
 		edges = append(edges, subscription.EdgeCouponAssociations)
+	}
+	if m.coupon_applications != nil {
+		edges = append(edges, subscription.EdgeCouponApplications)
 	}
 	return edges
 }
@@ -34690,13 +34869,19 @@ func (m *SubscriptionMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case subscription.EdgeCouponApplications:
+		ids := make([]ent.Value, 0, len(m.coupon_applications))
+		for id := range m.coupon_applications {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *SubscriptionMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.removedline_items != nil {
 		edges = append(edges, subscription.EdgeLineItems)
 	}
@@ -34708,6 +34893,9 @@ func (m *SubscriptionMutation) RemovedEdges() []string {
 	}
 	if m.removedcoupon_associations != nil {
 		edges = append(edges, subscription.EdgeCouponAssociations)
+	}
+	if m.removedcoupon_applications != nil {
+		edges = append(edges, subscription.EdgeCouponApplications)
 	}
 	return edges
 }
@@ -34740,13 +34928,19 @@ func (m *SubscriptionMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case subscription.EdgeCouponApplications:
+		ids := make([]ent.Value, 0, len(m.removedcoupon_applications))
+		for id := range m.removedcoupon_applications {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *SubscriptionMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.clearedline_items {
 		edges = append(edges, subscription.EdgeLineItems)
 	}
@@ -34761,6 +34955,9 @@ func (m *SubscriptionMutation) ClearedEdges() []string {
 	}
 	if m.clearedcoupon_associations {
 		edges = append(edges, subscription.EdgeCouponAssociations)
+	}
+	if m.clearedcoupon_applications {
+		edges = append(edges, subscription.EdgeCouponApplications)
 	}
 	return edges
 }
@@ -34779,6 +34976,8 @@ func (m *SubscriptionMutation) EdgeCleared(name string) bool {
 		return m.clearedschedule
 	case subscription.EdgeCouponAssociations:
 		return m.clearedcoupon_associations
+	case subscription.EdgeCouponApplications:
+		return m.clearedcoupon_applications
 	}
 	return false
 }
@@ -34812,6 +35011,9 @@ func (m *SubscriptionMutation) ResetEdge(name string) error {
 		return nil
 	case subscription.EdgeCouponAssociations:
 		m.ResetCouponAssociations()
+		return nil
+	case subscription.EdgeCouponApplications:
+		m.ResetCouponApplications()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription edge %s", name)

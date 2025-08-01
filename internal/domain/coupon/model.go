@@ -22,15 +22,10 @@ type Coupon struct {
 	Type              types.CouponType        `json:"type" db:"type"`
 	Cadence           types.CouponCadence     `json:"cadence" db:"cadence"`
 	DurationInPeriods *int                    `json:"duration_in_periods" db:"duration_in_periods"`
-	Currency          *string                 `json:"currency" db:"currency"`
+	Currency          string                  `json:"currency" db:"currency"`
 	Metadata          *map[string]string      `json:"metadata" db:"metadata"`
-	TenantID          string                  `json:"tenant_id" db:"tenant_id"`
-	Status            types.Status            `json:"status" db:"status"`
-	CreatedAt         time.Time               `json:"created_at" db:"created_at"`
-	UpdatedAt         time.Time               `json:"updated_at" db:"updated_at"`
-	CreatedBy         string                  `json:"created_by" db:"created_by"`
-	UpdatedBy         string                  `json:"updated_by" db:"updated_by"`
 	EnvironmentID     string                  `json:"environment_id" db:"environment_id"`
+	types.BaseModel
 }
 
 // IsValid checks if the coupon is valid for redemption
@@ -97,15 +92,17 @@ func FromEnt(e *ent.Coupon) *Coupon {
 		Type:              types.CouponType(e.Type),
 		Cadence:           types.CouponCadence(e.Cadence),
 		DurationInPeriods: e.DurationInPeriods,
-		Currency:          e.Currency,
-		TenantID:          e.TenantID,
-		Status:            types.Status(e.Status),
-		CreatedAt:         e.CreatedAt,
-		UpdatedAt:         e.UpdatedAt,
-		CreatedBy:         e.CreatedBy,
-		UpdatedBy:         e.UpdatedBy,
+		Currency:          *e.Currency,
 		EnvironmentID:     e.EnvironmentID,
 		Metadata:          &e.Metadata,
+		BaseModel: types.BaseModel{
+			TenantID:  e.TenantID,
+			Status:    types.Status(e.Status),
+			CreatedBy: e.CreatedBy,
+			UpdatedBy: e.UpdatedBy,
+			CreatedAt: e.CreatedAt,
+			UpdatedAt: e.UpdatedAt,
+		},
 	}
 }
 

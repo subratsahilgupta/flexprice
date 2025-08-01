@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/flexprice/flexprice/ent"
-	"github.com/flexprice/flexprice/ent/coupon"
 	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainCoupon "github.com/flexprice/flexprice/internal/domain/coupon"
@@ -241,9 +240,7 @@ func (r *couponAssociationRepository) GetBySubscription(ctx context.Context, sub
 			couponassociation.TenantID(types.GetTenantID(ctx)),
 			couponassociation.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
-		WithCoupon(func(q *ent.CouponQuery) {
-			q.Where(coupon.Status(string(types.StatusPublished)))
-		}).
+		WithCoupon().
 		All(ctx)
 
 	if err != nil {
@@ -297,88 +294,6 @@ func (r *couponAssociationRepository) GetBySubscriptionLineItem(ctx context.Cont
 	}
 
 	return domainAssociations, nil
-}
-
-func (r *couponAssociationRepository) CreateBulk(ctx context.Context, couponAssociations []*domainCouponAssociation.CouponAssociation) error {
-	client := r.client.Querier(ctx)
-
-	r.log.Debugw("creating bulk coupon associations", "count", len(couponAssociations))
-
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "coupon_association", "create_bulk", map[string]interface{}{
-		"count": len(couponAssociations),
-	})
-	defer FinishSpan(span)
-
-	bulkCreateQuery := client.CouponAssociation.Create()
-
-	for _, ca := range couponAssociations {
-		bulkCreateQuery = bulkCreateQuery.SetID(ca.ID).
-			SetTenantID(ca.TenantID).
-			SetCouponID(ca.CouponID).
-			SetSubscriptionID(ca.SubscriptionID).
-			SetStatus(string(ca.Status)).
-			SetCreatedAt(ca.CreatedAt).
-			SetUpdatedAt(ca.UpdatedAt).
-			SetCreatedBy(ca.CreatedBy).
-			SetUpdatedBy(ca.UpdatedBy).
-			SetEnvironmentID(ca.EnvironmentID)
-
-		// Handle optional subscription line item ID
-		if ca.SubscriptionLineItemID != nil {
-			bulkCreateQuery = bulkCreateQuery.SetSubscriptionLineItemID(*ca.SubscriptionLineItemID)
-		}
-
-		// Handle optional metadata
-		if ca.Metadata != nil {
-			bulkCreateQuery = bulkCreateQuery.SetMetadata(ca.Metadata)
-		}
-	}
-
-	_, err := bulkCreateQuery.Save(ctx)
-	if err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to create bulk coupon associations in database").
-			WithReportableDetails(map[string]interface{}{
-				"count": len(couponAssociations),
-			}).
-			Mark(ierr.ErrDatabase)
-	}
-
-	r.log.Infow("created bulk coupon associations", "count", len(couponAssociations))
-	return nil
-}
-
-func (r *couponAssociationRepository) DeleteBulk(ctx context.Context, ids []string) error {
-	client := r.client.Querier(ctx)
-
-	r.log.Debugw("deleting bulk coupon associations", "count", len(ids))
-
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "coupon_association", "delete_bulk", map[string]interface{}{
-		"count": len(ids),
-	})
-	defer FinishSpan(span)
-
-	_, err := client.CouponAssociation.Delete().
-		Where(
-			couponassociation.IDIn(ids...),
-			couponassociation.TenantID(types.GetTenantID(ctx)),
-			couponassociation.EnvironmentID(types.GetEnvironmentID(ctx)),
-		).
-		Exec(ctx)
-
-	if err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to delete bulk coupon associations from database").
-			WithReportableDetails(map[string]interface{}{
-				"count": len(ids),
-			}).
-			Mark(ierr.ErrDatabase)
-	}
-
-	r.log.Infow("deleted bulk coupon associations", "count", len(ids))
-	return nil
 }
 
 // Helper method to convert ent.CouponAssociation to domain.CouponAssociation

@@ -451,6 +451,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 		response.Schedule = schedule
 	}
 
+	// expand coupon associations
 	couponService := NewCouponService(s.ServiceParams)
 	couponAssociations, err := couponService.GetCouponAssociationsBySubscription(ctx, id)
 	if err != nil {

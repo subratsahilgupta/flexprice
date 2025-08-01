@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/ent/couponapplication"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
+	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/shopspring/decimal"
 )
 
@@ -62,6 +63,8 @@ type CouponApplication struct {
 	CouponSnapshot map[string]interface{} `json:"coupon_snapshot,omitempty"`
 	// Additional metadata for coupon application
 	Metadata map[string]string `json:"metadata,omitempty"`
+	// Subscription ID this coupon application is associated with
+	SubscriptionID *string `json:"subscription_id,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the CouponApplicationQuery when eager-loading is set.
 	Edges        CouponApplicationEdges `json:"edges"`
@@ -78,9 +81,11 @@ type CouponApplicationEdges struct {
 	Invoice *Invoice `json:"invoice,omitempty"`
 	// InvoiceLineItem holds the value of the invoice_line_item edge.
 	InvoiceLineItem *InvoiceLineItem `json:"invoice_line_item,omitempty"`
+	// Subscription holds the value of the subscription edge.
+	Subscription *Subscription `json:"subscription,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [4]bool
+	loadedTypes [5]bool
 }
 
 // CouponOrErr returns the Coupon value or an error if the edge
@@ -125,6 +130,17 @@ func (e CouponApplicationEdges) InvoiceLineItemOrErr() (*InvoiceLineItem, error)
 	return nil, &NotLoadedError{edge: "invoice_line_item"}
 }
 
+// SubscriptionOrErr returns the Subscription value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e CouponApplicationEdges) SubscriptionOrErr() (*Subscription, error) {
+	if e.Subscription != nil {
+		return e.Subscription, nil
+	} else if e.loadedTypes[4] {
+		return nil, &NotFoundError{label: subscription.Label}
+	}
+	return nil, &NotLoadedError{edge: "subscription"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*CouponApplication) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -136,7 +152,7 @@ func (*CouponApplication) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case couponapplication.FieldOriginalPrice, couponapplication.FieldFinalPrice, couponapplication.FieldDiscountedAmount:
 			values[i] = new(decimal.Decimal)
-		case couponapplication.FieldID, couponapplication.FieldTenantID, couponapplication.FieldStatus, couponapplication.FieldCreatedBy, couponapplication.FieldUpdatedBy, couponapplication.FieldEnvironmentID, couponapplication.FieldCouponID, couponapplication.FieldCouponAssociationID, couponapplication.FieldInvoiceID, couponapplication.FieldInvoiceLineItemID, couponapplication.FieldDiscountType, couponapplication.FieldCurrency:
+		case couponapplication.FieldID, couponapplication.FieldTenantID, couponapplication.FieldStatus, couponapplication.FieldCreatedBy, couponapplication.FieldUpdatedBy, couponapplication.FieldEnvironmentID, couponapplication.FieldCouponID, couponapplication.FieldCouponAssociationID, couponapplication.FieldInvoiceID, couponapplication.FieldInvoiceLineItemID, couponapplication.FieldDiscountType, couponapplication.FieldCurrency, couponapplication.FieldSubscriptionID:
 			values[i] = new(sql.NullString)
 		case couponapplication.FieldCreatedAt, couponapplication.FieldUpdatedAt, couponapplication.FieldAppliedAt:
 			values[i] = new(sql.NullTime)
@@ -289,6 +305,13 @@ func (ca *CouponApplication) assignValues(columns []string, values []any) error 
 					return fmt.Errorf("unmarshal field metadata: %w", err)
 				}
 			}
+		case couponapplication.FieldSubscriptionID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field subscription_id", values[i])
+			} else if value.Valid {
+				ca.SubscriptionID = new(string)
+				*ca.SubscriptionID = value.String
+			}
 		default:
 			ca.selectValues.Set(columns[i], values[i])
 		}
@@ -320,6 +343,11 @@ func (ca *CouponApplication) QueryInvoice() *InvoiceQuery {
 // QueryInvoiceLineItem queries the "invoice_line_item" edge of the CouponApplication entity.
 func (ca *CouponApplication) QueryInvoiceLineItem() *InvoiceLineItemQuery {
 	return NewCouponApplicationClient(ca.config).QueryInvoiceLineItem(ca)
+}
+
+// QuerySubscription queries the "subscription" edge of the CouponApplication entity.
+func (ca *CouponApplication) QuerySubscription() *SubscriptionQuery {
+	return NewCouponApplicationClient(ca.config).QuerySubscription(ca)
 }
 
 // Update returns a builder for updating this CouponApplication.
@@ -412,6 +440,11 @@ func (ca *CouponApplication) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("metadata=")
 	builder.WriteString(fmt.Sprintf("%v", ca.Metadata))
+	builder.WriteString(", ")
+	if v := ca.SubscriptionID; v != nil {
+		builder.WriteString("subscription_id=")
+		builder.WriteString(*v)
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

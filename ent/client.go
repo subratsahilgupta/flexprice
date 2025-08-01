@@ -1245,6 +1245,22 @@ func (c *CouponApplicationClient) QueryInvoiceLineItem(ca *CouponApplication) *I
 	return query
 }
 
+// QuerySubscription queries the subscription edge of a CouponApplication.
+func (c *CouponApplicationClient) QuerySubscription(ca *CouponApplication) *SubscriptionQuery {
+	query := (&SubscriptionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ca.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(couponapplication.Table, couponapplication.FieldID, id),
+			sqlgraph.To(subscription.Table, subscription.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, couponapplication.SubscriptionTable, couponapplication.SubscriptionColumn),
+		)
+		fromV = sqlgraph.Neighbors(ca.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *CouponApplicationClient) Hooks() []Hook {
 	return c.hooks.CouponApplication
@@ -4149,6 +4165,22 @@ func (c *SubscriptionClient) QueryCouponAssociations(s *Subscription) *CouponAss
 			sqlgraph.From(subscription.Table, subscription.FieldID, id),
 			sqlgraph.To(couponassociation.Table, couponassociation.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, subscription.CouponAssociationsTable, subscription.CouponAssociationsColumn),
+		)
+		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCouponApplications queries the coupon_applications edge of a Subscription.
+func (c *SubscriptionClient) QueryCouponApplications(s *Subscription) *CouponApplicationQuery {
+	query := (&CouponApplicationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := s.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(subscription.Table, subscription.FieldID, id),
+			sqlgraph.To(couponapplication.Table, couponapplication.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, subscription.CouponApplicationsTable, subscription.CouponApplicationsColumn),
 		)
 		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
 		return fromV, nil

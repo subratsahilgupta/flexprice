@@ -54,6 +54,8 @@ const (
 	FieldCouponSnapshot = "coupon_snapshot"
 	// FieldMetadata holds the string denoting the metadata field in the database.
 	FieldMetadata = "metadata"
+	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
+	FieldSubscriptionID = "subscription_id"
 	// EdgeCoupon holds the string denoting the coupon edge name in mutations.
 	EdgeCoupon = "coupon"
 	// EdgeCouponAssociation holds the string denoting the coupon_association edge name in mutations.
@@ -62,6 +64,8 @@ const (
 	EdgeInvoice = "invoice"
 	// EdgeInvoiceLineItem holds the string denoting the invoice_line_item edge name in mutations.
 	EdgeInvoiceLineItem = "invoice_line_item"
+	// EdgeSubscription holds the string denoting the subscription edge name in mutations.
+	EdgeSubscription = "subscription"
 	// Table holds the table name of the couponapplication in the database.
 	Table = "coupon_applications"
 	// CouponTable is the table that holds the coupon relation/edge.
@@ -90,6 +94,13 @@ const (
 	InvoiceLineItemInverseTable = "invoice_line_items"
 	// InvoiceLineItemColumn is the table column denoting the invoice_line_item relation/edge.
 	InvoiceLineItemColumn = "invoice_line_item_id"
+	// SubscriptionTable is the table that holds the subscription relation/edge.
+	SubscriptionTable = "coupon_applications"
+	// SubscriptionInverseTable is the table name for the Subscription entity.
+	// It exists in this package in order to avoid circular dependency with the "subscription" package.
+	SubscriptionInverseTable = "subscriptions"
+	// SubscriptionColumn is the table column denoting the subscription relation/edge.
+	SubscriptionColumn = "subscription_id"
 )
 
 // Columns holds all SQL columns for couponapplication fields.
@@ -115,6 +126,7 @@ var Columns = []string{
 	FieldCurrency,
 	FieldCouponSnapshot,
 	FieldMetadata,
+	FieldSubscriptionID,
 }
 
 var (
@@ -254,6 +266,11 @@ func ByCurrency(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCurrency, opts...).ToFunc()
 }
 
+// BySubscriptionID orders the results by the subscription_id field.
+func BySubscriptionID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionID, opts...).ToFunc()
+}
+
 // ByCouponField orders the results by coupon field.
 func ByCouponField(field string, opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -288,6 +305,13 @@ func ByInvoiceLineItemField(field string, opts ...sql.OrderTermOption) OrderOpti
 		sqlgraph.OrderByNeighborTerms(s, newInvoiceLineItemStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// BySubscriptionField orders the results by subscription field.
+func BySubscriptionField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSubscriptionStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newCouponStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -314,5 +338,12 @@ func newInvoiceLineItemStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(InvoiceLineItemInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, InvoiceLineItemTable, InvoiceLineItemColumn),
+	)
+}
+func newSubscriptionStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SubscriptionInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionTable, SubscriptionColumn),
 	)
 }

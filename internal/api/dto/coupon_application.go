@@ -13,6 +13,7 @@ type CreateCouponApplicationRequest struct {
 	CouponAssociationID string                 `json:"coupon_association_id,omitempty"`
 	InvoiceID           string                 `json:"invoice_id" validate:"required"`
 	InvoiceLineItemID   *string                `json:"invoice_line_item_id,omitempty"`
+	SubscriptionID      *string                `json:"subscription_id,omitempty"`
 	OriginalPrice       decimal.Decimal        `json:"original_price" validate:"required"`
 	FinalPrice          decimal.Decimal        `json:"final_price" validate:"required"`
 	DiscountedAmount    decimal.Decimal        `json:"discounted_amount" validate:"required"`

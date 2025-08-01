@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/couponapplication"
 	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/creditgrant"
 	"github.com/flexprice/flexprice/ent/predicate"
@@ -436,6 +437,21 @@ func (su *SubscriptionUpdate) AddCouponAssociations(c ...*CouponAssociation) *Su
 	return su.AddCouponAssociationIDs(ids...)
 }
 
+// AddCouponApplicationIDs adds the "coupon_applications" edge to the CouponApplication entity by IDs.
+func (su *SubscriptionUpdate) AddCouponApplicationIDs(ids ...string) *SubscriptionUpdate {
+	su.mutation.AddCouponApplicationIDs(ids...)
+	return su
+}
+
+// AddCouponApplications adds the "coupon_applications" edges to the CouponApplication entity.
+func (su *SubscriptionUpdate) AddCouponApplications(c ...*CouponApplication) *SubscriptionUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.AddCouponApplicationIDs(ids...)
+}
+
 // Mutation returns the SubscriptionMutation object of the builder.
 func (su *SubscriptionUpdate) Mutation() *SubscriptionMutation {
 	return su.mutation
@@ -529,6 +545,27 @@ func (su *SubscriptionUpdate) RemoveCouponAssociations(c ...*CouponAssociation) 
 		ids[i] = c[i].ID
 	}
 	return su.RemoveCouponAssociationIDs(ids...)
+}
+
+// ClearCouponApplications clears all "coupon_applications" edges to the CouponApplication entity.
+func (su *SubscriptionUpdate) ClearCouponApplications() *SubscriptionUpdate {
+	su.mutation.ClearCouponApplications()
+	return su
+}
+
+// RemoveCouponApplicationIDs removes the "coupon_applications" edge to CouponApplication entities by IDs.
+func (su *SubscriptionUpdate) RemoveCouponApplicationIDs(ids ...string) *SubscriptionUpdate {
+	su.mutation.RemoveCouponApplicationIDs(ids...)
+	return su
+}
+
+// RemoveCouponApplications removes "coupon_applications" edges to CouponApplication entities.
+func (su *SubscriptionUpdate) RemoveCouponApplications(c ...*CouponApplication) *SubscriptionUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return su.RemoveCouponApplicationIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -877,6 +914,51 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if su.mutation.CouponApplicationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponApplicationsTable,
+			Columns: []string{subscription.CouponApplicationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.RemovedCouponApplicationsIDs(); len(nodes) > 0 && !su.mutation.CouponApplicationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponApplicationsTable,
+			Columns: []string{subscription.CouponApplicationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := su.mutation.CouponApplicationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponApplicationsTable,
+			Columns: []string{subscription.CouponApplicationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
@@ -1306,6 +1388,21 @@ func (suo *SubscriptionUpdateOne) AddCouponAssociations(c ...*CouponAssociation)
 	return suo.AddCouponAssociationIDs(ids...)
 }
 
+// AddCouponApplicationIDs adds the "coupon_applications" edge to the CouponApplication entity by IDs.
+func (suo *SubscriptionUpdateOne) AddCouponApplicationIDs(ids ...string) *SubscriptionUpdateOne {
+	suo.mutation.AddCouponApplicationIDs(ids...)
+	return suo
+}
+
+// AddCouponApplications adds the "coupon_applications" edges to the CouponApplication entity.
+func (suo *SubscriptionUpdateOne) AddCouponApplications(c ...*CouponApplication) *SubscriptionUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.AddCouponApplicationIDs(ids...)
+}
+
 // Mutation returns the SubscriptionMutation object of the builder.
 func (suo *SubscriptionUpdateOne) Mutation() *SubscriptionMutation {
 	return suo.mutation
@@ -1399,6 +1496,27 @@ func (suo *SubscriptionUpdateOne) RemoveCouponAssociations(c ...*CouponAssociati
 		ids[i] = c[i].ID
 	}
 	return suo.RemoveCouponAssociationIDs(ids...)
+}
+
+// ClearCouponApplications clears all "coupon_applications" edges to the CouponApplication entity.
+func (suo *SubscriptionUpdateOne) ClearCouponApplications() *SubscriptionUpdateOne {
+	suo.mutation.ClearCouponApplications()
+	return suo
+}
+
+// RemoveCouponApplicationIDs removes the "coupon_applications" edge to CouponApplication entities by IDs.
+func (suo *SubscriptionUpdateOne) RemoveCouponApplicationIDs(ids ...string) *SubscriptionUpdateOne {
+	suo.mutation.RemoveCouponApplicationIDs(ids...)
+	return suo
+}
+
+// RemoveCouponApplications removes "coupon_applications" edges to CouponApplication entities.
+func (suo *SubscriptionUpdateOne) RemoveCouponApplications(c ...*CouponApplication) *SubscriptionUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return suo.RemoveCouponApplicationIDs(ids...)
 }
 
 // Where appends a list predicates to the SubscriptionUpdate builder.
@@ -1777,6 +1895,51 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if suo.mutation.CouponApplicationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponApplicationsTable,
+			Columns: []string{subscription.CouponApplicationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.RemovedCouponApplicationsIDs(); len(nodes) > 0 && !suo.mutation.CouponApplicationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponApplicationsTable,
+			Columns: []string{subscription.CouponApplicationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := suo.mutation.CouponApplicationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscription.CouponApplicationsTable,
+			Columns: []string{subscription.CouponApplicationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

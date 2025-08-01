@@ -144,6 +144,8 @@ func (Subscription) Edges() []ent.Edge {
 			Unique(),
 		edge.To("coupon_associations", CouponAssociation.Type).
 			Comment("Subscription can have multiple coupon associations"),
+		edge.To("coupon_applications", CouponApplication.Type).
+			Comment("Subscription can have multiple coupon applications"),
 	}
 }
 

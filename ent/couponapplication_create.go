@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
+	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/shopspring/decimal"
 )
 
@@ -233,6 +234,20 @@ func (cac *CouponApplicationCreate) SetMetadata(m map[string]string) *CouponAppl
 	return cac
 }
 
+// SetSubscriptionID sets the "subscription_id" field.
+func (cac *CouponApplicationCreate) SetSubscriptionID(s string) *CouponApplicationCreate {
+	cac.mutation.SetSubscriptionID(s)
+	return cac
+}
+
+// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
+func (cac *CouponApplicationCreate) SetNillableSubscriptionID(s *string) *CouponApplicationCreate {
+	if s != nil {
+		cac.SetSubscriptionID(*s)
+	}
+	return cac
+}
+
 // SetID sets the "id" field.
 func (cac *CouponApplicationCreate) SetID(s string) *CouponApplicationCreate {
 	cac.mutation.SetID(s)
@@ -267,6 +282,11 @@ func (cac *CouponApplicationCreate) SetInvoice(i *Invoice) *CouponApplicationCre
 // SetInvoiceLineItem sets the "invoice_line_item" edge to the InvoiceLineItem entity.
 func (cac *CouponApplicationCreate) SetInvoiceLineItem(i *InvoiceLineItem) *CouponApplicationCreate {
 	return cac.SetInvoiceLineItemID(i.ID)
+}
+
+// SetSubscription sets the "subscription" edge to the Subscription entity.
+func (cac *CouponApplicationCreate) SetSubscription(s *Subscription) *CouponApplicationCreate {
+	return cac.SetSubscriptionID(s.ID)
 }
 
 // Mutation returns the CouponApplicationMutation object of the builder.
@@ -555,6 +575,23 @@ func (cac *CouponApplicationCreate) createSpec() (*CouponApplication, *sqlgraph.
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.InvoiceLineItemID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := cac.mutation.SubscriptionIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   couponapplication.SubscriptionTable,
+			Columns: []string{couponapplication.SubscriptionColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscription.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.SubscriptionID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

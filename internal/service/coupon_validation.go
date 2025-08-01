@@ -13,9 +13,9 @@ import (
 
 // CouponValidationError represents validation errors with structured details
 type CouponValidationError struct {
-	Code    string                 `json:"code"`
-	Message string                 `json:"message"`
-	Details map[string]interface{} `json:"details,omitempty"`
+	Code    types.CouponValidationErrorCode `json:"code"`
+	Message string                          `json:"message"`
+	Details map[string]interface{}          `json:"details,omitempty"`
 }
 
 func (e *CouponValidationError) Error() string {
@@ -193,7 +193,7 @@ func (s *couponValidationService) ValidateCouponBasic(coupon *coupon.Coupon) err
 	// Check if coupon exists
 	if coupon == nil {
 		return &CouponValidationError{
-			Code:    "COUPON_NOT_FOUND",
+			Code:    types.CouponValidationErrorCodeNotFound,
 			Message: "Coupon not found",
 		}
 	}
@@ -201,7 +201,7 @@ func (s *couponValidationService) ValidateCouponBasic(coupon *coupon.Coupon) err
 	// Check if coupon is published
 	if coupon.Status != types.StatusPublished {
 		return &CouponValidationError{
-			Code:    "COUPON_NOT_PUBLISHED",
+			Code:    types.CouponValidationErrorCodeNotPublished,
 			Message: "Coupon is not published",
 			Details: map[string]interface{}{
 				"coupon_id": coupon.ID,
@@ -238,7 +238,7 @@ func (s *couponValidationService) validateCouponDateRange(coupon *coupon.Coupon)
 	if coupon.RedeemAfter != nil {
 		if now.Before(*coupon.RedeemAfter) {
 			return &CouponValidationError{
-				Code:    "COUPON_NOT_ACTIVE",
+				Code:    types.CouponValidationErrorCodeNotActive,
 				Message: "Coupon is not yet active",
 				Details: map[string]interface{}{
 					"coupon_id":    coupon.ID,
@@ -253,7 +253,7 @@ func (s *couponValidationService) validateCouponDateRange(coupon *coupon.Coupon)
 	if coupon.RedeemBefore != nil {
 		if now.After(*coupon.RedeemBefore) {
 			return &CouponValidationError{
-				Code:    "COUPON_EXPIRED",
+				Code:    types.CouponValidationErrorCodeExpired,
 				Message: "Coupon has expired",
 				Details: map[string]interface{}{
 					"coupon_id":     coupon.ID,
@@ -267,37 +267,17 @@ func (s *couponValidationService) validateCouponDateRange(coupon *coupon.Coupon)
 	return nil
 }
 
-// Environment validation
-func (s *couponValidationService) validateCouponEnvironment(coupon *coupon.Coupon) error {
-	// Get environment from context
-	envID := types.GetEnvironmentID(context.Background())
-
-	if coupon.EnvironmentID != envID {
-		return &CouponValidationError{
-			Code:    "ENVIRONMENT_MISMATCH",
-			Message: "Coupon environment does not match current environment",
-			Details: map[string]interface{}{
-				"coupon_id":           coupon.ID,
-				"coupon_environment":  coupon.EnvironmentID,
-				"current_environment": envID,
-			},
-		}
-	}
-
-	return nil
-}
-
 // Currency validation
 func (s *couponValidationService) validateCouponCurrency(coupon *coupon.Coupon, targetCurrency string) error {
 	// If coupon has specific currency, it must match target currency
-	if coupon.Currency != nil && *coupon.Currency != "" {
-		if *coupon.Currency != targetCurrency {
+	if coupon.Currency != "" {
+		if coupon.Currency != targetCurrency {
 			return &CouponValidationError{
-				Code:    "CURRENCY_MISMATCH",
+				Code:    types.CouponValidationErrorCodeCurrencyMismatch,
 				Message: "Coupon currency does not match target currency",
 				Details: map[string]interface{}{
 					"coupon_id":       coupon.ID,
-					"coupon_currency": *coupon.Currency,
+					"coupon_currency": coupon.Currency,
 					"target_currency": targetCurrency,
 				},
 			}
@@ -313,7 +293,7 @@ func (s *couponValidationService) validateCouponRedemption(coupon *coupon.Coupon
 	if coupon.MaxRedemptions != nil {
 		if coupon.TotalRedemptions >= *coupon.MaxRedemptions {
 			return &CouponValidationError{
-				Code:    "REDEMPTION_LIMIT_REACHED",
+				Code:    types.CouponValidationErrorCodeRedemptionLimitReached,
 				Message: "Coupon has reached maximum redemptions",
 				Details: map[string]interface{}{
 					"coupon_id":         coupon.ID,
@@ -332,7 +312,7 @@ func (s *couponValidationService) validateCouponForSubscriptionSpecific(coupon *
 	// Check if subscription is in a valid state for coupon association
 	if subscription.SubscriptionStatus == types.SubscriptionStatusCancelled {
 		return &CouponValidationError{
-			Code:    "INVALID_SUBSCRIPTION_STATUS",
+			Code:    types.CouponValidationErrorCodeInvalidSubscriptionStatus,
 			Message: "Cannot associate coupon with cancelled subscription",
 			Details: map[string]interface{}{
 				"coupon_id":       coupon.ID,
@@ -362,7 +342,7 @@ func (s *couponValidationService) validateCouponForInvoiceSpecific(ctx context.C
 		return s.validateRepeatedCadenceForInvoice(ctx, coupon, invoice, subscription)
 	default:
 		return &CouponValidationError{
-			Code:    "INVALID_CADENCE",
+			Code:    types.CouponValidationErrorCodeInvalidCadence,
 			Message: "Invalid coupon cadence",
 			Details: map[string]interface{}{
 				"coupon_id": coupon.ID,
@@ -379,51 +359,41 @@ func (s *couponValidationService) validateOnceCadenceForInvoice(ctx context.Cont
 		"invoice_id", invoice.ID,
 		"subscription_id", subscription.ID)
 
-	// Get all invoices for this subscription to check if this is the first one
-	limit := 100
-	invoiceFilter := &types.InvoiceFilter{
-		QueryFilter: &types.QueryFilter{
-			Limit: &limit, // Reasonable limit to check previous invoices
-		},
-		SubscriptionID: subscription.ID,
-	}
-
-	previousInvoices, err := s.InvoiceRepo.List(ctx, invoiceFilter)
+	// Use optimized query to check if this coupon has already been applied to this subscription
+	// This is much more efficient than fetching all invoices and counting them
+	existingApplicationCount, err := s.CouponApplicationRepo.CountBySubscriptionAndCoupon(ctx, subscription.ID, coupon.ID)
 	if err != nil {
 		return &CouponValidationError{
-			Code:    "DATABASE_ERROR",
-			Message: "Failed to get previous invoices for once cadence validation",
+			Code:    types.CouponValidationErrorCodeDatabaseError,
+			Message: "Failed to count existing applications for once cadence validation",
 			Details: map[string]interface{}{
 				"subscription_id": subscription.ID,
+				"coupon_id":       coupon.ID,
 				"error":           err.Error(),
 			},
 		}
 	}
 
-	// Count invoices that are not the current invoice (excluding drafts)
-	var previousInvoiceCount int
-	for _, inv := range previousInvoices {
-		// Only count finalized invoices, exclude current invoice and drafts
-		if inv.ID != invoice.ID && inv.InvoiceStatus != types.InvoiceStatusDraft {
-			previousInvoiceCount++
-		}
-	}
+	s.Logger.Debugw("existing applications count for once cadence validation",
+		"coupon_id", coupon.ID,
+		"subscription_id", subscription.ID,
+		"existing_applications", existingApplicationCount)
 
-	// For "once" cadence, this should be applied only to the first invoice
-	if previousInvoiceCount > 0 {
+	// For "once" cadence, this coupon should not have been applied before in this subscription
+	if existingApplicationCount > 0 {
 		return &CouponValidationError{
-			Code:    "ONCE_CADENCE_VIOLATION",
-			Message: "Once cadence coupon can only be applied to the first invoice",
+			Code:    types.CouponValidationErrorCodeOnceCadenceViolation,
+			Message: "Once cadence coupon can only be applied once per subscription",
 			Details: map[string]interface{}{
-				"coupon_id":              coupon.ID,
-				"subscription_id":        subscription.ID,
-				"current_invoice_id":     invoice.ID,
-				"previous_invoice_count": previousInvoiceCount,
+				"coupon_id":             coupon.ID,
+				"subscription_id":       subscription.ID,
+				"current_invoice_id":    invoice.ID,
+				"existing_applications": existingApplicationCount,
 			},
 		}
 	}
 
-	s.Logger.Debugw("once cadence validation passed - this is the first invoice",
+	s.Logger.Debugw("once cadence validation passed - no previous applications found",
 		"coupon_id", coupon.ID,
 		"subscription_id", subscription.ID)
 
@@ -454,7 +424,7 @@ func (s *couponValidationService) validateRepeatedCadenceForInvoice(ctx context.
 	// Check if duration_in_periods is set for repeated cadence
 	if coupon.DurationInPeriods == nil || *coupon.DurationInPeriods <= 0 {
 		return &CouponValidationError{
-			Code:    "INVALID_REPEATED_CADENCE",
+			Code:    types.CouponValidationErrorCodeInvalidRepeatedCadence,
 			Message: "Repeated cadence requires valid duration_in_periods",
 			Details: map[string]interface{}{
 				"coupon_id":           coupon.ID,
@@ -463,54 +433,27 @@ func (s *couponValidationService) validateRepeatedCadenceForInvoice(ctx context.
 		}
 	}
 
-	// Get all invoices for this subscription to count coupon applications across all periods
-	subscriptionLimit := 1000
-	invoiceFilter := &types.InvoiceFilter{
-		QueryFilter: &types.QueryFilter{
-			Limit: &subscriptionLimit, // Reasonable limit to check all invoices
-		},
-		SubscriptionID: subscription.ID,
-	}
-
-	subscriptionInvoices, err := s.InvoiceRepo.List(ctx, invoiceFilter)
+	// Use optimized query to count existing applications for this coupon and subscription
+	// This is much more efficient than the previous approach of getting all invoices and their applications
+	existingApplicationCount, err := s.CouponApplicationRepo.CountBySubscriptionAndCoupon(ctx, subscription.ID, coupon.ID)
 	if err != nil {
-		s.Logger.Warnw("failed to get subscription invoices for repeated cadence validation",
+		s.Logger.Warnw("failed to count existing applications for repeated cadence validation",
 			"coupon_id", coupon.ID,
 			"subscription_id", subscription.ID,
 			"error", err)
-		// Don't fail validation if we can't get invoices - allow the application to proceed
+		// Don't fail validation if we can't count applications - allow the application to proceed
 		return nil
 	}
 
-	// Count how many times this specific coupon has been applied across all invoices for this subscription
-	var existingApplicationCount int
-	for _, inv := range subscriptionInvoices {
-		// Skip the current invoice since we're validating if we can apply to it
-		if inv.ID == invoice.ID {
-			continue
-		}
-
-		// Get applications for each invoice
-		applications, err := s.CouponApplicationRepo.GetByInvoice(ctx, inv.ID)
-		if err != nil {
-			s.Logger.Warnw("failed to get applications for invoice",
-				"invoice_id", inv.ID,
-				"error", err)
-			continue
-		}
-
-		// Count applications for this specific coupon
-		for _, app := range applications {
-			if app.CouponID == coupon.ID {
-				existingApplicationCount++
-			}
-		}
-	}
+	s.Logger.Debugw("existing applications count for repeated cadence validation",
+		"coupon_id", coupon.ID,
+		"subscription_id", subscription.ID,
+		"existing_applications", existingApplicationCount)
 
 	// For repeated cadence, check if we've exceeded the duration_in_periods limit
 	if existingApplicationCount >= *coupon.DurationInPeriods {
 		return &CouponValidationError{
-			Code:    "REPEATED_CADENCE_LIMIT_REACHED",
+			Code:    types.CouponValidationErrorCodeRepeatedCadenceLimitReached,
 			Message: "Repeated cadence coupon has reached its application limit",
 			Details: map[string]interface{}{
 				"coupon_id":             coupon.ID,
