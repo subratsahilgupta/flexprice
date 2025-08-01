@@ -21302,6 +21302,8 @@ type PaymentMutation struct {
 	payment_method_id   *string
 	payment_gateway     *string
 	gateway_payment_id  *string
+	gateway_tracking_id *string
+	gateway_metadata    *map[string]string
 	amount              *decimal.Decimal
 	currency            *string
 	payment_status      *string
@@ -22007,6 +22009,104 @@ func (m *PaymentMutation) ResetGatewayPaymentID() {
 	delete(m.clearedFields, payment.FieldGatewayPaymentID)
 }
 
+// SetGatewayTrackingID sets the "gateway_tracking_id" field.
+func (m *PaymentMutation) SetGatewayTrackingID(s string) {
+	m.gateway_tracking_id = &s
+}
+
+// GatewayTrackingID returns the value of the "gateway_tracking_id" field in the mutation.
+func (m *PaymentMutation) GatewayTrackingID() (r string, exists bool) {
+	v := m.gateway_tracking_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGatewayTrackingID returns the old "gateway_tracking_id" field's value of the Payment entity.
+// If the Payment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentMutation) OldGatewayTrackingID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGatewayTrackingID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGatewayTrackingID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGatewayTrackingID: %w", err)
+	}
+	return oldValue.GatewayTrackingID, nil
+}
+
+// ClearGatewayTrackingID clears the value of the "gateway_tracking_id" field.
+func (m *PaymentMutation) ClearGatewayTrackingID() {
+	m.gateway_tracking_id = nil
+	m.clearedFields[payment.FieldGatewayTrackingID] = struct{}{}
+}
+
+// GatewayTrackingIDCleared returns if the "gateway_tracking_id" field was cleared in this mutation.
+func (m *PaymentMutation) GatewayTrackingIDCleared() bool {
+	_, ok := m.clearedFields[payment.FieldGatewayTrackingID]
+	return ok
+}
+
+// ResetGatewayTrackingID resets all changes to the "gateway_tracking_id" field.
+func (m *PaymentMutation) ResetGatewayTrackingID() {
+	m.gateway_tracking_id = nil
+	delete(m.clearedFields, payment.FieldGatewayTrackingID)
+}
+
+// SetGatewayMetadata sets the "gateway_metadata" field.
+func (m *PaymentMutation) SetGatewayMetadata(value map[string]string) {
+	m.gateway_metadata = &value
+}
+
+// GatewayMetadata returns the value of the "gateway_metadata" field in the mutation.
+func (m *PaymentMutation) GatewayMetadata() (r map[string]string, exists bool) {
+	v := m.gateway_metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGatewayMetadata returns the old "gateway_metadata" field's value of the Payment entity.
+// If the Payment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentMutation) OldGatewayMetadata(ctx context.Context) (v map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGatewayMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGatewayMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGatewayMetadata: %w", err)
+	}
+	return oldValue.GatewayMetadata, nil
+}
+
+// ClearGatewayMetadata clears the value of the "gateway_metadata" field.
+func (m *PaymentMutation) ClearGatewayMetadata() {
+	m.gateway_metadata = nil
+	m.clearedFields[payment.FieldGatewayMetadata] = struct{}{}
+}
+
+// GatewayMetadataCleared returns if the "gateway_metadata" field was cleared in this mutation.
+func (m *PaymentMutation) GatewayMetadataCleared() bool {
+	_, ok := m.clearedFields[payment.FieldGatewayMetadata]
+	return ok
+}
+
+// ResetGatewayMetadata resets all changes to the "gateway_metadata" field.
+func (m *PaymentMutation) ResetGatewayMetadata() {
+	m.gateway_metadata = nil
+	delete(m.clearedFields, payment.FieldGatewayMetadata)
+}
+
 // SetAmount sets the "amount" field.
 func (m *PaymentMutation) SetAmount(d decimal.Decimal) {
 	m.amount = &d
@@ -22533,7 +22633,7 @@ func (m *PaymentMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentMutation) Fields() []string {
-	fields := make([]string, 0, 24)
+	fields := make([]string, 0, 26)
 	if m.tenant_id != nil {
 		fields = append(fields, payment.FieldTenantID)
 	}
@@ -22575,6 +22675,12 @@ func (m *PaymentMutation) Fields() []string {
 	}
 	if m.gateway_payment_id != nil {
 		fields = append(fields, payment.FieldGatewayPaymentID)
+	}
+	if m.gateway_tracking_id != nil {
+		fields = append(fields, payment.FieldGatewayTrackingID)
+	}
+	if m.gateway_metadata != nil {
+		fields = append(fields, payment.FieldGatewayMetadata)
 	}
 	if m.amount != nil {
 		fields = append(fields, payment.FieldAmount)
@@ -22642,6 +22748,10 @@ func (m *PaymentMutation) Field(name string) (ent.Value, bool) {
 		return m.PaymentGateway()
 	case payment.FieldGatewayPaymentID:
 		return m.GatewayPaymentID()
+	case payment.FieldGatewayTrackingID:
+		return m.GatewayTrackingID()
+	case payment.FieldGatewayMetadata:
+		return m.GatewayMetadata()
 	case payment.FieldAmount:
 		return m.Amount()
 	case payment.FieldCurrency:
@@ -22699,6 +22809,10 @@ func (m *PaymentMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldPaymentGateway(ctx)
 	case payment.FieldGatewayPaymentID:
 		return m.OldGatewayPaymentID(ctx)
+	case payment.FieldGatewayTrackingID:
+		return m.OldGatewayTrackingID(ctx)
+	case payment.FieldGatewayMetadata:
+		return m.OldGatewayMetadata(ctx)
 	case payment.FieldAmount:
 		return m.OldAmount(ctx)
 	case payment.FieldCurrency:
@@ -22826,6 +22940,20 @@ func (m *PaymentMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetGatewayPaymentID(v)
 		return nil
+	case payment.FieldGatewayTrackingID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGatewayTrackingID(v)
+		return nil
+	case payment.FieldGatewayMetadata:
+		v, ok := value.(map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGatewayMetadata(v)
+		return nil
 	case payment.FieldAmount:
 		v, ok := value.(decimal.Decimal)
 		if !ok {
@@ -22944,6 +23072,12 @@ func (m *PaymentMutation) ClearedFields() []string {
 	if m.FieldCleared(payment.FieldGatewayPaymentID) {
 		fields = append(fields, payment.FieldGatewayPaymentID)
 	}
+	if m.FieldCleared(payment.FieldGatewayTrackingID) {
+		fields = append(fields, payment.FieldGatewayTrackingID)
+	}
+	if m.FieldCleared(payment.FieldGatewayMetadata) {
+		fields = append(fields, payment.FieldGatewayMetadata)
+	}
 	if m.FieldCleared(payment.FieldMetadata) {
 		fields = append(fields, payment.FieldMetadata)
 	}
@@ -22993,6 +23127,12 @@ func (m *PaymentMutation) ClearField(name string) error {
 		return nil
 	case payment.FieldGatewayPaymentID:
 		m.ClearGatewayPaymentID()
+		return nil
+	case payment.FieldGatewayTrackingID:
+		m.ClearGatewayTrackingID()
+		return nil
+	case payment.FieldGatewayMetadata:
+		m.ClearGatewayMetadata()
 		return nil
 	case payment.FieldMetadata:
 		m.ClearMetadata()
@@ -23061,6 +23201,12 @@ func (m *PaymentMutation) ResetField(name string) error {
 		return nil
 	case payment.FieldGatewayPaymentID:
 		m.ResetGatewayPaymentID()
+		return nil
+	case payment.FieldGatewayTrackingID:
+		m.ResetGatewayTrackingID()
+		return nil
+	case payment.FieldGatewayMetadata:
+		m.ResetGatewayMetadata()
 		return nil
 	case payment.FieldAmount:
 		m.ResetAmount()

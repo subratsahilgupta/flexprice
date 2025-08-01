@@ -826,19 +826,19 @@ func init() {
 	// payment.PaymentMethodTypeValidator is a validator for the "payment_method_type" field. It is called by the builders before save.
 	payment.PaymentMethodTypeValidator = paymentDescPaymentMethodType.Validators[0].(func(string) error)
 	// paymentDescAmount is the schema descriptor for amount field.
-	paymentDescAmount := paymentFields[8].Descriptor()
+	paymentDescAmount := paymentFields[10].Descriptor()
 	// payment.DefaultAmount holds the default value on creation for the amount field.
 	payment.DefaultAmount = paymentDescAmount.Default.(decimal.Decimal)
 	// paymentDescCurrency is the schema descriptor for currency field.
-	paymentDescCurrency := paymentFields[9].Descriptor()
+	paymentDescCurrency := paymentFields[11].Descriptor()
 	// payment.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	payment.CurrencyValidator = paymentDescCurrency.Validators[0].(func(string) error)
 	// paymentDescPaymentStatus is the schema descriptor for payment_status field.
-	paymentDescPaymentStatus := paymentFields[10].Descriptor()
+	paymentDescPaymentStatus := paymentFields[12].Descriptor()
 	// payment.PaymentStatusValidator is a validator for the "payment_status" field. It is called by the builders before save.
 	payment.PaymentStatusValidator = paymentDescPaymentStatus.Validators[0].(func(string) error)
 	// paymentDescTrackAttempts is the schema descriptor for track_attempts field.
-	paymentDescTrackAttempts := paymentFields[11].Descriptor()
+	paymentDescTrackAttempts := paymentFields[13].Descriptor()
 	// payment.DefaultTrackAttempts holds the default value on creation for the track_attempts field.
 	payment.DefaultTrackAttempts = paymentDescTrackAttempts.Default.(bool)
 	paymentattemptMixin := schema.PaymentAttempt{}.Mixin()

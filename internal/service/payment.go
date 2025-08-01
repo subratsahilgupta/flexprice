@@ -23,15 +23,6 @@ type PaymentService interface {
 	UpdatePayment(ctx context.Context, id string, req dto.UpdatePaymentRequest) (*dto.PaymentResponse, error)
 	ListPayments(ctx context.Context, filter *types.PaymentFilter) (*dto.ListPaymentsResponse, error)
 	DeletePayment(ctx context.Context, id string) error
-
-	// Generic payment gateway operations
-	CreatePaymentLink(ctx context.Context, req *dto.CreatePaymentLinkRequest) (*dto.PaymentLinkResponse, error)
-	GetPaymentStatus(ctx context.Context, sessionID string) (*dto.GenericPaymentStatusResponse, error)
-	GetSupportedGateways(ctx context.Context) (*dto.GetSupportedGatewaysResponse, error)
-
-	// Legacy Stripe payment link operations (for backward compatibility)
-	CreateStripePaymentLink(ctx context.Context, req *dto.CreateStripePaymentLinkRequest) (*dto.StripePaymentLinkResponse, error)
-	GetStripePaymentStatus(ctx context.Context, sessionID string, environmentID string) (*dto.PaymentStatusResponse, error)
 }
 
 type paymentService struct {
@@ -94,6 +85,16 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 		}
 		p.Metadata["wallet_type"] = string(selectedWallet.WalletType)
 		p.Metadata["wallet_id"] = selectedWallet.ID
+	}
+
+	// Handle payment link creation
+	if p.PaymentMethodType == types.PaymentMethodTypePaymentLink {
+		// For payment links, we don't create the payment link immediately
+		// The payment link will be created when the payment is processed
+		// Just set the payment gateway information
+		if req.PaymentGateway != nil {
+			p.PaymentGateway = lo.ToPtr(string(*req.PaymentGateway))
+		}
 	}
 
 	// Generate idempotency key
@@ -367,37 +368,6 @@ func (s *paymentService) DeletePayment(ctx context.Context, id string) error {
 	}
 
 	return s.PaymentRepo.Delete(ctx, id) // Repository already using ierr
-}
-
-// CreatePaymentLink creates a payment link using any gateway
-func (s *paymentService) CreatePaymentLink(ctx context.Context, req *dto.CreatePaymentLinkRequest) (*dto.PaymentLinkResponse, error) {
-	gatewayService := NewPaymentGatewayService(s.ServiceParams)
-	return gatewayService.CreatePaymentLink(ctx, req)
-}
-
-// GetPaymentStatus gets the payment status from any gateway
-func (s *paymentService) GetPaymentStatus(ctx context.Context, sessionID string) (*dto.GenericPaymentStatusResponse, error) {
-	gatewayService := NewPaymentGatewayService(s.ServiceParams)
-	return gatewayService.GetPaymentStatus(ctx, sessionID)
-}
-
-// GetSupportedGateways returns all supported payment gateways
-func (s *paymentService) GetSupportedGateways(ctx context.Context) (*dto.GetSupportedGatewaysResponse, error) {
-	gatewayService := NewPaymentGatewayService(s.ServiceParams)
-	return gatewayService.GetSupportedGateways(ctx)
-}
-
-// Legacy methods for backward compatibility
-// CreateStripePaymentLink creates a Stripe payment link
-func (s *paymentService) CreateStripePaymentLink(ctx context.Context, req *dto.CreateStripePaymentLinkRequest) (*dto.StripePaymentLinkResponse, error) {
-	stripeService := NewStripeService(s.ServiceParams)
-	return stripeService.CreatePaymentLink(ctx, req)
-}
-
-// GetStripePaymentStatus gets the payment status from Stripe
-func (s *paymentService) GetStripePaymentStatus(ctx context.Context, sessionID string, environmentID string) (*dto.PaymentStatusResponse, error) {
-	stripeService := NewStripeService(s.ServiceParams)
-	return stripeService.GetPaymentStatus(ctx, sessionID, environmentID)
 }
 
 func (s *paymentService) publishWebhookEvent(ctx context.Context, eventName string, paymentID string) {

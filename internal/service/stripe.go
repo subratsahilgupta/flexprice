@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/security"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
@@ -410,63 +408,15 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 		Customer:   stripe.String(stripeCustomerID),
 	}
 
-	// Create payment record in database first
-	paymentService := NewPaymentService(s.ServiceParams)
-
-	// Generate idempotency key using the proper generator
-	idempGen := idempotency.NewGenerator()
-	idempotencyKey := idempGen.GenerateKey(idempotency.ScopePayment, map[string]interface{}{
-		"invoice_id": req.InvoiceID,
-		"amount":     req.Amount,
-		"currency":   req.Currency,
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
-	})
-
-	paymentReq := &dto.CreatePaymentRequest{
-		IdempotencyKey:    idempotencyKey,
-		DestinationType:   types.PaymentDestinationTypeInvoice,
-		DestinationID:     req.InvoiceID,
-		PaymentMethodType: types.PaymentMethodTypePaymentLink,
-		PaymentMethodID:   "stripe_payment_link", // Temporary placeholder, will be updated with payment intent ID from webhook
-		Amount:            req.Amount,
-		Currency:          req.Currency,
-		Metadata: types.Metadata{
-			"customer_id":     req.CustomerID,
-			"environment_id":  req.EnvironmentID,
-			"payment_gateway": "stripe",
-			"success_url":     successURL,
-			"cancel_url":      cancelURL,
-		},
-		ProcessPayment: false, // Don't process immediately, wait for webhook
-	}
-
-	payment, err := paymentService.CreatePayment(ctx, paymentReq)
-	if err != nil {
-		s.Logger.Errorw("failed to create payment record",
-			"error", err,
-			"invoice_id", req.InvoiceID)
-		return nil, ierr.NewError("failed to create payment record").
-			WithHint("Payment record creation failed").
-			WithReportableDetails(map[string]interface{}{
-				"invoice_id": req.InvoiceID,
-				"error":      err.Error(),
-			}).
-			Mark(ierr.ErrSystem)
-	}
+	// Don't create payment record here - it should be created by the main payment flow
+	// Just create the Stripe session
 
 	// Create the checkout session
 	session, err := stripeClient.CheckoutSessions.New(params)
 	if err != nil {
 		s.Logger.Errorw("failed to create Stripe checkout session",
 			"error", err,
-			"invoice_id", req.InvoiceID,
-			"payment_id", payment.ID)
-		// Try to delete the payment record since Stripe session creation failed
-		if deleteErr := paymentService.DeletePayment(ctx, payment.ID); deleteErr != nil {
-			s.Logger.Errorw("failed to delete payment record after Stripe session creation failed",
-				"error", deleteErr,
-				"payment_id", payment.ID)
-		}
+			"invoice_id", req.InvoiceID)
 		return nil, ierr.NewError("failed to create payment link").
 			WithHint("Unable to create Stripe checkout session").
 			WithReportableDetails(map[string]interface{}{
@@ -474,29 +424,6 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 				"error":      err.Error(),
 			}).
 			Mark(ierr.ErrSystem)
-	}
-
-	// Update payment record with Stripe session information
-	payment.Metadata["stripe_session_id"] = session.ID
-	payment.Metadata["stripe_customer_id"] = stripeCustomerID
-	payment.Metadata["payment_url"] = session.URL
-
-	// Update payment with gateway information
-	paymentGateway := "stripe"
-	gatewayPaymentID := session.ID
-
-	_, err = paymentService.UpdatePayment(ctx, payment.ID, dto.UpdatePaymentRequest{
-		PaymentGateway:   &paymentGateway,
-		GatewayPaymentID: &gatewayPaymentID,
-		Metadata:         &payment.Metadata,
-	})
-	if err != nil {
-		s.Logger.Errorw("failed to update payment record with Stripe session info",
-			"error", err,
-			"payment_id", payment.ID,
-			"session_id", session.ID)
-		// Don't fail the entire request if metadata update fails
-		// The payment record exists and Stripe session was created
 	}
 
 	response := &dto.StripePaymentLinkResponse{
@@ -512,12 +439,7 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 		Currency:  req.Currency,
 		Status:    string(session.Status),
 		CreatedAt: session.Created,
-		PaymentID: func() string {
-			if payment != nil {
-				return payment.ID
-			}
-			return ""
-		}(),
+		PaymentID: "", // Payment ID will be set by the calling code
 	}
 
 	s.Logger.Infow("successfully created stripe payment link",
@@ -745,6 +667,7 @@ func (s *StripeService) GetPaymentStatus(ctx context.Context, sessionID string, 
 	var paymentStatus string
 	var amount decimal.Decimal
 	var currency string
+	var paymentMethodID string
 
 	// First try to get data from payment intent
 	if session.PaymentIntent != nil {
@@ -755,6 +678,22 @@ func (s *StripeService) GetPaymentStatus(ctx context.Context, sessionID string, 
 		}
 		if session.PaymentIntent.Currency != "" {
 			currency = string(session.PaymentIntent.Currency)
+		}
+
+		// Get payment method ID from payment intent
+		if paymentIntentID != "" {
+			paymentIntent, err := stripeClient.PaymentIntents.Get(paymentIntentID, nil)
+			if err != nil {
+				s.Logger.Warnw("failed to get payment intent details",
+					"error", err,
+					"payment_intent_id", paymentIntentID)
+				// Don't fail the entire request if we can't get payment intent details
+			} else {
+				// Get the payment method ID from the payment intent
+				if paymentIntent.PaymentMethod != nil {
+					paymentMethodID = paymentIntent.PaymentMethod.ID
+				}
+			}
 		}
 	}
 
@@ -806,6 +745,7 @@ func (s *StripeService) GetPaymentStatus(ctx context.Context, sessionID string, 
 	return &dto.PaymentStatusResponse{
 		SessionID:       session.ID,
 		PaymentIntentID: paymentIntentID,
+		PaymentMethodID: paymentMethodID,
 		Status:          paymentStatus,
 		Amount:          amount,
 		Currency:        currency,
@@ -818,5 +758,111 @@ func (s *StripeService) GetPaymentStatus(ctx context.Context, sessionID string, 
 		CreatedAt: session.Created,
 		ExpiresAt: session.ExpiresAt,
 		Metadata:  session.Metadata,
+	}, nil
+}
+
+// GetPaymentStatusByPaymentIntent gets payment status directly from a payment intent ID
+func (s *StripeService) GetPaymentStatusByPaymentIntent(ctx context.Context, paymentIntentID string, environmentID string) (*dto.PaymentStatusResponse, error) {
+	// Get Stripe connection for this environment
+	conn, err := s.ConnectionRepo.GetByEnvironmentAndProvider(ctx, environmentID, types.SecretProviderStripe)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe connection").
+			WithHint("Stripe connection not configured for this environment").
+			WithReportableDetails(map[string]interface{}{
+				"environment_id": environmentID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Get Stripe configuration
+	stripeConfig, err := s.GetDecryptedStripeConfig(conn)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe configuration").
+			WithHint("Invalid Stripe configuration").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Initialize Stripe client
+	stripeClient := &client.API{}
+	stripeClient.Init(stripeConfig.SecretKey, nil)
+
+	// Get the payment intent with expanded fields
+	params := &stripe.PaymentIntentParams{
+		Expand: []*string{
+			stripe.String("payment_method"),
+			stripe.String("customer"),
+		},
+	}
+	paymentIntent, err := stripeClient.PaymentIntents.Get(paymentIntentID, params)
+	if err != nil {
+		s.Logger.Errorw("failed to get Stripe payment intent",
+			"error", err,
+			"payment_intent_id", paymentIntentID)
+		return nil, ierr.NewError("failed to get payment status").
+			WithHint("Unable to retrieve Stripe payment intent").
+			WithReportableDetails(map[string]interface{}{
+				"payment_intent_id": paymentIntentID,
+				"error":             err.Error(),
+			}).
+			Mark(ierr.ErrSystem)
+	}
+
+	// Log payment intent details for debugging
+	s.Logger.Debugw("retrieved Stripe payment intent",
+		"payment_intent_id", paymentIntent.ID,
+		"status", paymentIntent.Status,
+		"has_payment_method", paymentIntent.PaymentMethod != nil,
+		"has_customer", paymentIntent.Customer != nil,
+	)
+
+	// Extract payment method ID
+	var paymentMethodID string
+	if paymentIntent.PaymentMethod != nil {
+		paymentMethodID = paymentIntent.PaymentMethod.ID
+	}
+
+	// Convert amount from cents to decimal
+	var amount decimal.Decimal
+	if paymentIntent.Amount > 0 {
+		amount = decimal.NewFromInt(paymentIntent.Amount).Div(decimal.NewFromInt(100))
+	}
+
+	// Get currency
+	currency := string(paymentIntent.Currency)
+	if currency == "" {
+		currency = "usd" // Default to USD
+	}
+
+	// Log extracted values for debugging
+	s.Logger.Debugw("extracted payment intent status values",
+		"payment_intent_id", paymentIntent.ID,
+		"status", string(paymentIntent.Status),
+		"amount", amount.String(),
+		"currency", currency,
+		"payment_method_id", paymentMethodID,
+		"customer_id", func() string {
+			if paymentIntent.Customer != nil {
+				return paymentIntent.Customer.ID
+			}
+			return ""
+		}(),
+	)
+
+	return &dto.PaymentStatusResponse{
+		SessionID:       "", // No session ID for direct payment intent
+		PaymentIntentID: paymentIntent.ID,
+		PaymentMethodID: paymentMethodID,
+		Status:          string(paymentIntent.Status),
+		Amount:          amount,
+		Currency:        currency,
+		CustomerID: func() string {
+			if paymentIntent.Customer != nil {
+				return paymentIntent.Customer.ID
+			}
+			return ""
+		}(),
+		CreatedAt: paymentIntent.Created,
+		ExpiresAt: 0, // Payment intents don't have expires_at
+		Metadata:  paymentIntent.Metadata,
 	}, nil
 }

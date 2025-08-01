@@ -9,6 +9,7 @@ import (
 type PaymentStatus string
 
 const (
+	PaymentStatusInitiated         PaymentStatus = "INITIATED"
 	PaymentStatusPending           PaymentStatus = "PENDING"
 	PaymentStatusProcessing        PaymentStatus = "PROCESSING"
 	PaymentStatusSucceeded         PaymentStatus = "SUCCEEDED"
@@ -23,6 +24,7 @@ func (s PaymentStatus) String() string {
 
 func (s PaymentStatus) Validate() error {
 	allowed := []PaymentStatus{
+		PaymentStatusInitiated,
 		PaymentStatusPending,
 		PaymentStatusProcessing,
 		PaymentStatusSucceeded,

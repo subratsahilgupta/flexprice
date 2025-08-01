@@ -836,6 +836,8 @@ var (
 		{Name: "payment_method_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "payment_gateway", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "gateway_payment_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "gateway_tracking_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "gateway_metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
 		{Name: "payment_status", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -856,12 +858,12 @@ var (
 			{
 				Name:    "idx_tenant_destination_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[9], PaymentsColumns[10], PaymentsColumns[17], PaymentsColumns[2]},
+				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[9], PaymentsColumns[10], PaymentsColumns[19], PaymentsColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_payment_method_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[11], PaymentsColumns[12], PaymentsColumns[17], PaymentsColumns[2]},
+				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[11], PaymentsColumns[12], PaymentsColumns[19], PaymentsColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_gateway_payment",
