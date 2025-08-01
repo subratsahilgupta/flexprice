@@ -2,6 +2,8 @@ package ent
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/priceunit"
@@ -32,6 +34,37 @@ func NewPriceUnitRepository(client postgres.IClient, log *logger.Logger, cache c
 func (r *priceUnitRepository) Create(ctx context.Context, unit *domainPriceUnit.PriceUnit) error {
 	client := r.client.Querier(ctx)
 
+	// Get tenant and environment from context
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	// Validate tenant isolation
+	if unit.TenantID != tenantID {
+		return ierr.WithError(errors.New("price unit tenant ID does not match context tenant ID")).
+			WithHint("Cannot create price unit for different tenant").
+			WithReportableDetails(map[string]any{
+				"expected_tenant_id": tenantID,
+				"actual_tenant_id":   unit.TenantID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Set environment ID from context if not already set
+	if unit.EnvironmentID == "" {
+		unit.EnvironmentID = environmentID
+	}
+
+	// Validate environment isolation
+	if unit.EnvironmentID != environmentID {
+		return ierr.WithError(errors.New("price unit environment ID does not match context environment ID")).
+			WithHint("Cannot create price unit for different environment").
+			WithReportableDetails(map[string]any{
+				"expected_environment_id": environmentID,
+				"actual_environment_id":   unit.EnvironmentID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	_, err := client.PriceUnit.Create().
 		SetID(unit.ID).
 		SetName(unit.Name).
@@ -41,8 +74,8 @@ func (r *priceUnitRepository) Create(ctx context.Context, unit *domainPriceUnit.
 		SetConversionRate(unit.ConversionRate).
 		SetPrecision(unit.Precision).
 		SetStatus(string(types.StatusPublished)). // Set default status to published
-		SetTenantID(unit.TenantID).
-		SetEnvironmentID(unit.EnvironmentID).
+		SetTenantID(tenantID).                    // Always use context tenant ID
+		SetEnvironmentID(environmentID).          // Always use context environment ID
 		SetCreatedAt(unit.CreatedAt).
 		SetUpdatedAt(unit.UpdatedAt).
 		Save(ctx)
@@ -68,7 +101,14 @@ func (r *priceUnitRepository) Create(ctx context.Context, unit *domainPriceUnit.
 func (r *priceUnitRepository) GetByID(ctx context.Context, id string) (*domainPriceUnit.PriceUnit, error) {
 	client := r.client.Querier(ctx)
 
-	unit, err := client.PriceUnit.Get(ctx, id)
+	unit, err := client.PriceUnit.Query().
+		Where(
+			priceunit.ID(id),
+			priceunit.TenantID(types.GetTenantID(ctx)),
+			priceunit.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
+		Only(ctx)
+
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil, ierr.WithError(err).
@@ -86,18 +126,17 @@ func (r *priceUnitRepository) GetByID(ctx context.Context, id string) (*domainPr
 func (r *priceUnitRepository) List(ctx context.Context, filter *domainPriceUnit.PriceUnitFilter) ([]*domainPriceUnit.PriceUnit, error) {
 	client := r.client.Querier(ctx)
 
-	query := client.PriceUnit.Query()
+	query := client.PriceUnit.Query().
+		Where(
+			priceunit.TenantID(types.GetTenantID(ctx)),
+			priceunit.EnvironmentID(types.GetEnvironmentID(ctx)),
+		)
 
 	if filter.Status != "" {
 		query = query.Where(priceunit.StatusEQ(string(filter.Status)))
-	}
-
-	if filter.TenantID != "" {
-		query = query.Where(priceunit.TenantIDEQ(filter.TenantID))
-	}
-
-	if filter.EnvironmentID != "" {
-		query = query.Where(priceunit.EnvironmentIDEQ(filter.EnvironmentID))
+	} else {
+		// By default, exclude archived items
+		query = query.Where(priceunit.StatusNEQ(string(types.StatusArchived)))
 	}
 
 	// Apply pagination
@@ -161,18 +200,17 @@ func (r *priceUnitRepository) List(ctx context.Context, filter *domainPriceUnit.
 func (r *priceUnitRepository) Count(ctx context.Context, filter *domainPriceUnit.PriceUnitFilter) (int, error) {
 	client := r.client.Querier(ctx)
 
-	query := client.PriceUnit.Query()
+	query := client.PriceUnit.Query().
+		Where(
+			priceunit.TenantID(types.GetTenantID(ctx)),
+			priceunit.EnvironmentID(types.GetEnvironmentID(ctx)),
+		)
 
 	if filter.Status != "" {
 		query = query.Where(priceunit.StatusEQ(string(filter.Status)))
-	}
-
-	if filter.TenantID != "" {
-		query = query.Where(priceunit.TenantIDEQ(filter.TenantID))
-	}
-
-	if filter.EnvironmentID != "" {
-		query = query.Where(priceunit.EnvironmentIDEQ(filter.EnvironmentID))
+	} else {
+		// By default, exclude archived items
+		query = query.Where(priceunit.StatusNEQ(string(types.StatusArchived)))
 	}
 
 	count, err := query.Count(ctx)
@@ -188,7 +226,12 @@ func (r *priceUnitRepository) Count(ctx context.Context, filter *domainPriceUnit
 func (r *priceUnitRepository) Update(ctx context.Context, unit *domainPriceUnit.PriceUnit) error {
 	client := r.client.Querier(ctx)
 
-	_, err := client.PriceUnit.UpdateOneID(unit.ID).
+	_, err := client.PriceUnit.Update().
+		Where(
+			priceunit.ID(unit.ID),
+			priceunit.TenantID(types.GetTenantID(ctx)),
+			priceunit.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
 		SetName(unit.Name).
 		SetSymbol(unit.Symbol).
 		SetPrecision(unit.Precision).
@@ -214,7 +257,17 @@ func (r *priceUnitRepository) Update(ctx context.Context, unit *domainPriceUnit.
 func (r *priceUnitRepository) Delete(ctx context.Context, id string) error {
 	client := r.client.Querier(ctx)
 
-	err := client.PriceUnit.DeleteOneID(id).Exec(ctx)
+	_, err := client.PriceUnit.Update().
+		Where(
+			priceunit.ID(id),
+			priceunit.TenantID(types.GetTenantID(ctx)),
+			priceunit.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
+		SetStatus(string(types.StatusArchived)).
+		SetUpdatedAt(time.Now().UTC()).
+		SetUpdatedBy(types.GetUserID(ctx)).
+		Save(ctx)
+
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return ierr.WithError(err).
@@ -229,14 +282,36 @@ func (r *priceUnitRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *priceUnitRepository) GetByCode(ctx context.Context, code, tenantID, environmentID string, status string) (*domainPriceUnit.PriceUnit, error) {
+func (r *priceUnitRepository) GetByCode(ctx context.Context, code string, tenantID string, environmentID string, status string) (*domainPriceUnit.PriceUnit, error) {
 	client := r.client.Querier(ctx)
+
+	// Validate tenant isolation
+	if tenantID != types.GetTenantID(ctx) {
+		return nil, ierr.WithError(errors.New("tenant ID does not match context tenant ID")).
+			WithHint("Cannot access price unit from different tenant").
+			WithReportableDetails(map[string]any{
+				"expected_tenant_id": types.GetTenantID(ctx),
+				"actual_tenant_id":   tenantID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate environment isolation
+	if environmentID != types.GetEnvironmentID(ctx) {
+		return nil, ierr.WithError(errors.New("environment ID does not match context environment ID")).
+			WithHint("Cannot access price unit from different environment").
+			WithReportableDetails(map[string]any{
+				"expected_environment_id": types.GetEnvironmentID(ctx),
+				"actual_environment_id":   environmentID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
 
 	q := client.PriceUnit.Query().
 		Where(
 			priceunit.CodeEQ(code),
-			priceunit.TenantIDEQ(tenantID),
-			priceunit.EnvironmentIDEQ(environmentID),
+			priceunit.TenantID(types.GetTenantID(ctx)),
+			priceunit.EnvironmentID(types.GetEnvironmentID(ctx)),
 		)
 	if status != "" {
 		q = q.Where(priceunit.StatusEQ(status))
@@ -255,7 +330,7 @@ func (r *priceUnitRepository) GetByCode(ctx context.Context, code, tenantID, env
 	return domainPriceUnit.FromEnt(unit), nil
 }
 
-func (r *priceUnitRepository) ConvertToBaseCurrency(ctx context.Context, code, tenantID, environmentID string, priceUnitAmount decimal.Decimal) (decimal.Decimal, error) {
+func (r *priceUnitRepository) ConvertToBaseCurrency(ctx context.Context, code string, tenantID string, environmentID string, priceUnitAmount decimal.Decimal) (decimal.Decimal, error) {
 	unit, err := r.GetByCode(ctx, code, tenantID, environmentID, string(types.StatusPublished))
 	if err != nil {
 		return decimal.Zero, err
@@ -264,7 +339,7 @@ func (r *priceUnitRepository) ConvertToBaseCurrency(ctx context.Context, code, t
 	return priceUnitAmount.Mul(unit.ConversionRate), nil
 }
 
-func (r *priceUnitRepository) ConvertToPriceUnit(ctx context.Context, code, tenantID, environmentID string, fiatAmount decimal.Decimal) (decimal.Decimal, error) {
+func (r *priceUnitRepository) ConvertToPriceUnit(ctx context.Context, code string, tenantID string, environmentID string, fiatAmount decimal.Decimal) (decimal.Decimal, error) {
 	unit, err := r.GetByCode(ctx, code, tenantID, environmentID, string(types.StatusPublished))
 	if err != nil {
 		return decimal.Zero, err
