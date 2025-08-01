@@ -451,11 +451,9 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 		response.Schedule = schedule
 	}
 
-	// Get coupon associations for this subscription
 	couponService := NewCouponService(s.ServiceParams)
 	couponAssociations, err := couponService.GetCouponAssociationsBySubscription(ctx, id)
 	if err != nil {
-		// Log the error but don't fail the entire request
 		s.Logger.Errorw("failed to get coupon associations for subscription",
 			"subscription_id", id,
 			"error", err)

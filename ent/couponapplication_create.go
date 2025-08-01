@@ -127,6 +127,14 @@ func (cac *CouponApplicationCreate) SetCouponAssociationID(s string) *CouponAppl
 	return cac
 }
 
+// SetNillableCouponAssociationID sets the "coupon_association_id" field if the given value is not nil.
+func (cac *CouponApplicationCreate) SetNillableCouponAssociationID(s *string) *CouponApplicationCreate {
+	if s != nil {
+		cac.SetCouponAssociationID(*s)
+	}
+	return cac
+}
+
 // SetInvoiceID sets the "invoice_id" field.
 func (cac *CouponApplicationCreate) SetInvoiceID(s string) *CouponApplicationCreate {
 	cac.mutation.SetInvoiceID(s)
@@ -236,9 +244,19 @@ func (cac *CouponApplicationCreate) SetCoupon(c *Coupon) *CouponApplicationCreat
 	return cac.SetCouponID(c.ID)
 }
 
-// SetCouponAssociation sets the "coupon_association" edge to the CouponAssociation entity.
-func (cac *CouponApplicationCreate) SetCouponAssociation(c *CouponAssociation) *CouponApplicationCreate {
-	return cac.SetCouponAssociationID(c.ID)
+// AddCouponAssociationIDs adds the "coupon_association" edge to the CouponAssociation entity by IDs.
+func (cac *CouponApplicationCreate) AddCouponAssociationIDs(ids ...string) *CouponApplicationCreate {
+	cac.mutation.AddCouponAssociationIDs(ids...)
+	return cac
+}
+
+// AddCouponAssociation adds the "coupon_association" edges to the CouponAssociation entity.
+func (cac *CouponApplicationCreate) AddCouponAssociation(c ...*CouponAssociation) *CouponApplicationCreate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return cac.AddCouponAssociationIDs(ids...)
 }
 
 // SetInvoice sets the "invoice" edge to the Invoice entity.
@@ -335,14 +353,6 @@ func (cac *CouponApplicationCreate) check() error {
 			return &ValidationError{Name: "coupon_id", err: fmt.Errorf(`ent: validator failed for field "CouponApplication.coupon_id": %w`, err)}
 		}
 	}
-	if _, ok := cac.mutation.CouponAssociationID(); !ok {
-		return &ValidationError{Name: "coupon_association_id", err: errors.New(`ent: missing required field "CouponApplication.coupon_association_id"`)}
-	}
-	if v, ok := cac.mutation.CouponAssociationID(); ok {
-		if err := couponapplication.CouponAssociationIDValidator(v); err != nil {
-			return &ValidationError{Name: "coupon_association_id", err: fmt.Errorf(`ent: validator failed for field "CouponApplication.coupon_association_id": %w`, err)}
-		}
-	}
 	if _, ok := cac.mutation.InvoiceID(); !ok {
 		return &ValidationError{Name: "invoice_id", err: errors.New(`ent: missing required field "CouponApplication.invoice_id"`)}
 	}
@@ -373,9 +383,6 @@ func (cac *CouponApplicationCreate) check() error {
 	}
 	if len(cac.mutation.CouponIDs()) == 0 {
 		return &ValidationError{Name: "coupon", err: errors.New(`ent: missing required edge "CouponApplication.coupon"`)}
-	}
-	if len(cac.mutation.CouponAssociationIDs()) == 0 {
-		return &ValidationError{Name: "coupon_association", err: errors.New(`ent: missing required edge "CouponApplication.coupon_association"`)}
 	}
 	if len(cac.mutation.InvoiceIDs()) == 0 {
 		return &ValidationError{Name: "invoice", err: errors.New(`ent: missing required edge "CouponApplication.invoice"`)}
@@ -443,6 +450,10 @@ func (cac *CouponApplicationCreate) createSpec() (*CouponApplication, *sqlgraph.
 		_spec.SetField(couponapplication.FieldEnvironmentID, field.TypeString, value)
 		_node.EnvironmentID = value
 	}
+	if value, ok := cac.mutation.CouponAssociationID(); ok {
+		_spec.SetField(couponapplication.FieldCouponAssociationID, field.TypeString, value)
+		_node.CouponAssociationID = &value
+	}
 	if value, ok := cac.mutation.AppliedAt(); ok {
 		_spec.SetField(couponapplication.FieldAppliedAt, field.TypeTime, value)
 		_node.AppliedAt = value
@@ -498,10 +509,10 @@ func (cac *CouponApplicationCreate) createSpec() (*CouponApplication, *sqlgraph.
 	}
 	if nodes := cac.mutation.CouponAssociationIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
+			Rel:     sqlgraph.M2M,
 			Inverse: true,
 			Table:   couponapplication.CouponAssociationTable,
-			Columns: []string{couponapplication.CouponAssociationColumn},
+			Columns: couponapplication.CouponAssociationPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
@@ -510,7 +521,6 @@ func (cac *CouponApplicationCreate) createSpec() (*CouponApplication, *sqlgraph.
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
-		_node.CouponAssociationID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := cac.mutation.InvoiceIDs(); len(nodes) > 0 {

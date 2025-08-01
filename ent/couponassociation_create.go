@@ -396,10 +396,10 @@ func (cac *CouponAssociationCreate) createSpec() (*CouponAssociation, *sqlgraph.
 	}
 	if nodes := cac.mutation.CouponApplicationsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
+			Rel:     sqlgraph.M2M,
 			Inverse: false,
 			Table:   couponassociation.CouponApplicationsTable,
-			Columns: []string{couponassociation.CouponApplicationsColumn},
+			Columns: couponassociation.CouponApplicationsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),

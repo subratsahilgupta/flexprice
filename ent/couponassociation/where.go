@@ -839,7 +839,7 @@ func HasCouponApplications() predicate.CouponAssociation {
 	return predicate.CouponAssociation(func(s *sql.Selector) {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, CouponApplicationsTable, CouponApplicationsColumn),
+			sqlgraph.Edge(sqlgraph.M2M, false, CouponApplicationsTable, CouponApplicationsPrimaryKey...),
 		)
 		sqlgraph.HasNeighbors(s, step)
 	})

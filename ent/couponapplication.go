@@ -12,7 +12,6 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/coupon"
 	"github.com/flexprice/flexprice/ent/couponapplication"
-	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/shopspring/decimal"
@@ -40,7 +39,7 @@ type CouponApplication struct {
 	// CouponID holds the value of the "coupon_id" field.
 	CouponID string `json:"coupon_id,omitempty"`
 	// CouponAssociationID holds the value of the "coupon_association_id" field.
-	CouponAssociationID string `json:"coupon_association_id,omitempty"`
+	CouponAssociationID *string `json:"coupon_association_id,omitempty"`
 	// InvoiceID holds the value of the "invoice_id" field.
 	InvoiceID string `json:"invoice_id,omitempty"`
 	// InvoiceLineItemID holds the value of the "invoice_line_item_id" field.
@@ -74,7 +73,7 @@ type CouponApplicationEdges struct {
 	// Coupon holds the value of the coupon edge.
 	Coupon *Coupon `json:"coupon,omitempty"`
 	// CouponAssociation holds the value of the coupon_association edge.
-	CouponAssociation *CouponAssociation `json:"coupon_association,omitempty"`
+	CouponAssociation []*CouponAssociation `json:"coupon_association,omitempty"`
 	// Invoice holds the value of the invoice edge.
 	Invoice *Invoice `json:"invoice,omitempty"`
 	// InvoiceLineItem holds the value of the invoice_line_item edge.
@@ -96,12 +95,10 @@ func (e CouponApplicationEdges) CouponOrErr() (*Coupon, error) {
 }
 
 // CouponAssociationOrErr returns the CouponAssociation value or an error if the edge
-// was not loaded in eager-loading, or loaded but was not found.
-func (e CouponApplicationEdges) CouponAssociationOrErr() (*CouponAssociation, error) {
-	if e.CouponAssociation != nil {
+// was not loaded in eager-loading.
+func (e CouponApplicationEdges) CouponAssociationOrErr() ([]*CouponAssociation, error) {
+	if e.loadedTypes[1] {
 		return e.CouponAssociation, nil
-	} else if e.loadedTypes[1] {
-		return nil, &NotFoundError{label: couponassociation.Label}
 	}
 	return nil, &NotLoadedError{edge: "coupon_association"}
 }
@@ -216,7 +213,8 @@ func (ca *CouponApplication) assignValues(columns []string, values []any) error 
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field coupon_association_id", values[i])
 			} else if value.Valid {
-				ca.CouponAssociationID = value.String
+				ca.CouponAssociationID = new(string)
+				*ca.CouponAssociationID = value.String
 			}
 		case couponapplication.FieldInvoiceID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -371,8 +369,10 @@ func (ca *CouponApplication) String() string {
 	builder.WriteString("coupon_id=")
 	builder.WriteString(ca.CouponID)
 	builder.WriteString(", ")
-	builder.WriteString("coupon_association_id=")
-	builder.WriteString(ca.CouponAssociationID)
+	if v := ca.CouponAssociationID; v != nil {
+		builder.WriteString("coupon_association_id=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("invoice_id=")
 	builder.WriteString(ca.InvoiceID)

@@ -71,13 +71,11 @@ const (
 	CouponInverseTable = "coupons"
 	// CouponColumn is the table column denoting the coupon relation/edge.
 	CouponColumn = "coupon_id"
-	// CouponAssociationTable is the table that holds the coupon_association relation/edge.
-	CouponAssociationTable = "coupon_applications"
+	// CouponAssociationTable is the table that holds the coupon_association relation/edge. The primary key declared below.
+	CouponAssociationTable = "coupon_association_coupon_applications"
 	// CouponAssociationInverseTable is the table name for the CouponAssociation entity.
 	// It exists in this package in order to avoid circular dependency with the "couponassociation" package.
 	CouponAssociationInverseTable = "coupon_associations"
-	// CouponAssociationColumn is the table column denoting the coupon_association relation/edge.
-	CouponAssociationColumn = "coupon_association_id"
 	// InvoiceTable is the table that holds the invoice relation/edge.
 	InvoiceTable = "coupon_applications"
 	// InvoiceInverseTable is the table name for the Invoice entity.
@@ -119,6 +117,12 @@ var Columns = []string{
 	FieldMetadata,
 }
 
+var (
+	// CouponAssociationPrimaryKey and CouponAssociationColumn2 are the table columns denoting the
+	// primary key for the coupon_association relation (M2M).
+	CouponAssociationPrimaryKey = []string{"coupon_association_id", "coupon_application_id"}
+)
+
 // ValidColumn reports if the column name is valid (part of the table columns).
 func ValidColumn(column string) bool {
 	for i := range Columns {
@@ -144,8 +148,6 @@ var (
 	DefaultEnvironmentID string
 	// CouponIDValidator is a validator for the "coupon_id" field. It is called by the builders before save.
 	CouponIDValidator func(string) error
-	// CouponAssociationIDValidator is a validator for the "coupon_association_id" field. It is called by the builders before save.
-	CouponAssociationIDValidator func(string) error
 	// InvoiceIDValidator is a validator for the "invoice_id" field. It is called by the builders before save.
 	InvoiceIDValidator func(string) error
 	// DefaultAppliedAt holds the default value on creation for the "applied_at" field.
@@ -259,10 +261,17 @@ func ByCouponField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
-// ByCouponAssociationField orders the results by coupon_association field.
-func ByCouponAssociationField(field string, opts ...sql.OrderTermOption) OrderOption {
+// ByCouponAssociationCount orders the results by coupon_association count.
+func ByCouponAssociationCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newCouponAssociationStep(), sql.OrderByField(field, opts...))
+		sqlgraph.OrderByNeighborsCount(s, newCouponAssociationStep(), opts...)
+	}
+}
+
+// ByCouponAssociation orders the results by coupon_association terms.
+func ByCouponAssociation(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCouponAssociationStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
 
@@ -290,7 +299,7 @@ func newCouponAssociationStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(CouponAssociationInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, CouponAssociationTable, CouponAssociationColumn),
+		sqlgraph.Edge(sqlgraph.M2M, true, CouponAssociationTable, CouponAssociationPrimaryKey...),
 	)
 }
 func newInvoiceStep() *sqlgraph.Step {

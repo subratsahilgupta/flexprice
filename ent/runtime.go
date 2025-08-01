@@ -222,10 +222,6 @@ func init() {
 	couponapplicationDescCouponID := couponapplicationFields[1].Descriptor()
 	// couponapplication.CouponIDValidator is a validator for the "coupon_id" field. It is called by the builders before save.
 	couponapplication.CouponIDValidator = couponapplicationDescCouponID.Validators[0].(func(string) error)
-	// couponapplicationDescCouponAssociationID is the schema descriptor for coupon_association_id field.
-	couponapplicationDescCouponAssociationID := couponapplicationFields[2].Descriptor()
-	// couponapplication.CouponAssociationIDValidator is a validator for the "coupon_association_id" field. It is called by the builders before save.
-	couponapplication.CouponAssociationIDValidator = couponapplicationDescCouponAssociationID.Validators[0].(func(string) error)
 	// couponapplicationDescInvoiceID is the schema descriptor for invoice_id field.
 	couponapplicationDescInvoiceID := couponapplicationFields[3].Descriptor()
 	// couponapplication.InvoiceIDValidator is a validator for the "invoice_id" field. It is called by the builders before save.

@@ -43,7 +43,8 @@ func (CouponApplication) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			NotEmpty().
+			Optional().
+			Nillable().
 			Immutable(),
 		field.String("invoice_id").
 			SchemaType(map[string]string{
@@ -110,11 +111,7 @@ func (CouponApplication) Edges() []ent.Edge {
 			Immutable().
 			Required(),
 		edge.From("coupon_association", CouponAssociation.Type).
-			Ref("coupon_applications").
-			Field("coupon_association_id").
-			Unique().
-			Immutable().
-			Required(),
+			Ref("coupon_applications"),
 		edge.From("invoice", Invoice.Type).
 			Ref("coupon_applications").
 			Field("invoice_id").

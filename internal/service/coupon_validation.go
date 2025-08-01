@@ -30,6 +30,9 @@ type CouponValidationService interface {
 
 	// Validate coupon redemption increment when coupon is associated with subscription
 	ValidateCouponRedemptionIncrement(ctx context.Context, couponID string) error
+
+	// Basic coupon validation (status, existence, etc.)
+	ValidateCouponBasic(coupon *coupon.Coupon) error
 }
 
 // couponValidationService implements CouponValidationService

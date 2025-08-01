@@ -11,7 +11,7 @@ import (
 // CreateCouponAssociationRequest represents the request to create a new coupon association
 type CreateCouponAssociationRequest struct {
 	CouponID               string            `json:"coupon_id" validate:"required"`
-	SubscriptionID         *string           `json:"subscription_id" validate:"required"`
+	SubscriptionID         string            `json:"subscription_id" validate:"required"`
 	SubscriptionLineItemID *string           `json:"subscription_line_item_id,omitempty"`
 	Metadata               map[string]string `json:"metadata,omitempty"`
 }
@@ -29,12 +29,6 @@ func (r *CreateCouponAssociationRequest) Validate() error {
 	if r.CouponID == "" {
 		return ierr.NewError("coupon_id is required").
 			WithHint("Please provide a valid coupon ID").
-			Mark(ierr.ErrValidation)
-	}
-
-	if r.SubscriptionID == nil {
-		return ierr.NewError("subscription_id is required").
-			WithHint("Please provide a valid subscription ID").
 			Mark(ierr.ErrValidation)
 	}
 

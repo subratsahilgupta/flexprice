@@ -1205,7 +1205,7 @@ func (c *CouponApplicationClient) QueryCouponAssociation(ca *CouponApplication) 
 		step := sqlgraph.NewStep(
 			sqlgraph.From(couponapplication.Table, couponapplication.FieldID, id),
 			sqlgraph.To(couponassociation.Table, couponassociation.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, couponapplication.CouponAssociationTable, couponapplication.CouponAssociationColumn),
+			sqlgraph.Edge(sqlgraph.M2M, true, couponapplication.CouponAssociationTable, couponapplication.CouponAssociationPrimaryKey...),
 		)
 		fromV = sqlgraph.Neighbors(ca.driver.Dialect(), step)
 		return fromV, nil
@@ -1434,7 +1434,7 @@ func (c *CouponAssociationClient) QueryCouponApplications(ca *CouponAssociation)
 		step := sqlgraph.NewStep(
 			sqlgraph.From(couponassociation.Table, couponassociation.FieldID, id),
 			sqlgraph.To(couponapplication.Table, couponapplication.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, couponassociation.CouponApplicationsTable, couponassociation.CouponApplicationsColumn),
+			sqlgraph.Edge(sqlgraph.M2M, false, couponassociation.CouponApplicationsTable, couponassociation.CouponApplicationsPrimaryKey...),
 		)
 		fromV = sqlgraph.Neighbors(ca.driver.Dialect(), step)
 		return fromV, nil

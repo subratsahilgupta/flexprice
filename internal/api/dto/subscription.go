@@ -52,8 +52,6 @@ type CreateSubscriptionRequest struct {
 	Phases []SubscriptionSchedulePhaseInput `json:"phases,omitempty" validate:"omitempty,dive"`
 	// SubscriptionCoupons is a list of coupon IDs to be applied to the subscription
 	SubscriptionCoupons []string `json:"subscription_coupons,omitempty"`
-	// SubscriptionLineItemCoupons maps line item IDs to lists of coupon IDs to be applied to specific line items
-	SubscriptionLineItemCoupons map[string][]string `json:"subscription_line_item_coupons,omitempty"`
 }
 
 type UpdateSubscriptionRequest struct {
@@ -258,30 +256,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 						"index": i,
 					}).
 					Mark(ierr.ErrValidation)
-			}
-		}
-	}
-
-	// Validate subscription line item coupons if provided
-	if len(r.SubscriptionLineItemCoupons) > 0 {
-		for lineItemID, couponIDs := range r.SubscriptionLineItemCoupons {
-			if lineItemID == "" {
-				return ierr.NewError("subscription line item ID cannot be empty").
-					WithHint("All subscription line item IDs must be valid").
-					Mark(ierr.ErrValidation)
-			}
-
-			// Validate that coupon IDs are not empty
-			for i, couponID := range couponIDs {
-				if couponID == "" {
-					return ierr.NewError("subscription line item coupon ID cannot be empty").
-						WithHint("All subscription line item coupon IDs must be valid").
-						WithReportableDetails(map[string]interface{}{
-							"line_item_id": lineItemID,
-							"index":        i,
-						}).
-						Mark(ierr.ErrValidation)
-				}
 			}
 		}
 	}

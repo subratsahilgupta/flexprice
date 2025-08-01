@@ -268,10 +268,10 @@ func (cau *CouponAssociationUpdate) sqlSave(ctx context.Context) (n int, err err
 	}
 	if cau.mutation.CouponApplicationsCleared() {
 		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
+			Rel:     sqlgraph.M2M,
 			Inverse: false,
 			Table:   couponassociation.CouponApplicationsTable,
-			Columns: []string{couponassociation.CouponApplicationsColumn},
+			Columns: couponassociation.CouponApplicationsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
@@ -281,10 +281,10 @@ func (cau *CouponAssociationUpdate) sqlSave(ctx context.Context) (n int, err err
 	}
 	if nodes := cau.mutation.RemovedCouponApplicationsIDs(); len(nodes) > 0 && !cau.mutation.CouponApplicationsCleared() {
 		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
+			Rel:     sqlgraph.M2M,
 			Inverse: false,
 			Table:   couponassociation.CouponApplicationsTable,
-			Columns: []string{couponassociation.CouponApplicationsColumn},
+			Columns: couponassociation.CouponApplicationsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
@@ -297,10 +297,10 @@ func (cau *CouponAssociationUpdate) sqlSave(ctx context.Context) (n int, err err
 	}
 	if nodes := cau.mutation.CouponApplicationsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
+			Rel:     sqlgraph.M2M,
 			Inverse: false,
 			Table:   couponassociation.CouponApplicationsTable,
-			Columns: []string{couponassociation.CouponApplicationsColumn},
+			Columns: couponassociation.CouponApplicationsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
@@ -599,10 +599,10 @@ func (cauo *CouponAssociationUpdateOne) sqlSave(ctx context.Context) (_node *Cou
 	}
 	if cauo.mutation.CouponApplicationsCleared() {
 		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
+			Rel:     sqlgraph.M2M,
 			Inverse: false,
 			Table:   couponassociation.CouponApplicationsTable,
-			Columns: []string{couponassociation.CouponApplicationsColumn},
+			Columns: couponassociation.CouponApplicationsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
@@ -612,10 +612,10 @@ func (cauo *CouponAssociationUpdateOne) sqlSave(ctx context.Context) (_node *Cou
 	}
 	if nodes := cauo.mutation.RemovedCouponApplicationsIDs(); len(nodes) > 0 && !cauo.mutation.CouponApplicationsCleared() {
 		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
+			Rel:     sqlgraph.M2M,
 			Inverse: false,
 			Table:   couponassociation.CouponApplicationsTable,
-			Columns: []string{couponassociation.CouponApplicationsColumn},
+			Columns: couponassociation.CouponApplicationsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
@@ -628,10 +628,10 @@ func (cauo *CouponAssociationUpdateOne) sqlSave(ctx context.Context) (_node *Cou
 	}
 	if nodes := cauo.mutation.CouponApplicationsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
+			Rel:     sqlgraph.M2M,
 			Inverse: false,
 			Table:   couponassociation.CouponApplicationsTable,
-			Columns: []string{couponassociation.CouponApplicationsColumn},
+			Columns: couponassociation.CouponApplicationsPrimaryKey,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),

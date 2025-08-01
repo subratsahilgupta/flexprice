@@ -67,13 +67,11 @@ const (
 	SubscriptionLineItemInverseTable = "subscription_line_items"
 	// SubscriptionLineItemColumn is the table column denoting the subscription_line_item relation/edge.
 	SubscriptionLineItemColumn = "subscription_line_item_id"
-	// CouponApplicationsTable is the table that holds the coupon_applications relation/edge.
-	CouponApplicationsTable = "coupon_applications"
+	// CouponApplicationsTable is the table that holds the coupon_applications relation/edge. The primary key declared below.
+	CouponApplicationsTable = "coupon_association_coupon_applications"
 	// CouponApplicationsInverseTable is the table name for the CouponApplication entity.
 	// It exists in this package in order to avoid circular dependency with the "couponapplication" package.
 	CouponApplicationsInverseTable = "coupon_applications"
-	// CouponApplicationsColumn is the table column denoting the coupon_applications relation/edge.
-	CouponApplicationsColumn = "coupon_association_id"
 )
 
 // Columns holds all SQL columns for couponassociation fields.
@@ -91,6 +89,12 @@ var Columns = []string{
 	FieldSubscriptionLineItemID,
 	FieldMetadata,
 }
+
+var (
+	// CouponApplicationsPrimaryKey and CouponApplicationsColumn2 are the table columns denoting the
+	// primary key for the coupon_applications relation (M2M).
+	CouponApplicationsPrimaryKey = []string{"coupon_association_id", "coupon_application_id"}
+)
 
 // ValidColumn reports if the column name is valid (part of the table columns).
 func ValidColumn(column string) bool {
@@ -238,6 +242,6 @@ func newCouponApplicationsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(CouponApplicationsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, CouponApplicationsTable, CouponApplicationsColumn),
+		sqlgraph.Edge(sqlgraph.M2M, false, CouponApplicationsTable, CouponApplicationsPrimaryKey...),
 	)
 }

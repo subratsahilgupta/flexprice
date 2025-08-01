@@ -71,6 +71,9 @@ type CreateInvoiceRequest struct {
 	// line_items contains the individual items that make up this invoice
 	LineItems []CreateInvoiceLineItemRequest `json:"line_items,omitempty"`
 
+	// coupons
+	Coupons []string `json:"coupons,omitempty"`
+
 	// metadata contains additional custom key-value pairs for storing extra information
 	Metadata types.Metadata `json:"metadata,omitempty"`
 
@@ -619,6 +622,15 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 		resp.LineItems = make([]*InvoiceLineItemResponse, len(inv.LineItems))
 		for i, item := range inv.LineItems {
 			resp.LineItems[i] = NewInvoiceLineItemResponse(item)
+		}
+	}
+
+	if inv.CouponApplications != nil {
+		resp.CouponApplications = make([]*CouponApplicationResponse, len(inv.CouponApplications))
+		for i, ca := range inv.CouponApplications {
+			resp.CouponApplications[i] = &CouponApplicationResponse{
+				CouponApplication: ca,
+			}
 		}
 	}
 

@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -102,7 +103,7 @@ func (caq *CouponApplicationQuery) QueryCouponAssociation() *CouponAssociationQu
 		step := sqlgraph.NewStep(
 			sqlgraph.From(couponapplication.Table, couponapplication.FieldID, selector),
 			sqlgraph.To(couponassociation.Table, couponassociation.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, couponapplication.CouponAssociationTable, couponapplication.CouponAssociationColumn),
+			sqlgraph.Edge(sqlgraph.M2M, true, couponapplication.CouponAssociationTable, couponapplication.CouponAssociationPrimaryKey...),
 		)
 		fromU = sqlgraph.SetNeighbors(caq.driver.Dialect(), step)
 		return fromU, nil
@@ -510,8 +511,11 @@ func (caq *CouponApplicationQuery) sqlAll(ctx context.Context, hooks ...queryHoo
 		}
 	}
 	if query := caq.withCouponAssociation; query != nil {
-		if err := caq.loadCouponAssociation(ctx, query, nodes, nil,
-			func(n *CouponApplication, e *CouponAssociation) { n.Edges.CouponAssociation = e }); err != nil {
+		if err := caq.loadCouponAssociation(ctx, query, nodes,
+			func(n *CouponApplication) { n.Edges.CouponAssociation = []*CouponAssociation{} },
+			func(n *CouponApplication, e *CouponAssociation) {
+				n.Edges.CouponAssociation = append(n.Edges.CouponAssociation, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -560,30 +564,62 @@ func (caq *CouponApplicationQuery) loadCoupon(ctx context.Context, query *Coupon
 	return nil
 }
 func (caq *CouponApplicationQuery) loadCouponAssociation(ctx context.Context, query *CouponAssociationQuery, nodes []*CouponApplication, init func(*CouponApplication), assign func(*CouponApplication, *CouponAssociation)) error {
-	ids := make([]string, 0, len(nodes))
-	nodeids := make(map[string][]*CouponApplication)
-	for i := range nodes {
-		fk := nodes[i].CouponAssociationID
-		if _, ok := nodeids[fk]; !ok {
-			ids = append(ids, fk)
+	edgeIDs := make([]driver.Value, len(nodes))
+	byID := make(map[string]*CouponApplication)
+	nids := make(map[string]map[*CouponApplication]struct{})
+	for i, node := range nodes {
+		edgeIDs[i] = node.ID
+		byID[node.ID] = node
+		if init != nil {
+			init(node)
 		}
-		nodeids[fk] = append(nodeids[fk], nodes[i])
 	}
-	if len(ids) == 0 {
-		return nil
+	query.Where(func(s *sql.Selector) {
+		joinT := sql.Table(couponapplication.CouponAssociationTable)
+		s.Join(joinT).On(s.C(couponassociation.FieldID), joinT.C(couponapplication.CouponAssociationPrimaryKey[0]))
+		s.Where(sql.InValues(joinT.C(couponapplication.CouponAssociationPrimaryKey[1]), edgeIDs...))
+		columns := s.SelectedColumns()
+		s.Select(joinT.C(couponapplication.CouponAssociationPrimaryKey[1]))
+		s.AppendSelect(columns...)
+		s.SetDistinct(false)
+	})
+	if err := query.prepareQuery(ctx); err != nil {
+		return err
 	}
-	query.Where(couponassociation.IDIn(ids...))
-	neighbors, err := query.All(ctx)
+	qr := QuerierFunc(func(ctx context.Context, q Query) (Value, error) {
+		return query.sqlAll(ctx, func(_ context.Context, spec *sqlgraph.QuerySpec) {
+			assign := spec.Assign
+			values := spec.ScanValues
+			spec.ScanValues = func(columns []string) ([]any, error) {
+				values, err := values(columns[1:])
+				if err != nil {
+					return nil, err
+				}
+				return append([]any{new(sql.NullString)}, values...), nil
+			}
+			spec.Assign = func(columns []string, values []any) error {
+				outValue := values[0].(*sql.NullString).String
+				inValue := values[1].(*sql.NullString).String
+				if nids[inValue] == nil {
+					nids[inValue] = map[*CouponApplication]struct{}{byID[outValue]: {}}
+					return assign(columns[1:], values[1:])
+				}
+				nids[inValue][byID[outValue]] = struct{}{}
+				return nil
+			}
+		})
+	})
+	neighbors, err := withInterceptors[[]*CouponAssociation](ctx, query, qr, query.inters)
 	if err != nil {
 		return err
 	}
 	for _, n := range neighbors {
-		nodes, ok := nodeids[n.ID]
+		nodes, ok := nids[n.ID]
 		if !ok {
-			return fmt.Errorf(`unexpected foreign-key "coupon_association_id" returned %v`, n.ID)
+			return fmt.Errorf(`unexpected "coupon_association" node returned %v`, n.ID)
 		}
-		for i := range nodes {
-			assign(nodes[i], n)
+		for kn := range nodes {
+			assign(kn, n)
 		}
 	}
 	return nil
@@ -677,9 +713,6 @@ func (caq *CouponApplicationQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if caq.withCoupon != nil {
 			_spec.Node.AddColumnOnce(couponapplication.FieldCouponID)
-		}
-		if caq.withCouponAssociation != nil {
-			_spec.Node.AddColumnOnce(couponapplication.FieldCouponAssociationID)
 		}
 		if caq.withInvoice != nil {
 			_spec.Node.AddColumnOnce(couponapplication.FieldInvoiceID)

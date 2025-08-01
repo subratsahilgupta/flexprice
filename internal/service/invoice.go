@@ -177,16 +177,17 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 			return err
 		}
 
-		// Apply coupons if this is a subscription invoice
-		if req.SubscriptionID != nil {
+		// Apply coupons if this is a subscription invoice or if coupons are provided
+		if req.SubscriptionID != nil || len(req.Coupons) > 0 {
 			s.Logger.Infow("applying coupons to invoice",
 				"invoice_id", inv.ID,
-				"subscription_id", *req.SubscriptionID,
+				"subscription_id", req.SubscriptionID,
 				"customer_id", inv.CustomerID,
 				"period_start", inv.PeriodStart,
 				"period_end", inv.PeriodEnd,
+				"standalone_coupons", len(req.Coupons),
 			)
-			if err := s.handleCouponOverrides(ctx, inv, req); err != nil {
+			if err := s.applyCouponsToInvoice(ctx, inv, req); err != nil {
 				return err
 			}
 		}
@@ -1346,7 +1347,7 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, fina
 }
 
 // handleCouponOverrides handles coupon overrides for an invoice
-func (s *invoiceService) handleCouponOverrides(ctx context.Context, inv *invoice.Invoice, req dto.CreateInvoiceRequest) error {
+func (s *invoiceService) applyCouponsToInvoice(ctx context.Context, inv *invoice.Invoice, req dto.CreateInvoiceRequest) error {
 	// Use coupon service to prepare and apply coupons
 	couponService := NewCouponService(s.ServiceParams)
 
@@ -1382,6 +1383,10 @@ func (s *invoiceService) handleCouponOverrides(ctx context.Context, inv *invoice
 	}
 
 	inv.Total = newTotal
+
+	// Update AmountDue and AmountRemaining to reflect new total
+	inv.AmountDue = newTotal
+	inv.AmountRemaining = newTotal.Sub(inv.AmountPaid)
 
 	// Update the invoice in the database
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {

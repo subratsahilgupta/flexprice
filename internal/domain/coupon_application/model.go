@@ -3,6 +3,7 @@ package coupon_application
 import (
 	"time"
 
+	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -23,13 +24,9 @@ type CouponApplication struct {
 	Currency            string                 `json:"currency" db:"currency"`
 	CouponSnapshot      map[string]interface{} `json:"coupon_snapshot,omitempty" db:"coupon_snapshot"`
 	Metadata            map[string]string      `json:"metadata,omitempty" db:"metadata"`
-	TenantID            string                 `json:"tenant_id" db:"tenant_id"`
-	Status              types.Status           `json:"status" db:"status"`
-	CreatedAt           time.Time              `json:"created_at" db:"created_at"`
-	UpdatedAt           time.Time              `json:"updated_at" db:"updated_at"`
-	CreatedBy           string                 `json:"created_by" db:"created_by"`
-	UpdatedBy           string                 `json:"updated_by" db:"updated_by"`
 	EnvironmentID       string                 `json:"environment_id" db:"environment_id"`
+
+	types.BaseModel
 }
 
 // IsLineItemLevel returns true if the coupon application is applied at invoice line item level
@@ -56,4 +53,46 @@ func (ca *CouponApplication) GetDiscountRate() decimal.Decimal {
 		return ca.GetDiscountPercentage().Div(decimal.NewFromInt(100))
 	}
 	return decimal.Zero
+}
+
+func FromEnt(e *ent.CouponApplication) *CouponApplication {
+	if e == nil {
+		return nil
+	}
+
+	return &CouponApplication{
+		ID:                 e.ID,
+		InvoiceID:          e.InvoiceID,
+		InvoiceLineItemID:  e.InvoiceLineItemID,
+		AppliedAt:          e.AppliedAt,
+		OriginalPrice:      e.OriginalPrice,
+		FinalPrice:         e.FinalPrice,
+		DiscountedAmount:   e.DiscountedAmount,
+		DiscountType:       types.CouponType(e.DiscountType),
+		DiscountPercentage: e.DiscountPercentage,
+		Currency:           *e.Currency,
+		CouponSnapshot:     e.CouponSnapshot,
+		Metadata:           e.Metadata,
+		EnvironmentID:      e.EnvironmentID,
+		BaseModel: types.BaseModel{
+			TenantID:  e.TenantID,
+			Status:    types.Status(e.Status),
+			CreatedBy: e.CreatedBy,
+			UpdatedBy: e.UpdatedBy,
+			CreatedAt: e.CreatedAt,
+			UpdatedAt: e.UpdatedAt,
+		},
+	}
+}
+
+// FromEntList converts a list of ent.Coupon to domain Coupons
+func FromEntList(list []*ent.CouponApplication) []*CouponApplication {
+	if list == nil {
+		return nil
+	}
+	couponApplications := make([]*CouponApplication, len(list))
+	for i, item := range list {
+		couponApplications[i] = FromEnt(item)
+	}
+	return couponApplications
 }

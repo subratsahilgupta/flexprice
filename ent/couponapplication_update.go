@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/couponapplication"
+	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/shopspring/decimal"
@@ -210,6 +211,21 @@ func (cau *CouponApplicationUpdate) ClearMetadata() *CouponApplicationUpdate {
 	return cau
 }
 
+// AddCouponAssociationIDs adds the "coupon_association" edge to the CouponAssociation entity by IDs.
+func (cau *CouponApplicationUpdate) AddCouponAssociationIDs(ids ...string) *CouponApplicationUpdate {
+	cau.mutation.AddCouponAssociationIDs(ids...)
+	return cau
+}
+
+// AddCouponAssociation adds the "coupon_association" edges to the CouponAssociation entity.
+func (cau *CouponApplicationUpdate) AddCouponAssociation(c ...*CouponAssociation) *CouponApplicationUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return cau.AddCouponAssociationIDs(ids...)
+}
+
 // SetInvoiceLineItem sets the "invoice_line_item" edge to the InvoiceLineItem entity.
 func (cau *CouponApplicationUpdate) SetInvoiceLineItem(i *InvoiceLineItem) *CouponApplicationUpdate {
 	return cau.SetInvoiceLineItemID(i.ID)
@@ -218,6 +234,27 @@ func (cau *CouponApplicationUpdate) SetInvoiceLineItem(i *InvoiceLineItem) *Coup
 // Mutation returns the CouponApplicationMutation object of the builder.
 func (cau *CouponApplicationUpdate) Mutation() *CouponApplicationMutation {
 	return cau.mutation
+}
+
+// ClearCouponAssociation clears all "coupon_association" edges to the CouponAssociation entity.
+func (cau *CouponApplicationUpdate) ClearCouponAssociation() *CouponApplicationUpdate {
+	cau.mutation.ClearCouponAssociation()
+	return cau
+}
+
+// RemoveCouponAssociationIDs removes the "coupon_association" edge to CouponAssociation entities by IDs.
+func (cau *CouponApplicationUpdate) RemoveCouponAssociationIDs(ids ...string) *CouponApplicationUpdate {
+	cau.mutation.RemoveCouponAssociationIDs(ids...)
+	return cau
+}
+
+// RemoveCouponAssociation removes "coupon_association" edges to CouponAssociation entities.
+func (cau *CouponApplicationUpdate) RemoveCouponAssociation(c ...*CouponAssociation) *CouponApplicationUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return cau.RemoveCouponAssociationIDs(ids...)
 }
 
 // ClearInvoiceLineItem clears the "invoice_line_item" edge to the InvoiceLineItem entity.
@@ -272,9 +309,6 @@ func (cau *CouponApplicationUpdate) check() error {
 	if cau.mutation.CouponCleared() && len(cau.mutation.CouponIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "CouponApplication.coupon"`)
 	}
-	if cau.mutation.CouponAssociationCleared() && len(cau.mutation.CouponAssociationIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "CouponApplication.coupon_association"`)
-	}
 	if cau.mutation.InvoiceCleared() && len(cau.mutation.InvoiceIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "CouponApplication.invoice"`)
 	}
@@ -311,6 +345,9 @@ func (cau *CouponApplicationUpdate) sqlSave(ctx context.Context) (n int, err err
 	if cau.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(couponapplication.FieldEnvironmentID, field.TypeString)
 	}
+	if cau.mutation.CouponAssociationIDCleared() {
+		_spec.ClearField(couponapplication.FieldCouponAssociationID, field.TypeString)
+	}
 	if value, ok := cau.mutation.OriginalPrice(); ok {
 		_spec.SetField(couponapplication.FieldOriginalPrice, field.TypeOther, value)
 	}
@@ -346,6 +383,51 @@ func (cau *CouponApplicationUpdate) sqlSave(ctx context.Context) (n int, err err
 	}
 	if cau.mutation.MetadataCleared() {
 		_spec.ClearField(couponapplication.FieldMetadata, field.TypeJSON)
+	}
+	if cau.mutation.CouponAssociationCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   couponapplication.CouponAssociationTable,
+			Columns: couponapplication.CouponAssociationPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := cau.mutation.RemovedCouponAssociationIDs(); len(nodes) > 0 && !cau.mutation.CouponAssociationCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   couponapplication.CouponAssociationTable,
+			Columns: couponapplication.CouponAssociationPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := cau.mutation.CouponAssociationIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   couponapplication.CouponAssociationTable,
+			Columns: couponapplication.CouponAssociationPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if cau.mutation.InvoiceLineItemCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -576,6 +658,21 @@ func (cauo *CouponApplicationUpdateOne) ClearMetadata() *CouponApplicationUpdate
 	return cauo
 }
 
+// AddCouponAssociationIDs adds the "coupon_association" edge to the CouponAssociation entity by IDs.
+func (cauo *CouponApplicationUpdateOne) AddCouponAssociationIDs(ids ...string) *CouponApplicationUpdateOne {
+	cauo.mutation.AddCouponAssociationIDs(ids...)
+	return cauo
+}
+
+// AddCouponAssociation adds the "coupon_association" edges to the CouponAssociation entity.
+func (cauo *CouponApplicationUpdateOne) AddCouponAssociation(c ...*CouponAssociation) *CouponApplicationUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return cauo.AddCouponAssociationIDs(ids...)
+}
+
 // SetInvoiceLineItem sets the "invoice_line_item" edge to the InvoiceLineItem entity.
 func (cauo *CouponApplicationUpdateOne) SetInvoiceLineItem(i *InvoiceLineItem) *CouponApplicationUpdateOne {
 	return cauo.SetInvoiceLineItemID(i.ID)
@@ -584,6 +681,27 @@ func (cauo *CouponApplicationUpdateOne) SetInvoiceLineItem(i *InvoiceLineItem) *
 // Mutation returns the CouponApplicationMutation object of the builder.
 func (cauo *CouponApplicationUpdateOne) Mutation() *CouponApplicationMutation {
 	return cauo.mutation
+}
+
+// ClearCouponAssociation clears all "coupon_association" edges to the CouponAssociation entity.
+func (cauo *CouponApplicationUpdateOne) ClearCouponAssociation() *CouponApplicationUpdateOne {
+	cauo.mutation.ClearCouponAssociation()
+	return cauo
+}
+
+// RemoveCouponAssociationIDs removes the "coupon_association" edge to CouponAssociation entities by IDs.
+func (cauo *CouponApplicationUpdateOne) RemoveCouponAssociationIDs(ids ...string) *CouponApplicationUpdateOne {
+	cauo.mutation.RemoveCouponAssociationIDs(ids...)
+	return cauo
+}
+
+// RemoveCouponAssociation removes "coupon_association" edges to CouponAssociation entities.
+func (cauo *CouponApplicationUpdateOne) RemoveCouponAssociation(c ...*CouponAssociation) *CouponApplicationUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return cauo.RemoveCouponAssociationIDs(ids...)
 }
 
 // ClearInvoiceLineItem clears the "invoice_line_item" edge to the InvoiceLineItem entity.
@@ -651,9 +769,6 @@ func (cauo *CouponApplicationUpdateOne) check() error {
 	if cauo.mutation.CouponCleared() && len(cauo.mutation.CouponIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "CouponApplication.coupon"`)
 	}
-	if cauo.mutation.CouponAssociationCleared() && len(cauo.mutation.CouponAssociationIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "CouponApplication.coupon_association"`)
-	}
 	if cauo.mutation.InvoiceCleared() && len(cauo.mutation.InvoiceIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "CouponApplication.invoice"`)
 	}
@@ -707,6 +822,9 @@ func (cauo *CouponApplicationUpdateOne) sqlSave(ctx context.Context) (_node *Cou
 	if cauo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(couponapplication.FieldEnvironmentID, field.TypeString)
 	}
+	if cauo.mutation.CouponAssociationIDCleared() {
+		_spec.ClearField(couponapplication.FieldCouponAssociationID, field.TypeString)
+	}
 	if value, ok := cauo.mutation.OriginalPrice(); ok {
 		_spec.SetField(couponapplication.FieldOriginalPrice, field.TypeOther, value)
 	}
@@ -742,6 +860,51 @@ func (cauo *CouponApplicationUpdateOne) sqlSave(ctx context.Context) (_node *Cou
 	}
 	if cauo.mutation.MetadataCleared() {
 		_spec.ClearField(couponapplication.FieldMetadata, field.TypeJSON)
+	}
+	if cauo.mutation.CouponAssociationCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   couponapplication.CouponAssociationTable,
+			Columns: couponapplication.CouponAssociationPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := cauo.mutation.RemovedCouponAssociationIDs(); len(nodes) > 0 && !cauo.mutation.CouponAssociationCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   couponapplication.CouponAssociationTable,
+			Columns: couponapplication.CouponAssociationPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := cauo.mutation.CouponAssociationIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   couponapplication.CouponAssociationTable,
+			Columns: couponapplication.CouponAssociationPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if cauo.mutation.InvoiceLineItemCleared() {
 		edge := &sqlgraph.EdgeSpec{

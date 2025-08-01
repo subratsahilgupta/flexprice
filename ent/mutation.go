@@ -4074,6 +4074,7 @@ type CouponApplicationMutation struct {
 	created_by                *string
 	updated_by                *string
 	environment_id            *string
+	coupon_association_id     *string
 	applied_at                *time.Time
 	original_price            *decimal.Decimal
 	final_price               *decimal.Decimal
@@ -4086,7 +4087,8 @@ type CouponApplicationMutation struct {
 	clearedFields             map[string]struct{}
 	coupon                    *string
 	clearedcoupon             bool
-	coupon_association        *string
+	coupon_association        map[string]struct{}
+	removedcoupon_association map[string]struct{}
 	clearedcoupon_association bool
 	invoice                   *string
 	clearedinvoice            bool
@@ -4530,12 +4532,12 @@ func (m *CouponApplicationMutation) ResetCouponID() {
 
 // SetCouponAssociationID sets the "coupon_association_id" field.
 func (m *CouponApplicationMutation) SetCouponAssociationID(s string) {
-	m.coupon_association = &s
+	m.coupon_association_id = &s
 }
 
 // CouponAssociationID returns the value of the "coupon_association_id" field in the mutation.
 func (m *CouponApplicationMutation) CouponAssociationID() (r string, exists bool) {
-	v := m.coupon_association
+	v := m.coupon_association_id
 	if v == nil {
 		return
 	}
@@ -4545,7 +4547,7 @@ func (m *CouponApplicationMutation) CouponAssociationID() (r string, exists bool
 // OldCouponAssociationID returns the old "coupon_association_id" field's value of the CouponApplication entity.
 // If the CouponApplication object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CouponApplicationMutation) OldCouponAssociationID(ctx context.Context) (v string, err error) {
+func (m *CouponApplicationMutation) OldCouponAssociationID(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCouponAssociationID is only allowed on UpdateOne operations")
 	}
@@ -4559,9 +4561,22 @@ func (m *CouponApplicationMutation) OldCouponAssociationID(ctx context.Context) 
 	return oldValue.CouponAssociationID, nil
 }
 
+// ClearCouponAssociationID clears the value of the "coupon_association_id" field.
+func (m *CouponApplicationMutation) ClearCouponAssociationID() {
+	m.coupon_association_id = nil
+	m.clearedFields[couponapplication.FieldCouponAssociationID] = struct{}{}
+}
+
+// CouponAssociationIDCleared returns if the "coupon_association_id" field was cleared in this mutation.
+func (m *CouponApplicationMutation) CouponAssociationIDCleared() bool {
+	_, ok := m.clearedFields[couponapplication.FieldCouponAssociationID]
+	return ok
+}
+
 // ResetCouponAssociationID resets all changes to the "coupon_association_id" field.
 func (m *CouponApplicationMutation) ResetCouponAssociationID() {
-	m.coupon_association = nil
+	m.coupon_association_id = nil
+	delete(m.clearedFields, couponapplication.FieldCouponAssociationID)
 }
 
 // SetInvoiceID sets the "invoice_id" field.
@@ -5052,10 +5067,19 @@ func (m *CouponApplicationMutation) ResetCoupon() {
 	m.clearedcoupon = false
 }
 
+// AddCouponAssociationIDs adds the "coupon_association" edge to the CouponAssociation entity by ids.
+func (m *CouponApplicationMutation) AddCouponAssociationIDs(ids ...string) {
+	if m.coupon_association == nil {
+		m.coupon_association = make(map[string]struct{})
+	}
+	for i := range ids {
+		m.coupon_association[ids[i]] = struct{}{}
+	}
+}
+
 // ClearCouponAssociation clears the "coupon_association" edge to the CouponAssociation entity.
 func (m *CouponApplicationMutation) ClearCouponAssociation() {
 	m.clearedcoupon_association = true
-	m.clearedFields[couponapplication.FieldCouponAssociationID] = struct{}{}
 }
 
 // CouponAssociationCleared reports if the "coupon_association" edge to the CouponAssociation entity was cleared.
@@ -5063,12 +5087,29 @@ func (m *CouponApplicationMutation) CouponAssociationCleared() bool {
 	return m.clearedcoupon_association
 }
 
+// RemoveCouponAssociationIDs removes the "coupon_association" edge to the CouponAssociation entity by IDs.
+func (m *CouponApplicationMutation) RemoveCouponAssociationIDs(ids ...string) {
+	if m.removedcoupon_association == nil {
+		m.removedcoupon_association = make(map[string]struct{})
+	}
+	for i := range ids {
+		delete(m.coupon_association, ids[i])
+		m.removedcoupon_association[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedCouponAssociation returns the removed IDs of the "coupon_association" edge to the CouponAssociation entity.
+func (m *CouponApplicationMutation) RemovedCouponAssociationIDs() (ids []string) {
+	for id := range m.removedcoupon_association {
+		ids = append(ids, id)
+	}
+	return
+}
+
 // CouponAssociationIDs returns the "coupon_association" edge IDs in the mutation.
-// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
-// CouponAssociationID instead. It exists only for internal usage by the builders.
 func (m *CouponApplicationMutation) CouponAssociationIDs() (ids []string) {
-	if id := m.coupon_association; id != nil {
-		ids = append(ids, *id)
+	for id := range m.coupon_association {
+		ids = append(ids, id)
 	}
 	return
 }
@@ -5077,6 +5118,7 @@ func (m *CouponApplicationMutation) CouponAssociationIDs() (ids []string) {
 func (m *CouponApplicationMutation) ResetCouponAssociation() {
 	m.coupon_association = nil
 	m.clearedcoupon_association = false
+	m.removedcoupon_association = nil
 }
 
 // ClearInvoice clears the "invoice" edge to the Invoice entity.
@@ -5192,7 +5234,7 @@ func (m *CouponApplicationMutation) Fields() []string {
 	if m.coupon != nil {
 		fields = append(fields, couponapplication.FieldCouponID)
 	}
-	if m.coupon_association != nil {
+	if m.coupon_association_id != nil {
 		fields = append(fields, couponapplication.FieldCouponAssociationID)
 	}
 	if m.invoice != nil {
@@ -5513,6 +5555,9 @@ func (m *CouponApplicationMutation) ClearedFields() []string {
 	if m.FieldCleared(couponapplication.FieldEnvironmentID) {
 		fields = append(fields, couponapplication.FieldEnvironmentID)
 	}
+	if m.FieldCleared(couponapplication.FieldCouponAssociationID) {
+		fields = append(fields, couponapplication.FieldCouponAssociationID)
+	}
 	if m.FieldCleared(couponapplication.FieldInvoiceLineItemID) {
 		fields = append(fields, couponapplication.FieldInvoiceLineItemID)
 	}
@@ -5550,6 +5595,9 @@ func (m *CouponApplicationMutation) ClearField(name string) error {
 		return nil
 	case couponapplication.FieldEnvironmentID:
 		m.ClearEnvironmentID()
+		return nil
+	case couponapplication.FieldCouponAssociationID:
+		m.ClearCouponAssociationID()
 		return nil
 	case couponapplication.FieldInvoiceLineItemID:
 		m.ClearInvoiceLineItemID()
@@ -5665,9 +5713,11 @@ func (m *CouponApplicationMutation) AddedIDs(name string) []ent.Value {
 			return []ent.Value{*id}
 		}
 	case couponapplication.EdgeCouponAssociation:
-		if id := m.coupon_association; id != nil {
-			return []ent.Value{*id}
+		ids := make([]ent.Value, 0, len(m.coupon_association))
+		for id := range m.coupon_association {
+			ids = append(ids, id)
 		}
+		return ids
 	case couponapplication.EdgeInvoice:
 		if id := m.invoice; id != nil {
 			return []ent.Value{*id}
@@ -5683,12 +5733,23 @@ func (m *CouponApplicationMutation) AddedIDs(name string) []ent.Value {
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *CouponApplicationMutation) RemovedEdges() []string {
 	edges := make([]string, 0, 4)
+	if m.removedcoupon_association != nil {
+		edges = append(edges, couponapplication.EdgeCouponAssociation)
+	}
 	return edges
 }
 
 // RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
 // the given name in this mutation.
 func (m *CouponApplicationMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case couponapplication.EdgeCouponAssociation:
+		ids := make([]ent.Value, 0, len(m.removedcoupon_association))
+		for id := range m.removedcoupon_association {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
@@ -5732,9 +5793,6 @@ func (m *CouponApplicationMutation) ClearEdge(name string) error {
 	switch name {
 	case couponapplication.EdgeCoupon:
 		m.ClearCoupon()
-		return nil
-	case couponapplication.EdgeCouponAssociation:
-		m.ClearCouponAssociation()
 		return nil
 	case couponapplication.EdgeInvoice:
 		m.ClearInvoice()

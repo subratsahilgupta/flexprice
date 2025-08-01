@@ -340,7 +340,7 @@ func (r *couponApplicationRepository) toDomainCouponApplication(ca *ent.CouponAp
 	domainCA := &domainCouponApplication.CouponApplication{
 		ID:                  ca.ID,
 		CouponID:            ca.CouponID,
-		CouponAssociationID: ca.CouponAssociationID,
+		CouponAssociationID: *ca.CouponAssociationID,
 		InvoiceID:           ca.InvoiceID,
 		AppliedAt:           ca.AppliedAt,
 		OriginalPrice:       ca.OriginalPrice,
@@ -348,13 +348,15 @@ func (r *couponApplicationRepository) toDomainCouponApplication(ca *ent.CouponAp
 		DiscountedAmount:    ca.DiscountedAmount,
 		DiscountType:        types.CouponType(ca.DiscountType),
 		Currency:            *ca.Currency,
-		Status:              types.Status(ca.Status),
-		CreatedAt:           ca.CreatedAt,
-		UpdatedAt:           ca.UpdatedAt,
-		CreatedBy:           ca.CreatedBy,
-		UpdatedBy:           ca.UpdatedBy,
-		TenantID:            ca.TenantID,
 		EnvironmentID:       ca.EnvironmentID,
+		BaseModel: types.BaseModel{
+			TenantID:  ca.TenantID,
+			Status:    types.Status(ca.Status),
+			CreatedBy: ca.CreatedBy,
+			UpdatedBy: ca.UpdatedBy,
+			CreatedAt: ca.CreatedAt,
+			UpdatedAt: ca.UpdatedAt,
+		},
 	}
 
 	// Handle optional fields

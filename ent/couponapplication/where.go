@@ -711,6 +711,16 @@ func CouponAssociationIDHasSuffix(v string) predicate.CouponApplication {
 	return predicate.CouponApplication(sql.FieldHasSuffix(FieldCouponAssociationID, v))
 }
 
+// CouponAssociationIDIsNil applies the IsNil predicate on the "coupon_association_id" field.
+func CouponAssociationIDIsNil() predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldIsNull(FieldCouponAssociationID))
+}
+
+// CouponAssociationIDNotNil applies the NotNil predicate on the "coupon_association_id" field.
+func CouponAssociationIDNotNil() predicate.CouponApplication {
+	return predicate.CouponApplication(sql.FieldNotNull(FieldCouponAssociationID))
+}
+
 // CouponAssociationIDEqualFold applies the EqualFold predicate on the "coupon_association_id" field.
 func CouponAssociationIDEqualFold(v string) predicate.CouponApplication {
 	return predicate.CouponApplication(sql.FieldEqualFold(FieldCouponAssociationID, v))
@@ -1259,7 +1269,7 @@ func HasCouponAssociation() predicate.CouponApplication {
 	return predicate.CouponApplication(func(s *sql.Selector) {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, CouponAssociationTable, CouponAssociationColumn),
+			sqlgraph.Edge(sqlgraph.M2M, true, CouponAssociationTable, CouponAssociationPrimaryKey...),
 		)
 		sqlgraph.HasNeighbors(s, step)
 	})

@@ -167,6 +167,7 @@ var (
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
 		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "coupon_association_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "applied_at", Type: field.TypeTime},
 		{Name: "original_price", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "final_price", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
@@ -177,7 +178,6 @@ var (
 		{Name: "coupon_snapshot", Type: field.TypeJSON, Nullable: true},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
 		{Name: "coupon_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
-		{Name: "coupon_association_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "invoice_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "invoice_line_item_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
@@ -189,14 +189,8 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "coupon_applications_coupons_coupon_applications",
-				Columns:    []*schema.Column{CouponApplicationsColumns[17]},
-				RefColumns: []*schema.Column{CouponsColumns[0]},
-				OnDelete:   schema.NoAction,
-			},
-			{
-				Symbol:     "coupon_applications_coupon_associations_coupon_applications",
 				Columns:    []*schema.Column{CouponApplicationsColumns[18]},
-				RefColumns: []*schema.Column{CouponAssociationsColumns[0]},
+				RefColumns: []*schema.Column{CouponsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
@@ -221,7 +215,7 @@ var (
 			{
 				Name:    "couponapplication_tenant_id_environment_id_coupon_id",
 				Unique:  false,
-				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7], CouponApplicationsColumns[17]},
+				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7], CouponApplicationsColumns[18]},
 			},
 			{
 				Name:    "couponapplication_tenant_id_environment_id_invoice_id",
@@ -1654,6 +1648,31 @@ var (
 			},
 		},
 	}
+	// CouponAssociationCouponApplicationsColumns holds the columns for the "coupon_association_coupon_applications" table.
+	CouponAssociationCouponApplicationsColumns = []*schema.Column{
+		{Name: "coupon_association_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "coupon_application_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+	}
+	// CouponAssociationCouponApplicationsTable holds the schema information for the "coupon_association_coupon_applications" table.
+	CouponAssociationCouponApplicationsTable = &schema.Table{
+		Name:       "coupon_association_coupon_applications",
+		Columns:    CouponAssociationCouponApplicationsColumns,
+		PrimaryKey: []*schema.Column{CouponAssociationCouponApplicationsColumns[0], CouponAssociationCouponApplicationsColumns[1]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "coupon_association_coupon_applications_coupon_association_id",
+				Columns:    []*schema.Column{CouponAssociationCouponApplicationsColumns[0]},
+				RefColumns: []*schema.Column{CouponAssociationsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "coupon_association_coupon_applications_coupon_application_id",
+				Columns:    []*schema.Column{CouponAssociationCouponApplicationsColumns[1]},
+				RefColumns: []*schema.Column{CouponApplicationsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		AuthsTable,
@@ -1689,6 +1708,7 @@ var (
 		UsersTable,
 		WalletsTable,
 		WalletTransactionsTable,
+		CouponAssociationCouponApplicationsTable,
 	}
 )
 
@@ -1699,9 +1719,8 @@ func init() {
 		Table: "costsheet",
 	}
 	CouponApplicationsTable.ForeignKeys[0].RefTable = CouponsTable
-	CouponApplicationsTable.ForeignKeys[1].RefTable = CouponAssociationsTable
-	CouponApplicationsTable.ForeignKeys[2].RefTable = InvoicesTable
-	CouponApplicationsTable.ForeignKeys[3].RefTable = InvoiceLineItemsTable
+	CouponApplicationsTable.ForeignKeys[1].RefTable = InvoicesTable
+	CouponApplicationsTable.ForeignKeys[2].RefTable = InvoiceLineItemsTable
 	CouponAssociationsTable.ForeignKeys[0].RefTable = CouponsTable
 	CouponAssociationsTable.ForeignKeys[1].RefTable = SubscriptionsTable
 	CouponAssociationsTable.ForeignKeys[2].RefTable = SubscriptionLineItemsTable
@@ -1715,4 +1734,6 @@ func init() {
 	SubscriptionPausesTable.ForeignKeys[0].RefTable = SubscriptionsTable
 	SubscriptionSchedulesTable.ForeignKeys[0].RefTable = SubscriptionsTable
 	SubscriptionSchedulePhasesTable.ForeignKeys[0].RefTable = SubscriptionSchedulesTable
+	CouponAssociationCouponApplicationsTable.ForeignKeys[0].RefTable = CouponAssociationsTable
+	CouponAssociationCouponApplicationsTable.ForeignKeys[1].RefTable = CouponApplicationsTable
 }

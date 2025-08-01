@@ -10,7 +10,7 @@ import (
 // CreateCouponApplicationRequest represents the request to create a new coupon application
 type CreateCouponApplicationRequest struct {
 	CouponID            string                 `json:"coupon_id" validate:"required"`
-	CouponAssociationID string                 `json:"coupon_association_id" validate:"required"`
+	CouponAssociationID string                 `json:"coupon_association_id,omitempty"`
 	InvoiceID           string                 `json:"invoice_id" validate:"required"`
 	InvoiceLineItemID   *string                `json:"invoice_line_item_id,omitempty"`
 	OriginalPrice       decimal.Decimal        `json:"original_price" validate:"required"`
@@ -36,12 +36,6 @@ func (r *CreateCouponApplicationRequest) Validate() error {
 	if r.CouponID == "" {
 		return ierr.NewError("coupon_id is required").
 			WithHint("Please provide a valid coupon ID").
-			Mark(ierr.ErrValidation)
-	}
-
-	if r.CouponAssociationID == "" {
-		return ierr.NewError("coupon_association_id is required").
-			WithHint("Please provide a valid coupon association ID").
 			Mark(ierr.ErrValidation)
 	}
 

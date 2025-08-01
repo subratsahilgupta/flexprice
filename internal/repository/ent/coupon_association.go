@@ -4,8 +4,10 @@ import (
 	"context"
 
 	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/ent/coupon"
 	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/internal/cache"
+	domainCoupon "github.com/flexprice/flexprice/internal/domain/coupon"
 	domainCouponAssociation "github.com/flexprice/flexprice/internal/domain/coupon_association"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -66,7 +68,7 @@ func (r *couponAssociationRepository) Create(ctx context.Context, ca *domainCoup
 		SetID(ca.ID).
 		SetTenantID(ca.TenantID).
 		SetCouponID(ca.CouponID).
-		SetSubscriptionID(*ca.SubscriptionID).
+		SetSubscriptionID(ca.SubscriptionID).
 		SetStatus(string(ca.Status)).
 		SetCreatedAt(ca.CreatedAt).
 		SetUpdatedAt(ca.UpdatedAt).
@@ -239,6 +241,9 @@ func (r *couponAssociationRepository) GetBySubscription(ctx context.Context, sub
 			couponassociation.TenantID(types.GetTenantID(ctx)),
 			couponassociation.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
+		WithCoupon(func(q *ent.CouponQuery) {
+			q.Where(coupon.Status(string(types.StatusPublished)))
+		}).
 		All(ctx)
 
 	if err != nil {
@@ -311,7 +316,7 @@ func (r *couponAssociationRepository) CreateBulk(ctx context.Context, couponAsso
 		bulkCreateQuery = bulkCreateQuery.SetID(ca.ID).
 			SetTenantID(ca.TenantID).
 			SetCouponID(ca.CouponID).
-			SetSubscriptionID(*ca.SubscriptionID).
+			SetSubscriptionID(ca.SubscriptionID).
 			SetStatus(string(ca.Status)).
 			SetCreatedAt(ca.CreatedAt).
 			SetUpdatedAt(ca.UpdatedAt).
@@ -378,13 +383,17 @@ func (r *couponAssociationRepository) DeleteBulk(ctx context.Context, ids []stri
 
 // Helper method to convert ent.CouponAssociation to domain.CouponAssociation
 func (r *couponAssociationRepository) toDomainCouponAssociation(ca *ent.CouponAssociation) *domainCouponAssociation.CouponAssociation {
+
+	couponObj := domainCoupon.FromEnt(ca.Edges.Coupon)
+
 	return &domainCouponAssociation.CouponAssociation{
 		ID:                     ca.ID,
 		CouponID:               ca.CouponID,
-		SubscriptionID:         &ca.SubscriptionID,
+		SubscriptionID:         ca.SubscriptionID,
 		SubscriptionLineItemID: ca.SubscriptionLineItemID,
 		Metadata:               ca.Metadata,
 		EnvironmentID:          ca.EnvironmentID,
+		Coupon:                 couponObj,
 		BaseModel: types.BaseModel{
 			TenantID:  ca.TenantID,
 			Status:    types.Status(ca.Status),
