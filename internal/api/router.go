@@ -52,7 +52,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	router.Use(
 		middleware.RequestIDMiddleware,
 		middleware.CORSMiddleware,
-		middleware.SentryMiddleware(cfg), // Add Sentry middleware
+		middleware.SentryMiddleware(cfg),    // Add Sentry middleware
+		middleware.PyroscopeMiddleware(cfg), // Add Pyroscope middleware
 	)
 
 	// Add middleware to set swagger host dynamically

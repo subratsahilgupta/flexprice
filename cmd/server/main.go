@@ -22,6 +22,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
+	"github.com/flexprice/flexprice/internal/pyroscope"
 	"github.com/flexprice/flexprice/internal/repository"
 	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/sentry"
@@ -78,6 +79,7 @@ func main() {
 
 			// Monitoring
 			sentry.NewSentryService,
+			pyroscope.NewPyroscopeService,
 
 			// Cache
 			cache.Initialize,
@@ -195,6 +197,7 @@ func main() {
 		),
 		fx.Invoke(
 			sentry.RegisterHooks,
+			pyroscope.RegisterHooks,
 			startServer,
 		),
 	)
