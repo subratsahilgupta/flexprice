@@ -93,14 +93,9 @@ var (
 		PrimaryKey: []*schema.Column{ConnectionsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "connection_tenant_id_environment_id",
+				Name:    "connection_tenant_id_environment_id_provider_type",
 				Unique:  false,
-				Columns: []*schema.Column{ConnectionsColumns[1], ConnectionsColumns[7]},
-			},
-			{
-				Name:    "connection_provider_type",
-				Unique:  false,
-				Columns: []*schema.Column{ConnectionsColumns[9]},
+				Columns: []*schema.Column{ConnectionsColumns[1], ConnectionsColumns[7], ConnectionsColumns[9]},
 			},
 		},
 	}
@@ -484,27 +479,15 @@ var (
 			{
 				Name:    "idx_entity_integration_mapping_unique",
 				Unique:  true,
-				Columns: []*schema.Column{EntityIntegrationMappingsColumns[8], EntityIntegrationMappingsColumns[9], EntityIntegrationMappingsColumns[10], EntityIntegrationMappingsColumns[7]},
-			},
-			{
-				Name:    "entityintegrationmapping_tenant_id_environment_id",
-				Unique:  false,
-				Columns: []*schema.Column{EntityIntegrationMappingsColumns[1], EntityIntegrationMappingsColumns[7]},
-			},
-			{
-				Name:    "entityintegrationmapping_entity_id_entity_type",
-				Unique:  false,
-				Columns: []*schema.Column{EntityIntegrationMappingsColumns[8], EntityIntegrationMappingsColumns[9]},
+				Columns: []*schema.Column{EntityIntegrationMappingsColumns[1], EntityIntegrationMappingsColumns[7], EntityIntegrationMappingsColumns[9], EntityIntegrationMappingsColumns[8], EntityIntegrationMappingsColumns[10]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published'",
+				},
 			},
 			{
 				Name:    "entityintegrationmapping_provider_type_provider_entity_id",
 				Unique:  false,
 				Columns: []*schema.Column{EntityIntegrationMappingsColumns[10], EntityIntegrationMappingsColumns[11]},
-			},
-			{
-				Name:    "entityintegrationmapping_status",
-				Unique:  false,
-				Columns: []*schema.Column{EntityIntegrationMappingsColumns[2]},
 			},
 		},
 	}

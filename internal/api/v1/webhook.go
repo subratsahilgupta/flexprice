@@ -90,8 +90,18 @@ func (h *WebhookHandler) GetDashboardURL(c *gin.Context) {
 	})
 }
 
-// HandleStripeWebhook handles Stripe webhook events
-// POST /webhooks/stripe/{tenant_id}/{environment_id}
+// @Summary Handle Stripe webhook events
+// @Description Process incoming Stripe webhook events for payment status updates and customer creation
+// @Tags Webhooks
+// @Accept json
+// @Produce json
+// @Param tenant_id path string true "Tenant ID"
+// @Param environment_id path string true "Environment ID"
+// @Param Stripe-Signature header string true "Stripe webhook signature"
+// @Success 200 {object} map[string]interface{} "Webhook processed successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request - missing parameters or invalid signature"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /webhooks/stripe/{tenant_id}/{environment_id} [post]
 func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	tenantID := c.Param("tenant_id")
 	environmentID := c.Param("environment_id")

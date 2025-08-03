@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
@@ -65,17 +66,13 @@ func (EntityIntegrationMapping) Edges() []ent.Edge {
 // Indexes of the EntityIntegrationMapping.
 func (EntityIntegrationMapping) Indexes() []ent.Index {
 	return []ent.Index{
-		// Unique index to prevent duplicate mappings
-		index.Fields("entity_id", "entity_type", "provider_type", "environment_id").
+		// Primary composite index with optimal column order for PostgreSQL
+		// tenant_id, environment_id, entity_type, entity_id, provider_type
+		index.Fields("tenant_id", "environment_id", "entity_type", "entity_id", "provider_type").
 			Unique().
-			StorageKey(Idx_entity_integration_mapping_unique),
-		// Index for efficient tenant/environment lookups
-		index.Fields("tenant_id", "environment_id"),
-		// Index for entity lookups
-		index.Fields("entity_id", "entity_type"),
-		// Index for provider lookups
+			StorageKey(Idx_entity_integration_mapping_unique).
+			Annotations(entsql.IndexWhere("status = 'published'")),
+		// Index for provider entity lookups (not covered by primary index)
 		index.Fields("provider_type", "provider_entity_id"),
-		// Index for status-based queries
-		index.Fields("status"),
 	}
 }

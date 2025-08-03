@@ -15,12 +15,6 @@ type EntityIntegrationMappingService interface {
 	GetEntityIntegrationMappings(ctx context.Context, filter *types.EntityIntegrationMappingFilter) (*dto.ListEntityIntegrationMappingsResponse, error)
 	UpdateEntityIntegrationMapping(ctx context.Context, id string, req dto.UpdateEntityIntegrationMappingRequest) (*dto.EntityIntegrationMappingResponse, error)
 	DeleteEntityIntegrationMapping(ctx context.Context, id string) error
-
-	// Provider-specific queries
-	GetByEntityAndProvider(ctx context.Context, entityID string, entityType types.IntegrationEntityType, providerType string) (*dto.EntityIntegrationMappingResponse, error)
-	GetByProviderEntity(ctx context.Context, providerType, providerEntityID string) (*dto.EntityIntegrationMappingResponse, error)
-	ListByEntity(ctx context.Context, entityID string, entityType types.IntegrationEntityType) (*dto.ListEntityIntegrationMappingsResponse, error)
-	ListByProvider(ctx context.Context, providerType string) (*dto.ListEntityIntegrationMappingsResponse, error)
 }
 
 type entityIntegrationMappingService struct {
@@ -175,104 +169,4 @@ func (s *entityIntegrationMappingService) DeleteEntityIntegrationMapping(ctx con
 	}
 
 	return nil
-}
-
-// Provider-specific queries
-
-func (s *entityIntegrationMappingService) GetByEntityAndProvider(ctx context.Context, entityID string, entityType types.IntegrationEntityType, providerType string) (*dto.EntityIntegrationMappingResponse, error) {
-	if entityID == "" {
-		return nil, ierr.NewError("entity ID is required").
-			WithHint("Entity ID is required").
-			Mark(ierr.ErrValidation)
-	}
-
-	if providerType == "" {
-		return nil, ierr.NewError("provider type is required").
-			WithHint("Provider type is required").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Validate entity type
-	if err := entityType.Validate(); err != nil {
-		return nil, err
-	}
-
-	mapping, err := s.EntityIntegrationMappingRepo.GetByEntityAndProvider(ctx, entityID, entityType, providerType)
-	if err != nil {
-		return nil, err
-	}
-
-	return &dto.EntityIntegrationMappingResponse{EntityIntegrationMapping: mapping}, nil
-}
-
-func (s *entityIntegrationMappingService) GetByProviderEntity(ctx context.Context, providerType, providerEntityID string) (*dto.EntityIntegrationMappingResponse, error) {
-	if providerType == "" {
-		return nil, ierr.NewError("provider type is required").
-			WithHint("Provider type is required").
-			Mark(ierr.ErrValidation)
-	}
-
-	if providerEntityID == "" {
-		return nil, ierr.NewError("provider entity ID is required").
-			WithHint("Provider entity ID is required").
-			Mark(ierr.ErrValidation)
-	}
-
-	mapping, err := s.EntityIntegrationMappingRepo.GetByProviderEntity(ctx, providerType, providerEntityID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &dto.EntityIntegrationMappingResponse{EntityIntegrationMapping: mapping}, nil
-}
-
-func (s *entityIntegrationMappingService) ListByEntity(ctx context.Context, entityID string, entityType types.IntegrationEntityType) (*dto.ListEntityIntegrationMappingsResponse, error) {
-	if entityID == "" {
-		return nil, ierr.NewError("entity ID is required").
-			WithHint("Entity ID is required").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Validate entity type
-	if err := entityType.Validate(); err != nil {
-		return nil, err
-	}
-
-	mappings, err := s.EntityIntegrationMappingRepo.ListByEntity(ctx, entityID, entityType)
-	if err != nil {
-		return nil, err
-	}
-
-	response := make([]*dto.EntityIntegrationMappingResponse, 0, len(mappings))
-	for _, m := range mappings {
-		response = append(response, &dto.EntityIntegrationMappingResponse{EntityIntegrationMapping: m})
-	}
-
-	return &dto.ListEntityIntegrationMappingsResponse{
-		Items:      response,
-		Pagination: types.NewPaginationResponse(len(mappings), len(mappings), 0),
-	}, nil
-}
-
-func (s *entityIntegrationMappingService) ListByProvider(ctx context.Context, providerType string) (*dto.ListEntityIntegrationMappingsResponse, error) {
-	if providerType == "" {
-		return nil, ierr.NewError("provider type is required").
-			WithHint("Provider type is required").
-			Mark(ierr.ErrValidation)
-	}
-
-	mappings, err := s.EntityIntegrationMappingRepo.ListByProvider(ctx, providerType)
-	if err != nil {
-		return nil, err
-	}
-
-	response := make([]*dto.EntityIntegrationMappingResponse, 0, len(mappings))
-	for _, m := range mappings {
-		response = append(response, &dto.EntityIntegrationMappingResponse{EntityIntegrationMapping: m})
-	}
-
-	return &dto.ListEntityIntegrationMappingsResponse{
-		Items:      response,
-		Pagination: types.NewPaginationResponse(len(mappings), len(mappings), 0),
-	}, nil
 }

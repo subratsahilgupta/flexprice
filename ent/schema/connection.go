@@ -52,7 +52,10 @@ func (Connection) Edges() []ent.Edge {
 // Indexes of the Connection.
 func (Connection) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "environment_id"),
-		index.Fields("provider_type"),
+		// Composite index with optimal column order for PostgreSQL
+		// tenant_id, environment_id, provider_type
+		// This order allows efficient lookups by tenant, environment, and provider
+		// PostgreSQL can use leftmost prefixes: tenant_id, tenant_id+environment_id, etc.
+		index.Fields("tenant_id", "environment_id", "provider_type"),
 	}
 }

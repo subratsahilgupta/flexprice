@@ -329,14 +329,12 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			entityIntegrationMappings.GET("/:id", handlers.EntityIntegrationMapping.GetEntityIntegrationMapping)
 			entityIntegrationMappings.PUT("/:id", handlers.EntityIntegrationMapping.UpdateEntityIntegrationMapping)
 			entityIntegrationMappings.DELETE("/:id", handlers.EntityIntegrationMapping.DeleteEntityIntegrationMapping)
-			entityIntegrationMappings.GET("/by-entity-and-provider", handlers.EntityIntegrationMapping.GetEntityIntegrationMappingByEntityAndProvider)
-			entityIntegrationMappings.GET("/by-provider-entity", handlers.EntityIntegrationMapping.GetEntityIntegrationMappingByProviderEntity)
 		}
 
 		// Integration routes
 		integration := v1Private.Group("/integration")
 		{
-			integration.POST("/sync-customer/:customer_id", handlers.Integration.SyncCustomerToProviders)
+			integration.POST("/sync/:entity_type/:entity_id", handlers.Integration.SyncEntityToProviders)
 			integration.GET("/providers", handlers.Integration.GetAvailableProviders)
 		}
 
@@ -365,11 +363,10 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	}
 
 	// Public webhook endpoints (no authentication required)
-	publicWebhooks := router.Group("/v1/webhooks")
-	publicWebhooks.Use(middleware.ErrorHandler())
+	webhooks := v1Public.Group("/webhooks")
 	{
 		// Stripe webhook endpoint: POST /v1/webhooks/stripe/{tenant_id}/{environment_id}
-		publicWebhooks.POST("/stripe/:tenant_id/:environment_id", handlers.Webhook.HandleStripeWebhook)
+		webhooks.POST("/stripe/:tenant_id/:environment_id", handlers.Webhook.HandleStripeWebhook)
 	}
 
 	// Cron routes

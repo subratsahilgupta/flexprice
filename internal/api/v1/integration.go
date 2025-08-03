@@ -26,44 +26,49 @@ func NewIntegrationHandler(
 	}
 }
 
-// SyncCustomerToProviders godoc
-// @Summary Sync customer to all available providers
-// @Description Sync a customer to all available payment providers for the current tenant
+// SyncEntityToProviders godoc
+// @Summary Sync entity to all available providers
+// @Description Sync an entity to all available payment providers for the current tenant
 // @Tags Integration
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param customer_id path string true "Customer ID"
+// @Param entity_type path string true "Entity type (e.g., customer, invoice, tax)"
+// @Param entity_id path string true "Entity ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} errors.ErrorResponse
 // @Failure 401 {object} errors.ErrorResponse
 // @Failure 404 {object} errors.ErrorResponse
 // @Failure 500 {object} errors.ErrorResponse
-// @Router /integration/sync-customer/{customer_id} [post]
-func (h *IntegrationHandler) SyncCustomerToProviders(c *gin.Context) {
-	customerID := c.Param("customer_id")
-	if customerID == "" {
+// @Router /integration/sync/{entity_type}/{entity_id} [post]
+func (h *IntegrationHandler) SyncEntityToProviders(c *gin.Context) {
+	entityType := c.Param("entity_type")
+	entityID := c.Param("entity_id")
+
+	if entityType == "" || entityID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Customer ID is required",
+			"error": "Entity type and entity ID are required",
 		})
 		return
 	}
 
 	ctx := c.Request.Context()
-	err := h.IntegrationService.SyncCustomerToProviders(ctx, customerID)
+	err := h.IntegrationService.SyncEntityToProviders(ctx, entityType, entityID)
 	if err != nil {
-		h.logger.Errorw("failed to sync customer to providers",
-			"customer_id", customerID,
+		h.logger.Errorw("failed to sync entity to providers",
+			"entity_type", entityType,
+			"entity_id", entityID,
 			"error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to sync customer to providers",
+			"error": "Failed to sync entity to providers",
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":     "Customer sync initiated successfully",
-		"customer_id": customerID,
+		"message":     "Entity sync initiated successfully",
+		"entity_type": entityType,
+		"entity_id":   entityID,
 	})
 }
 

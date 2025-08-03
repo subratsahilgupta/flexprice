@@ -16,8 +16,8 @@ import (
 
 // IntegrationService handles generic integration operations with multiple providers
 type IntegrationService interface {
-	// SyncCustomerToProviders syncs a customer to all available providers for the tenant
-	SyncCustomerToProviders(ctx context.Context, customerID string) error
+	// SyncEntityToProviders syncs an entity to all available providers for the tenant
+	SyncEntityToProviders(ctx context.Context, entityType string, entityID string) error
 
 	// SyncCustomerFromProvider syncs a customer from a specific provider to FlexPrice
 	SyncCustomerFromProvider(ctx context.Context, providerType string, providerCustomerID string, customerData map[string]interface{}) error
@@ -36,16 +36,8 @@ func NewIntegrationService(params ServiceParams) IntegrationService {
 	}
 }
 
-// SyncCustomerToProviders syncs a customer to all available providers for the tenant
-func (s *integrationService) SyncCustomerToProviders(ctx context.Context, customerID string) error {
-	// Get the customer
-	customerService := NewCustomerService(s.ServiceParams)
-	customerResp, err := customerService.GetCustomer(ctx, customerID)
-	if err != nil {
-		return err
-	}
-	customer := customerResp.Customer
-
+// SyncEntityToProviders syncs an entity to all available providers for the tenant
+func (s *integrationService) SyncEntityToProviders(ctx context.Context, entityType string, entityID string) error {
 	// Get all available connections for this tenant
 	connections, err := s.getAvailableConnections(ctx)
 	if err != nil {
@@ -53,11 +45,37 @@ func (s *integrationService) SyncCustomerToProviders(ctx context.Context, custom
 	}
 
 	if len(connections) == 0 {
-		s.Logger.Infow("no integrations available for customer sync",
-			"customer_id", customerID,
+		s.Logger.Infow("no integrations available for entity sync",
+			"entity_type", entityType,
+			"entity_id", entityID,
 			"tenant_id", types.GetTenantID(ctx))
 		return nil
 	}
+
+	// Sync based on entity type
+	switch entityType {
+	case "customer":
+		return s.syncCustomerToProviders(ctx, entityID, connections)
+	case "invoice":
+		return s.syncInvoiceToProviders(ctx, entityID, connections)
+	case "tax":
+		return s.syncTaxToProviders(ctx, entityID, connections)
+	default:
+		return ierr.NewError("unsupported entity type").
+			WithHint(fmt.Sprintf("Entity type %s is not supported for sync", entityType)).
+			Mark(ierr.ErrValidation)
+	}
+}
+
+// syncCustomerToProviders syncs a customer to all available providers for the tenant
+func (s *integrationService) syncCustomerToProviders(ctx context.Context, customerID string, connections []*connection.Connection) error {
+	// Get the customer
+	customerService := NewCustomerService(s.ServiceParams)
+	customerResp, err := customerService.GetCustomer(ctx, customerID)
+	if err != nil {
+		return err
+	}
+	customer := customerResp.Customer
 
 	// Sync to each provider
 	for _, conn := range connections {
@@ -83,6 +101,28 @@ func (s *integrationService) SyncCustomerToProviders(ctx context.Context, custom
 	return nil
 }
 
+// syncInvoiceToProviders syncs an invoice to all available providers for the tenant
+func (s *integrationService) syncInvoiceToProviders(ctx context.Context, invoiceID string, connections []*connection.Connection) error {
+	// TODO: Implement invoice sync logic when needed
+	s.Logger.Infow("invoice sync not yet implemented",
+		"invoice_id", invoiceID,
+		"tenant_id", types.GetTenantID(ctx))
+	return ierr.NewError("invoice sync not yet implemented").
+		WithHint("Invoice sync functionality is not yet available").
+		Mark(ierr.ErrInvalidOperation)
+}
+
+// syncTaxToProviders syncs a tax code to all available providers for the tenant
+func (s *integrationService) syncTaxToProviders(ctx context.Context, taxCode string, connections []*connection.Connection) error {
+	// TODO: Implement tax sync logic when needed
+	s.Logger.Infow("tax sync not yet implemented",
+		"tax_code", taxCode,
+		"tenant_id", types.GetTenantID(ctx))
+	return ierr.NewError("tax sync not yet implemented").
+		WithHint("Tax sync functionality is not yet available").
+		Mark(ierr.ErrInvalidOperation)
+}
+
 // syncCustomerToProvider syncs a customer to a specific provider
 func (s *integrationService) syncCustomerToProvider(ctx context.Context, customer *customer.Customer, conn *connection.Connection) error {
 	// Use database transaction to prevent race conditions
@@ -90,15 +130,22 @@ func (s *integrationService) syncCustomerToProvider(ctx context.Context, custome
 		// Check if mapping already exists for this customer_id, provider, tenant, and environment
 		// This check is now within the transaction, preventing race conditions
 		entityMappingService := NewEntityIntegrationMappingService(s.ServiceParams)
-		existingMapping, err := entityMappingService.GetByEntityAndProvider(
-			txCtx, customer.ID, "customer", string(conn.ProviderType))
 
-		if err == nil && existingMapping != nil {
+		// Use standard list/search pattern instead of specific endpoint
+		filter := &types.EntityIntegrationMappingFilter{
+			EntityID:     customer.ID,
+			EntityType:   "customer",
+			ProviderType: string(conn.ProviderType),
+		}
+
+		existingMappings, err := entityMappingService.GetEntityIntegrationMappings(txCtx, filter)
+		if err == nil && existingMappings != nil && len(existingMappings.Items) > 0 {
+			existingMapping := existingMappings.Items[0]
 			// Mapping exists, customer already synced
 			s.Logger.Infow("customer already mapped to provider",
 				"customer_id", customer.ID,
 				"provider_type", conn.ProviderType,
-				"provider_entity_id", existingMapping.ProviderEntityID)
+				"provider_entity_id", existingMapping.EntityIntegrationMapping.ProviderEntityID)
 			return nil
 		}
 
@@ -233,14 +280,21 @@ func (s *integrationService) SyncCustomerFromProvider(ctx context.Context, provi
 	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// Check if mapping already exists (within transaction)
 		entityMappingService := NewEntityIntegrationMappingService(s.ServiceParams)
-		existingMapping, err := entityMappingService.GetByProviderEntity(txCtx, providerType, providerCustomerID)
 
-		if err == nil && existingMapping != nil {
+		// Use standard list/search pattern instead of specific endpoint
+		filter := &types.EntityIntegrationMappingFilter{
+			ProviderType:     providerType,
+			ProviderEntityID: providerCustomerID,
+		}
+
+		existingMappings, err := entityMappingService.GetEntityIntegrationMappings(txCtx, filter)
+		if err == nil && existingMappings != nil && len(existingMappings.Items) > 0 {
+			existingMapping := existingMappings.Items[0]
 			// Mapping exists, customer already synced
 			s.Logger.Infow("customer already exists from provider",
 				"provider_type", providerType,
 				"provider_customer_id", providerCustomerID,
-				"flexprice_customer_id", existingMapping.EntityID)
+				"flexprice_customer_id", existingMapping.EntityIntegrationMapping.EntityID)
 			return nil
 		}
 

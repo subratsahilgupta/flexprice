@@ -64,7 +64,7 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 			syncCtx = types.SetEnvironmentID(syncCtx, types.GetEnvironmentID(ctx))
 			syncCtx = types.SetUserID(syncCtx, types.GetUserID(ctx))
 
-			if err := integrationService.SyncCustomerToProviders(syncCtx, cust.ID); err != nil {
+			if err := integrationService.SyncEntityToProviders(syncCtx, "customer", cust.ID); err != nil {
 				s.Logger.Errorw("failed to sync customer to providers",
 					"customer_id", cust.ID,
 					"error", err)

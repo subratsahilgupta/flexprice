@@ -101,10 +101,5 @@ func (Customer) Indexes() []ent.Index {
 		index.Fields("tenant_id", "environment_id", "email").
 			Annotations(entsql.IndexWhere("email IS NOT NULL AND email != '' AND status = 'published'")).
 			StorageKey("idx_customer_tenant_environment_email"),
-		// Add email uniqueness constraint (optional - uncomment if needed)
-		// index.Fields("tenant_id", "environment_id", "email").
-		// 	Unique().
-		// 	Annotations(entsql.IndexWhere("email IS NOT NULL AND email != '' AND status = 'published'")).
-		// 	StorageKey("idx_customer_tenant_environment_email_unique"),
 	}
 }
