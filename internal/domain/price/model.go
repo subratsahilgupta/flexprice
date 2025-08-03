@@ -353,10 +353,9 @@ func FromEnt(e *ent.Price) *Price {
 		TransformQuantity:  JSONBTransformQuantity(e.TransformQuantity),
 		Metadata:           JSONBMetadata(e.Metadata),
 		EnvironmentID:      e.EnvironmentID,
-		// Price override fields - Default values for now, would be set from ent after schema generation
-		Scope:          types.PRICE_SCOPE_PLAN, // Default to plan scope
-		ParentPriceID:  lo.FromPtr(e.ParentPriceID),
-		SubscriptionID: lo.FromPtr(e.SubscriptionID),
+		Scope:              types.PRICE_SCOPE_PLAN,
+		ParentPriceID:      lo.FromPtr(e.ParentPriceID),
+		SubscriptionID:     lo.FromPtr(e.SubscriptionID),
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

@@ -245,14 +245,14 @@ func (f PriceFilter) Validate() error {
 
 	// Validate subscription ID if provided
 	if f.SubscriptionID != nil && *f.SubscriptionID == "" {
-		return ierr.NewError("subscription id can not be empty").
+		return ierr.NewError("subscription ID can not be empty").
 			WithHint("Subscription ID cannot be empty").
 			Mark(ierr.ErrValidation)
 	}
 
 	// Validate parent price ID if provided
 	if f.ParentPriceID != nil && *f.ParentPriceID == "" {
-		return ierr.NewError("parent price id can not be empty").
+		return ierr.NewError("parent price ID can not be empty").
 			WithHint("Parent price ID cannot be empty").
 			Mark(ierr.ErrValidation)
 	}
