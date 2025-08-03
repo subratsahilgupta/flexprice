@@ -63,7 +63,7 @@ type Wallet struct {
 	// Config holds the value of the "config" field.
 	Config types.WalletConfig `json:"config,omitempty"`
 	// AlertConfig holds the value of the "alert_config" field.
-	AlertConfig types.AlertConfig `json:"alert_config,omitempty"`
+	AlertConfig *types.AlertConfig `json:"alert_config,omitempty"`
 	// AlertEnabled holds the value of the "alert_enabled" field.
 	AlertEnabled bool `json:"alert_enabled,omitempty"`
 	// AlertState holds the value of the "alert_state" field.

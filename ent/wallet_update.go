@@ -259,16 +259,8 @@ func (wu *WalletUpdate) ClearConfig() *WalletUpdate {
 }
 
 // SetAlertConfig sets the "alert_config" field.
-func (wu *WalletUpdate) SetAlertConfig(tc types.AlertConfig) *WalletUpdate {
+func (wu *WalletUpdate) SetAlertConfig(tc *types.AlertConfig) *WalletUpdate {
 	wu.mutation.SetAlertConfig(tc)
-	return wu
-}
-
-// SetNillableAlertConfig sets the "alert_config" field if the given value is not nil.
-func (wu *WalletUpdate) SetNillableAlertConfig(tc *types.AlertConfig) *WalletUpdate {
-	if tc != nil {
-		wu.SetAlertConfig(*tc)
-	}
 	return wu
 }
 
@@ -725,16 +717,8 @@ func (wuo *WalletUpdateOne) ClearConfig() *WalletUpdateOne {
 }
 
 // SetAlertConfig sets the "alert_config" field.
-func (wuo *WalletUpdateOne) SetAlertConfig(tc types.AlertConfig) *WalletUpdateOne {
+func (wuo *WalletUpdateOne) SetAlertConfig(tc *types.AlertConfig) *WalletUpdateOne {
 	wuo.mutation.SetAlertConfig(tc)
-	return wuo
-}
-
-// SetNillableAlertConfig sets the "alert_config" field if the given value is not nil.
-func (wuo *WalletUpdateOne) SetNillableAlertConfig(tc *types.AlertConfig) *WalletUpdateOne {
-	if tc != nil {
-		wuo.SetAlertConfig(*tc)
-	}
 	return wuo
 }
 

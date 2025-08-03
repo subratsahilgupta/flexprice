@@ -48,13 +48,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		w.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
-	// Convert AlertConfig from pointer to value
-	var alertConfig types.AlertConfig
-	if w.AlertConfig != nil {
-		alertConfig = *w.AlertConfig
-	}
-
-	_, err := client.Wallet.Create().
+	wallet, err := client.Wallet.Create().
 		SetID(w.ID).
 		SetTenantID(w.TenantID).
 		SetCustomerID(w.CustomerID).
@@ -78,7 +72,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetUpdatedAt(w.UpdatedAt).
 		SetEnvironmentID(w.EnvironmentID).
 		SetAlertEnabled(w.AlertEnabled).
-		SetAlertConfig(alertConfig).
+		SetAlertConfig(w.AlertConfig).
 		SetAlertState(w.AlertState).
 		Save(ctx)
 
@@ -87,12 +81,15 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		return ierr.WithError(err).
 			WithHint("Failed to create wallet").
 			WithReportableDetails(map[string]interface{}{
-				"wallet_id": w.ID,
+				"customer_id": w.CustomerID,
+				"currency":    w.Currency,
+				"wallet_id":   w.ID,
 			}).
 			Mark(ierr.ErrDatabase)
 	}
 
-	r.SetCache(ctx, w)
+	// Update the input wallet with created data
+	*w = *walletdomain.FromEnt(wallet)
 	return nil
 }
 
@@ -732,12 +729,6 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 	})
 	defer FinishSpan(span)
 
-	// Convert AlertConfig from pointer to value
-	var alertConfig types.AlertConfig
-	if w.AlertConfig != nil {
-		alertConfig = *w.AlertConfig
-	}
-
 	client := r.client.Querier(ctx)
 	update := client.Wallet.Update().
 		Where(
@@ -757,20 +748,24 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 		update.SetMetadata(w.Metadata)
 	}
 	if w.AutoTopupTrigger != "" {
-		update.SetAutoTopupTrigger(string(w.AutoTopupTrigger))
-	}
-	if w.AutoTopupMinBalance.IsPositive() {
-		update.SetAutoTopupMinBalance(w.AutoTopupMinBalance)
-	}
-	if w.AutoTopupAmount.IsPositive() {
-		update.SetAutoTopupAmount(w.AutoTopupAmount)
+		if w.AutoTopupTrigger == types.AutoTopupTriggerDisabled {
+			// When disabling auto top-up, set all related fields to NULL
+			update.SetAutoTopupTrigger(string(types.AutoTopupTriggerDisabled))
+			update.ClearAutoTopupMinBalance()
+			update.ClearAutoTopupAmount()
+		} else {
+			// When enabling auto top-up, set all required fields
+			update.SetAutoTopupTrigger(string(w.AutoTopupTrigger))
+			update.SetAutoTopupMinBalance(w.AutoTopupMinBalance)
+			update.SetAutoTopupAmount(w.AutoTopupAmount)
+		}
 	}
 	// Check if Config has any non-nil fields
 	if w.Config.AllowedPriceTypes != nil {
 		update.SetConfig(w.Config)
 	}
 	if w.AlertConfig != nil {
-		update.SetAlertConfig(alertConfig)
+		update.SetAlertConfig(w.AlertConfig)
 	}
 	if w.AlertState != "" {
 		update.SetAlertState(w.AlertState)

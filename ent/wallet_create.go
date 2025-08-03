@@ -269,16 +269,8 @@ func (wc *WalletCreate) SetNillableConfig(tc *types.WalletConfig) *WalletCreate 
 }
 
 // SetAlertConfig sets the "alert_config" field.
-func (wc *WalletCreate) SetAlertConfig(tc types.AlertConfig) *WalletCreate {
+func (wc *WalletCreate) SetAlertConfig(tc *types.AlertConfig) *WalletCreate {
 	wc.mutation.SetAlertConfig(tc)
-	return wc
-}
-
-// SetNillableAlertConfig sets the "alert_config" field if the given value is not nil.
-func (wc *WalletCreate) SetNillableAlertConfig(tc *types.AlertConfig) *WalletCreate {
-	if tc != nil {
-		wc.SetAlertConfig(*tc)
-	}
 	return wc
 }
 

@@ -46685,7 +46685,7 @@ type WalletMutation struct {
 	wallet_type            *string
 	conversion_rate        *decimal.Decimal
 	_config                *types.WalletConfig
-	alert_config           *types.AlertConfig
+	alert_config           **types.AlertConfig
 	alert_enabled          *bool
 	alert_state            *string
 	clearedFields          map[string]struct{}
@@ -47685,12 +47685,12 @@ func (m *WalletMutation) ResetConfig() {
 }
 
 // SetAlertConfig sets the "alert_config" field.
-func (m *WalletMutation) SetAlertConfig(tc types.AlertConfig) {
+func (m *WalletMutation) SetAlertConfig(tc *types.AlertConfig) {
 	m.alert_config = &tc
 }
 
 // AlertConfig returns the value of the "alert_config" field in the mutation.
-func (m *WalletMutation) AlertConfig() (r types.AlertConfig, exists bool) {
+func (m *WalletMutation) AlertConfig() (r *types.AlertConfig, exists bool) {
 	v := m.alert_config
 	if v == nil {
 		return
@@ -47701,7 +47701,7 @@ func (m *WalletMutation) AlertConfig() (r types.AlertConfig, exists bool) {
 // OldAlertConfig returns the old "alert_config" field's value of the Wallet entity.
 // If the Wallet object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletMutation) OldAlertConfig(ctx context.Context) (v types.AlertConfig, err error) {
+func (m *WalletMutation) OldAlertConfig(ctx context.Context) (v *types.AlertConfig, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldAlertConfig is only allowed on UpdateOne operations")
 	}
@@ -48208,7 +48208,7 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 		m.SetConfig(v)
 		return nil
 	case wallet.FieldAlertConfig:
-		v, ok := value.(types.AlertConfig)
+		v, ok := value.(*types.AlertConfig)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
