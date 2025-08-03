@@ -96,6 +96,7 @@ const (
 	UUID_PREFIX_COUPON                      = "coupon"
 	UUID_PREFIX_COUPON_ASSOCIATION          = "coupon_assoc"
 	UUID_PREFIX_COUPON_APPLICATION          = "coupon_app"
+	UUID_PREFIX_PRICE_UNIT                  = "price_unit"
 
 	UUID_PREFIX_WEBHOOK_EVENT = "webhook"
 )
