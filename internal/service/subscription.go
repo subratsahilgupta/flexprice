@@ -400,6 +400,11 @@ func (s *subscriptionService) processSubscriptionPriceOverrides(
 				Mark(ierr.ErrInternal)
 		}
 
+		priceUnitType := originalPrice.PriceUnitType
+		if priceUnitType == "" {
+			priceUnitType = types.PRICE_UNIT_TYPE_FIAT
+		}
+
 		// Create subscription-scoped price clone
 		overriddenPrice := &price.Price{
 			ID:                     types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
@@ -421,7 +426,7 @@ func (s *subscriptionService) processSubscriptionPriceOverrides(
 			Description:            originalPrice.Description,
 			PriceUnitID:            originalPrice.PriceUnitID,
 			PriceUnit:              originalPrice.PriceUnit,
-			PriceUnitType:          originalPrice.PriceUnitType,
+			PriceUnitType:          priceUnitType,
 			ConversionRate:         originalPrice.ConversionRate,
 			DisplayPriceUnitAmount: originalPrice.DisplayPriceUnitAmount,
 			PriceUnitAmount:        originalPrice.PriceUnitAmount,
