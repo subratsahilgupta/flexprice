@@ -837,10 +837,16 @@ func (r *walletRepository) GetWalletsByFilter(ctx context.Context, filter *types
 	client := r.client.Querier(ctx)
 	query := client.Wallet.Query().
 		Where(
-			wallet.TenantID(types.GetTenantID(ctx)),
 			wallet.StatusEQ(string(types.StatusPublished)),
 			wallet.EnvironmentID(types.GetEnvironmentID(ctx)),
 		)
+
+	// Apply tenant filter
+	if filter.TenantIDs != nil && len(filter.TenantIDs) > 0 {
+		query = query.Where(wallet.TenantIDIn(filter.TenantIDs...))
+	} else {
+		query = query.Where(wallet.TenantID(types.GetTenantID(ctx)))
+	}
 
 	// Apply status filter
 	if filter.Status != nil {
