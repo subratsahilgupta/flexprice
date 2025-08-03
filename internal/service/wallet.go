@@ -1057,6 +1057,7 @@ func (s *walletService) PublishEvent(ctx context.Context, eventName string, w *w
 		EventType: eventName,
 		WalletID:  w.ID,
 		TenantID:  w.TenantID,
+		Balance:   balance,
 	}
 
 	// Add alert info for alert events
@@ -1078,6 +1079,15 @@ func (s *walletService) PublishEvent(ctx context.Context, eventName string, w *w
 			AlertConfig:    w.AlertConfig,
 			AlertType:      getAlertType(eventName),
 		}
+
+		s.Logger.Infow("added alert info to webhook event",
+			"wallet_id", w.ID,
+			"alert_state", w.AlertState,
+			"alert_type", getAlertType(eventName),
+			"threshold", w.AlertConfig.Threshold.Value,
+			"current_balance", *currentBalance,
+			"credit_balance", *creditBalance,
+		)
 	}
 
 	// Convert to JSON

@@ -349,6 +349,7 @@ type WalletFilter struct {
 	*QueryFilter
 	Status       *WalletStatus `json:"status,omitempty" form:"status"`
 	AlertEnabled *bool         `json:"alert_enabled,omitempty" form:"alert_enabled"`
+	TenantIDs    []string      `json:"tenant_ids,omitempty" form:"tenant_ids"`
 }
 
 func NewWalletFilter() *WalletFilter {
