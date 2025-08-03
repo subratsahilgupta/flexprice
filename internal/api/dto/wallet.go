@@ -48,9 +48,10 @@ type CreateWalletRequest struct {
 	InitialCreditsExpiryDateUTC *time.Time `json:"initial_credits_expiry_date_utc,omitempty"`
 
 	// alert_enabled is the flag to enable alerts for the wallet
-	AlertEnabled bool `json:"alert_enabled,omitempty" default:"false"`
+	// defaults to true, can be explicitly set to false to disable alerts
+	AlertEnabled bool `json:"alert_enabled,omitempty"`
 
-	// alert_config is the alert configuration for the wallet
+	// alert_config is the alert configuration for the wallet (optional)
 	AlertConfig *AlertConfig `json:"alert_config,omitempty"`
 }
 
@@ -73,6 +74,8 @@ type UpdateWalletRequest struct {
 	AutoTopupMinBalance *decimal.Decimal        `json:"auto_topup_min_balance,omitempty"`
 	AutoTopupAmount     *decimal.Decimal        `json:"auto_topup_amount,omitempty"`
 	Config              *types.WalletConfig     `json:"config,omitempty"`
+	AlertEnabled        *bool                   `json:"alert_enabled,omitempty"`
+	AlertConfig         *AlertConfig            `json:"alert_config,omitempty"`
 }
 
 func (r *UpdateWalletRequest) Validate() error {
@@ -154,7 +157,7 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 
 	// Convert AlertConfig to types.AlertConfig
 	var alertConfig *types.AlertConfig
-	if r.AlertEnabled && r.AlertConfig != nil {
+	if r.AlertConfig != nil {
 		alertConfig = &types.AlertConfig{
 			AllowedTenantIDs: r.AlertConfig.AllowedTenantIDs,
 			Threshold: &types.AlertThreshold{
@@ -182,9 +185,9 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 		WalletType:          r.WalletType,
 		Config:              lo.FromPtr(r.Config),
 		ConversionRate:      r.ConversionRate,
-		AlertEnabled:        r.AlertEnabled,
+		AlertEnabled:        true, // Always enabled by default
 		AlertConfig:         alertConfig,
-		AlertState:          string(types.AlertStateOk),
+		AlertState:          string(types.AlertStateOk), // Always starts in "ok" state
 	}
 }
 
@@ -232,6 +235,31 @@ func (r *CreateWalletRequest) Validate() error {
 				Mark(ierr.ErrValidation)
 		}
 	}
+
+	// Validate alert config if provided
+	if r.AlertConfig != nil {
+		if r.AlertConfig.Threshold == nil {
+			return ierr.NewError("alert_config.threshold is required").
+				WithHint("Threshold must be provided when alert config is set").
+				Mark(ierr.ErrValidation)
+		}
+		if r.AlertConfig.Threshold.Type == "" {
+			return ierr.NewError("alert_config.threshold.type is required").
+				WithHint("Threshold type must be provided when alert config is set").
+				Mark(ierr.ErrValidation)
+		}
+		if r.AlertConfig.Threshold.Value.IsZero() {
+			return ierr.NewError("alert_config.threshold.value must be greater than 0").
+				WithHint("Threshold value must be provided when alert config is set").
+				Mark(ierr.ErrValidation)
+		}
+		if len(r.AlertConfig.AllowedTenantIDs) == 0 {
+			return ierr.NewError("alert_config.allowed_tenant_ids is required").
+				WithHint("At least one tenant ID must be provided when alert config is set").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	return validator.ValidateRequest(r)
 }
 
