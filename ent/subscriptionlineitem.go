@@ -82,9 +82,11 @@ type SubscriptionLineItem struct {
 type SubscriptionLineItemEdges struct {
 	// Subscription holds the value of the subscription edge.
 	Subscription *Subscription `json:"subscription,omitempty"`
+	// Subscription line item can have multiple coupon associations
+	CouponAssociations []*CouponAssociation `json:"coupon_associations,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // SubscriptionOrErr returns the Subscription value or an error if the edge
@@ -96,6 +98,15 @@ func (e SubscriptionLineItemEdges) SubscriptionOrErr() (*Subscription, error) {
 		return nil, &NotFoundError{label: subscription.Label}
 	}
 	return nil, &NotLoadedError{edge: "subscription"}
+}
+
+// CouponAssociationsOrErr returns the CouponAssociations value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionLineItemEdges) CouponAssociationsOrErr() ([]*CouponAssociation, error) {
+	if e.loadedTypes[1] {
+		return e.CouponAssociations, nil
+	}
+	return nil, &NotLoadedError{edge: "coupon_associations"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -318,6 +329,11 @@ func (sli *SubscriptionLineItem) Value(name string) (ent.Value, error) {
 // QuerySubscription queries the "subscription" edge of the SubscriptionLineItem entity.
 func (sli *SubscriptionLineItem) QuerySubscription() *SubscriptionQuery {
 	return NewSubscriptionLineItemClient(sli.config).QuerySubscription(sli)
+}
+
+// QueryCouponAssociations queries the "coupon_associations" edge of the SubscriptionLineItem entity.
+func (sli *SubscriptionLineItem) QueryCouponAssociations() *CouponAssociationQuery {
+	return NewSubscriptionLineItemClient(sli.config).QueryCouponAssociations(sli)
 }
 
 // Update returns a builder for updating this SubscriptionLineItem.

@@ -152,6 +152,8 @@ func (InvoiceLineItem) Edges() []ent.Edge {
 			Unique().
 			Required().
 			Immutable(),
+		edge.To("coupon_applications", CouponApplication.Type).
+			Comment("Invoice line item can have multiple coupon applications"),
 	}
 }
 

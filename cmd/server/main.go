@@ -139,6 +139,9 @@ func main() {
 			repository.NewCreditGrantApplicationRepository,
 			repository.NewCreditNoteRepository,
 			repository.NewCreditNoteLineItemRepository,
+			repository.NewCouponRepository,
+			repository.NewCouponAssociationRepository,
+			repository.NewCouponApplicationRepository,
 			repository.NewPriceUnitRepository,
 
 			// PubSub
@@ -186,6 +189,7 @@ func main() {
 			service.NewCreditGrantService,
 			service.NewCostSheetService,
 			service.NewCreditNoteService,
+			service.NewCouponService,
 			service.NewPriceUnitService,
 		),
 	)
@@ -238,6 +242,7 @@ func provideHandlers(
 	creditNoteService service.CreditNoteService,
 	priceUnitService *service.PriceUnitService,
 	svixClient *svix.Client,
+	couponService service.CouponService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:            v1.NewEventsHandler(eventService, eventPostProcessingService, logger),
@@ -268,6 +273,7 @@ func provideHandlers(
 		CreditNote:        v1.NewCreditNoteHandler(creditNoteService, logger),
 		PriceUnit:         v1.NewPriceUnitHandler(priceUnitService, logger),
 		Webhook:           v1.NewWebhookHandler(cfg, svixClient, logger),
+		Coupon:            v1.NewCouponHandler(couponService, logger),
 	}
 }
 
