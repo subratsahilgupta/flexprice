@@ -85,7 +85,10 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetUpdatedAt(p.UpdatedAt).
 		SetCreatedBy(p.CreatedBy).
 		SetUpdatedBy(p.UpdatedBy).
-		SetEnvironmentID(p.EnvironmentID)
+		SetEnvironmentID(p.EnvironmentID).
+		SetNillableParentPriceID(lo.ToPtr(p.ParentPriceID)).
+		SetNillableSubscriptionID(lo.ToPtr(p.SubscriptionID)).
+		SetNillableScope(lo.ToPtr(price.Scope(string(p.Scope))))
 
 	if p.PriceUnitID != "" {
 		priceBuilder.SetPriceUnitID(p.PriceUnitID)
