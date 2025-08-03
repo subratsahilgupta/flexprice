@@ -77,11 +77,10 @@ func FromEnt(e *ent.Wallet) *Wallet {
 		return nil
 	}
 
-	// Create a copy of AlertConfig if it has a threshold set
+	// Use AlertConfig directly
 	var alertConfig *types.AlertConfig
-	if e.AlertConfig.Threshold != nil {
-		alertConfigCopy := e.AlertConfig
-		alertConfig = &alertConfigCopy
+	if e.AlertConfig != nil {
+		alertConfig = e.AlertConfig
 	}
 
 	return &Wallet{

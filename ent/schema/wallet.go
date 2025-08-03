@@ -115,7 +115,7 @@ func (Wallet) Fields() []ent.Field {
 
 		field.Bool("alert_enabled").
 			Optional().
-			Default(false),
+			Default(true),
 		field.String("alert_state").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",

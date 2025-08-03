@@ -73,9 +73,6 @@ type WalletService interface {
 
 	// CheckBalanceThresholds checks if wallet balance is below threshold and triggers alerts
 	CheckBalanceThresholds(ctx context.Context, w *wallet.Wallet, balance *dto.WalletBalanceResponse) error
-
-	// UpdateWalletBalance updates a wallet's balance and checks thresholds
-	UpdateWalletBalance(ctx context.Context, walletID string, finalBalance, newCreditBalance decimal.Decimal) error
 }
 
 type walletService struct {
@@ -1239,27 +1236,4 @@ func (s *walletService) CheckBalanceThresholds(ctx context.Context, w *wallet.Wa
 		return errs[0] // Return first error
 	}
 	return nil
-}
-
-// UpdateWalletBalance updates a wallet's balance and checks thresholds
-func (s *walletService) UpdateWalletBalance(ctx context.Context, walletID string, finalBalance, newCreditBalance decimal.Decimal) error {
-	// Update balance in database
-	if err := s.WalletRepo.UpdateWalletBalance(ctx, walletID, finalBalance, newCreditBalance); err != nil {
-		return err
-	}
-
-	// Get updated wallet
-	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
-	if err != nil {
-		return err
-	}
-
-	// Get real-time balance
-	balance, err := s.GetWalletBalance(ctx, walletID)
-	if err != nil {
-		return err
-	}
-
-	// Check thresholds and trigger alerts if needed
-	return s.CheckBalanceThresholds(ctx, w, balance)
 }
