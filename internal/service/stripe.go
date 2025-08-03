@@ -35,11 +35,11 @@ func NewStripeService(params ServiceParams) *StripeService {
 }
 
 // decryptConnectionMetadata decrypts the connection metadata if it's encrypted
-func (s *StripeService) decryptConnectionMetadata(metadata types.ConnectionMetadata) (types.ConnectionMetadata, error) {
+func (s *StripeService) decryptConnectionMetadata(metadata types.ConnectionMetadata, providerType types.SecretProvider) (types.ConnectionMetadata, error) {
 	decryptedMetadata := metadata
 
-	switch metadata.Type {
-	case types.ConnectionMetadataTypeStripe:
+	switch providerType {
+	case types.SecretProviderStripe:
 		if metadata.Stripe != nil {
 			decryptedPublishableKey, err := s.encryptionService.Decrypt(metadata.Stripe.PublishableKey)
 			if err != nil {
@@ -61,52 +61,9 @@ func (s *StripeService) decryptConnectionMetadata(metadata types.ConnectionMetad
 				AccountID:      metadata.Stripe.AccountID, // Account ID is not sensitive
 			}
 		}
-	case types.ConnectionMetadataTypeRazorpay:
-		if metadata.Razorpay != nil {
-			decryptedKeyID, err := s.encryptionService.Decrypt(metadata.Razorpay.KeyID)
-			if err != nil {
-				return types.ConnectionMetadata{}, err
-			}
-			decryptedKeySecret, err := s.encryptionService.Decrypt(metadata.Razorpay.KeySecret)
-			if err != nil {
-				return types.ConnectionMetadata{}, err
-			}
-			decryptedWebhookSecret, err := s.encryptionService.Decrypt(metadata.Razorpay.WebhookSecret)
-			if err != nil {
-				return types.ConnectionMetadata{}, err
-			}
 
-			decryptedMetadata.Razorpay = &types.RazorpayConnectionMetadata{
-				KeyID:         decryptedKeyID,
-				KeySecret:     decryptedKeySecret,
-				WebhookSecret: decryptedWebhookSecret,
-				AccountID:     metadata.Razorpay.AccountID, // Account ID is not sensitive
-			}
-		}
-	case types.ConnectionMetadataTypePayPal:
-		if metadata.PayPal != nil {
-			decryptedClientID, err := s.encryptionService.Decrypt(metadata.PayPal.ClientID)
-			if err != nil {
-				return types.ConnectionMetadata{}, err
-			}
-			decryptedClientSecret, err := s.encryptionService.Decrypt(metadata.PayPal.ClientSecret)
-			if err != nil {
-				return types.ConnectionMetadata{}, err
-			}
-			decryptedWebhookID, err := s.encryptionService.Decrypt(metadata.PayPal.WebhookID)
-			if err != nil {
-				return types.ConnectionMetadata{}, err
-			}
-
-			decryptedMetadata.PayPal = &types.PayPalConnectionMetadata{
-				ClientID:     decryptedClientID,
-				ClientSecret: decryptedClientSecret,
-				WebhookID:    decryptedWebhookID,
-				AccountID:    metadata.PayPal.AccountID, // Account ID is not sensitive
-			}
-		}
-	case types.ConnectionMetadataTypeGeneric:
-		// For generic metadata, decrypt string values in the data map
+	default:
+		// For other providers or unknown types, use generic format
 		if metadata.Generic != nil {
 			decryptedData := make(map[string]interface{})
 			for key, value := range metadata.Generic.Data {
@@ -132,7 +89,7 @@ func (s *StripeService) decryptConnectionMetadata(metadata types.ConnectionMetad
 // GetDecryptedStripeConfig gets the decrypted Stripe configuration from a connection
 func (s *StripeService) GetDecryptedStripeConfig(conn *connection.Connection) (*connection.StripeConnection, error) {
 	// Decrypt metadata if needed
-	decryptedMetadata, err := s.decryptConnectionMetadata(conn.Metadata)
+	decryptedMetadata, err := s.decryptConnectionMetadata(conn.Metadata, conn.ProviderType)
 	if err != nil {
 		return nil, err
 	}

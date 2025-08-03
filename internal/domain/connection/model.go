@@ -32,12 +32,6 @@ func (c *Connection) GetStripeConfig() (*StripeConnection, error) {
 			Mark(ierr.ErrValidation)
 	}
 
-	if c.Metadata.Type != types.ConnectionMetadataTypeStripe {
-		return nil, ierr.NewError("connection metadata is not Stripe type").
-			WithHint("Connection metadata type must be stripe").
-			Mark(ierr.ErrValidation)
-	}
-
 	if c.Metadata.Stripe == nil {
 		return nil, ierr.NewError("stripe metadata is not configured").
 			WithHint("Stripe metadata is required for Stripe connections").
@@ -72,31 +66,11 @@ func convertMapToConnectionMetadata(metadata map[string]interface{}, providerTyp
 			stripeMetadata.AccountID = aid
 		}
 		return types.ConnectionMetadata{
-			Type:   types.ConnectionMetadataTypeStripe,
 			Stripe: stripeMetadata,
-		}
-	case types.SecretProviderRazorpay:
-		razorpayMetadata := &types.RazorpayConnectionMetadata{}
-		if kid, ok := metadata["key_id"].(string); ok {
-			razorpayMetadata.KeyID = kid
-		}
-		if ks, ok := metadata["key_secret"].(string); ok {
-			razorpayMetadata.KeySecret = ks
-		}
-		if ws, ok := metadata["webhook_secret"].(string); ok {
-			razorpayMetadata.WebhookSecret = ws
-		}
-		if aid, ok := metadata["account_id"].(string); ok {
-			razorpayMetadata.AccountID = aid
-		}
-		return types.ConnectionMetadata{
-			Type:     types.ConnectionMetadataTypeRazorpay,
-			Razorpay: razorpayMetadata,
 		}
 	default:
 		// For other providers or unknown types, use generic format
 		return types.ConnectionMetadata{
-			Type: types.ConnectionMetadataTypeGeneric,
 			Generic: &types.GenericConnectionMetadata{
 				Data: metadata,
 			},

@@ -1,6 +1,8 @@
 package dto
 
 import (
+	"encoding/json"
+
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -12,11 +14,94 @@ type CreateConnectionRequest struct {
 	Metadata     types.ConnectionMetadata `json:"metadata,omitempty"`
 }
 
+// UnmarshalJSON custom unmarshaling to handle flat metadata structure
+func (req *CreateConnectionRequest) UnmarshalJSON(data []byte) error {
+	// First, unmarshal to a temporary struct to get the raw data
+	var temp struct {
+		Name         string                 `json:"name"`
+		ProviderType types.SecretProvider   `json:"provider_type"`
+		Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	}
+
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	// Set the basic fields
+	req.Name = temp.Name
+	req.ProviderType = temp.ProviderType
+
+	// Convert flat metadata to structured format based on provider_type
+	if temp.Metadata != nil {
+		req.Metadata = convertFlatMetadataToStructured(temp.Metadata, temp.ProviderType)
+	}
+
+	return nil
+}
+
+// convertFlatMetadataToStructured converts flat metadata to structured format
+func convertFlatMetadataToStructured(flatMetadata map[string]interface{}, providerType types.SecretProvider) types.ConnectionMetadata {
+	switch providerType {
+	case types.SecretProviderStripe:
+		stripeMetadata := &types.StripeConnectionMetadata{}
+
+		if pk, ok := flatMetadata["publishable_key"].(string); ok {
+			stripeMetadata.PublishableKey = pk
+		}
+		if sk, ok := flatMetadata["secret_key"].(string); ok {
+			stripeMetadata.SecretKey = sk
+		}
+		if ws, ok := flatMetadata["webhook_secret"].(string); ok {
+			stripeMetadata.WebhookSecret = ws
+		}
+		if aid, ok := flatMetadata["account_id"].(string); ok {
+			stripeMetadata.AccountID = aid
+		}
+
+		return types.ConnectionMetadata{
+			Stripe: stripeMetadata,
+		}
+
+	default:
+		// For other providers or unknown types, use generic format
+		return types.ConnectionMetadata{
+			Generic: &types.GenericConnectionMetadata{
+				Data: flatMetadata,
+			},
+		}
+	}
+}
+
 // UpdateConnectionRequest represents the request to update a connection
 type UpdateConnectionRequest struct {
 	Name         string                   `json:"name,omitempty" validate:"omitempty,max=255"`
 	ProviderType types.SecretProvider     `json:"provider_type,omitempty"`
 	Metadata     types.ConnectionMetadata `json:"metadata,omitempty"`
+}
+
+// UnmarshalJSON custom unmarshaling to handle flat metadata structure
+func (req *UpdateConnectionRequest) UnmarshalJSON(data []byte) error {
+	// First, unmarshal to a temporary struct to get the raw data
+	var temp struct {
+		Name         string                 `json:"name"`
+		ProviderType types.SecretProvider   `json:"provider_type"`
+		Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	}
+
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	// Set the basic fields
+	req.Name = temp.Name
+	req.ProviderType = temp.ProviderType
+
+	// Convert flat metadata to structured format based on provider_type
+	if temp.Metadata != nil {
+		req.Metadata = convertFlatMetadataToStructured(temp.Metadata, temp.ProviderType)
+	}
+
+	return nil
 }
 
 // ConnectionResponse represents the response for connection operations

@@ -53,7 +53,7 @@ func (r *connectionRepository) Create(ctx context.Context, c *domainConnection.C
 	}
 
 	// Convert structured metadata to map format for database storage
-	metadataMap := convertConnectionMetadataToMap(c.Metadata)
+	metadataMap := convertConnectionMetadataToMap(c.Metadata, c.ProviderType)
 
 	connection, err := client.Connection.Create().
 		SetID(c.ID).
@@ -221,9 +221,9 @@ func (r *connectionRepository) List(ctx context.Context, filter *types.Connectio
 }
 
 // convertConnectionMetadataToMap converts structured metadata to map format for database storage
-func convertConnectionMetadataToMap(metadata types.ConnectionMetadata) map[string]interface{} {
-	switch metadata.Type {
-	case types.ConnectionMetadataTypeStripe:
+func convertConnectionMetadataToMap(metadata types.ConnectionMetadata, providerType types.SecretProvider) map[string]interface{} {
+	switch providerType {
+	case types.SecretProviderStripe:
 		if metadata.Stripe != nil {
 			return map[string]interface{}{
 				"publishable_key": metadata.Stripe.PublishableKey,
@@ -232,25 +232,8 @@ func convertConnectionMetadataToMap(metadata types.ConnectionMetadata) map[strin
 				"account_id":      metadata.Stripe.AccountID,
 			}
 		}
-	case types.ConnectionMetadataTypeRazorpay:
-		if metadata.Razorpay != nil {
-			return map[string]interface{}{
-				"key_id":         metadata.Razorpay.KeyID,
-				"key_secret":     metadata.Razorpay.KeySecret,
-				"webhook_secret": metadata.Razorpay.WebhookSecret,
-				"account_id":     metadata.Razorpay.AccountID,
-			}
-		}
-	case types.ConnectionMetadataTypePayPal:
-		if metadata.PayPal != nil {
-			return map[string]interface{}{
-				"client_id":     metadata.PayPal.ClientID,
-				"client_secret": metadata.PayPal.ClientSecret,
-				"webhook_id":    metadata.PayPal.WebhookID,
-				"account_id":    metadata.PayPal.AccountID,
-			}
-		}
-	case types.ConnectionMetadataTypeGeneric:
+	default:
+		// For other providers or unknown types, use generic format
 		if metadata.Generic != nil {
 			return metadata.Generic.Data
 		}
@@ -296,7 +279,7 @@ func (r *connectionRepository) Update(ctx context.Context, c *domainConnection.C
 	defer FinishSpan(span)
 
 	// Convert structured metadata to map format for database storage
-	metadataMap := convertConnectionMetadataToMap(c.Metadata)
+	metadataMap := convertConnectionMetadataToMap(c.Metadata, c.ProviderType)
 
 	connection, err := client.Connection.UpdateOneID(c.ID).
 		Where(

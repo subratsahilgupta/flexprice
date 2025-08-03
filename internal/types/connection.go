@@ -9,22 +9,18 @@ import (
 type ConnectionMetadataType string
 
 const (
-	ConnectionMetadataTypeStripe   ConnectionMetadataType = "stripe"
-	ConnectionMetadataTypeRazorpay ConnectionMetadataType = "razorpay"
-	ConnectionMetadataTypePayPal   ConnectionMetadataType = "paypal"
-	ConnectionMetadataTypeGeneric  ConnectionMetadataType = "generic"
+	ConnectionMetadataTypeStripe  ConnectionMetadataType = "stripe"
+	ConnectionMetadataTypeGeneric ConnectionMetadataType = "generic"
 )
 
 func (t ConnectionMetadataType) Validate() error {
 	allowedTypes := []ConnectionMetadataType{
 		ConnectionMetadataTypeStripe,
-		ConnectionMetadataTypeRazorpay,
-		ConnectionMetadataTypePayPal,
 		ConnectionMetadataTypeGeneric,
 	}
 	if !lo.Contains(allowedTypes, t) {
 		return ierr.NewError("invalid connection metadata type").
-			WithHint("Connection metadata type must be one of: stripe, razorpay, paypal, generic").
+			WithHint("Connection metadata type must be one of: stripe, generic").
 			Mark(ierr.ErrValidation)
 	}
 	return nil
@@ -58,62 +54,6 @@ func (s *StripeConnectionMetadata) Validate() error {
 	return nil
 }
 
-// RazorpayConnectionMetadata represents Razorpay-specific connection metadata
-type RazorpayConnectionMetadata struct {
-	KeyID         string `json:"key_id"`
-	KeySecret     string `json:"key_secret"`
-	WebhookSecret string `json:"webhook_secret"`
-	AccountID     string `json:"account_id,omitempty"`
-}
-
-// Validate validates the Razorpay connection metadata
-func (r *RazorpayConnectionMetadata) Validate() error {
-	if r.KeyID == "" {
-		return ierr.NewError("key_id is required").
-			WithHint("Razorpay key ID is required").
-			Mark(ierr.ErrValidation)
-	}
-	if r.KeySecret == "" {
-		return ierr.NewError("key_secret is required").
-			WithHint("Razorpay key secret is required").
-			Mark(ierr.ErrValidation)
-	}
-	if r.WebhookSecret == "" {
-		return ierr.NewError("webhook_secret is required").
-			WithHint("Razorpay webhook secret is required").
-			Mark(ierr.ErrValidation)
-	}
-	return nil
-}
-
-// PayPalConnectionMetadata represents PayPal-specific connection metadata
-type PayPalConnectionMetadata struct {
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	WebhookID    string `json:"webhook_id"`
-	AccountID    string `json:"account_id,omitempty"`
-}
-
-// Validate validates the PayPal connection metadata
-func (p *PayPalConnectionMetadata) Validate() error {
-	if p.ClientID == "" {
-		return ierr.NewError("client_id is required").
-			WithHint("PayPal client ID is required").
-			Mark(ierr.ErrValidation)
-	}
-	if p.ClientSecret == "" {
-		return ierr.NewError("client_secret is required").
-			WithHint("PayPal client secret is required").
-			Mark(ierr.ErrValidation)
-	}
-	if p.WebhookID == "" {
-		return ierr.NewError("webhook_id is required").
-			WithHint("PayPal webhook ID is required").
-			Mark(ierr.ErrValidation)
-	}
-	return nil
-}
-
 // GenericConnectionMetadata represents generic connection metadata
 type GenericConnectionMetadata struct {
 	Data map[string]interface{} `json:"data"`
@@ -131,52 +71,28 @@ func (g *GenericConnectionMetadata) Validate() error {
 
 // ConnectionMetadata represents structured connection metadata
 type ConnectionMetadata struct {
-	Type     ConnectionMetadataType      `json:"type"`
-	Stripe   *StripeConnectionMetadata   `json:"stripe,omitempty"`
-	Razorpay *RazorpayConnectionMetadata `json:"razorpay,omitempty"`
-	PayPal   *PayPalConnectionMetadata   `json:"paypal,omitempty"`
-	Generic  *GenericConnectionMetadata  `json:"generic,omitempty"`
+	Stripe  *StripeConnectionMetadata  `json:"stripe,omitempty"`
+	Generic *GenericConnectionMetadata `json:"generic,omitempty"`
 }
 
-// Validate validates the connection metadata
-func (c *ConnectionMetadata) Validate() error {
-	if err := c.Type.Validate(); err != nil {
-		return err
-	}
-
-	switch c.Type {
-	case ConnectionMetadataTypeStripe:
+// Validate validates the connection metadata based on provider type
+func (c *ConnectionMetadata) Validate(providerType SecretProvider) error {
+	switch providerType {
+	case SecretProviderStripe:
 		if c.Stripe == nil {
 			return ierr.NewError("stripe metadata is required").
-				WithHint("Stripe metadata is required for stripe type").
+				WithHint("Stripe metadata is required for stripe provider").
 				Mark(ierr.ErrValidation)
 		}
 		return c.Stripe.Validate()
-	case ConnectionMetadataTypeRazorpay:
-		if c.Razorpay == nil {
-			return ierr.NewError("razorpay metadata is required").
-				WithHint("Razorpay metadata is required for razorpay type").
-				Mark(ierr.ErrValidation)
-		}
-		return c.Razorpay.Validate()
-	case ConnectionMetadataTypePayPal:
-		if c.PayPal == nil {
-			return ierr.NewError("paypal metadata is required").
-				WithHint("PayPal metadata is required for paypal type").
-				Mark(ierr.ErrValidation)
-		}
-		return c.PayPal.Validate()
-	case ConnectionMetadataTypeGeneric:
+	default:
+		// For other providers or unknown types, use generic format
 		if c.Generic == nil {
 			return ierr.NewError("generic metadata is required").
-				WithHint("Generic metadata is required for generic type").
+				WithHint("Generic metadata is required for this provider type").
 				Mark(ierr.ErrValidation)
 		}
 		return c.Generic.Validate()
-	default:
-		return ierr.NewError("invalid metadata type").
-			WithHint("Invalid metadata type").
-			Mark(ierr.ErrValidation)
 	}
 }
 
