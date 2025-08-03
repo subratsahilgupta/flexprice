@@ -542,6 +542,11 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 		query = query.Where(price.IDIn(f.PriceIDs...))
 	}
 
+	// scope filter
+	if f.Scope != nil {
+		query = query.Where(price.ScopeEQ(price.Scope(string(*f.Scope))))
+	}
+
 	// Apply time range filters if specified
 	if f.TimeRangeFilter != nil {
 		if f.StartTime != nil {

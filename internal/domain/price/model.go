@@ -401,7 +401,7 @@ func FromEnt(e *ent.Price) *Price {
 		PriceUnitAmount:        decimal.NewFromFloat(e.PriceUnitAmount),
 		DisplayPriceUnitAmount: e.DisplayPriceUnitAmount,
 		ConversionRate:         decimal.NewFromFloat(e.ConversionRate),
-		Scope:                  types.PRICE_SCOPE_PLAN,
+		Scope:                  types.PriceScope(e.Scope),
 		ParentPriceID:          lo.FromPtr(e.ParentPriceID),
 		SubscriptionID:         lo.FromPtr(e.SubscriptionID),
 		BaseModel: types.BaseModel{
