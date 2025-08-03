@@ -611,6 +611,34 @@ func (s *walletService) UpdateWallet(ctx context.Context, id string, req *dto.Up
 		existing.Config = *req.Config
 	}
 
+	// Update alert config
+	if req.AlertEnabled != nil {
+		existing.AlertEnabled = *req.AlertEnabled
+		// If alerts are disabled, clear the config and state
+		if !*req.AlertEnabled {
+			existing.AlertConfig = nil
+			existing.AlertState = string(types.AlertStateOk)
+		}
+	}
+
+	// Update alert config if provided and alerts are enabled
+	if req.AlertConfig != nil {
+		if !existing.AlertEnabled {
+			return nil, ierr.NewError("cannot set alert config when alerts are disabled").
+				WithHint("Enable alerts first before setting alert config").
+				Mark(ierr.ErrValidation)
+		}
+
+		// Convert AlertConfig to types.AlertConfig
+		existing.AlertConfig = &types.AlertConfig{
+			AllowedTenantIDs: req.AlertConfig.AllowedTenantIDs,
+			Threshold: &types.AlertThreshold{
+				Type:  req.AlertConfig.Threshold.Type,
+				Value: req.AlertConfig.Threshold.Value,
+			},
+		}
+	}
+
 	// Update wallet
 	if err := s.WalletRepo.UpdateWallet(ctx, id, existing); err != nil {
 		return nil, ierr.WithError(err).
