@@ -332,10 +332,16 @@ const (
 	AlertStateAlert AlertState = "alert"
 )
 
+type CheckAlertsRequest struct {
+	TenantIDs []string        `json:"tenant_ids"`
+	EnvIDs    []string        `json:"env_ids"`
+	WalletIDs []string        `json:"wallet_ids"`
+	Threshold *AlertThreshold `json:"threshold,omitempty"`
+}
+
 // AlertConfig represents the configuration for wallet alerts
 type AlertConfig struct {
-	AllowedTenantIDs []string        `json:"allowed_tenant_ids,omitempty"`
-	Threshold        *AlertThreshold `json:"threshold,omitempty"`
+	Threshold *AlertThreshold `json:"threshold,omitempty"`
 }
 
 // AlertThreshold represents the threshold configuration
@@ -347,9 +353,9 @@ type AlertThreshold struct {
 // WalletFilter represents the filter options for wallets
 type WalletFilter struct {
 	*QueryFilter
+	WalletIDs    []string      `json:"wallet_ids,omitempty" form:"wallet_ids"`
 	Status       *WalletStatus `json:"status,omitempty" form:"status"`
 	AlertEnabled *bool         `json:"alert_enabled,omitempty" form:"alert_enabled"`
-	TenantIDs    []string      `json:"tenant_ids,omitempty" form:"tenant_ids"`
 }
 
 func NewWalletFilter() *WalletFilter {

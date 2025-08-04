@@ -631,7 +631,6 @@ func (s *walletService) UpdateWallet(ctx context.Context, id string, req *dto.Up
 
 		// Convert AlertConfig to types.AlertConfig
 		existing.AlertConfig = &types.AlertConfig{
-			AllowedTenantIDs: req.AlertConfig.AllowedTenantIDs,
 			Threshold: &types.AlertThreshold{
 				Type:  req.AlertConfig.Threshold.Type,
 				Value: req.AlertConfig.Threshold.Value,

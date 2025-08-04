@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -58,18 +59,9 @@ func walletFilterFn(ctx context.Context, w *wallet.Wallet, filter interface{}) b
 			return false
 		}
 
-		// Filter by tenant IDs
-		if f.TenantIDs != nil && len(f.TenantIDs) > 0 {
-			found := false
-			for _, tid := range f.TenantIDs {
-				if w.TenantID == tid {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false
-			}
+		// Filter by wallet IDs
+		if len(f.WalletIDs) > 0 && !lo.Contains(f.WalletIDs, w.ID) {
+			return false
 		}
 	}
 
