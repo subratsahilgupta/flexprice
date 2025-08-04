@@ -25,6 +25,8 @@ func GetAggregator(aggregationType types.AggregationType) events.Aggregator {
 		return &LatestAggregator{}
 	case types.AggregationSumWithMultiplier:
 		return &SumWithMultiAggregator{}
+	case types.AggregationMax:
+		return &MaxAggregator{}
 	}
 	return nil
 }
@@ -502,6 +504,73 @@ func (a *SumWithMultiAggregator) GetQuery(ctx context.Context, params *events.Us
 
 func (a *SumWithMultiAggregator) GetType() types.AggregationType {
 	return types.AggregationSumWithMultiplier
+}
+
+// MaxAggregator implements max aggregation
+type MaxAggregator struct{}
+
+func (a *MaxAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
+	windowSize := formatWindowSize(params.WindowSize)
+	selectClause := ""
+	windowClause := ""
+	groupByClause := ""
+	windowGroupBy := ""
+
+	if windowSize != "" {
+		selectClause = "window_size,"
+		windowClause = fmt.Sprintf("%s AS window_size,", windowSize)
+		groupByClause = "GROUP BY window_size ORDER BY window_size"
+		windowGroupBy = ", window_size"
+	}
+
+	externalCustomerFilter := ""
+	if params.ExternalCustomerID != "" {
+		externalCustomerFilter = fmt.Sprintf("AND external_customer_id = '%s'", params.ExternalCustomerID)
+	}
+
+	customerFilter := ""
+	if params.CustomerID != "" {
+		customerFilter = fmt.Sprintf("AND customer_id = '%s'", params.CustomerID)
+	}
+
+	filterConditions := buildFilterConditions(params.Filters)
+	timeConditions := buildTimeConditions(params)
+
+	return fmt.Sprintf(`
+        SELECT 
+            %s max(value) as total
+        FROM (
+            SELECT
+                %s anyLast(JSONExtractFloat(assumeNotNull(properties), '%s')) as value
+            FROM events
+            PREWHERE tenant_id = '%s'
+				AND environment_id = '%s'
+				AND event_name = '%s'
+				%s
+				%s
+                %s
+                %s
+            GROUP BY %s %s
+        )
+        %s
+    `,
+		selectClause,
+		windowClause,
+		params.PropertyName,
+		types.GetTenantID(ctx),
+		types.GetEnvironmentID(ctx),
+		params.EventName,
+		externalCustomerFilter,
+		customerFilter,
+		filterConditions,
+		timeConditions,
+		getDeduplicationKey(),
+		windowGroupBy,
+		groupByClause)
+}
+
+func (a *MaxAggregator) GetType() types.AggregationType {
+	return types.AggregationMax
 }
 
 // // buildFilterGroupsQuery builds a query that matches events to the most specific filter group
