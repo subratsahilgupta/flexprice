@@ -266,7 +266,7 @@ func provideHandlers(
 		Secret:            v1.NewSecretHandler(secretService, logger),
 		Onboarding:        v1.NewOnboardingHandler(onboardingService, logger),
 		CronSubscription:  cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
-		CronWallet:        cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService),
+		CronWallet:        cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService, environmentService),
 		CreditGrant:       v1.NewCreditGrantHandler(creditGrantService, logger),
 		CostSheet:         v1.NewCostSheetHandler(costSheetService, logger),
 		CronCreditGrant:   cron.NewCreditGrantCronHandler(creditGrantService, logger),
