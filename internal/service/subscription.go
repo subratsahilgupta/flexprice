@@ -114,10 +114,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	}
 
 	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
-	priceFilter := types.NewNoLimitPriceFilter().
-		WithPlanIDs([]string{plan.ID}).
-		WithExpand(string(types.ExpandMeters))
-	pricesResponse, err := priceService.GetPrices(ctx, priceFilter)
+	pricesResponse, err := priceService.GetPricesByPlanID(ctx, plan.ID)
 	if err != nil {
 		return nil, err
 	}
