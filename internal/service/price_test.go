@@ -120,6 +120,7 @@ func (s *PriceServiceSuite) TestGetPrices() {
 
 	// Retrieve all prices within limit
 	priceFilter := types.NewPriceFilter()
+	priceFilter.Scope = lo.ToPtr(types.PRICE_SCOPE_PLAN)
 	priceFilter.QueryFilter.Offset = lo.ToPtr(0)
 	priceFilter.QueryFilter.Limit = lo.ToPtr(10)
 	resp, err := s.priceService.GetPrices(s.ctx, priceFilter)
@@ -139,6 +140,7 @@ func (s *PriceServiceSuite) TestGetPrices() {
 	// Retrieve with offset exceeding available records
 	priceFilter.QueryFilter.Offset = lo.ToPtr(10)
 	priceFilter.QueryFilter.Limit = lo.ToPtr(10)
+	priceFilter.Scope = lo.ToPtr(types.PRICE_SCOPE_PLAN)
 	resp, err = s.priceService.GetPrices(s.ctx, priceFilter)
 	s.NoError(err)
 	s.NotNil(resp)
