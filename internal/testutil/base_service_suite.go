@@ -185,6 +185,7 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.CreditNoteRepo.(*InMemoryCreditNoteStore).Clear()
 	s.stores.CreditNoteLineItemRepo.(*InMemoryCreditNoteLineItemStore).Clear()
 	s.stores.ConnectionRepo.(*InMemoryConnectionStore).Clear()
+	s.stores.EntityIntegrationMappingRepo.(*InMemoryEntityIntegrationMappingStore).Clear()
 }
 
 func (s *BaseServiceTestSuite) ClearStores() {

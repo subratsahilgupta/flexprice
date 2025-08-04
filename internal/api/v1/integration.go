@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -42,12 +43,21 @@ func NewIntegrationHandler(
 // @Failure 500 {object} errors.ErrorResponse
 // @Router /integration/sync/{entity_type}/{entity_id} [post]
 func (h *IntegrationHandler) SyncEntityToProviders(c *gin.Context) {
-	entityType := c.Param("entity_type")
+	entityTypeStr := c.Param("entity_type")
 	entityID := c.Param("entity_id")
 
-	if entityType == "" || entityID == "" {
+	if entityTypeStr == "" || entityID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Entity type and entity ID are required",
+		})
+		return
+	}
+
+	// Convert string to enum and validate
+	entityType := types.IntegrationEntityType(entityTypeStr)
+	if err := entityType.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid entity type",
 		})
 		return
 	}

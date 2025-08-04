@@ -28,15 +28,27 @@ func (s *InMemoryConnectionStore) Get(ctx context.Context, id string) (*connecti
 	if err != nil {
 		return nil, err
 	}
+
+	// Only return published connections
+	if item.Status != types.StatusPublished {
+		return nil, ierr.NewError("connection not found").
+			WithHintf("Connection with ID %s was not found", id).
+			WithReportableDetails(map[string]any{
+				"connection_id": id,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
 	return copyConnection(item), nil
 }
 
 func (s *InMemoryConnectionStore) GetByEnvironmentAndProvider(ctx context.Context, environmentID string, provider types.SecretProvider) (*connection.Connection, error) {
-	// Create a filter function that matches by environment_id, provider_type, tenant_id
+	// Create a filter function that matches by environment_id, provider_type, tenant_id, and published status
 	filterFn := func(ctx context.Context, c *connection.Connection, _ interface{}) bool {
 		return c.EnvironmentID == environmentID &&
 			c.ProviderType == provider &&
-			c.TenantID == types.GetTenantID(ctx)
+			c.TenantID == types.GetTenantID(ctx) &&
+			c.Status == types.StatusPublished
 	}
 
 	// List all connections with our filter
@@ -108,6 +120,11 @@ func connectionFilterFn(ctx context.Context, c *connection.Connection, filter in
 
 	// Apply environment filter
 	if !CheckEnvironmentFilter(ctx, c.EnvironmentID) {
+		return false
+	}
+
+	// Apply published status filter - only return published connections
+	if c.Status != types.StatusPublished {
 		return false
 	}
 

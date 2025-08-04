@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/security"
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -146,6 +147,38 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 		return nil, err
 	}
 
+	// Check for existing published connection with same provider, tenant, and environment
+	existingFilter := &types.ConnectionFilter{
+		ProviderType: req.ProviderType,
+	}
+
+	existingConnections, err := s.ConnectionRepo.List(ctx, existingFilter)
+	if err != nil {
+		s.Logger.Errorw("failed to check for existing connections", "error", err)
+		return nil, err
+	}
+
+	// Check if there's already a published connection for this provider, tenant, and environment
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	for _, existingConn := range existingConnections {
+		if existingConn.TenantID == tenantID &&
+			existingConn.EnvironmentID == environmentID &&
+			existingConn.ProviderType == req.ProviderType &&
+			existingConn.Status == types.StatusPublished {
+			return nil, ierr.NewError("connection already exists").
+				WithHintf("A published connection for provider '%s' already exists in this environment", req.ProviderType).
+				WithReportableDetails(map[string]interface{}{
+					"provider_type":          req.ProviderType,
+					"tenant_id":              tenantID,
+					"environment_id":         environmentID,
+					"existing_connection_id": existingConn.ID,
+				}).
+				Mark(ierr.ErrAlreadyExists)
+		}
+	}
+
 	// Convert DTO to domain model
 	conn := req.ToConnection()
 
@@ -245,7 +278,42 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 	if req.Name != "" {
 		conn.Name = req.Name
 	}
-	if req.ProviderType != "" {
+
+	// If provider type is being changed, check for duplicates
+	if req.ProviderType != "" && req.ProviderType != conn.ProviderType {
+		// Check for existing published connection with same provider, tenant, and environment
+		existingFilter := &types.ConnectionFilter{
+			ProviderType: req.ProviderType,
+		}
+
+		existingConnections, err := s.ConnectionRepo.List(ctx, existingFilter)
+		if err != nil {
+			s.Logger.Errorw("failed to check for existing connections during update", "error", err)
+			return nil, err
+		}
+
+		// Check if there's already a published connection for this provider, tenant, and environment
+		tenantID := types.GetTenantID(ctx)
+		environmentID := types.GetEnvironmentID(ctx)
+
+		for _, existingConn := range existingConnections {
+			if existingConn.ID != id && // Exclude the current connection being updated
+				existingConn.TenantID == tenantID &&
+				existingConn.EnvironmentID == environmentID &&
+				existingConn.ProviderType == req.ProviderType &&
+				existingConn.Status == types.StatusPublished {
+				return nil, ierr.NewError("connection already exists").
+					WithHintf("A published connection for provider '%s' already exists in this environment", req.ProviderType).
+					WithReportableDetails(map[string]interface{}{
+						"provider_type":          req.ProviderType,
+						"tenant_id":              tenantID,
+						"environment_id":         environmentID,
+						"existing_connection_id": existingConn.ID,
+					}).
+					Mark(ierr.ErrAlreadyExists)
+			}
+		}
+
 		conn.ProviderType = req.ProviderType
 	}
 

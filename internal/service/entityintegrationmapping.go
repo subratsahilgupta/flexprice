@@ -15,6 +15,8 @@ type EntityIntegrationMappingService interface {
 	GetEntityIntegrationMappings(ctx context.Context, filter *types.EntityIntegrationMappingFilter) (*dto.ListEntityIntegrationMappingsResponse, error)
 	UpdateEntityIntegrationMapping(ctx context.Context, id string, req dto.UpdateEntityIntegrationMappingRequest) (*dto.EntityIntegrationMappingResponse, error)
 	DeleteEntityIntegrationMapping(ctx context.Context, id string) error
+	GetByEntityAndProvider(ctx context.Context, entityID string, entityType string, providerType string) (*dto.EntityIntegrationMappingResponse, error)
+	GetByProviderEntity(ctx context.Context, providerType string, providerEntityID string) (*dto.EntityIntegrationMappingResponse, error)
 }
 
 type entityIntegrationMappingService struct {
@@ -169,4 +171,81 @@ func (s *entityIntegrationMappingService) DeleteEntityIntegrationMapping(ctx con
 	}
 
 	return nil
+}
+
+func (s *entityIntegrationMappingService) GetByEntityAndProvider(ctx context.Context, entityID string, entityType string, providerType string) (*dto.EntityIntegrationMappingResponse, error) {
+	if entityID == "" {
+		return nil, ierr.NewError("entity ID is required").
+			WithHint("Entity ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if entityType == "" {
+		return nil, ierr.NewError("entity type is required").
+			WithHint("Entity type is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if providerType == "" {
+		return nil, ierr.NewError("provider type is required").
+			WithHint("Provider type is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Create a filter to find the mapping
+	filter := &types.EntityIntegrationMappingFilter{
+		QueryFilter:  types.NewDefaultQueryFilter(),
+		EntityID:     entityID,
+		EntityType:   types.IntegrationEntityType(entityType),
+		ProviderType: providerType,
+	}
+
+	mappings, err := s.EntityIntegrationMappingRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(mappings) == 0 {
+		return nil, ierr.NewError("entity integration mapping not found").
+			WithHint("No mapping found for the specified entity and provider").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Return the first mapping found
+	return &dto.EntityIntegrationMappingResponse{EntityIntegrationMapping: mappings[0]}, nil
+}
+
+func (s *entityIntegrationMappingService) GetByProviderEntity(ctx context.Context, providerType string, providerEntityID string) (*dto.EntityIntegrationMappingResponse, error) {
+	if providerType == "" {
+		return nil, ierr.NewError("provider type is required").
+			WithHint("Provider type is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if providerEntityID == "" {
+		return nil, ierr.NewError("provider entity ID is required").
+			WithHint("Provider entity ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Create a filter to find the mapping
+	filter := &types.EntityIntegrationMappingFilter{
+		QueryFilter:      types.NewDefaultQueryFilter(),
+		ProviderType:     providerType,
+		ProviderEntityID: providerEntityID,
+	}
+
+	mappings, err := s.EntityIntegrationMappingRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(mappings) == 0 {
+		return nil, ierr.NewError("entity integration mapping not found").
+			WithHint("No mapping found for the specified provider entity").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Return the first mapping found
+	return &dto.EntityIntegrationMappingResponse{EntityIntegrationMapping: mappings[0]}, nil
 }

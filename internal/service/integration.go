@@ -17,7 +17,7 @@ import (
 // IntegrationService handles generic integration operations with multiple providers
 type IntegrationService interface {
 	// SyncEntityToProviders syncs an entity to all available providers for the tenant
-	SyncEntityToProviders(ctx context.Context, entityType string, entityID string) error
+	SyncEntityToProviders(ctx context.Context, entityType types.IntegrationEntityType, entityID string) error
 
 	// SyncCustomerFromProvider syncs a customer from a specific provider to FlexPrice
 	SyncCustomerFromProvider(ctx context.Context, providerType string, providerCustomerID string, customerData map[string]interface{}) error
@@ -37,7 +37,7 @@ func NewIntegrationService(params ServiceParams) IntegrationService {
 }
 
 // SyncEntityToProviders syncs an entity to all available providers for the tenant
-func (s *integrationService) SyncEntityToProviders(ctx context.Context, entityType string, entityID string) error {
+func (s *integrationService) SyncEntityToProviders(ctx context.Context, entityType types.IntegrationEntityType, entityID string) error {
 	// Get all available connections for this tenant
 	connections, err := s.getAvailableConnections(ctx)
 	if err != nil {
@@ -52,19 +52,14 @@ func (s *integrationService) SyncEntityToProviders(ctx context.Context, entityTy
 		return nil
 	}
 
-	// Sync based on entity type
-	switch entityType {
-	case "customer":
-		return s.syncCustomerToProviders(ctx, entityID, connections)
-	case "invoice":
-		return s.syncInvoiceToProviders(ctx, entityID, connections)
-	case "tax":
-		return s.syncTaxToProviders(ctx, entityID, connections)
-	default:
+	// Only support customer sync for now
+	if entityType != types.IntegrationEntityTypeCustomer {
 		return ierr.NewError("unsupported entity type").
 			WithHint(fmt.Sprintf("Entity type %s is not supported for sync", entityType)).
 			Mark(ierr.ErrValidation)
 	}
+
+	return s.syncCustomerToProviders(ctx, entityID, connections)
 }
 
 // syncCustomerToProviders syncs a customer to all available providers for the tenant
@@ -101,28 +96,6 @@ func (s *integrationService) syncCustomerToProviders(ctx context.Context, custom
 	return nil
 }
 
-// syncInvoiceToProviders syncs an invoice to all available providers for the tenant
-func (s *integrationService) syncInvoiceToProviders(ctx context.Context, invoiceID string, connections []*connection.Connection) error {
-	// TODO: Implement invoice sync logic when needed
-	s.Logger.Infow("invoice sync not yet implemented",
-		"invoice_id", invoiceID,
-		"tenant_id", types.GetTenantID(ctx))
-	return ierr.NewError("invoice sync not yet implemented").
-		WithHint("Invoice sync functionality is not yet available").
-		Mark(ierr.ErrInvalidOperation)
-}
-
-// syncTaxToProviders syncs a tax code to all available providers for the tenant
-func (s *integrationService) syncTaxToProviders(ctx context.Context, taxCode string, connections []*connection.Connection) error {
-	// TODO: Implement tax sync logic when needed
-	s.Logger.Infow("tax sync not yet implemented",
-		"tax_code", taxCode,
-		"tenant_id", types.GetTenantID(ctx))
-	return ierr.NewError("tax sync not yet implemented").
-		WithHint("Tax sync functionality is not yet available").
-		Mark(ierr.ErrInvalidOperation)
-}
-
 // syncCustomerToProvider syncs a customer to a specific provider
 func (s *integrationService) syncCustomerToProvider(ctx context.Context, customer *customer.Customer, conn *connection.Connection) error {
 	// Use database transaction to prevent race conditions
@@ -134,7 +107,7 @@ func (s *integrationService) syncCustomerToProvider(ctx context.Context, custome
 		// Use standard list/search pattern instead of specific endpoint
 		filter := &types.EntityIntegrationMappingFilter{
 			EntityID:     customer.ID,
-			EntityType:   "customer",
+			EntityType:   types.IntegrationEntityTypeCustomer,
 			ProviderType: string(conn.ProviderType),
 		}
 
@@ -170,7 +143,7 @@ func (s *integrationService) syncCustomerToProvider(ctx context.Context, custome
 		// Create entity mapping (within transaction)
 		mappingReq := dto.CreateEntityIntegrationMappingRequest{
 			EntityID:         customer.ID,
-			EntityType:       "customer",
+			EntityType:       types.IntegrationEntityTypeCustomer,
 			ProviderType:     string(conn.ProviderType),
 			ProviderEntityID: providerEntityID,
 			Metadata:         metadata,
@@ -332,7 +305,7 @@ func (s *integrationService) SyncCustomerFromProvider(ctx context.Context, provi
 				// Create entity mapping for existing customer (within transaction)
 				mappingReq := dto.CreateEntityIntegrationMappingRequest{
 					EntityID:         existingCustomer.ID,
-					EntityType:       "customer",
+					EntityType:       types.IntegrationEntityTypeCustomer,
 					ProviderType:     providerType,
 					ProviderEntityID: providerCustomerID,
 					Metadata: map[string]interface{}{
@@ -381,7 +354,7 @@ func (s *integrationService) SyncCustomerFromProvider(ctx context.Context, provi
 		// Create entity mapping (within transaction)
 		mappingReq := dto.CreateEntityIntegrationMappingRequest{
 			EntityID:         customerID,
-			EntityType:       "customer",
+			EntityType:       types.IntegrationEntityTypeCustomer,
 			ProviderType:     providerType,
 			ProviderEntityID: providerCustomerID,
 			Metadata:         metadata,
@@ -468,14 +441,35 @@ func (s *integrationService) createCustomerFromStripe(ctx context.Context, strip
 		return "", nil, err
 	}
 
-	// Get the created customer
+	// Get the created customer by email (much more efficient than JSON metadata search)
 	customerService := NewCustomerService(s.ServiceParams)
-	customerResp, err := customerService.GetCustomerByLookupKey(ctx, stripeCustomerID)
+	email := customerData["email"].(string)
+	filter := &types.CustomerFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		Email:       email,
+	}
+
+	customers, err := customerService.GetCustomers(ctx, filter)
 	if err != nil {
 		return "", nil, err
 	}
 
-	return customerResp.Customer.ID, map[string]interface{}{
+	// Should find exactly one customer with this email
+	if len(customers.Items) == 0 {
+		return "", nil, ierr.NewError("failed to find created customer").
+			WithHint("Customer was created but could not be found by email").
+			Mark(ierr.ErrInternal)
+	}
+
+	if len(customers.Items) > 1 {
+		s.Logger.Warnw("multiple customers found with same email",
+			"email", email,
+			"count", len(customers.Items))
+	}
+
+	createdCustomer := customers.Items[0].Customer
+
+	return createdCustomer.ID, map[string]interface{}{
 		"stripe_customer_email": customerData["email"].(string),
 		"stripe_customer_name":  customerData["name"].(string),
 		"sync_direction":        "provider_to_flexprice",

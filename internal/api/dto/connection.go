@@ -119,6 +119,57 @@ type ConnectionResponse struct {
 	UpdatedBy     string                   `json:"updated_by"`
 }
 
+// MarshalJSON custom marshaling to flatten metadata structure
+func (resp *ConnectionResponse) MarshalJSON() ([]byte, error) {
+	// Create a temporary struct for marshaling
+	type tempResponse struct {
+		ID            string                 `json:"id"`
+		Name          string                 `json:"name"`
+		ProviderType  types.SecretProvider   `json:"provider_type"`
+		Metadata      map[string]interface{} `json:"metadata,omitempty"`
+		EnvironmentID string                 `json:"environment_id"`
+		TenantID      string                 `json:"tenant_id"`
+		Status        types.Status           `json:"status"`
+		CreatedAt     string                 `json:"created_at"`
+		UpdatedAt     string                 `json:"updated_at"`
+		CreatedBy     string                 `json:"created_by"`
+		UpdatedBy     string                 `json:"updated_by"`
+	}
+
+	temp := tempResponse{
+		ID:            resp.ID,
+		Name:          resp.Name,
+		ProviderType:  resp.ProviderType,
+		EnvironmentID: resp.EnvironmentID,
+		TenantID:      resp.TenantID,
+		Status:        resp.Status,
+		CreatedAt:     resp.CreatedAt,
+		UpdatedAt:     resp.UpdatedAt,
+		CreatedBy:     resp.CreatedBy,
+		UpdatedBy:     resp.UpdatedBy,
+	}
+
+	// Flatten metadata based on provider type
+	switch resp.ProviderType {
+	case types.SecretProviderStripe:
+		if resp.Metadata.Stripe != nil {
+			temp.Metadata = map[string]interface{}{
+				"publishable_key": resp.Metadata.Stripe.PublishableKey,
+				"secret_key":      resp.Metadata.Stripe.SecretKey,
+				"webhook_secret":  resp.Metadata.Stripe.WebhookSecret,
+				"account_id":      resp.Metadata.Stripe.AccountID,
+			}
+		}
+	default:
+		// For other providers, use generic data
+		if resp.Metadata.Generic != nil {
+			temp.Metadata = resp.Metadata.Generic.Data
+		}
+	}
+
+	return json.Marshal(temp)
+}
+
 // ListConnectionsResponse represents the response for listing connections
 type ListConnectionsResponse struct {
 	Connections []ConnectionResponse `json:"connections"`

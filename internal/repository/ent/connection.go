@@ -111,6 +111,7 @@ func (r *connectionRepository) Get(ctx context.Context, id string) (*domainConne
 			connection.ID(id),
 			connection.TenantID(types.GetTenantID(ctx)),
 			connection.EnvironmentID(types.GetEnvironmentID(ctx)),
+			connection.Status(string(types.StatusPublished)),
 		).
 		Only(ctx)
 
