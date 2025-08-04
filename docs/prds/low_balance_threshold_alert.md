@@ -7,14 +7,14 @@ This guide outlines the implementation of low balance alerts for both ongoing an
 ## Alert Types
 
 ### Credit Balance Alerts
-1. `wallet.credit_balance.depleted` - Balance reaches 0 // inactive
-2. `wallet.credit_balance.dropped` - Balance falls below threshold // active
-3. `wallet.credit_balance.recovered` - Balance returns above threshold // inactive
+1. `wallet.credit_balance.dropped` - Balance falls below threshold // active
+
+// TODO: set active
+2. `wallet.credit_balance.recovered` - Balance returns above threshold // inactive
 
 ### Ongoing Balance Alerts
-1. `wallet.ongoing_balance.depleted` - Balance reaches 0 // inactive
-2. `wallet.ongoing_balance.dropped` - Balance falls below threshold // active
-3. `wallet.ongoing_balance.recovered` - Balance returns above threshold // active
+1. `wallet.ongoing_balance.dropped` - Balance falls below threshold // active
+2. `wallet.ongoing_balance.recovered` - Balance returns above threshold // active
 
 ## Alert States
 
