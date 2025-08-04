@@ -77,12 +77,6 @@ func FromEnt(e *ent.Wallet) *Wallet {
 		return nil
 	}
 
-	// Use AlertConfig directly
-	var alertConfig *types.AlertConfig
-	if e.AlertConfig != nil {
-		alertConfig = e.AlertConfig
-	}
-
 	return &Wallet{
 		ID:                  e.ID,
 		CustomerID:          e.CustomerID,
@@ -101,7 +95,7 @@ func FromEnt(e *ent.Wallet) *Wallet {
 		ConversionRate:      e.ConversionRate,
 		EnvironmentID:       e.EnvironmentID,
 		AlertEnabled:        e.AlertEnabled,
-		AlertConfig:         alertConfig,
+		AlertConfig:         e.AlertConfig,
 		AlertState:          e.AlertState,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,

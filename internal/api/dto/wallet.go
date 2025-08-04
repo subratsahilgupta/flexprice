@@ -56,8 +56,7 @@ type CreateWalletRequest struct {
 }
 
 type AlertConfig struct {
-	AllowedTenantIDs []string   `json:"allowed_tenant_ids,omitempty"`
-	Threshold        *Threshold `json:"threshold,omitempty"`
+	Threshold *Threshold `json:"threshold,omitempty"`
 }
 
 type Threshold struct {
@@ -159,7 +158,6 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 	var alertConfig *types.AlertConfig
 	if r.AlertConfig != nil {
 		alertConfig = &types.AlertConfig{
-			AllowedTenantIDs: r.AlertConfig.AllowedTenantIDs,
 			Threshold: &types.AlertThreshold{
 				Type:  r.AlertConfig.Threshold.Type,
 				Value: r.AlertConfig.Threshold.Value,
@@ -251,11 +249,6 @@ func (r *CreateWalletRequest) Validate() error {
 		if r.AlertConfig.Threshold.Value.IsZero() {
 			return ierr.NewError("alert_config.threshold.value must be greater than 0").
 				WithHint("Threshold value must be provided when alert config is set").
-				Mark(ierr.ErrValidation)
-		}
-		if len(r.AlertConfig.AllowedTenantIDs) == 0 {
-			return ierr.NewError("alert_config.allowed_tenant_ids is required").
-				WithHint("At least one tenant ID must be provided when alert config is set").
 				Mark(ierr.ErrValidation)
 		}
 	}

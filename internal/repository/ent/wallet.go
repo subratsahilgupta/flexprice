@@ -839,14 +839,8 @@ func (r *walletRepository) GetWalletsByFilter(ctx context.Context, filter *types
 		Where(
 			wallet.StatusEQ(string(types.StatusPublished)),
 			wallet.EnvironmentID(types.GetEnvironmentID(ctx)),
+			wallet.TenantID(types.GetTenantID(ctx)),
 		)
-
-	// Apply tenant filter
-	if filter.TenantIDs != nil && len(filter.TenantIDs) > 0 {
-		query = query.Where(wallet.TenantIDIn(filter.TenantIDs...))
-	} else {
-		query = query.Where(wallet.TenantID(types.GetTenantID(ctx)))
-	}
 
 	// Apply status filter
 	if filter.Status != nil {
@@ -856,6 +850,11 @@ func (r *walletRepository) GetWalletsByFilter(ctx context.Context, filter *types
 	// Apply alert enabled filter
 	if filter.AlertEnabled != nil {
 		query = query.Where(wallet.AlertEnabledEQ(*filter.AlertEnabled))
+	}
+
+	// Apply wallet IDs filter
+	if len(filter.WalletIDs) > 0 {
+		query = query.Where(wallet.IDIn(filter.WalletIDs...))
 	}
 
 	wallets, err := query.All(ctx)
