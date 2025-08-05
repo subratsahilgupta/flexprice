@@ -1,5 +1,86 @@
 basePath: /v1
 definitions:
+  coupon.Coupon:
+    properties:
+      amount_off:
+        type: number
+      cadence:
+        $ref: '#/definitions/types.CouponCadence'
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      duration_in_periods:
+        type: integer
+      environment_id:
+        type: string
+      id:
+        type: string
+      max_redemptions:
+        type: integer
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      percentage_off:
+        type: number
+      redeem_after:
+        type: string
+      redeem_before:
+        type: string
+      rules:
+        additionalProperties: true
+        type: object
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      total_redemptions:
+        type: integer
+      type:
+        $ref: '#/definitions/types.CouponType'
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  coupon_association.CouponAssociation:
+    properties:
+      coupon:
+        $ref: '#/definitions/coupon.Coupon'
+      coupon_id:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      environment_id:
+        type: string
+      id:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        description: Mandatory
+        type: string
+      subscription_line_item_id:
+        description: Optional
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   creditnote.CreditNoteLineItem:
     properties:
       amount:
@@ -139,6 +220,11 @@ definitions:
           $ref: '#/definitions/dto.EntitlementSource'
         type: array
     type: object
+  dto.AlertConfig:
+    properties:
+      threshold:
+        $ref: '#/definitions/dto.Threshold'
+    type: object
   dto.AuthResponse:
     properties:
       tenant_id:
@@ -230,6 +316,137 @@ definitions:
       updated_at:
         type: string
     type: object
+  dto.CouponApplicationResponse:
+    properties:
+      applied_at:
+        type: string
+      coupon_association_id:
+        type: string
+      coupon_id:
+        type: string
+      coupon_snapshot:
+        additionalProperties: true
+        type: object
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      discount_percentage:
+        type: number
+      discount_type:
+        $ref: '#/definitions/types.CouponType'
+      discounted_amount:
+        type: number
+      environment_id:
+        type: string
+      final_price:
+        type: number
+      id:
+        type: string
+      invoice_id:
+        type: string
+      invoice_line_item_id:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      original_price:
+        type: number
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  dto.CouponAssociationResponse:
+    properties:
+      coupon:
+        $ref: '#/definitions/coupon.Coupon'
+      coupon_id:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      environment_id:
+        type: string
+      id:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        description: Mandatory
+        type: string
+      subscription_line_item_id:
+        description: Optional
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  dto.CouponResponse:
+    properties:
+      amount_off:
+        type: number
+      cadence:
+        $ref: '#/definitions/types.CouponCadence'
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      duration_in_periods:
+        type: integer
+      environment_id:
+        type: string
+      id:
+        type: string
+      max_redemptions:
+        type: integer
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      percentage_off:
+        type: number
+      redeem_after:
+        type: string
+      redeem_before:
+        type: string
+      rules:
+        additionalProperties: true
+        type: object
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      total_redemptions:
+        type: integer
+      type:
+        $ref: '#/definitions/types.CouponType'
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   dto.CreateAPIKeyRequest:
     properties:
       expires_at:
@@ -264,6 +481,49 @@ definitions:
     required:
     - meter_id
     - price_id
+    type: object
+  dto.CreateCouponRequest:
+    properties:
+      amount_off:
+        type: number
+      cadence:
+        allOf:
+        - $ref: '#/definitions/types.CouponCadence'
+        enum:
+        - once
+        - repeated
+        - forever
+      currency:
+        type: string
+      duration_in_periods:
+        type: integer
+      max_redemptions:
+        type: integer
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      percentage_off:
+        type: number
+      redeem_after:
+        type: string
+      redeem_before:
+        type: string
+      rules:
+        additionalProperties: true
+        type: object
+      type:
+        allOf:
+        - $ref: '#/definitions/types.CouponType'
+        enum:
+        - fixed
+        - percentage
+    required:
+    - cadence
+    - name
+    - type
     type: object
   dto.CreateCreditGrantRequest:
     properties:
@@ -513,6 +773,14 @@ definitions:
         description: price_type indicates the type of pricing (fixed, usage, tiered,
           etc.)
         type: string
+      price_unit:
+        description: price_unit is the optional 3-digit ISO code of the price unit
+          associated with this line item
+        type: string
+      price_unit_amount:
+        description: price_unit_amount is the optional amount converted to the price
+          unit currency
+        type: number
       quantity:
         description: quantity is the quantity of units for this line item
         type: number
@@ -538,6 +806,11 @@ definitions:
         - $ref: '#/definitions/types.InvoiceBillingReason'
         description: billing_reason indicates why this invoice was created (subscription_cycle,
           manual, etc.)
+      coupons:
+        description: coupons
+        items:
+          type: string
+        type: array
       currency:
         description: currency is the three-letter ISO currency code (e.g., USD, EUR)
           for the invoice
@@ -724,6 +997,10 @@ definitions:
         type: string
       plan_id:
         type: string
+      price_unit_config:
+        $ref: '#/definitions/dto.PriceUnitConfig'
+      price_unit_type:
+        $ref: '#/definitions/types.PriceUnitType'
       tier_mode:
         $ref: '#/definitions/types.BillingTier'
       tiers:
@@ -743,6 +1020,7 @@ definitions:
     - billing_period_count
     - currency
     - invoice_cadence
+    - price_unit_type
     - type
     type: object
   dto.CreatePlanRequest:
@@ -803,6 +1081,10 @@ definitions:
         type: string
       plan_id:
         type: string
+      price_unit_config:
+        $ref: '#/definitions/dto.PriceUnitConfig'
+      price_unit_type:
+        $ref: '#/definitions/types.PriceUnitType'
       tier_mode:
         $ref: '#/definitions/types.BillingTier'
       tiers:
@@ -822,6 +1104,7 @@ definitions:
     - billing_period_count
     - currency
     - invoice_cadence
+    - price_unit_type
     - type
     type: object
   dto.CreatePriceTier:
@@ -834,6 +1117,30 @@ definitions:
         type: integer
     required:
     - unit_amount
+    type: object
+  dto.CreatePriceUnitRequest:
+    properties:
+      base_currency:
+        type: string
+      code:
+        type: string
+      conversion_rate:
+        type: number
+      name:
+        type: string
+      precision:
+        maximum: 8
+        minimum: 0
+        type: integer
+      symbol:
+        maxLength: 10
+        type: string
+    required:
+    - base_currency
+    - code
+    - conversion_rate
+    - name
+    - symbol
     type: object
   dto.CreateSubscriptionRequest:
     properties:
@@ -888,6 +1195,12 @@ definitions:
         description: OverageFactor is a multiplier applied to usage beyond the commitment
           amount
         type: number
+      override_line_items:
+        description: OverrideLineItems allows customizing specific prices for this
+          subscription
+        items:
+          $ref: '#/definitions/dto.OverrideLineItemRequest'
+        type: array
       phases:
         description: Phases represents an optional timeline of subscription phases
         items:
@@ -897,6 +1210,12 @@ definitions:
         type: string
       start_date:
         type: string
+      subscription_coupons:
+        description: SubscriptionCoupons is a list of coupon IDs to be applied to
+          the subscription
+        items:
+          type: string
+        type: array
       trial_end:
         type: string
       trial_start:
@@ -941,6 +1260,15 @@ definitions:
     type: object
   dto.CreateWalletRequest:
     properties:
+      alert_config:
+        allOf:
+        - $ref: '#/definitions/dto.AlertConfig'
+        description: alert_config is the alert configuration for the wallet (optional)
+      alert_enabled:
+        description: |-
+          alert_enabled is the flag to enable alerts for the wallet
+          defaults to true, can be explicitly set to false to disable alerts
+        type: boolean
       auto_topup_amount:
         type: number
       auto_topup_min_balance:
@@ -1778,6 +2106,18 @@ definitions:
         description: price_type indicates the type of pricing (fixed, usage, tiered,
           etc.)
         type: string
+      price_unit:
+        description: price_unit is the optional 3-digit ISO code of the price unit
+          associated with this line item
+        type: string
+      price_unit_amount:
+        description: price_unit_amount is the optional amount converted to the price
+          unit currency
+        type: number
+      price_unit_id:
+        description: price_unit_id is the optional unique identifier of the price
+          unit associated with this line item
+        type: string
       quantity:
         description: quantity is the quantity of units for this line item
         type: number
@@ -1824,6 +2164,12 @@ definitions:
         description: billing_sequence is the optional sequence number for billing
           cycles
         type: integer
+      coupon_applications:
+        description: coupon_applications contains the coupon applications associated
+          with this invoice
+        items:
+          $ref: '#/definitions/dto.CouponApplicationResponse'
+        type: array
       created_at:
         description: created_at is the timestamp when this invoice was created
         type: string
@@ -1924,6 +2270,9 @@ definitions:
         description: total is the total amount of the invoice including taxes and
           discounts
         type: number
+      total_discount:
+        description: total_discount is the total discount amount from coupon applications
+        type: number
       updated_at:
         description: updated_at is the timestamp when this invoice was last updated
         type: string
@@ -1953,6 +2302,15 @@ definitions:
         type: array
       total:
         type: integer
+    type: object
+  dto.ListCouponsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.CouponResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.ListCreditGrantsResponse:
     properties:
@@ -2035,6 +2393,15 @@ definitions:
       items:
         items:
           $ref: '#/definitions/dto.PlanResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
+  dto.ListPriceUnitsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.PriceUnitResponse'
         type: array
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
@@ -2137,6 +2504,21 @@ definitions:
       updated_at:
         example: "2024-03-20T15:04:05Z"
         type: string
+    type: object
+  dto.OverrideLineItemRequest:
+    properties:
+      amount:
+        description: Amount is the new price amount that overrides the original price
+          (optional)
+        type: number
+      price_id:
+        description: PriceID references the plan price to override
+        type: string
+      quantity:
+        description: Quantity for this line item (optional)
+        type: number
+    required:
+    - price_id
     type: object
   dto.PauseSubscriptionRequest:
     properties:
@@ -2286,6 +2668,11 @@ definitions:
         description: BillingPeriodCount is the count of the billing period ex 1, 3,
           6, 12
         type: integer
+      conversion_rate:
+        description: |-
+          ConversionRate is the rate of the price unit to the base currency
+          For BTC: 1 BTC = 100000000 USD
+        type: number
       created_at:
         type: string
       created_by:
@@ -2301,6 +2688,11 @@ definitions:
         description: |-
           DisplayAmount is the formatted amount with currency symbol
           For USD: $12.50
+        type: string
+      display_price_unit_amount:
+        description: |-
+          DisplayPriceUnitAmount is the formatted amount with price unit symbol
+          For BTC: 0.00000001 BTC
         type: string
       environment_id:
         description: EnvironmentID is the environment identifier for the price
@@ -2320,11 +2712,47 @@ definitions:
       meter_id:
         description: MeterID is the id of the meter for usage based pricing
         type: string
+      parent_price_id:
+        description: ParentPriceID references the original price (only set when scope
+          is SUBSCRIPTION)
+        type: string
       plan_id:
         description: PlanID is the id of the plan for plan based pricing
         type: string
+      price_unit:
+        description: |-
+          PriceUnit 3 digit ISO currency code in lowercase ex btc
+          For BTC: btc
+        type: string
+      price_unit_amount:
+        description: |-
+          PriceUnitAmount is the amount stored in price unit
+          For BTC: 0.00000001 means 0.00000001 BTC
+        type: number
+      price_unit_id:
+        description: PriceUnitID is the id of the price unit
+        type: string
+      price_unit_tiers:
+        description: PriceUnitTiers are the tiers for the price unit
+        items:
+          $ref: '#/definitions/price.PriceTier'
+        type: array
+      price_unit_type:
+        allOf:
+        - $ref: '#/definitions/types.PriceUnitType'
+        description: PriceUnitType is the type of the price unit- Fiat, Custom, Crypto
+      scope:
+        allOf:
+        - $ref: '#/definitions/types.PriceScope'
+        description: |-
+          Price override fields
+          Scope indicates if this is a plan-level or subscription-level price
       status:
         $ref: '#/definitions/types.Status'
+      subscription_id:
+        description: SubscriptionID references the subscription (only set when scope
+          is SUBSCRIPTION)
+        type: string
       tenant_id:
         type: string
       tier_mode:
@@ -2345,6 +2773,42 @@ definitions:
       updated_at:
         type: string
       updated_by:
+        type: string
+    type: object
+  dto.PriceUnitConfig:
+    properties:
+      amount:
+        type: string
+      price_unit:
+        type: string
+      price_unit_tiers:
+        items:
+          $ref: '#/definitions/dto.CreatePriceTier'
+        type: array
+    required:
+    - price_unit
+    type: object
+  dto.PriceUnitResponse:
+    properties:
+      base_currency:
+        type: string
+      code:
+        type: string
+      conversion_rate:
+        type: number
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      precision:
+        type: integer
+      status:
+        $ref: '#/definitions/types.Status'
+      symbol:
+        type: string
+      updated_at:
         type: string
     type: object
   dto.ROIResponse:
@@ -2481,6 +2945,10 @@ definitions:
         type: string
       price_type:
         $ref: '#/definitions/types.PriceType'
+      price_unit:
+        type: string
+      price_unit_id:
+        type: string
       quantity:
         type: number
       start_date:
@@ -2595,6 +3063,11 @@ definitions:
         description: CommitmentAmount is the minimum amount a customer commits to
           paying for a billing period
         type: number
+      coupon_associations:
+        description: CouponAssociations are the coupon associations for this subscription
+        items:
+          $ref: '#/definitions/dto.CouponAssociationResponse'
+        type: array
       created_at:
         type: string
       created_by:
@@ -2858,12 +3331,22 @@ definitions:
         type: string
       id:
         type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
       name:
         type: string
       status:
         type: string
       updated_at:
         type: string
+    type: object
+  dto.Threshold:
+    properties:
+      type:
+        description: amount
+        type: string
+      value:
+        type: number
     type: object
   dto.TopUpWalletRequest:
     properties:
@@ -2917,6 +3400,15 @@ definitions:
         type: string
     required:
     - id
+    type: object
+  dto.UpdateCouponRequest:
+    properties:
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
     type: object
   dto.UpdateCreditGrantRequest:
     properties:
@@ -3122,6 +3614,10 @@ definitions:
         type: string
       plan_id:
         type: string
+      price_unit_config:
+        $ref: '#/definitions/dto.PriceUnitConfig'
+      price_unit_type:
+        $ref: '#/definitions/types.PriceUnitType'
       tier_mode:
         $ref: '#/definitions/types.BillingTier'
       tiers:
@@ -3141,6 +3637,7 @@ definitions:
     - billing_period_count
     - currency
     - invoice_cadence
+    - price_unit_type
     - type
     type: object
   dto.UpdatePlanRequest:
@@ -3175,6 +3672,20 @@ definitions:
           type: string
         type: object
     type: object
+  dto.UpdatePriceUnitRequest:
+    properties:
+      conversion_rate:
+        type: number
+      name:
+        type: string
+      precision:
+        maximum: 8
+        minimum: 0
+        type: integer
+      symbol:
+        maxLength: 10
+        type: string
+    type: object
   dto.UpdateTaskStatusRequest:
     properties:
       task_status:
@@ -3193,6 +3704,10 @@ definitions:
     type: object
   dto.UpdateWalletRequest:
     properties:
+      alert_config:
+        $ref: '#/definitions/dto.AlertConfig'
+      alert_enabled:
+        type: boolean
       auto_topup_amount:
         type: number
       auto_topup_min_balance:
@@ -3268,6 +3783,12 @@ definitions:
     type: object
   dto.WalletBalanceResponse:
     properties:
+      alert_config:
+        $ref: '#/definitions/types.AlertConfig'
+      alert_enabled:
+        type: boolean
+      alert_state:
+        type: string
       auto_topup_amount:
         type: number
       auto_topup_min_balance:
@@ -3325,6 +3846,12 @@ definitions:
     type: object
   dto.WalletResponse:
     properties:
+      alert_config:
+        $ref: '#/definitions/types.AlertConfig'
+      alert_enabled:
+        type: boolean
+      alert_state:
+        type: string
       auto_topup_amount:
         type: number
       auto_topup_min_balance:
@@ -3501,6 +4028,11 @@ definitions:
         description: BillingPeriodCount is the count of the billing period ex 1, 3,
           6, 12
         type: integer
+      conversion_rate:
+        description: |-
+          ConversionRate is the rate of the price unit to the base currency
+          For BTC: 1 BTC = 100000000 USD
+        type: number
       created_at:
         type: string
       created_by:
@@ -3516,6 +4048,11 @@ definitions:
         description: |-
           DisplayAmount is the formatted amount with currency symbol
           For USD: $12.50
+        type: string
+      display_price_unit_amount:
+        description: |-
+          DisplayPriceUnitAmount is the formatted amount with price unit symbol
+          For BTC: 0.00000001 BTC
         type: string
       environment_id:
         description: EnvironmentID is the environment identifier for the price
@@ -3533,11 +4070,47 @@ definitions:
       meter_id:
         description: MeterID is the id of the meter for usage based pricing
         type: string
+      parent_price_id:
+        description: ParentPriceID references the original price (only set when scope
+          is SUBSCRIPTION)
+        type: string
       plan_id:
         description: PlanID is the id of the plan for plan based pricing
         type: string
+      price_unit:
+        description: |-
+          PriceUnit 3 digit ISO currency code in lowercase ex btc
+          For BTC: btc
+        type: string
+      price_unit_amount:
+        description: |-
+          PriceUnitAmount is the amount stored in price unit
+          For BTC: 0.00000001 means 0.00000001 BTC
+        type: number
+      price_unit_id:
+        description: PriceUnitID is the id of the price unit
+        type: string
+      price_unit_tiers:
+        description: PriceUnitTiers are the tiers for the price unit
+        items:
+          $ref: '#/definitions/price.PriceTier'
+        type: array
+      price_unit_type:
+        allOf:
+        - $ref: '#/definitions/types.PriceUnitType'
+        description: PriceUnitType is the type of the price unit- Fiat, Custom, Crypto
+      scope:
+        allOf:
+        - $ref: '#/definitions/types.PriceScope'
+        description: |-
+          Price override fields
+          Scope indicates if this is a plan-level or subscription-level price
       status:
         $ref: '#/definitions/types.Status'
+      subscription_id:
+        description: SubscriptionID references the subscription (only set when scope
+          is SUBSCRIPTION)
+        type: string
       tenant_id:
         type: string
       tier_mode:
@@ -3642,6 +4215,10 @@ definitions:
         type: string
       price_type:
         $ref: '#/definitions/types.PriceType'
+      price_unit:
+        type: string
+      price_unit_id:
+        type: string
       quantity:
         type: number
       start_date:
@@ -3723,6 +4300,11 @@ definitions:
     x-enum-comments:
       AggregationSumWithMultiplier: Sum with a multiplier - [sum(value) * multiplier]
     x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
     - Sum with a multiplier - [sum(value) * multiplier]
     x-enum-varnames:
     - AggregationCount
@@ -3731,6 +4313,19 @@ definitions:
     - AggregationCountUnique
     - AggregationLatest
     - AggregationSumWithMultiplier
+  types.AlertConfig:
+    properties:
+      threshold:
+        $ref: '#/definitions/types.AlertThreshold'
+    type: object
+  types.AlertThreshold:
+    properties:
+      type:
+        description: amount
+        type: string
+      value:
+        type: number
+    type: object
   types.AutoTopupTrigger:
     enum:
     - disabled
@@ -3789,6 +4384,24 @@ definitions:
     x-enum-varnames:
     - BILLING_TIER_VOLUME
     - BILLING_TIER_SLAB
+  types.CouponCadence:
+    enum:
+    - once
+    - repeated
+    - forever
+    type: string
+    x-enum-varnames:
+    - CouponCadenceOnce
+    - CouponCadenceRepeated
+    - CouponCadenceForever
+  types.CouponType:
+    enum:
+    - fixed
+    - percentage
+    type: string
+    x-enum-varnames:
+    - CouponTypeFixed
+    - CouponTypePercentage
   types.CreditGrantCadence:
     enum:
     - ONETIME
@@ -4312,6 +4925,14 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
     type: object
+  types.PriceScope:
+    enum:
+    - PLAN
+    - SUBSCRIPTION
+    type: string
+    x-enum-varnames:
+    - PRICE_SCOPE_PLAN
+    - PRICE_SCOPE_SUBSCRIPTION
   types.PriceType:
     enum:
     - USAGE
@@ -4320,6 +4941,14 @@ definitions:
     x-enum-varnames:
     - PRICE_TYPE_USAGE
     - PRICE_TYPE_FIXED
+  types.PriceUnitType:
+    enum:
+    - FIAT
+    - CUSTOM
+    type: string
+    x-enum-varnames:
+    - PRICE_UNIT_TYPE_FIAT
+    - PRICE_UNIT_TYPE_CUSTOM
   types.QueryFilter:
     properties:
       expand:
@@ -4970,6 +5599,257 @@ paths:
       summary: Calculate ROI for cost sheet
       tags:
       - CostSheets
+  /coupons:
+    get:
+      consumes:
+      - application/json
+      description: Lists coupons with filtering
+      parameters:
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: coupon_ids
+        type: array
+      - in: query
+        name: expand
+        type: string
+      - in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      - in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListCouponsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List coupons with filtering
+      tags:
+      - Coupons
+    post:
+      consumes:
+      - application/json
+      description: Creates a new coupon
+      parameters:
+      - description: Coupon request
+        in: body
+        name: coupon
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateCouponRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CouponResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new coupon
+      tags:
+      - Coupons
+  /coupons/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes a coupon
+      parameters:
+      - description: Coupon ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a coupon
+      tags:
+      - Coupons
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a coupon by ID
+      parameters:
+      - description: Coupon ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CouponResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a coupon by ID
+      tags:
+      - Coupons
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing coupon
+      parameters:
+      - description: Coupon ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Coupon update request
+        in: body
+        name: coupon
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateCouponRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CouponResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update a coupon
+      tags:
+      - Coupons
   /creditgrants:
     get:
       consumes:
@@ -7899,6 +8779,9 @@ paths:
         in: query
         name: order
         type: string
+      - in: query
+        name: parent_price_id
+        type: string
       - collectionFormat: csv
         in: query
         items:
@@ -7911,6 +8794,16 @@ paths:
           type: string
         name: price_ids
         type: array
+      - description: Price override filtering fields
+        enum:
+        - PLAN
+        - SUBSCRIPTION
+        in: query
+        name: scope
+        type: string
+        x-enum-varnames:
+        - PRICE_SCOPE_PLAN
+        - PRICE_SCOPE_SUBSCRIPTION
       - in: query
         name: sort
         type: string
@@ -7928,6 +8821,9 @@ paths:
         - StatusPublished
         - StatusDeleted
         - StatusArchived
+      - in: query
+        name: subscription_id
+        type: string
       produces:
       - application/json
       responses:
@@ -7951,7 +8847,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new price with the specified configuration
+      description: Create a new price with the specified configuration. Supports both
+        regular and price unit configurations.
       parameters:
       - description: Price configuration
         in: body
@@ -8076,6 +8973,194 @@ paths:
       summary: Update a price
       tags:
       - Prices
+  /prices/units:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of price units with optional filtering
+      parameters:
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Limit number of results
+        in: query
+        name: limit
+        type: integer
+      - description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      - description: Sort field
+        in: query
+        name: sort
+        type: string
+      - description: Sort order (asc/desc)
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListPriceUnitsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: List price units
+      tags:
+      - Price Units
+    post:
+      consumes:
+      - application/json
+      description: Create a new price unit with the provided details
+      parameters:
+      - description: Price unit details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreatePriceUnitRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.PriceUnitResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Create a new price unit
+      tags:
+      - Price Units
+  /prices/units/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Archive an existing price unit. The unit will be marked as archived
+        and cannot be used in new prices.
+      parameters:
+      - description: Price unit ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Archive a price unit
+      tags:
+      - Price Units
+    get:
+      consumes:
+      - application/json
+      description: Get a price unit by ID
+      parameters:
+      - description: Price unit ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PriceUnitResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Get a price unit by ID
+      tags:
+      - Price Units
+    put:
+      consumes:
+      - application/json
+      description: Update an existing price unit with the provided details. Only name,
+        symbol, precision, and conversion_rate can be updated. Status changes are
+        not allowed.
+      parameters:
+      - description: Price unit ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Price unit details to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdatePriceUnitRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PriceUnitResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Update a price unit
+      tags:
+      - Price Units
+  /prices/units/code/{code}:
+    get:
+      consumes:
+      - application/json
+      description: Get a price unit by code
+      parameters:
+      - description: Price unit code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PriceUnitResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      summary: Get a price unit by code
+      tags:
+      - Price Units
   /secrets/api/keys:
     get:
       consumes:
