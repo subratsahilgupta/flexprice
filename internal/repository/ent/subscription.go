@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/ent/coupon"
+	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
@@ -289,6 +291,11 @@ func (r *subscriptionRepository) List(ctx context.Context, filter *types.Subscri
 	if filter.WithLineItems {
 		query = query.WithLineItems(func(q *ent.SubscriptionLineItemQuery) {
 			q.Where(subscriptionlineitem.Status(string(types.StatusPublished)))
+		}).WithCouponAssociations(func(q *ent.CouponAssociationQuery) {
+			q.Where(couponassociation.Status(string(types.StatusPublished))).
+				WithCoupon(func(cq *ent.CouponQuery) {
+					cq.Where(coupon.Status(string(types.StatusPublished)))
+				})
 		})
 	}
 
@@ -634,6 +641,8 @@ func (r *subscriptionRepository) CreateWithLineItems(ctx context.Context, sub *d
 				SetNillablePriceType(types.ToNillableString(string(item.PriceType))).
 				SetNillableMeterID(types.ToNillableString(item.MeterID)).
 				SetNillableMeterDisplayName(types.ToNillableString(item.MeterDisplayName)).
+				SetNillablePriceUnitID(types.ToNillableString(item.PriceUnitID)).
+				SetNillablePriceUnit(types.ToNillableString(item.PriceUnit)).
 				SetNillableDisplayName(types.ToNillableString(item.DisplayName)).
 				SetQuantity(item.Quantity).
 				SetCurrency(item.Currency).

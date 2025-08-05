@@ -8,6 +8,9 @@ import (
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/costsheet"
+	"github.com/flexprice/flexprice/ent/coupon"
+	"github.com/flexprice/flexprice/ent/couponapplication"
+	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/creditgrant"
 	"github.com/flexprice/flexprice/ent/creditgrantapplication"
 	"github.com/flexprice/flexprice/ent/creditnote"
@@ -24,6 +27,7 @@ import (
 	"github.com/flexprice/flexprice/ent/paymentattempt"
 	"github.com/flexprice/flexprice/ent/plan"
 	"github.com/flexprice/flexprice/ent/price"
+	"github.com/flexprice/flexprice/ent/priceunit"
 	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/secret"
 	"github.com/flexprice/flexprice/ent/subscription"
@@ -129,6 +133,145 @@ func init() {
 	costsheetDescPriceID := costsheetFields[2].Descriptor()
 	// costsheet.PriceIDValidator is a validator for the "price_id" field. It is called by the builders before save.
 	costsheet.PriceIDValidator = costsheetDescPriceID.Validators[0].(func(string) error)
+	couponMixin := schema.Coupon{}.Mixin()
+	couponMixinFields0 := couponMixin[0].Fields()
+	_ = couponMixinFields0
+	couponMixinFields1 := couponMixin[1].Fields()
+	_ = couponMixinFields1
+	couponFields := schema.Coupon{}.Fields()
+	_ = couponFields
+	// couponDescTenantID is the schema descriptor for tenant_id field.
+	couponDescTenantID := couponMixinFields0[0].Descriptor()
+	// coupon.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	coupon.TenantIDValidator = couponDescTenantID.Validators[0].(func(string) error)
+	// couponDescStatus is the schema descriptor for status field.
+	couponDescStatus := couponMixinFields0[1].Descriptor()
+	// coupon.DefaultStatus holds the default value on creation for the status field.
+	coupon.DefaultStatus = couponDescStatus.Default.(string)
+	// couponDescCreatedAt is the schema descriptor for created_at field.
+	couponDescCreatedAt := couponMixinFields0[2].Descriptor()
+	// coupon.DefaultCreatedAt holds the default value on creation for the created_at field.
+	coupon.DefaultCreatedAt = couponDescCreatedAt.Default.(func() time.Time)
+	// couponDescUpdatedAt is the schema descriptor for updated_at field.
+	couponDescUpdatedAt := couponMixinFields0[3].Descriptor()
+	// coupon.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	coupon.DefaultUpdatedAt = couponDescUpdatedAt.Default.(func() time.Time)
+	// coupon.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	coupon.UpdateDefaultUpdatedAt = couponDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// couponDescEnvironmentID is the schema descriptor for environment_id field.
+	couponDescEnvironmentID := couponMixinFields1[0].Descriptor()
+	// coupon.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	coupon.DefaultEnvironmentID = couponDescEnvironmentID.Default.(string)
+	// couponDescName is the schema descriptor for name field.
+	couponDescName := couponFields[1].Descriptor()
+	// coupon.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	coupon.NameValidator = couponDescName.Validators[0].(func(string) error)
+	// couponDescTotalRedemptions is the schema descriptor for total_redemptions field.
+	couponDescTotalRedemptions := couponFields[5].Descriptor()
+	// coupon.DefaultTotalRedemptions holds the default value on creation for the total_redemptions field.
+	coupon.DefaultTotalRedemptions = couponDescTotalRedemptions.Default.(int)
+	// couponDescAmountOff is the schema descriptor for amount_off field.
+	couponDescAmountOff := couponFields[7].Descriptor()
+	// coupon.DefaultAmountOff holds the default value on creation for the amount_off field.
+	coupon.DefaultAmountOff = couponDescAmountOff.Default.(decimal.Decimal)
+	// couponDescPercentageOff is the schema descriptor for percentage_off field.
+	couponDescPercentageOff := couponFields[8].Descriptor()
+	// coupon.DefaultPercentageOff holds the default value on creation for the percentage_off field.
+	coupon.DefaultPercentageOff = couponDescPercentageOff.Default.(decimal.Decimal)
+	// couponDescType is the schema descriptor for type field.
+	couponDescType := couponFields[9].Descriptor()
+	// coupon.DefaultType holds the default value on creation for the type field.
+	coupon.DefaultType = couponDescType.Default.(string)
+	// coupon.TypeValidator is a validator for the "type" field. It is called by the builders before save.
+	coupon.TypeValidator = couponDescType.Validators[0].(func(string) error)
+	// couponDescCadence is the schema descriptor for cadence field.
+	couponDescCadence := couponFields[10].Descriptor()
+	// coupon.DefaultCadence holds the default value on creation for the cadence field.
+	coupon.DefaultCadence = couponDescCadence.Default.(string)
+	// coupon.CadenceValidator is a validator for the "cadence" field. It is called by the builders before save.
+	coupon.CadenceValidator = couponDescCadence.Validators[0].(func(string) error)
+	couponapplicationMixin := schema.CouponApplication{}.Mixin()
+	couponapplicationMixinFields0 := couponapplicationMixin[0].Fields()
+	_ = couponapplicationMixinFields0
+	couponapplicationMixinFields1 := couponapplicationMixin[1].Fields()
+	_ = couponapplicationMixinFields1
+	couponapplicationFields := schema.CouponApplication{}.Fields()
+	_ = couponapplicationFields
+	// couponapplicationDescTenantID is the schema descriptor for tenant_id field.
+	couponapplicationDescTenantID := couponapplicationMixinFields0[0].Descriptor()
+	// couponapplication.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	couponapplication.TenantIDValidator = couponapplicationDescTenantID.Validators[0].(func(string) error)
+	// couponapplicationDescStatus is the schema descriptor for status field.
+	couponapplicationDescStatus := couponapplicationMixinFields0[1].Descriptor()
+	// couponapplication.DefaultStatus holds the default value on creation for the status field.
+	couponapplication.DefaultStatus = couponapplicationDescStatus.Default.(string)
+	// couponapplicationDescCreatedAt is the schema descriptor for created_at field.
+	couponapplicationDescCreatedAt := couponapplicationMixinFields0[2].Descriptor()
+	// couponapplication.DefaultCreatedAt holds the default value on creation for the created_at field.
+	couponapplication.DefaultCreatedAt = couponapplicationDescCreatedAt.Default.(func() time.Time)
+	// couponapplicationDescUpdatedAt is the schema descriptor for updated_at field.
+	couponapplicationDescUpdatedAt := couponapplicationMixinFields0[3].Descriptor()
+	// couponapplication.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	couponapplication.DefaultUpdatedAt = couponapplicationDescUpdatedAt.Default.(func() time.Time)
+	// couponapplication.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	couponapplication.UpdateDefaultUpdatedAt = couponapplicationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// couponapplicationDescEnvironmentID is the schema descriptor for environment_id field.
+	couponapplicationDescEnvironmentID := couponapplicationMixinFields1[0].Descriptor()
+	// couponapplication.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	couponapplication.DefaultEnvironmentID = couponapplicationDescEnvironmentID.Default.(string)
+	// couponapplicationDescCouponID is the schema descriptor for coupon_id field.
+	couponapplicationDescCouponID := couponapplicationFields[1].Descriptor()
+	// couponapplication.CouponIDValidator is a validator for the "coupon_id" field. It is called by the builders before save.
+	couponapplication.CouponIDValidator = couponapplicationDescCouponID.Validators[0].(func(string) error)
+	// couponapplicationDescInvoiceID is the schema descriptor for invoice_id field.
+	couponapplicationDescInvoiceID := couponapplicationFields[3].Descriptor()
+	// couponapplication.InvoiceIDValidator is a validator for the "invoice_id" field. It is called by the builders before save.
+	couponapplication.InvoiceIDValidator = couponapplicationDescInvoiceID.Validators[0].(func(string) error)
+	// couponapplicationDescAppliedAt is the schema descriptor for applied_at field.
+	couponapplicationDescAppliedAt := couponapplicationFields[5].Descriptor()
+	// couponapplication.DefaultAppliedAt holds the default value on creation for the applied_at field.
+	couponapplication.DefaultAppliedAt = couponapplicationDescAppliedAt.Default.(func() time.Time)
+	// couponapplicationDescDiscountType is the schema descriptor for discount_type field.
+	couponapplicationDescDiscountType := couponapplicationFields[9].Descriptor()
+	// couponapplication.DiscountTypeValidator is a validator for the "discount_type" field. It is called by the builders before save.
+	couponapplication.DiscountTypeValidator = couponapplicationDescDiscountType.Validators[0].(func(string) error)
+	couponassociationMixin := schema.CouponAssociation{}.Mixin()
+	couponassociationMixinFields0 := couponassociationMixin[0].Fields()
+	_ = couponassociationMixinFields0
+	couponassociationMixinFields1 := couponassociationMixin[1].Fields()
+	_ = couponassociationMixinFields1
+	couponassociationFields := schema.CouponAssociation{}.Fields()
+	_ = couponassociationFields
+	// couponassociationDescTenantID is the schema descriptor for tenant_id field.
+	couponassociationDescTenantID := couponassociationMixinFields0[0].Descriptor()
+	// couponassociation.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	couponassociation.TenantIDValidator = couponassociationDescTenantID.Validators[0].(func(string) error)
+	// couponassociationDescStatus is the schema descriptor for status field.
+	couponassociationDescStatus := couponassociationMixinFields0[1].Descriptor()
+	// couponassociation.DefaultStatus holds the default value on creation for the status field.
+	couponassociation.DefaultStatus = couponassociationDescStatus.Default.(string)
+	// couponassociationDescCreatedAt is the schema descriptor for created_at field.
+	couponassociationDescCreatedAt := couponassociationMixinFields0[2].Descriptor()
+	// couponassociation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	couponassociation.DefaultCreatedAt = couponassociationDescCreatedAt.Default.(func() time.Time)
+	// couponassociationDescUpdatedAt is the schema descriptor for updated_at field.
+	couponassociationDescUpdatedAt := couponassociationMixinFields0[3].Descriptor()
+	// couponassociation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	couponassociation.DefaultUpdatedAt = couponassociationDescUpdatedAt.Default.(func() time.Time)
+	// couponassociation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	couponassociation.UpdateDefaultUpdatedAt = couponassociationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// couponassociationDescEnvironmentID is the schema descriptor for environment_id field.
+	couponassociationDescEnvironmentID := couponassociationMixinFields1[0].Descriptor()
+	// couponassociation.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	couponassociation.DefaultEnvironmentID = couponassociationDescEnvironmentID.Default.(string)
+	// couponassociationDescCouponID is the schema descriptor for coupon_id field.
+	couponassociationDescCouponID := couponassociationFields[1].Descriptor()
+	// couponassociation.CouponIDValidator is a validator for the "coupon_id" field. It is called by the builders before save.
+	couponassociation.CouponIDValidator = couponassociationDescCouponID.Validators[0].(func(string) error)
+	// couponassociationDescSubscriptionID is the schema descriptor for subscription_id field.
+	couponassociationDescSubscriptionID := couponassociationFields[2].Descriptor()
+	// couponassociation.SubscriptionIDValidator is a validator for the "subscription_id" field. It is called by the builders before save.
+	couponassociation.SubscriptionIDValidator = couponassociationDescSubscriptionID.Validators[0].(func(string) error)
 	creditgrantMixin := schema.CreditGrant{}.Mixin()
 	creditgrantMixinFields0 := creditgrantMixin[0].Fields()
 	_ = creditgrantMixinFields0
@@ -574,12 +717,16 @@ func init() {
 	invoiceDescRefundedAmount := invoiceFields[12].Descriptor()
 	// invoice.DefaultRefundedAmount holds the default value on creation for the refunded_amount field.
 	invoice.DefaultRefundedAmount = invoiceDescRefundedAmount.Default.(decimal.Decimal)
+	// invoiceDescTotalDiscount is the schema descriptor for total_discount field.
+	invoiceDescTotalDiscount := invoiceFields[13].Descriptor()
+	// invoice.DefaultTotalDiscount holds the default value on creation for the total_discount field.
+	invoice.DefaultTotalDiscount = invoiceDescTotalDiscount.Default.(decimal.Decimal)
 	// invoiceDescTotal is the schema descriptor for total field.
-	invoiceDescTotal := invoiceFields[13].Descriptor()
+	invoiceDescTotal := invoiceFields[14].Descriptor()
 	// invoice.DefaultTotal holds the default value on creation for the total field.
 	invoice.DefaultTotal = invoiceDescTotal.Default.(decimal.Decimal)
 	// invoiceDescVersion is the schema descriptor for version field.
-	invoiceDescVersion := invoiceFields[25].Descriptor()
+	invoiceDescVersion := invoiceFields[26].Descriptor()
 	// invoice.DefaultVersion holds the default value on creation for the version field.
 	invoice.DefaultVersion = invoiceDescVersion.Default.(int)
 	invoicelineitemMixin := schema.InvoiceLineItem{}.Mixin()
@@ -620,15 +767,15 @@ func init() {
 	// invoicelineitem.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
 	invoicelineitem.CustomerIDValidator = invoicelineitemDescCustomerID.Validators[0].(func(string) error)
 	// invoicelineitemDescAmount is the schema descriptor for amount field.
-	invoicelineitemDescAmount := invoicelineitemFields[11].Descriptor()
+	invoicelineitemDescAmount := invoicelineitemFields[14].Descriptor()
 	// invoicelineitem.DefaultAmount holds the default value on creation for the amount field.
 	invoicelineitem.DefaultAmount = invoicelineitemDescAmount.Default.(decimal.Decimal)
 	// invoicelineitemDescQuantity is the schema descriptor for quantity field.
-	invoicelineitemDescQuantity := invoicelineitemFields[12].Descriptor()
+	invoicelineitemDescQuantity := invoicelineitemFields[15].Descriptor()
 	// invoicelineitem.DefaultQuantity holds the default value on creation for the quantity field.
 	invoicelineitem.DefaultQuantity = invoicelineitemDescQuantity.Default.(decimal.Decimal)
 	// invoicelineitemDescCurrency is the schema descriptor for currency field.
-	invoicelineitemDescCurrency := invoicelineitemFields[13].Descriptor()
+	invoicelineitemDescCurrency := invoicelineitemFields[16].Descriptor()
 	// invoicelineitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	invoicelineitem.CurrencyValidator = invoicelineitemDescCurrency.Validators[0].(func(string) error)
 	invoicesequenceFields := schema.InvoiceSequence{}.Fields()
@@ -874,34 +1021,109 @@ func init() {
 	priceDescDisplayAmount := priceFields[3].Descriptor()
 	// price.DisplayAmountValidator is a validator for the "display_amount" field. It is called by the builders before save.
 	price.DisplayAmountValidator = priceDescDisplayAmount.Validators[0].(func(string) error)
+	// priceDescPriceUnitType is the schema descriptor for price_unit_type field.
+	priceDescPriceUnitType := priceFields[4].Descriptor()
+	// price.DefaultPriceUnitType holds the default value on creation for the price_unit_type field.
+	price.DefaultPriceUnitType = priceDescPriceUnitType.Default.(string)
+	// price.PriceUnitTypeValidator is a validator for the "price_unit_type" field. It is called by the builders before save.
+	price.PriceUnitTypeValidator = priceDescPriceUnitType.Validators[0].(func(string) error)
 	// priceDescPlanID is the schema descriptor for plan_id field.
-	priceDescPlanID := priceFields[4].Descriptor()
+	priceDescPlanID := priceFields[10].Descriptor()
 	// price.PlanIDValidator is a validator for the "plan_id" field. It is called by the builders before save.
 	price.PlanIDValidator = priceDescPlanID.Validators[0].(func(string) error)
 	// priceDescType is the schema descriptor for type field.
-	priceDescType := priceFields[5].Descriptor()
+	priceDescType := priceFields[11].Descriptor()
 	// price.TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	price.TypeValidator = priceDescType.Validators[0].(func(string) error)
 	// priceDescBillingPeriod is the schema descriptor for billing_period field.
-	priceDescBillingPeriod := priceFields[6].Descriptor()
+	priceDescBillingPeriod := priceFields[12].Descriptor()
 	// price.BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
 	price.BillingPeriodValidator = priceDescBillingPeriod.Validators[0].(func(string) error)
 	// priceDescBillingPeriodCount is the schema descriptor for billing_period_count field.
-	priceDescBillingPeriodCount := priceFields[7].Descriptor()
+	priceDescBillingPeriodCount := priceFields[13].Descriptor()
 	// price.BillingPeriodCountValidator is a validator for the "billing_period_count" field. It is called by the builders before save.
 	price.BillingPeriodCountValidator = priceDescBillingPeriodCount.Validators[0].(func(int) error)
 	// priceDescBillingModel is the schema descriptor for billing_model field.
-	priceDescBillingModel := priceFields[8].Descriptor()
+	priceDescBillingModel := priceFields[14].Descriptor()
 	// price.BillingModelValidator is a validator for the "billing_model" field. It is called by the builders before save.
 	price.BillingModelValidator = priceDescBillingModel.Validators[0].(func(string) error)
 	// priceDescBillingCadence is the schema descriptor for billing_cadence field.
-	priceDescBillingCadence := priceFields[9].Descriptor()
+	priceDescBillingCadence := priceFields[15].Descriptor()
 	// price.BillingCadenceValidator is a validator for the "billing_cadence" field. It is called by the builders before save.
 	price.BillingCadenceValidator = priceDescBillingCadence.Validators[0].(func(string) error)
 	// priceDescTrialPeriod is the schema descriptor for trial_period field.
-	priceDescTrialPeriod := priceFields[11].Descriptor()
+	priceDescTrialPeriod := priceFields[17].Descriptor()
 	// price.DefaultTrialPeriod holds the default value on creation for the trial_period field.
 	price.DefaultTrialPeriod = priceDescTrialPeriod.Default.(int)
+	priceunitMixin := schema.PriceUnit{}.Mixin()
+	priceunitMixinFields0 := priceunitMixin[0].Fields()
+	_ = priceunitMixinFields0
+	priceunitMixinFields1 := priceunitMixin[1].Fields()
+	_ = priceunitMixinFields1
+	priceunitFields := schema.PriceUnit{}.Fields()
+	_ = priceunitFields
+	// priceunitDescTenantID is the schema descriptor for tenant_id field.
+	priceunitDescTenantID := priceunitMixinFields0[0].Descriptor()
+	// priceunit.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	priceunit.TenantIDValidator = priceunitDescTenantID.Validators[0].(func(string) error)
+	// priceunitDescStatus is the schema descriptor for status field.
+	priceunitDescStatus := priceunitMixinFields0[1].Descriptor()
+	// priceunit.DefaultStatus holds the default value on creation for the status field.
+	priceunit.DefaultStatus = priceunitDescStatus.Default.(string)
+	// priceunitDescCreatedAt is the schema descriptor for created_at field.
+	priceunitDescCreatedAt := priceunitMixinFields0[2].Descriptor()
+	// priceunit.DefaultCreatedAt holds the default value on creation for the created_at field.
+	priceunit.DefaultCreatedAt = priceunitDescCreatedAt.Default.(func() time.Time)
+	// priceunitDescUpdatedAt is the schema descriptor for updated_at field.
+	priceunitDescUpdatedAt := priceunitMixinFields0[3].Descriptor()
+	// priceunit.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	priceunit.DefaultUpdatedAt = priceunitDescUpdatedAt.Default.(func() time.Time)
+	// priceunit.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	priceunit.UpdateDefaultUpdatedAt = priceunitDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// priceunitDescEnvironmentID is the schema descriptor for environment_id field.
+	priceunitDescEnvironmentID := priceunitMixinFields1[0].Descriptor()
+	// priceunit.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	priceunit.DefaultEnvironmentID = priceunitDescEnvironmentID.Default.(string)
+	// priceunitDescName is the schema descriptor for name field.
+	priceunitDescName := priceunitFields[1].Descriptor()
+	// priceunit.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	priceunit.NameValidator = priceunitDescName.Validators[0].(func(string) error)
+	// priceunitDescCode is the schema descriptor for code field.
+	priceunitDescCode := priceunitFields[2].Descriptor()
+	// priceunit.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	priceunit.CodeValidator = priceunitDescCode.Validators[0].(func(string) error)
+	// priceunitDescSymbol is the schema descriptor for symbol field.
+	priceunitDescSymbol := priceunitFields[3].Descriptor()
+	// priceunit.SymbolValidator is a validator for the "symbol" field. It is called by the builders before save.
+	priceunit.SymbolValidator = priceunitDescSymbol.Validators[0].(func(string) error)
+	// priceunitDescBaseCurrency is the schema descriptor for base_currency field.
+	priceunitDescBaseCurrency := priceunitFields[4].Descriptor()
+	// priceunit.BaseCurrencyValidator is a validator for the "base_currency" field. It is called by the builders before save.
+	priceunit.BaseCurrencyValidator = priceunitDescBaseCurrency.Validators[0].(func(string) error)
+	// priceunitDescConversionRate is the schema descriptor for conversion_rate field.
+	priceunitDescConversionRate := priceunitFields[5].Descriptor()
+	// priceunit.DefaultConversionRate holds the default value on creation for the conversion_rate field.
+	priceunit.DefaultConversionRate = priceunitDescConversionRate.Default.(decimal.Decimal)
+	// priceunitDescPrecision is the schema descriptor for precision field.
+	priceunitDescPrecision := priceunitFields[6].Descriptor()
+	// priceunit.DefaultPrecision holds the default value on creation for the precision field.
+	priceunit.DefaultPrecision = priceunitDescPrecision.Default.(int)
+	// priceunit.PrecisionValidator is a validator for the "precision" field. It is called by the builders before save.
+	priceunit.PrecisionValidator = func() func(int) error {
+		validators := priceunitDescPrecision.Validators
+		fns := [...]func(int) error{
+			validators[0].(func(int) error),
+			validators[1].(func(int) error),
+		}
+		return func(precision int) error {
+			for _, fn := range fns {
+				if err := fn(precision); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	secretMixin := schema.Secret{}.Mixin()
 	secretMixinFields0 := secretMixin[0].Fields()
 	_ = secretMixinFields0
@@ -1084,19 +1306,19 @@ func init() {
 	// subscriptionlineitem.PriceIDValidator is a validator for the "price_id" field. It is called by the builders before save.
 	subscriptionlineitem.PriceIDValidator = subscriptionlineitemDescPriceID.Validators[0].(func(string) error)
 	// subscriptionlineitemDescQuantity is the schema descriptor for quantity field.
-	subscriptionlineitemDescQuantity := subscriptionlineitemFields[10].Descriptor()
+	subscriptionlineitemDescQuantity := subscriptionlineitemFields[12].Descriptor()
 	// subscriptionlineitem.DefaultQuantity holds the default value on creation for the quantity field.
 	subscriptionlineitem.DefaultQuantity = subscriptionlineitemDescQuantity.Default.(decimal.Decimal)
 	// subscriptionlineitemDescCurrency is the schema descriptor for currency field.
-	subscriptionlineitemDescCurrency := subscriptionlineitemFields[11].Descriptor()
+	subscriptionlineitemDescCurrency := subscriptionlineitemFields[13].Descriptor()
 	// subscriptionlineitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	subscriptionlineitem.CurrencyValidator = subscriptionlineitemDescCurrency.Validators[0].(func(string) error)
 	// subscriptionlineitemDescBillingPeriod is the schema descriptor for billing_period field.
-	subscriptionlineitemDescBillingPeriod := subscriptionlineitemFields[12].Descriptor()
+	subscriptionlineitemDescBillingPeriod := subscriptionlineitemFields[14].Descriptor()
 	// subscriptionlineitem.BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
 	subscriptionlineitem.BillingPeriodValidator = subscriptionlineitemDescBillingPeriod.Validators[0].(func(string) error)
 	// subscriptionlineitemDescTrialPeriod is the schema descriptor for trial_period field.
-	subscriptionlineitemDescTrialPeriod := subscriptionlineitemFields[14].Descriptor()
+	subscriptionlineitemDescTrialPeriod := subscriptionlineitemFields[16].Descriptor()
 	// subscriptionlineitem.DefaultTrialPeriod holds the default value on creation for the trial_period field.
 	subscriptionlineitem.DefaultTrialPeriod = subscriptionlineitemDescTrialPeriod.Default.(int)
 	subscriptionpauseMixin := schema.SubscriptionPause{}.Mixin()
@@ -1409,6 +1631,14 @@ func init() {
 	walletDescWalletType := walletFields[12].Descriptor()
 	// wallet.DefaultWalletType holds the default value on creation for the wallet_type field.
 	wallet.DefaultWalletType = walletDescWalletType.Default.(string)
+	// walletDescAlertEnabled is the schema descriptor for alert_enabled field.
+	walletDescAlertEnabled := walletFields[16].Descriptor()
+	// wallet.DefaultAlertEnabled holds the default value on creation for the alert_enabled field.
+	wallet.DefaultAlertEnabled = walletDescAlertEnabled.Default.(bool)
+	// walletDescAlertState is the schema descriptor for alert_state field.
+	walletDescAlertState := walletFields[17].Descriptor()
+	// wallet.DefaultAlertState holds the default value on creation for the alert_state field.
+	wallet.DefaultAlertState = walletDescAlertState.Default.(string)
 	wallettransactionMixin := schema.WalletTransaction{}.Mixin()
 	wallettransactionMixinFields0 := wallettransactionMixin[0].Fields()
 	_ = wallettransactionMixinFields0

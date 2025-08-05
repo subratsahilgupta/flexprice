@@ -15,6 +15,9 @@ import (
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/costsheet"
+	"github.com/flexprice/flexprice/ent/coupon"
+	"github.com/flexprice/flexprice/ent/couponapplication"
+	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/creditgrant"
 	"github.com/flexprice/flexprice/ent/creditgrantapplication"
 	"github.com/flexprice/flexprice/ent/creditnote"
@@ -31,6 +34,7 @@ import (
 	"github.com/flexprice/flexprice/ent/paymentattempt"
 	"github.com/flexprice/flexprice/ent/plan"
 	"github.com/flexprice/flexprice/ent/price"
+	"github.com/flexprice/flexprice/ent/priceunit"
 	"github.com/flexprice/flexprice/ent/secret"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
@@ -105,6 +109,9 @@ func checkColumn(table, column string) error {
 			auth.Table:                      auth.ValidColumn,
 			billingsequence.Table:           billingsequence.ValidColumn,
 			costsheet.Table:                 costsheet.ValidColumn,
+			coupon.Table:                    coupon.ValidColumn,
+			couponapplication.Table:         couponapplication.ValidColumn,
+			couponassociation.Table:         couponassociation.ValidColumn,
 			creditgrant.Table:               creditgrant.ValidColumn,
 			creditgrantapplication.Table:    creditgrantapplication.ValidColumn,
 			creditnote.Table:                creditnote.ValidColumn,
@@ -121,6 +128,7 @@ func checkColumn(table, column string) error {
 			paymentattempt.Table:            paymentattempt.ValidColumn,
 			plan.Table:                      plan.ValidColumn,
 			price.Table:                     price.ValidColumn,
+			priceunit.Table:                 priceunit.ValidColumn,
 			secret.Table:                    secret.ValidColumn,
 			subscription.Table:              subscription.ValidColumn,
 			subscriptionlineitem.Table:      subscriptionlineitem.ValidColumn,

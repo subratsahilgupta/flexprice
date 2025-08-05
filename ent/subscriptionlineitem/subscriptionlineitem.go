@@ -45,6 +45,10 @@ const (
 	FieldMeterID = "meter_id"
 	// FieldMeterDisplayName holds the string denoting the meter_display_name field in the database.
 	FieldMeterDisplayName = "meter_display_name"
+	// FieldPriceUnitID holds the string denoting the price_unit_id field in the database.
+	FieldPriceUnitID = "price_unit_id"
+	// FieldPriceUnit holds the string denoting the price_unit field in the database.
+	FieldPriceUnit = "price_unit"
 	// FieldDisplayName holds the string denoting the display_name field in the database.
 	FieldDisplayName = "display_name"
 	// FieldQuantity holds the string denoting the quantity field in the database.
@@ -65,6 +69,8 @@ const (
 	FieldMetadata = "metadata"
 	// EdgeSubscription holds the string denoting the subscription edge name in mutations.
 	EdgeSubscription = "subscription"
+	// EdgeCouponAssociations holds the string denoting the coupon_associations edge name in mutations.
+	EdgeCouponAssociations = "coupon_associations"
 	// Table holds the table name of the subscriptionlineitem in the database.
 	Table = "subscription_line_items"
 	// SubscriptionTable is the table that holds the subscription relation/edge.
@@ -74,6 +80,13 @@ const (
 	SubscriptionInverseTable = "subscriptions"
 	// SubscriptionColumn is the table column denoting the subscription relation/edge.
 	SubscriptionColumn = "subscription_id"
+	// CouponAssociationsTable is the table that holds the coupon_associations relation/edge.
+	CouponAssociationsTable = "coupon_associations"
+	// CouponAssociationsInverseTable is the table name for the CouponAssociation entity.
+	// It exists in this package in order to avoid circular dependency with the "couponassociation" package.
+	CouponAssociationsInverseTable = "coupon_associations"
+	// CouponAssociationsColumn is the table column denoting the coupon_associations relation/edge.
+	CouponAssociationsColumn = "subscription_line_item_id"
 )
 
 // Columns holds all SQL columns for subscriptionlineitem fields.
@@ -94,6 +107,8 @@ var Columns = []string{
 	FieldPriceType,
 	FieldMeterID,
 	FieldMeterDisplayName,
+	FieldPriceUnitID,
+	FieldPriceUnit,
 	FieldDisplayName,
 	FieldQuantity,
 	FieldCurrency,
@@ -227,6 +242,16 @@ func ByMeterDisplayName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMeterDisplayName, opts...).ToFunc()
 }
 
+// ByPriceUnitID orders the results by the price_unit_id field.
+func ByPriceUnitID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceUnitID, opts...).ToFunc()
+}
+
+// ByPriceUnit orders the results by the price_unit field.
+func ByPriceUnit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceUnit, opts...).ToFunc()
+}
+
 // ByDisplayName orders the results by the display_name field.
 func ByDisplayName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDisplayName, opts...).ToFunc()
@@ -273,10 +298,31 @@ func BySubscriptionField(field string, opts ...sql.OrderTermOption) OrderOption 
 		sqlgraph.OrderByNeighborTerms(s, newSubscriptionStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByCouponAssociationsCount orders the results by coupon_associations count.
+func ByCouponAssociationsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCouponAssociationsStep(), opts...)
+	}
+}
+
+// ByCouponAssociations orders the results by coupon_associations terms.
+func ByCouponAssociations(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCouponAssociationsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newSubscriptionStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(SubscriptionInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionTable, SubscriptionColumn),
+	)
+}
+func newCouponAssociationsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CouponAssociationsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CouponAssociationsTable, CouponAssociationsColumn),
 	)
 }
