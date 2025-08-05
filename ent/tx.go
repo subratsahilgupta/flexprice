@@ -20,6 +20,12 @@ type Tx struct {
 	BillingSequence *BillingSequenceClient
 	// Costsheet is the client for interacting with the Costsheet builders.
 	Costsheet *CostsheetClient
+	// Coupon is the client for interacting with the Coupon builders.
+	Coupon *CouponClient
+	// CouponApplication is the client for interacting with the CouponApplication builders.
+	CouponApplication *CouponApplicationClient
+	// CouponAssociation is the client for interacting with the CouponAssociation builders.
+	CouponAssociation *CouponAssociationClient
 	// CreditGrant is the client for interacting with the CreditGrant builders.
 	CreditGrant *CreditGrantClient
 	// CreditGrantApplication is the client for interacting with the CreditGrantApplication builders.
@@ -52,6 +58,8 @@ type Tx struct {
 	Plan *PlanClient
 	// Price is the client for interacting with the Price builders.
 	Price *PriceClient
+	// PriceUnit is the client for interacting with the PriceUnit builders.
+	PriceUnit *PriceUnitClient
 	// Secret is the client for interacting with the Secret builders.
 	Secret *SecretClient
 	// Subscription is the client for interacting with the Subscription builders.
@@ -208,6 +216,9 @@ func (tx *Tx) init() {
 	tx.Auth = NewAuthClient(tx.config)
 	tx.BillingSequence = NewBillingSequenceClient(tx.config)
 	tx.Costsheet = NewCostsheetClient(tx.config)
+	tx.Coupon = NewCouponClient(tx.config)
+	tx.CouponApplication = NewCouponApplicationClient(tx.config)
+	tx.CouponAssociation = NewCouponAssociationClient(tx.config)
 	tx.CreditGrant = NewCreditGrantClient(tx.config)
 	tx.CreditGrantApplication = NewCreditGrantApplicationClient(tx.config)
 	tx.CreditNote = NewCreditNoteClient(tx.config)
@@ -224,6 +235,7 @@ func (tx *Tx) init() {
 	tx.PaymentAttempt = NewPaymentAttemptClient(tx.config)
 	tx.Plan = NewPlanClient(tx.config)
 	tx.Price = NewPriceClient(tx.config)
+	tx.PriceUnit = NewPriceUnitClient(tx.config)
 	tx.Secret = NewSecretClient(tx.config)
 	tx.Subscription = NewSubscriptionClient(tx.config)
 	tx.SubscriptionLineItem = NewSubscriptionLineItemClient(tx.config)

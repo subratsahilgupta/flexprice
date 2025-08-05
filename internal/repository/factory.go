@@ -5,6 +5,9 @@ import (
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/costsheet"
+	"github.com/flexprice/flexprice/internal/domain/coupon"
+	"github.com/flexprice/flexprice/internal/domain/coupon_application"
+	"github.com/flexprice/flexprice/internal/domain/coupon_association"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
@@ -18,6 +21,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/task"
@@ -129,10 +133,26 @@ func NewCreditGrantApplicationRepository(p RepositoryParams) creditgrantapplicat
 	return entRepo.NewCreditGrantApplicationRepository(p.EntClient, p.Logger, p.Cache)
 }
 
+func NewCouponRepository(p RepositoryParams) coupon.Repository {
+	return entRepo.NewCouponRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewCouponAssociationRepository(p RepositoryParams) coupon_association.Repository {
+	return entRepo.NewCouponAssociationRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewCouponApplicationRepository(p RepositoryParams) coupon_application.Repository {
+	return entRepo.NewCouponApplicationRepository(p.EntClient, p.Logger, p.Cache)
+}
+
 func NewCreditNoteRepository(p RepositoryParams) creditnote.Repository {
 	return entRepo.NewCreditNoteRepository(p.EntClient, p.Logger, p.Cache)
 }
 
 func NewCreditNoteLineItemRepository(p RepositoryParams) creditnote.CreditNoteLineItemRepository {
 	return entRepo.NewCreditNoteLineItemRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewPriceUnitRepository(p RepositoryParams) priceunit.Repository {
+	return entRepo.NewPriceUnitRepository(p.EntClient, p.Logger, p.Cache)
 }

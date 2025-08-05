@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/ent/couponapplication"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/flexprice/flexprice/ent/predicate"
@@ -246,6 +247,9 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 					SetNillablePriceID(item.PriceID).
 					SetNillableMeterID(item.MeterID).
 					SetNillableMeterDisplayName(item.MeterDisplayName).
+					SetNillablePriceUnitID(item.PriceUnitID).
+					SetNillablePriceUnit(item.PriceUnit).
+					SetNillablePriceUnitAmount(item.PriceUnitAmount).
 					SetNillableDisplayName(item.DisplayName).
 					SetAmount(item.Amount).
 					SetQuantity(item.Quantity).
@@ -307,6 +311,8 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 				SetNillablePriceID(item.PriceID).
 				SetNillableMeterID(item.MeterID).
 				SetNillableMeterDisplayName(item.MeterDisplayName).
+				SetNillablePriceUnitID(item.PriceUnitID).
+				SetNillablePriceUnit(item.PriceUnit).
 				SetNillableDisplayName(item.DisplayName).
 				SetAmount(item.Amount).
 				SetQuantity(item.Quantity).
@@ -446,6 +452,9 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetRefundedAmount(inv.RefundedAmount).
 		SetUpdatedAt(time.Now()).
 		SetUpdatedBy(types.GetUserID(ctx)).
+		SetTotal(inv.Total).
+		SetSubtotal(inv.Subtotal).
+		SetTotalDiscount(inv.TotalDiscount).
 		AddVersion(1) // Increment version atomically
 
 	// Execute update
@@ -535,6 +544,9 @@ func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilte
 	query := client.Invoice.Query().
 		WithLineItems(func(q *ent.InvoiceLineItemQuery) {
 			q.Where(invoicelineitem.Status(string(types.StatusPublished)))
+		}).
+		WithCouponApplications(func(q *ent.CouponApplicationQuery) {
+			q.Where(couponapplication.Status(string(types.StatusPublished)))
 		})
 
 	// Apply common query options

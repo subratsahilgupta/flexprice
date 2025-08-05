@@ -120,6 +120,195 @@ var (
 			},
 		},
 	}
+	// CouponsColumns holds the columns for the "coupons" table.
+	CouponsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "redeem_after", Type: field.TypeTime, Nullable: true},
+		{Name: "redeem_before", Type: field.TypeTime, Nullable: true},
+		{Name: "max_redemptions", Type: field.TypeInt, Nullable: true},
+		{Name: "total_redemptions", Type: field.TypeInt, Default: 0},
+		{Name: "rules", Type: field.TypeJSON, Nullable: true},
+		{Name: "amount_off", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "percentage_off", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(7,4)"}},
+		{Name: "type", Type: field.TypeString, Default: "fixed", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "cadence", Type: field.TypeString, Default: "once", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "duration_in_periods", Type: field.TypeInt, Nullable: true},
+		{Name: "currency", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(10)"}},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// CouponsTable holds the schema information for the "coupons" table.
+	CouponsTable = &schema.Table{
+		Name:       "coupons",
+		Columns:    CouponsColumns,
+		PrimaryKey: []*schema.Column{CouponsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "coupon_tenant_id_environment_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponsColumns[1], CouponsColumns[7]},
+			},
+		},
+	}
+	// CouponApplicationsColumns holds the columns for the "coupon_applications" table.
+	CouponApplicationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "coupon_association_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "applied_at", Type: field.TypeTime},
+		{Name: "original_price", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "final_price", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "discounted_amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "discount_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "discount_percentage", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(7,4)"}},
+		{Name: "currency", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(10)"}},
+		{Name: "coupon_snapshot", Type: field.TypeJSON, Nullable: true},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "coupon_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "invoice_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "invoice_line_item_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "subscription_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+	}
+	// CouponApplicationsTable holds the schema information for the "coupon_applications" table.
+	CouponApplicationsTable = &schema.Table{
+		Name:       "coupon_applications",
+		Columns:    CouponApplicationsColumns,
+		PrimaryKey: []*schema.Column{CouponApplicationsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "coupon_applications_coupons_coupon_applications",
+				Columns:    []*schema.Column{CouponApplicationsColumns[18]},
+				RefColumns: []*schema.Column{CouponsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "coupon_applications_invoices_coupon_applications",
+				Columns:    []*schema.Column{CouponApplicationsColumns[19]},
+				RefColumns: []*schema.Column{InvoicesColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "coupon_applications_invoice_line_items_coupon_applications",
+				Columns:    []*schema.Column{CouponApplicationsColumns[20]},
+				RefColumns: []*schema.Column{InvoiceLineItemsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "coupon_applications_subscriptions_coupon_applications",
+				Columns:    []*schema.Column{CouponApplicationsColumns[21]},
+				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "couponapplication_tenant_id_environment_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7]},
+			},
+			{
+				Name:    "couponapplication_tenant_id_environment_id_coupon_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7], CouponApplicationsColumns[18]},
+			},
+			{
+				Name:    "couponapplication_tenant_id_environment_id_invoice_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7], CouponApplicationsColumns[19]},
+			},
+			{
+				Name:    "couponapplication_tenant_id_environment_id_invoice_id_invoice_line_item_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7], CouponApplicationsColumns[19], CouponApplicationsColumns[20]},
+			},
+			{
+				Name:    "couponapplication_tenant_id_environment_id_subscription_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7], CouponApplicationsColumns[21]},
+			},
+			{
+				Name:    "couponapplication_tenant_id_environment_id_subscription_id_coupon_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponApplicationsColumns[1], CouponApplicationsColumns[7], CouponApplicationsColumns[21], CouponApplicationsColumns[18]},
+			},
+		},
+	}
+	// CouponAssociationsColumns holds the columns for the "coupon_associations" table.
+	CouponAssociationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "coupon_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "subscription_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "subscription_line_item_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+	}
+	// CouponAssociationsTable holds the schema information for the "coupon_associations" table.
+	CouponAssociationsTable = &schema.Table{
+		Name:       "coupon_associations",
+		Columns:    CouponAssociationsColumns,
+		PrimaryKey: []*schema.Column{CouponAssociationsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "coupon_associations_coupons_coupon_associations",
+				Columns:    []*schema.Column{CouponAssociationsColumns[9]},
+				RefColumns: []*schema.Column{CouponsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "coupon_associations_subscriptions_coupon_associations",
+				Columns:    []*schema.Column{CouponAssociationsColumns[10]},
+				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "coupon_associations_subscription_line_items_coupon_associations",
+				Columns:    []*schema.Column{CouponAssociationsColumns[11]},
+				RefColumns: []*schema.Column{SubscriptionLineItemsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "couponassociation_tenant_id_environment_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponAssociationsColumns[1], CouponAssociationsColumns[7]},
+			},
+			{
+				Name:    "couponassociation_tenant_id_environment_id_coupon_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponAssociationsColumns[1], CouponAssociationsColumns[7], CouponAssociationsColumns[9]},
+			},
+			{
+				Name:    "couponassociation_tenant_id_environment_id_subscription_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponAssociationsColumns[1], CouponAssociationsColumns[7], CouponAssociationsColumns[10]},
+			},
+			{
+				Name:    "couponassociation_tenant_id_environment_id_subscription_id_subscription_line_item_id",
+				Unique:  false,
+				Columns: []*schema.Column{CouponAssociationsColumns[1], CouponAssociationsColumns[7], CouponAssociationsColumns[10], CouponAssociationsColumns[11]},
+			},
+		},
+	}
 	// CreditGrantsColumns holds the columns for the "credit_grants" table.
 	CreditGrantsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -534,6 +723,7 @@ var (
 		{Name: "subtotal", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "adjustment_amount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "refunded_amount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "total_discount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "total", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "description", Type: field.TypeString, Nullable: true},
 		{Name: "due_date", Type: field.TypeTime, Nullable: true},
@@ -578,12 +768,12 @@ var (
 			{
 				Name:    "idx_tenant_due_date_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[22], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[23], InvoicesColumns[11], InvoicesColumns[12], InvoicesColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_environment_invoice_number_unique",
 				Unique:  true,
-				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[33]},
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[34]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "invoice_number IS NOT NULL AND invoice_number != '' AND status = 'published'",
 				},
@@ -591,7 +781,7 @@ var (
 			{
 				Name:    "idx_tenant_environment_idempotency_key_unique",
 				Unique:  true,
-				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[35]},
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[7], InvoicesColumns[36]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "idempotency_key IS NOT NULL",
 				},
@@ -599,7 +789,7 @@ var (
 			{
 				Name:    "idx_subscription_period_unique",
 				Unique:  false,
-				Columns: []*schema.Column{InvoicesColumns[9], InvoicesColumns[27], InvoicesColumns[28]},
+				Columns: []*schema.Column{InvoicesColumns[9], InvoicesColumns[28], InvoicesColumns[29]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "invoice_status != 'VOIDED' AND subscription_id IS NOT NULL",
 				},
@@ -624,6 +814,9 @@ var (
 		{Name: "price_type", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "meter_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "meter_display_name", Type: field.TypeString, Nullable: true},
+		{Name: "price_unit_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "price_unit", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(3)"}},
+		{Name: "price_unit_amount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "display_name", Type: field.TypeString, Nullable: true},
 		{Name: "amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "quantity", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
@@ -641,7 +834,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "invoice_line_items_invoices_line_items",
-				Columns:    []*schema.Column{InvoiceLineItemsColumns[23]},
+				Columns:    []*schema.Column{InvoiceLineItemsColumns[26]},
 				RefColumns: []*schema.Column{InvoicesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -650,7 +843,7 @@ var (
 			{
 				Name:    "invoicelineitem_tenant_id_environment_id_invoice_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[23], InvoiceLineItemsColumns[2]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[26], InvoiceLineItemsColumns[2]},
 			},
 			{
 				Name:    "invoicelineitem_tenant_id_environment_id_customer_id_status",
@@ -675,7 +868,7 @@ var (
 			{
 				Name:    "invoicelineitem_period_start_period_end",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[20], InvoiceLineItemsColumns[21]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[23], InvoiceLineItemsColumns[24]},
 			},
 		},
 	}
@@ -883,6 +1076,11 @@ var (
 		{Name: "amount", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "numeric(25,15)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(3)"}},
 		{Name: "display_amount", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "price_unit_type", Type: field.TypeString, Default: "FIAT", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "price_unit", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(3)"}},
+		{Name: "price_unit_amount", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(25,15)"}},
+		{Name: "display_price_unit_amount", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "conversion_rate", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(25,15)"}},
 		{Name: "plan_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "billing_period", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(20)"}},
@@ -895,21 +1093,34 @@ var (
 		{Name: "filter_values", Type: field.TypeJSON, Nullable: true},
 		{Name: "tier_mode", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "tiers", Type: field.TypeJSON, Nullable: true},
+		{Name: "price_unit_tiers", Type: field.TypeJSON, Nullable: true},
 		{Name: "transform_quantity", Type: field.TypeJSON, Nullable: true},
 		{Name: "lookup_key", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "scope", Type: field.TypeEnum, Enums: []string{"PLAN", "SUBSCRIPTION"}, Default: "PLAN", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "parent_price_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "subscription_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "price_unit_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// PricesTable holds the schema information for the "prices" table.
 	PricesTable = &schema.Table{
 		Name:       "prices",
 		Columns:    PricesColumns,
 		PrimaryKey: []*schema.Column{PricesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "prices_price_unit_price_unit_edge",
+				Columns:    []*schema.Column{PricesColumns[36]},
+				RefColumns: []*schema.Column{PriceUnitColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "price_tenant_id_environment_id_lookup_key",
 				Unique:  true,
-				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7], PricesColumns[24]},
+				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7], PricesColumns[30]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status = 'published' AND lookup_key IS NOT NULL AND lookup_key != ''",
 				},
@@ -918,6 +1129,44 @@ var (
 				Name:    "price_tenant_id_environment_id",
 				Unique:  false,
 				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7]},
+			},
+		},
+	}
+	// PriceUnitColumns holds the columns for the "price_unit" table.
+	PriceUnitColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "code", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(3)"}},
+		{Name: "symbol", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
+		{Name: "base_currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(3)"}},
+		{Name: "conversion_rate", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
+		{Name: "precision", Type: field.TypeInt, Default: 0},
+	}
+	// PriceUnitTable holds the schema information for the "price_unit" table.
+	PriceUnitTable = &schema.Table{
+		Name:       "price_unit",
+		Columns:    PriceUnitColumns,
+		PrimaryKey: []*schema.Column{PriceUnitColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "priceunit_code_tenant_id_environment_id",
+				Unique:  true,
+				Columns: []*schema.Column{PriceUnitColumns[9], PriceUnitColumns[1], PriceUnitColumns[7]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published'",
+				},
+			},
+			{
+				Name:    "priceunit_tenant_id_environment_id",
+				Unique:  false,
+				Columns: []*schema.Column{PriceUnitColumns[1], PriceUnitColumns[7]},
 			},
 		},
 	}
@@ -1058,6 +1307,8 @@ var (
 		{Name: "price_type", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "meter_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "meter_display_name", Type: field.TypeString, Nullable: true},
+		{Name: "price_unit_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "price_unit", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(3)"}},
 		{Name: "display_name", Type: field.TypeString, Nullable: true},
 		{Name: "quantity", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
@@ -1077,7 +1328,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "subscription_line_items_subscriptions_line_items",
-				Columns:    []*schema.Column{SubscriptionLineItemsColumns[24]},
+				Columns:    []*schema.Column{SubscriptionLineItemsColumns[26]},
 				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -1086,7 +1337,7 @@ var (
 			{
 				Name:    "subscriptionlineitem_tenant_id_environment_id_subscription_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[24], SubscriptionLineItemsColumns[2]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[1], SubscriptionLineItemsColumns[7], SubscriptionLineItemsColumns[26], SubscriptionLineItemsColumns[2]},
 			},
 			{
 				Name:    "subscriptionlineitem_tenant_id_environment_id_customer_id_status",
@@ -1111,7 +1362,7 @@ var (
 			{
 				Name:    "subscriptionlineitem_start_date_end_date",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionLineItemsColumns[21], SubscriptionLineItemsColumns[22]},
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[23], SubscriptionLineItemsColumns[24]},
 			},
 		},
 	}
@@ -1390,6 +1641,9 @@ var (
 		{Name: "wallet_type", Type: field.TypeString, Default: "PRE_PAID", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "conversion_rate", Type: field.TypeOther, Default: "1", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
 		{Name: "config", Type: field.TypeJSON, Nullable: true},
+		{Name: "alert_config", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "alert_enabled", Type: field.TypeBool, Nullable: true, Default: true},
+		{Name: "alert_state", Type: field.TypeString, Nullable: true, Default: "ok", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// WalletsTable holds the schema information for the "wallets" table.
 	WalletsTable = &schema.Table{
@@ -1475,11 +1729,39 @@ var (
 			},
 		},
 	}
+	// CouponAssociationCouponApplicationsColumns holds the columns for the "coupon_association_coupon_applications" table.
+	CouponAssociationCouponApplicationsColumns = []*schema.Column{
+		{Name: "coupon_association_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "coupon_application_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+	}
+	// CouponAssociationCouponApplicationsTable holds the schema information for the "coupon_association_coupon_applications" table.
+	CouponAssociationCouponApplicationsTable = &schema.Table{
+		Name:       "coupon_association_coupon_applications",
+		Columns:    CouponAssociationCouponApplicationsColumns,
+		PrimaryKey: []*schema.Column{CouponAssociationCouponApplicationsColumns[0], CouponAssociationCouponApplicationsColumns[1]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "coupon_association_coupon_applications_coupon_association_id",
+				Columns:    []*schema.Column{CouponAssociationCouponApplicationsColumns[0]},
+				RefColumns: []*schema.Column{CouponAssociationsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "coupon_association_coupon_applications_coupon_application_id",
+				Columns:    []*schema.Column{CouponAssociationCouponApplicationsColumns[1]},
+				RefColumns: []*schema.Column{CouponApplicationsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		AuthsTable,
 		BillingSequencesTable,
 		CostsheetTable,
+		CouponsTable,
+		CouponApplicationsTable,
+		CouponAssociationsTable,
 		CreditGrantsTable,
 		CreditGrantApplicationsTable,
 		CreditNotesTable,
@@ -1496,6 +1778,7 @@ var (
 		PaymentAttemptsTable,
 		PlansTable,
 		PricesTable,
+		PriceUnitTable,
 		SecretsTable,
 		SubscriptionsTable,
 		SubscriptionLineItemsTable,
@@ -1507,6 +1790,7 @@ var (
 		UsersTable,
 		WalletsTable,
 		WalletTransactionsTable,
+		CouponAssociationCouponApplicationsTable,
 	}
 )
 
@@ -1516,14 +1800,27 @@ func init() {
 	CostsheetTable.Annotation = &entsql.Annotation{
 		Table: "costsheet",
 	}
+	CouponApplicationsTable.ForeignKeys[0].RefTable = CouponsTable
+	CouponApplicationsTable.ForeignKeys[1].RefTable = InvoicesTable
+	CouponApplicationsTable.ForeignKeys[2].RefTable = InvoiceLineItemsTable
+	CouponApplicationsTable.ForeignKeys[3].RefTable = SubscriptionsTable
+	CouponAssociationsTable.ForeignKeys[0].RefTable = CouponsTable
+	CouponAssociationsTable.ForeignKeys[1].RefTable = SubscriptionsTable
+	CouponAssociationsTable.ForeignKeys[2].RefTable = SubscriptionLineItemsTable
 	CreditGrantsTable.ForeignKeys[0].RefTable = PlansTable
 	CreditGrantsTable.ForeignKeys[1].RefTable = SubscriptionsTable
 	CreditNoteLineItemsTable.ForeignKeys[0].RefTable = CreditNotesTable
 	EntitlementsTable.ForeignKeys[0].RefTable = PlansTable
 	InvoiceLineItemsTable.ForeignKeys[0].RefTable = InvoicesTable
 	PaymentAttemptsTable.ForeignKeys[0].RefTable = PaymentsTable
+	PricesTable.ForeignKeys[0].RefTable = PriceUnitTable
+	PriceUnitTable.Annotation = &entsql.Annotation{
+		Table: "price_unit",
+	}
 	SubscriptionLineItemsTable.ForeignKeys[0].RefTable = SubscriptionsTable
 	SubscriptionPausesTable.ForeignKeys[0].RefTable = SubscriptionsTable
 	SubscriptionSchedulesTable.ForeignKeys[0].RefTable = SubscriptionsTable
 	SubscriptionSchedulePhasesTable.ForeignKeys[0].RefTable = SubscriptionSchedulesTable
+	CouponAssociationCouponApplicationsTable.ForeignKeys[0].RefTable = CouponAssociationsTable
+	CouponAssociationCouponApplicationsTable.ForeignKeys[1].RefTable = CouponApplicationsTable
 }

@@ -71,6 +71,9 @@ type CreateInvoiceRequest struct {
 	// line_items contains the individual items that make up this invoice
 	LineItems []CreateInvoiceLineItemRequest `json:"line_items,omitempty"`
 
+	// coupons
+	Coupons []string `json:"coupons,omitempty"`
+
 	// metadata contains additional custom key-value pairs for storing extra information
 	Metadata types.Metadata `json:"metadata,omitempty"`
 
@@ -236,6 +239,12 @@ type CreateInvoiceLineItemRequest struct {
 	// meter_display_name is the optional human-readable name of the meter
 	MeterDisplayName *string `json:"meter_display_name,omitempty"`
 
+	// price_unit is the optional 3-digit ISO code of the price unit associated with this line item
+	PriceUnit *string `json:"price_unit,omitempty"`
+
+	// price_unit_amount is the optional amount converted to the price unit currency
+	PriceUnitAmount *decimal.Decimal `json:"price_unit_amount,omitempty"`
+
 	// display_name is the optional human-readable name for this line item
 	DisplayName *string `json:"display_name,omitempty"`
 
@@ -303,6 +312,8 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		PriceType:        r.PriceType,
 		MeterID:          r.MeterID,
 		MeterDisplayName: r.MeterDisplayName,
+		PriceUnit:        r.PriceUnit,
+		PriceUnitAmount:  r.PriceUnitAmount,
 		DisplayName:      r.DisplayName,
 		Amount:           r.Amount,
 		Quantity:         r.Quantity,
@@ -346,6 +357,15 @@ type InvoiceLineItemResponse struct {
 
 	// meter_display_name is the optional human-readable name of the meter
 	MeterDisplayName *string `json:"meter_display_name,omitempty"`
+
+	// price_unit_id is the optional unique identifier of the price unit associated with this line item
+	PriceUnitID *string `json:"price_unit_id,omitempty"`
+
+	// price_unit is the optional 3-digit ISO code of the price unit associated with this line item
+	PriceUnit *string `json:"price_unit,omitempty"`
+
+	// price_unit_amount is the optional amount converted to the price unit currency
+	PriceUnitAmount *decimal.Decimal `json:"price_unit_amount,omitempty"`
 
 	// display_name is the optional human-readable name for this line item
 	DisplayName *string `json:"display_name,omitempty"`
@@ -403,6 +423,9 @@ func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemR
 		PriceType:        item.PriceType,
 		MeterID:          item.MeterID,
 		MeterDisplayName: item.MeterDisplayName,
+		PriceUnitID:      item.PriceUnitID,
+		PriceUnit:        item.PriceUnit,
+		PriceUnitAmount:  item.PriceUnitAmount,
 		DisplayName:      item.DisplayName,
 		Amount:           item.Amount,
 		Quantity:         item.Quantity,
@@ -455,6 +478,25 @@ func (r *UpdatePaymentStatusRequest) Validate() error {
 	return nil
 }
 
+// UpdateInvoiceRequest represents the request payload for updating an invoice
+type UpdateInvoiceRequest struct {
+	// invoice_pdf_url is the URL where customers can download the PDF version of this invoice
+	InvoicePDFURL *string `json:"invoice_pdf_url,omitempty"`
+}
+
+func (r *UpdateInvoiceRequest) Validate() error {
+	// url validation if url is provided
+	if r.InvoicePDFURL != nil {
+		if err := validator.ValidateURL(r.InvoicePDFURL); err != nil {
+			return ierr.WithError(err).
+				WithHint("invalid invoice_pdf_url").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
 // InvoiceResponse represents the response payload containing invoice information
 type InvoiceResponse struct {
 	// id is the unique identifier for this invoice
@@ -483,6 +525,9 @@ type InvoiceResponse struct {
 
 	// total is the total amount of the invoice including taxes and discounts
 	Total decimal.Decimal `json:"total"`
+
+	// total_discount is the total discount amount from coupon applications
+	TotalDiscount decimal.Decimal `json:"total_discount"`
 
 	// subtotal is the amount before taxes and discounts are applied
 	Subtotal decimal.Decimal `json:"subtotal"`
@@ -564,6 +609,9 @@ type InvoiceResponse struct {
 
 	// customer contains the customer information associated with this invoice
 	Customer *CustomerResponse `json:"customer,omitempty"`
+
+	// coupon_applications contains the coupon applications associated with this invoice
+	CouponApplications []*CouponApplicationResponse `json:"coupon_applications,omitempty"`
 }
 
 // NewInvoiceResponse creates a new invoice response from domain invoice
@@ -582,6 +630,7 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 		Currency:        inv.Currency,
 		AmountDue:       inv.AmountDue,
 		Total:           inv.Total,
+		TotalDiscount:   inv.TotalDiscount,
 		Subtotal:        inv.Subtotal,
 		AmountPaid:      inv.AmountPaid,
 		AmountRemaining: inv.AmountRemaining,
@@ -615,6 +664,15 @@ func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 		}
 	}
 
+	if inv.CouponApplications != nil {
+		resp.CouponApplications = make([]*CouponApplicationResponse, len(inv.CouponApplications))
+		for i, ca := range inv.CouponApplications {
+			resp.CouponApplications[i] = &CouponApplicationResponse{
+				CouponApplication: ca,
+			}
+		}
+	}
+
 	return resp
 }
 
@@ -626,6 +684,12 @@ func (r *InvoiceResponse) WithSubscription(sub *SubscriptionResponse) *InvoiceRe
 // WithCustomer adds customer information to the invoice response
 func (r *InvoiceResponse) WithCustomer(customer *CustomerResponse) *InvoiceResponse {
 	r.Customer = customer
+	return r
+}
+
+// WithCouponApplications adds coupon applications to the invoice response
+func (r *InvoiceResponse) WithCouponApplications(couponApplications []*CouponApplicationResponse) *InvoiceResponse {
+	r.CouponApplications = couponApplications
 	return r
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/couponapplication"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/shopspring/decimal"
@@ -222,6 +223,48 @@ func (ilic *InvoiceLineItemCreate) SetNillableMeterDisplayName(s *string) *Invoi
 	return ilic
 }
 
+// SetPriceUnitID sets the "price_unit_id" field.
+func (ilic *InvoiceLineItemCreate) SetPriceUnitID(s string) *InvoiceLineItemCreate {
+	ilic.mutation.SetPriceUnitID(s)
+	return ilic
+}
+
+// SetNillablePriceUnitID sets the "price_unit_id" field if the given value is not nil.
+func (ilic *InvoiceLineItemCreate) SetNillablePriceUnitID(s *string) *InvoiceLineItemCreate {
+	if s != nil {
+		ilic.SetPriceUnitID(*s)
+	}
+	return ilic
+}
+
+// SetPriceUnit sets the "price_unit" field.
+func (ilic *InvoiceLineItemCreate) SetPriceUnit(s string) *InvoiceLineItemCreate {
+	ilic.mutation.SetPriceUnit(s)
+	return ilic
+}
+
+// SetNillablePriceUnit sets the "price_unit" field if the given value is not nil.
+func (ilic *InvoiceLineItemCreate) SetNillablePriceUnit(s *string) *InvoiceLineItemCreate {
+	if s != nil {
+		ilic.SetPriceUnit(*s)
+	}
+	return ilic
+}
+
+// SetPriceUnitAmount sets the "price_unit_amount" field.
+func (ilic *InvoiceLineItemCreate) SetPriceUnitAmount(d decimal.Decimal) *InvoiceLineItemCreate {
+	ilic.mutation.SetPriceUnitAmount(d)
+	return ilic
+}
+
+// SetNillablePriceUnitAmount sets the "price_unit_amount" field if the given value is not nil.
+func (ilic *InvoiceLineItemCreate) SetNillablePriceUnitAmount(d *decimal.Decimal) *InvoiceLineItemCreate {
+	if d != nil {
+		ilic.SetPriceUnitAmount(*d)
+	}
+	return ilic
+}
+
 // SetDisplayName sets the "display_name" field.
 func (ilic *InvoiceLineItemCreate) SetDisplayName(s string) *InvoiceLineItemCreate {
 	ilic.mutation.SetDisplayName(s)
@@ -313,6 +356,21 @@ func (ilic *InvoiceLineItemCreate) SetID(s string) *InvoiceLineItemCreate {
 // SetInvoice sets the "invoice" edge to the Invoice entity.
 func (ilic *InvoiceLineItemCreate) SetInvoice(i *Invoice) *InvoiceLineItemCreate {
 	return ilic.SetInvoiceID(i.ID)
+}
+
+// AddCouponApplicationIDs adds the "coupon_applications" edge to the CouponApplication entity by IDs.
+func (ilic *InvoiceLineItemCreate) AddCouponApplicationIDs(ids ...string) *InvoiceLineItemCreate {
+	ilic.mutation.AddCouponApplicationIDs(ids...)
+	return ilic
+}
+
+// AddCouponApplications adds the "coupon_applications" edges to the CouponApplication entity.
+func (ilic *InvoiceLineItemCreate) AddCouponApplications(c ...*CouponApplication) *InvoiceLineItemCreate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return ilic.AddCouponApplicationIDs(ids...)
 }
 
 // Mutation returns the InvoiceLineItemMutation object of the builder.
@@ -523,6 +581,18 @@ func (ilic *InvoiceLineItemCreate) createSpec() (*InvoiceLineItem, *sqlgraph.Cre
 		_spec.SetField(invoicelineitem.FieldMeterDisplayName, field.TypeString, value)
 		_node.MeterDisplayName = &value
 	}
+	if value, ok := ilic.mutation.PriceUnitID(); ok {
+		_spec.SetField(invoicelineitem.FieldPriceUnitID, field.TypeString, value)
+		_node.PriceUnitID = &value
+	}
+	if value, ok := ilic.mutation.PriceUnit(); ok {
+		_spec.SetField(invoicelineitem.FieldPriceUnit, field.TypeString, value)
+		_node.PriceUnit = &value
+	}
+	if value, ok := ilic.mutation.PriceUnitAmount(); ok {
+		_spec.SetField(invoicelineitem.FieldPriceUnitAmount, field.TypeOther, value)
+		_node.PriceUnitAmount = &value
+	}
 	if value, ok := ilic.mutation.DisplayName(); ok {
 		_spec.SetField(invoicelineitem.FieldDisplayName, field.TypeString, value)
 		_node.DisplayName = &value
@@ -566,6 +636,22 @@ func (ilic *InvoiceLineItemCreate) createSpec() (*InvoiceLineItem, *sqlgraph.Cre
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.InvoiceID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := ilic.mutation.CouponApplicationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoicelineitem.CouponApplicationsTable,
+			Columns: []string{invoicelineitem.CouponApplicationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
