@@ -474,6 +474,7 @@ func (s *subscriptionService) handleSubscriptionPriceOverrides(
 	return nil
 }
 
+// handleCreditGrants handles creating and applying credit grants for a subscription
 func (s *subscriptionService) handleCreditGrants(
 	ctx context.Context,
 	subscription *subscription.Subscription,
