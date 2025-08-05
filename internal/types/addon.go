@@ -2,20 +2,27 @@ package types
 
 import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/samber/lo"
 )
 
 // AddonType represents the type of addon
 type AddonType string
 
 const (
-	AddonTypeSingleInstance   AddonType = "single"
-	AddonTypeMultipleInstance AddonType = "multiple"
+	AddonTypeOnetime  AddonType = "onetime"
+	AddonTypeMultiple AddonType = "multiple"
 )
 
 func (at AddonType) Validate() error {
-	if at != AddonTypeSingleInstance && at != AddonTypeMultipleInstance {
+
+	allowedTypes := []AddonType{
+		AddonTypeOnetime,
+		AddonTypeMultiple,
+	}
+
+	if !lo.Contains(allowedTypes, at) {
 		return ierr.NewError("invalid addon type").
-			WithHint("Addon type must be single or multiple").
+			WithHint("Addon type must be onetime or multiple").
 			Mark(ierr.ErrValidation)
 	}
 
