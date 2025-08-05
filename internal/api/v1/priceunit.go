@@ -32,7 +32,7 @@ func NewPriceUnitHandler(service *service.PriceUnitService, log *logger.Logger) 
 // @Produce json
 // @Param body body dto.CreatePriceUnitRequest true "Price unit details"
 // @Success 201 {object} dto.PriceUnitResponse
-// @Failure 400 {object} errors.Error
+// @Failure 400 {object} ierr.ErrorResponse
 // @Router /prices/units [post]
 func (h *PriceUnitHandler) CreatePriceUnit(c *gin.Context) {
 	var req dto.CreatePriceUnitRequest
@@ -70,7 +70,7 @@ func (h *PriceUnitHandler) CreatePriceUnit(c *gin.Context) {
 // @Param sort query string false "Sort field"
 // @Param order query string false "Sort order (asc/desc)"
 // @Success 200 {object} dto.ListPriceUnitsResponse
-// @Failure 400 {object} errors.Error
+// @Failure 400 {object} ierr.ErrorResponse
 // @Router /prices/units [get]
 func (h *PriceUnitHandler) GetPriceUnits(c *gin.Context) {
 	var filter priceunit.PriceUnitFilter
@@ -119,8 +119,8 @@ func (h *PriceUnitHandler) GetPriceUnits(c *gin.Context) {
 // @Param id path string true "Price unit ID"
 // @Param body body dto.UpdatePriceUnitRequest true "Price unit details to update"
 // @Success 200 {object} dto.PriceUnitResponse
-// @Failure 400 {object} errors.Error
-// @Failure 404 {object} errors.Error
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
 // @Router /prices/units/{id} [put]
 func (h *PriceUnitHandler) UpdatePriceUnit(c *gin.Context) {
 	id := c.Param("id")
@@ -163,8 +163,8 @@ func (h *PriceUnitHandler) UpdatePriceUnit(c *gin.Context) {
 // @Produce json
 // @Param id path string true "Price unit ID"
 // @Success 200 {object} gin.H
-// @Failure 400 {object} errors.Error
-// @Failure 404 {object} errors.Error
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
 // @Router /prices/units/{id} [delete]
 func (h *PriceUnitHandler) DeletePriceUnit(c *gin.Context) {
 	id := c.Param("id")
