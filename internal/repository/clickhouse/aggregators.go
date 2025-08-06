@@ -510,11 +510,12 @@ func (a *SumWithMultiAggregator) GetType() types.AggregationType {
 type MaxAggregator struct{}
 
 func (a *MaxAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
-	// If no bucket size is specified, use existing behavior
-	if params.BucketSize == "" {
-		return a.getNonWindowedQuery(ctx, params)
+	// If bucket_size is specified, use windowed aggregation
+	if params.BucketSize != "" {
+		return a.getWindowedQuery(ctx, params)
 	}
-	return a.getWindowedQuery(ctx, params)
+	// Otherwise use simple MAX aggregation
+	return a.getNonWindowedQuery(ctx, params)
 }
 
 func (a *MaxAggregator) getNonWindowedQuery(ctx context.Context, params *events.UsageParams) string {
