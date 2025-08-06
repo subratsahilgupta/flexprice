@@ -75,7 +75,7 @@ func (s *addonService) GetAddon(ctx context.Context, id string) (*dto.AddonRespo
 		return nil, err
 	}
 
-	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+	priceService := NewPriceService(s.ServiceParams)
 	entitlementService := NewEntitlementService(s.ServiceParams)
 
 	pricesResponse, err := s.getPricesByAddonID(ctx, priceService, domainAddon.ID)
@@ -110,7 +110,7 @@ func (s *addonService) GetAddonByLookupKey(ctx context.Context, lookupKey string
 		return nil, err
 	}
 
-	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+	priceService := NewPriceService(s.ServiceParams)
 	entitlementService := NewEntitlementService(s.ServiceParams)
 
 	pricesResponse, err := s.getPricesByAddonID(ctx, priceService, domainAddon.ID)
@@ -180,7 +180,7 @@ func (s *addonService) GetAddons(ctx context.Context, filter *types.AddonFilter)
 	pricesByAddonID := make(map[string][]*dto.PriceResponse)
 	entitlementsByAddonID := make(map[string][]*dto.EntitlementResponse)
 
-	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+	priceService := NewPriceService(s.ServiceParams)
 	entitlementService := NewEntitlementService(s.ServiceParams)
 
 	// If prices expansion is requested, fetch them in bulk
@@ -403,7 +403,7 @@ func (s *addonService) AddAddonToSubscription(
 	}
 
 	// Get prices for the addon
-	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+	priceService := NewPriceService(s.ServiceParams)
 	priceFilter := types.NewNoLimitPriceFilter().
 		WithEntityIDs([]string{req.AddonID}).
 		WithEntityType(types.PRICE_ENTITY_TYPE_ADDON).

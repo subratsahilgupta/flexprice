@@ -85,7 +85,7 @@ func (s *planService) CreatePlan(ctx context.Context, req dto.CreatePlanRequest)
 				// If price unit config is provided, use price unit handling logic
 				if planPriceReq.PriceUnitConfig != nil {
 					// Create a price service instance for price unit handling
-					priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+					priceService := NewPriceService(s.ServiceParams)
 					priceResp, err := priceService.CreatePrice(ctx, *planPriceReq.CreatePriceRequest)
 					if err != nil {
 						return ierr.WithError(err).
@@ -184,7 +184,7 @@ func (s *planService) GetPlan(ctx context.Context, id string) (*dto.PlanResponse
 		return nil, err
 	}
 
-	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+	priceService := NewPriceService(s.ServiceParams)
 	entitlementService := NewEntitlementService(s.ServiceParams)
 
 	pricesResponse, err := priceService.GetPricesByPlanID(ctx, plan.ID)
@@ -267,7 +267,7 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 	entitlementsByPlanID := make(map[string][]*dto.EntitlementResponse)
 	creditGrantsByPlanID := make(map[string][]*dto.CreditGrantResponse)
 
-	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+	priceService := NewPriceService(s.ServiceParams)
 	entitlementService := NewEntitlementService(s.ServiceParams)
 
 	// If prices or entitlements expansion is requested, fetch them in bulk
@@ -438,7 +438,7 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 						// Set plan ID before creating price
 						reqPrice.CreatePriceRequest.PlanID = plan.ID
 
-						priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+						priceService := NewPriceService(s.ServiceParams)
 						priceResp, err := priceService.CreatePrice(ctx, *reqPrice.CreatePriceRequest)
 						if err != nil {
 							return ierr.WithError(err).

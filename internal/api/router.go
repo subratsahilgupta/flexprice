@@ -128,6 +128,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		price := v1Private.Group("/prices")
 		{
 			price.POST("", handlers.Price.CreatePrice)
+			price.POST("/bulk", handlers.Price.CreateBulkPrice)
 			price.GET("", handlers.Price.GetPrices)
 			price.GET("/:id", handlers.Price.GetPrice)
 			price.PUT("/:id", handlers.Price.UpdatePrice)
