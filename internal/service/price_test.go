@@ -36,7 +36,14 @@ func (s *PriceServiceSuite) SetupTest() {
 	s.meterRepo = testutil.NewInMemoryMeterStore()
 	s.priceUnitRepo = testutil.NewInMemoryPriceUnitStore()
 	s.logger = logger.GetLogger()
-	s.priceService = NewPriceService(s.priceRepo, s.meterRepo, s.priceUnitRepo, s.logger)
+	
+	serviceParams := ServiceParams{
+		PriceRepo:     s.priceRepo,
+		MeterRepo:     s.meterRepo,
+		PriceUnitRepo: s.priceUnitRepo,
+		Logger:        s.logger,
+	}
+	s.priceService = NewPriceService(serviceParams)
 }
 
 func (s *PriceServiceSuite) TestCreatePrice() {
