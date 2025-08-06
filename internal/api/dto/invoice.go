@@ -405,6 +405,9 @@ type InvoiceLineItemResponse struct {
 
 	// updated_by is the identifier of the user who last updated this line item
 	UpdatedBy string `json:"updated_by,omitempty"`
+
+	// usage_analytics contains usage analytics for this line item
+	UsageAnalytics []UsageAnalyticsItem `json:"usage_analytics,omitempty"`
 }
 
 func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemResponse {
@@ -612,9 +615,6 @@ type InvoiceResponse struct {
 
 	// coupon_applications contains the coupon applications associated with this invoice
 	CouponApplications []*CouponApplicationResponse `json:"coupon_applications,omitempty"`
-
-	// usage_analytics contains usage analytics for this invoice
-	UsageAnalytics map[string][]UsageAnalyticsItem `json:"usage_analytics,omitempty"`
 }
 
 // UsageAnalyticsItem represents the usage breakdown for a specific source within a line item
@@ -716,7 +716,12 @@ func (r *InvoiceResponse) WithCouponApplications(couponApplications []*CouponApp
 
 // WithUsageAnalytics adds usage analytics to the invoice response
 func (r *InvoiceResponse) WithUsageAnalytics(usageAnalytics map[string][]UsageAnalyticsItem) *InvoiceResponse {
-	r.UsageAnalytics = usageAnalytics
+	for _, lineItem := range r.LineItems {
+		usageAnalyticsItem := usageAnalytics[lineItem.ID]
+		if usageAnalyticsItem != nil {
+			lineItem.UsageAnalytics = usageAnalyticsItem
+		}
+	}
 	return r
 }
 

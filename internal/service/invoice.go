@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -19,6 +20,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
+	"github.com/sourcegraph/conc/pool"
 )
 
 type InvoiceService interface {
@@ -265,6 +267,147 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 
 	return response, nil
 }
+
+func (s *invoiceService) getUsageAnalyticsForLineItem(ctx context.Context, lineItem *dto.InvoiceLineItemResponse, inv *dto.InvoiceResponse) ([]dto.UsageAnalyticsItem, error) {
+	usageAnalyticsResponse := make([]dto.UsageAnalyticsItem, 0)
+
+	s.Logger.Infow("calculating usage analytics for line item",
+		"line_item_id", lineItem.ID,
+		"price_id", lineItem.PriceID,
+		"meter_id", lineItem.MeterID)
+
+	// Skip if essential fields are missing
+	if lineItem.PriceID == nil || lineItem.MeterID == nil {
+		s.Logger.Warnw("skipping line item with missing price_id or meter_id",
+			"line_item_id", lineItem.ID,
+			"price_id", lineItem.PriceID,
+			"meter_id", lineItem.MeterID)
+		return nil, nil
+	}
+
+	// Use invoice period for usage calculation
+	periodStart := inv.PeriodStart
+	periodEnd := inv.PeriodEnd
+
+	// Fallback to line item period if invoice period is not available
+	if periodStart == nil && lineItem.PeriodStart != nil {
+		periodStart = lineItem.PeriodStart
+	}
+	if periodEnd == nil && lineItem.PeriodEnd != nil {
+		periodEnd = lineItem.PeriodEnd
+	}
+
+	if periodStart == nil || periodEnd == nil {
+		s.Logger.Warnw("skipping line item with missing period information",
+			"line_item_id", lineItem.ID,
+			"period_start", periodStart,
+			"period_end", periodEnd)
+		return nil, nil
+	}
+
+	// Get customer external ID for analytics request
+	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		s.Logger.Errorw("failed to get customer for usage analytics",
+			"customer_id", inv.CustomerID,
+			"error", err)
+		return nil, nil
+	}
+
+	// Get feature ID from meter
+	var featureID string
+	if lineItem.MeterID != nil {
+		featureFilter := types.NewNoLimitFeatureFilter()
+		featureFilter.MeterIDs = []string{*lineItem.MeterID}
+		features, err := s.FeatureRepo.List(ctx, featureFilter)
+		if err != nil || len(features) == 0 {
+			s.Logger.Warnw("no feature found for meter",
+				"meter_id", *lineItem.MeterID,
+				"line_item_id", lineItem.ID)
+			return nil, nil
+		}
+		featureID = features[0].ID
+	}
+
+	// Create usage analytics request for this line item
+	analyticsReq := &dto.GetUsageAnalyticsRequest{
+		ExternalCustomerID: customer.ExternalID,
+		FeatureIDs:         []string{featureID},
+		StartTime:          *periodStart,
+		EndTime:            *periodEnd,
+		GroupBy:            []string{"source"}, // Group by source to get breakdown
+	}
+
+	// Get detailed usage analytics
+	eventPostProcessingService := NewEventPostProcessingService(s.ServiceParams, s.EventRepo, s.ProcessedEventRepo)
+	analyticsResponse, err := eventPostProcessingService.GetDetailedUsageAnalytics(ctx, analyticsReq)
+	if err != nil {
+		s.Logger.Errorw("failed to get usage analytics for line item",
+			"line_item_id", lineItem.ID,
+			"price_id", *lineItem.PriceID,
+			"error", err)
+		return nil, err
+	}
+
+	s.Logger.Infow("retrieved usage analytics for line item",
+		"line_item_id", lineItem.ID,
+		"analytics_count", len(analyticsResponse.Items))
+
+	// Step 3: Map the usage analytics to the dto.InvoiceUsageAnalyticsResponse
+	totalLineItemCost := lineItem.Amount
+
+	// Calculate total usage across all sources for this line item
+	totalUsageForLineItem := decimal.Zero
+	for _, analyticsItem := range analyticsResponse.Items {
+		totalUsageForLineItem = totalUsageForLineItem.Add(analyticsItem.TotalUsage)
+	}
+
+	for _, analyticsItem := range analyticsResponse.Items {
+		// Calculate proportional cost based on usage
+		var cost string
+		if !totalLineItemCost.IsZero() && !totalUsageForLineItem.IsZero() {
+			proportionalCost := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(totalLineItemCost)
+			cost = proportionalCost.String()
+		} else {
+			cost = "0"
+		}
+
+		// Calculate percentage
+		var percentage string
+		if !totalUsageForLineItem.IsZero() {
+			pct := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(decimal.NewFromInt(100))
+			percentage = pct.String()
+		} else {
+			percentage = "0"
+		}
+
+		// Create usage analytics item
+		usageItem := dto.UsageAnalyticsItem{
+			Source: analyticsItem.Source,
+			Cost:   cost,
+		}
+
+		// Add optional fields
+		if !analyticsItem.TotalUsage.IsZero() {
+			usageStr := analyticsItem.TotalUsage.String()
+			usageItem.Usage = &usageStr
+		}
+
+		if percentage != "0" {
+			usageItem.Percentage = &percentage
+		}
+
+		if analyticsItem.EventCount > 0 {
+			eventCount := int(analyticsItem.EventCount)
+			usageItem.EventCount = &eventCount
+		}
+
+		usageAnalyticsResponse = append(usageAnalyticsResponse, usageItem)
+	}
+
+	return usageAnalyticsResponse, nil
+}
+
 func (s *invoiceService) CalculatePriceBreakdown(ctx context.Context, inv *dto.InvoiceResponse) (map[string][]dto.UsageAnalyticsItem, error) {
 	s.Logger.Infow("calculating price breakdown for invoice",
 		"invoice_id", inv.ID,
@@ -289,148 +432,48 @@ func (s *invoiceService) CalculatePriceBreakdown(ctx context.Context, inv *dto.I
 		return make(map[string][]dto.UsageAnalyticsItem), nil
 	}
 
-	// Step 2: Calculate the usage analytics for each line item one by one, based on the invoice period
-	eventPostProcessingService := NewEventPostProcessingService(s.ServiceParams, s.EventRepo, s.ProcessedEventRepo)
+	// Use GO routines to calculate usage analytics for each line item in parallel
+	// and then combine the results into a single map
 
+	// Create a pool with maximum concurrency and error handling
 	usageAnalyticsResponse := make(map[string][]dto.UsageAnalyticsItem)
 
+	p := pool.New().
+		WithContext(ctx).
+		WithMaxGoroutines(10)
+
+	var resultsMu sync.Mutex
+
 	for _, lineItem := range usageBasedLineItems {
-		s.Logger.Infow("calculating usage analytics for line item",
-			"line_item_id", lineItem.ID,
-			"price_id", lineItem.PriceID,
-			"meter_id", lineItem.MeterID)
+		lineItem := lineItem // Capture loop variable
+		p.Go(func(ctx context.Context) error {
+			usageAnalytics, err := s.getUsageAnalyticsForLineItem(ctx, lineItem, inv)
+			if err != nil {
+				s.Logger.Errorw("failed to calculate usage analytics for line item",
+					"line_item_id", lineItem.ID,
+					"error", err)
+				return err
+			}
 
-		// Skip if essential fields are missing
-		if lineItem.PriceID == nil || lineItem.MeterID == nil {
-			s.Logger.Warnw("skipping line item with missing price_id or meter_id",
+			// Thread-safe update of results map
+			resultsMu.Lock()
+			usageAnalyticsResponse[lineItem.ID] = usageAnalytics
+			resultsMu.Unlock()
+
+			s.Logger.Debugw("completed usage analytics for line item",
 				"line_item_id", lineItem.ID,
-				"price_id", lineItem.PriceID,
-				"meter_id", lineItem.MeterID)
-			continue
-		}
+				"analytics_count", len(usageAnalytics))
 
-		// Use invoice period for usage calculation
-		periodStart := inv.PeriodStart
-		periodEnd := inv.PeriodEnd
+			return nil
+		})
+	}
 
-		// Fallback to line item period if invoice period is not available
-		if periodStart == nil && lineItem.PeriodStart != nil {
-			periodStart = lineItem.PeriodStart
-		}
-		if periodEnd == nil && lineItem.PeriodEnd != nil {
-			periodEnd = lineItem.PeriodEnd
-		}
-
-		if periodStart == nil || periodEnd == nil {
-			s.Logger.Warnw("skipping line item with missing period information",
-				"line_item_id", lineItem.ID,
-				"period_start", periodStart,
-				"period_end", periodEnd)
-			continue
-		}
-
-		// Get customer external ID for analytics request
-		customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
-		if err != nil {
-			s.Logger.Errorw("failed to get customer for usage analytics",
-				"customer_id", inv.CustomerID,
-				"error", err)
-			continue
-		}
-
-		// Get feature ID from meter
-		var featureID string
-		if lineItem.MeterID != nil {
-			featureFilter := types.NewNoLimitFeatureFilter()
-			featureFilter.MeterIDs = []string{*lineItem.MeterID}
-			features, err := s.FeatureRepo.List(ctx, featureFilter)
-			if err != nil || len(features) == 0 {
-				s.Logger.Warnw("no feature found for meter",
-					"meter_id", *lineItem.MeterID,
-					"line_item_id", lineItem.ID)
-				continue
-			}
-			featureID = features[0].ID
-		}
-
-		// Create usage analytics request for this line item
-		analyticsReq := &dto.GetUsageAnalyticsRequest{
-			ExternalCustomerID: customer.ExternalID,
-			FeatureIDs:         []string{featureID},
-			StartTime:          *periodStart,
-			EndTime:            *periodEnd,
-			GroupBy:            []string{"source"}, // Group by source to get breakdown
-		}
-
-		// Get detailed usage analytics
-		analyticsResponse, err := eventPostProcessingService.GetDetailedUsageAnalytics(ctx, analyticsReq)
-		if err != nil {
-			s.Logger.Errorw("failed to get usage analytics for line item",
-				"line_item_id", lineItem.ID,
-				"price_id", *lineItem.PriceID,
-				"error", err)
-			continue
-		}
-
-		s.Logger.Infow("retrieved usage analytics for line item",
-			"line_item_id", lineItem.ID,
-			"analytics_count", len(analyticsResponse.Items))
-
-		// Step 3: Map the usage analytics to the dto.InvoiceUsageAnalyticsResponse
-		totalLineItemCost := lineItem.Amount
-
-		// Calculate total usage across all sources for this line item
-		totalUsageForLineItem := decimal.Zero
-		for _, analyticsItem := range analyticsResponse.Items {
-			totalUsageForLineItem = totalUsageForLineItem.Add(analyticsItem.TotalUsage)
-		}
-
-		for _, analyticsItem := range analyticsResponse.Items {
-			// Calculate proportional cost based on usage
-			var cost string
-			if !totalLineItemCost.IsZero() && !totalUsageForLineItem.IsZero() {
-				proportionalCost := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(totalLineItemCost)
-				cost = proportionalCost.String()
-			} else {
-				cost = "0"
-			}
-
-			// Calculate percentage
-			var percentage string
-			if !totalUsageForLineItem.IsZero() {
-				pct := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(decimal.NewFromInt(100))
-				percentage = pct.String()
-			} else {
-				percentage = "0"
-			}
-
-			// Create usage analytics item
-			usageItem := dto.UsageAnalyticsItem{
-				Source: analyticsItem.Source,
-				Cost:   cost,
-			}
-
-			// Add optional fields
-			if !analyticsItem.TotalUsage.IsZero() {
-				usageStr := analyticsItem.TotalUsage.String()
-				usageItem.Usage = &usageStr
-			}
-
-			if percentage != "0" {
-				usageItem.Percentage = &percentage
-			}
-
-			if analyticsItem.EventCount > 0 {
-				eventCount := int(analyticsItem.EventCount)
-				usageItem.EventCount = &eventCount
-			}
-
-			// Append to the line item's analytics
-			usageAnalyticsResponse[lineItem.ID] = append(
-				usageAnalyticsResponse[lineItem.ID],
-				usageItem,
-			)
-		}
+	// Wait for all goroutines to complete and check for errors
+	if err := p.Wait(); err != nil {
+		s.Logger.Errorw("error occurred during parallel price breakdown calculation",
+			"invoice_id", inv.ID,
+			"error", err)
+		return nil, err
 	}
 
 	s.Logger.Infow("completed price breakdown calculation",
