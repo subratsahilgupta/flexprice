@@ -270,6 +270,14 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			return err
 		}
 
+		// Handle addons if provided
+		if len(req.Addons) > 0 {
+			err = s.handleSubscriptionAddons(ctx, sub, req.Addons)
+			if err != nil {
+				return err
+			}
+		}
+
 		creditGrantRequests := make([]dto.CreateCreditGrantRequest, 0)
 
 		// check if user has overidden the plan credit grants, if so add them to the request
@@ -2747,3 +2755,57 @@ func (s *subscriptionService) RemoveCouponFromSubscription(ctx context.Context, 
 		}).
 		Mark(ierr.ErrNotFound)
 }
+
+// handleSubscriptionAddons processes addons for a subscription
+func (s *subscriptionService) handleSubscriptionAddons(
+	ctx context.Context,
+	subscription *subscription.Subscription,
+	addonRequests []dto.AddAddonToSubscriptionRequest,
+) error {
+	if len(addonRequests) == 0 {
+		return nil
+	}
+
+	s.Logger.Infow("processing addons for subscription",
+		"subscription_id", subscription.ID,
+		"addons_count", len(addonRequests))
+
+	// Validate and create subscription addons
+	for _, addonReq := range addonRequests {
+		// Validate the addon request
+		if err := addonReq.Validate(); err != nil {
+			return ierr.WithError(err).
+				WithHint("Invalid addon request").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": subscription.ID,
+					"addon_id":        addonReq.AddonID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		// Verify the addon exists and is active
+		addonService := NewAddonService(s.ServiceParams)
+		subscriptionAddon, err := addonService.AddAddonToSubscription(ctx, subscription.ID, lo.ToPtr(addonReq))
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Addon not found or not active").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": subscription.ID,
+					"addon_id":        addonReq.AddonID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+
+		s.Logger.Infow("created subscription addon",
+			"subscription_id", subscription.ID,
+			"addon_id", subscriptionAddon.AddonID,
+			"subscription_addon_id", subscriptionAddon.ID,
+			"start_date", subscriptionAddon.StartDate,
+			"end_date", subscriptionAddon.EndDate,
+		)
+	}
+
+	return nil
+}
+
+// handleCreditGrants processes credit grants for a subscription and creates wallet top-ups

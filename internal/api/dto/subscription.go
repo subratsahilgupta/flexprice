@@ -54,6 +54,8 @@ type CreateSubscriptionRequest struct {
 	SubscriptionCoupons []string `json:"subscription_coupons,omitempty"`
 	// OverrideLineItems allows customizing specific prices for this subscription
 	OverrideLineItems []OverrideLineItemRequest `json:"override_line_items,omitempty" validate:"omitempty,dive"`
+	// Addons represents addons to be added to the subscription during creation
+	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
 }
 
 type UpdateSubscriptionRequest struct {
