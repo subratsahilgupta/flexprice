@@ -82,8 +82,8 @@ const (
 	FieldEntityType = "entity_type"
 	// FieldEntityID holds the string denoting the entity_id field in the database.
 	FieldEntityID = "entity_id"
-	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
-	FieldSubscriptionID = "subscription_id"
+	// FieldParentPriceID holds the string denoting the parent_price_id field in the database.
+	FieldParentPriceID = "parent_price_id"
 	// EdgeCostsheet holds the string denoting the costsheet edge name in mutations.
 	EdgeCostsheet = "costsheet"
 	// EdgePriceUnitEdge holds the string denoting the price_unit_edge edge name in mutations.
@@ -143,7 +143,7 @@ var Columns = []string{
 	FieldMetadata,
 	FieldEntityType,
 	FieldEntityID,
-	FieldSubscriptionID,
+	FieldParentPriceID,
 }
 
 // ForeignKeys holds the SQL foreign-keys that are owned by the "prices"
@@ -357,9 +357,9 @@ func ByEntityID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEntityID, opts...).ToFunc()
 }
 
-// BySubscriptionID orders the results by the subscription_id field.
-func BySubscriptionID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSubscriptionID, opts...).ToFunc()
+// ByParentPriceID orders the results by the parent_price_id field.
+func ByParentPriceID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldParentPriceID, opts...).ToFunc()
 }
 
 // ByCostsheetCount orders the results by costsheet count.

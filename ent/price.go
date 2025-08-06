@@ -88,8 +88,8 @@ type Price struct {
 	EntityType *string `json:"entity_type,omitempty"`
 	// EntityID holds the value of the "entity_id" field.
 	EntityID *string `json:"entity_id,omitempty"`
-	// SubscriptionID holds the value of the "subscription_id" field.
-	SubscriptionID *string `json:"subscription_id,omitempty"`
+	// ParentPriceID holds the value of the "parent_price_id" field.
+	ParentPriceID *string `json:"parent_price_id,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the PriceQuery when eager-loading is set.
 	Edges        PriceEdges `json:"edges"`
@@ -139,7 +139,7 @@ func (*Price) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case price.FieldBillingPeriodCount, price.FieldTrialPeriod:
 			values[i] = new(sql.NullInt64)
-		case price.FieldID, price.FieldTenantID, price.FieldStatus, price.FieldCreatedBy, price.FieldUpdatedBy, price.FieldEnvironmentID, price.FieldCurrency, price.FieldDisplayAmount, price.FieldPriceUnitType, price.FieldPriceUnitID, price.FieldPriceUnit, price.FieldDisplayPriceUnitAmount, price.FieldType, price.FieldBillingPeriod, price.FieldBillingModel, price.FieldBillingCadence, price.FieldInvoiceCadence, price.FieldMeterID, price.FieldTierMode, price.FieldLookupKey, price.FieldDescription, price.FieldEntityType, price.FieldEntityID, price.FieldSubscriptionID:
+		case price.FieldID, price.FieldTenantID, price.FieldStatus, price.FieldCreatedBy, price.FieldUpdatedBy, price.FieldEnvironmentID, price.FieldCurrency, price.FieldDisplayAmount, price.FieldPriceUnitType, price.FieldPriceUnitID, price.FieldPriceUnit, price.FieldDisplayPriceUnitAmount, price.FieldType, price.FieldBillingPeriod, price.FieldBillingModel, price.FieldBillingCadence, price.FieldInvoiceCadence, price.FieldMeterID, price.FieldTierMode, price.FieldLookupKey, price.FieldDescription, price.FieldEntityType, price.FieldEntityID, price.FieldParentPriceID:
 			values[i] = new(sql.NullString)
 		case price.FieldCreatedAt, price.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -384,12 +384,12 @@ func (pr *Price) assignValues(columns []string, values []any) error {
 				pr.EntityID = new(string)
 				*pr.EntityID = value.String
 			}
-		case price.FieldSubscriptionID:
+		case price.FieldParentPriceID:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field subscription_id", values[i])
+				return fmt.Errorf("unexpected type %T for field parent_price_id", values[i])
 			} else if value.Valid {
-				pr.SubscriptionID = new(string)
-				*pr.SubscriptionID = value.String
+				pr.ParentPriceID = new(string)
+				*pr.ParentPriceID = value.String
 			}
 		case price.ForeignKeys[0]:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -554,8 +554,8 @@ func (pr *Price) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
-	if v := pr.SubscriptionID; v != nil {
-		builder.WriteString("subscription_id=")
+	if v := pr.ParentPriceID; v != nil {
+		builder.WriteString("parent_price_id=")
 		builder.WriteString(*v)
 	}
 	builder.WriteByte(')')

@@ -429,6 +429,7 @@ func (s *subscriptionService) handleSubscriptionPriceOverrides(
 			Metadata:               originalPrice.Metadata,
 			EnvironmentID:          originalPrice.EnvironmentID,
 			EntityType:             types.PRICE_ENTITY_TYPE_SUBSCRIPTION,
+			ParentPriceID:          originalPrice.ID,
 			EntityID:               sub.ID,
 			BaseModel:              types.GetDefaultBaseModel(ctx),
 		}

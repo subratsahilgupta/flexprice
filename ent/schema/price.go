@@ -186,7 +186,7 @@ func (Price) Fields() []ent.Field {
 			Nillable().
 			Optional(),
 
-		field.String("subscription_id").
+		field.String("parent_price_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).

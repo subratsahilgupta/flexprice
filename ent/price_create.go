@@ -395,16 +395,16 @@ func (pc *PriceCreate) SetNillableEntityID(s *string) *PriceCreate {
 	return pc
 }
 
-// SetSubscriptionID sets the "subscription_id" field.
-func (pc *PriceCreate) SetSubscriptionID(s string) *PriceCreate {
-	pc.mutation.SetSubscriptionID(s)
+// SetParentPriceID sets the "parent_price_id" field.
+func (pc *PriceCreate) SetParentPriceID(s string) *PriceCreate {
+	pc.mutation.SetParentPriceID(s)
 	return pc
 }
 
-// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
-func (pc *PriceCreate) SetNillableSubscriptionID(s *string) *PriceCreate {
+// SetNillableParentPriceID sets the "parent_price_id" field if the given value is not nil.
+func (pc *PriceCreate) SetNillableParentPriceID(s *string) *PriceCreate {
 	if s != nil {
-		pc.SetSubscriptionID(*s)
+		pc.SetParentPriceID(*s)
 	}
 	return pc
 }
@@ -770,9 +770,9 @@ func (pc *PriceCreate) createSpec() (*Price, *sqlgraph.CreateSpec) {
 		_spec.SetField(price.FieldEntityID, field.TypeString, value)
 		_node.EntityID = &value
 	}
-	if value, ok := pc.mutation.SubscriptionID(); ok {
-		_spec.SetField(price.FieldSubscriptionID, field.TypeString, value)
-		_node.SubscriptionID = &value
+	if value, ok := pc.mutation.ParentPriceID(); ok {
+		_spec.SetField(price.FieldParentPriceID, field.TypeString, value)
+		_node.ParentPriceID = &value
 	}
 	if nodes := pc.mutation.CostsheetIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

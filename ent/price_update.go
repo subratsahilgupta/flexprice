@@ -486,23 +486,23 @@ func (pu *PriceUpdate) ClearMetadata() *PriceUpdate {
 	return pu
 }
 
-// SetSubscriptionID sets the "subscription_id" field.
-func (pu *PriceUpdate) SetSubscriptionID(s string) *PriceUpdate {
-	pu.mutation.SetSubscriptionID(s)
+// SetParentPriceID sets the "parent_price_id" field.
+func (pu *PriceUpdate) SetParentPriceID(s string) *PriceUpdate {
+	pu.mutation.SetParentPriceID(s)
 	return pu
 }
 
-// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
-func (pu *PriceUpdate) SetNillableSubscriptionID(s *string) *PriceUpdate {
+// SetNillableParentPriceID sets the "parent_price_id" field if the given value is not nil.
+func (pu *PriceUpdate) SetNillableParentPriceID(s *string) *PriceUpdate {
 	if s != nil {
-		pu.SetSubscriptionID(*s)
+		pu.SetParentPriceID(*s)
 	}
 	return pu
 }
 
-// ClearSubscriptionID clears the value of the "subscription_id" field.
-func (pu *PriceUpdate) ClearSubscriptionID() *PriceUpdate {
-	pu.mutation.ClearSubscriptionID()
+// ClearParentPriceID clears the value of the "parent_price_id" field.
+func (pu *PriceUpdate) ClearParentPriceID() *PriceUpdate {
+	pu.mutation.ClearParentPriceID()
 	return pu
 }
 
@@ -819,11 +819,11 @@ func (pu *PriceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if pu.mutation.EntityIDCleared() {
 		_spec.ClearField(price.FieldEntityID, field.TypeString)
 	}
-	if value, ok := pu.mutation.SubscriptionID(); ok {
-		_spec.SetField(price.FieldSubscriptionID, field.TypeString, value)
+	if value, ok := pu.mutation.ParentPriceID(); ok {
+		_spec.SetField(price.FieldParentPriceID, field.TypeString, value)
 	}
-	if pu.mutation.SubscriptionIDCleared() {
-		_spec.ClearField(price.FieldSubscriptionID, field.TypeString)
+	if pu.mutation.ParentPriceIDCleared() {
+		_spec.ClearField(price.FieldParentPriceID, field.TypeString)
 	}
 	if pu.mutation.CostsheetCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1373,23 +1373,23 @@ func (puo *PriceUpdateOne) ClearMetadata() *PriceUpdateOne {
 	return puo
 }
 
-// SetSubscriptionID sets the "subscription_id" field.
-func (puo *PriceUpdateOne) SetSubscriptionID(s string) *PriceUpdateOne {
-	puo.mutation.SetSubscriptionID(s)
+// SetParentPriceID sets the "parent_price_id" field.
+func (puo *PriceUpdateOne) SetParentPriceID(s string) *PriceUpdateOne {
+	puo.mutation.SetParentPriceID(s)
 	return puo
 }
 
-// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
-func (puo *PriceUpdateOne) SetNillableSubscriptionID(s *string) *PriceUpdateOne {
+// SetNillableParentPriceID sets the "parent_price_id" field if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillableParentPriceID(s *string) *PriceUpdateOne {
 	if s != nil {
-		puo.SetSubscriptionID(*s)
+		puo.SetParentPriceID(*s)
 	}
 	return puo
 }
 
-// ClearSubscriptionID clears the value of the "subscription_id" field.
-func (puo *PriceUpdateOne) ClearSubscriptionID() *PriceUpdateOne {
-	puo.mutation.ClearSubscriptionID()
+// ClearParentPriceID clears the value of the "parent_price_id" field.
+func (puo *PriceUpdateOne) ClearParentPriceID() *PriceUpdateOne {
+	puo.mutation.ClearParentPriceID()
 	return puo
 }
 
@@ -1736,11 +1736,11 @@ func (puo *PriceUpdateOne) sqlSave(ctx context.Context) (_node *Price, err error
 	if puo.mutation.EntityIDCleared() {
 		_spec.ClearField(price.FieldEntityID, field.TypeString)
 	}
-	if value, ok := puo.mutation.SubscriptionID(); ok {
-		_spec.SetField(price.FieldSubscriptionID, field.TypeString, value)
+	if value, ok := puo.mutation.ParentPriceID(); ok {
+		_spec.SetField(price.FieldParentPriceID, field.TypeString, value)
 	}
-	if puo.mutation.SubscriptionIDCleared() {
-		_spec.ClearField(price.FieldSubscriptionID, field.TypeString)
+	if puo.mutation.ParentPriceIDCleared() {
+		_spec.ClearField(price.FieldParentPriceID, field.TypeString)
 	}
 	if puo.mutation.CostsheetCleared() {
 		edge := &sqlgraph.EdgeSpec{
