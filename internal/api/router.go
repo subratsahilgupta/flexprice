@@ -39,6 +39,7 @@ type Handlers struct {
 	Coupon            *v1.CouponHandler
 	PriceUnit         *v1.PriceUnitHandler
 	Webhook           *v1.WebhookHandler
+	Addon             *v1.AddonHandler
 	// Portal handlers
 	Onboarding *v1.OnboardingHandler
 	// Cron jobs : TODO: move crons out of API based architecture
@@ -186,6 +187,19 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			plan.GET("/:id/creditgrants", handlers.Plan.GetPlanCreditGrants)
 		}
 
+		addon := v1Private.Group("/addons")
+		{
+			// list addons by filter
+			addon.POST("/search", handlers.Addon.ListAddonsByFilter)
+
+			addon.POST("", handlers.Addon.CreateAddon)
+			addon.GET("", handlers.Addon.GetAddons)
+			addon.GET("/:id", handlers.Addon.GetAddon)
+			addon.GET("/lookup/:lookup_key", handlers.Addon.GetAddonByLookupKey)
+			addon.PUT("/:id", handlers.Addon.UpdateAddon)
+			addon.DELETE("/:id", handlers.Addon.DeleteAddon)
+		}
+
 		subscription := v1Private.Group("/subscriptions")
 		{
 			subscription.POST("/search", handlers.Subscription.ListSubscriptionsByFilter)
@@ -199,6 +213,10 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			subscription.POST("/:id/resume", handlers.SubscriptionPause.ResumeSubscription)
 			subscription.GET("/:id/pauses", handlers.SubscriptionPause.ListPauses)
 			subscription.POST("/:id/phases", handlers.Subscription.AddSubscriptionPhase)
+
+			// Addon management for subscriptions
+			subscription.POST("/:id/addons", handlers.Addon.AddAddonToSubscription)
+			subscription.DELETE("/:id/addons/:addon_id", handlers.Addon.RemoveAddonFromSubscription)
 		}
 
 		wallet := v1Private.Group("/wallets")

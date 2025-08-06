@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 )
@@ -92,4 +93,9 @@ func (r *AddAddonToSubscriptionRequest) Validate() error {
 	}
 
 	return nil
+}
+
+// AddonAssociationResponse represents the response for an addon association
+type AddonAssociationResponse struct {
+	*addonassociation.AddonAssociation
 }
