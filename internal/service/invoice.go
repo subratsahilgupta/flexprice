@@ -537,6 +537,11 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 		return nil, err
 	}
 
+	// Check if the invoice is zeroAmountInvoice
+	if invoiceReq.AmountDue.IsZero() {
+		return nil, nil
+	}
+
 	// Create the invoice
 	inv, err := s.CreateInvoice(ctx, *invoiceReq)
 	if err != nil {
