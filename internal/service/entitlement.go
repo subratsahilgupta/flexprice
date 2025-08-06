@@ -28,6 +28,7 @@ type EntitlementService interface {
 	DeleteEntitlement(ctx context.Context, id string) error
 	GetPlanEntitlements(ctx context.Context, planID string) (*dto.ListEntitlementsResponse, error)
 	GetPlanFeatureEntitlements(ctx context.Context, planID, featureID string) (*dto.ListEntitlementsResponse, error)
+	GetAddonEntitlements(ctx context.Context, addonID string) (*dto.ListEntitlementsResponse, error)
 }
 
 type entitlementService struct {
@@ -484,13 +485,25 @@ func (s *entitlementService) GetPlanEntitlements(ctx context.Context, planID str
 }
 
 func (s *entitlementService) GetPlanFeatureEntitlements(ctx context.Context, planID, featureID string) (*dto.ListEntitlementsResponse, error) {
-	// Create a filter for the feature's entitlements
+	// Create a filter for the plan's entitlements for a specific feature
 	filter := types.NewNoLimitEntitlementFilter()
 	filter.WithEntityIDs([]string{planID})
+	filter.WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_PLAN)
 	filter.WithFeatureID(featureID)
 	filter.WithStatus(types.StatusPublished)
-	filter.WithExpand(string(types.ExpandMeters))
-	filter.WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_PLAN)
+	filter.WithExpand(string(types.ExpandFeatures))
+
+	// Use the standard list function to get the entitlements with expansion
+	return s.ListEntitlements(ctx, filter)
+}
+
+func (s *entitlementService) GetAddonEntitlements(ctx context.Context, addonID string) (*dto.ListEntitlementsResponse, error) {
+	// Create a filter for the addon's entitlements
+	filter := types.NewNoLimitEntitlementFilter()
+	filter.WithEntityIDs([]string{addonID})
+	filter.WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_ADDON)
+	filter.WithStatus(types.StatusPublished)
+	filter.WithExpand(string(types.ExpandFeatures))
 
 	// Use the standard list function to get the entitlements with expansion
 	return s.ListEntitlements(ctx, filter)

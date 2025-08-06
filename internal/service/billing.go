@@ -156,16 +156,25 @@ func (s *billingService) CalculateUsageCharges(
 	usageCharges := make([]dto.CreateInvoiceLineItemRequest, 0)
 	totalUsageCost := decimal.Zero
 
+	// Collect both plan and addon IDs from line items
 	planIDs := make([]string, 0)
+	addonIDs := make([]string, 0)
 	for _, item := range sub.LineItems {
 		if item.PriceType == types.PRICE_TYPE_USAGE {
-			planIDs = append(planIDs, item.EntityID)
+			if item.EntityType == types.SubscriptionLineItemEntitiyTypePlan {
+				planIDs = append(planIDs, item.EntityID)
+			} else if item.EntityType == types.SubscriptionLineItemEntitiyTypeAddon {
+				addonIDs = append(addonIDs, item.EntityID)
+			}
 		}
 	}
 	planIDs = lo.Uniq(planIDs)
+	addonIDs = lo.Uniq(addonIDs)
 
-	// map of plan ID to meter ID to entitlement
-	entitlementsByPlanMeterID := make(map[string]map[string]*dto.EntitlementResponse)
+	// map of entity ID to meter ID to entitlement
+	entitlementsByEntityMeterID := make(map[string]map[string]*dto.EntitlementResponse)
+
+	// Get plan entitlements
 	for _, planID := range planIDs {
 		entitlements, err := entitlementService.GetPlanEntitlements(ctx, planID)
 		if err != nil {
@@ -173,12 +182,28 @@ func (s *billingService) CalculateUsageCharges(
 		}
 
 		for _, entitlement := range entitlements.Items {
-
 			if entitlement.FeatureType == types.FeatureTypeMetered {
-				if _, ok := entitlementsByPlanMeterID[planID]; !ok {
-					entitlementsByPlanMeterID[planID] = make(map[string]*dto.EntitlementResponse)
+				if _, ok := entitlementsByEntityMeterID[planID]; !ok {
+					entitlementsByEntityMeterID[planID] = make(map[string]*dto.EntitlementResponse)
 				}
-				entitlementsByPlanMeterID[planID][entitlement.Feature.MeterID] = entitlement
+				entitlementsByEntityMeterID[planID][entitlement.Feature.MeterID] = entitlement
+			}
+		}
+	}
+
+	// Get addon entitlements
+	for _, addonID := range addonIDs {
+		entitlements, err := entitlementService.GetAddonEntitlements(ctx, addonID)
+		if err != nil {
+			return nil, decimal.Zero, err
+		}
+
+		for _, entitlement := range entitlements.Items {
+			if entitlement.FeatureType == types.FeatureTypeMetered {
+				if _, ok := entitlementsByEntityMeterID[addonID]; !ok {
+					entitlementsByEntityMeterID[addonID] = make(map[string]*dto.EntitlementResponse)
+				}
+				entitlementsByEntityMeterID[addonID][entitlement.Feature.MeterID] = entitlement
 			}
 		}
 	}
@@ -214,7 +239,7 @@ func (s *billingService) CalculateUsageCharges(
 
 			// Use EntityID for entitlement lookup
 			entityKey := item.EntityID
-			matchingEntitlement, ok := entitlementsByPlanMeterID[entityKey][item.MeterID]
+			matchingEntitlement, ok := entitlementsByEntityMeterID[entityKey][item.MeterID]
 
 			// Only apply entitlement adjustments if:
 			// 1. This is not an overage charge
