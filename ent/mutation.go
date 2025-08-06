@@ -23597,7 +23597,8 @@ type InvoiceLineItemMutation struct {
 	environment_id             *string
 	customer_id                *string
 	subscription_id            *string
-	plan_id                    *string
+	entity_id                  *string
+	entity_type                *string
 	plan_display_name          *string
 	price_id                   *string
 	price_type                 *string
@@ -24140,53 +24141,102 @@ func (m *InvoiceLineItemMutation) ResetSubscriptionID() {
 	delete(m.clearedFields, invoicelineitem.FieldSubscriptionID)
 }
 
-// SetPlanID sets the "plan_id" field.
-func (m *InvoiceLineItemMutation) SetPlanID(s string) {
-	m.plan_id = &s
+// SetEntityID sets the "entity_id" field.
+func (m *InvoiceLineItemMutation) SetEntityID(s string) {
+	m.entity_id = &s
 }
 
-// PlanID returns the value of the "plan_id" field in the mutation.
-func (m *InvoiceLineItemMutation) PlanID() (r string, exists bool) {
-	v := m.plan_id
+// EntityID returns the value of the "entity_id" field in the mutation.
+func (m *InvoiceLineItemMutation) EntityID() (r string, exists bool) {
+	v := m.entity_id
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldPlanID returns the old "plan_id" field's value of the InvoiceLineItem entity.
+// OldEntityID returns the old "entity_id" field's value of the InvoiceLineItem entity.
 // If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceLineItemMutation) OldPlanID(ctx context.Context) (v *string, err error) {
+func (m *InvoiceLineItemMutation) OldEntityID(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPlanID is only allowed on UpdateOne operations")
+		return v, errors.New("OldEntityID is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPlanID requires an ID field in the mutation")
+		return v, errors.New("OldEntityID requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPlanID: %w", err)
+		return v, fmt.Errorf("querying old value for OldEntityID: %w", err)
 	}
-	return oldValue.PlanID, nil
+	return oldValue.EntityID, nil
 }
 
-// ClearPlanID clears the value of the "plan_id" field.
-func (m *InvoiceLineItemMutation) ClearPlanID() {
-	m.plan_id = nil
-	m.clearedFields[invoicelineitem.FieldPlanID] = struct{}{}
+// ClearEntityID clears the value of the "entity_id" field.
+func (m *InvoiceLineItemMutation) ClearEntityID() {
+	m.entity_id = nil
+	m.clearedFields[invoicelineitem.FieldEntityID] = struct{}{}
 }
 
-// PlanIDCleared returns if the "plan_id" field was cleared in this mutation.
-func (m *InvoiceLineItemMutation) PlanIDCleared() bool {
-	_, ok := m.clearedFields[invoicelineitem.FieldPlanID]
+// EntityIDCleared returns if the "entity_id" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) EntityIDCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldEntityID]
 	return ok
 }
 
-// ResetPlanID resets all changes to the "plan_id" field.
-func (m *InvoiceLineItemMutation) ResetPlanID() {
-	m.plan_id = nil
-	delete(m.clearedFields, invoicelineitem.FieldPlanID)
+// ResetEntityID resets all changes to the "entity_id" field.
+func (m *InvoiceLineItemMutation) ResetEntityID() {
+	m.entity_id = nil
+	delete(m.clearedFields, invoicelineitem.FieldEntityID)
+}
+
+// SetEntityType sets the "entity_type" field.
+func (m *InvoiceLineItemMutation) SetEntityType(s string) {
+	m.entity_type = &s
+}
+
+// EntityType returns the value of the "entity_type" field in the mutation.
+func (m *InvoiceLineItemMutation) EntityType() (r string, exists bool) {
+	v := m.entity_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEntityType returns the old "entity_type" field's value of the InvoiceLineItem entity.
+// If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceLineItemMutation) OldEntityType(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEntityType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEntityType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEntityType: %w", err)
+	}
+	return oldValue.EntityType, nil
+}
+
+// ClearEntityType clears the value of the "entity_type" field.
+func (m *InvoiceLineItemMutation) ClearEntityType() {
+	m.entity_type = nil
+	m.clearedFields[invoicelineitem.FieldEntityType] = struct{}{}
+}
+
+// EntityTypeCleared returns if the "entity_type" field was cleared in this mutation.
+func (m *InvoiceLineItemMutation) EntityTypeCleared() bool {
+	_, ok := m.clearedFields[invoicelineitem.FieldEntityType]
+	return ok
+}
+
+// ResetEntityType resets all changes to the "entity_type" field.
+func (m *InvoiceLineItemMutation) ResetEntityType() {
+	m.entity_type = nil
+	delete(m.clearedFields, invoicelineitem.FieldEntityType)
 }
 
 // SetPlanDisplayName sets the "plan_display_name" field.
@@ -25000,7 +25050,7 @@ func (m *InvoiceLineItemMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceLineItemMutation) Fields() []string {
-	fields := make([]string, 0, 26)
+	fields := make([]string, 0, 27)
 	if m.tenant_id != nil {
 		fields = append(fields, invoicelineitem.FieldTenantID)
 	}
@@ -25031,8 +25081,11 @@ func (m *InvoiceLineItemMutation) Fields() []string {
 	if m.subscription_id != nil {
 		fields = append(fields, invoicelineitem.FieldSubscriptionID)
 	}
-	if m.plan_id != nil {
-		fields = append(fields, invoicelineitem.FieldPlanID)
+	if m.entity_id != nil {
+		fields = append(fields, invoicelineitem.FieldEntityID)
+	}
+	if m.entity_type != nil {
+		fields = append(fields, invoicelineitem.FieldEntityType)
 	}
 	if m.plan_display_name != nil {
 		fields = append(fields, invoicelineitem.FieldPlanDisplayName)
@@ -25107,8 +25160,10 @@ func (m *InvoiceLineItemMutation) Field(name string) (ent.Value, bool) {
 		return m.CustomerID()
 	case invoicelineitem.FieldSubscriptionID:
 		return m.SubscriptionID()
-	case invoicelineitem.FieldPlanID:
-		return m.PlanID()
+	case invoicelineitem.FieldEntityID:
+		return m.EntityID()
+	case invoicelineitem.FieldEntityType:
+		return m.EntityType()
 	case invoicelineitem.FieldPlanDisplayName:
 		return m.PlanDisplayName()
 	case invoicelineitem.FieldPriceID:
@@ -25168,8 +25223,10 @@ func (m *InvoiceLineItemMutation) OldField(ctx context.Context, name string) (en
 		return m.OldCustomerID(ctx)
 	case invoicelineitem.FieldSubscriptionID:
 		return m.OldSubscriptionID(ctx)
-	case invoicelineitem.FieldPlanID:
-		return m.OldPlanID(ctx)
+	case invoicelineitem.FieldEntityID:
+		return m.OldEntityID(ctx)
+	case invoicelineitem.FieldEntityType:
+		return m.OldEntityType(ctx)
 	case invoicelineitem.FieldPlanDisplayName:
 		return m.OldPlanDisplayName(ctx)
 	case invoicelineitem.FieldPriceID:
@@ -25279,12 +25336,19 @@ func (m *InvoiceLineItemMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSubscriptionID(v)
 		return nil
-	case invoicelineitem.FieldPlanID:
+	case invoicelineitem.FieldEntityID:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetPlanID(v)
+		m.SetEntityID(v)
+		return nil
+	case invoicelineitem.FieldEntityType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEntityType(v)
 		return nil
 	case invoicelineitem.FieldPlanDisplayName:
 		v, ok := value.(string)
@@ -25433,8 +25497,11 @@ func (m *InvoiceLineItemMutation) ClearedFields() []string {
 	if m.FieldCleared(invoicelineitem.FieldSubscriptionID) {
 		fields = append(fields, invoicelineitem.FieldSubscriptionID)
 	}
-	if m.FieldCleared(invoicelineitem.FieldPlanID) {
-		fields = append(fields, invoicelineitem.FieldPlanID)
+	if m.FieldCleared(invoicelineitem.FieldEntityID) {
+		fields = append(fields, invoicelineitem.FieldEntityID)
+	}
+	if m.FieldCleared(invoicelineitem.FieldEntityType) {
+		fields = append(fields, invoicelineitem.FieldEntityType)
 	}
 	if m.FieldCleared(invoicelineitem.FieldPlanDisplayName) {
 		fields = append(fields, invoicelineitem.FieldPlanDisplayName)
@@ -25498,8 +25565,11 @@ func (m *InvoiceLineItemMutation) ClearField(name string) error {
 	case invoicelineitem.FieldSubscriptionID:
 		m.ClearSubscriptionID()
 		return nil
-	case invoicelineitem.FieldPlanID:
-		m.ClearPlanID()
+	case invoicelineitem.FieldEntityID:
+		m.ClearEntityID()
+		return nil
+	case invoicelineitem.FieldEntityType:
+		m.ClearEntityType()
 		return nil
 	case invoicelineitem.FieldPlanDisplayName:
 		m.ClearPlanDisplayName()
@@ -25575,8 +25645,11 @@ func (m *InvoiceLineItemMutation) ResetField(name string) error {
 	case invoicelineitem.FieldSubscriptionID:
 		m.ResetSubscriptionID()
 		return nil
-	case invoicelineitem.FieldPlanID:
-		m.ResetPlanID()
+	case invoicelineitem.FieldEntityID:
+		m.ResetEntityID()
+		return nil
+	case invoicelineitem.FieldEntityType:
+		m.ResetEntityType()
 		return nil
 	case invoicelineitem.FieldPlanDisplayName:
 		m.ResetPlanDisplayName()
