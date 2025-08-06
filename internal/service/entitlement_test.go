@@ -31,6 +31,8 @@ func (s *EntitlementServiceSuite) setupService() {
 	stores := s.GetStores()
 	s.service = NewEntitlementService(ServiceParams{
 		Logger:           s.GetLogger(),
+		Config:           s.GetConfig(),
+		DB:               s.GetDB(),
 		EntitlementRepo:  stores.EntitlementRepo,
 		PlanRepo:         stores.PlanRepo,
 		FeatureRepo:      stores.FeatureRepo,
@@ -388,4 +390,212 @@ func (s *EntitlementServiceSuite) TestDeleteEntitlement() {
 	// Verify the entitlement is deleted
 	_, err = s.GetStores().EntitlementRepo.Get(s.GetContext(), "ent-1")
 	s.Error(err)
+}
+
+func (s *EntitlementServiceSuite) TestCreateBulkEntitlement() {
+	// Setup test features with different types
+	boolFeature := &feature.Feature{
+		ID:          "feat-bool-bulk",
+		Name:        "Boolean Feature Bulk",
+		Description: "Test Boolean Feature for Bulk",
+		Type:        types.FeatureTypeBoolean,
+		BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+	}
+	err := s.GetStores().FeatureRepo.Create(s.GetContext(), boolFeature)
+	s.NoError(err)
+
+	meteredFeature := &feature.Feature{
+		ID:          "feat-metered-bulk",
+		Name:        "Metered Feature Bulk",
+		Description: "Test Metered Feature for Bulk",
+		Type:        types.FeatureTypeMetered,
+		BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+	}
+	err = s.GetStores().FeatureRepo.Create(s.GetContext(), meteredFeature)
+	s.NoError(err)
+
+	staticFeature := &feature.Feature{
+		ID:          "feat-static-bulk",
+		Name:        "Static Feature Bulk",
+		Description: "Test Static Feature for Bulk",
+		Type:        types.FeatureTypeStatic,
+		BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+	}
+	err = s.GetStores().FeatureRepo.Create(s.GetContext(), staticFeature)
+	s.NoError(err)
+
+	// Create test plans
+	testPlan1 := &plan.Plan{
+		ID:          "plan-bulk-1",
+		Name:        "Test Plan Bulk 1",
+		Description: "Test Plan Description Bulk 1",
+		BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+	}
+	err = s.GetStores().PlanRepo.Create(s.GetContext(), testPlan1)
+	s.NoError(err)
+
+	testPlan2 := &plan.Plan{
+		ID:          "plan-bulk-2",
+		Name:        "Test Plan Bulk 2",
+		Description: "Test Plan Description Bulk 2",
+		BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+	}
+	err = s.GetStores().PlanRepo.Create(s.GetContext(), testPlan2)
+	s.NoError(err)
+
+	s.Run("Valid Bulk Entitlement Creation", func() {
+		req := dto.CreateBulkEntitlementRequest{
+			Items: []dto.CreateEntitlementRequest{
+				{
+					PlanID:      testPlan1.ID,
+					FeatureID:   boolFeature.ID,
+					FeatureType: types.FeatureTypeBoolean,
+					IsEnabled:   true,
+				},
+				{
+					PlanID:           testPlan1.ID,
+					FeatureID:        meteredFeature.ID,
+					FeatureType:      types.FeatureTypeMetered,
+					UsageLimit:       lo.ToPtr(int64(1000)),
+					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					IsSoftLimit:      true,
+				},
+				{
+					PlanID:      testPlan2.ID,
+					FeatureID:   staticFeature.ID,
+					FeatureType: types.FeatureTypeStatic,
+					StaticValue: "premium",
+				},
+			},
+		}
+
+		resp, err := s.service.CreateBulkEntitlement(s.GetContext(), req)
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Len(resp.Entitlements, 3)
+
+		// Verify first entitlement (boolean)
+		ent1 := resp.Entitlements[0]
+		s.Equal(types.ENTITLEMENT_ENTITY_TYPE_PLAN, ent1.Entitlement.EntityType)
+		s.Equal(testPlan1.ID, ent1.Entitlement.EntityID)
+		s.Equal(boolFeature.ID, ent1.Entitlement.FeatureID)
+		s.Equal(types.FeatureTypeBoolean, ent1.Entitlement.FeatureType)
+		s.True(ent1.Entitlement.IsEnabled)
+		s.NotNil(ent1.Feature)
+		s.Equal(boolFeature.ID, ent1.Feature.Feature.ID)
+		s.NotNil(ent1.Plan)
+		s.Equal(testPlan1.ID, ent1.Plan.Plan.ID)
+
+		// Verify second entitlement (metered)
+		ent2 := resp.Entitlements[1]
+		s.Equal(types.ENTITLEMENT_ENTITY_TYPE_PLAN, ent2.Entitlement.EntityType)
+		s.Equal(testPlan1.ID, ent2.Entitlement.EntityID)
+		s.Equal(meteredFeature.ID, ent2.Entitlement.FeatureID)
+		s.Equal(types.FeatureTypeMetered, ent2.Entitlement.FeatureType)
+		s.Equal(int64(1000), *ent2.Entitlement.UsageLimit)
+		s.Equal(types.BILLING_PERIOD_MONTHLY, ent2.Entitlement.UsageResetPeriod)
+		s.True(ent2.Entitlement.IsSoftLimit)
+		s.NotNil(ent2.Feature)
+		s.Equal(meteredFeature.ID, ent2.Feature.Feature.ID)
+		s.NotNil(ent2.Plan)
+		s.Equal(testPlan1.ID, ent2.Plan.Plan.ID)
+
+		// Verify third entitlement (static)
+		ent3 := resp.Entitlements[2]
+		s.Equal(types.ENTITLEMENT_ENTITY_TYPE_PLAN, ent3.Entitlement.EntityType)
+		s.Equal(testPlan2.ID, ent3.Entitlement.EntityID)
+		s.Equal(staticFeature.ID, ent3.Entitlement.FeatureID)
+		s.Equal(types.FeatureTypeStatic, ent3.Entitlement.FeatureType)
+		s.Equal("premium", ent3.Entitlement.StaticValue)
+		s.NotNil(ent3.Feature)
+		s.Equal(staticFeature.ID, ent3.Feature.Feature.ID)
+		s.NotNil(ent3.Plan)
+		s.Equal(testPlan2.ID, ent3.Plan.Plan.ID)
+	})
+
+	s.Run("Invalid Bulk Entitlement - Feature Type Mismatch", func() {
+		req := dto.CreateBulkEntitlementRequest{
+			Items: []dto.CreateEntitlementRequest{
+				{
+					PlanID:      testPlan1.ID,
+					FeatureID:   boolFeature.ID,
+					FeatureType: types.FeatureTypeMetered, // Wrong type
+					IsEnabled:   true,
+				},
+			},
+		}
+
+		resp, err := s.service.CreateBulkEntitlement(s.GetContext(), req)
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "feature type mismatch")
+	})
+
+	s.Run("Invalid Bulk Entitlement - Non-existent Plan", func() {
+		req := dto.CreateBulkEntitlementRequest{
+			Items: []dto.CreateEntitlementRequest{
+				{
+					PlanID:      "non-existent-plan",
+					FeatureID:   boolFeature.ID,
+					FeatureType: types.FeatureTypeBoolean,
+					IsEnabled:   true,
+				},
+			},
+		}
+
+		resp, err := s.service.CreateBulkEntitlement(s.GetContext(), req)
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "not found")
+	})
+
+	s.Run("Invalid Bulk Entitlement - Non-existent Feature", func() {
+		req := dto.CreateBulkEntitlementRequest{
+			Items: []dto.CreateEntitlementRequest{
+				{
+					PlanID:      testPlan1.ID,
+					FeatureID:   "non-existent-feature",
+					FeatureType: types.FeatureTypeBoolean,
+					IsEnabled:   true,
+				},
+			},
+		}
+
+		resp, err := s.service.CreateBulkEntitlement(s.GetContext(), req)
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "not found")
+	})
+
+	s.Run("Invalid Bulk Entitlement - Empty Request", func() {
+		req := dto.CreateBulkEntitlementRequest{
+			Items: []dto.CreateEntitlementRequest{},
+		}
+
+		resp, err := s.service.CreateBulkEntitlement(s.GetContext(), req)
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "at least one entitlement is required")
+	})
+
+	s.Run("Invalid Bulk Entitlement - Too Many Entitlements", func() {
+		entitlements := make([]dto.CreateEntitlementRequest, 101)
+		for i := 0; i < 101; i++ {
+			entitlements[i] = dto.CreateEntitlementRequest{
+				PlanID:      testPlan1.ID,
+				FeatureID:   boolFeature.ID,
+				FeatureType: types.FeatureTypeBoolean,
+				IsEnabled:   true,
+			}
+		}
+
+		req := dto.CreateBulkEntitlementRequest{
+			Items: entitlements,
+		}
+
+		resp, err := s.service.CreateBulkEntitlement(s.GetContext(), req)
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "too many entitlements in bulk request")
+	})
 }

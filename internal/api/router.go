@@ -251,6 +251,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			entitlement.POST("/search", handlers.Entitlement.ListEntitlementsByFilter)
 			entitlement.POST("", handlers.Entitlement.CreateEntitlement)
+			entitlement.POST("/bulk", handlers.Entitlement.CreateBulkEntitlement)
 			entitlement.GET("", handlers.Entitlement.ListEntitlements)
 			entitlement.GET("/:id", handlers.Entitlement.GetEntitlement)
 			entitlement.PUT("/:id", handlers.Entitlement.UpdateEntitlement)
