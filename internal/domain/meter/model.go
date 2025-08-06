@@ -63,6 +63,10 @@ type Aggregation struct {
 	// For ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000
 	// to scale up by a factor of 1000
 	Multiplier decimal.Decimal `json:"multiplier,omitempty"`
+
+	// BucketSize is used only for MAX aggregation when windowed aggregation is needed
+	// It defines the size of time windows to calculate max values within
+	BucketSize types.WindowSize `json:"bucket_size,omitempty"`
 }
 
 // FromEnt converts an Ent Meter to a domain Meter
@@ -88,6 +92,7 @@ func FromEnt(e *ent.Meter) *Meter {
 			Type:       e.Aggregation.Type,
 			Field:      e.Aggregation.Field,
 			Multiplier: e.Aggregation.Multiplier,
+			BucketSize: e.Aggregation.BucketSize,
 		},
 		Filters:       filters,
 		ResetUsage:    types.ResetUsage(e.ResetUsage),
@@ -136,6 +141,7 @@ func (m *Meter) ToEntAggregation() schema.MeterAggregation {
 		Type:       m.Aggregation.Type,
 		Field:      m.Aggregation.Field,
 		Multiplier: m.Aggregation.Multiplier,
+		BucketSize: m.Aggregation.BucketSize,
 	}
 }
 
@@ -179,6 +185,27 @@ func (m *Meter) Validate() error {
 				"multiplier": m.Aggregation.Multiplier,
 			}).
 			Mark(ierr.ErrValidation)
+	}
+	// Validate bucket_size is only used with MAX aggregation
+	if m.Aggregation.BucketSize != "" && m.Aggregation.Type != types.AggregationMax {
+		return ierr.NewError("bucket_size can only be used with MAX aggregation").
+			WithHint("BucketSize is only valid for MAX aggregation type").
+			WithReportableDetails(map[string]interface{}{
+				"aggregation_type": m.Aggregation.Type,
+				"bucket_size":      m.Aggregation.BucketSize,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	// If bucket_size is provided for MAX aggregation, validate it's a valid window size
+	if m.Aggregation.Type == types.AggregationMax && m.Aggregation.BucketSize != "" {
+		if err := m.Aggregation.BucketSize.Validate(); err != nil {
+			return ierr.NewError("invalid bucket_size").
+				WithHint("Please provide a valid window size for bucket_size").
+				WithReportableDetails(map[string]interface{}{
+					"bucket_size": m.Aggregation.BucketSize,
+				}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 
 	for _, filter := range m.Filters {
