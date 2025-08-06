@@ -31615,7 +31615,7 @@ type PriceMutation struct {
 	metadata                  *map[string]string
 	entity_type               *string
 	entity_id                 *string
-	subscription_id           *string
+	parent_price_id           *string
 	clearedFields             map[string]struct{}
 	costsheet                 map[string]struct{}
 	removedcostsheet          map[string]struct{}
@@ -33349,53 +33349,53 @@ func (m *PriceMutation) ResetEntityID() {
 	delete(m.clearedFields, price.FieldEntityID)
 }
 
-// SetSubscriptionID sets the "subscription_id" field.
-func (m *PriceMutation) SetSubscriptionID(s string) {
-	m.subscription_id = &s
+// SetParentPriceID sets the "parent_price_id" field.
+func (m *PriceMutation) SetParentPriceID(s string) {
+	m.parent_price_id = &s
 }
 
-// SubscriptionID returns the value of the "subscription_id" field in the mutation.
-func (m *PriceMutation) SubscriptionID() (r string, exists bool) {
-	v := m.subscription_id
+// ParentPriceID returns the value of the "parent_price_id" field in the mutation.
+func (m *PriceMutation) ParentPriceID() (r string, exists bool) {
+	v := m.parent_price_id
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldSubscriptionID returns the old "subscription_id" field's value of the Price entity.
+// OldParentPriceID returns the old "parent_price_id" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldSubscriptionID(ctx context.Context) (v *string, err error) {
+func (m *PriceMutation) OldParentPriceID(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSubscriptionID is only allowed on UpdateOne operations")
+		return v, errors.New("OldParentPriceID is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSubscriptionID requires an ID field in the mutation")
+		return v, errors.New("OldParentPriceID requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSubscriptionID: %w", err)
+		return v, fmt.Errorf("querying old value for OldParentPriceID: %w", err)
 	}
-	return oldValue.SubscriptionID, nil
+	return oldValue.ParentPriceID, nil
 }
 
-// ClearSubscriptionID clears the value of the "subscription_id" field.
-func (m *PriceMutation) ClearSubscriptionID() {
-	m.subscription_id = nil
-	m.clearedFields[price.FieldSubscriptionID] = struct{}{}
+// ClearParentPriceID clears the value of the "parent_price_id" field.
+func (m *PriceMutation) ClearParentPriceID() {
+	m.parent_price_id = nil
+	m.clearedFields[price.FieldParentPriceID] = struct{}{}
 }
 
-// SubscriptionIDCleared returns if the "subscription_id" field was cleared in this mutation.
-func (m *PriceMutation) SubscriptionIDCleared() bool {
-	_, ok := m.clearedFields[price.FieldSubscriptionID]
+// ParentPriceIDCleared returns if the "parent_price_id" field was cleared in this mutation.
+func (m *PriceMutation) ParentPriceIDCleared() bool {
+	_, ok := m.clearedFields[price.FieldParentPriceID]
 	return ok
 }
 
-// ResetSubscriptionID resets all changes to the "subscription_id" field.
-func (m *PriceMutation) ResetSubscriptionID() {
-	m.subscription_id = nil
-	delete(m.clearedFields, price.FieldSubscriptionID)
+// ResetParentPriceID resets all changes to the "parent_price_id" field.
+func (m *PriceMutation) ResetParentPriceID() {
+	m.parent_price_id = nil
+	delete(m.clearedFields, price.FieldParentPriceID)
 }
 
 // AddCostsheetIDs adds the "costsheet" edge to the Costsheet entity by ids.
@@ -33629,8 +33629,8 @@ func (m *PriceMutation) Fields() []string {
 	if m.entity_id != nil {
 		fields = append(fields, price.FieldEntityID)
 	}
-	if m.subscription_id != nil {
-		fields = append(fields, price.FieldSubscriptionID)
+	if m.parent_price_id != nil {
+		fields = append(fields, price.FieldParentPriceID)
 	}
 	return fields
 }
@@ -33708,8 +33708,8 @@ func (m *PriceMutation) Field(name string) (ent.Value, bool) {
 		return m.EntityType()
 	case price.FieldEntityID:
 		return m.EntityID()
-	case price.FieldSubscriptionID:
-		return m.SubscriptionID()
+	case price.FieldParentPriceID:
+		return m.ParentPriceID()
 	}
 	return nil, false
 }
@@ -33787,8 +33787,8 @@ func (m *PriceMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldEntityType(ctx)
 	case price.FieldEntityID:
 		return m.OldEntityID(ctx)
-	case price.FieldSubscriptionID:
-		return m.OldSubscriptionID(ctx)
+	case price.FieldParentPriceID:
+		return m.OldParentPriceID(ctx)
 	}
 	return nil, fmt.Errorf("unknown Price field %s", name)
 }
@@ -34036,12 +34036,12 @@ func (m *PriceMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetEntityID(v)
 		return nil
-	case price.FieldSubscriptionID:
+	case price.FieldParentPriceID:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetSubscriptionID(v)
+		m.SetParentPriceID(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Price field %s", name)
@@ -34196,8 +34196,8 @@ func (m *PriceMutation) ClearedFields() []string {
 	if m.FieldCleared(price.FieldEntityID) {
 		fields = append(fields, price.FieldEntityID)
 	}
-	if m.FieldCleared(price.FieldSubscriptionID) {
-		fields = append(fields, price.FieldSubscriptionID)
+	if m.FieldCleared(price.FieldParentPriceID) {
+		fields = append(fields, price.FieldParentPriceID)
 	}
 	return fields
 }
@@ -34273,8 +34273,8 @@ func (m *PriceMutation) ClearField(name string) error {
 	case price.FieldEntityID:
 		m.ClearEntityID()
 		return nil
-	case price.FieldSubscriptionID:
-		m.ClearSubscriptionID()
+	case price.FieldParentPriceID:
+		m.ClearParentPriceID()
 		return nil
 	}
 	return fmt.Errorf("unknown Price nullable field %s", name)
@@ -34386,8 +34386,8 @@ func (m *PriceMutation) ResetField(name string) error {
 	case price.FieldEntityID:
 		m.ResetEntityID()
 		return nil
-	case price.FieldSubscriptionID:
-		m.ResetSubscriptionID()
+	case price.FieldParentPriceID:
+		m.ResetParentPriceID()
 		return nil
 	}
 	return fmt.Errorf("unknown Price field %s", name)

@@ -111,8 +111,8 @@ type Price struct {
 	// EntityID holds the value of the "entity_id" field.
 	EntityID string `db:"entity_id" json:"entity_id,omitempty"`
 
-	// SubscriptionID references the subscription (only set when scope is SUBSCRIPTION)
-	SubscriptionID string `db:"subscription_id" json:"subscription_id,omitempty"`
+	// ParentPriceID references the parent price (only set when scope is SUBSCRIPTION)
+	ParentPriceID string `db:"parent_price_id" json:"parent_price_id,omitempty"`
 
 	types.BaseModel
 }
@@ -388,7 +388,7 @@ func FromEnt(e *ent.Price) *Price {
 		ConversionRate:         decimal.NewFromFloat(e.ConversionRate),
 		EntityType:             types.PriceEntityType(lo.FromPtr(e.EntityType)),
 		EntityID:               lo.FromPtr(e.EntityID),
-		SubscriptionID:         lo.FromPtr(e.SubscriptionID),
+		ParentPriceID:          lo.FromPtr(e.ParentPriceID),
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

@@ -694,7 +694,10 @@ func (r *subscriptionRepository) GetWithLineItems(ctx context.Context, id string
 			subscription.Status(string(types.StatusPublished)),
 		).
 		WithLineItems(func(q *ent.SubscriptionLineItemQuery) {
-			q.Where(subscriptionlineitem.Status(string(types.StatusPublished)))
+			q.Where(
+				subscriptionlineitem.Status(string(types.StatusPublished)),
+				subscriptionlineitem.EntityType(string(types.SubscriptionLineItemEntitiyTypePlan)),
+			)
 		}).
 		Only(ctx)
 

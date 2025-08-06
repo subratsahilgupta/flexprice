@@ -210,9 +210,9 @@ func EntityID(v string) predicate.Price {
 	return predicate.Price(sql.FieldEQ(FieldEntityID, v))
 }
 
-// SubscriptionID applies equality check predicate on the "subscription_id" field. It's identical to SubscriptionIDEQ.
-func SubscriptionID(v string) predicate.Price {
-	return predicate.Price(sql.FieldEQ(FieldSubscriptionID, v))
+// ParentPriceID applies equality check predicate on the "parent_price_id" field. It's identical to ParentPriceIDEQ.
+func ParentPriceID(v string) predicate.Price {
+	return predicate.Price(sql.FieldEQ(FieldParentPriceID, v))
 }
 
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
@@ -2125,79 +2125,79 @@ func EntityIDContainsFold(v string) predicate.Price {
 	return predicate.Price(sql.FieldContainsFold(FieldEntityID, v))
 }
 
-// SubscriptionIDEQ applies the EQ predicate on the "subscription_id" field.
-func SubscriptionIDEQ(v string) predicate.Price {
-	return predicate.Price(sql.FieldEQ(FieldSubscriptionID, v))
+// ParentPriceIDEQ applies the EQ predicate on the "parent_price_id" field.
+func ParentPriceIDEQ(v string) predicate.Price {
+	return predicate.Price(sql.FieldEQ(FieldParentPriceID, v))
 }
 
-// SubscriptionIDNEQ applies the NEQ predicate on the "subscription_id" field.
-func SubscriptionIDNEQ(v string) predicate.Price {
-	return predicate.Price(sql.FieldNEQ(FieldSubscriptionID, v))
+// ParentPriceIDNEQ applies the NEQ predicate on the "parent_price_id" field.
+func ParentPriceIDNEQ(v string) predicate.Price {
+	return predicate.Price(sql.FieldNEQ(FieldParentPriceID, v))
 }
 
-// SubscriptionIDIn applies the In predicate on the "subscription_id" field.
-func SubscriptionIDIn(vs ...string) predicate.Price {
-	return predicate.Price(sql.FieldIn(FieldSubscriptionID, vs...))
+// ParentPriceIDIn applies the In predicate on the "parent_price_id" field.
+func ParentPriceIDIn(vs ...string) predicate.Price {
+	return predicate.Price(sql.FieldIn(FieldParentPriceID, vs...))
 }
 
-// SubscriptionIDNotIn applies the NotIn predicate on the "subscription_id" field.
-func SubscriptionIDNotIn(vs ...string) predicate.Price {
-	return predicate.Price(sql.FieldNotIn(FieldSubscriptionID, vs...))
+// ParentPriceIDNotIn applies the NotIn predicate on the "parent_price_id" field.
+func ParentPriceIDNotIn(vs ...string) predicate.Price {
+	return predicate.Price(sql.FieldNotIn(FieldParentPriceID, vs...))
 }
 
-// SubscriptionIDGT applies the GT predicate on the "subscription_id" field.
-func SubscriptionIDGT(v string) predicate.Price {
-	return predicate.Price(sql.FieldGT(FieldSubscriptionID, v))
+// ParentPriceIDGT applies the GT predicate on the "parent_price_id" field.
+func ParentPriceIDGT(v string) predicate.Price {
+	return predicate.Price(sql.FieldGT(FieldParentPriceID, v))
 }
 
-// SubscriptionIDGTE applies the GTE predicate on the "subscription_id" field.
-func SubscriptionIDGTE(v string) predicate.Price {
-	return predicate.Price(sql.FieldGTE(FieldSubscriptionID, v))
+// ParentPriceIDGTE applies the GTE predicate on the "parent_price_id" field.
+func ParentPriceIDGTE(v string) predicate.Price {
+	return predicate.Price(sql.FieldGTE(FieldParentPriceID, v))
 }
 
-// SubscriptionIDLT applies the LT predicate on the "subscription_id" field.
-func SubscriptionIDLT(v string) predicate.Price {
-	return predicate.Price(sql.FieldLT(FieldSubscriptionID, v))
+// ParentPriceIDLT applies the LT predicate on the "parent_price_id" field.
+func ParentPriceIDLT(v string) predicate.Price {
+	return predicate.Price(sql.FieldLT(FieldParentPriceID, v))
 }
 
-// SubscriptionIDLTE applies the LTE predicate on the "subscription_id" field.
-func SubscriptionIDLTE(v string) predicate.Price {
-	return predicate.Price(sql.FieldLTE(FieldSubscriptionID, v))
+// ParentPriceIDLTE applies the LTE predicate on the "parent_price_id" field.
+func ParentPriceIDLTE(v string) predicate.Price {
+	return predicate.Price(sql.FieldLTE(FieldParentPriceID, v))
 }
 
-// SubscriptionIDContains applies the Contains predicate on the "subscription_id" field.
-func SubscriptionIDContains(v string) predicate.Price {
-	return predicate.Price(sql.FieldContains(FieldSubscriptionID, v))
+// ParentPriceIDContains applies the Contains predicate on the "parent_price_id" field.
+func ParentPriceIDContains(v string) predicate.Price {
+	return predicate.Price(sql.FieldContains(FieldParentPriceID, v))
 }
 
-// SubscriptionIDHasPrefix applies the HasPrefix predicate on the "subscription_id" field.
-func SubscriptionIDHasPrefix(v string) predicate.Price {
-	return predicate.Price(sql.FieldHasPrefix(FieldSubscriptionID, v))
+// ParentPriceIDHasPrefix applies the HasPrefix predicate on the "parent_price_id" field.
+func ParentPriceIDHasPrefix(v string) predicate.Price {
+	return predicate.Price(sql.FieldHasPrefix(FieldParentPriceID, v))
 }
 
-// SubscriptionIDHasSuffix applies the HasSuffix predicate on the "subscription_id" field.
-func SubscriptionIDHasSuffix(v string) predicate.Price {
-	return predicate.Price(sql.FieldHasSuffix(FieldSubscriptionID, v))
+// ParentPriceIDHasSuffix applies the HasSuffix predicate on the "parent_price_id" field.
+func ParentPriceIDHasSuffix(v string) predicate.Price {
+	return predicate.Price(sql.FieldHasSuffix(FieldParentPriceID, v))
 }
 
-// SubscriptionIDIsNil applies the IsNil predicate on the "subscription_id" field.
-func SubscriptionIDIsNil() predicate.Price {
-	return predicate.Price(sql.FieldIsNull(FieldSubscriptionID))
+// ParentPriceIDIsNil applies the IsNil predicate on the "parent_price_id" field.
+func ParentPriceIDIsNil() predicate.Price {
+	return predicate.Price(sql.FieldIsNull(FieldParentPriceID))
 }
 
-// SubscriptionIDNotNil applies the NotNil predicate on the "subscription_id" field.
-func SubscriptionIDNotNil() predicate.Price {
-	return predicate.Price(sql.FieldNotNull(FieldSubscriptionID))
+// ParentPriceIDNotNil applies the NotNil predicate on the "parent_price_id" field.
+func ParentPriceIDNotNil() predicate.Price {
+	return predicate.Price(sql.FieldNotNull(FieldParentPriceID))
 }
 
-// SubscriptionIDEqualFold applies the EqualFold predicate on the "subscription_id" field.
-func SubscriptionIDEqualFold(v string) predicate.Price {
-	return predicate.Price(sql.FieldEqualFold(FieldSubscriptionID, v))
+// ParentPriceIDEqualFold applies the EqualFold predicate on the "parent_price_id" field.
+func ParentPriceIDEqualFold(v string) predicate.Price {
+	return predicate.Price(sql.FieldEqualFold(FieldParentPriceID, v))
 }
 
-// SubscriptionIDContainsFold applies the ContainsFold predicate on the "subscription_id" field.
-func SubscriptionIDContainsFold(v string) predicate.Price {
-	return predicate.Price(sql.FieldContainsFold(FieldSubscriptionID, v))
+// ParentPriceIDContainsFold applies the ContainsFold predicate on the "parent_price_id" field.
+func ParentPriceIDContainsFold(v string) predicate.Price {
+	return predicate.Price(sql.FieldContainsFold(FieldParentPriceID, v))
 }
 
 // HasCostsheet applies the HasEdge predicate on the "costsheet" edge.

@@ -84,7 +84,7 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetCreatedBy(p.CreatedBy).
 		SetUpdatedBy(p.UpdatedBy).
 		SetEnvironmentID(p.EnvironmentID).
-		SetNillableSubscriptionID(lo.ToPtr(p.SubscriptionID)).
+		SetNillableParentPriceID(lo.ToPtr(p.ParentPriceID)).
 		SetEntityType(string(p.EntityType)).
 		SetEntityID(p.EntityID)
 
@@ -538,7 +538,12 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 
 	// entity type filter
 	if f.EntityType != nil {
-		query = query.Where(price.EntityTypeEQ(string(*f.EntityType)))
+		query = query.Where(price.EntityType(string(*f.EntityType)))
+	}
+
+	// entity id filter
+	if f.EntityIDs != nil {
+		query = query.Where(price.EntityIDIn(f.EntityIDs...))
 	}
 
 	// Apply time range filters if specified
