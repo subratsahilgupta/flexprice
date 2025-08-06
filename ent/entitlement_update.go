@@ -12,7 +12,6 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/entitlement"
-	"github.com/flexprice/flexprice/ent/plan"
 	"github.com/flexprice/flexprice/ent/predicate"
 )
 
@@ -232,34 +231,9 @@ func (eu *EntitlementUpdate) ClearStaticValue() *EntitlementUpdate {
 	return eu
 }
 
-// SetPlanID sets the "plan" edge to the Plan entity by ID.
-func (eu *EntitlementUpdate) SetPlanID(id string) *EntitlementUpdate {
-	eu.mutation.SetPlanID(id)
-	return eu
-}
-
-// SetNillablePlanID sets the "plan" edge to the Plan entity by ID if the given value is not nil.
-func (eu *EntitlementUpdate) SetNillablePlanID(id *string) *EntitlementUpdate {
-	if id != nil {
-		eu = eu.SetPlanID(*id)
-	}
-	return eu
-}
-
-// SetPlan sets the "plan" edge to the Plan entity.
-func (eu *EntitlementUpdate) SetPlan(p *Plan) *EntitlementUpdate {
-	return eu.SetPlanID(p.ID)
-}
-
 // Mutation returns the EntitlementMutation object of the builder.
 func (eu *EntitlementUpdate) Mutation() *EntitlementMutation {
 	return eu.mutation
-}
-
-// ClearPlan clears the "plan" edge to the Plan entity.
-func (eu *EntitlementUpdate) ClearPlan() *EntitlementUpdate {
-	eu.mutation.ClearPlan()
-	return eu
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -387,35 +361,6 @@ func (eu *EntitlementUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if eu.mutation.StaticValueCleared() {
 		_spec.ClearField(entitlement.FieldStaticValue, field.TypeString)
-	}
-	if eu.mutation.PlanCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: false,
-			Table:   entitlement.PlanTable,
-			Columns: []string{entitlement.PlanColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(plan.FieldID, field.TypeString),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := eu.mutation.PlanIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: false,
-			Table:   entitlement.PlanTable,
-			Columns: []string{entitlement.PlanColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(plan.FieldID, field.TypeString),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, eu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -640,34 +585,9 @@ func (euo *EntitlementUpdateOne) ClearStaticValue() *EntitlementUpdateOne {
 	return euo
 }
 
-// SetPlanID sets the "plan" edge to the Plan entity by ID.
-func (euo *EntitlementUpdateOne) SetPlanID(id string) *EntitlementUpdateOne {
-	euo.mutation.SetPlanID(id)
-	return euo
-}
-
-// SetNillablePlanID sets the "plan" edge to the Plan entity by ID if the given value is not nil.
-func (euo *EntitlementUpdateOne) SetNillablePlanID(id *string) *EntitlementUpdateOne {
-	if id != nil {
-		euo = euo.SetPlanID(*id)
-	}
-	return euo
-}
-
-// SetPlan sets the "plan" edge to the Plan entity.
-func (euo *EntitlementUpdateOne) SetPlan(p *Plan) *EntitlementUpdateOne {
-	return euo.SetPlanID(p.ID)
-}
-
 // Mutation returns the EntitlementMutation object of the builder.
 func (euo *EntitlementUpdateOne) Mutation() *EntitlementMutation {
 	return euo.mutation
-}
-
-// ClearPlan clears the "plan" edge to the Plan entity.
-func (euo *EntitlementUpdateOne) ClearPlan() *EntitlementUpdateOne {
-	euo.mutation.ClearPlan()
-	return euo
 }
 
 // Where appends a list predicates to the EntitlementUpdate builder.
@@ -825,35 +745,6 @@ func (euo *EntitlementUpdateOne) sqlSave(ctx context.Context) (_node *Entitlemen
 	}
 	if euo.mutation.StaticValueCleared() {
 		_spec.ClearField(entitlement.FieldStaticValue, field.TypeString)
-	}
-	if euo.mutation.PlanCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: false,
-			Table:   entitlement.PlanTable,
-			Columns: []string{entitlement.PlanColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(plan.FieldID, field.TypeString),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := euo.mutation.PlanIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: false,
-			Table:   entitlement.PlanTable,
-			Columns: []string{entitlement.PlanColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(plan.FieldID, field.TypeString),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &Entitlement{config: euo.config}
 	_spec.Assign = _node.assignValues

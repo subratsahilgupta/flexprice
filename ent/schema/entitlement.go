@@ -3,7 +3,6 @@ package schema
 import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
-	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
@@ -74,11 +73,7 @@ func (Entitlement) Fields() []ent.Field {
 
 // Edges of the Entitlement.
 func (Entitlement) Edges() []ent.Edge {
-	return []ent.Edge{
-		edge.To("plan", Plan.Type).
-			StorageKey(edge.Column("entity_id")).
-			Unique(),
-	}
+	return []ent.Edge{}
 }
 
 // Indexes of the Entitlement.

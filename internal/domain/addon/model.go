@@ -18,8 +18,6 @@ type Addon struct {
 	types.BaseModel
 }
 
-
-
 func FromEnt(ent *ent.Addon) *Addon {
 	return &Addon{
 		ID:            ent.ID,
@@ -30,6 +28,8 @@ func FromEnt(ent *ent.Addon) *Addon {
 		Type:          types.AddonType(ent.Type),
 		Metadata:      ent.Metadata,
 		BaseModel: types.BaseModel{
+			TenantID:  ent.TenantID,
+			Status:    types.Status(ent.Status),
 			CreatedAt: ent.CreatedAt,
 			UpdatedAt: ent.UpdatedAt,
 			CreatedBy: ent.CreatedBy,

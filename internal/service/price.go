@@ -18,6 +18,7 @@ type PriceService interface {
 	GetPrice(ctx context.Context, id string) (*dto.PriceResponse, error)
 	GetPricesByPlanID(ctx context.Context, planID string) (*dto.ListPricesResponse, error)
 	GetPricesBySubscriptionID(ctx context.Context, subscriptionID string) (*dto.ListPricesResponse, error)
+	GetPricesByAddonID(ctx context.Context, addonID string) (*dto.ListPricesResponse, error)
 	GetPrices(ctx context.Context, filter *types.PriceFilter) (*dto.ListPricesResponse, error)
 	UpdatePrice(ctx context.Context, id string, req dto.UpdatePriceRequest) (*dto.PriceResponse, error)
 	DeletePrice(ctx context.Context, id string) error
@@ -45,10 +46,32 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 		return nil, err
 	}
 
-	if req.PlanID == "" {
-		return nil, ierr.NewError("plan_id is required").
-			WithHint("Plan ID is required").
-			Mark(ierr.ErrValidation)
+	// Handle entity type validation
+	if req.EntityType != "" {
+		if err := req.EntityType.Validate(); err != nil {
+			return nil, err
+		}
+
+		if req.EntityID == "" {
+			return nil, ierr.NewError("entity_id is required when entity_type is provided").
+				WithHint("Please provide an entity id").
+				Mark(ierr.ErrValidation)
+		}
+
+		// Validate that the entity exists based on entity type
+		if err := s.validateEntityExists(ctx, req.EntityType, req.EntityID); err != nil {
+			return nil, err
+		}
+	} else {
+		// Legacy support for plan_id
+		if req.PlanID == "" {
+			return nil, ierr.NewError("either entity_type/entity_id or plan_id is required").
+				WithHint("Please provide entity_type and entity_id, or plan_id for backward compatibility").
+				Mark(ierr.ErrValidation)
+		}
+		// Set entity type and ID from plan_id for backward compatibility
+		req.EntityType = types.PRICE_ENTITY_TYPE_PLAN
+		req.EntityID = req.PlanID
 	}
 
 	// Handle price unit config case
@@ -76,6 +99,50 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 	}
 
 	return response, nil
+}
+
+// validateEntityExists validates that the entity exists based on the entity type
+func (s *priceService) validateEntityExists(ctx context.Context, entityType types.PriceEntityType, entityID string) error {
+	switch entityType {
+	case types.PRICE_ENTITY_TYPE_PLAN:
+		plan, err := s.PlanRepo.Get(ctx, entityID)
+		if err != nil || plan == nil {
+			return ierr.NewError("plan not found").
+				WithHint("The specified plan does not exist").
+				WithReportableDetails(map[string]interface{}{
+					"plan_id": entityID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+	case types.PRICE_ENTITY_TYPE_ADDON:
+		addon, err := s.AddonRepo.GetByID(ctx, entityID)
+		if err != nil || addon == nil {
+			return ierr.NewError("addon not found").
+				WithHint("The specified addon does not exist").
+				WithReportableDetails(map[string]interface{}{
+					"addon_id": entityID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+	case types.PRICE_ENTITY_TYPE_SUBSCRIPTION:
+		subscription, err := s.SubRepo.Get(ctx, entityID)
+		if err != nil || subscription == nil {
+			return ierr.NewError("subscription not found").
+				WithHint("The specified subscription does not exist").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": entityID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+	default:
+		return ierr.NewError("unsupported entity type").
+			WithHint("The specified entity type is not supported").
+			WithReportableDetails(map[string]interface{}{
+				"entity_type": entityType,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
 }
 
 func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPriceRequest) (*dto.CreateBulkPriceResponse, error) {
@@ -388,6 +455,10 @@ func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceRespo
 
 	response := &dto.PriceResponse{Price: price}
 
+	// Set entity information
+	response.EntityType = price.EntityType
+	response.EntityID = price.EntityID
+
 	// TODO: !REMOVE after migration
 	if price.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
 		response.PlanID = price.EntityID
@@ -432,6 +503,28 @@ func (s *priceService) GetPricesBySubscriptionID(ctx context.Context, subscripti
 		WithEntityType(types.PRICE_ENTITY_TYPE_SUBSCRIPTION).
 		WithStatus(types.StatusPublished).
 		WithExpand(string(types.ExpandMeters))
+
+	response, err := s.GetPrices(ctx, priceFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
+}
+
+func (s *priceService) GetPricesByAddonID(ctx context.Context, addonID string) (*dto.ListPricesResponse, error) {
+
+	if addonID == "" {
+		return nil, ierr.NewError("addon_id is required").
+			WithHint("Addon ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	entityType := types.PRICE_ENTITY_TYPE_ADDON
+	priceFilter := &types.PriceFilter{
+		EntityType: &entityType,
+		EntityIDs:  []string{addonID},
+	}
 
 	response, err := s.GetPrices(ctx, priceFilter)
 	if err != nil {

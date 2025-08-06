@@ -577,6 +577,8 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*priceDomain.Price, e
 		Tiers:              tiers,
 		PriceUnitTiers:     priceUnitTiers,
 		TransformQuantity:  transformQuantity,
+		EntityType:         r.EntityType,
+		EntityID:           r.EntityID,
 		EnvironmentID:      types.GetEnvironmentID(ctx),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 	}

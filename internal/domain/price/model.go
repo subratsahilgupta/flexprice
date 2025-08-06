@@ -28,7 +28,7 @@ type JSONBMetadata map[string]string
 type JSONBFilters map[string][]string
 
 // Price model with JSONB tags
-type Price struct {
+type 	Price struct {
 	// ID uuid identifier for the price
 	ID string `db:"id" json:"id"`
 

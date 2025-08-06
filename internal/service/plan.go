@@ -436,7 +436,8 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 					// If price unit config is provided, handle it through the price service
 					if reqPrice.PriceUnitConfig != nil {
 						// Set plan ID before creating price
-						reqPrice.CreatePriceRequest.PlanID = plan.ID
+						reqPrice.CreatePriceRequest.EntityID = plan.ID
+						reqPrice.CreatePriceRequest.EntityType = types.PRICE_ENTITY_TYPE_PLAN
 
 						priceService := NewPriceService(s.ServiceParams)
 						priceResp, err := priceService.CreatePrice(ctx, *reqPrice.CreatePriceRequest)

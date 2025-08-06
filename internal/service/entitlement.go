@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
@@ -46,15 +47,56 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 		return nil, err
 	}
 
-	if req.PlanID == "" {
-		return nil, ierr.NewError("plan_id is required").
+	// Support both plan_id (legacy) and entity_type/entity_id
+	var entityID string
+	var entityType types.EntitlementEntityType
+
+	if req.EntityType != "" && req.EntityID != "" {
+		// New way: using entity_type and entity_id
+		entityID = req.EntityID
+		entityType = req.EntityType
+	} else if req.PlanID != "" {
+		// Legacy way: using plan_id
+		entityID = req.PlanID
+		entityType = types.ENTITLEMENT_ENTITY_TYPE_PLAN
+	} else {
+		return nil, ierr.NewError("either entity_type/entity_id or plan_id is required").
+			WithHint("Please provide entity_type and entity_id, or plan_id for backward compatibility").
 			Mark(ierr.ErrValidation)
 	}
 
-	// Validate plan exists
-	plan, err := s.PlanRepo.Get(ctx, req.PlanID)
-	if err != nil {
-		return nil, err
+	// Validate entity exists based on entity type
+	var entity interface{}
+	var err error
+
+	switch entityType {
+	case types.ENTITLEMENT_ENTITY_TYPE_PLAN:
+		entity, err = s.PlanRepo.Get(ctx, entityID)
+		if err != nil {
+			return nil, ierr.WithError(err).
+				WithHint("Plan not found").
+				WithReportableDetails(map[string]interface{}{
+					"plan_id": entityID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+	case types.ENTITLEMENT_ENTITY_TYPE_ADDON:
+		entity, err = s.AddonRepo.GetByID(ctx, entityID)
+		if err != nil {
+			return nil, ierr.WithError(err).
+				WithHint("Addon not found").
+				WithReportableDetails(map[string]interface{}{
+					"addon_id": entityID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+	default:
+		return nil, ierr.NewError("unsupported entity type").
+			WithHint("Only PLAN and ADDON entity types are supported").
+			WithReportableDetails(map[string]interface{}{
+				"entity_type": entityType,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate feature exists
@@ -76,6 +118,9 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 
 	// Create entitlement
 	e := req.ToEntitlement(ctx)
+	// Ensure entity type and ID are set correctly
+	e.EntityType = entityType
+	e.EntityID = entityID
 
 	result, err := s.EntitlementRepo.Create(ctx, e)
 	if err != nil {
@@ -84,12 +129,18 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 
 	response := &dto.EntitlementResponse{Entitlement: result}
 
-	// TODO: !REMOVE after migration
-	response.PlanID = result.EntityID
-
 	// Add expanded fields
 	response.Feature = &dto.FeatureResponse{Feature: feature}
-	response.Plan = &dto.PlanResponse{Plan: plan}
+
+	// Add entity-specific response based on entity type
+	switch entityType {
+	case types.ENTITLEMENT_ENTITY_TYPE_PLAN:
+		response.Plan = &dto.PlanResponse{Plan: entity.(*plan.Plan)}
+		response.PlanID = entityID
+	case types.ENTITLEMENT_ENTITY_TYPE_ADDON:
+		response.Addon = &dto.AddonResponse{Addon: entity.(*addon.Addon)}
+		response.PlanID = entityID // Keep for backward compatibility
+	}
 
 	// Publish webhook event
 	s.publishWebhookEvent(ctx, types.WebhookEventEntitlementCreated, result.ID)
