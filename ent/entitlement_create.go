@@ -11,7 +11,6 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/entitlement"
-	"github.com/flexprice/flexprice/ent/plan"
 )
 
 // EntitlementCreate is the builder for creating a Entitlement entity.
@@ -227,25 +226,6 @@ func (ec *EntitlementCreate) SetID(s string) *EntitlementCreate {
 	return ec
 }
 
-// SetPlanID sets the "plan" edge to the Plan entity by ID.
-func (ec *EntitlementCreate) SetPlanID(id string) *EntitlementCreate {
-	ec.mutation.SetPlanID(id)
-	return ec
-}
-
-// SetNillablePlanID sets the "plan" edge to the Plan entity by ID if the given value is not nil.
-func (ec *EntitlementCreate) SetNillablePlanID(id *string) *EntitlementCreate {
-	if id != nil {
-		ec = ec.SetPlanID(*id)
-	}
-	return ec
-}
-
-// SetPlan sets the "plan" edge to the Plan entity.
-func (ec *EntitlementCreate) SetPlan(p *Plan) *EntitlementCreate {
-	return ec.SetPlanID(p.ID)
-}
-
 // Mutation returns the EntitlementMutation object of the builder.
 func (ec *EntitlementCreate) Mutation() *EntitlementMutation {
 	return ec.mutation
@@ -455,23 +435,6 @@ func (ec *EntitlementCreate) createSpec() (*Entitlement, *sqlgraph.CreateSpec) {
 	if value, ok := ec.mutation.StaticValue(); ok {
 		_spec.SetField(entitlement.FieldStaticValue, field.TypeString, value)
 		_node.StaticValue = value
-	}
-	if nodes := ec.mutation.PlanIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: false,
-			Table:   entitlement.PlanTable,
-			Columns: []string{entitlement.PlanColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(plan.FieldID, field.TypeString),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_node.entity_id = &nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

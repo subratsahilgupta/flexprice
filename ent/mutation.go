@@ -17303,8 +17303,6 @@ type EntitlementMutation struct {
 	is_soft_limit      *bool
 	static_value       *string
 	clearedFields      map[string]struct{}
-	plan               *string
-	clearedplan        bool
 	done               bool
 	oldValue           func(context.Context) (*Entitlement, error)
 	predicates         []predicate.Entitlement
@@ -18115,45 +18113,6 @@ func (m *EntitlementMutation) ResetStaticValue() {
 	delete(m.clearedFields, entitlement.FieldStaticValue)
 }
 
-// SetPlanID sets the "plan" edge to the Plan entity by id.
-func (m *EntitlementMutation) SetPlanID(id string) {
-	m.plan = &id
-}
-
-// ClearPlan clears the "plan" edge to the Plan entity.
-func (m *EntitlementMutation) ClearPlan() {
-	m.clearedplan = true
-}
-
-// PlanCleared reports if the "plan" edge to the Plan entity was cleared.
-func (m *EntitlementMutation) PlanCleared() bool {
-	return m.clearedplan
-}
-
-// PlanID returns the "plan" edge ID in the mutation.
-func (m *EntitlementMutation) PlanID() (id string, exists bool) {
-	if m.plan != nil {
-		return *m.plan, true
-	}
-	return
-}
-
-// PlanIDs returns the "plan" edge IDs in the mutation.
-// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
-// PlanID instead. It exists only for internal usage by the builders.
-func (m *EntitlementMutation) PlanIDs() (ids []string) {
-	if id := m.plan; id != nil {
-		ids = append(ids, *id)
-	}
-	return
-}
-
-// ResetPlan resets all changes to the "plan" edge.
-func (m *EntitlementMutation) ResetPlan() {
-	m.plan = nil
-	m.clearedplan = false
-}
-
 // Where appends a list predicates to the EntitlementMutation builder.
 func (m *EntitlementMutation) Where(ps ...predicate.Entitlement) {
 	m.predicates = append(m.predicates, ps...)
@@ -18608,28 +18567,19 @@ func (m *EntitlementMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *EntitlementMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
-	if m.plan != nil {
-		edges = append(edges, entitlement.EdgePlan)
-	}
+	edges := make([]string, 0, 0)
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
 func (m *EntitlementMutation) AddedIDs(name string) []ent.Value {
-	switch name {
-	case entitlement.EdgePlan:
-		if id := m.plan; id != nil {
-			return []ent.Value{*id}
-		}
-	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *EntitlementMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 0)
 	return edges
 }
 
@@ -18641,42 +18591,25 @@ func (m *EntitlementMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *EntitlementMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
-	if m.clearedplan {
-		edges = append(edges, entitlement.EdgePlan)
-	}
+	edges := make([]string, 0, 0)
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
 func (m *EntitlementMutation) EdgeCleared(name string) bool {
-	switch name {
-	case entitlement.EdgePlan:
-		return m.clearedplan
-	}
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
 func (m *EntitlementMutation) ClearEdge(name string) error {
-	switch name {
-	case entitlement.EdgePlan:
-		m.ClearPlan()
-		return nil
-	}
 	return fmt.Errorf("unknown Entitlement unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
 func (m *EntitlementMutation) ResetEdge(name string) error {
-	switch name {
-	case entitlement.EdgePlan:
-		m.ResetPlan()
-		return nil
-	}
 	return fmt.Errorf("unknown Entitlement edge %s", name)
 }
 

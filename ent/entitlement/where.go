@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/flexprice/flexprice/ent/predicate"
 )
 
@@ -1078,29 +1077,6 @@ func StaticValueEqualFold(v string) predicate.Entitlement {
 // StaticValueContainsFold applies the ContainsFold predicate on the "static_value" field.
 func StaticValueContainsFold(v string) predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldContainsFold(FieldStaticValue, v))
-}
-
-// HasPlan applies the HasEdge predicate on the "plan" edge.
-func HasPlan() predicate.Entitlement {
-	return predicate.Entitlement(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, false, PlanTable, PlanColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasPlanWith applies the HasEdge predicate on the "plan" edge with a given conditions (other predicates).
-func HasPlanWith(preds ...predicate.Plan) predicate.Entitlement {
-	return predicate.Entitlement(func(s *sql.Selector) {
-		step := newPlanStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
 }
 
 // And groups predicates with the AND operator between them.

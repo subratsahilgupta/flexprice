@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 const (
@@ -46,17 +45,8 @@ const (
 	FieldIsSoftLimit = "is_soft_limit"
 	// FieldStaticValue holds the string denoting the static_value field in the database.
 	FieldStaticValue = "static_value"
-	// EdgePlan holds the string denoting the plan edge name in mutations.
-	EdgePlan = "plan"
 	// Table holds the table name of the entitlement in the database.
 	Table = "entitlements"
-	// PlanTable is the table that holds the plan relation/edge.
-	PlanTable = "entitlements"
-	// PlanInverseTable is the table name for the Plan entity.
-	// It exists in this package in order to avoid circular dependency with the "plan" package.
-	PlanInverseTable = "plans"
-	// PlanColumn is the table column denoting the plan relation/edge.
-	PlanColumn = "entity_id"
 )
 
 // Columns holds all SQL columns for entitlement fields.
@@ -84,7 +74,6 @@ var Columns = []string{
 // table and are not defined as standalone fields in the schema.
 var ForeignKeys = []string{
 	"addon_entitlements",
-	"entity_id",
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -215,18 +204,4 @@ func ByIsSoftLimit(opts ...sql.OrderTermOption) OrderOption {
 // ByStaticValue orders the results by the static_value field.
 func ByStaticValue(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStaticValue, opts...).ToFunc()
-}
-
-// ByPlanField orders the results by plan field.
-func ByPlanField(field string, opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newPlanStep(), sql.OrderByField(field, opts...))
-	}
-}
-func newPlanStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(PlanInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, false, PlanTable, PlanColumn),
-	)
 }

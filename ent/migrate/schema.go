@@ -662,12 +662,6 @@ var (
 				RefColumns: []*schema.Column{AddonsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
-			{
-				Symbol:     "entitlements_plans_plan",
-				Columns:    []*schema.Column{EntitlementsColumns[9]},
-				RefColumns: []*schema.Column{PlansColumns[0]},
-				OnDelete:   schema.SetNull,
-			},
 		},
 		Indexes: []*schema.Index{
 			{
@@ -1904,7 +1898,6 @@ func init() {
 	CreditGrantsTable.ForeignKeys[1].RefTable = SubscriptionsTable
 	CreditNoteLineItemsTable.ForeignKeys[0].RefTable = CreditNotesTable
 	EntitlementsTable.ForeignKeys[0].RefTable = AddonsTable
-	EntitlementsTable.ForeignKeys[1].RefTable = PlansTable
 	InvoiceLineItemsTable.ForeignKeys[0].RefTable = InvoicesTable
 	PaymentAttemptsTable.ForeignKeys[0].RefTable = PaymentsTable
 	PricesTable.ForeignKeys[0].RefTable = AddonsTable

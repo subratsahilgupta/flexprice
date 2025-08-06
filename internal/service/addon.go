@@ -70,31 +70,41 @@ func (s *addonService) GetAddon(ctx context.Context, id string) (*dto.AddonRespo
 			Mark(ierr.ErrValidation)
 	}
 
-	domainAddon, err := s.AddonRepo.GetByID(ctx, id)
+	addon, err := s.AddonRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
+	response := &dto.AddonResponse{
+		Addon: addon,
+	}
+
+	// Get prices for this addon using filter
 	priceService := NewPriceService(s.ServiceParams)
+	prices, err := priceService.GetPricesByAddonID(ctx, id)
+	if err != nil {
+		s.Logger.Errorw("failed to fetch prices for addon", "addon_id", id, "error", err)
+		return nil, err
+	}
+
+	if err == nil && len(prices.Items) > 0 {
+		response.Prices = make([]*dto.PriceResponse, len(prices.Items))
+		for i, price := range prices.Items {
+			response.Prices[i] = &dto.PriceResponse{Price: price.Price}
+		}
+	}
+
+	// Get entitlements for this addon
 	entitlementService := NewEntitlementService(s.ServiceParams)
-
-	pricesResponse, err := s.getPricesByAddonID(ctx, priceService, domainAddon.ID)
-	if err != nil {
-		s.Logger.Errorw("failed to fetch prices for addon", "addon_id", domainAddon.ID, "error", err)
-		return nil, err
+	entitlements, err := entitlementService.GetAddonEntitlements(ctx, id)
+	if err == nil && len(entitlements.Items) > 0 {
+		response.Entitlements = make([]*dto.EntitlementResponse, len(entitlements.Items))
+		for i, entitlement := range entitlements.Items {
+			response.Entitlements[i] = &dto.EntitlementResponse{Entitlement: entitlement.Entitlement}
+		}
 	}
 
-	entitlements, err := s.getAddonEntitlements(ctx, entitlementService, domainAddon.ID)
-	if err != nil {
-		s.Logger.Errorw("failed to fetch entitlements for addon", "addon_id", domainAddon.ID, "error", err)
-		return nil, err
-	}
-
-	return &dto.AddonResponse{
-		Addon:        domainAddon,
-		Prices:       pricesResponse.Items,
-		Entitlements: entitlements.Items,
-	}, nil
+	return response, nil
 }
 
 // GetAddonByLookupKey retrieves an addon by lookup key

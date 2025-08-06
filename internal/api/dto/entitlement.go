@@ -101,6 +101,7 @@ type EntitlementResponse struct {
 	*entitlement.Entitlement
 	Feature *FeatureResponse `json:"feature,omitempty"`
 	Plan    *PlanResponse    `json:"plan,omitempty"`
+	Addon   *AddonResponse   `json:"addon,omitempty"`
 
 	// TODO: Remove this once we have a proper entitlement entity type
 	PlanID string `json:"plan_id,omitempty"`
