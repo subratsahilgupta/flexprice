@@ -79,7 +79,7 @@ func SyncPlanPrices() error {
 	planPrices := make([]*price.Price, 0)
 	meterMap := make(map[string]*meter.Meter)
 	for _, price := range prices {
-		if price.EntityID == planID && price.TenantID == tenantID && price.EnvironmentID == environmentID {
+		if price.EntityID == planID && price.TenantID == tenantID && price.EnvironmentID == environmentID && price.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
 			planPrices = append(planPrices, price)
 			if price.MeterID != "" {
 				meterMap[price.MeterID] = nil
@@ -162,7 +162,7 @@ func SyncPlanPrices() error {
 		// Create maps for fast lookups
 		existingPriceIDs := make(map[string]*subscription.SubscriptionLineItem)
 		for _, item := range lineItems {
-			if item.PlanID == planID && item.Status == types.StatusPublished {
+			if item.EntityID == planID && item.Status == types.StatusPublished {
 				existingPriceIDs[item.PriceID] = item
 			}
 		}
@@ -190,7 +190,8 @@ func SyncPlanPrices() error {
 				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
 				SubscriptionID:  sub.ID,
 				CustomerID:      sub.CustomerID,
-				PlanID:          planID,
+				EntityID:        planID,
+				EntityType:      types.SubscriptionLineItemEntitiyTypePlan,
 				PlanDisplayName: p.Name,
 				PriceID:         pr.ID,
 				PriceType:       pr.Type,

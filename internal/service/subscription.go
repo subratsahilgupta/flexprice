@@ -223,7 +223,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 		item.SubscriptionID = sub.ID
 		item.PriceType = price.Type
-		item.PlanID = plan.ID
+		item.EntityID = plan.ID
+		item.EntityType = types.SubscriptionLineItemEntitiyTypePlan
 		item.PlanDisplayName = plan.Name
 		item.CustomerID = sub.CustomerID
 		item.Currency = sub.Currency

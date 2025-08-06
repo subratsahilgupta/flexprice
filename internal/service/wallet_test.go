@@ -290,7 +290,8 @@ func (s *WalletServiceSuite) setupTestData() {
 		LineItems: []*subscription.SubscriptionLineItem{
 			{
 				CustomerID:       s.testData.customer.ID,
-				PlanID:           s.testData.plan.ID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntitiyTypePlan,
 				PlanDisplayName:  s.testData.plan.Name,
 				PriceID:          s.testData.prices.storage.ID,
 				PriceType:        types.PRICE_TYPE_USAGE,
@@ -306,7 +307,8 @@ func (s *WalletServiceSuite) setupTestData() {
 			},
 			{
 				CustomerID:       s.testData.customer.ID,
-				PlanID:           s.testData.plan.ID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntitiyTypePlan,
 				PlanDisplayName:  s.testData.plan.Name,
 				PriceID:          s.testData.prices.storageArchive.ID,
 				PriceType:        types.PRICE_TYPE_USAGE,
@@ -322,7 +324,8 @@ func (s *WalletServiceSuite) setupTestData() {
 			},
 			{
 				CustomerID:       s.testData.customer.ID,
-				PlanID:           s.testData.plan.ID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntitiyTypePlan,
 				PlanDisplayName:  s.testData.plan.Name,
 				PriceID:          s.testData.prices.apiCalls.ID,
 				PriceType:        types.PRICE_TYPE_USAGE,
@@ -423,7 +426,8 @@ func (s *WalletServiceSuite) setupTestData() {
 	subscriptionLineItems := []*subscription.SubscriptionLineItem{
 		{
 			CustomerID:       s.testData.customer.ID,
-			PlanID:           s.testData.plan.ID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntitiyTypePlan,
 			PlanDisplayName:  s.testData.plan.Name,
 			PriceID:          s.testData.prices.storage.ID,
 			PriceType:        types.PRICE_TYPE_USAGE,
@@ -439,7 +443,8 @@ func (s *WalletServiceSuite) setupTestData() {
 		},
 		{
 			CustomerID:       s.testData.customer.ID,
-			PlanID:           s.testData.plan.ID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntitiyTypePlan,
 			PlanDisplayName:  s.testData.plan.Name,
 			PriceID:          s.testData.prices.storageArchive.ID,
 			PriceType:        types.PRICE_TYPE_USAGE,
@@ -455,7 +460,8 @@ func (s *WalletServiceSuite) setupTestData() {
 		},
 		{
 			CustomerID:       s.testData.customer.ID,
-			PlanID:           s.testData.plan.ID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntitiyTypePlan,
 			PlanDisplayName:  s.testData.plan.Name,
 			PriceID:          s.testData.prices.apiCalls.ID,
 			PriceType:        types.PRICE_TYPE_USAGE,
