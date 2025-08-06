@@ -612,6 +612,27 @@ type InvoiceResponse struct {
 
 	// coupon_applications contains the coupon applications associated with this invoice
 	CouponApplications []*CouponApplicationResponse `json:"coupon_applications,omitempty"`
+
+	// usage_analytics contains usage analytics for this invoice
+	UsageAnalytics map[string][]UsageAnalyticsItem `json:"usage_analytics,omitempty"`
+}
+
+// UsageAnalyticsItem represents the usage breakdown for a specific source within a line item
+type UsageAnalyticsItem struct {
+	// source is the name of the event source
+	Source string `json:"source"`
+
+	// cost is the cost attributed to this source for the line item
+	Cost string `json:"cost"`
+
+	// usage is the total usage amount from this source (optional, for additional context)
+	Usage *string `json:"usage,omitempty"`
+
+	// percentage is the percentage of total line item cost from this source (optional)
+	Percentage *string `json:"percentage,omitempty"`
+
+	// event_count is the number of events from this source (optional)
+	EventCount *int `json:"event_count,omitempty"`
 }
 
 // NewInvoiceResponse creates a new invoice response from domain invoice
@@ -690,6 +711,12 @@ func (r *InvoiceResponse) WithCustomer(customer *CustomerResponse) *InvoiceRespo
 // WithCouponApplications adds coupon applications to the invoice response
 func (r *InvoiceResponse) WithCouponApplications(couponApplications []*CouponApplicationResponse) *InvoiceResponse {
 	r.CouponApplications = couponApplications
+	return r
+}
+
+// WithUsageAnalytics adds usage analytics to the invoice response
+func (r *InvoiceResponse) WithUsageAnalytics(usageAnalytics map[string][]UsageAnalyticsItem) *InvoiceResponse {
+	r.UsageAnalytics = usageAnalytics
 	return r
 }
 
