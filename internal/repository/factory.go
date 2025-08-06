@@ -3,6 +3,8 @@ package repository
 import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
+	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/costsheet"
 	"github.com/flexprice/flexprice/internal/domain/coupon"
@@ -155,4 +157,12 @@ func NewCreditNoteLineItemRepository(p RepositoryParams) creditnote.CreditNoteLi
 
 func NewPriceUnitRepository(p RepositoryParams) priceunit.Repository {
 	return entRepo.NewPriceUnitRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewAddonRepository(p RepositoryParams) addon.Repository {
+	return entRepo.NewAddonRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewAddonAssociationRepository(p RepositoryParams) addonassociation.Repository {
+	return entRepo.NewAddonAssociationRepository(p.EntClient, p.Logger, p.Cache)
 }

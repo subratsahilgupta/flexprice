@@ -143,6 +143,8 @@ func main() {
 			repository.NewCouponAssociationRepository,
 			repository.NewCouponApplicationRepository,
 			repository.NewPriceUnitRepository,
+			repository.NewAddonRepository,
+			repository.NewAddonAssociationRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
