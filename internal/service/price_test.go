@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
@@ -36,17 +37,27 @@ func (s *PriceServiceSuite) SetupTest() {
 	s.meterRepo = testutil.NewInMemoryMeterStore()
 	s.priceUnitRepo = testutil.NewInMemoryPriceUnitStore()
 	s.logger = logger.GetLogger()
-	
+
 	serviceParams := ServiceParams{
 		PriceRepo:     s.priceRepo,
 		MeterRepo:     s.meterRepo,
 		PriceUnitRepo: s.priceUnitRepo,
+		PlanRepo:      testutil.NewInMemoryPlanStore(),
 		Logger:        s.logger,
 	}
 	s.priceService = NewPriceService(serviceParams)
 }
 
 func (s *PriceServiceSuite) TestCreatePrice() {
+	// Create a plan first so that the price can reference it
+	plan := &plan.Plan{
+		ID:          "plan-1",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		BaseModel:   types.GetDefaultBaseModel(s.ctx),
+	}
+	_ = s.priceService.(*priceService).ServiceParams.PlanRepo.Create(s.ctx, plan)
+
 	req := dto.CreatePriceRequest{
 		Amount:             "100",
 		Currency:           "usd",
