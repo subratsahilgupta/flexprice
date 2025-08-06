@@ -117,7 +117,8 @@ func (s *billingService) CalculateFixedCharges(
 		}
 
 		fixedCostLineItems = append(fixedCostLineItems, dto.CreateInvoiceLineItemRequest{
-			PlanID:          lo.ToPtr(item.PlanID),
+			EntityID:        lo.ToPtr(item.EntityID),
+			EntityType:      lo.ToPtr(string(item.EntityType)),
 			PlanDisplayName: lo.ToPtr(item.PlanDisplayName),
 			PriceID:         lo.ToPtr(item.PriceID),
 			PriceType:       lo.ToPtr(string(item.PriceType)),
@@ -158,7 +159,7 @@ func (s *billingService) CalculateUsageCharges(
 	planIDs := make([]string, 0)
 	for _, item := range sub.LineItems {
 		if item.PriceType == types.PRICE_TYPE_USAGE {
-			planIDs = append(planIDs, item.PlanID)
+			planIDs = append(planIDs, item.EntityID)
 		}
 	}
 	planIDs = lo.Uniq(planIDs)
@@ -172,11 +173,6 @@ func (s *billingService) CalculateUsageCharges(
 		}
 
 		for _, entitlement := range entitlements.Items {
-
-			// TODO: !REMOVE after migration
-			if entitlement.EntityType == types.ENTITLEMENT_ENTITY_TYPE_PLAN {
-				entitlement.PlanID = entitlement.EntityID
-			}
 
 			if entitlement.FeatureType == types.FeatureTypeMetered {
 				if _, ok := entitlementsByPlanMeterID[planID]; !ok {
@@ -215,7 +211,10 @@ func (s *billingService) CalculateUsageCharges(
 		// Process each matching charge individually (normal and overage charges)
 		for _, matchingCharge := range matchingCharges {
 			quantityForCalculation := decimal.NewFromFloat(matchingCharge.Quantity)
-			matchingEntitlement, ok := entitlementsByPlanMeterID[item.PlanID][item.MeterID]
+
+			// Use EntityID for entitlement lookup
+			entityKey := item.EntityID
+			matchingEntitlement, ok := entitlementsByPlanMeterID[entityKey][item.MeterID]
 
 			// Only apply entitlement adjustments if:
 			// 1. This is not an overage charge
@@ -285,7 +284,8 @@ func (s *billingService) CalculateUsageCharges(
 			}
 
 			usageCharges = append(usageCharges, dto.CreateInvoiceLineItemRequest{
-				PlanID:           lo.ToPtr(item.PlanID),
+				EntityID:         lo.ToPtr(item.EntityID),
+				EntityType:       lo.ToPtr(string(item.EntityType)),
 				PlanDisplayName:  lo.ToPtr(item.PlanDisplayName),
 				PriceType:        lo.ToPtr(string(item.PriceType)),
 				PriceID:          lo.ToPtr(item.PriceID),
@@ -904,7 +904,7 @@ func (s *billingService) GetCustomerEntitlements(ctx context.Context, customerID
 		subscriptionMap[sub.ID] = sub
 		for _, li := range sub.LineItems {
 			if li.IsActive(time.Now()) {
-				planIDs = append(planIDs, li.PlanID)
+				planIDs = append(planIDs, li.EntityID)
 			}
 		}
 	}
@@ -992,14 +992,14 @@ func (s *billingService) GetCustomerEntitlements(ctx context.Context, customerID
 				continue
 			}
 
-			// Get entitlements for this plan
-			planEntitlements, ok := entitlementsByPlan[li.PlanID]
+			// Get entitlements for this entity
+			planEntitlements, ok := entitlementsByPlan[li.EntityID]
 			if !ok {
 				continue
 			}
 
 			// Get the plan details
-			p, ok := planMap[li.PlanID]
+			p, ok := planMap[li.EntityID]
 			if !ok {
 				continue
 			}
@@ -1022,7 +1022,8 @@ func (s *billingService) GetCustomerEntitlements(ctx context.Context, customerID
 				// Create a source for this entitlement
 				source := &dto.EntitlementSource{
 					SubscriptionID: sub.ID,
-					PlanID:         p.ID,
+					EntityID:       p.ID,
+					EntityType:     string(types.SubscriptionLineItemEntitiyTypePlan),
 					PlanName:       p.Name,
 					Quantity:       quantity,
 					EntitlementID:  e.ID,

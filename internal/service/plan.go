@@ -777,7 +777,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 		// Create maps for fast lookups
 		existingPriceIDs := make(map[string]*subscription.SubscriptionLineItem)
 		for _, item := range lineItems {
-			if item.PlanID == id && item.Status == types.StatusPublished {
+			if item.EntityID == id && item.Status == types.StatusPublished {
 				existingPriceIDs[item.PriceID] = item
 			}
 		}
@@ -805,7 +805,8 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*SyncPlanP
 				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
 				SubscriptionID:  sub.ID,
 				CustomerID:      sub.CustomerID,
-				PlanID:          id,
+				EntityID:        id,
+				EntityType:      types.SubscriptionLineItemEntitiyTypePlan,
 				PlanDisplayName: p.Name,
 				PriceID:         pr.ID,
 				PriceType:       pr.Type,

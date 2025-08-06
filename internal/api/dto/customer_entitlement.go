@@ -56,7 +56,8 @@ type AggregatedEntitlement struct {
 // EntitlementSource tracks which subscription provided the entitlement
 type EntitlementSource struct {
 	SubscriptionID string `json:"subscription_id"`
-	PlanID         string `json:"plan_id"`
+	EntityID       string `json:"entity_id"`
+	EntityType     string `json:"entity_type"`
 	Quantity       int64  `json:"quantity"`
 	PlanName       string `json:"plan_name"`
 	EntitlementID  string `json:"entitlement_id"`

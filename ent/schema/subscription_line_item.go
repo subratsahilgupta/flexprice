@@ -43,7 +43,13 @@ func (SubscriptionLineItem) Fields() []ent.Field {
 			}).
 			NotEmpty().
 			Immutable(),
-		field.String("plan_id").
+		field.String("entity_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Optional().
+			Nillable(),
+		field.String("entity_type").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
@@ -143,7 +149,7 @@ func (SubscriptionLineItem) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "environment_id", "subscription_id", "status"),
 		index.Fields("tenant_id", "environment_id", "customer_id", "status"),
-		index.Fields("tenant_id", "environment_id", "plan_id", "status"),
+		index.Fields("tenant_id", "environment_id", "entity_id", "entity_type", "status"),
 		index.Fields("tenant_id", "environment_id", "price_id", "status"),
 		index.Fields("tenant_id", "environment_id", "meter_id", "status"),
 		index.Fields("start_date", "end_date"),

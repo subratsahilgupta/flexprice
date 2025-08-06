@@ -1396,23 +1396,23 @@ func init() {
 	// subscriptionlineitem.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
 	subscriptionlineitem.CustomerIDValidator = subscriptionlineitemDescCustomerID.Validators[0].(func(string) error)
 	// subscriptionlineitemDescPriceID is the schema descriptor for price_id field.
-	subscriptionlineitemDescPriceID := subscriptionlineitemFields[5].Descriptor()
+	subscriptionlineitemDescPriceID := subscriptionlineitemFields[6].Descriptor()
 	// subscriptionlineitem.PriceIDValidator is a validator for the "price_id" field. It is called by the builders before save.
 	subscriptionlineitem.PriceIDValidator = subscriptionlineitemDescPriceID.Validators[0].(func(string) error)
 	// subscriptionlineitemDescQuantity is the schema descriptor for quantity field.
-	subscriptionlineitemDescQuantity := subscriptionlineitemFields[12].Descriptor()
+	subscriptionlineitemDescQuantity := subscriptionlineitemFields[13].Descriptor()
 	// subscriptionlineitem.DefaultQuantity holds the default value on creation for the quantity field.
 	subscriptionlineitem.DefaultQuantity = subscriptionlineitemDescQuantity.Default.(decimal.Decimal)
 	// subscriptionlineitemDescCurrency is the schema descriptor for currency field.
-	subscriptionlineitemDescCurrency := subscriptionlineitemFields[13].Descriptor()
+	subscriptionlineitemDescCurrency := subscriptionlineitemFields[14].Descriptor()
 	// subscriptionlineitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	subscriptionlineitem.CurrencyValidator = subscriptionlineitemDescCurrency.Validators[0].(func(string) error)
 	// subscriptionlineitemDescBillingPeriod is the schema descriptor for billing_period field.
-	subscriptionlineitemDescBillingPeriod := subscriptionlineitemFields[14].Descriptor()
+	subscriptionlineitemDescBillingPeriod := subscriptionlineitemFields[15].Descriptor()
 	// subscriptionlineitem.BillingPeriodValidator is a validator for the "billing_period" field. It is called by the builders before save.
 	subscriptionlineitem.BillingPeriodValidator = subscriptionlineitemDescBillingPeriod.Validators[0].(func(string) error)
 	// subscriptionlineitemDescTrialPeriod is the schema descriptor for trial_period field.
-	subscriptionlineitemDescTrialPeriod := subscriptionlineitemFields[16].Descriptor()
+	subscriptionlineitemDescTrialPeriod := subscriptionlineitemFields[17].Descriptor()
 	// subscriptionlineitem.DefaultTrialPeriod holds the default value on creation for the trial_period field.
 	subscriptionlineitem.DefaultTrialPeriod = subscriptionlineitemDescTrialPeriod.Default.(int)
 	subscriptionpauseMixin := schema.SubscriptionPause{}.Mixin()
