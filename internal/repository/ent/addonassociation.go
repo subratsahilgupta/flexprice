@@ -416,6 +416,11 @@ func (o AddonAssociationQueryOptions) applyEntityQueryOptions(ctx context.Contex
 		query = query.Where(addonassociation.EntityIDIn(f.EntityIDs...))
 	}
 
+	// Apply addon status filter if specified
+	if f.AddonStatus != nil {
+		query = query.Where(addonassociation.AddonStatus(*f.AddonStatus))
+	}
+
 	// Apply time range filters if specified
 	if f.TimeRangeFilter != nil {
 		if f.StartTime != nil {

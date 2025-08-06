@@ -34,11 +34,12 @@ type AddonAssociationFilter struct {
 	*TimeRangeFilter
 
 	// filters allows complex filtering based on multiple fields
-	Filters    []*FilterCondition          `json:"filters,omitempty" form:"filters" validate:"omitempty"`
-	Sort       []*SortCondition            `json:"sort,omitempty" form:"sort" validate:"omitempty"`
-	AddonIDs   []string                    `json:"addon_ids,omitempty" form:"addon_ids" validate:"omitempty"`
-	EntityType *AddonAssociationEntityType `json:"entity_type,omitempty" form:"entity_type" validate:"omitempty"`
-	EntityIDs  []string                    `json:"entity_ids,omitempty" form:"entity_ids" validate:"omitempty"`
+	Filters     []*FilterCondition          `json:"filters,omitempty" form:"filters" validate:"omitempty"`
+	Sort        []*SortCondition            `json:"sort,omitempty" form:"sort" validate:"omitempty"`
+	AddonIDs    []string                    `json:"addon_ids,omitempty" form:"addon_ids" validate:"omitempty"`
+	EntityType  *AddonAssociationEntityType `json:"entity_type,omitempty" form:"entity_type" validate:"omitempty"`
+	EntityIDs   []string                    `json:"entity_ids,omitempty" form:"entity_ids" validate:"omitempty"`
+	AddonStatus *string                     `json:"addon_status,omitempty" form:"addon_status" validate:"omitempty"`
 }
 
 // NewAddonAssociationFilter creates a new addon association filter with default options

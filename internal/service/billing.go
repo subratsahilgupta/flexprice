@@ -1023,7 +1023,7 @@ func (s *billingService) GetCustomerEntitlements(ctx context.Context, customerID
 				source := &dto.EntitlementSource{
 					SubscriptionID: sub.ID,
 					EntityID:       p.ID,
-					EntityType:     string(types.SubscriptionLineItemEntitiyTypePlan),
+					EntityType:     dto.EntitlementSourceEntityTypePlan,
 					PlanName:       p.Name,
 					Quantity:       quantity,
 					EntitlementID:  e.ID,

@@ -87,6 +87,10 @@ func NewSubscriptionScheduleRepository(p RepositoryParams) subscription.Subscrip
 	return entRepo.NewSubscriptionScheduleRepository(p.EntClient, p.Logger, p.Cache)
 }
 
+func NewSubscriptionLineItemRepository(p RepositoryParams) subscription.LineItemRepository {
+	return entRepo.NewSubscriptionLineItemRepository(p.EntClient)
+}
+
 func NewWalletRepository(p RepositoryParams) wallet.Repository {
 	return entRepo.NewWalletRepository(p.EntClient, p.Logger, p.Cache)
 }
