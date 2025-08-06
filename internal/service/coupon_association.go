@@ -15,6 +15,9 @@ type CouponAssociationService interface {
 	DeleteCouponAssociation(ctx context.Context, id string) error
 	GetCouponAssociationsBySubscription(ctx context.Context, subscriptionID string) ([]*dto.CouponAssociationResponse, error)
 	ApplyCouponToSubscription(ctx context.Context, couponIDs []string, subscriptionID string) error
+
+	// Line item coupon association methods
+	ApplyCouponToSubscriptionLineItem(ctx context.Context, couponIDs []string, subscriptionID string, priceID string) error
 }
 
 type couponAssociationService struct {
@@ -152,6 +155,42 @@ func (s *couponAssociationService) ApplyCouponToSubscription(ctx context.Context
 		}
 
 		// Create the coupon association
+		_, err := s.CreateCouponAssociation(ctx, req)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *couponAssociationService) ApplyCouponToSubscriptionLineItem(ctx context.Context, couponIDs []string, subscriptionID string, lineItemID string) error {
+	if len(couponIDs) == 0 {
+		return ierr.NewError("at least one coupon_id is required").
+			WithHint("Please provide at least one coupon ID to apply").
+			Mark(ierr.ErrValidation)
+	}
+
+	if subscriptionID == "" {
+		return ierr.NewError("subscription_id is required").
+			WithHint("Please provide a valid subscription ID").
+			Mark(ierr.ErrValidation)
+	}
+
+	if lineItemID == "" {
+		return ierr.NewError("price_id is required").
+			WithHint("Please provide a valid price ID").
+			Mark(ierr.ErrValidation)
+	}
+
+	for _, couponID := range couponIDs {
+		req := dto.CreateCouponAssociationRequest{
+			CouponID:               couponID,
+			SubscriptionID:         subscriptionID,
+			SubscriptionLineItemID: &lineItemID,
+			Metadata:               map[string]string{},
+		}
+
 		_, err := s.CreateCouponAssociation(ctx, req)
 		if err != nil {
 			return err

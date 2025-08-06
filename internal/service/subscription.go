@@ -43,6 +43,7 @@ type SubscriptionService interface {
 
 	// Coupon-related methods
 	ApplyCouponsToSubscription(ctx context.Context, subscriptionID string, couponIDs []string) error
+	ApplyCouponsToSubscriptionLineItems(ctx context.Context, subscriptionID string, couponIDs map[string][]string, lineItems []*subscription.SubscriptionLineItem) error
 }
 
 type subscriptionService struct {
@@ -319,6 +320,11 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 		// Apply coupons to the subscription
 		err = s.ApplyCouponsToSubscription(ctx, sub.ID, req.SubscriptionCoupons)
+		if err != nil {
+			return err
+		}
+
+		err = s.ApplyCouponsToSubscriptionLineItems(ctx, sub.ID, req.SubscriptionLineItemsCoupons, lineItems)
 		if err != nil {
 			return err
 		}
@@ -2552,5 +2558,36 @@ func (s *subscriptionService) ApplyCouponsToSubscription(ctx context.Context, su
 		"subscription_id", subscriptionID,
 		"coupon_count", len(couponIDs))
 
+	return nil
+}
+
+func (s *subscriptionService) ApplyCouponsToSubscriptionLineItems(ctx context.Context, subscriptionID string, couponIDs map[string][]string, lineItems []*subscription.SubscriptionLineItem) error {
+	if len(couponIDs) == 0 {
+		return nil
+	}
+
+	priceIDToLineItem := make(map[string]*subscription.SubscriptionLineItem)
+	for _, lineItem := range lineItems {
+		priceIDToLineItem[lineItem.PriceID] = lineItem
+	}
+
+	couponAssociationService := NewCouponAssociationService(s.ServiceParams)
+
+	for priceID, couponIDs := range couponIDs {
+		lineItem, ok := priceIDToLineItem[priceID]
+		if !ok {
+			return ierr.NewError("line item not found").
+				WithHint("Please provide a valid price ID").
+				WithReportableDetails(map[string]interface{}{
+					"price_id": priceID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		err := couponAssociationService.ApplyCouponToSubscriptionLineItem(ctx, couponIDs, subscriptionID, lineItem.ID)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
