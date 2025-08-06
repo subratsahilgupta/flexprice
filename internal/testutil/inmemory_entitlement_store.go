@@ -271,3 +271,21 @@ func (s *InMemoryEntitlementStore) ListByFeatureIDs(ctx context.Context, feature
 	// Use the existing List method
 	return s.List(ctx, filter)
 }
+
+// ListByAddonIDs retrieves all entitlements for the given addon IDs
+func (s *InMemoryEntitlementStore) ListByAddonIDs(ctx context.Context, addonIDs []string) ([]*entitlement.Entitlement, error) {
+	if len(addonIDs) == 0 {
+		return []*entitlement.Entitlement{}, nil
+	}
+
+	// Create a filter with entity IDs (for addon entitlements)
+	entityType := types.ENTITLEMENT_ENTITY_TYPE_ADDON
+	filter := &types.EntitlementFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		EntityType:  &entityType,
+		EntityIDs:   addonIDs,
+	}
+
+	// Use the existing List method
+	return s.List(ctx, filter)
+}
