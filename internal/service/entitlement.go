@@ -21,6 +21,7 @@ import (
 // EntitlementService defines the interface for entitlement operations
 type EntitlementService interface {
 	CreateEntitlement(ctx context.Context, req dto.CreateEntitlementRequest) (*dto.EntitlementResponse, error)
+	CreateBulkEntitlement(ctx context.Context, req dto.CreateBulkEntitlementRequest) (*dto.CreateBulkEntitlementResponse, error)
 	GetEntitlement(ctx context.Context, id string) (*dto.EntitlementResponse, error)
 	ListEntitlements(ctx context.Context, filter *types.EntitlementFilter) (*dto.ListEntitlementsResponse, error)
 	UpdateEntitlement(ctx context.Context, id string, req dto.UpdateEntitlementRequest) (*dto.EntitlementResponse, error)
@@ -91,6 +92,131 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 
 	// Publish webhook event
 	s.publishWebhookEvent(ctx, types.WebhookEventEntitlementCreated, result.ID)
+
+	return response, nil
+}
+
+func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.CreateBulkEntitlementRequest) (*dto.CreateBulkEntitlementResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	var response *dto.CreateBulkEntitlementResponse
+
+	// Use transaction to ensure all entitlements are created or none
+	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		response = &dto.CreateBulkEntitlementResponse{
+			Entitlements: make([]*dto.EntitlementResponse, 0),
+		}
+
+		// Pre-validate all plans and features to ensure they exist
+		planIDs := make(map[string]bool)
+		featureIDs := make(map[string]bool)
+
+		for _, entReq := range req.Items {
+			if entReq.PlanID != "" {
+				planIDs[entReq.PlanID] = true
+			}
+			featureIDs[entReq.FeatureID] = true
+		}
+
+		// Validate all plans exist
+		for planID := range planIDs {
+			_, err := s.PlanRepo.Get(txCtx, planID)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHint(fmt.Sprintf("Plan with ID %s not found", planID)).
+					WithReportableDetails(map[string]interface{}{
+						"plan_id": planID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+
+		// Validate all features exist and get them for later use
+		featuresByID := make(map[string]*feature.Feature)
+		for featureID := range featureIDs {
+			feature, err := s.FeatureRepo.Get(txCtx, featureID)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHint(fmt.Sprintf("Feature with ID %s not found", featureID)).
+					WithReportableDetails(map[string]interface{}{
+						"feature_id": featureID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+			featuresByID[featureID] = feature
+		}
+
+		// Create entitlements in bulk
+		entitlements := make([]*entitlement.Entitlement, len(req.Items))
+		for i, entReq := range req.Items {
+			// Validate feature type matches
+			feature := featuresByID[entReq.FeatureID]
+			if feature.Type != entReq.FeatureType {
+				return ierr.NewError("feature type mismatch").
+					WithHint(fmt.Sprintf("Expected %s, got %s", feature.Type, entReq.FeatureType)).
+					WithReportableDetails(map[string]interface{}{
+						"expected":   feature.Type,
+						"actual":     entReq.FeatureType,
+						"feature_id": entReq.FeatureID,
+						"index":      i,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+
+			ent := entReq.ToEntitlement(txCtx)
+			entitlements[i] = ent
+		}
+
+		// Create entitlements in bulk
+		createdEntitlements, err := s.EntitlementRepo.CreateBulk(txCtx, entitlements)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to create entitlements in bulk").
+				Mark(ierr.ErrDatabase)
+		}
+
+		// Build response with expanded fields
+		for _, ent := range createdEntitlements {
+			entResp := &dto.EntitlementResponse{Entitlement: ent}
+
+			// TODO: !REMOVE after migration
+			if ent.EntityType == types.ENTITLEMENT_ENTITY_TYPE_PLAN {
+				entResp.PlanID = ent.EntityID
+			}
+
+			// Add expanded feature
+			if feature, ok := featuresByID[ent.FeatureID]; ok {
+				entResp.Feature = &dto.FeatureResponse{Feature: feature}
+			}
+
+			// Add expanded plan if it's a plan entitlement
+			if ent.EntityType == types.ENTITLEMENT_ENTITY_TYPE_PLAN {
+				plan, err := s.PlanRepo.Get(txCtx, ent.EntityID)
+				if err != nil {
+					return ierr.WithError(err).
+						WithHint("Failed to fetch plan for entitlement").
+						WithReportableDetails(map[string]interface{}{
+							"plan_id": ent.EntityID,
+						}).
+						Mark(ierr.ErrDatabase)
+				}
+				entResp.Plan = &dto.PlanResponse{Plan: plan}
+			}
+
+			response.Entitlements = append(response.Entitlements, entResp)
+
+			// Publish webhook event for each created entitlement
+			s.publishWebhookEvent(txCtx, types.WebhookEventEntitlementCreated, ent.ID)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
 
 	return response, nil
 }

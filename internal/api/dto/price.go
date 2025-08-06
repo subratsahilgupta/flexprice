@@ -604,30 +604,30 @@ type ListPricesResponse = types.ListResponse[*PriceResponse]
 
 // CreateBulkPriceRequest represents the request to create multiple prices in bulk
 type CreateBulkPriceRequest struct {
-	Prices []CreatePriceRequest `json:"prices" validate:"required,min=1,max=100"`
+	Items []CreatePriceRequest `json:"items" validate:"required,min=1,max=100"`
 }
 
 // CreateBulkPriceResponse represents the response for bulk price creation
 type CreateBulkPriceResponse struct {
-	Prices []*PriceResponse `json:"prices"`
+	Items []*PriceResponse `json:"items"`
 }
 
 // Validate validates the bulk price creation request
 func (r *CreateBulkPriceRequest) Validate() error {
-	if len(r.Prices) == 0 {
+	if len(r.Items) == 0 {
 		return ierr.NewError("at least one price is required").
 			WithHint("Please provide at least one price to create").
 			Mark(ierr.ErrValidation)
 	}
 
-	if len(r.Prices) > 100 {
+	if len(r.Items) > 100 {
 		return ierr.NewError("too many prices in bulk request").
 			WithHint("Maximum 100 prices allowed per bulk request").
 			Mark(ierr.ErrValidation)
 	}
 
 	// Validate each individual price
-	for i, price := range r.Prices {
+	for i, price := range r.Items {
 		if err := price.Validate(); err != nil {
 			return ierr.WithError(err).
 				WithHint(fmt.Sprintf("Price at index %d is invalid", i)).

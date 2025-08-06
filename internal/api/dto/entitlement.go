@@ -2,6 +2,7 @@ package dto
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -107,6 +108,45 @@ type EntitlementResponse struct {
 
 // ListEntitlementsResponse represents a paginated list of entitlements
 type ListEntitlementsResponse = types.ListResponse[*EntitlementResponse]
+
+// CreateBulkEntitlementRequest represents the request to create multiple entitlements in bulk
+type CreateBulkEntitlementRequest struct {
+	Items []CreateEntitlementRequest `json:"items" validate:"required,min=1,max=100"`
+}
+
+// CreateBulkEntitlementResponse represents the response for bulk entitlement creation
+type CreateBulkEntitlementResponse struct {
+	Entitlements []*EntitlementResponse `json:"entitlements"`
+}
+
+// Validate validates the bulk entitlement creation request
+func (r *CreateBulkEntitlementRequest) Validate() error {
+	if len(r.Items) == 0 {
+		return ierr.NewError("at least one entitlement is required").
+			WithHint("Please provide at least one entitlement to create").
+			Mark(ierr.ErrValidation)
+	}
+
+	if len(r.Items) > 100 {
+		return ierr.NewError("too many entitlements in bulk request").
+			WithHint("Maximum 100 entitlements allowed per bulk request").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate each individual entitlement
+	for i, entitlement := range r.Items {
+		if err := entitlement.Validate(); err != nil {
+			return ierr.WithError(err).
+				WithHint(fmt.Sprintf("Entitlement at index %d is invalid", i)).
+				WithReportableDetails(map[string]interface{}{
+					"index": i,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
+}
 
 // EntitlementToResponse converts an entitlement to a response
 func EntitlementToResponse(e *entitlement.Entitlement) *EntitlementResponse {

@@ -88,14 +88,14 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 	// Use transaction to ensure all prices are created or none
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		response = &dto.CreateBulkPriceResponse{
-			Prices: make([]*dto.PriceResponse, 0),
+			Items: make([]*dto.PriceResponse, 0),
 		}
 
 		// Separate prices that need price unit config handling from regular prices
 		var regularPrices []*price.Price
 		var priceUnitConfigPrices []dto.CreatePriceRequest
 
-		for _, priceReq := range req.Prices {
+		for _, priceReq := range req.Items {
 			if priceReq.PriceUnitConfig != nil {
 				priceUnitConfigPrices = append(priceUnitConfigPrices, priceReq)
 			} else {
@@ -124,7 +124,7 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 				if p.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
 					priceResp.PlanID = p.EntityID
 				}
-				response.Prices = append(response.Prices, priceResp)
+				response.Items = append(response.Items, priceResp)
 			}
 		}
 
@@ -136,7 +136,7 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 					WithHint("Failed to create price with unit config").
 					Mark(ierr.ErrValidation)
 			}
-			response.Prices = append(response.Prices, priceResp)
+			response.Items = append(response.Items, priceResp)
 		}
 
 		return nil
