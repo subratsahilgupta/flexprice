@@ -538,7 +538,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	}
 
 	// Check if the invoice is zeroAmountInvoice
-	if invoiceReq.AmountDue.IsZero() {
+	if invoiceReq.Subtotal.IsZero() {
 		return nil, nil
 	}
 
