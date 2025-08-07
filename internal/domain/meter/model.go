@@ -61,8 +61,8 @@ type Aggregation struct {
 
 	// Multiplier is the multiplier for the aggregation
 	// For ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000
-	// to scale up by a factor of 1000
-	Multiplier decimal.Decimal `json:"multiplier,omitempty"`
+	// to scale up by a factor of 1000. If not provided, it will be null.
+	Multiplier *decimal.Decimal `json:"multiplier,omitempty"`
 
 	// BucketSize is used only for MAX aggregation when windowed aggregation is needed
 	// It defines the size of time windows to calculate max values within
@@ -178,13 +178,20 @@ func (m *Meter) Validate() error {
 			}).
 			Mark(ierr.ErrValidation)
 	}
-	if m.Aggregation.Type == types.AggregationSumWithMultiplier && m.Aggregation.Multiplier.LessThanOrEqual(decimal.NewFromFloat(0)) {
-		return ierr.NewError("invalid multiplier value").
-			WithHint("Multiplier must be greater than zero").
-			WithReportableDetails(map[string]interface{}{
-				"multiplier": m.Aggregation.Multiplier,
-			}).
-			Mark(ierr.ErrValidation)
+	if m.Aggregation.Type == types.AggregationSumWithMultiplier {
+		if m.Aggregation.Multiplier == nil {
+			return ierr.NewError("multiplier is required for SUM_WITH_MULTIPLIER").
+				WithHint("Please provide a multiplier value").
+				Mark(ierr.ErrValidation)
+		}
+		if m.Aggregation.Multiplier.LessThanOrEqual(decimal.NewFromFloat(0)) {
+			return ierr.NewError("invalid multiplier value").
+				WithHint("Multiplier must be greater than zero").
+				WithReportableDetails(map[string]interface{}{
+					"multiplier": m.Aggregation.Multiplier,
+				}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 	// Validate bucket_size is only used with MAX aggregation
 	if m.Aggregation.BucketSize != "" && m.Aggregation.Type != types.AggregationMax {
