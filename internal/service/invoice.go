@@ -208,8 +208,8 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		}
 
 		// Apply coupons if this is a subscription invoice or if coupons are provided
-		if len(req.InvoiceCoupons) > 0 {
-			if err := s.applyCouponsToInvoice(ctx, inv, req); err != nil {
+		if len(req.InvoiceCoupons) > 0 || len(req.LineItemCoupons) > 0 {
+			if err := s.applyCouponsToInvoiceWithLineItems(ctx, inv, req); err != nil {
 				return err
 			}
 		}
@@ -1386,6 +1386,62 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, fina
 
 	// Return updated invoice
 	return s.GetInvoice(ctx, id)
+}
+
+// applyCouponsToInvoiceWithLineItems handles both invoice-level and line item-level coupon application
+func (s *invoiceService) applyCouponsToInvoiceWithLineItems(ctx context.Context, inv *invoice.Invoice, req dto.CreateInvoiceRequest) error {
+	// Use coupon service to prepare and apply coupons
+	couponApplicationService := NewCouponApplicationService(s.ServiceParams)
+
+	// Apply both invoice-level and line item-level coupons
+	couponResult, err := couponApplicationService.ApplyCouponsOnInvoiceWithLineItems(ctx, inv, req.InvoiceCoupons, req.LineItemCoupons)
+	if err != nil {
+		return err
+	}
+
+	// Update the invoice with calculated discount amounts
+	inv.TotalDiscount = couponResult.TotalDiscountAmount
+
+	// Calculate new total, ensuring it doesn't go below zero
+	originalTotal := inv.Total
+	newTotal := originalTotal.Sub(couponResult.TotalDiscountAmount)
+
+	// Ensure total doesn't go negative
+	if newTotal.LessThan(decimal.Zero) {
+		s.Logger.Warnw("discount amount exceeds invoice total, capping at zero",
+			"invoice_id", inv.ID,
+			"original_total", originalTotal,
+			"total_discount", couponResult.TotalDiscountAmount,
+			"calculated_total", newTotal)
+		newTotal = decimal.Zero
+		// Adjust the total discount to not exceed the original total
+		inv.TotalDiscount = originalTotal
+	}
+
+	inv.Total = newTotal
+
+	// Update AmountDue and AmountRemaining to reflect new total
+	inv.AmountDue = newTotal
+	inv.AmountRemaining = newTotal.Sub(inv.AmountPaid)
+
+	// Update the invoice in the database
+	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
+		s.Logger.Errorw("failed to update invoice with coupon amounts",
+			"error", err,
+			"invoice_id", inv.ID,
+			"total_discount", couponResult.TotalDiscountAmount,
+			"new_total", inv.Total)
+		return err
+	}
+
+	s.Logger.Infow("successfully updated invoice with coupon discounts (including line items)",
+		"invoice_id", inv.ID,
+		"total_discount", couponResult.TotalDiscountAmount,
+		"invoice_level_coupons", len(req.InvoiceCoupons),
+		"line_item_level_coupons", len(req.LineItemCoupons),
+		"new_total", inv.Total)
+
+	return nil
 }
 
 // handleCouponOverrides handles coupon overrides for an invoice

@@ -28,6 +28,7 @@ type CouponApplicationService interface {
 	GetCouponApplicationsBySubscription(ctx context.Context, subscriptionID string) ([]*dto.CouponApplicationResponse, error)
 	ApplyCouponToInvoice(ctx context.Context, couponID string, invoiceID string, originalPrice decimal.Decimal) (*dto.CouponApplicationResponse, error)
 	ApplyCouponsOnInvoice(ctx context.Context, inv *invoice.Invoice, invoiceCoupons []dto.InvoiceCoupon) (*CouponCalculationResult, error)
+	ApplyCouponsOnInvoiceWithLineItems(ctx context.Context, inv *invoice.Invoice, invoiceCoupons []dto.InvoiceCoupon, lineItemCoupons []dto.InvoiceLineItemCoupon) (*CouponCalculationResult, error)
 }
 
 type couponApplicationService struct {
@@ -267,6 +268,191 @@ func (s *couponApplicationService) ApplyCouponToInvoice(ctx context.Context, cou
 	}
 
 	return response, nil
+}
+
+// ApplyCouponsOnInvoiceWithLineItems applies both invoice-level and line item-level coupons to an invoice
+func (s *couponApplicationService) ApplyCouponsOnInvoiceWithLineItems(ctx context.Context, inv *invoice.Invoice, invoiceCoupons []dto.InvoiceCoupon, lineItemCoupons []dto.InvoiceLineItemCoupon) (*CouponCalculationResult, error) {
+	if len(invoiceCoupons) == 0 && len(lineItemCoupons) == 0 {
+		return &CouponCalculationResult{
+			TotalDiscountAmount: decimal.Zero,
+			AppliedCoupons:      make([]*dto.CouponApplicationResponse, 0),
+			Currency:            inv.Currency,
+			Metadata:            make(map[string]interface{}),
+		}, nil
+	}
+
+	s.Logger.Infow("applying coupons to invoice with line item support",
+		"invoice_id", inv.ID,
+		"invoice_coupon_count", len(invoiceCoupons),
+		"line_item_coupon_count", len(lineItemCoupons),
+		"original_total", inv.Total)
+
+	var result *CouponCalculationResult
+
+	// Use transaction for atomic operations
+	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		totalDiscount := decimal.Zero
+		applicationRequests := make([]dto.CreateCouponApplicationRequest, 0, len(invoiceCoupons)+len(lineItemCoupons))
+
+		// Step 1: Apply line item level coupons first
+		lineItemDiscounts := make(map[string]decimal.Decimal) // lineItemID -> total discount for that line item
+		for _, lineItemCoupon := range lineItemCoupons {
+			// Find the line item this coupon applies to by matching price_id
+			// (lineItemCoupon.LineItemID contains the price_id from billing service)
+			var targetLineItem *invoice.InvoiceLineItem
+			for _, lineItem := range inv.LineItems {
+				if lineItem.PriceID != nil && *lineItem.PriceID == lineItemCoupon.LineItemID {
+					targetLineItem = lineItem
+					break
+				}
+			}
+
+			if targetLineItem == nil {
+				s.Logger.Warnw("line item not found for coupon, skipping",
+					"price_id_used_as_line_item_id", lineItemCoupon.LineItemID,
+					"coupon_id", lineItemCoupon.CouponID)
+				continue
+			}
+
+			// Calculate discount for this line item
+			originalLineItemAmount := targetLineItem.Amount
+			discount := lineItemCoupon.CalculateDiscount(originalLineItemAmount)
+			finalPrice := lineItemCoupon.ApplyDiscount(originalLineItemAmount)
+
+			// Create application request for line item coupon
+			req := dto.CreateCouponApplicationRequest{
+				CouponID:          lineItemCoupon.CouponID,
+				InvoiceID:         inv.ID,
+				InvoiceLineItemID: &targetLineItem.ID,
+				OriginalPrice:     originalLineItemAmount,
+				FinalPrice:        finalPrice,
+				DiscountedAmount:  discount,
+				DiscountType:      lineItemCoupon.Type,
+				Currency:          inv.Currency,
+				CouponSnapshot: map[string]interface{}{
+					"type":           lineItemCoupon.Type,
+					"amount_off":     lineItemCoupon.AmountOff,
+					"percentage_off": lineItemCoupon.PercentageOff,
+					"applied_to":     "line_item",
+					"line_item_id":   targetLineItem.ID,
+					"price_id":       lineItemCoupon.LineItemID,
+				},
+			}
+
+			// Set association ID if provided
+			if lineItemCoupon.CouponAssociationID != nil {
+				req.CouponAssociationID = *lineItemCoupon.CouponAssociationID
+			}
+
+			if lineItemCoupon.Type == types.CouponTypePercentage {
+				req.DiscountPercentage = lineItemCoupon.PercentageOff
+			}
+
+			if inv.SubscriptionID != nil {
+				req.SubscriptionID = inv.SubscriptionID
+			}
+
+			applicationRequests = append(applicationRequests, req)
+			totalDiscount = totalDiscount.Add(discount)
+
+			// Track line item discount for invoice total calculation
+			lineItemDiscounts[targetLineItem.ID] = lineItemDiscounts[targetLineItem.ID].Add(discount)
+
+			s.Logger.Debugw("applied line item coupon",
+				"line_item_id", targetLineItem.ID,
+				"price_id", lineItemCoupon.LineItemID,
+				"coupon_id", lineItemCoupon.CouponID,
+				"original_amount", originalLineItemAmount,
+				"discount", discount,
+				"final_price", finalPrice)
+		}
+
+		// Step 2: Apply invoice-level coupons to the remaining invoice total
+		// Calculate the new invoice total after line item discounts
+		adjustedInvoiceTotal := inv.Total.Sub(totalDiscount)
+		runningTotal := adjustedInvoiceTotal
+
+		for _, invoiceCoupon := range invoiceCoupons {
+			// Calculate discount for this coupon based on the running total
+			discount := invoiceCoupon.CalculateDiscount(runningTotal)
+			finalPrice := invoiceCoupon.ApplyDiscount(runningTotal)
+
+			// Create application request for invoice-level coupon
+			req := dto.CreateCouponApplicationRequest{
+				CouponID:         invoiceCoupon.CouponID,
+				InvoiceID:        inv.ID,
+				OriginalPrice:    runningTotal,
+				FinalPrice:       finalPrice,
+				DiscountedAmount: discount,
+				DiscountType:     invoiceCoupon.Type,
+				Currency:         inv.Currency,
+				CouponSnapshot: map[string]interface{}{
+					"type":           invoiceCoupon.Type,
+					"amount_off":     invoiceCoupon.AmountOff,
+					"percentage_off": invoiceCoupon.PercentageOff,
+					"applied_to":     "invoice",
+				},
+			}
+
+			// Set association ID if provided
+			if invoiceCoupon.CouponAssociationID != nil {
+				req.CouponAssociationID = *invoiceCoupon.CouponAssociationID
+			}
+
+			if invoiceCoupon.Type == types.CouponTypePercentage {
+				req.DiscountPercentage = invoiceCoupon.PercentageOff
+			}
+
+			if inv.SubscriptionID != nil {
+				req.SubscriptionID = inv.SubscriptionID
+			}
+
+			applicationRequests = append(applicationRequests, req)
+			totalDiscount = totalDiscount.Add(discount)
+			runningTotal = finalPrice
+
+			s.Logger.Debugw("applied invoice coupon",
+				"coupon_id", invoiceCoupon.CouponID,
+				"original_total", runningTotal.Add(discount),
+				"discount", discount,
+				"final_total", finalPrice)
+		}
+
+		// Batch create coupon applications
+		appliedCoupons, err := s.batchCreateCouponApplications(txCtx, applicationRequests)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to batch create coupon applications").
+				Mark(ierr.ErrInternal)
+		}
+
+		result = &CouponCalculationResult{
+			TotalDiscountAmount: totalDiscount,
+			AppliedCoupons:      appliedCoupons,
+			Currency:            inv.Currency,
+			Metadata: map[string]interface{}{
+				"total_coupons_processed":    len(invoiceCoupons) + len(lineItemCoupons),
+				"successful_applications":    len(appliedCoupons),
+				"validation_failures":        (len(invoiceCoupons) + len(lineItemCoupons)) - len(appliedCoupons),
+				"invoice_level_coupons":      len(invoiceCoupons),
+				"line_item_level_coupons":    len(lineItemCoupons),
+				"line_item_discount_details": lineItemDiscounts,
+			},
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	s.Logger.Infow("completed coupon application to invoice with line items",
+		"invoice_id", inv.ID,
+		"total_discount", result.TotalDiscountAmount,
+		"applied_coupon_count", len(result.AppliedCoupons))
+
+	return result, nil
 }
 
 // ApplyCouponsOnInvoice applies coupons to an invoice with optimized batch processing

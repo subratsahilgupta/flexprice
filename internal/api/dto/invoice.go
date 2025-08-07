@@ -20,6 +20,16 @@ type InvoiceCoupon struct {
 	Type                types.CouponType `json:"type,"`
 }
 
+// InvoiceLineItemCoupon represents a coupon applied to a specific invoice line item
+type InvoiceLineItemCoupon struct {
+	LineItemID          string           `json:"line_item_id"` // ID of the invoice line item this coupon applies to
+	CouponID            string           `json:"coupon_id"`
+	CouponAssociationID *string          `json:"coupon_association_id"`
+	AmountOff           *decimal.Decimal `json:"amount_off,omitempty"`
+	PercentageOff       *decimal.Decimal `json:"percentage_off,omitempty"`
+	Type                types.CouponType `json:"type,"`
+}
+
 // CreateInvoiceRequest represents the request payload for creating a new invoice
 type CreateInvoiceRequest struct {
 	// invoice_number is an optional human-readable identifier for the invoice
@@ -84,6 +94,9 @@ type CreateInvoiceRequest struct {
 
 	// Invoice Coupns
 	InvoiceCoupons []InvoiceCoupon `json:"invoice_coupons,omitempty"`
+
+	// Invoice Line Item Coupons
+	LineItemCoupons []InvoiceLineItemCoupon `json:"line_item_coupons,omitempty"`
 
 	// metadata contains additional custom key-value pairs for storing extra information
 	Metadata types.Metadata `json:"metadata,omitempty"`
@@ -157,6 +170,20 @@ func (r *CreateInvoiceRequest) Validate() error {
 		// Verify total amount matches invoice amount
 		if !totalAmount.Equal(r.AmountDue) {
 			return ierr.NewError("sum of line item amounts must equal invoice amount_due").WithHintf("sum of line item amounts %s must equal invoice amount_due %s", totalAmount.String(), r.AmountDue.String()).Mark(ierr.ErrValidation)
+		}
+	}
+
+	// Validate invoice coupons if present
+	for _, coupon := range r.InvoiceCoupons {
+		if err := coupon.Validate(); err != nil {
+			return ierr.WithError(err).WithHint("invalid invoice coupon").Mark(ierr.ErrValidation)
+		}
+	}
+
+	// Validate line item coupons if present
+	for _, lineItemCoupon := range r.LineItemCoupons {
+		if err := lineItemCoupon.Validate(); err != nil {
+			return ierr.WithError(err).WithHint("invalid line item coupon").Mark(ierr.ErrValidation)
 		}
 	}
 
@@ -308,6 +335,64 @@ func (c *InvoiceCoupon) ApplyDiscount(originalPrice decimal.Decimal) decimal.Dec
 	}
 
 	return finalPrice
+}
+
+// CalculateDiscount calculates the discount amount for a given price
+func (c *InvoiceLineItemCoupon) CalculateDiscount(originalPrice decimal.Decimal) decimal.Decimal {
+	switch c.Type {
+	case types.CouponTypeFixed:
+		return *c.AmountOff
+	case types.CouponTypePercentage:
+		return originalPrice.Mul(*c.PercentageOff).Div(decimal.NewFromInt(100))
+	default:
+		return decimal.Zero
+	}
+}
+
+// ApplyDiscount applies the discount to a given price and returns the final price
+func (c *InvoiceLineItemCoupon) ApplyDiscount(originalPrice decimal.Decimal) decimal.Decimal {
+	discount := c.CalculateDiscount(originalPrice)
+	finalPrice := originalPrice.Sub(discount)
+
+	// Ensure final price doesn't go below zero
+	if finalPrice.LessThan(decimal.Zero) {
+		return decimal.Zero
+	}
+
+	return finalPrice
+}
+
+// Validate validates the line item coupon
+func (c *InvoiceLineItemCoupon) Validate() error {
+	if c.LineItemID == "" {
+		return ierr.NewError("line_item_id is required").
+			WithHint("line_item_id is required for line item coupons").
+			Mark(ierr.ErrValidation)
+	}
+
+	if c.CouponID == "" {
+		return ierr.NewError("coupon_id is required").
+			WithHint("coupon_id is required for line item coupons").
+			Mark(ierr.ErrValidation)
+	}
+
+	if c.Type == types.CouponTypePercentage {
+		if c.PercentageOff == nil || c.PercentageOff.IsNegative() {
+			return ierr.NewError("percentage_off must be non-negative").
+				WithHint("percentage_off must be non-negative").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	if c.Type == types.CouponTypeFixed {
+		if c.AmountOff == nil || c.AmountOff.IsNegative() {
+			return ierr.NewError("amount_off must be non-negative").
+				WithHint("amount_off must be non-negative").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
 }
 
 // CreateInvoiceLineItemRequest represents a single line item in an invoice creation request

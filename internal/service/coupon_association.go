@@ -14,6 +14,7 @@ type CouponAssociationService interface {
 	GetCouponAssociation(ctx context.Context, id string) (*dto.CouponAssociationResponse, error)
 	DeleteCouponAssociation(ctx context.Context, id string) error
 	GetCouponAssociationsBySubscription(ctx context.Context, subscriptionID string) ([]*dto.CouponAssociationResponse, error)
+	GetCouponAssociationsBySubscriptionLineItem(ctx context.Context, subscriptionLineItemID string) ([]*dto.CouponAssociationResponse, error)
 	ApplyCouponToSubscription(ctx context.Context, couponIDs []string, subscriptionID string) error
 
 	// Line item coupon association methods
@@ -105,6 +106,21 @@ func (s *couponAssociationService) DeleteCouponAssociation(ctx context.Context, 
 // GetCouponAssociationsBySubscription retrieves coupon associations for a subscription
 func (s *couponAssociationService) GetCouponAssociationsBySubscription(ctx context.Context, subscriptionID string) ([]*dto.CouponAssociationResponse, error) {
 	associations, err := s.CouponAssociationRepo.GetBySubscription(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	responses := make([]*dto.CouponAssociationResponse, len(associations))
+	for i, ca := range associations {
+		responses[i] = s.toCouponAssociationResponse(ca)
+	}
+
+	return responses, nil
+}
+
+// GetCouponAssociationsBySubscriptionLineItem retrieves coupon associations for a subscription line item
+func (s *couponAssociationService) GetCouponAssociationsBySubscriptionLineItem(ctx context.Context, subscriptionLineItemID string) ([]*dto.CouponAssociationResponse, error) {
+	associations, err := s.CouponAssociationRepo.GetBySubscriptionLineItem(ctx, subscriptionLineItemID)
 	if err != nil {
 		return nil, err
 	}
