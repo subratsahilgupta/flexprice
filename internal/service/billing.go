@@ -156,25 +156,16 @@ func (s *billingService) CalculateUsageCharges(
 	usageCharges := make([]dto.CreateInvoiceLineItemRequest, 0)
 	totalUsageCost := decimal.Zero
 
-	// Collect both plan and addon IDs from line items
 	planIDs := make([]string, 0)
-	addonIDs := make([]string, 0)
 	for _, item := range sub.LineItems {
 		if item.PriceType == types.PRICE_TYPE_USAGE {
-			if item.EntityType == types.SubscriptionLineItemEntitiyTypePlan {
-				planIDs = append(planIDs, item.EntityID)
-			} else if item.EntityType == types.SubscriptionLineItemEntitiyTypeAddon {
-				addonIDs = append(addonIDs, item.EntityID)
-			}
+			planIDs = append(planIDs, item.EntityID)
 		}
 	}
 	planIDs = lo.Uniq(planIDs)
-	addonIDs = lo.Uniq(addonIDs)
 
-	// map of entity ID to meter ID to entitlement
-	entitlementsByEntityMeterID := make(map[string]map[string]*dto.EntitlementResponse)
-
-	// Get plan entitlements
+	// map of plan ID to meter ID to entitlement
+	entitlementsByPlanMeterID := make(map[string]map[string]*dto.EntitlementResponse)
 	for _, planID := range planIDs {
 		entitlements, err := entitlementService.GetPlanEntitlements(ctx, planID)
 		if err != nil {
@@ -183,27 +174,10 @@ func (s *billingService) CalculateUsageCharges(
 
 		for _, entitlement := range entitlements.Items {
 			if entitlement.FeatureType == types.FeatureTypeMetered {
-				if _, ok := entitlementsByEntityMeterID[planID]; !ok {
-					entitlementsByEntityMeterID[planID] = make(map[string]*dto.EntitlementResponse)
+				if _, ok := entitlementsByPlanMeterID[planID]; !ok {
+					entitlementsByPlanMeterID[planID] = make(map[string]*dto.EntitlementResponse)
 				}
-				entitlementsByEntityMeterID[planID][entitlement.Feature.MeterID] = entitlement
-			}
-		}
-	}
-
-	// Get addon entitlements
-	for _, addonID := range addonIDs {
-		entitlements, err := entitlementService.GetAddonEntitlements(ctx, addonID)
-		if err != nil {
-			return nil, decimal.Zero, err
-		}
-
-		for _, entitlement := range entitlements.Items {
-			if entitlement.FeatureType == types.FeatureTypeMetered {
-				if _, ok := entitlementsByEntityMeterID[addonID]; !ok {
-					entitlementsByEntityMeterID[addonID] = make(map[string]*dto.EntitlementResponse)
-				}
-				entitlementsByEntityMeterID[addonID][entitlement.Feature.MeterID] = entitlement
+				entitlementsByPlanMeterID[planID][entitlement.Feature.MeterID] = entitlement
 			}
 		}
 	}
@@ -236,10 +210,7 @@ func (s *billingService) CalculateUsageCharges(
 		// Process each matching charge individually (normal and overage charges)
 		for _, matchingCharge := range matchingCharges {
 			quantityForCalculation := decimal.NewFromFloat(matchingCharge.Quantity)
-
-			// Use EntityID for entitlement lookup
-			entityKey := item.EntityID
-			matchingEntitlement, ok := entitlementsByEntityMeterID[entityKey][item.MeterID]
+			matchingEntitlement, ok := entitlementsByPlanMeterID[item.EntityID][item.MeterID]
 
 			// Only apply entitlement adjustments if:
 			// 1. This is not an overage charge
@@ -821,7 +792,7 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 			isSoftLimit = true
 		}
 
-		// total limit is the sum of all limits (plan + addon entitlements)
+		// total limit is the sum of all limits
 		totalLimit += *e.UsageLimit
 
 		if e.UsageResetPeriod != "" {
@@ -855,7 +826,7 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 func aggregateBooleanEntitlementsForBilling(entitlements []*entitlement.Entitlement) *dto.AggregatedEntitlement {
 	isEnabled := false
 
-	// If any plan or addon enables the feature, it's enabled
+	// If any subscription enables the feature, it's enabled
 	for _, e := range entitlements {
 		if e.IsEnabled {
 			isEnabled = true
@@ -894,331 +865,232 @@ func (s *billingService) GetCustomerEntitlements(ctx context.Context, customerID
 		return nil, err
 	}
 
-	// Get and filter subscriptions
-	subscriptions, err := s.getFilteredSubscriptions(ctx, customerID, req.SubscriptionIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(subscriptions) == 0 {
-		return &dto.CustomerEntitlementsResponse{CustomerID: customerID, Features: []*dto.AggregatedFeature{}}, nil
-	}
-
-	// Extract plan and addon IDs from active line items
-	planIDs, addonIDs := s.extractPlanAndAddonIDs(subscriptions)
-
-	// Get plans and create lookup map
-	planMap, err := s.getPlanMap(ctx, planIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get and filter entitlements
-	entitlements, err := s.getFilteredEntitlements(ctx, planIDs, addonIDs, req.FeatureIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(entitlements) == 0 {
-		return &dto.CustomerEntitlementsResponse{CustomerID: customerID, Features: []*dto.AggregatedFeature{}}, nil
-	}
-
-	// Organize entitlements by plan and addon
-	entitlementsByPlan, entitlementsByAddon := s.organizeEntitlements(entitlements)
-
-	// Get features and create lookup map
-	featureIDs := lo.Uniq(lo.Map(entitlements, func(e *entitlement.Entitlement, _ int) string { return e.FeatureID }))
-	featureMap, err := s.getFeatureMap(ctx, featureIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	// Process entitlements and build response
-	entitlementsByFeature, sourcesByFeature := s.processEntitlements(ctx, subscriptions, entitlementsByPlan, entitlementsByAddon, planMap)
-
-	// Build aggregated features
-	aggregatedFeatures := s.buildAggregatedFeatures(entitlementsByFeature, sourcesByFeature, featureMap)
-
-	return &dto.CustomerEntitlementsResponse{
+	resp := &dto.CustomerEntitlementsResponse{
 		CustomerID: customerID,
-		Features:   aggregatedFeatures,
-	}, nil
-}
+		Features:   []*dto.AggregatedFeature{},
+	}
 
-// Helper methods to break down the complex logic
-func (s *billingService) getFilteredSubscriptions(ctx context.Context, customerID string, subscriptionIDs []string) ([]*subscription.Subscription, error) {
+	// 1. Get active subscriptions for the customer
 	subscriptions, err := s.SubRepo.ListByCustomerID(ctx, customerID)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(subscriptionIDs) == 0 {
-		return subscriptions, nil
+	// Filter subscriptions if IDs are specified
+	if len(req.SubscriptionIDs) > 0 {
+		filteredSubscriptions := make([]*subscription.Subscription, 0)
+		for _, sub := range subscriptions {
+			if lo.Contains(req.SubscriptionIDs, sub.ID) {
+				filteredSubscriptions = append(filteredSubscriptions, sub)
+			}
+		}
+		subscriptions = filteredSubscriptions
 	}
 
-	return lo.Filter(subscriptions, func(sub *subscription.Subscription, _ int) bool {
-		return lo.Contains(subscriptionIDs, sub.ID)
-	}), nil
-}
+	// Return empty response if no subscriptions found
+	if len(subscriptions) == 0 {
+		return resp, nil
+	}
 
-func (s *billingService) extractPlanAndAddonIDs(subscriptions []*subscription.Subscription) ([]string, []string) {
+	// 2. Extract plan IDs from active line items in subscriptions
 	planIDs := make([]string, 0)
-	addonIDs := make([]string, 0)
+	subscriptionMap := make(map[string]*subscription.Subscription)
 
 	for _, sub := range subscriptions {
+		subscriptionMap[sub.ID] = sub
 		for _, li := range sub.LineItems {
-			if !li.IsActive(time.Now()) {
-				continue
-			}
-
-			if li.EntityType == types.SubscriptionLineItemEntitiyTypePlan {
+			if li.IsActive(time.Now()) {
 				planIDs = append(planIDs, li.EntityID)
-			} else if li.EntityType == types.SubscriptionLineItemEntitiyTypeAddon {
-				addonIDs = append(addonIDs, li.EntityID)
 			}
 		}
 	}
+	// Deduplicate plan IDs
+	planIDs = lo.Uniq(planIDs)
 
-	return lo.Uniq(planIDs), lo.Uniq(addonIDs)
-}
-
-func (s *billingService) getPlanMap(ctx context.Context, planIDs []string) (map[string]*plan.Plan, error) {
-	if len(planIDs) == 0 {
-		return make(map[string]*plan.Plan), nil
-	}
-
+	// 3. Get plans for the subscriptions
 	planFilter := types.NewNoLimitPlanFilter()
-	planFilter.EntityIDs = planIDs
+	planFilter.PlanIDs = planIDs
 	plans, err := s.PlanRepo.List(ctx, planFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	return lo.KeyBy(plans, func(p *plan.Plan) string { return p.ID }), nil
-}
+	// Create a map of plan IDs to plans for easy lookup
+	planMap := make(map[string]*plan.Plan)
+	for _, p := range plans {
+		planMap[p.ID] = p
+	}
 
-func (s *billingService) getFilteredEntitlements(ctx context.Context, planIDs, addonIDs, featureIDs []string) ([]*entitlement.Entitlement, error) {
-	planEntitlements, err := s.EntitlementRepo.ListByPlanIDs(ctx, planIDs)
+	// 4. Get entitlements for the plans
+	entitlements, err := s.EntitlementRepo.ListByPlanIDs(ctx, planIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	addonEntitlements, err := s.EntitlementRepo.ListByAddonIDs(ctx, addonIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	allEntitlements := append(planEntitlements, addonEntitlements...)
-
-	return lo.Filter(allEntitlements, func(e *entitlement.Entitlement, _ int) bool {
-		// Filter by feature IDs if specified
-		if len(featureIDs) > 0 && !lo.Contains(featureIDs, e.FeatureID) {
-			return false
+	filteredEntitlements := make([]*entitlement.Entitlement, 0)
+	for _, e := range entitlements {
+		if len(req.FeatureIDs) > 0 && !lo.Contains(req.FeatureIDs, e.FeatureID) {
+			continue
 		}
-		// Filter enabled and published entitlements
-		return e.IsEnabled && e.Status == types.StatusPublished
-	}), nil
-}
+		// skip not enabled entitlements
+		if !e.IsEnabled || e.Status != types.StatusPublished {
+			continue
+		}
+		filteredEntitlements = append(filteredEntitlements, e)
+	}
+	entitlements = filteredEntitlements
 
-func (s *billingService) organizeEntitlements(entitlements []*entitlement.Entitlement) (map[string][]*entitlement.Entitlement, map[string][]*entitlement.Entitlement) {
+	if len(entitlements) == 0 {
+		return resp, nil
+	}
+
+	// 5. Get all unique feature IDs and organize entitlements
+	featureIDs := make([]string, 0)
+
+	// Map of plan ID to its entitlements
 	entitlementsByPlan := make(map[string][]*entitlement.Entitlement)
-	entitlementsByAddon := make(map[string][]*entitlement.Entitlement)
 
 	for _, e := range entitlements {
-		if e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_PLAN {
-			entitlementsByPlan[e.EntityID] = append(entitlementsByPlan[e.EntityID], e)
-		} else if e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_ADDON {
-			entitlementsByAddon[e.EntityID] = append(entitlementsByAddon[e.EntityID], e)
+		featureIDs = append(featureIDs, e.FeatureID)
+		if _, ok := entitlementsByPlan[e.EntityID]; !ok {
+			entitlementsByPlan[e.EntityID] = make([]*entitlement.Entitlement, 0)
 		}
+		entitlementsByPlan[e.EntityID] = append(entitlementsByPlan[e.EntityID], e)
 	}
+	featureIDs = lo.Uniq(featureIDs)
 
-	return entitlementsByPlan, entitlementsByAddon
-}
-
-func (s *billingService) getFeatureMap(ctx context.Context, featureIDs []string) (map[string]*feature.Feature, error) {
-	if len(featureIDs) == 0 {
-		return make(map[string]*feature.Feature), nil
-	}
-
+	// 6. Get features
 	features, err := s.FeatureRepo.ListByIDs(ctx, featureIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	return lo.KeyBy(features, func(f *feature.Feature) string { return f.ID }), nil
-}
+	// Create a map of feature IDs to features for easy lookup
+	featureMap := make(map[string]*feature.Feature)
+	for _, f := range features {
+		featureMap[f.ID] = f
+	}
 
-func (s *billingService) processEntitlements(
-	ctx context.Context,
-	subscriptions []*subscription.Subscription,
-	entitlementsByPlan map[string][]*entitlement.Entitlement,
-	entitlementsByAddon map[string][]*entitlement.Entitlement,
-	planMap map[string]*plan.Plan,
-) (map[string][]*entitlement.Entitlement, map[string][]*dto.EntitlementSource) {
+	// 7. Group entitlements by feature (across all subscriptions and line items)
+	// This will be used to create our final response with one entry per feature
 	entitlementsByFeature := make(map[string][]*entitlement.Entitlement)
+
+	// Track sources for each feature
 	sourcesByFeature := make(map[string][]*dto.EntitlementSource)
+	// Use a map to deduplicate sources by unique key
 	sourceDedupeMap := make(map[string]bool)
 
+	// Process each subscription and its line items
 	for _, sub := range subscriptions {
+		// Process each line item in the subscription
 		for _, li := range sub.LineItems {
 			if !li.IsActive(time.Now()) {
 				continue
 			}
 
-			quantity := lo.Max([]int64{li.Quantity.IntPart(), 1})
-
-			// Process plan entitlements
-			if li.EntityType == types.SubscriptionLineItemEntitiyTypePlan {
-				s.processPlanEntitlements(sub, li, entitlementsByPlan, planMap, quantity, entitlementsByFeature, sourcesByFeature, sourceDedupeMap)
+			// Get entitlements for this plan
+			planEntitlements, ok := entitlementsByPlan[li.EntityID]
+			if !ok {
+				continue
 			}
 
-			// Process addon entitlements
-			if li.EntityType == types.SubscriptionLineItemEntitiyTypeAddon {
-				s.processAddonEntitlements(ctx, sub, li, entitlementsByAddon, quantity, entitlementsByFeature, sourcesByFeature, sourceDedupeMap)
+			// Get the plan details
+			p, ok := planMap[li.EntityID]
+			if !ok {
+				continue
+			}
+
+			// Convert quantity to int (floor the decimal)
+			quantity := li.Quantity.IntPart()
+			if quantity <= 0 {
+				quantity = 1 // Ensure at least 1 quantity
+			}
+
+			// Process each entitlement for this plan
+			for _, e := range planEntitlements {
+				// Create a unique key for deduplication
+				sourceKey := fmt.Sprintf("%s-%s-%s-%s", e.FeatureID, sub.ID, p.ID, e.ID)
+				if sourceDedupeMap[sourceKey] {
+					continue // Skip if we've already processed this source
+				}
+				sourceDedupeMap[sourceKey] = true
+
+				// Create a source for this entitlement
+				source := &dto.EntitlementSource{
+					SubscriptionID: sub.ID,
+					EntityID:       p.ID,
+					EntityType:     dto.EntitlementSourceEntityTypePlan,
+					EntitiyName:    p.Name,
+					Quantity:       quantity,
+					EntitlementID:  e.ID,
+					IsEnabled:      e.IsEnabled,
+					UsageLimit:     e.UsageLimit,
+					StaticValue:    e.StaticValue,
+				}
+
+				// Initialize feature collections if needed
+				if _, ok := entitlementsByFeature[e.FeatureID]; !ok {
+					entitlementsByFeature[e.FeatureID] = make([]*entitlement.Entitlement, 0)
+					sourcesByFeature[e.FeatureID] = make([]*dto.EntitlementSource, 0)
+				}
+
+				// Add source to feature sources
+				sourcesByFeature[e.FeatureID] = append(sourcesByFeature[e.FeatureID], source)
+
+				// For each quantity of the line item, add the entitlement
+				for range quantity {
+					// Duplicate the entitlement for each quantity
+					entitlementCopy := *e // Make a copy to avoid modifying the original
+					entitlementsByFeature[e.FeatureID] = append(entitlementsByFeature[e.FeatureID], &entitlementCopy)
+				}
 			}
 		}
 	}
 
-	return entitlementsByFeature, sourcesByFeature
-}
+	// 8. Aggregate entitlements by feature and build the response
+	aggregatedFeatures := make([]*dto.AggregatedFeature, 0, len(featureIDs))
 
-func (s *billingService) processPlanEntitlements(
-	sub *subscription.Subscription,
-	li *subscription.SubscriptionLineItem,
-	entitlementsByPlan map[string][]*entitlement.Entitlement,
-	planMap map[string]*plan.Plan,
-	quantity int64,
-	entitlementsByFeature map[string][]*entitlement.Entitlement,
-	sourcesByFeature map[string][]*dto.EntitlementSource,
-	sourceDedupeMap map[string]bool,
-) {
-	planEntitlements, ok := entitlementsByPlan[li.EntityID]
-	if !ok {
-		return
-	}
-
-	p, ok := planMap[li.EntityID]
-	if !ok {
-		return
-	}
-
-	for _, e := range planEntitlements {
-		sourceKey := fmt.Sprintf("%s-%s-%s-%s", e.FeatureID, sub.ID, p.ID, e.ID)
-		if sourceDedupeMap[sourceKey] {
-			continue
-		}
-		sourceDedupeMap[sourceKey] = true
-
-		source := &dto.EntitlementSource{
-			SubscriptionID: sub.ID,
-			EntityID:       p.ID,
-			EntityType:     dto.EntitlementSourceEntityTypePlan,
-			EntitiyName:    p.Name,
-			Quantity:       quantity,
-			EntitlementID:  e.ID,
-			IsEnabled:      e.IsEnabled,
-			UsageLimit:     e.UsageLimit,
-			StaticValue:    e.StaticValue,
-		}
-
-		s.addEntitlementAndSource(e, source, entitlementsByFeature, sourcesByFeature)
-	}
-}
-
-func (s *billingService) processAddonEntitlements(
-	ctx context.Context,
-	sub *subscription.Subscription,
-	li *subscription.SubscriptionLineItem,
-	entitlementsByAddon map[string][]*entitlement.Entitlement,
-	quantity int64,
-	entitlementsByFeature map[string][]*entitlement.Entitlement,
-	sourcesByFeature map[string][]*dto.EntitlementSource,
-	sourceDedupeMap map[string]bool,
-) {
-	addonEntitlements, ok := entitlementsByAddon[li.EntityID]
-	if !ok {
-		return
-	}
-
-	addon, err := s.AddonRepo.GetByID(ctx, li.EntityID)
-	if err != nil || addon == nil {
-		return
-	}
-
-	for _, e := range addonEntitlements {
-		sourceKey := fmt.Sprintf("%s-%s-%s-%s", e.FeatureID, sub.ID, addon.ID, e.ID)
-		if sourceDedupeMap[sourceKey] {
-			continue
-		}
-		sourceDedupeMap[sourceKey] = true
-
-		source := &dto.EntitlementSource{
-			SubscriptionID: sub.ID,
-			EntityID:       addon.ID,
-			EntityType:     dto.EntitlementSourceEntityTypeAddon,
-			EntitiyName:    addon.Name, // Using PlanName field for addon name
-			Quantity:       quantity,
-			EntitlementID:  e.ID,
-			IsEnabled:      e.IsEnabled,
-			UsageLimit:     e.UsageLimit,
-			StaticValue:    e.StaticValue,
-		}
-
-		s.addEntitlementAndSource(e, source, entitlementsByFeature, sourcesByFeature)
-	}
-}
-
-func (s *billingService) addEntitlementAndSource(
-	e *entitlement.Entitlement,
-	source *dto.EntitlementSource,
-	entitlementsByFeature map[string][]*entitlement.Entitlement,
-	sourcesByFeature map[string][]*dto.EntitlementSource,
-) {
-	// Initialize collections if needed
-	if _, ok := entitlementsByFeature[e.FeatureID]; !ok {
-		entitlementsByFeature[e.FeatureID] = make([]*entitlement.Entitlement, 0)
-		sourcesByFeature[e.FeatureID] = make([]*dto.EntitlementSource, 0)
-	}
-
-	// Add source and entitlement
-	sourcesByFeature[e.FeatureID] = append(sourcesByFeature[e.FeatureID], source)
-	entitlementCopy := *e
-	entitlementsByFeature[e.FeatureID] = append(entitlementsByFeature[e.FeatureID], &entitlementCopy)
-}
-
-func (s *billingService) buildAggregatedFeatures(
-	entitlementsByFeature map[string][]*entitlement.Entitlement,
-	sourcesByFeature map[string][]*dto.EntitlementSource,
-	featureMap map[string]*feature.Feature,
-) []*dto.AggregatedFeature {
-	return lo.FilterMap(lo.Keys(entitlementsByFeature), func(featureID string, _ int) (*dto.AggregatedFeature, bool) {
+	for featureID, featureEntitlements := range entitlementsByFeature {
 		f, ok := featureMap[featureID]
 		if !ok {
-			return nil, false
+			// Skip if feature not found
+			continue
 		}
 
-		featureEntitlements := entitlementsByFeature[featureID]
-		aggregatedEntitlement := s.aggregateEntitlementsByType(f.Type, featureEntitlements)
+		// Create feature response
+		featureResponse := &dto.FeatureResponse{Feature: f}
 
-		return &dto.AggregatedFeature{
-			Feature:     &dto.FeatureResponse{Feature: f},
+		// Aggregate entitlements based on feature type
+		var aggregatedEntitlement *dto.AggregatedEntitlement
+		switch f.Type {
+		case types.FeatureTypeMetered:
+			aggregatedEntitlement = aggregateMeteredEntitlementsForBilling(featureEntitlements)
+		case types.FeatureTypeBoolean:
+			aggregatedEntitlement = aggregateBooleanEntitlementsForBilling(featureEntitlements)
+		case types.FeatureTypeStatic:
+			aggregatedEntitlement = aggregateStaticEntitlementsForBilling(featureEntitlements)
+		default:
+			// Skip unknown feature types
+			continue
+		}
+
+		// Create aggregated feature with sources
+		aggregatedFeature := &dto.AggregatedFeature{
+			Feature:     featureResponse,
 			Entitlement: aggregatedEntitlement,
 			Sources:     sourcesByFeature[featureID],
-		}, true
-	})
-}
+		}
 
-func (s *billingService) aggregateEntitlementsByType(featureType types.FeatureType, entitlements []*entitlement.Entitlement) *dto.AggregatedEntitlement {
-	switch featureType {
-	case types.FeatureTypeMetered:
-		return aggregateMeteredEntitlementsForBilling(entitlements)
-	case types.FeatureTypeBoolean:
-		return aggregateBooleanEntitlementsForBilling(entitlements)
-	case types.FeatureTypeStatic:
-		return aggregateStaticEntitlementsForBilling(entitlements)
-	default:
-		return nil
+		aggregatedFeatures = append(aggregatedFeatures, aggregatedFeature)
 	}
+
+	// 9. Build final response
+	response := &dto.CustomerEntitlementsResponse{
+		CustomerID: customerID,
+		Features:   aggregatedFeatures,
+	}
+
+	return response, nil
 }
 
 func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID string, req *dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error) {
