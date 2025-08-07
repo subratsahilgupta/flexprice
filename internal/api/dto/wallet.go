@@ -46,6 +46,22 @@ type CreateWalletRequest struct {
 	// initial_credits_expiry_date_utc is the expiry date in UTC timezone (optional to set nil means no expiry)
 	// ex 2025-01-01 00:00:00 UTC
 	InitialCreditsExpiryDateUTC *time.Time `json:"initial_credits_expiry_date_utc,omitempty"`
+
+	// alert_enabled is the flag to enable alerts for the wallet
+	// defaults to true, can be explicitly set to false to disable alerts
+	AlertEnabled bool `json:"alert_enabled,omitempty"`
+
+	// alert_config is the alert configuration for the wallet (optional)
+	AlertConfig *AlertConfig `json:"alert_config,omitempty"`
+}
+
+type AlertConfig struct {
+	Threshold *Threshold `json:"threshold,omitempty"`
+}
+
+type Threshold struct {
+	Type  string          `json:"type"` //amount
+	Value decimal.Decimal `json:"value"`
 }
 
 // UpdateWalletRequest represents the request to update a wallet
@@ -57,6 +73,8 @@ type UpdateWalletRequest struct {
 	AutoTopupMinBalance *decimal.Decimal        `json:"auto_topup_min_balance,omitempty"`
 	AutoTopupAmount     *decimal.Decimal        `json:"auto_topup_amount,omitempty"`
 	Config              *types.WalletConfig     `json:"config,omitempty"`
+	AlertEnabled        *bool                   `json:"alert_enabled,omitempty"`
+	AlertConfig         *AlertConfig            `json:"alert_config,omitempty"`
 }
 
 func (r *UpdateWalletRequest) Validate() error {
@@ -136,6 +154,17 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 		}
 	}
 
+	// Convert AlertConfig to types.AlertConfig
+	var alertConfig *types.AlertConfig
+	if r.AlertConfig != nil {
+		alertConfig = &types.AlertConfig{
+			Threshold: &types.AlertThreshold{
+				Type:  r.AlertConfig.Threshold.Type,
+				Value: r.AlertConfig.Threshold.Value,
+			},
+		}
+	}
+
 	return &wallet.Wallet{
 		ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET),
 		CustomerID:          r.CustomerID,
@@ -154,6 +183,9 @@ func (r *CreateWalletRequest) ToWallet(ctx context.Context) *wallet.Wallet {
 		WalletType:          r.WalletType,
 		Config:              lo.FromPtr(r.Config),
 		ConversionRate:      r.ConversionRate,
+		AlertEnabled:        true, // Always enabled by default
+		AlertConfig:         alertConfig,
+		AlertState:          string(types.AlertStateOk), // Always starts in "ok" state
 	}
 }
 
@@ -201,6 +233,26 @@ func (r *CreateWalletRequest) Validate() error {
 				Mark(ierr.ErrValidation)
 		}
 	}
+
+	// Validate alert config if provided
+	if r.AlertConfig != nil {
+		if r.AlertConfig.Threshold == nil {
+			return ierr.NewError("alert_config.threshold is required").
+				WithHint("Threshold must be provided when alert config is set").
+				Mark(ierr.ErrValidation)
+		}
+		if r.AlertConfig.Threshold.Type == "" {
+			return ierr.NewError("alert_config.threshold.type is required").
+				WithHint("Threshold type must be provided when alert config is set").
+				Mark(ierr.ErrValidation)
+		}
+		if r.AlertConfig.Threshold.Value.IsZero() {
+			return ierr.NewError("alert_config.threshold.value must be greater than 0").
+				WithHint("Threshold value must be provided when alert config is set").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	return validator.ValidateRequest(r)
 }
 
@@ -221,6 +273,9 @@ type WalletResponse struct {
 	WalletType          types.WalletType       `json:"wallet_type"`
 	Config              types.WalletConfig     `json:"config,omitempty"`
 	ConversionRate      decimal.Decimal        `json:"conversion_rate"`
+	AlertEnabled        bool                   `json:"alert_enabled"`
+	AlertConfig         *types.AlertConfig     `json:"alert_config,omitempty"`
+	AlertState          string                 `json:"alert_state,omitempty"`
 	CreatedAt           time.Time              `json:"created_at"`
 	UpdatedAt           time.Time              `json:"updated_at"`
 }
@@ -246,6 +301,9 @@ func FromWallet(w *wallet.Wallet) *WalletResponse {
 		WalletType:          w.WalletType,
 		Config:              w.Config,
 		ConversionRate:      w.ConversionRate,
+		AlertEnabled:        w.AlertEnabled,
+		AlertConfig:         w.AlertConfig,
+		AlertState:          w.AlertState,
 		CreatedAt:           w.CreatedAt,
 		UpdatedAt:           w.UpdatedAt,
 	}

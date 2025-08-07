@@ -17,7 +17,7 @@ type InvoiceCoupon struct {
 	CouponAssociationID *string          `json:"coupon_association_id"`
 	AmountOff           *decimal.Decimal `json:"amount_off,omitempty"`
 	PercentageOff       *decimal.Decimal `json:"percentage_off,omitempty"`
-	Type                types.CouponType `json:"type,"`
+	Type                types.CouponType `json:"type"`
 }
 
 // InvoiceLineItemCoupon represents a coupon applied to a specific invoice line item
@@ -415,6 +415,12 @@ type CreateInvoiceLineItemRequest struct {
 	// meter_display_name is the optional human-readable name of the meter
 	MeterDisplayName *string `json:"meter_display_name,omitempty"`
 
+	// price_unit is the optional 3-digit ISO code of the price unit associated with this line item
+	PriceUnit *string `json:"price_unit,omitempty"`
+
+	// price_unit_amount is the optional amount converted to the price unit currency
+	PriceUnitAmount *decimal.Decimal `json:"price_unit_amount,omitempty"`
+
 	// display_name is the optional human-readable name for this line item
 	DisplayName *string `json:"display_name,omitempty"`
 
@@ -482,6 +488,8 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		PriceType:        r.PriceType,
 		MeterID:          r.MeterID,
 		MeterDisplayName: r.MeterDisplayName,
+		PriceUnit:        r.PriceUnit,
+		PriceUnitAmount:  r.PriceUnitAmount,
 		DisplayName:      r.DisplayName,
 		Amount:           r.Amount,
 		Quantity:         r.Quantity,
@@ -525,6 +533,15 @@ type InvoiceLineItemResponse struct {
 
 	// meter_display_name is the optional human-readable name of the meter
 	MeterDisplayName *string `json:"meter_display_name,omitempty"`
+
+	// price_unit_id is the optional unique identifier of the price unit associated with this line item
+	PriceUnitID *string `json:"price_unit_id,omitempty"`
+
+	// price_unit is the optional 3-digit ISO code of the price unit associated with this line item
+	PriceUnit *string `json:"price_unit,omitempty"`
+
+	// price_unit_amount is the optional amount converted to the price unit currency
+	PriceUnitAmount *decimal.Decimal `json:"price_unit_amount,omitempty"`
 
 	// display_name is the optional human-readable name for this line item
 	DisplayName *string `json:"display_name,omitempty"`
@@ -582,6 +599,9 @@ func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemR
 		PriceType:        item.PriceType,
 		MeterID:          item.MeterID,
 		MeterDisplayName: item.MeterDisplayName,
+		PriceUnitID:      item.PriceUnitID,
+		PriceUnit:        item.PriceUnit,
+		PriceUnitAmount:  item.PriceUnitAmount,
 		DisplayName:      item.DisplayName,
 		Amount:           item.Amount,
 		Quantity:         item.Quantity,
@@ -631,6 +651,25 @@ func (r *UpdatePaymentStatusRequest) Validate() error {
 			}).
 			Mark(ierr.ErrValidation)
 	}
+	return nil
+}
+
+// UpdateInvoiceRequest represents the request payload for updating an invoice
+type UpdateInvoiceRequest struct {
+	// invoice_pdf_url is the URL where customers can download the PDF version of this invoice
+	InvoicePDFURL *string `json:"invoice_pdf_url,omitempty"`
+}
+
+func (r *UpdateInvoiceRequest) Validate() error {
+	// url validation if url is provided
+	if r.InvoicePDFURL != nil {
+		if err := validator.ValidateURL(r.InvoicePDFURL); err != nil {
+			return ierr.WithError(err).
+				WithHint("invalid invoice_pdf_url").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	return nil
 }
 
