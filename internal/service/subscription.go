@@ -112,11 +112,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			Mark(ierr.ErrValidation)
 	}
 
-	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
-	priceFilter := types.NewNoLimitPriceFilter().
-		WithPlanIDs([]string{plan.ID}).
-		WithExpand(string(types.ExpandMeters))
-	pricesResponse, err := priceService.GetPrices(ctx, priceFilter)
+	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
+	pricesResponse, err := priceService.GetPricesByPlanID(ctx, plan.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -235,11 +232,22 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		item.BillingPeriod = sub.BillingPeriod
 		item.InvoiceCadence = price.InvoiceCadence
 		item.TrialPeriod = price.TrialPeriod
+		item.PriceUnitID = price.PriceUnitID
+		item.PriceUnit = price.PriceUnit
 		item.StartDate = sub.StartDate
 		if sub.EndDate != nil {
 			item.EndDate = *sub.EndDate
 		}
 	}
+
+	// Process price overrides if provided
+	if len(req.OverrideLineItems) > 0 {
+		err = s.processSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	sub.LineItems = lineItems
 
 	s.Logger.Infow("creating subscription",
@@ -346,7 +354,141 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	return response, nil
 }
 
-// handleCreditGrants processes credit grants for a subscription and creates wallet top-ups
+// processSubscriptionPriceOverrides handles creating subscription-scoped prices for overrides
+func (s *subscriptionService) processSubscriptionPriceOverrides(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	overrideRequests []dto.OverrideLineItemRequest,
+	lineItems []*subscription.SubscriptionLineItem,
+	priceMap map[string]*dto.PriceResponse,
+) error {
+	if len(overrideRequests) == 0 {
+		return nil
+	}
+
+	s.Logger.Infow("processing price overrides for subscription",
+		"subscription_id", sub.ID,
+		"override_count", len(overrideRequests))
+
+	// Create a map from price ID to line item for quick lookup
+	lineItemsByPriceID := make(map[string]*subscription.SubscriptionLineItem)
+	for _, item := range lineItems {
+		lineItemsByPriceID[item.PriceID] = item
+	}
+
+	// Process each override request
+	for _, override := range overrideRequests {
+		// Validate that the price exists in the plan
+		originalPrice, exists := priceMap[override.PriceID]
+		if !exists {
+			return ierr.NewError("price not found in plan").
+				WithHint("Override price must be a valid price from the selected plan").
+				WithReportableDetails(map[string]interface{}{
+					"price_id": override.PriceID,
+					"plan_id":  sub.PlanID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		// Find the corresponding line item
+		lineItem, exists := lineItemsByPriceID[override.PriceID]
+		if !exists {
+			return ierr.NewError("line item not found for price").
+				WithHint("Could not find line item for the specified price").
+				WithReportableDetails(map[string]interface{}{
+					"price_id": override.PriceID,
+				}).
+				Mark(ierr.ErrInternal)
+		}
+
+		priceUnitType := originalPrice.PriceUnitType
+		if priceUnitType == "" {
+			priceUnitType = types.PRICE_UNIT_TYPE_FIAT
+		}
+
+		// Create subscription-scoped price clone
+		overriddenPrice := &price.Price{
+			ID:                     types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+			Amount:                 originalPrice.Amount,
+			Currency:               originalPrice.Currency,
+			DisplayAmount:          originalPrice.DisplayAmount,
+			PlanID:                 originalPrice.PlanID,
+			Type:                   originalPrice.Type,
+			BillingPeriod:          originalPrice.BillingPeriod,
+			BillingPeriodCount:     originalPrice.BillingPeriodCount,
+			BillingModel:           originalPrice.BillingModel,
+			BillingCadence:         originalPrice.BillingCadence,
+			InvoiceCadence:         originalPrice.InvoiceCadence,
+			TrialPeriod:            originalPrice.TrialPeriod,
+			TierMode:               originalPrice.TierMode,
+			Tiers:                  originalPrice.Tiers,
+			MeterID:                originalPrice.MeterID,
+			LookupKey:              "", // Clear lookup key for subscription-scoped prices
+			Description:            originalPrice.Description,
+			PriceUnitID:            originalPrice.PriceUnitID,
+			PriceUnit:              originalPrice.PriceUnit,
+			PriceUnitType:          priceUnitType,
+			ConversionRate:         originalPrice.ConversionRate,
+			DisplayPriceUnitAmount: originalPrice.DisplayPriceUnitAmount,
+			PriceUnitAmount:        originalPrice.PriceUnitAmount,
+			PriceUnitTiers:         originalPrice.PriceUnitTiers,
+			TransformQuantity:      originalPrice.TransformQuantity,
+			Metadata:               originalPrice.Metadata,
+			EnvironmentID:          originalPrice.EnvironmentID,
+			// Set override-specific fields
+			Scope:          types.PRICE_SCOPE_SUBSCRIPTION,
+			ParentPriceID:  originalPrice.ID,
+			SubscriptionID: sub.ID,
+			BaseModel:      types.GetDefaultBaseModel(ctx),
+		}
+
+		// Apply overrides
+		if override.Amount != nil {
+			overriddenPrice.Amount = *override.Amount
+			overriddenPrice.DisplayAmount = overriddenPrice.GetDisplayAmount()
+		}
+
+		// Update line item quantity if specified
+		if override.Quantity != nil {
+			lineItem.Quantity = *override.Quantity
+		}
+
+		// Validate the overridden price
+		if err := overriddenPrice.Validate(); err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to validate overridden price").
+				WithReportableDetails(map[string]interface{}{
+					"original_price_id": override.PriceID,
+					"override_price_id": overriddenPrice.ID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		// Create the subscription-scoped price
+		if err := s.PriceRepo.Create(ctx, overriddenPrice); err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to create subscription-scoped price").
+				WithReportableDetails(map[string]interface{}{
+					"original_price_id": override.PriceID,
+					"override_price_id": overriddenPrice.ID,
+				}).
+				Mark(ierr.ErrDatabase)
+		}
+
+		// Update the line item to reference the new subscription-scoped price
+		lineItem.PriceID = overriddenPrice.ID
+
+		s.Logger.Infow("created subscription-scoped price override",
+			"subscription_id", sub.ID,
+			"original_price_id", override.PriceID,
+			"override_price_id", overriddenPrice.ID,
+			"amount_override", override.Amount != nil,
+			"quantity_override", override.Quantity != nil)
+	}
+
+	return nil
+}
+
 func (s *subscriptionService) handleCreditGrants(
 	ctx context.Context,
 	subscription *subscription.Subscription,
@@ -627,7 +769,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	response := &dto.GetUsageBySubscriptionResponse{}
 
 	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
-	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.Logger)
+	priceService := NewPriceService(s.PriceRepo, s.MeterRepo, s.PriceUnitRepo, s.Logger)
 
 	// Get subscription with line items
 	subscription, lineItems, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)

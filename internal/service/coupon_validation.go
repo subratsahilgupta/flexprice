@@ -268,7 +268,7 @@ func (s *couponValidationService) validateOnceCadence(ctx context.Context, coupo
 		"existing_applications", existingApplicationCount)
 
 	// For "once" cadence, this coupon should not have been applied before in this subscription
-	if existingApplicationCount > 0 {
+	if existingApplicationCount > 1 {
 		return &CouponValidationError{
 			Code:    types.CouponValidationErrorCodeOnceCadenceViolation,
 			Message: "Once cadence coupon can only be applied once per subscription",

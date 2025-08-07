@@ -22,6 +22,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
+	"github.com/flexprice/flexprice/internal/pyroscope"
 	"github.com/flexprice/flexprice/internal/repository"
 	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/sentry"
@@ -78,6 +79,7 @@ func main() {
 
 			// Monitoring
 			sentry.NewSentryService,
+			pyroscope.NewPyroscopeService,
 
 			// Cache
 			cache.Initialize,
@@ -140,6 +142,7 @@ func main() {
 			repository.NewCouponRepository,
 			repository.NewCouponAssociationRepository,
 			repository.NewCouponApplicationRepository,
+			repository.NewPriceUnitRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -187,6 +190,7 @@ func main() {
 			service.NewCostSheetService,
 			service.NewCreditNoteService,
 			service.NewCouponService,
+			service.NewPriceUnitService,
 		),
 	)
 
@@ -199,6 +203,7 @@ func main() {
 		),
 		fx.Invoke(
 			sentry.RegisterHooks,
+			pyroscope.RegisterHooks,
 			startServer,
 		),
 	)
@@ -235,6 +240,7 @@ func provideHandlers(
 	creditGrantService service.CreditGrantService,
 	costSheetService service.CostSheetService,
 	creditNoteService service.CreditNoteService,
+	priceUnitService *service.PriceUnitService,
 	svixClient *svix.Client,
 	couponService service.CouponService,
 ) api.Handlers {
@@ -260,11 +266,12 @@ func provideHandlers(
 		Secret:            v1.NewSecretHandler(secretService, logger),
 		Onboarding:        v1.NewOnboardingHandler(onboardingService, logger),
 		CronSubscription:  cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
-		CronWallet:        cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService),
+		CronWallet:        cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService, environmentService),
 		CreditGrant:       v1.NewCreditGrantHandler(creditGrantService, logger),
 		CostSheet:         v1.NewCostSheetHandler(costSheetService, logger),
 		CronCreditGrant:   cron.NewCreditGrantCronHandler(creditGrantService, logger),
 		CreditNote:        v1.NewCreditNoteHandler(creditNoteService, logger),
+		PriceUnit:         v1.NewPriceUnitHandler(priceUnitService, logger),
 		Webhook:           v1.NewWebhookHandler(cfg, svixClient, logger),
 		Coupon:            v1.NewCouponHandler(couponService, logger),
 	}
