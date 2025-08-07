@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -20,7 +19,6 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
-	"github.com/sourcegraph/conc/pool"
 )
 
 type InvoiceService interface {
@@ -408,6 +406,196 @@ func (s *invoiceService) getUsageAnalyticsForLineItem(ctx context.Context, lineI
 	return usageAnalyticsResponse, nil
 }
 
+// getBulkUsageAnalyticsForInvoice fetches analytics for all line items in a single ClickHouse call
+// This replaces the previous approach of making N separate calls per line item
+func (s *invoiceService) getBulkUsageAnalyticsForInvoice(ctx context.Context, usageBasedLineItems []*dto.InvoiceLineItemResponse, inv *dto.InvoiceResponse) (map[string][]dto.UsageAnalyticsItem, error) {
+	// Step 1: Collect all feature IDs and build line item metadata
+	featureIDs := make([]string, 0, len(usageBasedLineItems))
+	lineItemToFeatureMap := make(map[string]string)                   // lineItemID -> featureID
+	lineItemMetadata := make(map[string]*dto.InvoiceLineItemResponse) // lineItemID -> lineItem
+
+	for _, lineItem := range usageBasedLineItems {
+		// Skip if essential fields are missing
+		if lineItem.PriceID == nil || lineItem.MeterID == nil {
+			s.Logger.Warnw("skipping line item with missing price_id or meter_id",
+				"line_item_id", lineItem.ID,
+				"price_id", lineItem.PriceID,
+				"meter_id", lineItem.MeterID)
+			continue
+		}
+
+		// Get feature ID from meter
+		featureFilter := types.NewNoLimitFeatureFilter()
+		featureFilter.MeterIDs = []string{*lineItem.MeterID}
+		features, err := s.FeatureRepo.List(ctx, featureFilter)
+		if err != nil || len(features) == 0 {
+			s.Logger.Warnw("no feature found for meter",
+				"meter_id", *lineItem.MeterID,
+				"line_item_id", lineItem.ID)
+			continue
+		}
+
+		featureID := features[0].ID
+		featureIDs = append(featureIDs, featureID)
+		lineItemToFeatureMap[lineItem.ID] = featureID
+		lineItemMetadata[lineItem.ID] = lineItem
+	}
+
+	if len(featureIDs) == 0 {
+		s.Logger.Warnw("no valid feature IDs found for any line items")
+		return make(map[string][]dto.UsageAnalyticsItem), nil
+	}
+
+	// Step 2: Get customer external ID
+	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		s.Logger.Errorw("failed to get customer for usage analytics",
+			"customer_id", inv.CustomerID,
+			"error", err)
+		return nil, err
+	}
+
+	// Step 3: Use invoice period for usage calculation
+	periodStart := inv.PeriodStart
+	periodEnd := inv.PeriodEnd
+
+	if periodStart == nil || periodEnd == nil {
+		s.Logger.Warnw("missing period information in invoice",
+			"invoice_id", inv.ID,
+			"period_start", periodStart,
+			"period_end", periodEnd)
+		return make(map[string][]dto.UsageAnalyticsItem), nil
+	}
+
+	// Step 4: Make SINGLE analytics request for ALL feature IDs, grouped by source AND feature_id
+	analyticsReq := &dto.GetUsageAnalyticsRequest{
+		ExternalCustomerID: customer.ExternalID,
+		FeatureIDs:         featureIDs, // All feature IDs at once!
+		StartTime:          *periodStart,
+		EndTime:            *periodEnd,
+		GroupBy:            []string{"source", "feature_id"}, // Group by BOTH source and feature_id
+	}
+
+	s.Logger.Infow("making bulk analytics request",
+		"invoice_id", inv.ID,
+		"feature_ids_count", len(featureIDs),
+		"customer_id", customer.ExternalID)
+
+	eventPostProcessingService := NewEventPostProcessingService(s.ServiceParams, s.EventRepo, s.ProcessedEventRepo)
+	analyticsResponse, err := eventPostProcessingService.GetDetailedUsageAnalytics(ctx, analyticsReq)
+	if err != nil {
+		s.Logger.Errorw("failed to get bulk usage analytics",
+			"invoice_id", inv.ID,
+			"error", err)
+		return nil, err
+	}
+
+	s.Logger.Infow("retrieved bulk usage analytics",
+		"invoice_id", inv.ID,
+		"analytics_items_count", len(analyticsResponse.Items))
+
+	// Step 5: Map results back to line items and calculate costs
+	return s.mapBulkAnalyticsToLineItems(ctx, analyticsResponse, lineItemToFeatureMap, lineItemMetadata)
+}
+
+// mapBulkAnalyticsToLineItems maps the bulk analytics response back to individual line items
+// and calculates proportional costs for each source within each line item
+func (s *invoiceService) mapBulkAnalyticsToLineItems(ctx context.Context, analyticsResponse *dto.GetUsageAnalyticsResponse, lineItemToFeatureMap map[string]string, lineItemMetadata map[string]*dto.InvoiceLineItemResponse) (map[string][]dto.UsageAnalyticsItem, error) {
+	usageAnalyticsResponse := make(map[string][]dto.UsageAnalyticsItem)
+
+	// Step 1: Group analytics by feature_id and source
+	featureAnalyticsMap := make(map[string]map[string]dto.UsageAnalyticItem) // featureID -> source -> analytics
+
+	for _, analyticsItem := range analyticsResponse.Items {
+		if featureAnalyticsMap[analyticsItem.FeatureID] == nil {
+			featureAnalyticsMap[analyticsItem.FeatureID] = make(map[string]dto.UsageAnalyticItem)
+		}
+		featureAnalyticsMap[analyticsItem.FeatureID][analyticsItem.Source] = analyticsItem
+	}
+
+	// Step 2: Process each line item
+	for lineItemID, featureID := range lineItemToFeatureMap {
+		lineItem := lineItemMetadata[lineItemID]
+		sourceAnalytics, exists := featureAnalyticsMap[featureID]
+
+		if !exists || len(sourceAnalytics) == 0 {
+			// No usage data for this line item
+			s.Logger.Debugw("no usage analytics found for line item",
+				"line_item_id", lineItemID,
+				"feature_id", featureID)
+			usageAnalyticsResponse[lineItemID] = []dto.UsageAnalyticsItem{}
+			continue
+		}
+
+		// Step 3: Calculate total usage for this line item across all sources
+		totalUsageForLineItem := decimal.Zero
+		for _, analyticsItem := range sourceAnalytics {
+			totalUsageForLineItem = totalUsageForLineItem.Add(analyticsItem.TotalUsage)
+		}
+
+		// Step 4: Calculate proportional costs for each source
+		lineItemUsageAnalytics := make([]dto.UsageAnalyticsItem, 0, len(sourceAnalytics))
+		totalLineItemCost := lineItem.Amount
+
+		for source, analyticsItem := range sourceAnalytics {
+			// Calculate proportional cost based on usage
+			var cost string
+			if !totalLineItemCost.IsZero() && !totalUsageForLineItem.IsZero() {
+				proportionalCost := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(totalLineItemCost)
+				cost = proportionalCost.String()
+			} else {
+				cost = "0"
+			}
+
+			// Calculate percentage
+			var percentage string
+			if !totalUsageForLineItem.IsZero() {
+				pct := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(decimal.NewFromInt(100))
+				percentage = pct.String()
+			} else {
+				percentage = "0"
+			}
+
+			// Create usage analytics item
+			usageItem := dto.UsageAnalyticsItem{
+				Source: source,
+				Cost:   cost,
+			}
+
+			// Add optional fields
+			if !analyticsItem.TotalUsage.IsZero() {
+				usageStr := analyticsItem.TotalUsage.String()
+				usageItem.Usage = &usageStr
+			}
+
+			if percentage != "0" {
+				usageItem.Percentage = &percentage
+			}
+
+			if analyticsItem.EventCount > 0 {
+				eventCount := int(analyticsItem.EventCount)
+				usageItem.EventCount = &eventCount
+			}
+
+			lineItemUsageAnalytics = append(lineItemUsageAnalytics, usageItem)
+		}
+
+		usageAnalyticsResponse[lineItemID] = lineItemUsageAnalytics
+
+		s.Logger.Debugw("mapped usage analytics for line item",
+			"line_item_id", lineItemID,
+			"feature_id", featureID,
+			"sources_count", len(lineItemUsageAnalytics),
+			"total_usage", totalUsageForLineItem.String())
+	}
+
+	s.Logger.Infow("completed bulk analytics mapping",
+		"line_items_processed", len(usageAnalyticsResponse),
+		"total_analytics_items", s.countTotalAnalyticsItems(usageAnalyticsResponse))
+
+	return usageAnalyticsResponse, nil
+}
+
 func (s *invoiceService) CalculatePriceBreakdown(ctx context.Context, inv *dto.InvoiceResponse) (map[string][]dto.UsageAnalyticsItem, error) {
 	s.Logger.Infow("calculating price breakdown for invoice",
 		"invoice_id", inv.ID,
@@ -432,56 +620,8 @@ func (s *invoiceService) CalculatePriceBreakdown(ctx context.Context, inv *dto.I
 		return make(map[string][]dto.UsageAnalyticsItem), nil
 	}
 
-	// Use GO routines to calculate usage analytics for each line item in parallel
-	// and then combine the results into a single map
-
-	// Create a pool with maximum concurrency and error handling
-	usageAnalyticsResponse := make(map[string][]dto.UsageAnalyticsItem)
-
-	p := pool.New().
-		WithContext(ctx).
-		WithMaxGoroutines(10)
-
-	var resultsMu sync.Mutex
-
-	for _, lineItem := range usageBasedLineItems {
-		lineItem := lineItem // Capture loop variable
-		p.Go(func(ctx context.Context) error {
-			usageAnalytics, err := s.getUsageAnalyticsForLineItem(ctx, lineItem, inv)
-			if err != nil {
-				s.Logger.Errorw("failed to calculate usage analytics for line item",
-					"line_item_id", lineItem.ID,
-					"error", err)
-				return err
-			}
-
-			// Thread-safe update of results map
-			resultsMu.Lock()
-			usageAnalyticsResponse[lineItem.ID] = usageAnalytics
-			resultsMu.Unlock()
-
-			s.Logger.Debugw("completed usage analytics for line item",
-				"line_item_id", lineItem.ID,
-				"analytics_count", len(usageAnalytics))
-
-			return nil
-		})
-	}
-
-	// Wait for all goroutines to complete and check for errors
-	if err := p.Wait(); err != nil {
-		s.Logger.Errorw("error occurred during parallel price breakdown calculation",
-			"invoice_id", inv.ID,
-			"error", err)
-		return nil, err
-	}
-
-	s.Logger.Infow("completed price breakdown calculation",
-		"invoice_id", inv.ID,
-		"line_items_with_usage", len(usageAnalyticsResponse),
-		"total_analytics_items", s.countTotalAnalyticsItems(usageAnalyticsResponse))
-
-	return usageAnalyticsResponse, nil
+	// OPTIMIZED: Use single ClickHouse call to get all analytics data grouped by source and feature_id
+	return s.getBulkUsageAnalyticsForInvoice(ctx, usageBasedLineItems, inv)
 }
 
 // Helper function to count total analytics items
