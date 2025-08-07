@@ -327,12 +327,12 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		// Apply coupons to the subscription
-		err = s.ApplyCouponsToSubscription(ctx, sub.ID, req.SubscriptionCoupons)
+		err = s.ApplyCouponsToSubscription(ctx, sub.ID, req.Coupons)
 		if err != nil {
 			return err
 		}
 
-		err = s.ApplyCouponsToSubscriptionLineItems(ctx, sub.ID, req.SubscriptionLineItemsCoupons, lineItems)
+		err = s.ApplyCouponsToSubscriptionLineItems(ctx, sub.ID, req.LineItemCoupons, lineItems)
 		if err != nil {
 			return err
 		}

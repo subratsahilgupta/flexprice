@@ -51,9 +51,9 @@ type CreateSubscriptionRequest struct {
 	// Phases represents an optional timeline of subscription phases
 	Phases []SubscriptionSchedulePhaseInput `json:"phases,omitempty" validate:"omitempty,dive"`
 	// SubscriptionCoupons is a list of coupon IDs to be applied to the subscription
-	SubscriptionCoupons []string `json:"subscription_coupons,omitempty"`
+	Coupons []string `json:"coupons,omitempty"`
 	// SubscriptionLineItemsCoupons is a list of coupon IDs to be applied to the subscription line items
-	SubscriptionLineItemsCoupons map[string][]string `json:"subscription_line_items_coupons,omitempty"`
+	LineItemCoupons map[string][]string `json:"line_item_coupons,omitempty"`
 	// OverrideLineItems allows customizing specific prices for this subscription
 	OverrideLineItems []OverrideLineItemRequest `json:"override_line_items,omitempty" validate:"omitempty,dive"`
 }
@@ -250,9 +250,9 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	}
 
 	// Validate subscription coupons if provided
-	if len(r.SubscriptionCoupons) > 0 {
+	if len(r.Coupons) > 0 {
 		// Validate that coupon IDs are not empty
-		for i, couponID := range r.SubscriptionCoupons {
+		for i, couponID := range r.Coupons {
 			if couponID == "" {
 				return ierr.NewError("subscription coupon ID cannot be empty").
 					WithHint("All subscription coupon IDs must be valid").
@@ -264,8 +264,8 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		}
 	}
 
-	if len(r.SubscriptionLineItemsCoupons) > 0 {
-		for priceID, couponIDs := range r.SubscriptionLineItemsCoupons {
+	if len(r.LineItemCoupons) > 0 {
+		for priceID, couponIDs := range r.LineItemCoupons {
 			if len(couponIDs) == 0 {
 				return ierr.NewError("subscription line item coupon IDs cannot be empty").
 					WithHint("All subscription line item coupon IDs must be valid").
