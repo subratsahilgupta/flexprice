@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -46,9 +47,22 @@ func walletFilterFn(ctx context.Context, w *wallet.Wallet, filter interface{}) b
 		return false
 	}
 
-	// Check wallet status is active
-	if w.WalletStatus != types.WalletStatusActive {
-		return false
+	// Apply WalletFilter if provided
+	if f, ok := filter.(*types.WalletFilter); ok {
+		// Filter by wallet status
+		if f.Status != nil && w.WalletStatus != *f.Status {
+			return false
+		}
+
+		// Filter by alert enabled
+		if f.AlertEnabled != nil && w.AlertEnabled != *f.AlertEnabled {
+			return false
+		}
+
+		// Filter by wallet IDs
+		if len(f.WalletIDs) > 0 && !lo.Contains(f.WalletIDs, w.ID) {
+			return false
+		}
 	}
 
 	return true
@@ -524,4 +538,23 @@ func (s *InMemoryWalletStore) UpdateWallet(ctx context.Context, id string, w *wa
 	*w = *existing
 
 	return nil
+}
+
+// walletSortFn implements sorting logic for wallets
+func walletSortFn(i, j *wallet.Wallet) bool {
+	return i.CreatedAt.Before(j.CreatedAt)
+}
+
+// GetWalletsByFilter retrieves wallets based on filter criteria
+func (s *InMemoryWalletStore) GetWalletsByFilter(ctx context.Context, filter *types.WalletFilter) ([]*wallet.Wallet, error) {
+	wallets, err := s.wallets.List(ctx, filter, walletFilterFn, walletSortFn)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list wallets").
+			Mark(ierr.ErrDatabase)
+	}
+	if len(wallets) == 0 {
+		return []*wallet.Wallet{}, nil
+	}
+	return wallets, nil
 }

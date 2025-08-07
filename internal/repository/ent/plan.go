@@ -429,8 +429,13 @@ func (o PlanQueryOptions) GetFieldName(field string) string {
 		return plan.FieldLookupKey
 	case "name":
 		return plan.FieldName
+	case "description":
+		return plan.FieldDescription
+	case "status":
+		return plan.FieldStatus
 	default:
-		return field
+		// unknown field
+		return ""
 	}
 }
 
@@ -475,6 +480,16 @@ func (o PlanQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.Pl
 		)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	// Apply time range filters if specified
+	if f.TimeRangeFilter != nil {
+		if f.StartTime != nil {
+			query = query.Where(plan.CreatedAtGTE(*f.StartTime))
+		}
+		if f.EndTime != nil {
+			query = query.Where(plan.CreatedAtLTE(*f.EndTime))
 		}
 	}
 
