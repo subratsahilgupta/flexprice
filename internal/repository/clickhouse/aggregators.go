@@ -612,7 +612,7 @@ func (a *MaxAggregator) getWindowedQuery(ctx context.Context, params *events.Usa
 			ORDER BY bucket_start
 		)
 		SELECT
-			(SELECT max(bucket_max) FROM bucket_maxes) as total,
+			(SELECT sum(bucket_max) FROM bucket_maxes) as total,
 			bucket_start as timestamp,
 			bucket_max as value
 		FROM bucket_maxes
