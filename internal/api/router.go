@@ -37,6 +37,7 @@ type Handlers struct {
 	CostSheet         *v1.CostSheetHandler
 	CreditNote        *v1.CreditNoteHandler
 	Coupon            *v1.CouponHandler
+	PriceUnit         *v1.PriceUnitHandler
 	Webhook           *v1.WebhookHandler
 	// Portal handlers
 	Onboarding *v1.OnboardingHandler
@@ -53,7 +54,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	router.Use(
 		middleware.RequestIDMiddleware,
 		middleware.CORSMiddleware,
-		middleware.SentryMiddleware(cfg), // Add Sentry middleware
+		middleware.SentryMiddleware(cfg),    // Add Sentry middleware
+		middleware.PyroscopeMiddleware(cfg), // Add Pyroscope middleware
 	)
 
 	// Add middleware to set swagger host dynamically
@@ -130,6 +132,16 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			price.GET("/:id", handlers.Price.GetPrice)
 			price.PUT("/:id", handlers.Price.UpdatePrice)
 			price.DELETE("/:id", handlers.Price.DeletePrice)
+
+			priceUnit := price.Group("/units")
+			{
+				priceUnit.POST("", handlers.PriceUnit.CreatePriceUnit)
+				priceUnit.GET("", handlers.PriceUnit.GetPriceUnits)
+				priceUnit.GET("/:id", handlers.PriceUnit.GetByID)
+				priceUnit.GET("/code/:code", handlers.PriceUnit.GetByCode)
+				priceUnit.PUT("/:id", handlers.PriceUnit.UpdatePriceUnit)
+				priceUnit.DELETE("/:id", handlers.PriceUnit.DeletePriceUnit)
+			}
 		}
 
 		customer := v1Private.Group("/customers")
@@ -213,6 +225,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			invoices.POST("", handlers.Invoice.CreateInvoice)
 			invoices.GET("", handlers.Invoice.ListInvoices)
 			invoices.GET("/:id", handlers.Invoice.GetInvoice)
+			invoices.PUT("/:id", handlers.Invoice.UpdateInvoice)
 			invoices.POST("/:id/finalize", handlers.Invoice.FinalizeInvoice)
 			invoices.POST("/:id/void", handlers.Invoice.VoidInvoice)
 			invoices.POST("/preview", handlers.Invoice.GetPreviewInvoice)
@@ -362,6 +375,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	walletGroup := cron.Group("/wallets")
 	{
 		walletGroup.POST("/expire-credits", handlers.CronWallet.ExpireCredits)
+		walletGroup.POST("/check-alerts", handlers.CronWallet.CheckAlerts)
 	}
 
 	// Credit grant related cron jobs
