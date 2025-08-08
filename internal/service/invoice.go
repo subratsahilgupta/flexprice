@@ -365,7 +365,7 @@ func (s *invoiceService) getUsageAnalyticsForLineItem(ctx context.Context, lineI
 		var cost string
 		if !totalLineItemCost.IsZero() && !totalUsageForLineItem.IsZero() {
 			proportionalCost := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(totalLineItemCost)
-			cost = proportionalCost.String()
+			cost = proportionalCost.StringFixed(2)
 		} else {
 			cost = "0"
 		}
@@ -589,10 +589,6 @@ func (s *invoiceService) mapBulkAnalyticsToLineItems(ctx context.Context, analyt
 			"total_usage", totalUsageForLineItem.String())
 	}
 
-	s.Logger.Infow("completed bulk analytics mapping",
-		"line_items_processed", len(usageAnalyticsResponse),
-		"total_analytics_items", s.countTotalAnalyticsItems(usageAnalyticsResponse))
-
 	return usageAnalyticsResponse, nil
 }
 
@@ -622,15 +618,6 @@ func (s *invoiceService) CalculatePriceBreakdown(ctx context.Context, inv *dto.I
 
 	// OPTIMIZED: Use single ClickHouse call to get all analytics data grouped by source and feature_id
 	return s.getBulkUsageAnalyticsForInvoice(ctx, usageBasedLineItems, inv)
-}
-
-// Helper function to count total analytics items
-func (s *invoiceService) countTotalAnalyticsItems(analytics map[string][]dto.UsageAnalyticsItem) int {
-	total := 0
-	for _, items := range analytics {
-		total += len(items)
-	}
-	return total
 }
 
 func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error) {
