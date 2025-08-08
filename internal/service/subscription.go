@@ -153,17 +153,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			Mark(ierr.ErrValidation)
 	}
 
-	now := time.Now().UTC()
-
-	// Set start date and ensure it's in UTC
-	// TODO: handle when start date is in the past and there are
-	// multiple billing periods in the past so in this case we need to keep
-	// the current period start as now only and handle past periods in proration
-	if sub.StartDate.IsZero() {
-		sub.StartDate = now
-	} else {
-		sub.StartDate = sub.StartDate.UTC()
-	}
+	// Ensure start date is in UTC format
+	// Note: StartDate is now guaranteed to be set (either from request or defaulted in DTO validation)
+	sub.StartDate = sub.StartDate.UTC()
 
 	if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod)

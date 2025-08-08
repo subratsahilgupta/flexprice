@@ -958,7 +958,7 @@ func (s *onboardingService) createDefaultSubscriptions(ctx context.Context, cust
 		CustomerID:         customer.ID,
 		PlanID:             proPlan.ID,
 		Currency:           "USD",
-		StartDate:          time.Now(),
+		StartDate:          lo.ToPtr(time.Now()),
 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,

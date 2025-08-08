@@ -566,7 +566,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			name: "both_customer_id_and_external_id_absent",
 			input: dto.CreateSubscriptionRequest{
 				PlanID:             s.testData.plan.ID,
-				StartDate:          s.testData.now,
+				StartDate:          lo.ToPtr(s.testData.now),
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
@@ -583,7 +583,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			input: dto.CreateSubscriptionRequest{
 				CustomerID:         s.testData.customer.ID,
 				PlanID:             s.testData.plan.ID,
-				StartDate:          s.testData.now,
+				StartDate:          lo.ToPtr(s.testData.now),
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
@@ -598,7 +598,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			input: dto.CreateSubscriptionRequest{
 				ExternalCustomerID: s.testData.customer.ExternalID,
 				PlanID:             s.testData.plan.ID,
-				StartDate:          s.testData.now,
+				StartDate:          lo.ToPtr(s.testData.now),
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
@@ -614,7 +614,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				CustomerID:         s.testData.customer.ID,
 				ExternalCustomerID: "some_other_external_id",
 				PlanID:             s.testData.plan.ID,
-				StartDate:          s.testData.now,
+				StartDate:          lo.ToPtr(s.testData.now),
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
@@ -629,7 +629,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			input: dto.CreateSubscriptionRequest{
 				ExternalCustomerID: "non_existent_external_id",
 				PlanID:             s.testData.plan.ID,
-				StartDate:          s.testData.now,
+				StartDate:          lo.ToPtr(s.testData.now),
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
@@ -646,7 +646,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			input: dto.CreateSubscriptionRequest{
 				CustomerID:         "invalid_id",
 				PlanID:             s.testData.plan.ID,
-				StartDate:          s.testData.now,
+				StartDate:          lo.ToPtr(s.testData.now),
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
@@ -663,7 +663,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			input: dto.CreateSubscriptionRequest{
 				CustomerID:         s.testData.customer.ID,
 				PlanID:             "invalid_id",
-				StartDate:          s.testData.now,
+				StartDate:          lo.ToPtr(s.testData.now),
 				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
@@ -680,7 +680,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			input: dto.CreateSubscriptionRequest{
 				CustomerID:         s.testData.customer.ID,
 				PlanID:             s.testData.plan.ID,
-				StartDate:          s.testData.now,
+				StartDate:          lo.ToPtr(s.testData.now),
 				EndDate:            lo.ToPtr(s.testData.now.Add(-24 * time.Hour)),
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
@@ -1084,7 +1084,7 @@ func (s *SubscriptionServiceSuite) TestSubscriptionAnchor_CalendarAndAnniversary
 			input := dto.CreateSubscriptionRequest{
 				CustomerID:         s.testData.customer.ID,
 				PlanID:             s.testData.plan.ID,
-				StartDate:          tt.startDate,
+				StartDate:          lo.ToPtr(tt.startDate),
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
 				BillingPeriod:      tt.billingPeriod,
@@ -1275,7 +1275,7 @@ func (s *SubscriptionServiceSuite) TestSubscriptionWithEndDate() {
 			input := dto.CreateSubscriptionRequest{
 				CustomerID:         s.testData.customer.ID,
 				PlanID:             s.testData.plan.ID,
-				StartDate:          tt.startDate,
+				StartDate:          lo.ToPtr(tt.startDate),
 				EndDate:            tt.endDate,
 				Currency:           "usd",
 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
