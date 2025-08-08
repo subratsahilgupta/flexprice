@@ -433,7 +433,11 @@ func (s *addonService) AddAddonToSubscription(
 	}
 
 	// Create subscription addon
-	subscriptionAddon := s.createSubscriptionAddonFromRequest(ctx, req, subscriptionID)
+	subscriptionAddon := req.ToAddonAssociation(
+		ctx,
+		subscriptionID,
+		types.AddonAssociationEntityTypeSubscription,
+	)
 
 	// Create line items for the addon
 	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(pricesResponse.Items))
@@ -652,28 +656,6 @@ func (s *addonService) getAddonEntitlements(ctx context.Context, entitlementServ
 	}
 
 	return response, nil
-}
-
-// createSubscriptionAddonFromRequest creates a subscription addon from the request
-func (s *addonService) createSubscriptionAddonFromRequest(ctx context.Context, req *dto.AddAddonToSubscriptionRequest, subscriptionID string) *addonassociation.AddonAssociation {
-	now := time.Now()
-	startDate := now
-	if req.StartDate != nil {
-		startDate = *req.StartDate
-	}
-
-	return &addonassociation.AddonAssociation{
-		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ADDON_ASSOCIATION),
-		EntityID:      subscriptionID,
-		EntityType:    types.AddonAssociationEntityTypeSubscription,
-		AddonID:       req.AddonID,
-		AddonStatus:   string(types.AddonStatusActive),
-		StartDate:     &startDate,
-		EndDate:       req.EndDate,
-		Metadata:      req.Metadata,
-		EnvironmentID: types.GetEnvironmentID(ctx),
-		BaseModel:     types.GetDefaultBaseModel(ctx),
-	}
 }
 
 // createLineItemFromPrice creates a subscription line item from a price
