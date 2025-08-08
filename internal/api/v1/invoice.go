@@ -77,7 +77,7 @@ func (h *InvoiceHandler) GetInvoice(c *gin.Context) {
 		return
 	}
 
-	expandBySource := c.Query("expand_by_source") == "true"
+	expandBySource := c.DefaultQuery("expand_by_source", "false") == "true"
 
 	invoice, err := h.invoiceService.GetInvoice(c.Request.Context(), id)
 	if err != nil {
