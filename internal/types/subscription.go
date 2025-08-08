@@ -102,8 +102,10 @@ type SubscriptionFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
 
-	SubscriptionIDs []string `json:"subscription_ids,omitempty" form:"subscription_ids"`
+	Filters []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
+	Sort    []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
 
+	SubscriptionIDs []string `json:"subscription_ids,omitempty" form:"subscription_ids"`
 	// CustomerID filters by customer ID
 	CustomerID string `json:"customer_id,omitempty" form:"customer_id"`
 	// PlanID filters by plan ID
