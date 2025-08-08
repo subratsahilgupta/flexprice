@@ -111,7 +111,8 @@ couponResult := couponService.ApplyCouponsOnInvoice(ctx, invoice, couponsWithAss
 
 // 3. Update invoice totals
 invoice.TotalDiscount = couponResult.TotalDiscountAmount
-invoice.Total = originalTotal.Sub(couponResult.TotalDiscountAmount)
+// Discount-first approach: apply discount to subtotal for consistency with tax calculation
+invoice.Total = invoice.Subtotal.Sub(couponResult.TotalDiscountAmount)
 ```
 
 ### 2. Direct Invoice Coupon Application
