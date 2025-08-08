@@ -45,6 +45,8 @@ type SubscriptionService interface {
 	ApplyCouponsToSubscription(ctx context.Context, subscriptionID string, couponIDs []string) error
 	GetSubscriptionCouponAssociations(ctx context.Context, subscriptionID string) ([]*dto.CouponAssociationResponse, error)
 	RemoveCouponFromSubscription(ctx context.Context, subscriptionID string, couponID string) error
+
+	ValidateAndFilterPricesForSubscription(ctx context.Context, entityID string, entityType types.PriceEntityType, subscription *subscription.Subscription) ([]*dto.PriceResponse, error)
 }
 
 type subscriptionService struct {
@@ -113,38 +115,26 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			Mark(ierr.ErrValidation)
 	}
 
-	priceService := NewPriceService(s.ServiceParams)
-	pricesResponse, err := priceService.GetPricesByPlanID(ctx, plan.ID)
+	sub := req.ToSubscription(ctx)
+
+	// Validate and filter prices for the plan using the reusable method
+	validPrices, err := s.ValidateAndFilterPricesForSubscription(
+		ctx,
+		plan.ID,
+		types.PRICE_ENTITY_TYPE_PLAN,
+		sub,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(pricesResponse.Items) == 0 {
-		return nil, ierr.NewError("no prices found for plan").
-			WithHint("The plan must have at least one price to create a subscription").
-			WithReportableDetails(map[string]interface{}{
-				"plan_id": req.PlanID,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	prices := make([]price.Price, len(pricesResponse.Items))
-	for i, p := range pricesResponse.Items {
-		prices[i] = *p.Price
-
-		// TODO: !REMOVE after migration
-		if p.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
-			p.PlanID = p.EntityID
-		}
-	}
-
-	priceMap := make(map[string]*dto.PriceResponse, len(prices))
-	for _, p := range pricesResponse.Items {
+	// Create price map for line item creation
+	priceMap := make(map[string]*dto.PriceResponse, len(validPrices))
+	for _, p := range validPrices {
 		priceMap[p.Price.ID] = p
 	}
 
-	sub := req.ToSubscription(ctx)
-
+	
 	// Filter prices for subscription that are valid for the plan
 	validPrices := filterValidPricesForSubscription(pricesResponse.Items, sub)
 	if len(validPrices) == 0 {
@@ -158,9 +148,21 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			Mark(ierr.ErrValidation)
 	}
 
+	sub := req.ToSubscription(ctx)
 	// Ensure start date is in UTC format
 	// Note: StartDate is now guaranteed to be set (either from request or defaulted in DTO validation)
 	sub.StartDate = sub.StartDate.UTC()
+	now := time.Now().UTC()
+
+	// Set start date and ensure it's in UTC
+	// TODO: handle when start date is in the past and there are
+	// multiple billing periods in the past so in this case we need to keep
+	// the current period start as now only and handle past periods in proration
+	if sub.StartDate.IsZero() {
+		sub.StartDate = now
+	} else {
+		sub.StartDate = sub.StartDate.UTC()
+	}
 
 	if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod)
@@ -1467,16 +1469,70 @@ func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost 
 	}
 }
 
-func filterValidPricesForSubscription(prices []*dto.PriceResponse, subscriptionObj *subscription.Subscription) []*dto.PriceResponse {
+// filterValidPricesForSubscription filters prices that are valid for a subscription
+// This utility function can be used for both plans and addons
+func filterValidPricesForSubscription(prices []*dto.PriceResponse, subscription *subscription.Subscription) []*dto.PriceResponse {
 	var validPrices []*dto.PriceResponse
 	for _, p := range prices {
-		if types.IsMatchingCurrency(p.Price.Currency, subscriptionObj.Currency) &&
-			p.Price.BillingPeriod == subscriptionObj.BillingPeriod &&
-			p.Price.BillingPeriodCount == subscriptionObj.BillingPeriodCount {
+		if types.IsMatchingCurrency(p.Price.Currency, subscription.Currency) &&
+			p.Price.BillingPeriod == subscription.BillingPeriod &&
+			p.Price.BillingPeriodCount == subscription.BillingPeriodCount {
 			validPrices = append(validPrices, p)
 		}
 	}
 	return validPrices
+}
+
+// ValidateAndFilterPricesForSubscription validates and filters prices for a subscription
+// This method follows the same validation pattern as plans and can be reused for addons
+func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
+	ctx context.Context,
+	entityID string,
+	entityType types.PriceEntityType,
+	subscription *subscription.Subscription,
+) ([]*dto.PriceResponse, error) {
+	// Get prices for the entity (plan or addon)
+	priceService := NewPriceService(s.ServiceParams)
+
+	var pricesResponse *dto.ListPricesResponse
+	var err error
+
+	if entityType == types.PRICE_ENTITY_TYPE_PLAN {
+		pricesResponse, err = priceService.GetPricesByPlanID(ctx, entityID)
+	} else if entityType == types.PRICE_ENTITY_TYPE_ADDON {
+		pricesResponse, err = priceService.GetPricesByAddonID(ctx, entityID)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(pricesResponse.Items) == 0 {
+		return nil, ierr.NewError("no prices found for entity").
+			WithHint("The entity must have at least one price to create a subscription").
+			WithReportableDetails(map[string]interface{}{
+				"entity_id":   entityID,
+				"entity_type": entityType,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Filter prices for subscription that are valid for the entity
+	validPrices := filterValidPricesForSubscription(pricesResponse.Items, subscription)
+	if len(validPrices) == 0 {
+		return nil, ierr.NewError("no valid prices found for subscription").
+			WithHint("No prices match the subscription criteria").
+			WithReportableDetails(map[string]interface{}{
+				"entity_id":       entityID,
+				"entity_type":     entityType,
+				"billing_period":  subscription.BillingPeriod,
+				"billing_cadence": subscription.BillingCadence,
+				"currency":        subscription.Currency,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return validPrices, nil
 }
 
 // PauseSubscription pauses a subscription
@@ -2783,12 +2839,57 @@ func (s *subscriptionService) handleSubscriptionAddons(
 				Mark(ierr.ErrValidation)
 		}
 
-		// Verify the addon exists and is active
+		// Get addon to ensure it's valid and active
 		addonService := NewAddonService(s.ServiceParams)
+		addonResponse, err := addonService.GetAddon(ctx, addonReq.AddonID)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Addon not found").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": subscription.ID,
+					"addon_id":        addonReq.AddonID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+
+		if addonResponse.Addon.Status != types.StatusPublished {
+			return ierr.NewError("addon is not active").
+				WithHint("The addon must be active to add to a subscription").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": subscription.ID,
+					"addon_id":        addonReq.AddonID,
+					"status":          addonResponse.Addon.Status,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		// Validate and filter prices for the addon using the same pattern as plans
+		validPrices, err := s.ValidateAndFilterPricesForSubscription(
+			ctx,
+			addonReq.AddonID,
+			types.PRICE_ENTITY_TYPE_ADDON,
+			subscription,
+		)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to validate addon prices").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": subscription.ID,
+					"addon_id":        addonReq.AddonID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		s.Logger.Infow("validated addon prices for subscription",
+			"subscription_id", subscription.ID,
+			"addon_id", addonReq.AddonID,
+			"valid_prices_count", len(validPrices))
+
+		// Create subscription addon using the validated prices
 		subscriptionAddon, err := addonService.AddAddonToSubscription(ctx, subscription.ID, lo.ToPtr(addonReq))
 		if err != nil {
 			return ierr.WithError(err).
-				WithHint("Addon not found or not active").
+				WithHint("Failed to add addon to subscription").
 				WithReportableDetails(map[string]interface{}{
 					"subscription_id": subscription.ID,
 					"addon_id":        addonReq.AddonID,
@@ -2807,5 +2908,3 @@ func (s *subscriptionService) handleSubscriptionAddons(
 
 	return nil
 }
-
-// handleCreditGrants processes credit grants for a subscription and creates wallet top-ups

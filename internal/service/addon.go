@@ -412,45 +412,30 @@ func (s *addonService) AddAddonToSubscription(
 		}
 	}
 
-	// Get prices for the addon
-	priceService := NewPriceService(s.ServiceParams)
-	priceFilter := types.NewNoLimitPriceFilter().
-		WithEntityIDs([]string{req.AddonID}).
-		WithEntityType(types.PRICE_ENTITY_TYPE_ADDON).
-		WithExpand(string(types.ExpandMeters))
-	pricesResponse, err := priceService.GetPrices(ctx, priceFilter)
+	// Validate and filter prices for the addon using the same pattern as plans
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	validPrices, err := subscriptionService.ValidateAndFilterPricesForSubscription(ctx, req.AddonID, types.PRICE_ENTITY_TYPE_ADDON, sub)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(pricesResponse.Items) == 0 {
-		return nil, ierr.NewError("no prices found for addon").
-			WithHint("The addon must have at least one price to be added to a subscription").
-			WithReportableDetails(map[string]interface{}{
-				"addon_id": req.AddonID,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
 	// Create subscription addon
-	subscriptionAddon := req.ToAddonAssociation(
+	addonAssociation := req.ToAddonAssociation(
 		ctx,
 		subscriptionID,
 		types.AddonAssociationEntityTypeSubscription,
 	)
 
-	// Create line items for the addon
-	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(pricesResponse.Items))
-	for _, priceResponse := range pricesResponse.Items {
+	// Create line items for the addon using validated prices
+	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(validPrices))
+	for _, priceResponse := range validPrices {
 		lineItem := s.createLineItemFromPrice(ctx, priceResponse, sub, req.AddonID, a.Addon.Name)
 		lineItems = append(lineItems, lineItem)
 	}
 
-	var result *addonassociation.AddonAssociation
-
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Create subscription addon
-		err = s.AddonAssociationRepo.Create(ctx, subscriptionAddon)
+		err = s.AddonAssociationRepo.Create(ctx, addonAssociation)
 		if err != nil {
 			return err
 		}
@@ -463,19 +448,6 @@ func (s *addonService) AddAddonToSubscription(
 			}
 		}
 
-		// Convert to AddonAssociation for return
-		result = &addonassociation.AddonAssociation{
-			ID:          subscriptionAddon.ID,
-			EntityID:    subscriptionAddon.EntityID,
-			EntityType:  subscriptionAddon.EntityType,
-			AddonID:     subscriptionAddon.AddonID,
-			AddonStatus: subscriptionAddon.AddonStatus,
-			StartDate:   subscriptionAddon.StartDate,
-			EndDate:     subscriptionAddon.EndDate,
-			Metadata:    subscriptionAddon.Metadata,
-			BaseModel:   subscriptionAddon.BaseModel,
-		}
-
 		return nil
 	})
 
@@ -486,11 +458,11 @@ func (s *addonService) AddAddonToSubscription(
 	s.Logger.Infow("added addon to subscription",
 		"subscription_id", subscriptionID,
 		"addon_id", req.AddonID,
-		"prices_count", len(pricesResponse.Items),
+		"prices_count", len(validPrices),
 		"line_items_count", len(lineItems),
 	)
 
-	return result, nil
+	return addonAssociation, nil
 }
 
 // RemoveAddonFromSubscription removes an addon from a subscription
