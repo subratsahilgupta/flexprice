@@ -472,10 +472,10 @@ func (s *EntitlementServiceSuite) TestCreateBulkEntitlement() {
 		resp, err := s.service.CreateBulkEntitlement(s.GetContext(), req)
 		s.NoError(err)
 		s.NotNil(resp)
-		s.Len(resp.Entitlements, 3)
+		s.Len(resp.Items, 3)
 
 		// Verify first entitlement (boolean)
-		ent1 := resp.Entitlements[0]
+		ent1 := resp.Items[0]
 		s.Equal(types.ENTITLEMENT_ENTITY_TYPE_PLAN, ent1.Entitlement.EntityType)
 		s.Equal(testPlan1.ID, ent1.Entitlement.EntityID)
 		s.Equal(boolFeature.ID, ent1.Entitlement.FeatureID)
@@ -487,7 +487,7 @@ func (s *EntitlementServiceSuite) TestCreateBulkEntitlement() {
 		s.Equal(testPlan1.ID, ent1.Plan.Plan.ID)
 
 		// Verify second entitlement (metered)
-		ent2 := resp.Entitlements[1]
+		ent2 := resp.Items[1]
 		s.Equal(types.ENTITLEMENT_ENTITY_TYPE_PLAN, ent2.Entitlement.EntityType)
 		s.Equal(testPlan1.ID, ent2.Entitlement.EntityID)
 		s.Equal(meteredFeature.ID, ent2.Entitlement.FeatureID)
@@ -501,7 +501,7 @@ func (s *EntitlementServiceSuite) TestCreateBulkEntitlement() {
 		s.Equal(testPlan1.ID, ent2.Plan.Plan.ID)
 
 		// Verify third entitlement (static)
-		ent3 := resp.Entitlements[2]
+		ent3 := resp.Items[2]
 		s.Equal(types.ENTITLEMENT_ENTITY_TYPE_PLAN, ent3.Entitlement.EntityType)
 		s.Equal(testPlan2.ID, ent3.Entitlement.EntityID)
 		s.Equal(staticFeature.ID, ent3.Entitlement.FeatureID)

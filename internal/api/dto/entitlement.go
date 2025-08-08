@@ -117,7 +117,7 @@ type CreateBulkEntitlementRequest struct {
 
 // CreateBulkEntitlementResponse represents the response for bulk entitlement creation
 type CreateBulkEntitlementResponse struct {
-	Entitlements []*EntitlementResponse `json:"entitlements"`
+	Items []*EntitlementResponse `json:"items"`
 }
 
 // Validate validates the bulk entitlement creation request

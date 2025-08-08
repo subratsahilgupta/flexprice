@@ -158,7 +158,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 	// Use transaction to ensure all entitlements are created or none
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		response = &dto.CreateBulkEntitlementResponse{
-			Entitlements: make([]*dto.EntitlementResponse, 0),
+			Items: make([]*dto.EntitlementResponse, 0),
 		}
 
 		// Pre-validate all plans and features to ensure they exist
@@ -257,7 +257,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 				entResp.Plan = &dto.PlanResponse{Plan: plan}
 			}
 
-			response.Entitlements = append(response.Entitlements, entResp)
+			response.Items = append(response.Items, entResp)
 
 			// Publish webhook event for each created entitlement
 			s.publishWebhookEvent(txCtx, types.WebhookEventEntitlementCreated, ent.ID)
