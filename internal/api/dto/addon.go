@@ -86,6 +86,27 @@ type AddAddonToSubscriptionRequest struct {
 	Metadata  map[string]interface{} `json:"metadata"`
 }
 
+func (a *AddAddonToSubscriptionRequest) ToAddonAssociation(ctx context.Context, enitiyId string, enitityType types.AddonAssociationEntityType) *addonassociation.AddonAssociation {
+
+	now := time.Now()
+	startDate := now
+	if a.StartDate != nil {
+		startDate = *a.StartDate
+	}
+	return &addonassociation.AddonAssociation{
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ADDON_ASSOCIATION),
+		EntityID:      enitiyId,
+		EntityType:    enitityType,
+		AddonID:       a.AddonID,
+		AddonStatus:   string(types.AddonStatusActive),
+		StartDate:     &startDate,
+		EndDate:       a.EndDate,
+		Metadata:      a.Metadata,
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}
+}
+
 func (r *AddAddonToSubscriptionRequest) Validate() error {
 	err := validator.ValidateRequest(r)
 	if err != nil {
