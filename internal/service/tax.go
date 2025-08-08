@@ -469,7 +469,11 @@ func (s *taxService) RecalculateInvoiceTaxes(ctx context.Context, invoiceId stri
 
 		// Update the invoice with the total tax and recalculate the total
 		invoice.TotalTax = totalTaxAmount
-		invoice.Total = invoice.Subtotal.Add(totalTaxAmount)
+		// Discount-first-then-tax: total = subtotal - discount + tax
+		invoice.Total = invoice.Subtotal.Sub(invoice.TotalDiscount).Add(totalTaxAmount)
+		if invoice.Total.IsNegative() {
+			invoice.Total = decimal.Zero
+		}
 
 		// Update the invoice
 		if err := s.InvoiceRepo.Update(txCtx, invoice); err != nil {

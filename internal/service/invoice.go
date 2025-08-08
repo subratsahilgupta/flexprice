@@ -1441,7 +1441,11 @@ func (s *invoiceService) RecalculateTaxesOnInvoice(ctx context.Context, inv *inv
 
 	// Update the invoice with calculated tax amounts
 	inv.TotalTax = taxResult.TotalTaxAmount
-	inv.Total = inv.Subtotal.Add(taxResult.TotalTaxAmount)
+	// Discount-first-then-tax: total = subtotal - discount + tax
+	inv.Total = inv.Subtotal.Sub(inv.TotalDiscount).Add(taxResult.TotalTaxAmount)
+	if inv.Total.IsNegative() {
+		inv.Total = decimal.Zero
+	}
 
 	// Update the invoice in the database
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
@@ -1475,20 +1479,21 @@ func (s *invoiceService) applyCouponsToInvoiceWithLineItems(ctx context.Context,
 	// Update the invoice with calculated discount amounts
 	inv.TotalDiscount = couponResult.TotalDiscountAmount
 
-	// Calculate new total, ensuring it doesn't go below zero
-	originalTotal := inv.Total
-	newTotal := originalTotal.Sub(couponResult.TotalDiscountAmount)
+	// Calculate new total based on subtotal - discount (discount-first approach)
+	// This ensures consistency with tax calculation which uses subtotal - discount
+	originalSubtotal := inv.Subtotal
+	newTotal := originalSubtotal.Sub(couponResult.TotalDiscountAmount)
 
 	// Ensure total doesn't go negative
 	if newTotal.LessThan(decimal.Zero) {
-		s.Logger.Warnw("discount amount exceeds invoice total, capping at zero",
+		s.Logger.Warnw("discount amount exceeds invoice subtotal, capping at zero",
 			"invoice_id", inv.ID,
-			"original_total", originalTotal,
+			"original_subtotal", originalSubtotal,
 			"total_discount", couponResult.TotalDiscountAmount,
 			"calculated_total", newTotal)
 		newTotal = decimal.Zero
-		// Adjust the total discount to not exceed the original total
-		inv.TotalDiscount = originalTotal
+		// Adjust the total discount to not exceed the original subtotal
+		inv.TotalDiscount = originalSubtotal
 	}
 
 	inv.Total = newTotal
