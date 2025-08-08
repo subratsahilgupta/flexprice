@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/shopspring/decimal"
@@ -200,6 +201,34 @@ func (slic *SubscriptionLineItemCreate) SetNillableMeterDisplayName(s *string) *
 	return slic
 }
 
+// SetPriceUnitID sets the "price_unit_id" field.
+func (slic *SubscriptionLineItemCreate) SetPriceUnitID(s string) *SubscriptionLineItemCreate {
+	slic.mutation.SetPriceUnitID(s)
+	return slic
+}
+
+// SetNillablePriceUnitID sets the "price_unit_id" field if the given value is not nil.
+func (slic *SubscriptionLineItemCreate) SetNillablePriceUnitID(s *string) *SubscriptionLineItemCreate {
+	if s != nil {
+		slic.SetPriceUnitID(*s)
+	}
+	return slic
+}
+
+// SetPriceUnit sets the "price_unit" field.
+func (slic *SubscriptionLineItemCreate) SetPriceUnit(s string) *SubscriptionLineItemCreate {
+	slic.mutation.SetPriceUnit(s)
+	return slic
+}
+
+// SetNillablePriceUnit sets the "price_unit" field if the given value is not nil.
+func (slic *SubscriptionLineItemCreate) SetNillablePriceUnit(s *string) *SubscriptionLineItemCreate {
+	if s != nil {
+		slic.SetPriceUnit(*s)
+	}
+	return slic
+}
+
 // SetDisplayName sets the "display_name" field.
 func (slic *SubscriptionLineItemCreate) SetDisplayName(s string) *SubscriptionLineItemCreate {
 	slic.mutation.SetDisplayName(s)
@@ -311,6 +340,21 @@ func (slic *SubscriptionLineItemCreate) SetID(s string) *SubscriptionLineItemCre
 // SetSubscription sets the "subscription" edge to the Subscription entity.
 func (slic *SubscriptionLineItemCreate) SetSubscription(s *Subscription) *SubscriptionLineItemCreate {
 	return slic.SetSubscriptionID(s.ID)
+}
+
+// AddCouponAssociationIDs adds the "coupon_associations" edge to the CouponAssociation entity by IDs.
+func (slic *SubscriptionLineItemCreate) AddCouponAssociationIDs(ids ...string) *SubscriptionLineItemCreate {
+	slic.mutation.AddCouponAssociationIDs(ids...)
+	return slic
+}
+
+// AddCouponAssociations adds the "coupon_associations" edges to the CouponAssociation entity.
+func (slic *SubscriptionLineItemCreate) AddCouponAssociations(c ...*CouponAssociation) *SubscriptionLineItemCreate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return slic.AddCouponAssociationIDs(ids...)
 }
 
 // Mutation returns the SubscriptionLineItemMutation object of the builder.
@@ -533,6 +577,14 @@ func (slic *SubscriptionLineItemCreate) createSpec() (*SubscriptionLineItem, *sq
 		_spec.SetField(subscriptionlineitem.FieldMeterDisplayName, field.TypeString, value)
 		_node.MeterDisplayName = &value
 	}
+	if value, ok := slic.mutation.PriceUnitID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldPriceUnitID, field.TypeString, value)
+		_node.PriceUnitID = &value
+	}
+	if value, ok := slic.mutation.PriceUnit(); ok {
+		_spec.SetField(subscriptionlineitem.FieldPriceUnit, field.TypeString, value)
+		_node.PriceUnit = &value
+	}
 	if value, ok := slic.mutation.DisplayName(); ok {
 		_spec.SetField(subscriptionlineitem.FieldDisplayName, field.TypeString, value)
 		_node.DisplayName = &value
@@ -584,6 +636,22 @@ func (slic *SubscriptionLineItemCreate) createSpec() (*SubscriptionLineItem, *sq
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.SubscriptionID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := slic.mutation.CouponAssociationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionlineitem.CouponAssociationsTable,
+			Columns: []string{subscriptionlineitem.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

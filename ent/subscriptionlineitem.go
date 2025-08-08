@@ -50,6 +50,10 @@ type SubscriptionLineItem struct {
 	MeterID *string `json:"meter_id,omitempty"`
 	// MeterDisplayName holds the value of the "meter_display_name" field.
 	MeterDisplayName *string `json:"meter_display_name,omitempty"`
+	// PriceUnitID holds the value of the "price_unit_id" field.
+	PriceUnitID *string `json:"price_unit_id,omitempty"`
+	// PriceUnit holds the value of the "price_unit" field.
+	PriceUnit *string `json:"price_unit,omitempty"`
 	// DisplayName holds the value of the "display_name" field.
 	DisplayName *string `json:"display_name,omitempty"`
 	// Quantity holds the value of the "quantity" field.
@@ -78,9 +82,11 @@ type SubscriptionLineItem struct {
 type SubscriptionLineItemEdges struct {
 	// Subscription holds the value of the subscription edge.
 	Subscription *Subscription `json:"subscription,omitempty"`
+	// Subscription line item can have multiple coupon associations
+	CouponAssociations []*CouponAssociation `json:"coupon_associations,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // SubscriptionOrErr returns the Subscription value or an error if the edge
@@ -94,6 +100,15 @@ func (e SubscriptionLineItemEdges) SubscriptionOrErr() (*Subscription, error) {
 	return nil, &NotLoadedError{edge: "subscription"}
 }
 
+// CouponAssociationsOrErr returns the CouponAssociations value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionLineItemEdges) CouponAssociationsOrErr() ([]*CouponAssociation, error) {
+	if e.loadedTypes[1] {
+		return e.CouponAssociations, nil
+	}
+	return nil, &NotLoadedError{edge: "coupon_associations"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*SubscriptionLineItem) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -105,7 +120,7 @@ func (*SubscriptionLineItem) scanValues(columns []string) ([]any, error) {
 			values[i] = new(decimal.Decimal)
 		case subscriptionlineitem.FieldTrialPeriod:
 			values[i] = new(sql.NullInt64)
-		case subscriptionlineitem.FieldID, subscriptionlineitem.FieldTenantID, subscriptionlineitem.FieldStatus, subscriptionlineitem.FieldCreatedBy, subscriptionlineitem.FieldUpdatedBy, subscriptionlineitem.FieldEnvironmentID, subscriptionlineitem.FieldSubscriptionID, subscriptionlineitem.FieldCustomerID, subscriptionlineitem.FieldPlanID, subscriptionlineitem.FieldPlanDisplayName, subscriptionlineitem.FieldPriceID, subscriptionlineitem.FieldPriceType, subscriptionlineitem.FieldMeterID, subscriptionlineitem.FieldMeterDisplayName, subscriptionlineitem.FieldDisplayName, subscriptionlineitem.FieldCurrency, subscriptionlineitem.FieldBillingPeriod, subscriptionlineitem.FieldInvoiceCadence:
+		case subscriptionlineitem.FieldID, subscriptionlineitem.FieldTenantID, subscriptionlineitem.FieldStatus, subscriptionlineitem.FieldCreatedBy, subscriptionlineitem.FieldUpdatedBy, subscriptionlineitem.FieldEnvironmentID, subscriptionlineitem.FieldSubscriptionID, subscriptionlineitem.FieldCustomerID, subscriptionlineitem.FieldPlanID, subscriptionlineitem.FieldPlanDisplayName, subscriptionlineitem.FieldPriceID, subscriptionlineitem.FieldPriceType, subscriptionlineitem.FieldMeterID, subscriptionlineitem.FieldMeterDisplayName, subscriptionlineitem.FieldPriceUnitID, subscriptionlineitem.FieldPriceUnit, subscriptionlineitem.FieldDisplayName, subscriptionlineitem.FieldCurrency, subscriptionlineitem.FieldBillingPeriod, subscriptionlineitem.FieldInvoiceCadence:
 			values[i] = new(sql.NullString)
 		case subscriptionlineitem.FieldCreatedAt, subscriptionlineitem.FieldUpdatedAt, subscriptionlineitem.FieldStartDate, subscriptionlineitem.FieldEndDate:
 			values[i] = new(sql.NullTime)
@@ -225,6 +240,20 @@ func (sli *SubscriptionLineItem) assignValues(columns []string, values []any) er
 				sli.MeterDisplayName = new(string)
 				*sli.MeterDisplayName = value.String
 			}
+		case subscriptionlineitem.FieldPriceUnitID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field price_unit_id", values[i])
+			} else if value.Valid {
+				sli.PriceUnitID = new(string)
+				*sli.PriceUnitID = value.String
+			}
+		case subscriptionlineitem.FieldPriceUnit:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field price_unit", values[i])
+			} else if value.Valid {
+				sli.PriceUnit = new(string)
+				*sli.PriceUnit = value.String
+			}
 		case subscriptionlineitem.FieldDisplayName:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field display_name", values[i])
@@ -302,6 +331,11 @@ func (sli *SubscriptionLineItem) QuerySubscription() *SubscriptionQuery {
 	return NewSubscriptionLineItemClient(sli.config).QuerySubscription(sli)
 }
 
+// QueryCouponAssociations queries the "coupon_associations" edge of the SubscriptionLineItem entity.
+func (sli *SubscriptionLineItem) QueryCouponAssociations() *CouponAssociationQuery {
+	return NewSubscriptionLineItemClient(sli.config).QueryCouponAssociations(sli)
+}
+
 // Update returns a builder for updating this SubscriptionLineItem.
 // Note that you need to call SubscriptionLineItem.Unwrap() before calling this method if this SubscriptionLineItem
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -377,6 +411,16 @@ func (sli *SubscriptionLineItem) String() string {
 	builder.WriteString(", ")
 	if v := sli.MeterDisplayName; v != nil {
 		builder.WriteString("meter_display_name=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := sli.PriceUnitID; v != nil {
+		builder.WriteString("price_unit_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := sli.PriceUnit; v != nil {
+		builder.WriteString("price_unit=")
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
