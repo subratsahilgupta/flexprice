@@ -6,6 +6,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,7 +26,7 @@ func TestCreateSubscriptionWithPriceOverrides(t *testing.T) {
 			CustomerID:         "test_customer_123",
 			PlanID:             "test_plan_456",
 			Currency:           "USD",
-			StartDate:          time.Now(),
+			StartDate:          lo.ToPtr(time.Now()),
 			BillingCadence:     types.BILLING_CADENCE_RECURRING,
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
@@ -91,7 +92,7 @@ func TestCreateSubscriptionWithPriceOverrides(t *testing.T) {
 			CustomerID:         "test_customer",
 			PlanID:             "test_plan",
 			Currency:           "USD",
-			StartDate:          time.Now(),
+			StartDate:          lo.ToPtr(time.Now()),
 			BillingCadence:     types.BILLING_CADENCE_RECURRING,
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
@@ -143,16 +144,16 @@ func TestPriceScopeFiltering(t *testing.T) {
 }
 
 // Example of how the price override functionality would be tested in integration tests
-func ExamplePriceOverrideWorkflow() {
-	// This example shows the expected workflow for price overrides
+// func ExamplePriceOverrideWorkflow() {
+// This example shows the expected workflow for price overrides
 
-	// 1. Create a plan with standard prices
-	// 2. Create a subscription with override_line_items
-	// 3. Verify that subscription-scoped prices are created
-	// 4. Verify that line items reference the subscription-scoped prices
-	// 5. Verify that billing calculations use the overridden prices
-	// 6. Verify that plan queries only return plan-scoped prices
-	// 7. Verify that subscription queries return subscription-scoped prices
+// 1. Create a plan with standard prices
+// 2. Create a subscription with override_line_items
+// 3. Verify that subscription-scoped prices are created
+// 4. Verify that line items reference the subscription-scoped prices
+// 5. Verify that billing calculations use the overridden prices
+// 6. Verify that plan queries only return plan-scoped prices
+// 7. Verify that subscription queries return subscription-scoped prices
 
-	// Note: Actual implementation would require full test environment setup
-}
+// Note: Actual implementation would require full test environment setup
+// }

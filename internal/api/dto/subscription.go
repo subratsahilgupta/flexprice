@@ -300,10 +300,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 }
 
 func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscription.Subscription {
-	now := time.Now().UTC()
-	if r.StartDate == nil {
-		r.StartDate = &now
-	}
 
 	sub := &subscription.Subscription{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
