@@ -50,7 +50,6 @@ type CreateSubscriptionRequest struct {
 	OverageFactor *decimal.Decimal `json:"overage_factor,omitempty"`
 	// Phases represents an optional timeline of subscription phases
 	Phases []SubscriptionSchedulePhaseInput `json:"phases,omitempty" validate:"omitempty,dive"`
-
 	// tax_rate_overrides is the tax rate overrides	to be applied to the subscription
 	TaxRateOverrides []*TaxRateOverride `json:"tax_rate_overrides,omitempty"`
 	// SubscriptionCoupons is a list of coupon IDs to be applied to the subscription

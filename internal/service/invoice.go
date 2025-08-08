@@ -208,38 +208,41 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 			return err
 		}
 
-		// Apply taxes if this is a subscription invoice
-		s.Logger.Infow("applying taxes to invoice",
+		// Apply coupons first (invoice and line-item)
+		if err := s.applyCouponsToInvoiceWithLineItems(ctx, inv, req); err != nil {
+			return err
+		}
+
+		s.Logger.Infow("invoice created successfully",
 			"invoice_id", inv.ID,
-			"subscription_id", inv.SubscriptionID,
-			"customer_id", inv.CustomerID,
-			"period_start", inv.PeriodStart,
-			"period_end", inv.PeriodEnd,
+			"total_discount", inv.TotalDiscount,
+			"total_tax", inv.TotalTax,
+			"total", inv.Total,
+			"amount_due", inv.AmountDue,
+			"amount_paid", inv.AmountPaid,
+			"amount_remaining", inv.AmountRemaining,
+			"invoice_status", inv.InvoiceStatus,
 		)
 		if err := s.handleTaxRateOverrides(ctx, inv, req); err != nil {
 			return err
 		}
 
-		// Apply taxes if this is a subscription invoice
-		s.Logger.Infow("applying taxes to invoice",
+		s.Logger.Infow("invoice created successfully",
 			"invoice_id", inv.ID,
-			"subscription_id", inv.SubscriptionID,
-			"customer_id", inv.CustomerID,
-			"period_start", inv.PeriodStart,
-			"period_end", inv.PeriodEnd,
+			"total_discount", inv.TotalDiscount,
+			"total_tax", inv.TotalTax,
+			"total", inv.Total,
+			"amount_due", inv.AmountDue,
+			"amount_paid", inv.AmountPaid,
+			"amount_remaining", inv.AmountRemaining,
+			"invoice_status", inv.InvoiceStatus,
 		)
-		if err := s.handleTaxRateOverrides(ctx, inv, req); err != nil {
+
+		// Update the invoice in the database
+		if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
 			return err
 		}
 
-		// Apply coupons if this is a subscription invoice or if coupons are provided
-		if len(req.InvoiceCoupons) > 0 || len(req.LineItemCoupons) > 0 {
-			if err := s.applyCouponsToInvoiceWithLineItems(ctx, inv, req); err != nil {
-				return err
-			}
-		}
-
-		// Convert to response
 		resp = dto.NewInvoiceResponse(inv)
 		return nil
 	})
@@ -582,38 +585,6 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	if err != nil {
 		return nil, err
 	}
-
-	// Apply coupons to the invoice
-
-	couponAssociationService := NewCouponAssociationService(s.ServiceParams)
-	couponAssociations, err := couponAssociationService.GetCouponAssociationsBySubscription(ctx, req.SubscriptionID)
-	if err != nil {
-		return nil, err
-	}
-
-	couponValidationService := NewCouponValidationService(s.ServiceParams)
-	couponService := NewCouponService(s.ServiceParams)
-	validCoupons := make([]dto.InvoiceCoupon, 0)
-	for _, couponAssociation := range couponAssociations {
-		coupon, err := couponService.GetCoupon(ctx, couponAssociation.CouponID)
-		if err != nil {
-			s.Logger.Errorw("failed to get coupon", "error", err, "coupon_id", couponAssociation.CouponID)
-			continue
-		}
-		if err := couponValidationService.ValidateCoupon(ctx, couponAssociation.CouponID, &req.SubscriptionID); err != nil {
-			s.Logger.Errorw("failed to validate coupon", "error", err, "coupon_id", couponAssociation.CouponID)
-			continue
-		}
-		validCoupons = append(validCoupons, dto.InvoiceCoupon{
-			CouponID:            couponAssociation.CouponID,
-			CouponAssociationID: &couponAssociation.ID,
-			AmountOff:           coupon.AmountOff,
-			PercentageOff:       coupon.PercentageOff,
-			Type:                coupon.Type,
-		})
-	}
-
-	invoiceReq.InvoiceCoupons = validCoupons
 
 	// Create the invoice
 	inv, err := s.CreateInvoice(ctx, *invoiceReq)
@@ -1393,7 +1364,9 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, fina
 		}
 
 		// STEP 7: Apply taxes after recalculation
-		s.RecalculateTaxesOnInvoice(txCtx, inv)
+		if err := s.RecalculateTaxesOnInvoice(txCtx, inv); err != nil {
+			return err
+		}
 
 		s.Logger.Infow("successfully recalculated invoice with fresh calculation",
 			"invoice_id", inv.ID,
@@ -1483,41 +1456,13 @@ func (s *invoiceService) RecalculateTaxesOnInvoice(ctx context.Context, inv *inv
 	return nil
 }
 
-func (s *invoiceService) handleTaxRateOverrides(ctx context.Context, inv *invoice.Invoice, req dto.CreateInvoiceRequest) error {
-	// Use tax service to prepare and apply taxes
-	taxService := NewTaxService(s.ServiceParams)
-
-	// Prepare tax rates for the invoice - now only needs the request
-	taxRates, err := taxService.PrepareTaxRatesForInvoice(ctx, req)
-	if err != nil {
-		return err
-	}
-
-	// Apply taxes to the invoice
-	taxResult, err := taxService.ApplyTaxesOnInvoice(ctx, inv, taxRates)
-	if err != nil {
-		return err
-	}
-
-	// Update the invoice with calculated tax amounts
-	inv.TotalTax = taxResult.TotalTaxAmount
-	inv.Total = inv.Subtotal.Add(taxResult.TotalTaxAmount)
-
-	// Update the invoice in the database
-	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-		s.Logger.Errorw("failed to update invoice with tax amounts",
-			"error", err,
-			"invoice_id", inv.ID,
-			"total_tax", taxResult.TotalTaxAmount,
-			"new_total", inv.Total)
-		return err
-	}
-
-	return nil
-}
-
 // applyCouponsToInvoiceWithLineItems handles both invoice-level and line item-level coupon application
 func (s *invoiceService) applyCouponsToInvoiceWithLineItems(ctx context.Context, inv *invoice.Invoice, req dto.CreateInvoiceRequest) error {
+
+	if len(req.InvoiceCoupons) == 0 && len(req.LineItemCoupons) == 0 {
+		return nil
+	}
+
 	// Use coupon service to prepare and apply coupons
 	couponApplicationService := NewCouponApplicationService(s.ServiceParams)
 
@@ -1552,16 +1497,6 @@ func (s *invoiceService) applyCouponsToInvoiceWithLineItems(ctx context.Context,
 	inv.AmountDue = newTotal
 	inv.AmountRemaining = newTotal.Sub(inv.AmountPaid)
 
-	// Update the invoice in the database
-	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-		s.Logger.Errorw("failed to update invoice with coupon amounts",
-			"error", err,
-			"invoice_id", inv.ID,
-			"total_discount", couponResult.TotalDiscountAmount,
-			"new_total", inv.Total)
-		return err
-	}
-
 	s.Logger.Infow("successfully updated invoice with coupon discounts (including line items)",
 		"invoice_id", inv.ID,
 		"total_discount", couponResult.TotalDiscountAmount,
@@ -1569,6 +1504,37 @@ func (s *invoiceService) applyCouponsToInvoiceWithLineItems(ctx context.Context,
 		"line_item_level_coupons", len(req.LineItemCoupons),
 		"new_total", inv.Total)
 
+	return nil
+}
+
+// HandleTaxRateOverrides is deprecated. Use prepared tax rates passed via dto.CreateInvoiceRequest or
+// resolve and apply taxes inline in CreateInvoice using TaxService.
+func (s *invoiceService) handleTaxRateOverrides(ctx context.Context, inv *invoice.Invoice, req dto.CreateInvoiceRequest) error {
+	if len(req.PreparedTaxRates) == 0 {
+		return nil
+	}
+
+	s.Logger.Infow("applying taxes to invoice",
+		"invoice_id", inv.ID,
+		"subscription_id", inv.SubscriptionID,
+		"customer_id", inv.CustomerID,
+		"period_start", inv.PeriodStart,
+		"period_end", inv.PeriodEnd,
+	)
+	taxService := NewTaxService(s.ServiceParams)
+	taxRates := req.PreparedTaxRates
+	taxResult, err := taxService.ApplyTaxesOnInvoice(ctx, inv, taxRates)
+	if err != nil {
+		return err
+	}
+	inv.TotalTax = taxResult.TotalTaxAmount
+	// Discount-first-then-tax: total = subtotal - discount + tax
+	inv.Total = inv.Subtotal.Sub(inv.TotalDiscount).Add(taxResult.TotalTaxAmount)
+	if inv.Total.IsNegative() {
+		inv.Total = decimal.Zero
+	}
+	inv.AmountDue = inv.Total
+	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
 	return nil
 }
 

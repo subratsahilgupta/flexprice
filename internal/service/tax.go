@@ -394,8 +394,11 @@ func (s *taxService) RecalculateInvoiceTaxes(ctx context.Context, invoiceId stri
 			return err
 		}
 
-		// Taxable amount is the subtotal of the invoice
-		taxableAmount := invoice.Subtotal
+		// Discount-first policy: taxable amount is subtotal minus total discount (clamped at zero)
+		taxableAmount := invoice.Subtotal.Sub(invoice.TotalDiscount)
+		if taxableAmount.IsNegative() {
+			taxableAmount = decimal.Zero
+		}
 		totalTaxAmount := decimal.Zero
 
 		// Create a map to store tax association by tax rate ID for quick lookup
@@ -1044,7 +1047,11 @@ func (s *taxService) ApplyTaxesOnInvoice(ctx context.Context, inv *invoice.Invoi
 		"invoice_id", inv.ID,
 		"tax_rates_count", len(taxRates))
 
-	taxableAmount := inv.Subtotal
+	// Discount-first policy: taxable amount is subtotal minus total discount (clamped at zero)
+	taxableAmount := inv.Subtotal.Sub(inv.TotalDiscount)
+	if taxableAmount.IsNegative() {
+		taxableAmount = decimal.Zero
+	}
 	totalTaxAmount := decimal.Zero
 	taxAppliedRecords := make([]*dto.TaxAppliedResponse, 0, len(taxRates))
 
