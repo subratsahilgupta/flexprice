@@ -617,7 +617,7 @@ type InvoiceResponse struct {
 	CouponApplications []*CouponApplicationResponse `json:"coupon_applications,omitempty"`
 }
 
-// UsageAnalyticsItem represents the usage breakdown for a specific source within a line item
+// SourceUsageItem represents the usage breakdown for a specific source within a line item
 type SourceUsageItem struct {
 	// source is the name of the event source
 	Source string `json:"source"`
