@@ -781,28 +781,40 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 		return nil, err
 	}
 
+	// Resolve tax rates for invoice level (invoice-level only per scope)
+	// Prepare minimal request for tax resolution using subscription context
+	taxService := NewTaxService(s.ServiceParams)
+	taxPrepareReq := dto.CreateInvoiceRequest{
+		SubscriptionID: lo.ToPtr(sub.ID),
+		CustomerID:     sub.CustomerID,
+	}
+	preparedTaxRates, err := taxService.PrepareTaxRatesForInvoice(ctx, taxPrepareReq)
+	if err != nil {
+		return nil, err
+	}
 	// Create invoice request
 	req := &dto.CreateInvoiceRequest{
-		CustomerID:      sub.CustomerID,
-		SubscriptionID:  lo.ToPtr(sub.ID),
-		InvoiceType:     types.InvoiceTypeSubscription,
-		InvoiceStatus:   lo.ToPtr(types.InvoiceStatusDraft),
-		PaymentStatus:   lo.ToPtr(types.PaymentStatusPending),
-		Currency:        sub.Currency,
-		AmountDue:       result.TotalAmount,
-		Total:           result.TotalAmount,
-		Subtotal:        result.TotalAmount,
-		Description:     description,
-		DueDate:         lo.ToPtr(invoiceDueDate),
-		BillingPeriod:   lo.ToPtr(string(sub.BillingPeriod)),
-		PeriodStart:     &periodStart,
-		PeriodEnd:       &periodEnd,
-		BillingReason:   types.InvoiceBillingReasonSubscriptionCycle,
-		EnvironmentID:   sub.EnvironmentID,
-		Metadata:        metadata,
-		LineItems:       append(result.FixedCharges, result.UsageCharges...),
-		InvoiceCoupons:  validCoupons,
-		LineItemCoupons: validLineItemCoupons,
+		CustomerID:       sub.CustomerID,
+		SubscriptionID:   lo.ToPtr(sub.ID),
+		InvoiceType:      types.InvoiceTypeSubscription,
+		InvoiceStatus:    lo.ToPtr(types.InvoiceStatusDraft),
+		PaymentStatus:    lo.ToPtr(types.PaymentStatusPending),
+		Currency:         sub.Currency,
+		AmountDue:        result.TotalAmount,
+		Total:            result.TotalAmount,
+		Subtotal:         result.TotalAmount,
+		Description:      description,
+		DueDate:          lo.ToPtr(invoiceDueDate),
+		BillingPeriod:    lo.ToPtr(string(sub.BillingPeriod)),
+		PeriodStart:      &periodStart,
+		PeriodEnd:        &periodEnd,
+		BillingReason:    types.InvoiceBillingReasonSubscriptionCycle,
+		EnvironmentID:    sub.EnvironmentID,
+		Metadata:         metadata,
+		LineItems:        append(result.FixedCharges, result.UsageCharges...),
+		InvoiceCoupons:   validCoupons,
+		LineItemCoupons:  validLineItemCoupons,
+		PreparedTaxRates: preparedTaxRates,
 	}
 
 	return req, nil

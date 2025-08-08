@@ -104,6 +104,10 @@ type CreateInvoiceRequest struct {
 	// tax_rate_overrides is the tax rate overrides to be applied to the invoice
 	TaxRateOverrides []*TaxRateOverride `json:"tax_rate_overrides,omitempty"`
 
+	// prepared_tax_rates contains the tax rates pre-resolved by the caller (e.g., billing service)
+	// These are applied at invoice level by the invoice service without further resolution
+	PreparedTaxRates []*TaxRateResponse `json:"prepared_tax_rates,omitempty"`
+
 	// environment_id is the unique identifier of the environment this invoice belongs to
 	EnvironmentID string `json:"environment_id,omitempty"`
 
