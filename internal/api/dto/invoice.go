@@ -407,7 +407,7 @@ type InvoiceLineItemResponse struct {
 	UpdatedBy string `json:"updated_by,omitempty"`
 
 	// usage_analytics contains usage analytics for this line item
-	UsageAnalytics []UsageAnalyticsItem `json:"usage_analytics,omitempty"`
+	UsageAnalytics []SourceUsageItem `json:"usage_analytics,omitempty"`
 }
 
 func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemResponse {
@@ -618,7 +618,7 @@ type InvoiceResponse struct {
 }
 
 // UsageAnalyticsItem represents the usage breakdown for a specific source within a line item
-type UsageAnalyticsItem struct {
+type SourceUsageItem struct {
 	// source is the name of the event source
 	Source string `json:"source"`
 
@@ -715,7 +715,7 @@ func (r *InvoiceResponse) WithCouponApplications(couponApplications []*CouponApp
 }
 
 // WithUsageAnalytics adds usage analytics to the invoice response
-func (r *InvoiceResponse) WithUsageAnalytics(usageAnalytics map[string][]UsageAnalyticsItem) *InvoiceResponse {
+func (r *InvoiceResponse) WithUsageAnalytics(usageAnalytics map[string][]SourceUsageItem) *InvoiceResponse {
 	for _, lineItem := range r.LineItems {
 		usageAnalyticsItem := usageAnalytics[lineItem.ID]
 		if usageAnalyticsItem != nil {
