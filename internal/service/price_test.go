@@ -18,11 +18,12 @@ import (
 
 type PriceServiceSuite struct {
 	suite.Suite
-	ctx          context.Context
-	priceService PriceService
-	priceRepo    *testutil.InMemoryPriceStore
-	meterRepo    *testutil.InMemoryMeterStore
-	logger       *logger.Logger
+	ctx           context.Context
+	priceService  PriceService
+	priceRepo     *testutil.InMemoryPriceStore
+	meterRepo     *testutil.InMemoryMeterStore
+	priceUnitRepo *testutil.InMemoryPriceUnitStore
+	logger        *logger.Logger
 }
 
 func TestPriceService(t *testing.T) {
@@ -33,8 +34,9 @@ func (s *PriceServiceSuite) SetupTest() {
 	s.ctx = testutil.SetupContext()
 	s.priceRepo = testutil.NewInMemoryPriceStore()
 	s.meterRepo = testutil.NewInMemoryMeterStore()
+	s.priceUnitRepo = testutil.NewInMemoryPriceUnitStore()
 	s.logger = logger.GetLogger()
-	s.priceService = NewPriceService(s.priceRepo, s.meterRepo, s.logger)
+	s.priceService = NewPriceService(s.priceRepo, s.meterRepo, s.priceUnitRepo, s.logger)
 }
 
 func (s *PriceServiceSuite) TestCreatePrice() {
@@ -118,6 +120,7 @@ func (s *PriceServiceSuite) TestGetPrices() {
 
 	// Retrieve all prices within limit
 	priceFilter := types.NewPriceFilter()
+	priceFilter.Scope = lo.ToPtr(types.PRICE_SCOPE_PLAN)
 	priceFilter.QueryFilter.Offset = lo.ToPtr(0)
 	priceFilter.QueryFilter.Limit = lo.ToPtr(10)
 	resp, err := s.priceService.GetPrices(s.ctx, priceFilter)
@@ -137,6 +140,7 @@ func (s *PriceServiceSuite) TestGetPrices() {
 	// Retrieve with offset exceeding available records
 	priceFilter.QueryFilter.Offset = lo.ToPtr(10)
 	priceFilter.QueryFilter.Limit = lo.ToPtr(10)
+	priceFilter.Scope = lo.ToPtr(types.PRICE_SCOPE_PLAN)
 	resp, err = s.priceService.GetPrices(s.ctx, priceFilter)
 	s.NoError(err)
 	s.NotNil(resp)

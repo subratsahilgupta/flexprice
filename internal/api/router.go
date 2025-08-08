@@ -37,8 +37,9 @@ type Handlers struct {
 	CostSheet         *v1.CostSheetHandler
 	CreditNote        *v1.CreditNoteHandler
 	Tax               *v1.TaxHandler
-
-	Webhook *v1.WebhookHandler
+	Coupon            *v1.CouponHandler
+	PriceUnit         *v1.PriceUnitHandler
+	Webhook           *v1.WebhookHandler
 	// Portal handlers
 	Onboarding *v1.OnboardingHandler
 	// Cron jobs : TODO: move crons out of API based architecture
@@ -54,7 +55,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	router.Use(
 		middleware.RequestIDMiddleware,
 		middleware.CORSMiddleware,
-		middleware.SentryMiddleware(cfg), // Add Sentry middleware
+		middleware.SentryMiddleware(cfg),    // Add Sentry middleware
+		middleware.PyroscopeMiddleware(cfg), // Add Pyroscope middleware
 	)
 
 	// Add middleware to set swagger host dynamically
@@ -131,6 +133,16 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			price.GET("/:id", handlers.Price.GetPrice)
 			price.PUT("/:id", handlers.Price.UpdatePrice)
 			price.DELETE("/:id", handlers.Price.DeletePrice)
+
+			priceUnit := price.Group("/units")
+			{
+				priceUnit.POST("", handlers.PriceUnit.CreatePriceUnit)
+				priceUnit.GET("", handlers.PriceUnit.GetPriceUnits)
+				priceUnit.GET("/:id", handlers.PriceUnit.GetByID)
+				priceUnit.GET("/code/:code", handlers.PriceUnit.GetByCode)
+				priceUnit.PUT("/:id", handlers.PriceUnit.UpdatePriceUnit)
+				priceUnit.DELETE("/:id", handlers.PriceUnit.DeletePriceUnit)
+			}
 		}
 
 		customer := v1Private.Group("/customers")
@@ -159,6 +171,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		plan := v1Private.Group("/plans")
 		{
+			// list plans by filter
+			plan.POST("/search", handlers.Plan.ListPlansByFilter)
+
 			plan.POST("", handlers.Plan.CreatePlan)
 			plan.GET("", handlers.Plan.GetPlans)
 			plan.GET("/:id", handlers.Plan.GetPlan)
@@ -173,6 +188,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		subscription := v1Private.Group("/subscriptions")
 		{
+			subscription.POST("/search", handlers.Subscription.ListSubscriptionsByFilter)
 			subscription.POST("", handlers.Subscription.CreateSubscription)
 			subscription.GET("", handlers.Subscription.GetSubscriptions)
 			subscription.GET("/:id", handlers.Subscription.GetSubscription)
@@ -206,9 +222,11 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		invoices := v1Private.Group("/invoices")
 		{
+			invoices.POST("/search", handlers.Invoice.ListInvoicesByFilter)
 			invoices.POST("", handlers.Invoice.CreateInvoice)
 			invoices.GET("", handlers.Invoice.ListInvoices)
 			invoices.GET("/:id", handlers.Invoice.GetInvoice)
+			invoices.PUT("/:id", handlers.Invoice.UpdateInvoice)
 			invoices.POST("/:id/finalize", handlers.Invoice.FinalizeInvoice)
 			invoices.POST("/:id/void", handlers.Invoice.VoidInvoice)
 			invoices.POST("/preview", handlers.Invoice.GetPreviewInvoice)
@@ -231,6 +249,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 		entitlement := v1Private.Group("/entitlements")
 		{
+			entitlement.POST("/search", handlers.Entitlement.ListEntitlementsByFilter)
 			entitlement.POST("", handlers.Entitlement.CreateEntitlement)
 			entitlement.GET("", handlers.Entitlement.ListEntitlements)
 			entitlement.GET("/:id", handlers.Entitlement.GetEntitlement)
@@ -328,6 +347,17 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			creditNotes.POST("/:id/finalize", handlers.CreditNote.FinalizeCreditNote)
 		}
 
+		// Coupon routes
+		coupon := v1Private.Group("/coupons")
+		{
+			coupon.POST("", handlers.Coupon.CreateCoupon)
+			coupon.GET("", handlers.Coupon.ListCouponsByFilter)
+			coupon.GET("/:id", handlers.Coupon.GetCoupon)
+			coupon.PUT("/:id", handlers.Coupon.UpdateCoupon)
+			coupon.DELETE("/:id", handlers.Coupon.DeleteCoupon)
+			coupon.POST("/search", handlers.Coupon.ListCouponsByFilter)
+		}
+
 		// Admin routes (API Key only)
 		adminRoutes := v1Private.Group("/admin")
 		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, secretService, logger))
@@ -366,6 +396,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	walletGroup := cron.Group("/wallets")
 	{
 		walletGroup.POST("/expire-credits", handlers.CronWallet.ExpireCredits)
+		walletGroup.POST("/check-alerts", handlers.CronWallet.CheckAlerts)
 	}
 
 	// Credit grant related cron jobs

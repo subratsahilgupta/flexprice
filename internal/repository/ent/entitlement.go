@@ -6,8 +6,10 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/entitlement"
+	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainEntitlement "github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/dsl"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -155,7 +157,13 @@ func (r *entitlementRepository) List(ctx context.Context, filter *types.Entitlem
 	query := client.Entitlement.Query()
 
 	// Apply entity-specific filters
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to apply query options").
+			Mark(ierr.ErrDatabase)
+	}
 
 	// Apply common query options
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
@@ -191,7 +199,13 @@ func (r *entitlementRepository) Count(ctx context.Context, filter *types.Entitle
 	query := client.Entitlement.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		SetSpanError(span, err)
+		return 0, ierr.WithError(err).
+			WithHint("Failed to apply query options").
+			Mark(ierr.ErrDatabase)
+	}
 
 	count, err := query.Count(ctx)
 	if err != nil {
@@ -523,9 +537,19 @@ func (o EntitlementQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o EntitlementQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.EntitlementFilter, query EntitlementQuery) EntitlementQuery {
+func (o EntitlementQueryOptions) GetFieldResolver(field string) (string, error) {
+	fieldName := o.GetFieldName(field)
+	if fieldName == "" {
+		return "", ierr.NewErrorf("unknown field name '%s' in entitlement query", field).
+			Mark(ierr.ErrValidation)
+	}
+	return fieldName, nil
+}
+
+func (o EntitlementQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.EntitlementFilter, query EntitlementQuery) (EntitlementQuery, error) {
+	var err error
 	if f == nil {
-		return query
+		return query, nil
 	}
 
 	// Apply plan ID filter if specified
@@ -558,7 +582,32 @@ func (o EntitlementQueryOptions) applyEntityQueryOptions(_ context.Context, f *t
 		}
 	}
 
-	return query
+	if f.Filters != nil {
+		query, err = dsl.ApplyFilters[EntitlementQuery, predicate.Entitlement](
+			query,
+			f.Filters,
+			o.GetFieldResolver,
+			func(p dsl.Predicate) predicate.Entitlement { return predicate.Entitlement(p) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply sorts using the generic function
+	if f.Sort != nil {
+		query, err = dsl.ApplySorts[EntitlementQuery, entitlement.OrderOption](
+			query,
+			f.Sort,
+			o.GetFieldResolver,
+			func(o dsl.OrderFunc) entitlement.OrderOption { return entitlement.OrderOption(o) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return query, nil
 }
 
 func (r *entitlementRepository) SetCache(ctx context.Context, entitlement *domainEntitlement.Entitlement) {

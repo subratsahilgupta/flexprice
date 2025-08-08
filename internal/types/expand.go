@@ -12,21 +12,24 @@ type ExpandableField string
 
 // Common expandable fields
 const (
-	ExpandPrices         ExpandableField = "prices"
-	ExpandPlan           ExpandableField = "plan"
-	ExpandMeters         ExpandableField = "meters"
-	ExpandFeatures       ExpandableField = "features"
-	ExpandPlans          ExpandableField = "plans"
-	ExpandEntitlements   ExpandableField = "entitlements"
-	ExpandSchedule       ExpandableField = "schedule"
-	ExpandInvoice        ExpandableField = "invoice"
-	ExpandSubscription   ExpandableField = "subscription"
-	ExpandCustomer       ExpandableField = "customer"
-	ExpandCreditNote     ExpandableField = "credit_note"
-	ExpandCreditGrant    ExpandableField = "credit_grant"
-	ExpandTaxApplied     ExpandableField = "tax_applied"
-	ExpandTaxRate        ExpandableField = "tax_rate"
-	ExpandTaxAssociation ExpandableField = "tax_association"
+	ExpandPrices             ExpandableField = "prices"
+	ExpandPlan               ExpandableField = "plan"
+	ExpandMeters             ExpandableField = "meters"
+	ExpandFeatures           ExpandableField = "features"
+	ExpandPlans              ExpandableField = "plans"
+	ExpandEntitlements       ExpandableField = "entitlements"
+	ExpandSchedule           ExpandableField = "schedule"
+	ExpandInvoice            ExpandableField = "invoice"
+	ExpandSubscription       ExpandableField = "subscription"
+	ExpandCustomer           ExpandableField = "customer"
+	ExpandCreditNote         ExpandableField = "credit_note"
+	ExpandCreditGrant        ExpandableField = "credit_grant"
+	ExpandTaxApplied         ExpandableField = "tax_applied"
+	ExpandTaxRate            ExpandableField = "tax_rate"
+	ExpandTaxAssociation     ExpandableField = "tax_association"
+	ExpandCoupon             ExpandableField = "coupon"
+	ExpandCouponApplications ExpandableField = "coupon_applications"
+	ExpandCouponAssociations ExpandableField = "coupon_associations"
 )
 
 // ExpandConfig defines which fields can be expanded and their nested expansions
@@ -58,11 +61,12 @@ var (
 
 	// SubscriptionExpandConfig defines what can be expanded on a subscription
 	SubscriptionExpandConfig = ExpandConfig{
-		AllowedFields: []ExpandableField{ExpandPlan, ExpandPrices, ExpandMeters, ExpandSchedule},
+		AllowedFields: []ExpandableField{ExpandPlan, ExpandPrices, ExpandMeters, ExpandSchedule, ExpandCouponAssociations, ExpandCoupon},
 		NestedExpands: map[ExpandableField][]ExpandableField{
-			ExpandPlan:     {ExpandPrices},
-			ExpandPrices:   {ExpandMeters},
-			ExpandSchedule: {},
+			ExpandPlan:               {ExpandPrices},
+			ExpandPrices:             {ExpandMeters},
+			ExpandSchedule:           {},
+			ExpandCouponAssociations: {ExpandCoupon},
 		},
 	}
 
@@ -99,10 +103,13 @@ var (
 		},
 	}
 
+	// InvoiceExpandConfig defines what can be expanded on an invoice
 	InvoiceExpandConfig = ExpandConfig{
-		AllowedFields: []ExpandableField{ExpandTaxApplied},
+		AllowedFields: []ExpandableField{ExpandSubscription, ExpandCustomer, ExpandCouponApplications},
 		NestedExpands: map[ExpandableField][]ExpandableField{
-			ExpandTaxApplied: {ExpandTaxRate},
+			ExpandSubscription:       {ExpandPlan},
+			ExpandCustomer:           {},
+			ExpandCouponApplications: {ExpandCoupon},
 		},
 	}
 )

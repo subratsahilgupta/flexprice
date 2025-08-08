@@ -4,8 +4,10 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/internal/domain/coupon_application"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -43,6 +45,9 @@ type Invoice struct {
 
 	// total is the final amount including taxes, fees, and discounts
 	Total decimal.Decimal `json:"total"`
+
+	// total_discount is the sum of all coupon discounts applied to the invoice
+	TotalDiscount decimal.Decimal `json:"total_discount"`
 
 	// amount_remaining is the outstanding amount still owed on this invoice (calculated as amount_due minus amount_paid)
 	AmountRemaining decimal.Decimal `json:"amount_remaining"`
@@ -92,6 +97,9 @@ type Invoice struct {
 	// line_items contains the individual items and charges that make up this invoice
 	LineItems []*InvoiceLineItem `json:"line_items,omitempty"`
 
+	// coupon_applications contains the coupon applications that were applied to this invoice
+	CouponApplications []*coupon_application.CouponApplication `json:"coupon_applications,omitempty"`
+
 	// version is the version number for tracking changes to this invoice
 	Version int `json:"version"`
 
@@ -105,7 +113,7 @@ type Invoice struct {
 	// refunded_amount is the total sum of credit notes of type "refund".
 	// These are actual refunds issued to the customer.
 	RefundedAmount decimal.Decimal `json:"refunded_amount"`
-	
+
 	// total_tax is the sum of all taxes combined at the invoice level.
 	TotalTax decimal.Decimal `json:"total_tax"`
 
@@ -128,39 +136,45 @@ func FromEnt(e *ent.Invoice) *Invoice {
 		}
 	}
 
+	var couponApplications []*coupon_application.CouponApplication
+	if e.Edges.CouponApplications != nil {
+		couponApplications = coupon_application.FromEntList(e.Edges.CouponApplications)
+	}
 	return &Invoice{
-		ID:               e.ID,
-		CustomerID:       e.CustomerID,
-		SubscriptionID:   e.SubscriptionID,
-		InvoiceType:      types.InvoiceType(e.InvoiceType),
-		InvoiceStatus:    types.InvoiceStatus(e.InvoiceStatus),
-		PaymentStatus:    types.PaymentStatus(e.PaymentStatus),
-		Currency:         e.Currency,
-		AmountDue:        e.AmountDue,
-		AmountPaid:       e.AmountPaid,
-		Subtotal:         e.Subtotal,
-		Total:            e.Total,
-		AmountRemaining:  e.AmountRemaining,
-		AdjustmentAmount: e.AdjustmentAmount,
-		RefundedAmount:   e.RefundedAmount,
-		InvoiceNumber:    e.InvoiceNumber,
-		IdempotencyKey:   e.IdempotencyKey,
-		BillingSequence:  e.BillingSequence,
-		Description:      e.Description,
-		DueDate:          e.DueDate,
-		PaidAt:           e.PaidAt,
-		VoidedAt:         e.VoidedAt,
-		FinalizedAt:      e.FinalizedAt,
-		BillingPeriod:    e.BillingPeriod,
-		PeriodStart:      e.PeriodStart,
-		PeriodEnd:        e.PeriodEnd,
-		InvoicePDFURL:    e.InvoicePdfURL,
-		BillingReason:    e.BillingReason,
-		Metadata:         e.Metadata,
-		LineItems:        lineItems,
-		Version:          e.Version,
-		EnvironmentID:    e.EnvironmentID,
-		TotalTax:         e.TotalTax,
+		ID:                 e.ID,
+		CustomerID:         e.CustomerID,
+		SubscriptionID:     e.SubscriptionID,
+		InvoiceType:        types.InvoiceType(e.InvoiceType),
+		InvoiceStatus:      types.InvoiceStatus(e.InvoiceStatus),
+		PaymentStatus:      types.PaymentStatus(e.PaymentStatus),
+		Currency:           e.Currency,
+		AmountDue:          e.AmountDue,
+		AmountPaid:         e.AmountPaid,
+		Subtotal:           e.Subtotal,
+		Total:              e.Total,
+		TotalDiscount:      lo.FromPtrOr(e.TotalDiscount, decimal.Zero),
+		TotalTax:           e.TotalTax,
+		AmountRemaining:    e.AmountRemaining,
+		AdjustmentAmount:   e.AdjustmentAmount,
+		RefundedAmount:     e.RefundedAmount,
+		InvoiceNumber:      e.InvoiceNumber,
+		IdempotencyKey:     e.IdempotencyKey,
+		BillingSequence:    e.BillingSequence,
+		Description:        e.Description,
+		DueDate:            e.DueDate,
+		PaidAt:             e.PaidAt,
+		VoidedAt:           e.VoidedAt,
+		FinalizedAt:        e.FinalizedAt,
+		BillingPeriod:      e.BillingPeriod,
+		PeriodStart:        e.PeriodStart,
+		PeriodEnd:          e.PeriodEnd,
+		InvoicePDFURL:      e.InvoicePdfURL,
+		BillingReason:      e.BillingReason,
+		Metadata:           e.Metadata,
+		LineItems:          lineItems,
+		CouponApplications: couponApplications,
+		Version:            e.Version,
+		EnvironmentID:      e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

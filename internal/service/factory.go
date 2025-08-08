@@ -4,6 +4,9 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	costsheet "github.com/flexprice/flexprice/internal/domain/costsheet"
+	"github.com/flexprice/flexprice/internal/domain/coupon"
+	"github.com/flexprice/flexprice/internal/domain/coupon_application"
+	"github.com/flexprice/flexprice/internal/domain/coupon_association"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
@@ -17,6 +20,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/task"
@@ -51,6 +55,7 @@ type ServiceParams struct {
 	ProcessedEventRepo         events.ProcessedEventRepository
 	MeterRepo                  meter.Repository
 	PriceRepo                  price.Repository
+	PriceUnitRepo              priceunit.Repository
 	CustomerRepo               customer.Repository
 	PlanRepo                   plan.Repository
 	SubRepo                    subscription.Repository
@@ -72,6 +77,10 @@ type ServiceParams struct {
 	TaxRateRepo                taxrate.Repository
 	TaxAssociationRepo         taxassociation.Repository
 	TaxAppliedRepo             taxapplied.Repository
+	CouponRepo                 coupon.Repository
+	CouponAssociationRepo      coupon_association.Repository
+	CouponApplicationRepo      coupon_application.Repository
+
 	// Publishers
 	EventPublisher   publisher.EventPublisher
 	WebhookPublisher webhookPublisher.WebhookPublisher
@@ -92,6 +101,7 @@ func NewServiceParams(
 	processedEventRepo events.ProcessedEventRepository,
 	meterRepo meter.Repository,
 	priceRepo price.Repository,
+	priceUnitRepo priceunit.Repository,
 	customerRepo customer.Repository,
 	planRepo plan.Repository,
 	subRepo subscription.Repository,
@@ -113,6 +123,9 @@ func NewServiceParams(
 	costSheetRepo costsheet.Repository,
 	taxAppliedRepo taxapplied.Repository,
 	taxRateRepo taxrate.Repository,
+	couponRepo coupon.Repository,
+	couponAssociationRepo coupon_association.Repository,
+	couponApplicationRepo coupon_application.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
 	s3Service s3.Service,
@@ -130,6 +143,7 @@ func NewServiceParams(
 		ProcessedEventRepo:         processedEventRepo,
 		MeterRepo:                  meterRepo,
 		PriceRepo:                  priceRepo,
+		PriceUnitRepo:              priceUnitRepo,
 		CustomerRepo:               customerRepo,
 		PlanRepo:                   planRepo,
 		SubRepo:                    subRepo,
@@ -155,5 +169,8 @@ func NewServiceParams(
 		WebhookPublisher:           webhookPublisher,
 		S3:                         s3Service,
 		Client:                     client,
+		CouponRepo:                 couponRepo,
+		CouponAssociationRepo:      couponAssociationRepo,
+		CouponApplicationRepo:      couponApplicationRepo,
 	}
 }

@@ -6,10 +6,12 @@ type EntitlementFilter struct {
 	*TimeRangeFilter
 
 	// Specific filters for entitlements
-	PlanIDs     []string     `form:"plan_ids" json:"plan_ids,omitempty"`
-	FeatureIDs  []string     `form:"feature_ids" json:"feature_ids,omitempty"`
-	FeatureType *FeatureType `form:"feature_type" json:"feature_type,omitempty"`
-	IsEnabled   *bool        `form:"is_enabled" json:"is_enabled,omitempty"`
+	Filters     []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
+	Sort        []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
+	PlanIDs     []string           `form:"plan_ids" json:"plan_ids,omitempty"`
+	FeatureIDs  []string           `form:"feature_ids" json:"feature_ids,omitempty"`
+	FeatureType *FeatureType       `form:"feature_type" json:"feature_type,omitempty"`
+	IsEnabled   *bool              `form:"is_enabled" json:"is_enabled,omitempty"`
 }
 
 // NewDefaultEntitlementFilter creates a new EntitlementFilter with default values
