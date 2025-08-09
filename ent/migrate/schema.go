@@ -60,21 +60,12 @@ var (
 		{Name: "cancellation_reason", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "cancelled_at", Type: field.TypeTime, Nullable: true},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
-		{Name: "subscription_addon_associations", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// AddonAssociationsTable holds the schema information for the "addon_associations" table.
 	AddonAssociationsTable = &schema.Table{
 		Name:       "addon_associations",
 		Columns:    AddonAssociationsColumns,
 		PrimaryKey: []*schema.Column{AddonAssociationsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "addon_associations_subscriptions_addon_associations",
-				Columns:    []*schema.Column{AddonAssociationsColumns[17]},
-				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
-				OnDelete:   schema.SetNull,
-			},
-		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "addonassociation_tenant_id_environment_id_entity_id_entity_type_addon_id",
@@ -1881,7 +1872,6 @@ var (
 )
 
 func init() {
-	AddonAssociationsTable.ForeignKeys[0].RefTable = SubscriptionsTable
 	CostsheetTable.ForeignKeys[0].RefTable = MetersTable
 	CostsheetTable.ForeignKeys[1].RefTable = PricesTable
 	CostsheetTable.Annotation = &entsql.Annotation{

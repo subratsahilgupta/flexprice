@@ -67,7 +67,7 @@ func (r *addonAssociationRepository) Create(ctx context.Context, a *domainAddonA
 		SetAddonID(a.AddonID).
 		SetNillableStartDate(a.StartDate).
 		SetNillableEndDate(a.EndDate).
-		SetAddonStatus(a.AddonStatus).
+		SetAddonStatus(string(a.AddonStatus)).
 		SetCancellationReason(a.CancellationReason).
 		SetNillableCancelledAt(a.CancelledAt).
 		SetMetadata(a.Metadata).
@@ -252,7 +252,7 @@ func (r *addonAssociationRepository) Update(ctx context.Context, a *domainAddonA
 		).
 		SetNillableStartDate(a.StartDate).
 		SetNillableEndDate(a.EndDate).
-		SetAddonStatus(a.AddonStatus).
+		SetAddonStatus(string(a.AddonStatus)).
 		SetCancellationReason(a.CancellationReason).
 		SetNillableCancelledAt(a.CancelledAt).
 		SetMetadata(a.Metadata).

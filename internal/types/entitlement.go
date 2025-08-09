@@ -81,6 +81,7 @@ func (f EntitlementFilter) Validate() error {
 func (f *EntitlementFilter) WithPlanIDs(planIDs []string) *EntitlementFilter {
 	f.PlanIDs = planIDs
 	f.EntityType = lo.ToPtr(ENTITLEMENT_ENTITY_TYPE_PLAN)
+	f.EntityIDs = planIDs
 	return f
 }
 

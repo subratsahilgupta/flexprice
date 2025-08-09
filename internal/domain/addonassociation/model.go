@@ -17,7 +17,7 @@ type AddonAssociation struct {
 	AddonID            string                           `json:"addon_id,omitempty"`
 	StartDate          *time.Time                       `json:"start_date,omitempty"`
 	EndDate            *time.Time                       `json:"end_date,omitempty"`
-	AddonStatus        string                           `json:"addon_status,omitempty"`
+	AddonStatus        types.AddonStatus                `json:"addon_status,omitempty"`
 	CancellationReason string                           `json:"cancellation_reason,omitempty"`
 	CancelledAt        *time.Time                       `json:"cancelled_at,omitempty"`
 	Metadata           map[string]interface{}           `json:"metadata,omitempty"`
@@ -34,7 +34,7 @@ func FromEnt(ent *ent.AddonAssociation) *AddonAssociation {
 		AddonID:            ent.AddonID,
 		StartDate:          ent.StartDate,
 		EndDate:            ent.EndDate,
-		AddonStatus:        ent.AddonStatus,
+		AddonStatus:        types.AddonStatus(ent.AddonStatus),
 		CancellationReason: ent.CancellationReason,
 		CancelledAt:        ent.CancelledAt,
 		Metadata:           ent.Metadata,
@@ -43,6 +43,8 @@ func FromEnt(ent *ent.AddonAssociation) *AddonAssociation {
 			UpdatedAt: ent.UpdatedAt,
 			CreatedBy: ent.CreatedBy,
 			UpdatedBy: ent.UpdatedBy,
+			TenantID:  ent.TenantID,
+			Status:    types.Status(ent.Status),
 		},
 	}
 }
