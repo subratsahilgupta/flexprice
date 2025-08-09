@@ -58,6 +58,19 @@ type CreateSubscriptionRequest struct {
 	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
 }
 
+// AddAddonRequest is used by body-based endpoint /subscriptions/addon
+type AddAddonRequest struct {
+	SubscriptionID                string `json:"subscription_id" validate:"required"`
+	AddAddonToSubscriptionRequest `json:",inline"`
+}
+
+// RemoveAddonRequest is used by body-based endpoint /subscriptions/addon (DELETE)
+type RemoveAddonRequest struct {
+	SubscriptionID string `json:"subscription_id" validate:"required"`
+	AddonID        string `json:"addon_id" validate:"required"`
+	Reason         string `json:"reason"`
+}
+
 type UpdateSubscriptionRequest struct {
 	Status            types.SubscriptionStatus `json:"status"`
 	CancelAt          *time.Time               `json:"cancel_at,omitempty"`
