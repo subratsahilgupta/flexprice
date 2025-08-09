@@ -274,40 +274,82 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 		}
 	}
 
-	// Apply Coupons for preview purposes (no DB operations)
-	// Note: This is for UI preview only. Actual coupon application with validation,
-	// audit trails, and persistence happens in InvoiceService.applyCouponsToInvoice()
-	if len(r.InvoiceCoupons) > 0 {
-		originalTotal := inv.Total
-		runningTotal := inv.Total
-		totalDiscountAmount := decimal.Zero
-
-		// Apply coupons sequentially to maintain proper discount calculation
-		for _, coupon := range r.InvoiceCoupons {
-			// Calculate discount based on current running total
-			discount := coupon.CalculateDiscount(runningTotal)
-			totalDiscountAmount = totalDiscountAmount.Add(discount)
-
-			// Apply discount to get new running total
-			runningTotal = coupon.ApplyDiscount(runningTotal)
+	// Apply preview-only discounts and taxes (no DB operations)
+	// 1) Line-item level discounts based on temporary line item identifiers (price_id)
+	totalLineItemDiscount := decimal.Zero
+	if len(r.LineItemCoupons) > 0 && len(inv.LineItems) > 0 {
+		for _, lic := range r.LineItemCoupons {
+			for _, li := range inv.LineItems {
+				if li.PriceID != nil && *li.PriceID == lic.LineItemID {
+					discount := lic.CalculateDiscount(li.Amount)
+					if discount.GreaterThan(li.Amount) {
+						discount = li.Amount
+					}
+					totalLineItemDiscount = totalLineItemDiscount.Add(discount)
+					break
+				}
+			}
 		}
-
-		// Calculate new total, ensuring it doesn't go below zero
-		newTotal := originalTotal.Sub(totalDiscountAmount)
-
-		// Ensure total doesn't go negative (preview layer protection)
-		if newTotal.LessThan(decimal.Zero) {
-			newTotal = decimal.Zero
-			// Adjust the total discount to not exceed the original total
-			totalDiscountAmount = originalTotal
-		}
-
-		// Update invoice fields for preview
-		inv.TotalDiscount = totalDiscountAmount
-		inv.Total = newTotal
-		inv.AmountDue = newTotal
-		inv.AmountRemaining = newTotal.Sub(inv.AmountPaid)
 	}
+
+	// 2) Invoice-level discounts applied sequentially after line-item discounts
+	totalInvoiceDiscount := decimal.Zero
+	adjustedAfterLineItem := inv.Subtotal.Sub(totalLineItemDiscount)
+	if adjustedAfterLineItem.IsNegative() {
+		adjustedAfterLineItem = decimal.Zero
+	}
+	runningTotal := adjustedAfterLineItem
+	if len(r.InvoiceCoupons) > 0 {
+		for _, coupon := range r.InvoiceCoupons {
+			discount := coupon.CalculateDiscount(runningTotal)
+			if discount.GreaterThan(runningTotal) {
+				discount = runningTotal
+			}
+			totalInvoiceDiscount = totalInvoiceDiscount.Add(discount)
+			runningTotal = runningTotal.Sub(discount)
+		}
+	}
+
+	totalDiscount := totalLineItemDiscount.Add(totalInvoiceDiscount)
+
+	// 3) Taxes on (subtotal - totalDiscount) using prepared tax rates
+	totalTax := decimal.Zero
+	taxableAmount := inv.Subtotal.Sub(totalDiscount)
+	if taxableAmount.IsNegative() {
+		taxableAmount = decimal.Zero
+	}
+
+	if len(r.PreparedTaxRates) > 0 {
+		for _, tr := range r.PreparedTaxRates {
+			var taxAmount decimal.Decimal
+			switch tr.TaxRateType {
+			case types.TaxRateTypePercentage:
+				if tr.PercentageValue != nil {
+					taxAmount = taxableAmount.Mul(*tr.PercentageValue).Div(decimal.NewFromInt(100))
+				}
+			case types.TaxRateTypeFixed:
+				if tr.FixedValue != nil {
+					taxAmount = *tr.FixedValue
+				}
+			default:
+				continue
+			}
+			if taxAmount.IsNegative() {
+				taxAmount = decimal.Zero
+			}
+			totalTax = totalTax.Add(taxAmount)
+		}
+	}
+
+	// 4) Update invoice preview totals
+	inv.TotalDiscount = totalDiscount
+	inv.TotalTax = totalTax
+	inv.Total = inv.Subtotal.Sub(totalDiscount).Add(totalTax)
+	if inv.Total.IsNegative() {
+		inv.Total = decimal.Zero
+	}
+	inv.AmountDue = inv.Total
+	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
 
 	return inv, nil
 }
