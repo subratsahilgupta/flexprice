@@ -30,6 +30,47 @@ type CreatePlanEntitlementRequest struct {
 	*CreateEntitlementRequest
 }
 
+// Validate validates the entitlement when provided inline within a plan creation request.
+func (r *CreatePlanEntitlementRequest) Validate() error {
+	if r.CreateEntitlementRequest == nil {
+		return errors.NewError("entitlement request cannot be nil").
+			WithHint("Please provide valid entitlement configuration").
+			Mark(errors.ErrValidation)
+	}
+
+	if err := validator.ValidateRequest(r.CreateEntitlementRequest); err != nil {
+		return err
+	}
+
+	if r.CreateEntitlementRequest.FeatureID == "" {
+		return errors.NewError("feature_id is required").
+			WithHint("Feature ID is required").
+			Mark(errors.ErrValidation)
+	}
+
+	if err := r.CreateEntitlementRequest.FeatureType.Validate(); err != nil {
+		return err
+	}
+
+	// Type-specific validations
+	switch r.CreateEntitlementRequest.FeatureType {
+	case types.FeatureTypeMetered:
+		if r.CreateEntitlementRequest.UsageResetPeriod != "" {
+			if err := r.CreateEntitlementRequest.UsageResetPeriod.Validate(); err != nil {
+				return err
+			}
+		}
+	case types.FeatureTypeStatic:
+		if r.CreateEntitlementRequest.StaticValue == "" {
+			return errors.NewError("static_value is required for static features").
+				WithHint("Static value is required for static features").
+				Mark(errors.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
 func (r *CreatePlanRequest) Validate() error {
 	err := validator.ValidateRequest(r)
 	if err != nil {
