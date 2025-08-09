@@ -2907,10 +2907,11 @@ func (s *subscriptionService) AddAddonToSubscription(
 	req *dto.AddAddonToSubscriptionRequest,
 ) (*addonassociation.AddonAssociation, error) {
 
-	sub, err := s.SubRepo.Get(ctx, subID)
+	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subID)
 	if err != nil {
 		return nil, err
 	}
+	sub.LineItems = lineItems
 
 	return s.addAddonToSubscription(ctx, sub, req)
 }
@@ -2978,6 +2979,31 @@ func (s *subscriptionService) addAddonToSubscription(
 		sub.ID,
 		types.AddonAssociationEntityTypeSubscription,
 	)
+
+	// Track existing meter IDs
+	meterIDMap := make(map[string]bool)
+	for _, item := range sub.LineItems {
+		if item.MeterID != "" {
+			meterIDMap[item.MeterID] = true
+		}
+	}
+
+	// Check for meter ID conflicts in new addon prices
+	for _, price := range validPrices {
+		if price.Price.MeterID != "" {
+			if meterIDMap[price.Price.MeterID] {
+				return nil, ierr.NewError("duplicate meter ID found in addon prices").
+					WithHint("Each price must have a unique meter ID across the subscription").
+					WithReportableDetails(map[string]interface{}{
+						"subscription_id": sub.ID,
+						"addon_id":        req.AddonID,
+						"meter_id":        price.Price.MeterID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+			meterIDMap[price.Price.MeterID] = true
+		}
+	}
 
 	// Create line items for the addon using validated prices
 	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(validPrices))
