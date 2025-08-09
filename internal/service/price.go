@@ -520,11 +520,11 @@ func (s *priceService) GetPricesByAddonID(ctx context.Context, addonID string) (
 			Mark(ierr.ErrValidation)
 	}
 
-	entityType := types.PRICE_ENTITY_TYPE_ADDON
-	priceFilter := &types.PriceFilter{
-		EntityType: &entityType,
-		EntityIDs:  []string{addonID},
-	}
+	priceFilter := types.NewNoLimitPriceFilter().
+		WithEntityIDs([]string{addonID}).
+		WithEntityType(types.PRICE_ENTITY_TYPE_ADDON).
+		WithStatus(types.StatusPublished).
+		WithExpand(string(types.ExpandMeters))
 
 	response, err := s.GetPrices(ctx, priceFilter)
 	if err != nil {
