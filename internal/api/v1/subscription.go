@@ -264,7 +264,7 @@ func (h *SubscriptionHandler) ListSubscriptionsByFilter(c *gin.Context) {
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
 // @Router /subscriptions/addon [post]
-func (h *SubscriptionHandler) AddAddon(c *gin.Context) {
+func (h *SubscriptionHandler) AddAddonToSubscription(c *gin.Context) {
 	var req dto.AddAddonRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.log.Error("Failed to bind JSON", "error", err)
@@ -295,7 +295,7 @@ func (h *SubscriptionHandler) AddAddon(c *gin.Context) {
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
 // @Router /subscriptions/addon [delete]
-func (h *SubscriptionHandler) RemoveAddon(c *gin.Context) {
+func (h *SubscriptionHandler) RemoveAddonToSubscription(c *gin.Context) {
 	var req dto.RemoveAddonRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.log.Error("Failed to bind JSON", "error", err)
