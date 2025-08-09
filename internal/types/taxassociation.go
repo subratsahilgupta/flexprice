@@ -10,7 +10,7 @@ type TaxAssociationFilter struct {
 	*TimeRangeFilter
 	TaxAssociationIDs []string          `json:"tax_association_ids,omitempty" form:"tax_association_ids"`
 	TaxRateIDs        []string          `json:"tax_rate_ids,omitempty" form:"tax_rate_ids"`
-	EntityType        TaxrateEntityType `json:"entity_type,omitempty" form:"entity_type"`
+	EntityType        TaxRateEntityType `json:"entity_type,omitempty" form:"entity_type"`
 	EntityID          string            `json:"entity_id,omitempty" form:"entity_id"`
 	Currency          string            `json:"currency,omitempty" form:"currency"`
 	AutoApply         *bool             `json:"auto_apply,omitempty" form:"auto_apply"`
@@ -18,15 +18,15 @@ type TaxAssociationFilter struct {
 
 // EntityHierarchy defines the hierarchy levels for tax associations
 // The order determines precedence: first level has highest priority
-var EntityHierarchy = []TaxrateEntityType{
-	TaxrateEntityTypeTenant,
-	TaxrateEntityTypeCustomer,
-	TaxrateEntityTypeSubscription,
+var EntityHierarchy = []TaxRateEntityType{
+	TaxRateEntityTypeTenant,
+	TaxRateEntityTypeCustomer,
+	TaxRateEntityTypeSubscription,
 }
 
 // GetHierarchyLevels returns the hierarchy levels excluding the current entity type
-func GetHierarchyLevels(currentEntityType TaxrateEntityType) []TaxrateEntityType {
-	var levels []TaxrateEntityType
+func GetHierarchyLevels(currentEntityType TaxRateEntityType) []TaxRateEntityType {
+	var levels []TaxRateEntityType
 	for _, level := range EntityHierarchy {
 		if level != currentEntityType {
 			levels = append(levels, level)
