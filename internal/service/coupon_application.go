@@ -369,19 +369,18 @@ func (s *couponApplicationService) ApplyCouponsOnInvoiceWithLineItems(ctx contex
 
 		// Step 2: Apply invoice-level coupons to the remaining invoice total
 		// Calculate the new invoice total after line item discounts
-		adjustedInvoiceTotal := inv.Total.Sub(totalDiscount)
-		runningTotal := adjustedInvoiceTotal
+		runningSubTotal := inv.Subtotal.Sub(totalDiscount)
 
 		for _, invoiceCoupon := range invoiceCoupons {
 			// Calculate discount for this coupon based on the running total
-			discount := invoiceCoupon.CalculateDiscount(runningTotal)
-			finalPrice := invoiceCoupon.ApplyDiscount(runningTotal)
+			discount := invoiceCoupon.CalculateDiscount(runningSubTotal)
+			finalPrice := invoiceCoupon.ApplyDiscount(runningSubTotal)
 
 			// Create application request for invoice-level coupon
 			req := dto.CreateCouponApplicationRequest{
 				CouponID:         invoiceCoupon.CouponID,
 				InvoiceID:        inv.ID,
-				OriginalPrice:    runningTotal,
+				OriginalPrice:    runningSubTotal,
 				FinalPrice:       finalPrice,
 				DiscountedAmount: discount,
 				DiscountType:     invoiceCoupon.Type,
@@ -409,13 +408,13 @@ func (s *couponApplicationService) ApplyCouponsOnInvoiceWithLineItems(ctx contex
 
 			applicationRequests = append(applicationRequests, req)
 			totalDiscount = totalDiscount.Add(discount)
-			runningTotal = finalPrice
+			runningSubTotal = finalPrice
 
 			s.Logger.Debugw("applied invoice coupon",
 				"coupon_id", invoiceCoupon.CouponID,
-				"original_total", runningTotal.Add(discount),
+				"original_subtotal", runningSubTotal.Add(discount),
 				"discount", discount,
-				"final_total", finalPrice)
+				"final_subtotal", finalPrice)
 		}
 
 		// Batch create coupon applications
