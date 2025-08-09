@@ -2871,7 +2871,7 @@ func (s *subscriptionService) handleSubscriptionAddons(
 			"valid_prices_count", len(validPrices))
 
 		// Create subscription addon using the validated prices
-		subscriptionAddon, err := addonService.AddAddonToSubscription(ctx, subscription.ID, lo.ToPtr(addonReq))
+		subscriptionAddon, err := addonService.AddAddonToSubscription(ctx, subscription, lo.ToPtr(addonReq))
 		if err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to add addon to subscription").
