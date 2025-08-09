@@ -54,6 +54,21 @@ type CreateSubscriptionRequest struct {
 	SubscriptionCoupons []string `json:"subscription_coupons,omitempty"`
 	// OverrideLineItems allows customizing specific prices for this subscription
 	OverrideLineItems []OverrideLineItemRequest `json:"override_line_items,omitempty" validate:"omitempty,dive"`
+	// Addons represents addons to be added to the subscription during creation
+	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
+}
+
+// AddAddonRequest is used by body-based endpoint /subscriptions/addon
+type AddAddonRequest struct {
+	SubscriptionID                string `json:"subscription_id" validate:"required"`
+	AddAddonToSubscriptionRequest `json:",inline"`
+}
+
+// RemoveAddonRequest is used by body-based endpoint /subscriptions/addon (DELETE)
+type RemoveAddonRequest struct {
+	SubscriptionID string `json:"subscription_id" validate:"required"`
+	AddonID        string `json:"addon_id" validate:"required"`
+	Reason         string `json:"reason"`
 }
 
 type UpdateSubscriptionRequest struct {
