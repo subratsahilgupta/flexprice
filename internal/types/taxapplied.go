@@ -10,7 +10,7 @@ type TaxAppliedFilter struct {
 	Filters          []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
 	Sort             []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
 	TaxRateIDs       []string           `json:"taxrate_ids,omitempty" form:"taxrate_ids" validate:"omitempty"`
-	EntityType       TaxrateEntityType  `json:"entity_type,omitempty" form:"entity_type" validate:"omitempty"`
+	EntityType       TaxRateEntityType  `json:"entity_type,omitempty" form:"entity_type" validate:"omitempty"`
 	EntityID         string             `json:"entity_id,omitempty" form:"entity_id" validate:"omitempty"`
 	TaxAssociationID string             `json:"tax_association_id,omitempty" form:"tax_association_id" validate:"omitempty"`
 }

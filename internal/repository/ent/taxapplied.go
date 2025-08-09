@@ -313,7 +313,7 @@ func (r *taxappliedRepository) List(ctx context.Context, filter *types.TaxApplie
 	return domainTaxApplied.FromEntList(taxapplieds), nil
 }
 
-// Count counts tax configs based on filter
+// Count counts tax applied records based on filter
 func (r *taxappliedRepository) Count(ctx context.Context, filter *types.TaxAppliedFilter) (int, error) {
 	client := r.client.Querier(ctx)
 

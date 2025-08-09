@@ -11,7 +11,7 @@ import (
 
 type CreateTaxAppliedRequest struct {
 	TaxRateID        string                  `json:"tax_rate_id" validate:"required"`
-	EntityType       types.TaxrateEntityType `json:"entity_type" validate:"required"`
+	EntityType       types.TaxRateEntityType `json:"entity_type" validate:"required"`
 	EntityID         string                  `json:"entity_id" validate:"required"`
 	TaxableAmount    decimal.Decimal         `json:"taxable_amount" validate:"required"`
 	TaxAmount        decimal.Decimal         `json:"tax_amount" validate:"required"`

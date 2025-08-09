@@ -14,7 +14,7 @@ type CouponAssociationService interface {
 	GetCouponAssociation(ctx context.Context, id string) (*dto.CouponAssociationResponse, error)
 	DeleteCouponAssociation(ctx context.Context, id string) error
 	GetCouponAssociationsBySubscription(ctx context.Context, subscriptionID string) ([]*dto.CouponAssociationResponse, error)
-	GetCouponAssociationsBySubscriptionLineItem(ctx context.Context, subscriptionLineItemID string) ([]*dto.CouponAssociationResponse, error)
+	GetBySubscriptionForLineItems(ctx context.Context, subscriptionID string) ([]*dto.CouponAssociationResponse, error)
 	ApplyCouponToSubscription(ctx context.Context, couponIDs []string, subscriptionID string) error
 
 	// Line item coupon association methods
@@ -119,8 +119,8 @@ func (s *couponAssociationService) GetCouponAssociationsBySubscription(ctx conte
 }
 
 // GetCouponAssociationsBySubscriptionLineItem retrieves coupon associations for a subscription line item
-func (s *couponAssociationService) GetCouponAssociationsBySubscriptionLineItem(ctx context.Context, subscriptionLineItemID string) ([]*dto.CouponAssociationResponse, error) {
-	associations, err := s.CouponAssociationRepo.GetBySubscriptionLineItem(ctx, subscriptionLineItemID)
+func (s *couponAssociationService) GetBySubscriptionForLineItems(ctx context.Context, subscriptionID string) ([]*dto.CouponAssociationResponse, error) {
+	associations, err := s.CouponAssociationRepo.GetBySubscriptionForLineItems(ctx, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -194,8 +194,8 @@ func (s *couponAssociationService) ApplyCouponToSubscriptionLineItem(ctx context
 	}
 
 	if lineItemID == "" {
-		return ierr.NewError("price_id is required").
-			WithHint("Please provide a valid price ID").
+		return ierr.NewError("subscription_line_item_id is required").
+			WithHint("Please provide a valid subscription line item ID").
 			Mark(ierr.ErrValidation)
 	}
 

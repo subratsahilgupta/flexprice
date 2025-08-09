@@ -223,7 +223,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		invoices := v1Private.Group("/invoices")
 		{
 			invoices.POST("/search", handlers.Invoice.ListInvoicesByFilter)
-			invoices.POST("", handlers.Invoice.CreateInvoice)
+			invoices.POST("", handlers.Invoice.CreateOneOffInvoice)
 			invoices.GET("", handlers.Invoice.ListInvoices)
 			invoices.GET("/:id", handlers.Invoice.GetInvoice)
 			invoices.PUT("/:id", handlers.Invoice.UpdateInvoice)
@@ -300,7 +300,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			taxAssociations.POST("", handlers.Tax.CreateTaxAssociation)
 			taxAssociations.GET("", handlers.Tax.ListTaxAssociations)
-			tax.GET("/:id", handlers.Tax.GetTaxAssociation)
+			taxAssociations.GET("/:id", handlers.Tax.GetTaxAssociation)
 			taxAssociations.PUT("/:id", handlers.Tax.UpdateTaxAssociation)
 			taxAssociations.DELETE("/:id", handlers.Tax.DeleteTaxAssociation)
 		}

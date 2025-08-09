@@ -13,7 +13,7 @@ import (
 type TaxApplied struct {
 	ID               string                  `json:"id,omitempty"`
 	TaxRateID        string                  `json:"tax_rate_id,omitempty"`
-	EntityType       types.TaxrateEntityType `json:"entity_type,omitempty"`
+	EntityType       types.TaxRateEntityType `json:"entity_type,omitempty"`
 	EntityID         string                  `json:"entity_id,omitempty"`
 	TaxAssociationID *string                 `json:"tax_association_id,omitempty"`
 	TaxableAmount    decimal.Decimal         `json:"taxable_amount,omitempty"`
@@ -30,7 +30,7 @@ func FromEnt(ent *ent.TaxApplied) *TaxApplied {
 	return &TaxApplied{
 		ID:               ent.ID,
 		TaxRateID:        ent.TaxRateID,
-		EntityType:       types.TaxrateEntityType(ent.EntityType),
+		EntityType:       types.TaxRateEntityType(ent.EntityType),
 		EntityID:         ent.EntityID,
 		TaxAssociationID: ent.TaxAssociationID,
 		TaxableAmount:    ent.TaxableAmount,

@@ -70,7 +70,7 @@ func (r *taxAssociationRepository) Create(ctx context.Context, t *domainTaxConfi
 
 		if ent.IsConstraintError(err) {
 			return ierr.WithError(err).
-				WithHint("Tax association with this entitiy id and tax rate id already exists").
+				WithHint("Tax association with this entity id and tax rate id already exists").
 				WithReportableDetails(map[string]interface{}{
 					"tax_association_id": t.ID,
 					"tax_rate_id":        t.TaxRateID,

@@ -56,7 +56,7 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 		// If no tax rate overrides are provided, link the tenant tax rate to the customer
 		if len(req.TaxRateOverrides) > 0 {
 			err := taxService.LinkTaxRatesToEntity(txCtx, dto.LinkTaxRateToEntityRequest{
-				EntityType:       types.TaxrateEntityTypeCustomer,
+				EntityType:       types.TaxRateEntityTypeCustomer,
 				EntityID:         cust.ID,
 				TaxRateOverrides: req.TaxRateOverrides,
 			})
@@ -68,7 +68,7 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 		// If no tax rate overrides are provided, link the tenant tax rate to the customer
 		if req.TaxRateOverrides == nil {
 			filter := types.NewNoLimitTaxAssociationFilter()
-			filter.EntityType = types.TaxrateEntityTypeTenant
+			filter.EntityType = types.TaxRateEntityTypeTenant
 			filter.EntityID = types.GetTenantID(txCtx)
 			filter.AutoApply = lo.ToPtr(true)
 			tenantTaxAssociations, err := taxService.ListTaxAssociations(txCtx, filter)
@@ -77,7 +77,7 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 			}
 
 			err = taxService.LinkTaxRatesToEntity(txCtx, dto.LinkTaxRateToEntityRequest{
-				EntityType:              types.TaxrateEntityTypeCustomer,
+				EntityType:              types.TaxRateEntityTypeCustomer,
 				EntityID:                cust.ID,
 				ExistingTaxAssociations: tenantTaxAssociations.Items,
 			})

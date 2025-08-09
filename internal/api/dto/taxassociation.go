@@ -12,7 +12,7 @@ import (
 
 type CreateTaxAssociationRequest struct {
 	TaxRateCode string                  `json:"tax_rate_code" binding:"required"`
-	EntityType  types.TaxrateEntityType `json:"entity_type" binding:"required"`
+	EntityType  types.TaxRateEntityType `json:"entity_type" binding:"required"`
 	EntityID    string                  `json:"entity_id" binding:"required"`
 	Priority    int                     `json:"priority" binding:"omitempty"`
 	Currency    string                  `json:"currency" binding:"omitempty"`
@@ -89,7 +89,7 @@ func (r *TaxAssociationUpdateRequest) Validate() error {
 type LinkTaxRateToEntityRequest struct {
 	TaxRateOverrides        []*TaxRateOverride        `json:"tax_rate_overrides" binding:"omitempty"`
 	ExistingTaxAssociations []*TaxAssociationResponse `json:"existing_tax_associations" binding:"omitempty"`
-	EntityType              types.TaxrateEntityType   `json:"entity_type" binding:"required" default:"tenant"`
+	EntityType              types.TaxRateEntityType   `json:"entity_type" binding:"required" default:"tenant"`
 	EntityID                string                    `json:"entity_id" binding:"required"`
 }
 
@@ -105,7 +105,7 @@ func (r *LinkTaxRateToEntityRequest) Validate() error {
 type TaxAssociationResponse struct {
 	ID            string                  `json:"id"`
 	TaxRateID     string                  `json:"tax_rate_id"`
-	EntityType    types.TaxrateEntityType `json:"entity_type"`
+	EntityType    types.TaxRateEntityType `json:"entity_type"`
 	EntityID      string                  `json:"entity_id"`
 	Priority      int                     `json:"priority"`
 	AutoApply     bool                    `json:"auto_apply"`
@@ -123,7 +123,7 @@ type TaxAssociationResponse struct {
 	TaxRate       *TaxRateResponse        `json:"tax_rate,omitempty"`
 }
 
-// ToTaxAssociationResponse converts a domain TaxConfig to a TaxConfigResponse
+// ToTaxAssociationResponse converts a domain TaxConfig to a TaxAssociationResponse
 func ToTaxAssociationResponse(tc *taxassociation.TaxAssociation) *TaxAssociationResponse {
 	if tc == nil {
 		return nil
@@ -182,7 +182,7 @@ func (tr *TaxRateOverride) Validate() error {
 	return nil
 }
 
-func (tr *TaxRateOverride) ToTaxAssociationRequest(_ context.Context, entityID string, entityType types.TaxrateEntityType) *CreateTaxAssociationRequest {
+func (tr *TaxRateOverride) ToTaxAssociationRequest(_ context.Context, entityID string, entityType types.TaxRateEntityType) *CreateTaxAssociationRequest {
 	return &CreateTaxAssociationRequest{
 		TaxRateCode: tr.TaxRateCode,
 		EntityType:  entityType,

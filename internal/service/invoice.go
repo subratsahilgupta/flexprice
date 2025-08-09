@@ -294,7 +294,7 @@ func (s *invoiceService) GetInvoice(ctx context.Context, id string) (*dto.Invoic
 	// get tax applied records
 	taxService := NewTaxService(s.ServiceParams)
 	filter := types.NewNoLimitTaxAppliedFilter()
-	filter.EntityType = types.TaxrateEntityTypeInvoice
+	filter.EntityType = types.TaxRateEntityTypeInvoice
 	filter.EntityID = inv.ID
 	appliedTaxes, err := taxService.ListTaxApplied(ctx, filter)
 	if err != nil {

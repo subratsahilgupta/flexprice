@@ -12,7 +12,7 @@ type TaxAssociation struct {
 	// Reference to the TaxRate entity
 	TaxRateID string `json:"tax_rate_id,omitempty"`
 	// Type of entity this tax rate applies to
-	EntityType types.TaxrateEntityType `json:"entity_type,omitempty"`
+	EntityType types.TaxRateEntityType `json:"entity_type,omitempty"`
 	// ID of the entity this tax rate applies to
 	EntityID string `json:"entity_id,omitempty"`
 	// Priority for tax resolution (lower number = higher priority)
@@ -34,7 +34,7 @@ func FromEnt(ent *ent.TaxAssociation) *TaxAssociation {
 	return &TaxAssociation{
 		ID:            ent.ID,
 		TaxRateID:     ent.TaxRateID,
-		EntityType:    types.TaxrateEntityType(ent.EntityType),
+		EntityType:    types.TaxRateEntityType(ent.EntityType),
 		EntityID:      ent.EntityID,
 		Priority:      ent.Priority,
 		AutoApply:     ent.AutoApply,
