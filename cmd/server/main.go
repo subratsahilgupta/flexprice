@@ -146,6 +146,9 @@ func main() {
 			repository.NewCouponAssociationRepository,
 			repository.NewCouponApplicationRepository,
 			repository.NewPriceUnitRepository,
+			repository.NewAddonRepository,
+			repository.NewAddonAssociationRepository,
+			repository.NewSubscriptionLineItemRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -162,16 +165,13 @@ func main() {
 	// Service layer
 	opts = append(opts,
 		fx.Provide(
+			// Services
 			service.NewServiceParams,
-
-			// Core services
 			service.NewTenantService,
 			service.NewAuthService,
 			service.NewUserService,
 			service.NewEnvAccessService,
 			service.NewEnvironmentService,
-
-			// Business services
 			service.NewMeterService,
 			service.NewEventService,
 			service.NewEventPostProcessingService,
@@ -195,6 +195,7 @@ func main() {
 			service.NewTaxService,
 			service.NewCouponService,
 			service.NewPriceUnitService,
+			service.NewAddonService,
 		),
 	)
 
@@ -248,6 +249,7 @@ func provideHandlers(
 	svixClient *svix.Client,
 	taxService service.TaxService,
 	couponService service.CouponService,
+	addonService service.AddonService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:            v1.NewEventsHandler(eventService, eventPostProcessingService, logger),
@@ -280,6 +282,7 @@ func provideHandlers(
 		PriceUnit:         v1.NewPriceUnitHandler(priceUnitService, logger),
 		Webhook:           v1.NewWebhookHandler(cfg, svixClient, logger),
 		Coupon:            v1.NewCouponHandler(couponService, logger),
+		Addon:             v1.NewAddonHandler(addonService, logger),
 	}
 }
 

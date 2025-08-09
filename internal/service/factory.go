@@ -2,6 +2,8 @@ package service
 
 import (
 	"github.com/flexprice/flexprice/internal/config"
+	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	costsheet "github.com/flexprice/flexprice/internal/domain/costsheet"
 	"github.com/flexprice/flexprice/internal/domain/coupon"
@@ -60,6 +62,7 @@ type ServiceParams struct {
 	PlanRepo                   plan.Repository
 	SubRepo                    subscription.Repository
 	SubscriptionScheduleRepo   subscription.SubscriptionScheduleRepository
+	SubscriptionLineItemRepo   subscription.LineItemRepository
 	WalletRepo                 wallet.Repository
 	TenantRepo                 tenant.Repository
 	InvoiceRepo                invoice.Repository
@@ -80,6 +83,8 @@ type ServiceParams struct {
 	CouponRepo                 coupon.Repository
 	CouponAssociationRepo      coupon_association.Repository
 	CouponApplicationRepo      coupon_application.Repository
+	AddonRepo                  addon.Repository
+	AddonAssociationRepo       addonassociation.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -106,6 +111,7 @@ func NewServiceParams(
 	planRepo plan.Repository,
 	subRepo subscription.Repository,
 	subscriptionScheduleRepo subscription.SubscriptionScheduleRepository,
+	subscriptionLineItemRepo subscription.LineItemRepository,
 	walletRepo wallet.Repository,
 	tenantRepo tenant.Repository,
 	invoiceRepo invoice.Repository,
@@ -130,7 +136,8 @@ func NewServiceParams(
 	webhookPublisher webhookPublisher.WebhookPublisher,
 	s3Service s3.Service,
 	client httpclient.Client,
-
+	addonRepo addon.Repository,
+	addonAssociationRepo addonassociation.Repository,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:                     logger,
@@ -148,6 +155,7 @@ func NewServiceParams(
 		PlanRepo:                   planRepo,
 		SubRepo:                    subRepo,
 		SubscriptionScheduleRepo:   subscriptionScheduleRepo,
+		SubscriptionLineItemRepo:   subscriptionLineItemRepo,
 		WalletRepo:                 walletRepo,
 		TenantRepo:                 tenantRepo,
 		InvoiceRepo:                invoiceRepo,
@@ -172,5 +180,7 @@ func NewServiceParams(
 		CouponRepo:                 couponRepo,
 		CouponAssociationRepo:      couponAssociationRepo,
 		CouponApplicationRepo:      couponApplicationRepo,
+		AddonRepo:                  addonRepo,
+		AddonAssociationRepo:       addonAssociationRepo,
 	}
 }
