@@ -1634,9 +1634,10 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 				_, err := s.GetStores().EntitlementRepo.Create(s.GetContext(), entitlement)
 				s.NoError(err)
 			},
-			expectedRealTimeBalance: decimal.NewFromInt(750), // 1000 - 250 - 0
+			// Disabled entitlement should not adjust usage; expect same charges as baseline
+			expectedRealTimeBalance: decimal.NewFromInt(672), // 1000 - 250 - 78
 			expectedUnpaidAmount:    decimal.NewFromInt(250), // 100 + 150 (USD invoices)
-			expectedCurrentUsage:    decimal.NewFromInt(0),   // No usage charges due to entitlement
+			expectedCurrentUsage:    decimal.NewFromInt(78),  // Usage unchanged when entitlement is disabled
 			wantErr:                 false,
 		},
 	}
