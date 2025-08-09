@@ -2876,7 +2876,7 @@ func (s *subscriptionService) handleSubscriptionAddons(
 			"valid_prices_count", len(validPrices))
 
 		// Create subscription addon using the validated prices
-		subscriptionAddon, err := s.AddAddonToSubscription(ctx, subscription.ID, lo.ToPtr(addonReq))
+		subscriptionAddon, err := s.addAddonToSubscription(ctx, subscription, lo.ToPtr(addonReq))
 		if err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to add addon to subscription").
@@ -2900,9 +2900,25 @@ func (s *subscriptionService) handleSubscriptionAddons(
 }
 
 // AddAddonToSubscription adds an addon to a subscription
+// This is the public facing method for adding an addon to a subscription
 func (s *subscriptionService) AddAddonToSubscription(
 	ctx context.Context,
 	subID string,
+	req *dto.AddAddonToSubscriptionRequest,
+) (*addonassociation.AddonAssociation, error) {
+
+	sub, err := s.SubRepo.Get(ctx, subID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.addAddonToSubscription(ctx, sub, req)
+}
+
+// addAddonToSubscription adds an addon to a subscription
+func (s *subscriptionService) addAddonToSubscription(
+	ctx context.Context,
+	sub *subscription.Subscription,
 	req *dto.AddAddonToSubscriptionRequest,
 ) (*addonassociation.AddonAssociation, error) {
 	// Validate request
@@ -2921,11 +2937,6 @@ func (s *subscriptionService) AddAddonToSubscription(
 		return nil, ierr.NewError("addon is not published").
 			WithHint("Cannot add inactive addon to subscription").
 			Mark(ierr.ErrValidation)
-	}
-
-	sub, err := s.SubRepo.Get(ctx, subID)
-	if err != nil {
-		return nil, err
 	}
 
 	// Check if sub exists and is active

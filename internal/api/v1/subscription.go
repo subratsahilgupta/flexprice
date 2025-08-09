@@ -259,7 +259,7 @@ func (h *SubscriptionHandler) ListSubscriptionsByFilter(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body dto.AddAddonRequest true "Add Addon Request"
+// @Param request body dto.AddAddonToSubscriptionRequest true "Add Addon Request"
 // @Success 200 {object} dto.AddonAssociationResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
