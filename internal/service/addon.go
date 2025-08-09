@@ -25,7 +25,7 @@ type AddonService interface {
 	DeleteAddon(ctx context.Context, id string) error
 
 	// Add addon to subscription
-	AddAddonToSubscription(ctx context.Context, sub *subscription.Subscription, req *dto.AddAddonToSubscriptionRequest) (*addonassociation.AddonAssociation, error)
+	AddAddonToSubscription(ctx context.Context, subID string, req *dto.AddAddonToSubscriptionRequest) (*addonassociation.AddonAssociation, error)
 
 	// Remove addon from subscription
 	RemoveAddonFromSubscription(ctx context.Context, subscriptionID string, addonID string, reason string) error
@@ -360,7 +360,7 @@ func (s *addonService) DeleteAddon(ctx context.Context, id string) error {
 // AddAddonToSubscription adds an addon to a subscription
 func (s *addonService) AddAddonToSubscription(
 	ctx context.Context,
-	sub *subscription.Subscription,
+	subID string,
 	req *dto.AddAddonToSubscriptionRequest,
 ) (*addonassociation.AddonAssociation, error) {
 	// Validate request
@@ -378,6 +378,11 @@ func (s *addonService) AddAddonToSubscription(
 		return nil, ierr.NewError("addon is not published").
 			WithHint("Cannot add inactive addon to subscription").
 			Mark(ierr.ErrValidation)
+	}
+
+	sub, err := s.SubRepo.Get(ctx, subID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if sub exists and is active
