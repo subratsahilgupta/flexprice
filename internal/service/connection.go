@@ -32,22 +32,22 @@ func NewConnectionService(params ServiceParams, encryptionService security.Encry
 	}
 }
 
-// encryptMetadata encrypts the structured metadata
-func (s *connectionService) encryptMetadata(metadata types.ConnectionMetadata, providerType types.SecretProvider) (types.ConnectionMetadata, error) {
-	encryptedMetadata := metadata
+// encryptMetadata encrypts the structured encrypted secret data
+func (s *connectionService) encryptMetadata(encryptedSecretData types.ConnectionMetadata, providerType types.SecretProvider) (types.ConnectionMetadata, error) {
+	encryptedMetadata := encryptedSecretData
 
 	switch providerType {
 	case types.SecretProviderStripe:
-		if metadata.Stripe != nil {
-			encryptedPublishableKey, err := s.encryptionService.Encrypt(metadata.Stripe.PublishableKey)
+		if encryptedSecretData.Stripe != nil {
+			encryptedPublishableKey, err := s.encryptionService.Encrypt(encryptedSecretData.Stripe.PublishableKey)
 			if err != nil {
 				return types.ConnectionMetadata{}, err
 			}
-			encryptedSecretKey, err := s.encryptionService.Encrypt(metadata.Stripe.SecretKey)
+			encryptedSecretKey, err := s.encryptionService.Encrypt(encryptedSecretData.Stripe.SecretKey)
 			if err != nil {
 				return types.ConnectionMetadata{}, err
 			}
-			encryptedWebhookSecret, err := s.encryptionService.Encrypt(metadata.Stripe.WebhookSecret)
+			encryptedWebhookSecret, err := s.encryptionService.Encrypt(encryptedSecretData.Stripe.WebhookSecret)
 			if err != nil {
 				return types.ConnectionMetadata{}, err
 			}
@@ -56,15 +56,15 @@ func (s *connectionService) encryptMetadata(metadata types.ConnectionMetadata, p
 				PublishableKey: encryptedPublishableKey,
 				SecretKey:      encryptedSecretKey,
 				WebhookSecret:  encryptedWebhookSecret,
-				AccountID:      metadata.Stripe.AccountID, // Account ID is not sensitive
+				AccountID:      encryptedSecretData.Stripe.AccountID, // Account ID is not sensitive
 			}
 		}
 
 	default:
 		// For other providers or unknown types, use generic format
-		if metadata.Generic != nil {
+		if encryptedSecretData.Generic != nil {
 			encryptedData := make(map[string]interface{})
-			for key, value := range metadata.Generic.Data {
+			for key, value := range encryptedSecretData.Generic.Data {
 				if strValue, ok := value.(string); ok {
 					encryptedValue, err := s.encryptionService.Encrypt(strValue)
 					if err != nil {
@@ -84,22 +84,22 @@ func (s *connectionService) encryptMetadata(metadata types.ConnectionMetadata, p
 	return encryptedMetadata, nil
 }
 
-// decryptMetadata decrypts the structured metadata
-func (s *connectionService) decryptMetadata(metadata types.ConnectionMetadata, providerType types.SecretProvider) (types.ConnectionMetadata, error) {
-	decryptedMetadata := metadata
+// decryptMetadata decrypts the structured encrypted secret data
+func (s *connectionService) decryptMetadata(encryptedSecretData types.ConnectionMetadata, providerType types.SecretProvider) (types.ConnectionMetadata, error) {
+	decryptedMetadata := encryptedSecretData
 
 	switch providerType {
 	case types.SecretProviderStripe:
-		if metadata.Stripe != nil {
-			decryptedPublishableKey, err := s.encryptionService.Decrypt(metadata.Stripe.PublishableKey)
+		if encryptedSecretData.Stripe != nil {
+			decryptedPublishableKey, err := s.encryptionService.Decrypt(encryptedSecretData.Stripe.PublishableKey)
 			if err != nil {
 				return types.ConnectionMetadata{}, err
 			}
-			decryptedSecretKey, err := s.encryptionService.Decrypt(metadata.Stripe.SecretKey)
+			decryptedSecretKey, err := s.encryptionService.Decrypt(encryptedSecretData.Stripe.SecretKey)
 			if err != nil {
 				return types.ConnectionMetadata{}, err
 			}
-			decryptedWebhookSecret, err := s.encryptionService.Decrypt(metadata.Stripe.WebhookSecret)
+			decryptedWebhookSecret, err := s.encryptionService.Decrypt(encryptedSecretData.Stripe.WebhookSecret)
 			if err != nil {
 				return types.ConnectionMetadata{}, err
 			}
@@ -108,15 +108,15 @@ func (s *connectionService) decryptMetadata(metadata types.ConnectionMetadata, p
 				PublishableKey: decryptedPublishableKey,
 				SecretKey:      decryptedSecretKey,
 				WebhookSecret:  decryptedWebhookSecret,
-				AccountID:      metadata.Stripe.AccountID, // Account ID is not sensitive
+				AccountID:      encryptedSecretData.Stripe.AccountID, // Account ID is not sensitive
 			}
 		}
 
 	default:
 		// For other providers or unknown types, use generic format
-		if metadata.Generic != nil {
+		if encryptedSecretData.Generic != nil {
 			decryptedData := make(map[string]interface{})
-			for key, value := range metadata.Generic.Data {
+			for key, value := range encryptedSecretData.Generic.Data {
 				if strValue, ok := value.(string); ok {
 					decryptedValue, err := s.encryptionService.Decrypt(strValue)
 					if err != nil {
@@ -193,12 +193,12 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 	conn.UpdatedBy = types.GetUserID(ctx)
 
 	// Encrypt metadata
-	encryptedMetadata, err := s.encryptMetadata(conn.Metadata, conn.ProviderType)
+	encryptedMetadata, err := s.encryptMetadata(conn.EncryptedSecretData, conn.ProviderType)
 	if err != nil {
 		s.Logger.Errorw("failed to encrypt metadata", "error", err)
 		return nil, err
 	}
-	conn.Metadata = encryptedMetadata
+	conn.EncryptedSecretData = encryptedMetadata
 
 	// Create the connection
 	if err := s.ConnectionRepo.Create(ctx, conn); err != nil {
@@ -219,14 +219,6 @@ func (s *connectionService) GetConnection(ctx context.Context, id string) (*dto.
 		return nil, err
 	}
 
-	// Decrypt metadata
-	decryptedMetadata, err := s.decryptMetadata(conn.Metadata, conn.ProviderType)
-	if err != nil {
-		s.Logger.Errorw("failed to decrypt metadata", "error", err)
-		return nil, err
-	}
-	conn.Metadata = decryptedMetadata
-
 	return dto.ToConnectionResponse(conn), nil
 }
 
@@ -237,16 +229,6 @@ func (s *connectionService) GetConnections(ctx context.Context, filter *types.Co
 	if err != nil {
 		s.Logger.Errorw("failed to get connections", "error", err)
 		return nil, err
-	}
-
-	// Decrypt metadata for all connections
-	for _, conn := range connections {
-		decryptedMetadata, err := s.decryptMetadata(conn.Metadata, conn.ProviderType)
-		if err != nil {
-			s.Logger.Errorw("failed to decrypt metadata for connection", "error", err, "connection_id", conn.ID)
-			return nil, err
-		}
-		conn.Metadata = decryptedMetadata
 	}
 
 	total, err := s.ConnectionRepo.Count(ctx, filter)
@@ -279,61 +261,6 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 		conn.Name = req.Name
 	}
 
-	// If provider type is being changed, check for duplicates
-	if req.ProviderType != "" && req.ProviderType != conn.ProviderType {
-		// Check for existing published connection with same provider, tenant, and environment
-		existingFilter := &types.ConnectionFilter{
-			ProviderType: req.ProviderType,
-		}
-
-		existingConnections, err := s.ConnectionRepo.List(ctx, existingFilter)
-		if err != nil {
-			s.Logger.Errorw("failed to check for existing connections during update", "error", err)
-			return nil, err
-		}
-
-		// Check if there's already a published connection for this provider, tenant, and environment
-		tenantID := types.GetTenantID(ctx)
-		environmentID := types.GetEnvironmentID(ctx)
-
-		for _, existingConn := range existingConnections {
-			if existingConn.ID != id && // Exclude the current connection being updated
-				existingConn.TenantID == tenantID &&
-				existingConn.EnvironmentID == environmentID &&
-				existingConn.ProviderType == req.ProviderType &&
-				existingConn.Status == types.StatusPublished {
-				return nil, ierr.NewError("connection already exists").
-					WithHintf("A published connection for provider '%s' already exists in this environment", req.ProviderType).
-					WithReportableDetails(map[string]interface{}{
-						"provider_type":          req.ProviderType,
-						"tenant_id":              tenantID,
-						"environment_id":         environmentID,
-						"existing_connection_id": existingConn.ID,
-					}).
-					Mark(ierr.ErrAlreadyExists)
-			}
-		}
-
-		conn.ProviderType = req.ProviderType
-	}
-
-	// Handle metadata update if provided
-	if req.Metadata.Stripe != nil || req.Metadata.Generic != nil {
-		// Validate the new metadata
-		if err := req.Metadata.Validate(req.ProviderType); err != nil {
-			s.Logger.Errorw("invalid metadata in update request", "error", err)
-			return nil, err
-		}
-
-		// Encrypt the new metadata
-		encryptedMetadata, err := s.encryptMetadata(req.Metadata, req.ProviderType)
-		if err != nil {
-			s.Logger.Errorw("failed to encrypt metadata during update", "error", err)
-			return nil, err
-		}
-		conn.Metadata = encryptedMetadata
-	}
-
 	conn.UpdatedAt = time.Now()
 	conn.UpdatedBy = types.GetUserID(ctx)
 
@@ -342,14 +269,6 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 		s.Logger.Errorw("failed to update connection", "error", err, "connection_id", id)
 		return nil, err
 	}
-
-	// Decrypt metadata for response
-	decryptedMetadata, err := s.decryptMetadata(conn.Metadata, conn.ProviderType)
-	if err != nil {
-		s.Logger.Errorw("failed to decrypt metadata after update", "error", err)
-		return nil, err
-	}
-	conn.Metadata = decryptedMetadata
 
 	s.Logger.Infow("connection updated successfully", "connection_id", conn.ID)
 	return dto.ToConnectionResponse(conn), nil

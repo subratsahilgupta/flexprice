@@ -72,25 +72,19 @@ func (s *integrationService) syncCustomerToProviders(ctx context.Context, custom
 	}
 	customer := customerResp.Customer
 
-	// Sync to each provider
+	// Sync to each provider synchronously (caller already runs this in a goroutine)
 	for _, conn := range connections {
-		// Use goroutine to avoid blocking
-		go func(connection *connection.Connection) {
-			syncCtx := types.SetTenantID(context.Background(), types.GetTenantID(ctx))
-			syncCtx = types.SetEnvironmentID(syncCtx, types.GetEnvironmentID(ctx))
-			syncCtx = types.SetUserID(syncCtx, types.GetUserID(ctx))
-
-			if err := s.syncCustomerToProvider(syncCtx, customer, connection); err != nil {
-				s.Logger.Errorw("failed to sync customer to provider",
-					"customer_id", customerID,
-					"provider_type", connection.ProviderType,
-					"error", err)
-			} else {
-				s.Logger.Infow("customer synced to provider successfully",
-					"customer_id", customerID,
-					"provider_type", connection.ProviderType)
-			}
-		}(conn)
+		if err := s.syncCustomerToProvider(ctx, customer, conn); err != nil {
+			s.Logger.Errorw("failed to sync customer to provider",
+				"customer_id", customerID,
+				"provider_type", conn.ProviderType,
+				"error", err)
+			// Continue syncing other providers even if one fails
+			continue
+		}
+		s.Logger.Infow("customer synced to provider successfully",
+			"customer_id", customerID,
+			"provider_type", conn.ProviderType)
 	}
 
 	return nil
@@ -106,9 +100,9 @@ func (s *integrationService) syncCustomerToProvider(ctx context.Context, custome
 
 		// Use standard list/search pattern instead of specific endpoint
 		filter := &types.EntityIntegrationMappingFilter{
-			EntityID:     customer.ID,
-			EntityType:   types.IntegrationEntityTypeCustomer,
-			ProviderType: string(conn.ProviderType),
+			EntityID:      customer.ID,
+			EntityType:    types.IntegrationEntityTypeCustomer,
+			ProviderTypes: []string{string(conn.ProviderType)},
 		}
 
 		existingMappings, err := entityMappingService.GetEntityIntegrationMappings(txCtx, filter)
@@ -118,7 +112,7 @@ func (s *integrationService) syncCustomerToProvider(ctx context.Context, custome
 			s.Logger.Infow("customer already mapped to provider",
 				"customer_id", customer.ID,
 				"provider_type", conn.ProviderType,
-				"provider_entity_id", existingMapping.EntityIntegrationMapping.ProviderEntityID)
+				"provider_entity_id", existingMapping.ProviderEntityID)
 			return nil
 		}
 
@@ -256,8 +250,8 @@ func (s *integrationService) SyncCustomerFromProvider(ctx context.Context, provi
 
 		// Use standard list/search pattern instead of specific endpoint
 		filter := &types.EntityIntegrationMappingFilter{
-			ProviderType:     providerType,
-			ProviderEntityID: providerCustomerID,
+			ProviderTypes:     []string{providerType},
+			ProviderEntityIDs: []string{providerCustomerID},
 		}
 
 		existingMappings, err := entityMappingService.GetEntityIntegrationMappings(txCtx, filter)
@@ -267,7 +261,7 @@ func (s *integrationService) SyncCustomerFromProvider(ctx context.Context, provi
 			s.Logger.Infow("customer already exists from provider",
 				"provider_type", providerType,
 				"provider_customer_id", providerCustomerID,
-				"flexprice_customer_id", existingMapping.EntityIntegrationMapping.EntityID)
+				"flexprice_customer_id", existingMapping.EntityID)
 			return nil
 		}
 
@@ -339,7 +333,7 @@ func (s *integrationService) SyncCustomerFromProvider(ctx context.Context, provi
 		var metadata map[string]interface{}
 
 		switch providerType {
-		case "stripe":
+		case string(types.SecretProviderStripe):
 			customerID, metadata, err = s.createCustomerFromStripe(ctx, providerCustomerID, customerData)
 		default:
 			return ierr.NewError("unsupported provider type").

@@ -624,14 +624,14 @@ func ProviderTypeNotIn(vs ...ProviderType) predicate.Connection {
 	return predicate.Connection(sql.FieldNotIn(FieldProviderType, vs...))
 }
 
-// MetadataIsNil applies the IsNil predicate on the "metadata" field.
-func MetadataIsNil() predicate.Connection {
-	return predicate.Connection(sql.FieldIsNull(FieldMetadata))
+// EncryptedSecretDataIsNil applies the IsNil predicate on the "encrypted_secret_data" field.
+func EncryptedSecretDataIsNil() predicate.Connection {
+	return predicate.Connection(sql.FieldIsNull(FieldEncryptedSecretData))
 }
 
-// MetadataNotNil applies the NotNil predicate on the "metadata" field.
-func MetadataNotNil() predicate.Connection {
-	return predicate.Connection(sql.FieldNotNull(FieldMetadata))
+// EncryptedSecretDataNotNil applies the NotNil predicate on the "encrypted_secret_data" field.
+func EncryptedSecretDataNotNil() predicate.Connection {
+	return predicate.Connection(sql.FieldNotNull(FieldEncryptedSecretData))
 }
 
 // And groups predicates with the AND operator between them.

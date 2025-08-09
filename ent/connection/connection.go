@@ -32,8 +32,8 @@ const (
 	FieldName = "name"
 	// FieldProviderType holds the string denoting the provider_type field in the database.
 	FieldProviderType = "provider_type"
-	// FieldMetadata holds the string denoting the metadata field in the database.
-	FieldMetadata = "metadata"
+	// FieldEncryptedSecretData holds the string denoting the encrypted_secret_data field in the database.
+	FieldEncryptedSecretData = "encrypted_secret_data"
 	// Table holds the table name of the connection in the database.
 	Table = "connections"
 )
@@ -50,7 +50,7 @@ var Columns = []string{
 	FieldEnvironmentID,
 	FieldName,
 	FieldProviderType,
-	FieldMetadata,
+	FieldEncryptedSecretData,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).

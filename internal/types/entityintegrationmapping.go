@@ -52,10 +52,8 @@ type EntityIntegrationMappingFilter struct {
 	EntityType IntegrationEntityType `json:"entity_type,omitempty" form:"entity_type" validate:"omitempty"`
 	EntityID   string                `json:"entity_id,omitempty" form:"entity_id" validate:"omitempty"`
 
-	// Provider-specific filters
-	ProviderType      string   `json:"provider_type,omitempty" form:"provider_type" validate:"omitempty"`
+	// Provider-specific filters (only plural variants kept)
 	ProviderTypes     []string `json:"provider_types,omitempty" form:"provider_types" validate:"omitempty"`
-	ProviderEntityID  string   `json:"provider_entity_id,omitempty" form:"provider_entity_id" validate:"omitempty"`
 	ProviderEntityIDs []string `json:"provider_entity_ids,omitempty" form:"provider_entity_ids" validate:"omitempty"`
 }
 
@@ -94,17 +92,19 @@ func (f EntityIntegrationMappingFilter) Validate() error {
 		}
 	}
 
-	// Validate provider type if provided
-	if f.ProviderType != "" {
+	// Validate provider types if provided
+	if len(f.ProviderTypes) > 0 {
 		validProviderTypes := map[string]bool{
 			"stripe":   true,
 			"razorpay": true,
 			"paypal":   true,
 		}
-		if !validProviderTypes[f.ProviderType] {
-			return ierr.NewError("invalid provider_type").
-				WithHint("Provider type must be one of: stripe, razorpay, paypal").
-				Mark(ierr.ErrValidation)
+		for _, pt := range f.ProviderTypes {
+			if !validProviderTypes[pt] {
+				return ierr.NewError("invalid provider_type").
+					WithHint("Provider type must be one of: stripe, razorpay, paypal").
+					Mark(ierr.ErrValidation)
+			}
 		}
 	}
 

@@ -2872,149 +2872,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/entity-integration-mappings/by-entity-and-provider": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Retrieve an entity integration mapping by FlexPrice entity and provider",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Entity Integration Mappings"
-                ],
-                "summary": "Get entity integration mapping by entity and provider",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "FlexPrice entity ID",
-                        "name": "entity_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Entity type",
-                        "name": "entity_type",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Provider type",
-                        "name": "provider_type",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.EntityIntegrationMappingResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/entity-integration-mappings/by-provider-entity": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Retrieve an entity integration mapping by provider entity ID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Entity Integration Mappings"
-                ],
-                "summary": "Get entity integration mapping by provider entity",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Provider type",
-                        "name": "provider_type",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Provider entity ID",
-                        "name": "provider_entity_id",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.EntityIntegrationMappingResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/entity-integration-mappings/{id}": {
             "get": {
                 "security": [
@@ -3040,74 +2897,6 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.EntityIntegrationMappingResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Update an existing entity integration mapping",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Entity Integration Mappings"
-                ],
-                "summary": "Update entity integration mapping",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Entity integration mapping ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Entity integration mapping data",
-                        "name": "entity_integration_mapping",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.UpdateEntityIntegrationMappingRequest"
-                        }
                     }
                 ],
                 "responses": {
@@ -4147,6 +3936,115 @@ const docTemplate = `{
                 }
             }
         },
+        "/integration/providers": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get all available payment providers for the current tenant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Integration"
+                ],
+                "summary": "Get available providers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListConnectionsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/integration/sync/{entity_type}/{entity_id}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Sync an entity to all available payment providers for the current tenant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Integration"
+                ],
+                "summary": "Sync entity to all available providers",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entity type (e.g., customer, invoice, tax)",
+                        "name": "entity_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Entity ID",
+                        "name": "entity_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/invoices": {
             "get": {
                 "description": "List invoices with optional filtering",
@@ -4262,6 +4160,7 @@ const docTemplate = `{
                         "type": "array",
                         "items": {
                             "enum": [
+                                "INITIATED",
                                 "PENDING",
                                 "PROCESSING",
                                 "SUCCEEDED",
@@ -8004,6 +7903,67 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/webhooks/stripe/{tenant_id}/{environment_id}": {
+            "post": {
+                "description": "Process incoming Stripe webhook events for payment status updates and customer creation",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Handle Stripe webhook events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenant_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Environment ID",
+                        "name": "environment_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Stripe webhook signature",
+                        "name": "Stripe-Signature",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Webhook processed successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing parameters or invalid signature",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -8289,15 +8249,14 @@ const docTemplate = `{
                 "created_by": {
                     "type": "string"
                 },
+                "encrypted_secret_data": {
+                    "$ref": "#/definitions/types.ConnectionMetadata"
+                },
                 "environment_id": {
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
                 },
                 "name": {
                     "type": "string"
@@ -8421,9 +8380,8 @@ const docTemplate = `{
                 "provider_type"
             ],
             "properties": {
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
+                "encrypted_secret_data": {
+                    "$ref": "#/definitions/types.ConnectionMetadata"
                 },
                 "name": {
                     "type": "string",
@@ -8676,8 +8634,7 @@ const docTemplate = `{
                     "maxLength": 255
                 },
                 "entity_type": {
-                    "type": "string",
-                    "maxLength": 50
+                    "$ref": "#/definitions/types.IntegrationEntityType"
                 },
                 "metadata": {
                     "type": "object",
@@ -9004,6 +8961,9 @@ const docTemplate = `{
                 },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
+                },
+                "payment_gateway": {
+                    "$ref": "#/definitions/types.PaymentGatewayType"
                 },
                 "payment_method_id": {
                     "type": "string"
@@ -9942,7 +9902,11 @@ const docTemplate = `{
                 },
                 "entity_type": {
                     "description": "EntityType is the type of entity (e.g., customer, plan, invoice, subscription, etc.)",
-                    "type": "string"
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.IntegrationEntityType"
+                        }
+                    ]
                 },
                 "environment_id": {
                     "description": "EnvironmentID is the environment identifier",
@@ -11235,6 +11199,15 @@ const docTemplate = `{
                 "failed_at": {
                     "type": "string"
                 },
+                "gateway_metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "gateway_payment_id": {
+                    "type": "string"
+                },
+                "gateway_tracking_id": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -11247,6 +11220,9 @@ const docTemplate = `{
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
+                "payment_gateway": {
+                    "type": "string"
+                },
                 "payment_method_id": {
                     "type": "string"
                 },
@@ -11256,7 +11232,13 @@ const docTemplate = `{
                 "payment_status": {
                     "$ref": "#/definitions/types.PaymentStatus"
                 },
+                "payment_url": {
+                    "type": "string"
+                },
                 "refunded_at": {
+                    "type": "string"
+                },
+                "session_id": {
                     "type": "string"
                 },
                 "succeeded_at": {
@@ -12215,16 +12197,9 @@ const docTemplate = `{
         "dto.UpdateConnectionRequest": {
             "type": "object",
             "properties": {
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
                 "name": {
                     "type": "string",
                     "maxLength": 255
-                },
-                "provider_type": {
-                    "$ref": "#/definitions/types.SecretProvider"
                 }
             }
         },
@@ -12318,31 +12293,6 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.UpdateEntityIntegrationMappingRequest": {
-            "type": "object",
-            "properties": {
-                "entity_id": {
-                    "type": "string",
-                    "maxLength": 255
-                },
-                "entity_type": {
-                    "type": "string",
-                    "maxLength": 50
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "provider_entity_id": {
-                    "type": "string",
-                    "maxLength": 255
-                },
-                "provider_type": {
-                    "type": "string",
-                    "maxLength": 50
-                }
-            }
-        },
         "dto.UpdateEnvironmentRequest": {
             "type": "object",
             "properties": {
@@ -12383,10 +12333,28 @@ const docTemplate = `{
         "dto.UpdatePaymentRequest": {
             "type": "object",
             "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "failed_at": {
+                    "type": "string"
+                },
+                "gateway_payment_id": {
+                    "type": "string"
+                },
                 "metadata": {
                     "$ref": "#/definitions/types.Metadata"
                 },
+                "payment_gateway": {
+                    "type": "string"
+                },
+                "payment_method_id": {
+                    "type": "string"
+                },
                 "payment_status": {
+                    "type": "string"
+                },
+                "succeeded_at": {
                     "type": "string"
                 }
             }
@@ -13558,6 +13526,17 @@ const docTemplate = `{
                 }
             }
         },
+        "types.ConnectionMetadata": {
+            "type": "object",
+            "properties": {
+                "generic": {
+                    "$ref": "#/definitions/types.GenericConnectionMetadata"
+                },
+                "stripe": {
+                    "$ref": "#/definitions/types.StripeConnectionMetadata"
+                }
+            }
+        },
         "types.CreditGrantCadence": {
             "type": "string",
             "enum": [
@@ -13892,6 +13871,34 @@ const docTemplate = `{
                 "AFTER"
             ]
         },
+        "types.GenericConnectionMetadata": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "types.IntegrationEntityType": {
+            "type": "string",
+            "enum": [
+                "customer",
+                "plan",
+                "invoice",
+                "subscription",
+                "payment",
+                "credit_note"
+            ],
+            "x-enum-varnames": [
+                "IntegrationEntityTypeCustomer",
+                "IntegrationEntityTypePlan",
+                "IntegrationEntityTypeInvoice",
+                "IntegrationEntityTypeSubscription",
+                "IntegrationEntityTypePayment",
+                "IntegrationEntityTypeCreditNote"
+            ]
+        },
         "types.InvoiceBillingReason": {
             "type": "string",
             "enum": [
@@ -14003,24 +14010,40 @@ const docTemplate = `{
                 "PaymentDestinationTypeInvoice"
             ]
         },
+        "types.PaymentGatewayType": {
+            "type": "string",
+            "enum": [
+                "stripe",
+                "razorpay",
+                "finix"
+            ],
+            "x-enum-varnames": [
+                "PaymentGatewayTypeStripe",
+                "PaymentGatewayTypeRazorpay",
+                "PaymentGatewayTypeFinix"
+            ]
+        },
         "types.PaymentMethodType": {
             "type": "string",
             "enum": [
                 "CARD",
                 "ACH",
                 "OFFLINE",
-                "CREDITS"
+                "CREDITS",
+                "PAYMENT_LINK"
             ],
             "x-enum-varnames": [
                 "PaymentMethodTypeCard",
                 "PaymentMethodTypeACH",
                 "PaymentMethodTypeOffline",
-                "PaymentMethodTypeCredits"
+                "PaymentMethodTypeCredits",
+                "PaymentMethodTypePaymentLink"
             ]
         },
         "types.PaymentStatus": {
             "type": "string",
             "enum": [
+                "INITIATED",
                 "PENDING",
                 "PROCESSING",
                 "SUCCEEDED",
@@ -14029,6 +14052,7 @@ const docTemplate = `{
                 "PARTIALLY_REFUNDED"
             ],
             "x-enum-varnames": [
+                "PaymentStatusInitiated",
                 "PaymentStatusPending",
                 "PaymentStatusProcessing",
                 "PaymentStatusSucceeded",
@@ -14173,6 +14197,23 @@ const docTemplate = `{
                 "StatusDeleted",
                 "StatusArchived"
             ]
+        },
+        "types.StripeConnectionMetadata": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "publishable_key": {
+                    "type": "string"
+                },
+                "secret_key": {
+                    "type": "string"
+                },
+                "webhook_secret": {
+                    "type": "string"
+                }
+            }
         },
         "types.SubscriptionScheduleStatus": {
             "type": "string",

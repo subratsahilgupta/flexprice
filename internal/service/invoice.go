@@ -488,7 +488,7 @@ func (s *invoiceService) ReconcilePaymentStatus(ctx context.Context, id string, 
 
 	// Validate the invoice status
 	allowedInvoiceStatuses := []types.InvoiceStatus{
-		types.InvoiceStatusDraft,
+		types.InvoiceStatusDraft, //check should we allow draft status as we dont allow payment to be take for draft invoices oayment can only be done for finzalized invoices
 		types.InvoiceStatusFinalized,
 	}
 	if !lo.Contains(allowedInvoiceStatuses, inv.InvoiceStatus) {

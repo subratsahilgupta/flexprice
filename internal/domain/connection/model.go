@@ -8,11 +8,11 @@ import (
 
 // Connection represents an integration connection in the system
 type Connection struct {
-	ID            string                   `db:"id" json:"id"`
-	Name          string                   `db:"name" json:"name"`
-	ProviderType  types.SecretProvider     `db:"provider_type" json:"provider_type"`
-	Metadata      types.ConnectionMetadata `db:"metadata" json:"metadata"`
-	EnvironmentID string                   `db:"environment_id" json:"environment_id"`
+	ID                  string                   `db:"id" json:"id"`
+	Name                string                   `db:"name" json:"name"`
+	ProviderType        types.SecretProvider     `db:"provider_type" json:"provider_type"`
+	EncryptedSecretData types.ConnectionMetadata `db:"encrypted_secret_data" json:"encrypted_secret_data"`
+	EnvironmentID       string                   `db:"environment_id" json:"environment_id"`
 	types.BaseModel
 }
 
@@ -32,17 +32,17 @@ func (c *Connection) GetStripeConfig() (*StripeConnection, error) {
 			Mark(ierr.ErrValidation)
 	}
 
-	if c.Metadata.Stripe == nil {
+	if c.EncryptedSecretData.Stripe == nil {
 		return nil, ierr.NewError("stripe metadata is not configured").
 			WithHint("Stripe metadata is required for Stripe connections").
 			Mark(ierr.ErrValidation)
 	}
 
 	config := &StripeConnection{
-		PublishableKey: c.Metadata.Stripe.PublishableKey,
-		SecretKey:      c.Metadata.Stripe.SecretKey,
-		WebhookSecret:  c.Metadata.Stripe.WebhookSecret,
-		AccountID:      c.Metadata.Stripe.AccountID,
+		PublishableKey: c.EncryptedSecretData.Stripe.PublishableKey,
+		SecretKey:      c.EncryptedSecretData.Stripe.SecretKey,
+		WebhookSecret:  c.EncryptedSecretData.Stripe.WebhookSecret,
+		AccountID:      c.EncryptedSecretData.Stripe.AccountID,
 	}
 
 	return config, nil
@@ -86,16 +86,16 @@ func FromEnt(entConn *ent.Connection) *Connection {
 
 	// Convert old map format to new structured format
 	var metadata types.ConnectionMetadata
-	if entConn.Metadata != nil {
-		metadata = convertMapToConnectionMetadata(entConn.Metadata, types.SecretProvider(entConn.ProviderType))
+	if entConn.EncryptedSecretData != nil {
+		metadata = convertMapToConnectionMetadata(entConn.EncryptedSecretData, types.SecretProvider(entConn.ProviderType))
 	}
 
 	return &Connection{
-		ID:            entConn.ID,
-		Name:          entConn.Name,
-		ProviderType:  types.SecretProvider(entConn.ProviderType),
-		Metadata:      metadata,
-		EnvironmentID: entConn.EnvironmentID,
+		ID:                  entConn.ID,
+		Name:                entConn.Name,
+		ProviderType:        types.SecretProvider(entConn.ProviderType),
+		EncryptedSecretData: metadata,
+		EnvironmentID:       entConn.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  entConn.TenantID,
 			Status:    types.Status(entConn.Status),

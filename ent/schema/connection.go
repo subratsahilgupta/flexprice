@@ -39,7 +39,7 @@ func (Connection) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}),
-		field.JSON("metadata", map[string]interface{}{}).
+		field.JSON("encrypted_secret_data", map[string]interface{}{}).
 			Optional(),
 	}
 }

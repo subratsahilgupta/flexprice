@@ -182,13 +182,9 @@ func (r *entityIntegrationMappingRepository) List(ctx context.Context, filter *t
 	defer FinishSpan(span)
 
 	query := client.EntityIntegrationMapping.Query()
-
-	// Apply query options
-	query = r.queryOpts.ApplyTenantFilter(ctx, query)
-	query = r.queryOpts.ApplyEnvironmentFilter(ctx, query)
-	query = r.queryOpts.ApplyStatusFilter(query, filter.GetStatus())
-	query = r.queryOpts.ApplySortFilter(query, filter.GetSort(), filter.GetOrder())
-	query = r.queryOpts.ApplyPaginationFilter(query, filter.GetLimit(), filter.GetOffset())
+	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
+	query = ApplyPagination(query, filter, r.queryOpts)
+	query = ApplySorting(query, filter, r.queryOpts)
 
 	// Apply entity-specific filters
 	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
@@ -220,11 +216,7 @@ func (r *entityIntegrationMappingRepository) Count(ctx context.Context, filter *
 	defer FinishSpan(span)
 
 	query := client.EntityIntegrationMapping.Query()
-
-	// Apply query options
-	query = r.queryOpts.ApplyTenantFilter(ctx, query)
-	query = r.queryOpts.ApplyEnvironmentFilter(ctx, query)
-	query = r.queryOpts.ApplyStatusFilter(query, filter.GetStatus())
+	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
 
 	// Apply entity-specific filters
 	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
@@ -242,43 +234,6 @@ func (r *entityIntegrationMappingRepository) Count(ctx context.Context, filter *
 	}
 
 	return count, nil
-}
-
-func (r *entityIntegrationMappingRepository) ListAll(ctx context.Context, filter *types.EntityIntegrationMappingFilter) ([]*domainEntityIntegrationMapping.EntityIntegrationMapping, error) {
-	client := r.client.Querier(ctx)
-
-	r.log.Debugw("listing all entity integration mappings", "filter", filter)
-
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "entity_integration_mapping", "list_all", map[string]interface{}{
-		"filter": filter,
-	})
-	defer FinishSpan(span)
-
-	query := client.EntityIntegrationMapping.Query()
-
-	// Apply query options
-	query = r.queryOpts.ApplyTenantFilter(ctx, query)
-	query = r.queryOpts.ApplyEnvironmentFilter(ctx, query)
-	query = r.queryOpts.ApplyStatusFilter(query, filter.GetStatus())
-	query = r.queryOpts.ApplySortFilter(query, filter.GetSort(), filter.GetOrder())
-
-	// Apply entity-specific filters
-	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
-	if err != nil {
-		SetSpanError(span, err)
-		return nil, err
-	}
-
-	mappings, err := query.All(ctx)
-	if err != nil {
-		SetSpanError(span, err)
-		return nil, ierr.WithError(err).
-			WithHint("Failed to list all entity integration mappings").
-			Mark(ierr.ErrInternal)
-	}
-
-	return domainEntityIntegrationMapping.FromEntList(mappings), nil
 }
 
 func (r *entityIntegrationMappingRepository) Update(ctx context.Context, mapping *domainEntityIntegrationMapping.EntityIntegrationMapping) error {
@@ -523,16 +478,8 @@ func (o EntityIntegrationMappingQueryOptions) applyEntityQueryOptions(_ context.
 		query = query.Where(entityintegrationmapping.EntityIDIn(f.EntityIDs...))
 	}
 
-	if f.ProviderType != "" {
-		query = query.Where(entityintegrationmapping.ProviderType(f.ProviderType))
-	}
-
 	if len(f.ProviderTypes) > 0 {
 		query = query.Where(entityintegrationmapping.ProviderTypeIn(f.ProviderTypes...))
-	}
-
-	if f.ProviderEntityID != "" {
-		query = query.Where(entityintegrationmapping.ProviderEntityID(f.ProviderEntityID))
 	}
 
 	if len(f.ProviderEntityIDs) > 0 {

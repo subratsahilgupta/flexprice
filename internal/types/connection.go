@@ -136,10 +136,10 @@ func (f ConnectionFilter) Validate() error {
 		}
 	}
 
-	if f.ProviderType != "" && !f.ProviderType.IsValid() {
-		return ierr.NewError("invalid provider type").
-			WithHint("Please provide a valid provider type").
-			Mark(ierr.ErrValidation)
+	if f.ProviderType != "" {
+		if err := f.ProviderType.Validate(); err != nil {
+			return err
+		}
 	}
 
 	return nil

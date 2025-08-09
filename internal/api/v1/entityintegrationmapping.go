@@ -96,49 +96,6 @@ func (h *EntityIntegrationMappingHandler) GetEntityIntegrationMapping(c *gin.Con
 	c.JSON(http.StatusOK, mapping)
 }
 
-// UpdateEntityIntegrationMapping godoc
-// @Summary Update entity integration mapping
-// @Description Update an existing entity integration mapping
-// @Tags Entity Integration Mappings
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param id path string true "Entity integration mapping ID"
-// @Param entity_integration_mapping body dto.UpdateEntityIntegrationMappingRequest true "Entity integration mapping data"
-// @Success 200 {object} dto.EntityIntegrationMappingResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 401 {object} ierr.ErrorResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /entity-integration-mappings/{id} [put]
-func (h *EntityIntegrationMappingHandler) UpdateEntityIntegrationMapping(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.Error(ierr.NewError("entity integration mapping ID is required").
-			WithHint("Entity integration mapping ID is required").
-			Mark(ierr.ErrValidation))
-		return
-	}
-
-	var req dto.UpdateEntityIntegrationMappingRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.logger.Errorw("failed to bind update entity integration mapping request", "error", err)
-		c.Error(ierr.WithError(err).
-			WithHint("Invalid request body").
-			Mark(ierr.ErrValidation))
-		return
-	}
-
-	mapping, err := h.EntityIntegrationMappingService.UpdateEntityIntegrationMapping(c.Request.Context(), id, req)
-	if err != nil {
-		h.logger.Errorw("failed to update entity integration mapping", "error", err, "id", id)
-		c.Error(err)
-		return
-	}
-
-	c.JSON(http.StatusOK, mapping)
-}
-
 // DeleteEntityIntegrationMapping godoc
 // @Summary Delete entity integration mapping
 // @Description Delete an entity integration mapping
@@ -203,10 +160,10 @@ func (h *EntityIntegrationMappingHandler) ListEntityIntegrationMappings(c *gin.C
 		filter.EntityType = types.IntegrationEntityType(entityType)
 	}
 	if providerType := c.Query("provider_type"); providerType != "" {
-		filter.ProviderType = providerType
+		filter.ProviderTypes = []string{providerType}
 	}
 	if providerEntityID := c.Query("provider_entity_id"); providerEntityID != "" {
-		filter.ProviderEntityID = providerEntityID
+		filter.ProviderEntityIDs = []string{providerEntityID}
 	}
 
 	// Parse pagination parameters

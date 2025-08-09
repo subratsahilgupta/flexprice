@@ -195,13 +195,12 @@ definitions:
         type: string
       created_by:
         type: string
+      encrypted_secret_data:
+        $ref: '#/definitions/types.ConnectionMetadata'
       environment_id:
         type: string
       id:
         type: string
-      metadata:
-        additionalProperties: true
-        type: object
       name:
         type: string
       provider_type:
@@ -281,9 +280,8 @@ definitions:
     type: object
   dto.CreateConnectionRequest:
     properties:
-      metadata:
-        additionalProperties: true
-        type: object
+      encrypted_secret_data:
+        $ref: '#/definitions/types.ConnectionMetadata'
       name:
         maxLength: 255
         type: string
@@ -464,8 +462,7 @@ definitions:
         maxLength: 255
         type: string
       entity_type:
-        maxLength: 50
-        type: string
+        $ref: '#/definitions/types.IntegrationEntityType'
       metadata:
         additionalProperties: true
         type: object
@@ -712,6 +709,8 @@ definitions:
         type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
+      payment_gateway:
+        $ref: '#/definitions/types.PaymentGatewayType'
       payment_method_id:
         type: string
       payment_method_type:
@@ -1399,9 +1398,10 @@ definitions:
           etc.)
         type: string
       entity_type:
+        allOf:
+        - $ref: '#/definitions/types.IntegrationEntityType'
         description: EntityType is the type of entity (e.g., customer, plan, invoice,
           subscription, etc.)
-        type: string
       environment_id:
         description: EnvironmentID is the environment identifier
         type: string
@@ -2327,6 +2327,12 @@ definitions:
         type: string
       failed_at:
         type: string
+      gateway_metadata:
+        $ref: '#/definitions/types.Metadata'
+      gateway_payment_id:
+        type: string
+      gateway_tracking_id:
+        type: string
       id:
         type: string
       idempotency_key:
@@ -2335,13 +2341,19 @@ definitions:
         type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
+      payment_gateway:
+        type: string
       payment_method_id:
         type: string
       payment_method_type:
         $ref: '#/definitions/types.PaymentMethodType'
       payment_status:
         $ref: '#/definitions/types.PaymentStatus'
+      payment_url:
+        type: string
       refunded_at:
+        type: string
+      session_id:
         type: string
       succeeded_at:
         type: string
@@ -3031,14 +3043,9 @@ definitions:
     type: object
   dto.UpdateConnectionRequest:
     properties:
-      metadata:
-        additionalProperties: true
-        type: object
       name:
         maxLength: 255
         type: string
-      provider_type:
-        $ref: '#/definitions/types.SecretProvider'
     type: object
   dto.UpdateCostSheetRequest:
     properties:
@@ -3101,24 +3108,6 @@ definitions:
       usage_reset_period:
         $ref: '#/definitions/types.BillingPeriod'
     type: object
-  dto.UpdateEntityIntegrationMappingRequest:
-    properties:
-      entity_id:
-        maxLength: 255
-        type: string
-      entity_type:
-        maxLength: 50
-        type: string
-      metadata:
-        additionalProperties: true
-        type: object
-      provider_entity_id:
-        maxLength: 255
-        type: string
-      provider_type:
-        maxLength: 50
-        type: string
-    type: object
   dto.UpdateEnvironmentRequest:
     properties:
       name:
@@ -3145,9 +3134,21 @@ definitions:
     type: object
   dto.UpdatePaymentRequest:
     properties:
+      error_message:
+        type: string
+      failed_at:
+        type: string
+      gateway_payment_id:
+        type: string
       metadata:
         $ref: '#/definitions/types.Metadata'
+      payment_gateway:
+        type: string
+      payment_method_id:
+        type: string
       payment_status:
+        type: string
+      succeeded_at:
         type: string
     type: object
   dto.UpdatePaymentStatusRequest:
@@ -3973,6 +3974,13 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
     type: object
+  types.ConnectionMetadata:
+    properties:
+      generic:
+        $ref: '#/definitions/types.GenericConnectionMetadata'
+      stripe:
+        $ref: '#/definitions/types.StripeConnectionMetadata'
+    type: object
   types.CreditGrantCadence:
     enum:
     - ONETIME
@@ -4222,6 +4230,28 @@ definitions:
     - NOT_IN
     - BEFORE
     - AFTER
+  types.GenericConnectionMetadata:
+    properties:
+      data:
+        additionalProperties: true
+        type: object
+    type: object
+  types.IntegrationEntityType:
+    enum:
+    - customer
+    - plan
+    - invoice
+    - subscription
+    - payment
+    - credit_note
+    type: string
+    x-enum-varnames:
+    - IntegrationEntityTypeCustomer
+    - IntegrationEntityTypePlan
+    - IntegrationEntityTypeInvoice
+    - IntegrationEntityTypeSubscription
+    - IntegrationEntityTypePayment
+    - IntegrationEntityTypeCreditNote
   types.InvoiceBillingReason:
     enum:
     - SUBSCRIPTION_CREATE
@@ -4305,20 +4335,33 @@ definitions:
     type: string
     x-enum-varnames:
     - PaymentDestinationTypeInvoice
+  types.PaymentGatewayType:
+    enum:
+    - stripe
+    - razorpay
+    - finix
+    type: string
+    x-enum-varnames:
+    - PaymentGatewayTypeStripe
+    - PaymentGatewayTypeRazorpay
+    - PaymentGatewayTypeFinix
   types.PaymentMethodType:
     enum:
     - CARD
     - ACH
     - OFFLINE
     - CREDITS
+    - PAYMENT_LINK
     type: string
     x-enum-varnames:
     - PaymentMethodTypeCard
     - PaymentMethodTypeACH
     - PaymentMethodTypeOffline
     - PaymentMethodTypeCredits
+    - PaymentMethodTypePaymentLink
   types.PaymentStatus:
     enum:
+    - INITIATED
     - PENDING
     - PROCESSING
     - SUCCEEDED
@@ -4327,6 +4370,7 @@ definitions:
     - PARTIALLY_REFUNDED
     type: string
     x-enum-varnames:
+    - PaymentStatusInitiated
     - PaymentStatusPending
     - PaymentStatusProcessing
     - PaymentStatusSucceeded
@@ -4433,6 +4477,17 @@ definitions:
     - StatusPublished
     - StatusDeleted
     - StatusArchived
+  types.StripeConnectionMetadata:
+    properties:
+      account_id:
+        type: string
+      publishable_key:
+        type: string
+      secret_key:
+        type: string
+      webhook_secret:
+        type: string
+    type: object
   types.SubscriptionScheduleStatus:
     enum:
     - ACTIVE
@@ -6518,144 +6573,6 @@ paths:
       summary: Get entity integration mapping
       tags:
       - Entity Integration Mappings
-    put:
-      consumes:
-      - application/json
-      description: Update an existing entity integration mapping
-      parameters:
-      - description: Entity integration mapping ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Entity integration mapping data
-        in: body
-        name: entity_integration_mapping
-        required: true
-        schema:
-          $ref: '#/definitions/dto.UpdateEntityIntegrationMappingRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Update entity integration mapping
-      tags:
-      - Entity Integration Mappings
-  /entity-integration-mappings/by-entity-and-provider:
-    get:
-      consumes:
-      - application/json
-      description: Retrieve an entity integration mapping by FlexPrice entity and
-        provider
-      parameters:
-      - description: FlexPrice entity ID
-        in: query
-        name: entity_id
-        required: true
-        type: string
-      - description: Entity type
-        in: query
-        name: entity_type
-        required: true
-        type: string
-      - description: Provider type
-        in: query
-        name: provider_type
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Get entity integration mapping by entity and provider
-      tags:
-      - Entity Integration Mappings
-  /entity-integration-mappings/by-provider-entity:
-    get:
-      consumes:
-      - application/json
-      description: Retrieve an entity integration mapping by provider entity ID
-      parameters:
-      - description: Provider type
-        in: query
-        name: provider_type
-        required: true
-        type: string
-      - description: Provider entity ID
-        in: query
-        name: provider_entity_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Get entity integration mapping by provider entity
-      tags:
-      - Entity Integration Mappings
   /environments:
     get:
       consumes:
@@ -7259,6 +7176,77 @@ paths:
       summary: List features by filter
       tags:
       - Features
+  /integration/providers:
+    get:
+      consumes:
+      - application/json
+      description: Get all available payment providers for the current tenant
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListConnectionsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get available providers
+      tags:
+      - Integration
+  /integration/sync/{entity_type}/{entity_id}:
+    post:
+      consumes:
+      - application/json
+      description: Sync an entity to all available payment providers for the current
+        tenant
+      parameters:
+      - description: Entity type (e.g., customer, invoice, tax)
+        in: path
+        name: entity_type
+        required: true
+        type: string
+      - description: Entity ID
+        in: path
+        name: entity_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Sync entity to all available providers
+      tags:
+      - Integration
   /invoices:
     get:
       consumes:
@@ -7353,6 +7341,7 @@ paths:
         in: query
         items:
           enum:
+          - INITIATED
           - PENDING
           - PROCESSING
           - SUCCEEDED
@@ -9796,6 +9785,49 @@ paths:
       summary: Get wallet transactions
       tags:
       - Wallets
+  /webhooks/stripe/{tenant_id}/{environment_id}:
+    post:
+      consumes:
+      - application/json
+      description: Process incoming Stripe webhook events for payment status updates
+        and customer creation
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenant_id
+        required: true
+        type: string
+      - description: Environment ID
+        in: path
+        name: environment_id
+        required: true
+        type: string
+      - description: Stripe webhook signature
+        in: header
+        name: Stripe-Signature
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook processed successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request - missing parameters or invalid signature
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Handle Stripe webhook events
+      tags:
+      - Webhooks
 schemes:
 - http
 - https

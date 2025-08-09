@@ -36,9 +36,9 @@ type Connection struct {
 	Name string `json:"name,omitempty"`
 	// ProviderType holds the value of the "provider_type" field.
 	ProviderType connection.ProviderType `json:"provider_type,omitempty"`
-	// Metadata holds the value of the "metadata" field.
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
-	selectValues sql.SelectValues
+	// EncryptedSecretData holds the value of the "encrypted_secret_data" field.
+	EncryptedSecretData map[string]interface{} `json:"encrypted_secret_data,omitempty"`
+	selectValues        sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -46,7 +46,7 @@ func (*Connection) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case connection.FieldMetadata:
+		case connection.FieldEncryptedSecretData:
 			values[i] = new([]byte)
 		case connection.FieldID, connection.FieldTenantID, connection.FieldStatus, connection.FieldCreatedBy, connection.FieldUpdatedBy, connection.FieldEnvironmentID, connection.FieldName, connection.FieldProviderType:
 			values[i] = new(sql.NullString)
@@ -127,12 +127,12 @@ func (c *Connection) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				c.ProviderType = connection.ProviderType(value.String)
 			}
-		case connection.FieldMetadata:
+		case connection.FieldEncryptedSecretData:
 			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field metadata", values[i])
+				return fmt.Errorf("unexpected type %T for field encrypted_secret_data", values[i])
 			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &c.Metadata); err != nil {
-					return fmt.Errorf("unmarshal field metadata: %w", err)
+				if err := json.Unmarshal(*value, &c.EncryptedSecretData); err != nil {
+					return fmt.Errorf("unmarshal field encrypted_secret_data: %w", err)
 				}
 			}
 		default:
@@ -198,8 +198,8 @@ func (c *Connection) String() string {
 	builder.WriteString("provider_type=")
 	builder.WriteString(fmt.Sprintf("%v", c.ProviderType))
 	builder.WriteString(", ")
-	builder.WriteString("metadata=")
-	builder.WriteString(fmt.Sprintf("%v", c.Metadata))
+	builder.WriteString("encrypted_secret_data=")
+	builder.WriteString(fmt.Sprintf("%v", c.EncryptedSecretData))
 	builder.WriteByte(')')
 	return builder.String()
 }

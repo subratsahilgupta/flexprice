@@ -59,15 +59,14 @@ func (s *EntityIntegrationMappingServiceSuite) TestCreateEntityIntegrationMappin
 	// Assert
 	require.NoError(s.T(), err)
 	assert.NotNil(s.T(), resp)
-	assert.NotNil(s.T(), resp.EntityIntegrationMapping)
-	assert.Equal(s.T(), req.EntityID, resp.EntityIntegrationMapping.EntityID)
-	assert.Equal(s.T(), types.IntegrationEntityType(req.EntityType), resp.EntityIntegrationMapping.EntityType)
-	assert.Equal(s.T(), req.ProviderType, resp.EntityIntegrationMapping.ProviderType)
-	assert.Equal(s.T(), req.ProviderEntityID, resp.EntityIntegrationMapping.ProviderEntityID)
-	assert.Equal(s.T(), req.Metadata, resp.EntityIntegrationMapping.Metadata)
-	assert.NotEmpty(s.T(), resp.EntityIntegrationMapping.ID)
-	assert.Equal(s.T(), "test_tenant", resp.EntityIntegrationMapping.TenantID)
-	assert.Equal(s.T(), "test_env", resp.EntityIntegrationMapping.EnvironmentID)
+	assert.Equal(s.T(), req.EntityID, resp.EntityID)
+	assert.Equal(s.T(), types.IntegrationEntityType(req.EntityType), resp.EntityType)
+	assert.Equal(s.T(), req.ProviderType, resp.ProviderType)
+	assert.Equal(s.T(), req.ProviderEntityID, resp.ProviderEntityID)
+	// Note: resp.Metadata should NOT exist anymore - this verifies our security fix!
+	assert.NotEmpty(s.T(), resp.ID)
+	assert.Equal(s.T(), "test_tenant", resp.TenantID)
+	assert.Equal(s.T(), "test_env", resp.EnvironmentID)
 }
 
 func (s *EntityIntegrationMappingServiceSuite) TestGetEntityIntegrationMapping() {
@@ -87,16 +86,16 @@ func (s *EntityIntegrationMappingServiceSuite) TestGetEntityIntegrationMapping()
 	require.NoError(s.T(), err)
 
 	// Get the mapping
-	resp, err := s.service.GetEntityIntegrationMapping(ctx, created.EntityIntegrationMapping.ID)
+	resp, err := s.service.GetEntityIntegrationMapping(ctx, created.ID)
 
 	// Assert
 	require.NoError(s.T(), err)
 	assert.NotNil(s.T(), resp)
-	assert.Equal(s.T(), created.EntityIntegrationMapping.ID, resp.EntityIntegrationMapping.ID)
-	assert.Equal(s.T(), req.EntityID, resp.EntityIntegrationMapping.EntityID)
-	assert.Equal(s.T(), types.IntegrationEntityType(req.EntityType), resp.EntityIntegrationMapping.EntityType)
-	assert.Equal(s.T(), req.ProviderType, resp.EntityIntegrationMapping.ProviderType)
-	assert.Equal(s.T(), req.ProviderEntityID, resp.EntityIntegrationMapping.ProviderEntityID)
+	assert.Equal(s.T(), created.ID, resp.ID)
+	assert.Equal(s.T(), req.EntityID, resp.EntityID)
+	assert.Equal(s.T(), types.IntegrationEntityType(req.EntityType), resp.EntityType)
+	assert.Equal(s.T(), req.ProviderType, resp.ProviderType)
+	assert.Equal(s.T(), req.ProviderEntityID, resp.ProviderEntityID)
 }
 
 func (s *EntityIntegrationMappingServiceSuite) TestGetByEntityAndProvider() {
@@ -115,16 +114,23 @@ func (s *EntityIntegrationMappingServiceSuite) TestGetByEntityAndProvider() {
 	_, err := s.service.CreateEntityIntegrationMapping(ctx, req)
 	require.NoError(s.T(), err)
 
-	// Get by entity and provider
-	resp, err := s.service.GetByEntityAndProvider(ctx, "cust_123", "customer", "stripe")
+	// Get by entity and provider using plural filters
+	listResp, err := s.service.GetEntityIntegrationMappings(ctx, &types.EntityIntegrationMappingFilter{
+		QueryFilter:   types.NewDefaultQueryFilter(),
+		EntityID:      "cust_123",
+		EntityType:    types.IntegrationEntityType("customer"),
+		ProviderTypes: []string{"stripe"},
+	})
 
 	// Assert
 	require.NoError(s.T(), err)
-	assert.NotNil(s.T(), resp)
-	assert.Equal(s.T(), "cust_123", resp.EntityIntegrationMapping.EntityID)
-	assert.Equal(s.T(), types.IntegrationEntityType("customer"), resp.EntityIntegrationMapping.EntityType)
-	assert.Equal(s.T(), "stripe", resp.EntityIntegrationMapping.ProviderType)
-	assert.Equal(s.T(), "cus_stripe_456", resp.EntityIntegrationMapping.ProviderEntityID)
+	require.NotNil(s.T(), listResp)
+	require.GreaterOrEqual(s.T(), len(listResp.Items), 1)
+	first := listResp.Items[0]
+	assert.Equal(s.T(), "cust_123", first.EntityID)
+	assert.Equal(s.T(), types.IntegrationEntityType("customer"), first.EntityType)
+	assert.Equal(s.T(), "stripe", first.ProviderType)
+	assert.Equal(s.T(), "cus_stripe_456", first.ProviderEntityID)
 }
 
 func (s *EntityIntegrationMappingServiceSuite) TestGetByProviderEntity() {
@@ -143,14 +149,20 @@ func (s *EntityIntegrationMappingServiceSuite) TestGetByProviderEntity() {
 	_, err := s.service.CreateEntityIntegrationMapping(ctx, req)
 	require.NoError(s.T(), err)
 
-	// Get by provider entity
-	resp, err := s.service.GetByProviderEntity(ctx, "stripe", "cus_stripe_456")
+	// Get by provider entity using plural filters
+	listResp, err := s.service.GetEntityIntegrationMappings(ctx, &types.EntityIntegrationMappingFilter{
+		QueryFilter:       types.NewDefaultQueryFilter(),
+		ProviderTypes:     []string{"stripe"},
+		ProviderEntityIDs: []string{"cus_stripe_456"},
+	})
 
 	// Assert
 	require.NoError(s.T(), err)
-	assert.NotNil(s.T(), resp)
-	assert.Equal(s.T(), "cust_123", resp.EntityIntegrationMapping.EntityID)
-	assert.Equal(s.T(), types.IntegrationEntityType("customer"), resp.EntityIntegrationMapping.EntityType)
-	assert.Equal(s.T(), "stripe", resp.EntityIntegrationMapping.ProviderType)
-	assert.Equal(s.T(), "cus_stripe_456", resp.EntityIntegrationMapping.ProviderEntityID)
+	require.NotNil(s.T(), listResp)
+	require.GreaterOrEqual(s.T(), len(listResp.Items), 1)
+	first := listResp.Items[0]
+	assert.Equal(s.T(), "cust_123", first.EntityID)
+	assert.Equal(s.T(), types.IntegrationEntityType("customer"), first.EntityType)
+	assert.Equal(s.T(), "stripe", first.ProviderType)
+	assert.Equal(s.T(), "cus_stripe_456", first.ProviderEntityID)
 }

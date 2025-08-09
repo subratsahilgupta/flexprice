@@ -96,15 +96,15 @@ func (cu *ConnectionUpdate) SetNillableProviderType(ct *connection.ProviderType)
 	return cu
 }
 
-// SetMetadata sets the "metadata" field.
-func (cu *ConnectionUpdate) SetMetadata(m map[string]interface{}) *ConnectionUpdate {
-	cu.mutation.SetMetadata(m)
+// SetEncryptedSecretData sets the "encrypted_secret_data" field.
+func (cu *ConnectionUpdate) SetEncryptedSecretData(m map[string]interface{}) *ConnectionUpdate {
+	cu.mutation.SetEncryptedSecretData(m)
 	return cu
 }
 
-// ClearMetadata clears the value of the "metadata" field.
-func (cu *ConnectionUpdate) ClearMetadata() *ConnectionUpdate {
-	cu.mutation.ClearMetadata()
+// ClearEncryptedSecretData clears the value of the "encrypted_secret_data" field.
+func (cu *ConnectionUpdate) ClearEncryptedSecretData() *ConnectionUpdate {
+	cu.mutation.ClearEncryptedSecretData()
 	return cu
 }
 
@@ -200,11 +200,11 @@ func (cu *ConnectionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := cu.mutation.ProviderType(); ok {
 		_spec.SetField(connection.FieldProviderType, field.TypeEnum, value)
 	}
-	if value, ok := cu.mutation.Metadata(); ok {
-		_spec.SetField(connection.FieldMetadata, field.TypeJSON, value)
+	if value, ok := cu.mutation.EncryptedSecretData(); ok {
+		_spec.SetField(connection.FieldEncryptedSecretData, field.TypeJSON, value)
 	}
-	if cu.mutation.MetadataCleared() {
-		_spec.ClearField(connection.FieldMetadata, field.TypeJSON)
+	if cu.mutation.EncryptedSecretDataCleared() {
+		_spec.ClearField(connection.FieldEncryptedSecretData, field.TypeJSON)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, cu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -294,15 +294,15 @@ func (cuo *ConnectionUpdateOne) SetNillableProviderType(ct *connection.ProviderT
 	return cuo
 }
 
-// SetMetadata sets the "metadata" field.
-func (cuo *ConnectionUpdateOne) SetMetadata(m map[string]interface{}) *ConnectionUpdateOne {
-	cuo.mutation.SetMetadata(m)
+// SetEncryptedSecretData sets the "encrypted_secret_data" field.
+func (cuo *ConnectionUpdateOne) SetEncryptedSecretData(m map[string]interface{}) *ConnectionUpdateOne {
+	cuo.mutation.SetEncryptedSecretData(m)
 	return cuo
 }
 
-// ClearMetadata clears the value of the "metadata" field.
-func (cuo *ConnectionUpdateOne) ClearMetadata() *ConnectionUpdateOne {
-	cuo.mutation.ClearMetadata()
+// ClearEncryptedSecretData clears the value of the "encrypted_secret_data" field.
+func (cuo *ConnectionUpdateOne) ClearEncryptedSecretData() *ConnectionUpdateOne {
+	cuo.mutation.ClearEncryptedSecretData()
 	return cuo
 }
 
@@ -428,11 +428,11 @@ func (cuo *ConnectionUpdateOne) sqlSave(ctx context.Context) (_node *Connection,
 	if value, ok := cuo.mutation.ProviderType(); ok {
 		_spec.SetField(connection.FieldProviderType, field.TypeEnum, value)
 	}
-	if value, ok := cuo.mutation.Metadata(); ok {
-		_spec.SetField(connection.FieldMetadata, field.TypeJSON, value)
+	if value, ok := cuo.mutation.EncryptedSecretData(); ok {
+		_spec.SetField(connection.FieldEncryptedSecretData, field.TypeJSON, value)
 	}
-	if cuo.mutation.MetadataCleared() {
-		_spec.ClearField(connection.FieldMetadata, field.TypeJSON)
+	if cuo.mutation.EncryptedSecretDataCleared() {
+		_spec.ClearField(connection.FieldEncryptedSecretData, field.TypeJSON)
 	}
 	_node = &Connection{config: cuo.config}
 	_spec.Assign = _node.assignValues

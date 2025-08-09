@@ -111,7 +111,6 @@ func (h *IntegrationHandler) GetAvailableProviders(c *gin.Context) {
 			ID:            provider.ID,
 			Name:          provider.Name,
 			ProviderType:  provider.ProviderType,
-			Metadata:      provider.Metadata,
 			EnvironmentID: provider.EnvironmentID,
 			TenantID:      provider.TenantID,
 			Status:        provider.Status,

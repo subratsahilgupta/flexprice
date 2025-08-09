@@ -16,16 +16,19 @@ type CreateEntityIntegrationMappingRequest struct {
 	Metadata         map[string]interface{}      `json:"metadata,omitempty"`
 }
 
-type UpdateEntityIntegrationMappingRequest struct {
-	EntityID         *string                      `json:"entity_id" validate:"omitempty,max=255"`
-	EntityType       *types.IntegrationEntityType `json:"entity_type" validate:"omitempty"`
-	ProviderType     *string                      `json:"provider_type" validate:"omitempty,max=50"`
-	ProviderEntityID *string                      `json:"provider_entity_id" validate:"omitempty,max=255"`
-	Metadata         map[string]interface{}       `json:"metadata,omitempty"`
-}
-
 type EntityIntegrationMappingResponse struct {
-	*entityintegrationmapping.EntityIntegrationMapping
+	ID               string                      `json:"id"`
+	EntityID         string                      `json:"entity_id"`
+	EntityType       types.IntegrationEntityType `json:"entity_type"`
+	ProviderType     string                      `json:"provider_type"`
+	ProviderEntityID string                      `json:"provider_entity_id"`
+	EnvironmentID    string                      `json:"environment_id"`
+	TenantID         string                      `json:"tenant_id"`
+	Status           types.Status                `json:"status"`
+	CreatedAt        string                      `json:"created_at"`
+	UpdatedAt        string                      `json:"updated_at"`
+	CreatedBy        string                      `json:"created_by"`
+	UpdatedBy        string                      `json:"updated_by"`
 }
 
 // ListEntityIntegrationMappingsResponse represents the response for listing entity integration mappings
@@ -46,8 +49,4 @@ func (r *CreateEntityIntegrationMappingRequest) ToEntityIntegrationMapping(ctx c
 		EnvironmentID:    types.GetEnvironmentID(ctx),
 		BaseModel:        types.GetDefaultBaseModel(ctx),
 	}
-}
-
-func (r *UpdateEntityIntegrationMappingRequest) Validate() error {
-	return validator.ValidateRequest(r)
 }

@@ -42,12 +42,12 @@ func (s *InMemoryConnectionStore) Get(ctx context.Context, id string) (*connecti
 	return copyConnection(item), nil
 }
 
-func (s *InMemoryConnectionStore) GetByEnvironmentAndProvider(ctx context.Context, environmentID string, provider types.SecretProvider) (*connection.Connection, error) {
-	// Create a filter function that matches by environment_id, provider_type, tenant_id, and published status
+func (s *InMemoryConnectionStore) GetByProvider(ctx context.Context, provider types.SecretProvider) (*connection.Connection, error) {
+	// Create a filter function that matches by provider_type, tenant_id, environment (from ctx), and published status
 	filterFn := func(ctx context.Context, c *connection.Connection, _ interface{}) bool {
-		return c.EnvironmentID == environmentID &&
-			c.ProviderType == provider &&
+		return c.ProviderType == provider &&
 			c.TenantID == types.GetTenantID(ctx) &&
+			CheckEnvironmentFilter(ctx, c.EnvironmentID) &&
 			c.Status == types.StatusPublished
 	}
 
@@ -61,10 +61,10 @@ func (s *InMemoryConnectionStore) GetByEnvironmentAndProvider(ctx context.Contex
 
 	if len(connections) == 0 {
 		return nil, ierr.NewError("connection not found").
-			WithHintf("Connection with environment ID %s and provider %s was not found", environmentID, provider).
+			WithHintf("Connection with provider %s was not found in this environment", provider).
 			WithReportableDetails(map[string]any{
-				"environment_id": environmentID,
-				"provider_type":  provider,
+				"provider_type": provider,
+				"tenant_id":     types.GetTenantID(ctx),
 			}).
 			Mark(ierr.ErrNotFound)
 	}
@@ -173,11 +173,11 @@ func copyConnection(c *connection.Connection) *connection.Connection {
 	}
 
 	return &connection.Connection{
-		ID:            c.ID,
-		Name:          c.Name,
-		ProviderType:  c.ProviderType,
-		Metadata:      c.Metadata, // Copy the structured metadata directly
-		EnvironmentID: c.EnvironmentID,
+		ID:                  c.ID,
+		Name:                c.Name,
+		ProviderType:        c.ProviderType,
+		EncryptedSecretData: c.EncryptedSecretData,
+		EnvironmentID:       c.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  c.TenantID,
 			Status:    c.Status,

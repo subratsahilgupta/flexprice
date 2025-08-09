@@ -140,7 +140,7 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	c.Request = c.Request.WithContext(ctx)
 
 	// Get Stripe connection to retrieve webhook secret
-	conn, err := h.stripeService.ConnectionRepo.GetByEnvironmentAndProvider(ctx, environmentID, types.SecretProviderStripe)
+	conn, err := h.stripeService.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
 	if err != nil {
 		h.logger.Errorw("failed to get Stripe connection for webhook verification",
 			"error", err,
@@ -207,8 +207,6 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 		h.handleCheckoutSessionExpired(c, event, environmentID)
 	case string(types.WebhookEventTypePaymentIntentPaymentFailed):
 		h.handlePaymentIntentPaymentFailed(c, event, environmentID)
-	case string(types.WebhookEventTypePaymentIntentSucceeded):
-		h.handlePaymentIntentSucceeded(c, event, environmentID)
 
 	default:
 		h.logger.Infow("unhandled Stripe webhook event type", "type", event.Type)
@@ -303,7 +301,7 @@ func (h *WebhookHandler) findPaymentBySessionID(ctx context.Context, sessionID s
 // getSessionIDFromPaymentIntent gets the session ID by looking up checkout sessions with the payment intent ID
 func (h *WebhookHandler) getSessionIDFromPaymentIntent(ctx context.Context, paymentIntentID string, environmentID string) (string, error) {
 	// Get Stripe connection using the stripe service connection repo
-	conn, err := h.stripeService.ConnectionRepo.GetByEnvironmentAndProvider(ctx, environmentID, types.SecretProviderStripe)
+	conn, err := h.stripeService.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
 	if err != nil {
 		return "", err
 	}
@@ -1145,162 +1143,5 @@ func (h *WebhookHandler) handlePaymentIntentPaymentFailed(c *gin.Context, event 
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment intent payment failed webhook processed successfully",
-	})
-}
-
-// handlePaymentIntentSucceeded handles payment_intent.succeeded webhook
-func (h *WebhookHandler) handlePaymentIntentSucceeded(c *gin.Context, event *stripe.Event, environmentID string) {
-	var paymentIntent stripe.PaymentIntent
-	err := json.Unmarshal(event.Data.Raw, &paymentIntent)
-	if err != nil {
-		h.logger.Errorw("failed to parse payment intent from webhook", "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Failed to parse payment intent data",
-		})
-		return
-	}
-
-	// Log the webhook data correctly
-	h.logger.Infow("received payment_intent.succeeded webhook",
-		"payment_intent_id", paymentIntent.ID,
-		"status", paymentIntent.Status,
-		"environment_id", environmentID,
-		"event_id", event.ID,
-		"event_type", event.Type,
-		"amount", paymentIntent.Amount,
-		"currency", paymentIntent.Currency,
-	)
-
-	// Make a separate Stripe API call to get current status using the payment intent ID from webhook
-	paymentStatusResp, err := h.stripeService.GetPaymentStatusByPaymentIntent(c.Request.Context(), paymentIntent.ID, environmentID)
-	if err != nil {
-		h.logger.Errorw("failed to get payment status from Stripe API",
-			"error", err,
-			"payment_intent_id", paymentIntent.ID)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get payment status from Stripe",
-		})
-		return
-	}
-
-	h.logger.Infow("retrieved payment status from Stripe API",
-		"payment_intent_id", paymentIntent.ID,
-		"payment_method_id", paymentStatusResp.PaymentMethodID,
-		"status", paymentStatusResp.Status,
-		"amount", paymentStatusResp.Amount.String(),
-		"currency", paymentStatusResp.Currency,
-	)
-
-	// Get session ID by calling Stripe API to lookup checkout session with payment intent ID
-	sessionID, err := h.getSessionIDFromPaymentIntent(c.Request.Context(), paymentIntent.ID, environmentID)
-	if err != nil {
-		h.logger.Errorw("failed to get session ID from payment intent", "error", err, "payment_intent_id", paymentIntent.ID)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get session ID from payment intent",
-		})
-		return
-	}
-
-	h.logger.Infow("found session ID for payment intent", "payment_intent_id", paymentIntent.ID, "session_id", sessionID)
-
-	// Find payment record by session ID in gateway_tracking_id
-	payment, err := h.findPaymentBySessionID(c.Request.Context(), sessionID)
-	if err != nil {
-		h.logger.Errorw("failed to find payment record", "error", err, "session_id", sessionID)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to find payment record",
-		})
-		return
-	}
-
-	if payment == nil {
-		h.logger.Warnw("no payment record found for session", "session_id", sessionID, "payment_intent_id", paymentIntent.ID)
-		c.JSON(http.StatusOK, gin.H{
-			"message": "No payment record found for session",
-		})
-		return
-	}
-
-	// Check if payment is already successful - prevent any updates to successful payments
-	if payment.PaymentStatus == types.PaymentStatusSucceeded {
-		h.logger.Warnw("payment is already successful, skipping update",
-			"payment_id", payment.ID,
-			"session_id", sessionID,
-			"payment_intent_id", paymentIntent.ID,
-			"current_status", payment.PaymentStatus)
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Payment is already successful, no update needed",
-		})
-		return
-	}
-
-	// Determine payment status based on Stripe API response
-	var paymentStatus string
-	var succeededAt *time.Time
-
-	switch paymentStatusResp.Status {
-	case "complete", "succeeded":
-		paymentStatus = string(types.PaymentStatusSucceeded)
-		now := time.Now()
-		succeededAt = &now
-	case "pending", "processing":
-		paymentStatus = string(types.PaymentStatusPending)
-	default:
-		paymentStatus = string(types.PaymentStatusSucceeded)
-		now := time.Now()
-		succeededAt = &now
-	}
-
-	// Update payment with data from Stripe API
-	paymentService := service.NewPaymentService(h.stripeService.ServiceParams)
-	updateReq := dto.UpdatePaymentRequest{
-		PaymentStatus: &paymentStatus,
-	}
-
-	// Update gateway_payment_id with pi_ prefixed payment intent ID
-	updateReq.GatewayPaymentID = &paymentIntent.ID
-
-	// Update payment_method_id with pm_ prefixed payment method ID from Stripe
-	if paymentStatusResp.PaymentMethodID != "" {
-		updateReq.PaymentMethodID = &paymentStatusResp.PaymentMethodID
-	}
-
-	// Set succeeded_at
-	if succeededAt != nil {
-		updateReq.SucceededAt = succeededAt
-	}
-
-	_, err = paymentService.UpdatePayment(c.Request.Context(), payment.ID, updateReq)
-	if err != nil {
-		h.logger.Errorw("failed to update payment status", "error", err, "payment_id", payment.ID)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to update payment status",
-		})
-		return
-	}
-
-	// Reconcile payment with invoice if payment succeeded
-	if paymentStatus == string(types.PaymentStatusSucceeded) {
-		if err := h.stripeService.ReconcilePaymentWithInvoice(c.Request.Context(), payment.ID, payment.Amount); err != nil {
-			h.logger.Errorw("failed to reconcile payment with invoice",
-				"error", err,
-				"payment_id", payment.ID,
-				"invoice_id", payment.DestinationID,
-			)
-			// Don't fail the webhook if reconciliation fails, but log the error
-			// The payment is still marked as succeeded
-		}
-	}
-
-	h.logger.Infow("successfully updated payment status from payment_intent.succeeded webhook",
-		"payment_id", payment.ID,
-		"payment_intent_id", paymentIntent.ID,
-		"payment_method_id", paymentStatusResp.PaymentMethodID,
-		"status", paymentStatus,
-		"environment_id", environmentID,
-	)
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Payment intent succeeded webhook processed successfully",
 	})
 }

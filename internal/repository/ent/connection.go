@@ -52,15 +52,15 @@ func (r *connectionRepository) Create(ctx context.Context, c *domainConnection.C
 		c.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
-	// Convert structured metadata to map format for database storage
-	metadataMap := convertConnectionMetadataToMap(c.Metadata, c.ProviderType)
+	// Convert structured encrypted secret data to map format for database storage
+	encryptedSecretDataMap := convertConnectionMetadataToMap(c.EncryptedSecretData, c.ProviderType)
 
 	connection, err := client.Connection.Create().
 		SetID(c.ID).
 		SetTenantID(c.TenantID).
 		SetName(c.Name).
 		SetProviderType(connection.ProviderType(c.ProviderType)).
-		SetMetadata(metadataMap).
+		SetEncryptedSecretData(encryptedSecretDataMap).
 		SetStatus(string(c.Status)).
 		SetCreatedAt(c.CreatedAt).
 		SetUpdatedAt(c.UpdatedAt).
@@ -140,19 +140,17 @@ func (r *connectionRepository) Get(ctx context.Context, id string) (*domainConne
 	return domainConn, nil
 }
 
-func (r *connectionRepository) GetByEnvironmentAndProvider(ctx context.Context, environmentID string, provider types.SecretProvider) (*domainConnection.Connection, error) {
+func (r *connectionRepository) GetByProvider(ctx context.Context, provider types.SecretProvider) (*domainConnection.Connection, error) {
 	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "connection", "get_by_env_provider", map[string]interface{}{
-		"environment_id": environmentID,
-		"provider_type":  provider,
+	span := StartRepositorySpan(ctx, "connection", "get_by_provider", map[string]interface{}{
+		"provider_type": provider,
 	})
 	defer FinishSpan(span)
 
-	r.log.Debugw("getting connection by environment and provider",
-		"environment_id", environmentID,
+	r.log.Debugw("getting connection by provider",
 		"provider_type", provider)
 
-	// Create a filter to get connections by environment and provider
+	// Create a filter to get connections by provider (tenant/environment inferred from ctx)
 	filter := &types.ConnectionFilter{
 		ProviderType: provider,
 	}
@@ -164,33 +162,19 @@ func (r *connectionRepository) GetByEnvironmentAndProvider(ctx context.Context, 
 		return nil, err
 	}
 
-	// Filter by environment ID since the List function applies environment filter automatically
-	// but we need to match the specific environment ID
-	var matchingConnection *domainConnection.Connection
-	for _, conn := range connections {
-		if conn.EnvironmentID == environmentID {
-			matchingConnection = conn
-			break
-		}
-	}
-
-	if matchingConnection == nil {
+	if len(connections) == 0 {
 		SetSpanError(span, ierr.ErrNotFound)
 		return nil, ierr.NewError("connection not found").
-			WithHintf("Connection with environment ID %s and provider %s was not found", environmentID, provider).
-			WithReportableDetails(map[string]any{
-				"environment_id": environmentID,
-				"provider_type":  provider,
-			}).
+			WithHintf("Connection with provider %s was not found in this environment", provider).
 			Mark(ierr.ErrNotFound)
 	}
 
 	SetSpanSuccess(span)
 
 	// Cache the result
-	r.SetCache(ctx, matchingConnection)
+	r.SetCache(ctx, connections[0])
 
-	return matchingConnection, nil
+	return connections[0], nil
 }
 
 func (r *connectionRepository) List(ctx context.Context, filter *types.ConnectionFilter) ([]*domainConnection.Connection, error) {
@@ -221,22 +205,22 @@ func (r *connectionRepository) List(ctx context.Context, filter *types.Connectio
 	return result, nil
 }
 
-// convertConnectionMetadataToMap converts structured metadata to map format for database storage
-func convertConnectionMetadataToMap(metadata types.ConnectionMetadata, providerType types.SecretProvider) map[string]interface{} {
+// convertConnectionMetadataToMap converts structured encrypted secret data to map format for database storage
+func convertConnectionMetadataToMap(encryptedSecretData types.ConnectionMetadata, providerType types.SecretProvider) map[string]interface{} {
 	switch providerType {
 	case types.SecretProviderStripe:
-		if metadata.Stripe != nil {
+		if encryptedSecretData.Stripe != nil {
 			return map[string]interface{}{
-				"publishable_key": metadata.Stripe.PublishableKey,
-				"secret_key":      metadata.Stripe.SecretKey,
-				"webhook_secret":  metadata.Stripe.WebhookSecret,
-				"account_id":      metadata.Stripe.AccountID,
+				"publishable_key": encryptedSecretData.Stripe.PublishableKey,
+				"secret_key":      encryptedSecretData.Stripe.SecretKey,
+				"webhook_secret":  encryptedSecretData.Stripe.WebhookSecret,
+				"account_id":      encryptedSecretData.Stripe.AccountID,
 			}
 		}
 	default:
 		// For other providers or unknown types, use generic format
-		if metadata.Generic != nil {
-			return metadata.Generic.Data
+		if encryptedSecretData.Generic != nil {
+			return encryptedSecretData.Generic.Data
 		}
 	}
 	return make(map[string]interface{})
@@ -279,18 +263,12 @@ func (r *connectionRepository) Update(ctx context.Context, c *domainConnection.C
 	})
 	defer FinishSpan(span)
 
-	// Convert structured metadata to map format for database storage
-	metadataMap := convertConnectionMetadataToMap(c.Metadata, c.ProviderType)
-
 	connection, err := client.Connection.UpdateOneID(c.ID).
 		Where(
 			connection.TenantID(c.TenantID),
 			connection.EnvironmentID(c.EnvironmentID),
 		).
 		SetName(c.Name).
-		SetProviderType(connection.ProviderType(c.ProviderType)).
-		SetMetadata(metadataMap).
-		SetStatus(string(c.Status)).
 		SetUpdatedAt(c.UpdatedAt).
 		SetUpdatedBy(c.UpdatedBy).
 		Save(ctx)

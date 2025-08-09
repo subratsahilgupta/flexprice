@@ -327,7 +327,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			entityIntegrationMappings.POST("", handlers.EntityIntegrationMapping.CreateEntityIntegrationMapping)
 			entityIntegrationMappings.GET("", handlers.EntityIntegrationMapping.ListEntityIntegrationMappings)
 			entityIntegrationMappings.GET("/:id", handlers.EntityIntegrationMapping.GetEntityIntegrationMapping)
-			entityIntegrationMappings.PUT("/:id", handlers.EntityIntegrationMapping.UpdateEntityIntegrationMapping)
 			entityIntegrationMappings.DELETE("/:id", handlers.EntityIntegrationMapping.DeleteEntityIntegrationMapping)
 		}
 

@@ -85,24 +85,6 @@ func (s *InMemoryEntityIntegrationMappingStore) Count(ctx context.Context, filte
 	return s.InMemoryStore.Count(ctx, filter, entityIntegrationMappingFilterFn)
 }
 
-// ListAll retrieves all entity integration mappings based on filter
-func (s *InMemoryEntityIntegrationMappingStore) ListAll(ctx context.Context, filter *types.EntityIntegrationMappingFilter) ([]*entityintegrationmapping.EntityIntegrationMapping, error) {
-	// For ListAll, we create a filter that ignores pagination
-	unlimitedFilter := &types.EntityIntegrationMappingFilter{
-		QueryFilter: types.NewNoLimitQueryFilter(),
-	}
-
-	mappings, err := s.InMemoryStore.List(ctx, unlimitedFilter, entityIntegrationMappingFilterFn, entityIntegrationMappingSortFn)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to list all entity integration mappings").
-			Mark(ierr.ErrDatabase)
-	}
-	return lo.Map(mappings, func(m *entityintegrationmapping.EntityIntegrationMapping, _ int) *entityintegrationmapping.EntityIntegrationMapping {
-		return copyEntityIntegrationMapping(m)
-	}), nil
-}
-
 // Update updates an entity integration mapping
 func (s *InMemoryEntityIntegrationMappingStore) Update(ctx context.Context, mapping *entityintegrationmapping.EntityIntegrationMapping) error {
 	return s.InMemoryStore.Update(ctx, mapping.ID, copyEntityIntegrationMapping(mapping))
@@ -250,13 +232,13 @@ func entityIntegrationMappingFilterFn(ctx context.Context, m *entityintegrationm
 		return false
 	}
 
-	// Apply provider type filter
-	if f.ProviderType != "" && m.ProviderType != f.ProviderType {
+	// Apply provider types filter (plural)
+	if len(f.ProviderTypes) > 0 && !lo.Contains(f.ProviderTypes, m.ProviderType) {
 		return false
 	}
 
-	// Apply provider entity ID filter
-	if f.ProviderEntityID != "" && m.ProviderEntityID != f.ProviderEntityID {
+	// Apply provider entity IDs filter (plural)
+	if len(f.ProviderEntityIDs) > 0 && !lo.Contains(f.ProviderEntityIDs, m.ProviderEntityID) {
 		return false
 	}
 
@@ -265,15 +247,7 @@ func entityIntegrationMappingFilterFn(ctx context.Context, m *entityintegrationm
 		return false
 	}
 
-	// Apply provider types filter
-	if len(f.ProviderTypes) > 0 && !lo.Contains(f.ProviderTypes, m.ProviderType) {
-		return false
-	}
-
-	// Apply provider entity IDs filter
-	if len(f.ProviderEntityIDs) > 0 && !lo.Contains(f.ProviderEntityIDs, m.ProviderEntityID) {
-		return false
-	}
+	// Retain plural filters (already handled above); nothing more to do here
 
 	// Apply time range filter if present
 	if f.TimeRangeFilter != nil {

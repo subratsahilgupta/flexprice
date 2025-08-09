@@ -34,22 +34,22 @@ func NewStripeService(params ServiceParams) *StripeService {
 	}
 }
 
-// decryptConnectionMetadata decrypts the connection metadata if it's encrypted
-func (s *StripeService) decryptConnectionMetadata(metadata types.ConnectionMetadata, providerType types.SecretProvider) (types.ConnectionMetadata, error) {
-	decryptedMetadata := metadata
+// decryptConnectionMetadata decrypts the connection encrypted secret data if it's encrypted
+func (s *StripeService) decryptConnectionMetadata(encryptedSecretData types.ConnectionMetadata, providerType types.SecretProvider) (types.ConnectionMetadata, error) {
+	decryptedMetadata := encryptedSecretData
 
 	switch providerType {
 	case types.SecretProviderStripe:
-		if metadata.Stripe != nil {
-			decryptedPublishableKey, err := s.encryptionService.Decrypt(metadata.Stripe.PublishableKey)
+		if encryptedSecretData.Stripe != nil {
+			decryptedPublishableKey, err := s.encryptionService.Decrypt(encryptedSecretData.Stripe.PublishableKey)
 			if err != nil {
 				return types.ConnectionMetadata{}, err
 			}
-			decryptedSecretKey, err := s.encryptionService.Decrypt(metadata.Stripe.SecretKey)
+			decryptedSecretKey, err := s.encryptionService.Decrypt(encryptedSecretData.Stripe.SecretKey)
 			if err != nil {
 				return types.ConnectionMetadata{}, err
 			}
-			decryptedWebhookSecret, err := s.encryptionService.Decrypt(metadata.Stripe.WebhookSecret)
+			decryptedWebhookSecret, err := s.encryptionService.Decrypt(encryptedSecretData.Stripe.WebhookSecret)
 			if err != nil {
 				return types.ConnectionMetadata{}, err
 			}
@@ -58,15 +58,15 @@ func (s *StripeService) decryptConnectionMetadata(metadata types.ConnectionMetad
 				PublishableKey: decryptedPublishableKey,
 				SecretKey:      decryptedSecretKey,
 				WebhookSecret:  decryptedWebhookSecret,
-				AccountID:      metadata.Stripe.AccountID, // Account ID is not sensitive
+				AccountID:      encryptedSecretData.Stripe.AccountID, // Account ID is not sensitive
 			}
 		}
 
 	default:
 		// For other providers or unknown types, use generic format
-		if metadata.Generic != nil {
+		if encryptedSecretData.Generic != nil {
 			decryptedData := make(map[string]interface{})
-			for key, value := range metadata.Generic.Data {
+			for key, value := range encryptedSecretData.Generic.Data {
 				if strValue, ok := value.(string); ok {
 					decryptedValue, err := s.encryptionService.Decrypt(strValue)
 					if err != nil {
@@ -89,19 +89,19 @@ func (s *StripeService) decryptConnectionMetadata(metadata types.ConnectionMetad
 // GetDecryptedStripeConfig gets the decrypted Stripe configuration from a connection
 func (s *StripeService) GetDecryptedStripeConfig(conn *connection.Connection) (*connection.StripeConnection, error) {
 	// Decrypt metadata if needed
-	decryptedMetadata, err := s.decryptConnectionMetadata(conn.Metadata, conn.ProviderType)
+	decryptedMetadata, err := s.decryptConnectionMetadata(conn.EncryptedSecretData, conn.ProviderType)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create a temporary connection with decrypted metadata
+	// Create a temporary connection with decrypted encrypted secret data
 	tempConn := &connection.Connection{
-		ID:            conn.ID,
-		Name:          conn.Name,
-		ProviderType:  conn.ProviderType,
-		Metadata:      decryptedMetadata,
-		EnvironmentID: conn.EnvironmentID,
-		BaseModel:     conn.BaseModel,
+		ID:                  conn.ID,
+		Name:                conn.Name,
+		ProviderType:        conn.ProviderType,
+		EncryptedSecretData: decryptedMetadata,
+		EnvironmentID:       conn.EnvironmentID,
+		BaseModel:           conn.BaseModel,
 	}
 
 	// Now call GetStripeConfig on the decrypted connection
@@ -119,7 +119,7 @@ func (s *StripeService) CreateCustomerInStripe(ctx context.Context, customerID s
 	ourCustomer := ourCustomerResp.Customer
 
 	// Get Stripe connection for this environment
-	conn, err := s.ConnectionRepo.GetByEnvironmentAndProvider(ctx, ourCustomer.EnvironmentID, types.SecretProviderStripe)
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
 	if err != nil {
 		return ierr.NewError("failed to get Stripe connection").
 			WithHint("Stripe connection not configured for this environment").
@@ -261,7 +261,7 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 	)
 
 	// Get Stripe connection for this environment
-	conn, err := s.ConnectionRepo.GetByEnvironmentAndProvider(ctx, req.EnvironmentID, types.SecretProviderStripe)
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
 	if err != nil {
 		return nil, ierr.NewError("failed to get Stripe connection").
 			WithHint("Stripe connection not configured for this environment").
@@ -407,12 +407,12 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 	// Provide default URLs if not provided
 	successURL := req.SuccessURL
 	if successURL == "" {
-		successURL = "https://i.pinimg.com/originals/93/7e/0f/937e0ff78860fd29a59a9f5d4242b4f7.gif"
+		successURL = "https://admin-dev.flexprice.io/customer-management/invoices?page=1"
 	}
 
 	cancelURL := req.CancelURL
 	if cancelURL == "" {
-		cancelURL = "https://www.redbubble.com/i/mug/Game-over-Play-again-Yes-by-Bisams/69638823.9Q0AD?epik=dj0yJnU9MVczbWt6T1Rmc2RLWGstMDVzeXZ4eVBmVzBPd09ZSVEmcD0wJm49clVRc3FrMXhCaHByVmhPRy1FM2FzZyZ0PUFBQUFBR2lMZk1n"
+		cancelURL = "https://admin-dev.flexprice.io/customer-management/invoices?page=1"
 	}
 
 	// Create checkout session parameters
@@ -486,12 +486,7 @@ func (s *StripeService) ReconcilePaymentWithInvoice(ctx context.Context, payment
 			"error", err,
 			"payment_id", paymentID,
 		)
-		return ierr.WithError(err).
-			WithHint("Failed to get payment record for reconciliation").
-			WithReportableDetails(map[string]interface{}{
-				"payment_id": paymentID,
-			}).
-			Mark(ierr.ErrSystem)
+		return err
 	}
 
 	s.Logger.Infow("got payment record for reconciliation",
@@ -536,6 +531,7 @@ func (s *StripeService) ReconcilePaymentWithInvoice(ctx context.Context, payment
 	var newPaymentStatus types.PaymentStatus
 	if newAmountRemaining.IsZero() || newAmountRemaining.IsNegative() {
 		newPaymentStatus = types.PaymentStatusSucceeded
+		newAmountRemaining = decimal.Zero
 	} else {
 		newPaymentStatus = types.PaymentStatusPending
 	}
@@ -620,7 +616,7 @@ func (s *StripeService) VerifyWebhookSignature(payload []byte, signature string,
 // GetPaymentStatus gets the payment status from Stripe checkout session
 func (s *StripeService) GetPaymentStatus(ctx context.Context, sessionID string, environmentID string) (*dto.PaymentStatusResponse, error) {
 	// Get Stripe connection for this environment
-	conn, err := s.ConnectionRepo.GetByEnvironmentAndProvider(ctx, environmentID, types.SecretProviderStripe)
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
 	if err != nil {
 		return nil, ierr.NewError("failed to get Stripe connection").
 			WithHint("Stripe connection not configured for this environment").
@@ -781,7 +777,7 @@ func (s *StripeService) GetPaymentStatus(ctx context.Context, sessionID string, 
 // GetPaymentStatusByPaymentIntent gets payment status directly from a payment intent ID
 func (s *StripeService) GetPaymentStatusByPaymentIntent(ctx context.Context, paymentIntentID string, environmentID string) (*dto.PaymentStatusResponse, error) {
 	// Get Stripe connection for this environment
-	conn, err := s.ConnectionRepo.GetByEnvironmentAndProvider(ctx, environmentID, types.SecretProviderStripe)
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
 	if err != nil {
 		return nil, ierr.NewError("failed to get Stripe connection").
 			WithHint("Stripe connection not configured for this environment").

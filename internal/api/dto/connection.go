@@ -9,18 +9,18 @@ import (
 
 // CreateConnectionRequest represents the request to create a connection
 type CreateConnectionRequest struct {
-	Name         string                   `json:"name" validate:"required,max=255"`
-	ProviderType types.SecretProvider     `json:"provider_type" validate:"required"`
-	Metadata     types.ConnectionMetadata `json:"metadata,omitempty"`
+	Name                string                   `json:"name" validate:"required,max=255"`
+	ProviderType        types.SecretProvider     `json:"provider_type" validate:"required"`
+	EncryptedSecretData types.ConnectionMetadata `json:"encrypted_secret_data,omitempty"`
 }
 
 // UnmarshalJSON custom unmarshaling to handle flat metadata structure
 func (req *CreateConnectionRequest) UnmarshalJSON(data []byte) error {
 	// First, unmarshal to a temporary struct to get the raw data
 	var temp struct {
-		Name         string                 `json:"name"`
-		ProviderType types.SecretProvider   `json:"provider_type"`
-		Metadata     map[string]interface{} `json:"metadata,omitempty"`
+		Name                string                 `json:"name"`
+		ProviderType        types.SecretProvider   `json:"provider_type"`
+		EncryptedSecretData map[string]interface{} `json:"encrypted_secret_data,omitempty"`
 	}
 
 	if err := json.Unmarshal(data, &temp); err != nil {
@@ -31,9 +31,9 @@ func (req *CreateConnectionRequest) UnmarshalJSON(data []byte) error {
 	req.Name = temp.Name
 	req.ProviderType = temp.ProviderType
 
-	// Convert flat metadata to structured format based on provider_type
-	if temp.Metadata != nil {
-		req.Metadata = convertFlatMetadataToStructured(temp.Metadata, temp.ProviderType)
+	// Convert flat encrypted secret data to structured format based on provider_type
+	if temp.EncryptedSecretData != nil {
+		req.EncryptedSecretData = convertFlatMetadataToStructured(temp.EncryptedSecretData, temp.ProviderType)
 	}
 
 	return nil
@@ -74,100 +74,38 @@ func convertFlatMetadataToStructured(flatMetadata map[string]interface{}, provid
 
 // UpdateConnectionRequest represents the request to update a connection
 type UpdateConnectionRequest struct {
-	Name         string                   `json:"name,omitempty" validate:"omitempty,max=255"`
-	ProviderType types.SecretProvider     `json:"provider_type,omitempty"`
-	Metadata     types.ConnectionMetadata `json:"metadata,omitempty"`
+	Name string `json:"name,omitempty" validate:"omitempty,max=255"`
 }
 
 // UnmarshalJSON custom unmarshaling to handle flat metadata structure
 func (req *UpdateConnectionRequest) UnmarshalJSON(data []byte) error {
 	// First, unmarshal to a temporary struct to get the raw data
 	var temp struct {
-		Name         string                 `json:"name"`
-		ProviderType types.SecretProvider   `json:"provider_type"`
-		Metadata     map[string]interface{} `json:"metadata,omitempty"`
+		Name string `json:"name"`
 	}
 
 	if err := json.Unmarshal(data, &temp); err != nil {
 		return err
 	}
 
-	// Set the basic fields
+	// Set the basic fields (only name is updatable)
 	req.Name = temp.Name
-	req.ProviderType = temp.ProviderType
-
-	// Convert flat metadata to structured format based on provider_type
-	if temp.Metadata != nil {
-		req.Metadata = convertFlatMetadataToStructured(temp.Metadata, temp.ProviderType)
-	}
 
 	return nil
 }
 
 // ConnectionResponse represents the response for connection operations
 type ConnectionResponse struct {
-	ID            string                   `json:"id"`
-	Name          string                   `json:"name"`
-	ProviderType  types.SecretProvider     `json:"provider_type"`
-	Metadata      types.ConnectionMetadata `json:"metadata,omitempty"`
-	EnvironmentID string                   `json:"environment_id"`
-	TenantID      string                   `json:"tenant_id"`
-	Status        types.Status             `json:"status"`
-	CreatedAt     string                   `json:"created_at"`
-	UpdatedAt     string                   `json:"updated_at"`
-	CreatedBy     string                   `json:"created_by"`
-	UpdatedBy     string                   `json:"updated_by"`
-}
-
-// MarshalJSON custom marshaling to flatten metadata structure
-func (resp *ConnectionResponse) MarshalJSON() ([]byte, error) {
-	// Create a temporary struct for marshaling
-	type tempResponse struct {
-		ID            string                 `json:"id"`
-		Name          string                 `json:"name"`
-		ProviderType  types.SecretProvider   `json:"provider_type"`
-		Metadata      map[string]interface{} `json:"metadata,omitempty"`
-		EnvironmentID string                 `json:"environment_id"`
-		TenantID      string                 `json:"tenant_id"`
-		Status        types.Status           `json:"status"`
-		CreatedAt     string                 `json:"created_at"`
-		UpdatedAt     string                 `json:"updated_at"`
-		CreatedBy     string                 `json:"created_by"`
-		UpdatedBy     string                 `json:"updated_by"`
-	}
-
-	temp := tempResponse{
-		ID:            resp.ID,
-		Name:          resp.Name,
-		ProviderType:  resp.ProviderType,
-		EnvironmentID: resp.EnvironmentID,
-		TenantID:      resp.TenantID,
-		Status:        resp.Status,
-		CreatedAt:     resp.CreatedAt,
-		UpdatedAt:     resp.UpdatedAt,
-		CreatedBy:     resp.CreatedBy,
-		UpdatedBy:     resp.UpdatedBy,
-	}
-
-	// Flatten metadata based on provider type
-	switch resp.ProviderType {
-	case types.SecretProviderStripe:
-		if resp.Metadata.Stripe != nil {
-			temp.Metadata = map[string]interface{}{
-				"publishable_key": resp.Metadata.Stripe.PublishableKey,
-				"secret_key":      resp.Metadata.Stripe.SecretKey,
-				"webhook_secret":  resp.Metadata.Stripe.WebhookSecret,
-				"account_id":      resp.Metadata.Stripe.AccountID,
-			}
-		}
-	default:
-		// For other providers, use generic data
-		if resp.Metadata.Generic != nil {
-			temp.Metadata = resp.Metadata.Generic.Data
-		}
-	}
-
-	return json.Marshal(temp)
+	ID            string               `json:"id"`
+	Name          string               `json:"name"`
+	ProviderType  types.SecretProvider `json:"provider_type"`
+	EnvironmentID string               `json:"environment_id"`
+	TenantID      string               `json:"tenant_id"`
+	Status        types.Status         `json:"status"`
+	CreatedAt     string               `json:"created_at"`
+	UpdatedAt     string               `json:"updated_at"`
+	CreatedBy     string               `json:"created_by"`
+	UpdatedBy     string               `json:"updated_by"`
 }
 
 // ListConnectionsResponse represents the response for listing connections
@@ -181,9 +119,9 @@ type ListConnectionsResponse struct {
 // ToConnection converts CreateConnectionRequest to domain Connection
 func (req *CreateConnectionRequest) ToConnection() *connection.Connection {
 	return &connection.Connection{
-		Name:         req.Name,
-		ProviderType: req.ProviderType,
-		Metadata:     req.Metadata,
+		Name:                req.Name,
+		ProviderType:        req.ProviderType,
+		EncryptedSecretData: req.EncryptedSecretData,
 	}
 }
 
@@ -197,7 +135,6 @@ func ToConnectionResponse(conn *connection.Connection) *ConnectionResponse {
 		ID:            conn.ID,
 		Name:          conn.Name,
 		ProviderType:  conn.ProviderType,
-		Metadata:      conn.Metadata,
 		EnvironmentID: conn.EnvironmentID,
 		TenantID:      conn.TenantID,
 		Status:        conn.Status,

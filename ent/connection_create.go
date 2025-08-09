@@ -122,9 +122,9 @@ func (cc *ConnectionCreate) SetProviderType(ct connection.ProviderType) *Connect
 	return cc
 }
 
-// SetMetadata sets the "metadata" field.
-func (cc *ConnectionCreate) SetMetadata(m map[string]interface{}) *ConnectionCreate {
-	cc.mutation.SetMetadata(m)
+// SetEncryptedSecretData sets the "encrypted_secret_data" field.
+func (cc *ConnectionCreate) SetEncryptedSecretData(m map[string]interface{}) *ConnectionCreate {
+	cc.mutation.SetEncryptedSecretData(m)
 	return cc
 }
 
@@ -293,9 +293,9 @@ func (cc *ConnectionCreate) createSpec() (*Connection, *sqlgraph.CreateSpec) {
 		_spec.SetField(connection.FieldProviderType, field.TypeEnum, value)
 		_node.ProviderType = value
 	}
-	if value, ok := cc.mutation.Metadata(); ok {
-		_spec.SetField(connection.FieldMetadata, field.TypeJSON, value)
-		_node.Metadata = value
+	if value, ok := cc.mutation.EncryptedSecretData(); ok {
+		_spec.SetField(connection.FieldEncryptedSecretData, field.TypeJSON, value)
+		_node.EncryptedSecretData = value
 	}
 	return _node, _spec
 }
