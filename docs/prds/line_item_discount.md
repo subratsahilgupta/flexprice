@@ -11,4 +11,4 @@ As we have implemented the invoice level discount we also need to implement the 
 
 
 ## Note
-Follow the best pratices and existing pattern
+Follow the best practices and existing pattern
