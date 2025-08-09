@@ -221,11 +221,14 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 
 // CreateInvoiceLineItemRequest represents a single line item in an invoice creation request
 type CreateInvoiceLineItemRequest struct {
+	// entity_id is the optional unique identifier of the entity associated with this line item
+	EntityID *string `json:"entity_id,omitempty"`
+
+	// entity_type is the optional type of the entity associated with this line item
+	EntityType *string `json:"entity_type,omitempty"`
+
 	// price_id is the optional unique identifier of the price associated with this line item
 	PriceID *string `json:"price_id,omitempty"`
-
-	// plan_id is the optional unique identifier of the plan associated with this line item
-	PlanID *string `json:"plan_id,omitempty"`
 
 	// plan_display_name is the optional human-readable name of the plan
 	PlanDisplayName *string `json:"plan_display_name,omitempty"`
@@ -262,6 +265,10 @@ type CreateInvoiceLineItemRequest struct {
 
 	// metadata contains additional custom key-value pairs for storing extra information about this line item
 	Metadata types.Metadata `json:"metadata,omitempty"`
+
+	// TODO: !REMOVE after migration
+	// plan_id is the optional unique identifier of the plan associated with this line item
+	PlanID *string `json:"plan_id,omitempty"`
 }
 
 func (r *CreateInvoiceLineItemRequest) Validate(invoiceType types.InvoiceType) error {
@@ -307,7 +314,8 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		CustomerID:       inv.CustomerID,
 		SubscriptionID:   inv.SubscriptionID,
 		PriceID:          r.PriceID,
-		PlanID:           r.PlanID,
+		EntityID:         r.EntityID,
+		EntityType:       r.EntityType,
 		PlanDisplayName:  r.PlanDisplayName,
 		PriceType:        r.PriceType,
 		MeterID:          r.MeterID,
@@ -345,6 +353,12 @@ type InvoiceLineItemResponse struct {
 
 	// plan_id is the optional unique identifier of the plan associated with this line item
 	PlanID *string `json:"plan_id,omitempty"`
+
+	// entity_id is the optional unique identifier of the entity associated with this line item
+	EntityID *string `json:"entity_id,omitempty"`
+
+	// entity_type is the optional type of the entity associated with this line item
+	EntityType *string `json:"entity_type,omitempty"`
 
 	// plan_display_name is the optional human-readable name of the plan
 	PlanDisplayName *string `json:"plan_display_name,omitempty"`
@@ -420,7 +434,8 @@ func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemR
 		InvoiceID:        item.InvoiceID,
 		CustomerID:       item.CustomerID,
 		SubscriptionID:   item.SubscriptionID,
-		PlanID:           item.PlanID,
+		EntityID:         item.EntityID,
+		EntityType:       item.EntityType,
 		PlanDisplayName:  item.PlanDisplayName,
 		PriceID:          item.PriceID,
 		PriceType:        item.PriceType,

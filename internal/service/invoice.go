@@ -1496,11 +1496,13 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, fina
 		// STEP 4: Create new line items from the fresh calculation
 		newLineItems := make([]*invoice.InvoiceLineItem, len(newInvoiceReq.LineItems))
 		for i, lineItemReq := range newInvoiceReq.LineItems {
+			
 			lineItem := &invoice.InvoiceLineItem{
 				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
 				InvoiceID:       inv.ID,
 				CustomerID:      inv.CustomerID,
-				PlanID:          lineItemReq.PlanID,
+				EntityID:        lineItemReq.EntityID,
+				EntityType:      lineItemReq.EntityType,
 				PlanDisplayName: lineItemReq.PlanDisplayName,
 				PriceID:         lineItemReq.PriceID,
 				PriceType:       lineItemReq.PriceType,
