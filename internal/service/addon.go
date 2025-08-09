@@ -25,7 +25,7 @@ type AddonService interface {
 	DeleteAddon(ctx context.Context, id string) error
 
 	// Add addon to subscription
-	AddAddonToSubscription(ctx context.Context, subscriptionID string, req *dto.AddAddonToSubscriptionRequest) (*addonassociation.AddonAssociation, error)
+	AddAddonToSubscription(ctx context.Context, sub *subscription.Subscription, req *dto.AddAddonToSubscriptionRequest) (*addonassociation.AddonAssociation, error)
 
 	// Remove addon from subscription
 	RemoveAddonFromSubscription(ctx context.Context, subscriptionID string, addonID string, reason string) error
@@ -360,7 +360,7 @@ func (s *addonService) DeleteAddon(ctx context.Context, id string) error {
 // AddAddonToSubscription adds an addon to a subscription
 func (s *addonService) AddAddonToSubscription(
 	ctx context.Context,
-	subscriptionID string,
+	sub *subscription.Subscription,
 	req *dto.AddAddonToSubscriptionRequest,
 ) (*addonassociation.AddonAssociation, error) {
 	// Validate request
@@ -381,11 +381,6 @@ func (s *addonService) AddAddonToSubscription(
 	}
 
 	// Check if sub exists and is active
-	sub, err := s.SubRepo.Get(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-
 	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
 		return nil, ierr.NewError("subscription is not active").
 			WithHint("Cannot add addon to inactive subscription").
@@ -396,7 +391,7 @@ func (s *addonService) AddAddonToSubscription(
 	if a.Addon.Type == types.AddonTypeOnetime {
 		filter := types.NewAddonAssociationFilter()
 		filter.AddonIDs = []string{req.AddonID}
-		filter.EntityIDs = []string{subscriptionID}
+		filter.EntityIDs = []string{sub.ID}
 		filter.EntityType = lo.ToPtr(types.AddonAssociationEntityTypeSubscription)
 		filter.Limit = lo.ToPtr(1)
 
@@ -422,7 +417,7 @@ func (s *addonService) AddAddonToSubscription(
 	// Create subscription addon
 	addonAssociation := req.ToAddonAssociation(
 		ctx,
-		subscriptionID,
+		sub.ID,
 		types.AddonAssociationEntityTypeSubscription,
 	)
 
@@ -456,7 +451,7 @@ func (s *addonService) AddAddonToSubscription(
 	}
 
 	s.Logger.Infow("added addon to subscription",
-		"subscription_id", subscriptionID,
+		"subscription_id", sub.ID,
 		"addon_id", req.AddonID,
 		"prices_count", len(validPrices),
 		"line_items_count", len(lineItems),
