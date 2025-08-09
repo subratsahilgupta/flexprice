@@ -80,6 +80,19 @@ func (s *invoiceService) CreateOneOffInvoice(ctx context.Context, req dto.Create
 	}
 
 	req.InvoiceCoupons = validCoupons
+
+	// Validate tax rates
+	taxService := NewTaxService(s.ServiceParams)
+	finalTaxRates := make([]*dto.TaxRateResponse, 0)
+	for _, taxRate := range req.TaxRates {
+		taxRate, err := taxService.GetTaxRate(ctx, taxRate)
+		if err != nil {
+			return nil, err
+		}
+		finalTaxRates = append(finalTaxRates, taxRate)
+	}
+
+	req.PreparedTaxRates = finalTaxRates
 	return s.CreateInvoice(ctx, req)
 }
 
@@ -213,31 +226,10 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 			return err
 		}
 
-		s.Logger.Infow("invoice created successfully",
-			"invoice_id", inv.ID,
-			"total_discount", inv.TotalDiscount,
-			"total_tax", inv.TotalTax,
-			"total", inv.Total,
-			"amount_due", inv.AmountDue,
-			"amount_paid", inv.AmountPaid,
-			"amount_remaining", inv.AmountRemaining,
-			"invoice_status", inv.InvoiceStatus,
-		)
+		// Handle tax rate overrides
 		if err := s.handleTaxRateOverrides(ctx, inv, req); err != nil {
 			return err
 		}
-
-		s.Logger.Infow("invoice created successfully",
-			"invoice_id", inv.ID,
-			"total_discount", inv.TotalDiscount,
-			"total_tax", inv.TotalTax,
-			"total", inv.Total,
-			"amount_due", inv.AmountDue,
-			"amount_paid", inv.AmountPaid,
-			"amount_remaining", inv.AmountRemaining,
-			"invoice_status", inv.InvoiceStatus,
-		)
-
 		// Update the invoice in the database
 		if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
 			return err

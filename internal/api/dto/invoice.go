@@ -27,7 +27,7 @@ type InvoiceLineItemCoupon struct {
 	CouponAssociationID *string          `json:"coupon_association_id"`
 	AmountOff           *decimal.Decimal `json:"amount_off,omitempty"`
 	PercentageOff       *decimal.Decimal `json:"percentage_off,omitempty"`
-	Type                types.CouponType `json:"type,"`
+	Type                types.CouponType `json:"type"`
 }
 
 // CreateInvoiceRequest represents the request payload for creating a new invoice
@@ -91,6 +91,9 @@ type CreateInvoiceRequest struct {
 
 	// coupons
 	Coupons []string `json:"coupons,omitempty"`
+
+	// tax_rates
+	TaxRates []string `json:"tax_rates,omitempty"`
 
 	// Invoice Coupns
 	InvoiceCoupons []InvoiceCoupon `json:"invoice_coupons,omitempty"`
