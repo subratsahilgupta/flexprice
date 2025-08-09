@@ -9,6 +9,30 @@ import (
 	"github.com/flexprice/flexprice/ent"
 )
 
+// The AddonFunc type is an adapter to allow the use of ordinary
+// function as Addon mutator.
+type AddonFunc func(context.Context, *ent.AddonMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AddonFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AddonMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AddonMutation", m)
+}
+
+// The AddonAssociationFunc type is an adapter to allow the use of ordinary
+// function as AddonAssociation mutator.
+type AddonAssociationFunc func(context.Context, *ent.AddonAssociationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AddonAssociationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AddonAssociationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AddonAssociationMutation", m)
+}
+
 // The AuthFunc type is an adapter to allow the use of ordinary
 // function as Auth mutator.
 type AuthFunc func(context.Context, *ent.AuthMutation) (ent.Value, error)
@@ -367,6 +391,42 @@ func (f TaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error)
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaskMutation", m)
+}
+
+// The TaxAppliedFunc type is an adapter to allow the use of ordinary
+// function as TaxApplied mutator.
+type TaxAppliedFunc func(context.Context, *ent.TaxAppliedMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TaxAppliedFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TaxAppliedMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaxAppliedMutation", m)
+}
+
+// The TaxAssociationFunc type is an adapter to allow the use of ordinary
+// function as TaxAssociation mutator.
+type TaxAssociationFunc func(context.Context, *ent.TaxAssociationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TaxAssociationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TaxAssociationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaxAssociationMutation", m)
+}
+
+// The TaxRateFunc type is an adapter to allow the use of ordinary
+// function as TaxRate mutator.
+type TaxRateFunc func(context.Context, *ent.TaxRateMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TaxRateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TaxRateMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaxRateMutation", m)
 }
 
 // The TenantFunc type is an adapter to allow the use of ordinary

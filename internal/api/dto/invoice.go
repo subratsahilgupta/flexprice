@@ -462,11 +462,14 @@ func (c *InvoiceLineItemCoupon) Validate() error {
 
 // CreateInvoiceLineItemRequest represents a single line item in an invoice creation request
 type CreateInvoiceLineItemRequest struct {
+	// entity_id is the optional unique identifier of the entity associated with this line item
+	EntityID *string `json:"entity_id,omitempty"`
+
+	// entity_type is the optional type of the entity associated with this line item
+	EntityType *string `json:"entity_type,omitempty"`
+
 	// price_id is the optional unique identifier of the price associated with this line item
 	PriceID *string `json:"price_id,omitempty"`
-
-	// plan_id is the optional unique identifier of the plan associated with this line item
-	PlanID *string `json:"plan_id,omitempty"`
 
 	// plan_display_name is the optional human-readable name of the plan
 	PlanDisplayName *string `json:"plan_display_name,omitempty"`
@@ -503,6 +506,10 @@ type CreateInvoiceLineItemRequest struct {
 
 	// metadata contains additional custom key-value pairs for storing extra information about this line item
 	Metadata types.Metadata `json:"metadata,omitempty"`
+
+	// TODO: !REMOVE after migration
+	// plan_id is the optional unique identifier of the plan associated with this line item
+	PlanID *string `json:"plan_id,omitempty"`
 }
 
 func (r *CreateInvoiceLineItemRequest) Validate(invoiceType types.InvoiceType) error {
@@ -548,7 +555,8 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		CustomerID:       inv.CustomerID,
 		SubscriptionID:   inv.SubscriptionID,
 		PriceID:          r.PriceID,
-		PlanID:           r.PlanID,
+		EntityID:         r.EntityID,
+		EntityType:       r.EntityType,
 		PlanDisplayName:  r.PlanDisplayName,
 		PriceType:        r.PriceType,
 		MeterID:          r.MeterID,
@@ -586,6 +594,12 @@ type InvoiceLineItemResponse struct {
 
 	// plan_id is the optional unique identifier of the plan associated with this line item
 	PlanID *string `json:"plan_id,omitempty"`
+
+	// entity_id is the optional unique identifier of the entity associated with this line item
+	EntityID *string `json:"entity_id,omitempty"`
+
+	// entity_type is the optional type of the entity associated with this line item
+	EntityType *string `json:"entity_type,omitempty"`
 
 	// plan_display_name is the optional human-readable name of the plan
 	PlanDisplayName *string `json:"plan_display_name,omitempty"`
@@ -646,6 +660,9 @@ type InvoiceLineItemResponse struct {
 
 	// updated_by is the identifier of the user who last updated this line item
 	UpdatedBy string `json:"updated_by,omitempty"`
+
+	// usage_analytics contains usage analytics for this line item
+	UsageAnalytics []SourceUsageItem `json:"usage_analytics,omitempty"`
 }
 
 func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemResponse {
@@ -658,7 +675,8 @@ func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemR
 		InvoiceID:        item.InvoiceID,
 		CustomerID:       item.CustomerID,
 		SubscriptionID:   item.SubscriptionID,
-		PlanID:           item.PlanID,
+		EntityID:         item.EntityID,
+		EntityType:       item.EntityType,
 		PlanDisplayName:  item.PlanDisplayName,
 		PriceID:          item.PriceID,
 		PriceType:        item.PriceType,
@@ -860,6 +878,24 @@ type InvoiceResponse struct {
 	CouponApplications []*CouponApplicationResponse `json:"coupon_applications,omitempty"`
 }
 
+// SourceUsageItem represents the usage breakdown for a specific source within a line item
+type SourceUsageItem struct {
+	// source is the name of the event source
+	Source string `json:"source"`
+
+	// cost is the cost attributed to this source for the line item
+	Cost string `json:"cost"`
+
+	// usage is the total usage amount from this source (optional, for additional context)
+	Usage *string `json:"usage,omitempty"`
+
+	// percentage is the percentage of total line item cost from this source (optional)
+	Percentage *string `json:"percentage,omitempty"`
+
+	// event_count is the number of events from this source (optional)
+	EventCount *int `json:"event_count,omitempty"`
+}
+
 // NewInvoiceResponse creates a new invoice response from domain invoice
 func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 	if inv == nil {
@@ -943,6 +979,17 @@ func (r *InvoiceResponse) WithTaxes(taxes []*TaxAppliedResponse) *InvoiceRespons
 // WithCouponApplications adds coupon applications to the invoice response
 func (r *InvoiceResponse) WithCouponApplications(couponApplications []*CouponApplicationResponse) *InvoiceResponse {
 	r.CouponApplications = couponApplications
+	return r
+}
+
+// WithUsageAnalytics adds usage analytics to the invoice response
+func (r *InvoiceResponse) WithUsageAnalytics(usageAnalytics map[string][]SourceUsageItem) *InvoiceResponse {
+	for _, lineItem := range r.LineItems {
+		usageAnalyticsItem := usageAnalytics[lineItem.ID]
+		if usageAnalyticsItem != nil {
+			lineItem.UsageAnalytics = usageAnalyticsItem
+		}
+	}
 	return r
 }
 

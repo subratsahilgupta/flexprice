@@ -6,6 +6,12 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// Addon is the predicate function for addon builders.
+type Addon func(*sql.Selector)
+
+// AddonAssociation is the predicate function for addonassociation builders.
+type AddonAssociation func(*sql.Selector)
+
 // Auth is the predicate function for auth builders.
 type Auth func(*sql.Selector)
 
@@ -95,6 +101,15 @@ type SubscriptionSchedulePhase func(*sql.Selector)
 
 // Task is the predicate function for task builders.
 type Task func(*sql.Selector)
+
+// TaxApplied is the predicate function for taxapplied builders.
+type TaxApplied func(*sql.Selector)
+
+// TaxAssociation is the predicate function for taxassociation builders.
+type TaxAssociation func(*sql.Selector)
+
+// TaxRate is the predicate function for taxrate builders.
+type TaxRate func(*sql.Selector)
 
 // Tenant is the predicate function for tenant builders.
 type Tenant func(*sql.Selector)
