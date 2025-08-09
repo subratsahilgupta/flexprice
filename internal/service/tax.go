@@ -51,7 +51,7 @@ type taxService struct {
 	ServiceParams
 }
 
-// NewTaxRateService creates a new instance of TaxRateService
+// NewTaxService creates a new instance of TaxService
 func NewTaxService(params ServiceParams) TaxService {
 	return &taxService{
 		ServiceParams: params,
@@ -350,7 +350,7 @@ func (s *taxService) RecalculateInvoiceTaxes(ctx context.Context, invoiceId stri
 		// Get all the taxes associated with the subscription of this invoice
 		taxAssociations, err := s.TaxAssociationRepo.List(txCtx, &types.TaxAssociationFilter{
 			EntityID:   lo.FromPtr(invoice.SubscriptionID),
-			EntityType: types.TaxrateEntityTypeSubscription,
+			EntityType: types.TaxRateEntityTypeSubscription,
 		})
 		if err != nil {
 			s.Logger.Errorw("failed to get tax associations for subscription",
@@ -363,7 +363,7 @@ func (s *taxService) RecalculateInvoiceTaxes(ctx context.Context, invoiceId stri
 
 		s.Logger.Infow("tax associations found for subscription",
 			"invoice_id", invoiceId,
-			"entity_type", types.TaxrateEntityTypeSubscription,
+			"entity_type", types.TaxRateEntityTypeSubscription,
 			"subscription_id", lo.FromPtr(invoice.SubscriptionID),
 			"tax_associations", taxAssociations,
 		)
@@ -436,7 +436,7 @@ func (s *taxService) RecalculateInvoiceTaxes(ctx context.Context, invoiceId stri
 			// Create a tax applied record
 			taxAppliedRecord := &dto.CreateTaxAppliedRequest{
 				TaxRateID:        taxRate.ID,
-				EntityType:       types.TaxrateEntityTypeInvoice,
+				EntityType:       types.TaxRateEntityTypeInvoice,
 				EntityID:         invoiceId,
 				TaxAssociationID: lo.ToPtr(taxAssociation.ID),
 				TaxableAmount:    taxableAmount,
@@ -986,7 +986,7 @@ func (s *taxService) PrepareTaxRatesForInvoice(ctx context.Context, req dto.Crea
 
 	if req.SubscriptionID != nil {
 		filter := types.NewNoLimitTaxAssociationFilter()
-		filter.EntityType = types.TaxrateEntityTypeSubscription
+		filter.EntityType = types.TaxRateEntityTypeSubscription
 		filter.EntityID = lo.FromPtr(req.SubscriptionID)
 		filter.AutoApply = lo.ToPtr(true)
 
@@ -1115,7 +1115,7 @@ func (s *taxService) processTaxApplication(ctx context.Context, inv *invoice.Inv
 	idempotencyKey := idempGen.GenerateKey(idempotency.ScopeTaxApplication, map[string]interface{}{
 		"tax_rate_id": taxRate.ID,
 		"entity_id":   inv.ID,
-		"entity_type": string(types.TaxrateEntityTypeInvoice),
+		"entity_type": string(types.TaxRateEntityTypeInvoice),
 	})
 
 	// Check if tax applied record already exists
@@ -1154,7 +1154,7 @@ func (s *taxService) processTaxApplication(ctx context.Context, inv *invoice.Inv
 
 	taxAppliedRecord := &dto.CreateTaxAppliedRequest{
 		TaxRateID:     taxRate.ID,
-		EntityType:    types.TaxrateEntityTypeInvoice,
+		EntityType:    types.TaxRateEntityTypeInvoice,
 		EntityID:      inv.ID,
 		TaxableAmount: taxableAmount,
 		TaxAmount:     taxAmount,

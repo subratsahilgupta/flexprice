@@ -329,9 +329,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		if err != nil {
 			return err
 		}
-
 		// Apply coupons to the subscription
-		if err := s.ApplyCouponsToSubscriptionWithLineItems(ctx, sub.ID, req.Coupons, req.LineItemCoupons, sub.LineItems); err != nil {
+		if err := s.ApplyCouponsToSubscriptionWithLineItems(ctx, sub.ID, req.Coupons, req.LineItemCoupons, lineItems); err != nil {
 			return err
 		}
 
@@ -359,7 +358,7 @@ func (s *subscriptionService) handleTaxRateLinking(ctx context.Context, sub *sub
 	// if tax overrides are provided, link them to the subscription
 	if len(req.TaxRateOverrides) > 0 {
 		err := taxService.LinkTaxRatesToEntity(ctx, dto.LinkTaxRateToEntityRequest{
-			EntityType:       types.TaxrateEntityTypeSubscription,
+			EntityType:       types.TaxRateEntityTypeSubscription,
 			EntityID:         sub.ID,
 			TaxRateOverrides: req.TaxRateOverrides,
 		})
@@ -371,7 +370,7 @@ func (s *subscriptionService) handleTaxRateLinking(ctx context.Context, sub *sub
 	// If no tax rate overrides are provided, link the customer's tax association to the subscription
 	if req.TaxRateOverrides == nil {
 		filter := types.NewNoLimitTaxAssociationFilter()
-		filter.EntityType = types.TaxrateEntityTypeCustomer
+		filter.EntityType = types.TaxRateEntityTypeCustomer
 		filter.EntityID = sub.CustomerID
 		filter.AutoApply = lo.ToPtr(true)
 		tenantTaxAssociations, err := taxService.ListTaxAssociations(ctx, filter)
@@ -380,7 +379,7 @@ func (s *subscriptionService) handleTaxRateLinking(ctx context.Context, sub *sub
 		}
 
 		err = taxService.LinkTaxRatesToEntity(ctx, dto.LinkTaxRateToEntityRequest{
-			EntityType:              types.TaxrateEntityTypeSubscription,
+			EntityType:              types.TaxRateEntityTypeSubscription,
 			EntityID:                sub.ID,
 			ExistingTaxAssociations: tenantTaxAssociations.Items,
 		})

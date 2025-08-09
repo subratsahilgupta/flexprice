@@ -287,7 +287,7 @@ func (s *couponValidationService) validateOnceCadence(ctx context.Context, coupo
 	return nil
 }
 
-// validateForeverCadenceForInvoice validates "forever" cadence - coupon is always applied
+// validateForeverCadence validates "forever" cadence - coupon is always applied
 func (s *couponValidationService) validateForeverCadence(coupon *coupon.Coupon, subscription *subscription.Subscription) error {
 	s.Logger.Debugw("validating forever cadence for invoice",
 		"coupon_id", coupon.ID,

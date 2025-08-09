@@ -34,7 +34,7 @@ func NewTaxHandler(service service.TaxService, logger *logger.Logger) *TaxHandle
 // @Success 201 {object} dto.TaxRateResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxrates [post]
+// @Router /taxes/rates [post]
 func (h *TaxHandler) CreateTaxRate(c *gin.Context) {
 	var req dto.CreateTaxRateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -63,7 +63,7 @@ func (h *TaxHandler) CreateTaxRate(c *gin.Context) {
 // @Success 200 {object} dto.TaxRateResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxrates/{id} [get]
+// @Router /taxes/rates/{id} [get]
 func (h *TaxHandler) GetTaxRate(c *gin.Context) {
 	taxRates, err := h.service.GetTaxRate(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -83,7 +83,7 @@ func (h *TaxHandler) GetTaxRate(c *gin.Context) {
 // @Success 200 {object} []dto.TaxRateResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxrates [get]
+// @Router /taxes/rates [get]
 func (h *TaxHandler) ListTaxRates(c *gin.Context) {
 	var filter types.TaxRateFilter
 	if err := c.ShouldBindQuery(&filter); err != nil {
@@ -112,7 +112,7 @@ func (h *TaxHandler) ListTaxRates(c *gin.Context) {
 // @Success 200 {object} dto.TaxRateResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxrates/{id} [put]
+// @Router /taxes/rates/{id} [put]
 func (h *TaxHandler) UpdateTaxRate(c *gin.Context) {
 	var req dto.UpdateTaxRateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -143,7 +143,7 @@ func (h *TaxHandler) UpdateTaxRate(c *gin.Context) {
 // @Success 204 {object} nil
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxrates/{id} [delete]
+// @Router /taxes/rates/{id} [delete]
 func (h *TaxHandler) DeleteTaxRate(c *gin.Context) {
 	id := c.Param("id")
 
@@ -156,9 +156,9 @@ func (h *TaxHandler) DeleteTaxRate(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// @Summary CreateTaxAssociation tax config
-// @Description CreateTaxAssociation a new tax config
-// @Tags Tax Configs
+// @Summary Create Tax Association
+// @Description Create a new tax association
+// @Tags Tax Associations
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
@@ -166,7 +166,7 @@ func (h *TaxHandler) DeleteTaxRate(c *gin.Context) {
 // @Success 200 {object} dto.TaxAssociationResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxassociations [post]
+// @Router /taxes/associations [post]
 func (h *TaxHandler) CreateTaxAssociation(c *gin.Context) {
 	var req dto.CreateTaxAssociationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -185,9 +185,9 @@ func (h *TaxHandler) CreateTaxAssociation(c *gin.Context) {
 	c.JSON(http.StatusOK, taxConfig)
 }
 
-// @Summary GetTaxAssociation tax config
-// @Description GetTaxAssociation a tax config by ID
-// @Tags Tax Configs
+// @Summary Get Tax Association
+// @Description Get a tax association by ID
+// @Tags Tax Associations
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
@@ -195,7 +195,7 @@ func (h *TaxHandler) CreateTaxAssociation(c *gin.Context) {
 // @Success 200 {object} dto.TaxAssociationResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxassociations/{id} [get]
+// @Router /taxes/associations/{id} [get]
 func (h *TaxHandler) GetTaxAssociation(c *gin.Context) {
 	id := c.Param("id")
 
@@ -210,7 +210,7 @@ func (h *TaxHandler) GetTaxAssociation(c *gin.Context) {
 
 // @Summary Update tax association
 // @Description Update a tax association by ID
-// @Tags Tax Configs
+// @Tags Tax Associations
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
@@ -219,7 +219,7 @@ func (h *TaxHandler) GetTaxAssociation(c *gin.Context) {
 // @Success 200 {object} dto.TaxAssociationResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxassociations/{id} [put]
+// @Router /taxes/associations/{id} [put]
 func (h *TaxHandler) UpdateTaxAssociation(c *gin.Context) {
 	id := c.Param("id")
 
@@ -242,7 +242,7 @@ func (h *TaxHandler) UpdateTaxAssociation(c *gin.Context) {
 
 // @Summary Delete tax association
 // @Description Delete a tax association by ID
-// @Tags Tax Configs
+// @Tags Tax Associations
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
@@ -250,7 +250,7 @@ func (h *TaxHandler) UpdateTaxAssociation(c *gin.Context) {
 // @Success 200 {object} dto.TaxAssociationResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxassociations/{id} [delete]
+// @Router /taxes/associations/{id} [delete]
 func (h *TaxHandler) DeleteTaxAssociation(c *gin.Context) {
 	id := c.Param("id")
 
@@ -263,7 +263,7 @@ func (h *TaxHandler) DeleteTaxAssociation(c *gin.Context) {
 
 // @Summary List tax associations
 // @Description List tax associations
-// @Tags Tax Configs
+// @Tags Tax Associations
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
@@ -271,7 +271,7 @@ func (h *TaxHandler) DeleteTaxAssociation(c *gin.Context) {
 // @Success 200 {object} dto.ListTaxAssociationsResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /taxassociations [get]
+// @Router /taxes/associations [get]
 func (h *TaxHandler) ListTaxAssociations(c *gin.Context) {
 	var filter types.TaxAssociationFilter
 	if err := c.ShouldBindQuery(&filter); err != nil {

@@ -56,25 +56,25 @@ func (s TaxRateScope) Validate() error {
 	return nil
 }
 
-type TaxrateEntityType string
+type TaxRateEntityType string
 
 const (
-	TaxrateEntityTypeCustomer     TaxrateEntityType = "customer"
-	TaxrateEntityTypeSubscription TaxrateEntityType = "subscription"
-	TaxrateEntityTypeInvoice      TaxrateEntityType = "invoice"
-	TaxrateEntityTypeTenant       TaxrateEntityType = "tenant"
+	TaxRateEntityTypeCustomer     TaxRateEntityType = "customer"
+	TaxRateEntityTypeSubscription TaxRateEntityType = "subscription"
+	TaxRateEntityTypeInvoice      TaxRateEntityType = "invoice"
+	TaxRateEntityTypeTenant       TaxRateEntityType = "tenant"
 )
 
-func (t TaxrateEntityType) String() string {
+func (t TaxRateEntityType) String() string {
 	return string(t)
 }
 
-func (t TaxrateEntityType) Validate() error {
+func (t TaxRateEntityType) Validate() error {
 	allowedValues := []string{
-		TaxrateEntityTypeCustomer.String(),
-		TaxrateEntityTypeSubscription.String(),
-		TaxrateEntityTypeInvoice.String(),
-		TaxrateEntityTypeTenant.String(),
+		TaxRateEntityTypeCustomer.String(),
+		TaxRateEntityTypeSubscription.String(),
+		TaxRateEntityTypeInvoice.String(),
+		TaxRateEntityTypeTenant.String(),
 	}
 
 	if !slices.Contains(allowedValues, string(t)) {
