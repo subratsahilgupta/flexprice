@@ -22,7 +22,6 @@ type AddonAssociationQuery struct {
 	order      []addonassociation.OrderOption
 	inters     []Interceptor
 	predicates []predicate.AddonAssociation
-	withFKs    bool
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -333,13 +332,9 @@ func (aaq *AddonAssociationQuery) prepareQuery(ctx context.Context) error {
 
 func (aaq *AddonAssociationQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*AddonAssociation, error) {
 	var (
-		nodes   = []*AddonAssociation{}
-		withFKs = aaq.withFKs
-		_spec   = aaq.querySpec()
+		nodes = []*AddonAssociation{}
+		_spec = aaq.querySpec()
 	)
-	if withFKs {
-		_spec.Node.Columns = append(_spec.Node.Columns, addonassociation.ForeignKeys...)
-	}
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*AddonAssociation).scanValues(nil, columns)
 	}

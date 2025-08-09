@@ -36988,9 +36988,6 @@ type SubscriptionMutation struct {
 	coupon_applications        map[string]struct{}
 	removedcoupon_applications map[string]struct{}
 	clearedcoupon_applications bool
-	addon_associations         map[string]struct{}
-	removedaddon_associations  map[string]struct{}
-	clearedaddon_associations  bool
 	done                       bool
 	oldValue                   func(context.Context) (*Subscription, error)
 	predicates                 []predicate.Subscription
@@ -38770,60 +38767,6 @@ func (m *SubscriptionMutation) ResetCouponApplications() {
 	m.removedcoupon_applications = nil
 }
 
-// AddAddonAssociationIDs adds the "addon_associations" edge to the AddonAssociation entity by ids.
-func (m *SubscriptionMutation) AddAddonAssociationIDs(ids ...string) {
-	if m.addon_associations == nil {
-		m.addon_associations = make(map[string]struct{})
-	}
-	for i := range ids {
-		m.addon_associations[ids[i]] = struct{}{}
-	}
-}
-
-// ClearAddonAssociations clears the "addon_associations" edge to the AddonAssociation entity.
-func (m *SubscriptionMutation) ClearAddonAssociations() {
-	m.clearedaddon_associations = true
-}
-
-// AddonAssociationsCleared reports if the "addon_associations" edge to the AddonAssociation entity was cleared.
-func (m *SubscriptionMutation) AddonAssociationsCleared() bool {
-	return m.clearedaddon_associations
-}
-
-// RemoveAddonAssociationIDs removes the "addon_associations" edge to the AddonAssociation entity by IDs.
-func (m *SubscriptionMutation) RemoveAddonAssociationIDs(ids ...string) {
-	if m.removedaddon_associations == nil {
-		m.removedaddon_associations = make(map[string]struct{})
-	}
-	for i := range ids {
-		delete(m.addon_associations, ids[i])
-		m.removedaddon_associations[ids[i]] = struct{}{}
-	}
-}
-
-// RemovedAddonAssociations returns the removed IDs of the "addon_associations" edge to the AddonAssociation entity.
-func (m *SubscriptionMutation) RemovedAddonAssociationsIDs() (ids []string) {
-	for id := range m.removedaddon_associations {
-		ids = append(ids, id)
-	}
-	return
-}
-
-// AddonAssociationsIDs returns the "addon_associations" edge IDs in the mutation.
-func (m *SubscriptionMutation) AddonAssociationsIDs() (ids []string) {
-	for id := range m.addon_associations {
-		ids = append(ids, id)
-	}
-	return
-}
-
-// ResetAddonAssociations resets all changes to the "addon_associations" edge.
-func (m *SubscriptionMutation) ResetAddonAssociations() {
-	m.addon_associations = nil
-	m.clearedaddon_associations = false
-	m.removedaddon_associations = nil
-}
-
 // Where appends a list predicates to the SubscriptionMutation builder.
 func (m *SubscriptionMutation) Where(ps ...predicate.Subscription) {
 	m.predicates = append(m.predicates, ps...)
@@ -39592,7 +39535,7 @@ func (m *SubscriptionMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *SubscriptionMutation) AddedEdges() []string {
-	edges := make([]string, 0, 7)
+	edges := make([]string, 0, 6)
 	if m.line_items != nil {
 		edges = append(edges, subscription.EdgeLineItems)
 	}
@@ -39610,9 +39553,6 @@ func (m *SubscriptionMutation) AddedEdges() []string {
 	}
 	if m.coupon_applications != nil {
 		edges = append(edges, subscription.EdgeCouponApplications)
-	}
-	if m.addon_associations != nil {
-		edges = append(edges, subscription.EdgeAddonAssociations)
 	}
 	return edges
 }
@@ -39655,19 +39595,13 @@ func (m *SubscriptionMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
-	case subscription.EdgeAddonAssociations:
-		ids := make([]ent.Value, 0, len(m.addon_associations))
-		for id := range m.addon_associations {
-			ids = append(ids, id)
-		}
-		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *SubscriptionMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 7)
+	edges := make([]string, 0, 6)
 	if m.removedline_items != nil {
 		edges = append(edges, subscription.EdgeLineItems)
 	}
@@ -39682,9 +39616,6 @@ func (m *SubscriptionMutation) RemovedEdges() []string {
 	}
 	if m.removedcoupon_applications != nil {
 		edges = append(edges, subscription.EdgeCouponApplications)
-	}
-	if m.removedaddon_associations != nil {
-		edges = append(edges, subscription.EdgeAddonAssociations)
 	}
 	return edges
 }
@@ -39723,19 +39654,13 @@ func (m *SubscriptionMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
-	case subscription.EdgeAddonAssociations:
-		ids := make([]ent.Value, 0, len(m.removedaddon_associations))
-		for id := range m.removedaddon_associations {
-			ids = append(ids, id)
-		}
-		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *SubscriptionMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 7)
+	edges := make([]string, 0, 6)
 	if m.clearedline_items {
 		edges = append(edges, subscription.EdgeLineItems)
 	}
@@ -39753,9 +39678,6 @@ func (m *SubscriptionMutation) ClearedEdges() []string {
 	}
 	if m.clearedcoupon_applications {
 		edges = append(edges, subscription.EdgeCouponApplications)
-	}
-	if m.clearedaddon_associations {
-		edges = append(edges, subscription.EdgeAddonAssociations)
 	}
 	return edges
 }
@@ -39776,8 +39698,6 @@ func (m *SubscriptionMutation) EdgeCleared(name string) bool {
 		return m.clearedcoupon_associations
 	case subscription.EdgeCouponApplications:
 		return m.clearedcoupon_applications
-	case subscription.EdgeAddonAssociations:
-		return m.clearedaddon_associations
 	}
 	return false
 }
@@ -39814,9 +39734,6 @@ func (m *SubscriptionMutation) ResetEdge(name string) error {
 		return nil
 	case subscription.EdgeCouponApplications:
 		m.ResetCouponApplications()
-		return nil
-	case subscription.EdgeAddonAssociations:
-		m.ResetAddonAssociations()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription edge %s", name)

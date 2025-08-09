@@ -49,6 +49,14 @@ func (f *PlanFilter) Validate() error {
 				Mark(ierr.ErrValidation)
 		}
 	}
+
+	for _, planID := range f.PlanIDs {
+		if planID == "" {
+			return ierr.NewError("plan id can not be empty").
+				WithHint("Plan info can not be empty").
+				Mark(ierr.ErrValidation)
+		}
+	}
 	return nil
 }
 

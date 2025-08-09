@@ -49,9 +49,8 @@ type AddonAssociation struct {
 	// CancelledAt holds the value of the "cancelled_at" field.
 	CancelledAt *time.Time `json:"cancelled_at,omitempty"`
 	// Metadata holds the value of the "metadata" field.
-	Metadata                        map[string]interface{} `json:"metadata,omitempty"`
-	subscription_addon_associations *string
-	selectValues                    sql.SelectValues
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	selectValues sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -65,8 +64,6 @@ func (*AddonAssociation) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullString)
 		case addonassociation.FieldCreatedAt, addonassociation.FieldUpdatedAt, addonassociation.FieldStartDate, addonassociation.FieldEndDate, addonassociation.FieldCancelledAt:
 			values[i] = new(sql.NullTime)
-		case addonassociation.ForeignKeys[0]: // subscription_addon_associations
-			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
 		}
@@ -188,13 +185,6 @@ func (aa *AddonAssociation) assignValues(columns []string, values []any) error {
 				if err := json.Unmarshal(*value, &aa.Metadata); err != nil {
 					return fmt.Errorf("unmarshal field metadata: %w", err)
 				}
-			}
-		case addonassociation.ForeignKeys[0]:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field subscription_addon_associations", values[i])
-			} else if value.Valid {
-				aa.subscription_addon_associations = new(string)
-				*aa.subscription_addon_associations = value.String
 			}
 		default:
 			aa.selectValues.Set(columns[i], values[i])

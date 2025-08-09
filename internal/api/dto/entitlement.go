@@ -55,6 +55,18 @@ func (r *CreateEntitlementRequest) Validate() error {
 		}
 	}
 
+	// either you pass planId or entityType and entityId
+	if r.PlanID == "" && (r.EntityType == "" || r.EntityID == "") {
+		return ierr.NewError("either plan_id or entity_type and entity_id is required").
+			WithHint("Please provide plan_id or entity_type and entity_id").
+			WithReportableDetails(map[string]interface{}{
+				"plan_id":     r.PlanID,
+				"entity_type": r.EntityType,
+				"entity_id":   r.EntityID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	return nil
 }
 

@@ -4643,22 +4643,6 @@ func (c *SubscriptionClient) QueryCouponApplications(s *Subscription) *CouponApp
 	return query
 }
 
-// QueryAddonAssociations queries the addon_associations edge of a Subscription.
-func (c *SubscriptionClient) QueryAddonAssociations(s *Subscription) *AddonAssociationQuery {
-	query := (&AddonAssociationClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := s.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(subscription.Table, subscription.FieldID, id),
-			sqlgraph.To(addonassociation.Table, addonassociation.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, subscription.AddonAssociationsTable, subscription.AddonAssociationsColumn),
-		)
-		fromV = sqlgraph.Neighbors(s.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
 // Hooks returns the client hooks.
 func (c *SubscriptionClient) Hooks() []Hook {
 	return c.hooks.Subscription

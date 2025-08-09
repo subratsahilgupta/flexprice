@@ -134,21 +134,6 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		priceMap[p.Price.ID] = p
 	}
 
-	
-	// Filter prices for subscription that are valid for the plan
-	validPrices := filterValidPricesForSubscription(pricesResponse.Items, sub)
-	if len(validPrices) == 0 {
-		return nil, ierr.NewError("no valid prices found for subscription").
-			WithHint("No prices match the subscription criteria").
-			WithReportableDetails(map[string]interface{}{
-				"plan_id":         req.PlanID,
-				"billing_period":  sub.BillingPeriod,
-				"billing_cadence": sub.BillingCadence,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	sub := req.ToSubscription(ctx)
 	// Ensure start date is in UTC format
 	// Note: StartDate is now guaranteed to be set (either from request or defaulted in DTO validation)
 	sub.StartDate = sub.StartDate.UTC()

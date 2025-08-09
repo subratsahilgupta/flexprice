@@ -154,7 +154,7 @@ func addonAssociationFilterFn(ctx context.Context, aa *addonassociation.AddonAss
 	}
 
 	if f.AddonStatus != nil {
-		if aa.AddonStatus != *f.AddonStatus {
+		if aa.AddonStatus != types.AddonStatus(*f.AddonStatus) {
 			return false
 		}
 	}
@@ -186,7 +186,7 @@ func applyAddonAssociationFilterCondition(aa *addonassociation.AddonAssociation,
 		}
 	case "addon_status":
 		if condition.Value != nil && condition.Value.String != nil {
-			return aa.AddonStatus == *condition.Value.String
+			return aa.AddonStatus == types.AddonStatus(*condition.Value.String)
 		}
 	case "environment_id":
 		if condition.Value != nil && condition.Value.String != nil {

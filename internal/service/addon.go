@@ -87,7 +87,7 @@ func (s *addonService) GetAddon(ctx context.Context, id string) (*dto.AddonRespo
 		return nil, err
 	}
 
-	if err == nil && len(prices.Items) > 0 {
+	if len(prices.Items) > 0 {
 		response.Prices = make([]*dto.PriceResponse, len(prices.Items))
 		for i, price := range prices.Items {
 			response.Prices[i] = &dto.PriceResponse{Price: price.Price}
@@ -485,7 +485,7 @@ func (s *addonService) RemoveAddonFromSubscription(
 
 	var targetAddon *addonassociation.AddonAssociation
 	for _, sa := range subscriptionAddons {
-		if sa.AddonStatus == string(types.AddonStatusActive) {
+		if sa.AddonStatus == types.AddonStatusActive {
 			targetAddon = sa
 			break
 		}
@@ -499,7 +499,7 @@ func (s *addonService) RemoveAddonFromSubscription(
 
 	// Update addon status to cancelled and delete line items in a transaction
 	now := time.Now()
-	targetAddon.AddonStatus = string(types.AddonStatusCancelled)
+	targetAddon.AddonStatus = types.AddonStatusCancelled
 	targetAddon.CancellationReason = reason
 	targetAddon.CancelledAt = &now
 	targetAddon.EndDate = &now
