@@ -214,9 +214,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			subscription.GET("/:id/pauses", handlers.SubscriptionPause.ListPauses)
 			subscription.POST("/:id/phases", handlers.Subscription.AddSubscriptionPhase)
 
-			// Addon management for subscriptions
-			subscription.POST("/:id/addons", handlers.Addon.AddAddonToSubscription)
-			subscription.DELETE("/:id/addons/:addon_id", handlers.Addon.RemoveAddonFromSubscription)
+			// Addon management for subscriptions - moved under subscription handler
+			subscription.POST("/addon", handlers.Subscription.AddAddon)
+			subscription.DELETE("/addon", handlers.Subscription.RemoveAddon)
 		}
 
 		wallet := v1Private.Group("/wallets")

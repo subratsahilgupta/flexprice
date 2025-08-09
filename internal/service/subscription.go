@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -47,6 +48,10 @@ type SubscriptionService interface {
 	RemoveCouponFromSubscription(ctx context.Context, subscriptionID string, couponID string) error
 
 	ValidateAndFilterPricesForSubscription(ctx context.Context, entityID string, entityType types.PriceEntityType, subscription *subscription.Subscription) ([]*dto.PriceResponse, error)
+
+	// Addon management for subscriptions
+	AddAddonToSubscription(ctx context.Context, subscriptionID string, req *dto.AddAddonToSubscriptionRequest) (*addonassociation.AddonAssociation, error)
+	RemoveAddonFromSubscription(ctx context.Context, subscriptionID string, addonID string, reason string) error
 }
 
 type subscriptionService struct {
@@ -2871,7 +2876,7 @@ func (s *subscriptionService) handleSubscriptionAddons(
 			"valid_prices_count", len(validPrices))
 
 		// Create subscription addon using the validated prices
-		subscriptionAddon, err := addonService.AddAddonToSubscription(ctx, subscription.ID, lo.ToPtr(addonReq))
+		subscriptionAddon, err := s.AddAddonToSubscription(ctx, subscription.ID, lo.ToPtr(addonReq))
 		if err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to add addon to subscription").
@@ -2892,4 +2897,271 @@ func (s *subscriptionService) handleSubscriptionAddons(
 	}
 
 	return nil
+}
+
+// AddAddonToSubscription adds an addon to a subscription
+func (s *subscriptionService) AddAddonToSubscription(
+	ctx context.Context,
+	subID string,
+	req *dto.AddAddonToSubscriptionRequest,
+) (*addonassociation.AddonAssociation, error) {
+	// Validate request
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Get addon via addon service to reuse validations
+	addonService := NewAddonService(s.ServiceParams)
+	a, err := addonService.GetAddon(ctx, req.AddonID)
+	if err != nil {
+		return nil, err
+	}
+
+	if a.Addon.Status != types.StatusPublished {
+		return nil, ierr.NewError("addon is not published").
+			WithHint("Cannot add inactive addon to subscription").
+			Mark(ierr.ErrValidation)
+	}
+
+	sub, err := s.SubRepo.Get(ctx, subID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if sub exists and is active
+	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
+		return nil, ierr.NewError("subscription is not active").
+			WithHint("Cannot add addon to inactive subscription").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Check if addon is already added to subscription only for single instance addons
+	if a.Addon.Type == types.AddonTypeOnetime {
+		filter := types.NewAddonAssociationFilter()
+		filter.AddonIDs = []string{req.AddonID}
+		filter.EntityIDs = []string{sub.ID}
+		filter.EntityType = lo.ToPtr(types.AddonAssociationEntityTypeSubscription)
+		filter.Limit = lo.ToPtr(1)
+
+		existingAddons, err := s.AddonAssociationRepo.List(ctx, filter)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(existingAddons) > 0 {
+			return nil, ierr.NewError("addon is already added to subscription").
+				WithHint("Cannot add addon to subscription that already has an active instance").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	// Validate and filter prices for the addon using the same pattern as plans
+	validPrices, err := s.ValidateAndFilterPricesForSubscription(ctx, req.AddonID, types.PRICE_ENTITY_TYPE_ADDON, sub)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create subscription addon
+	addonAssociation := req.ToAddonAssociation(
+		ctx,
+		sub.ID,
+		types.AddonAssociationEntityTypeSubscription,
+	)
+
+	// Create line items for the addon using validated prices
+	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(validPrices))
+	for _, priceResponse := range validPrices {
+		lineItem := s.createLineItemFromPrice(ctx, priceResponse, sub, req.AddonID, a.Addon.Name)
+		lineItems = append(lineItems, lineItem)
+	}
+
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// Create subscription addon
+		err = s.AddonAssociationRepo.Create(ctx, addonAssociation)
+		if err != nil {
+			return err
+		}
+
+		// Create line items for the addon
+		for _, lineItem := range lineItems {
+			err = s.SubscriptionLineItemRepo.Create(ctx, lineItem)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	s.Logger.Infow("added addon to subscription",
+		"subscription_id", sub.ID,
+		"addon_id", req.AddonID,
+		"prices_count", len(validPrices),
+		"line_items_count", len(lineItems),
+	)
+
+	return addonAssociation, nil
+}
+
+// RemoveAddonFromSubscription removes an addon from a subscription
+func (s *subscriptionService) RemoveAddonFromSubscription(
+	ctx context.Context,
+	subscriptionID string,
+	addonID string,
+	reason string,
+) error {
+	// Get subscription addon
+	filter := types.NewAddonAssociationFilter()
+	filter.AddonIDs = []string{addonID}
+	filter.EntityIDs = []string{subscriptionID}
+	filter.EntityType = lo.ToPtr(types.AddonAssociationEntityTypeSubscription)
+
+	subscriptionAddons, err := s.AddonAssociationRepo.List(ctx, filter)
+	if err != nil {
+		return err
+	}
+
+	var targetAddon *addonassociation.AddonAssociation
+	for _, sa := range subscriptionAddons {
+		if sa.AddonStatus == types.AddonStatusActive {
+			targetAddon = sa
+			break
+		}
+	}
+
+	if targetAddon == nil {
+		return ierr.NewError("addon not found on subscription").
+			WithHint("Addon is not active on this subscription").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Update addon status to cancelled and delete line items in a transaction
+	now := time.Now()
+	targetAddon.AddonStatus = types.AddonStatusCancelled
+	targetAddon.CancellationReason = reason
+	targetAddon.CancelledAt = &now
+	targetAddon.EndDate = &now
+
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// Update subscription addon
+		err = s.AddonAssociationRepo.Update(ctx, targetAddon)
+		if err != nil {
+			return err
+		}
+
+		// End the corresponding line items for this addon (soft delete approach)
+		subscription, err := s.SubRepo.Get(ctx, subscriptionID)
+		if err != nil {
+			return err
+		}
+
+		lineItemsEnded := 0
+		for _, lineItem := range subscription.LineItems {
+			// Debug logging to understand line item matching
+			s.Logger.Infow("checking line item for addon removal",
+				"subscription_id", subscriptionID,
+				"addon_id", addonID,
+				"line_item_id", lineItem.ID,
+				"line_item_metadata", lineItem.Metadata)
+
+			// Check metadata for addon_id
+			metadataMatch := lineItem.Metadata != nil && lineItem.Metadata["addon_id"] == addonID
+
+			if metadataMatch {
+				s.Logger.Infow("found matching line item for addon removal",
+					"subscription_id", subscriptionID,
+					"addon_id", addonID,
+					"line_item_id", lineItem.ID,
+					"metadata_match", metadataMatch)
+
+				// End the line item (soft delete approach like Togai)
+				lineItem.EndDate = now
+				lineItem.Status = types.StatusDeleted
+
+				// Add metadata for audit trail
+				if lineItem.Metadata == nil {
+					lineItem.Metadata = make(map[string]string)
+				}
+				lineItem.Metadata["removal_reason"] = reason
+				lineItem.Metadata["removed_at"] = now.Format(time.RFC3339)
+				lineItem.Metadata["removed_by"] = types.GetUserID(ctx)
+
+				err = s.SubscriptionLineItemRepo.Update(ctx, lineItem)
+				if err != nil {
+					s.Logger.Errorw("failed to end line item for addon",
+						"subscription_id", subscriptionID,
+						"addon_id", addonID,
+						"line_item_id", lineItem.ID,
+						"error", err)
+					return err
+				}
+				lineItemsEnded++
+			}
+		}
+
+		s.Logger.Infow("ended line items for addon removal",
+			"subscription_id", subscriptionID,
+			"addon_id", addonID,
+			"line_items_ended", lineItemsEnded,
+			"removal_reason", reason)
+
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	s.Logger.Infow("removed addon from subscription",
+		"subscription_id", subscriptionID,
+		"addon_id", addonID,
+	)
+
+	return nil
+}
+
+// createLineItemFromPrice creates a subscription line item from a price for addon additions
+func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, priceResponse *dto.PriceResponse, sub *subscription.Subscription, addonID, addonName string) *subscription.SubscriptionLineItem {
+	price := priceResponse.Price
+
+	lineItem := &subscription.SubscriptionLineItem{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+		SubscriptionID: sub.ID,
+		CustomerID:     sub.CustomerID,
+		EntityID:       addonID,
+		EntityType:     types.SubscriptionLineItemEntitiyTypeAddon,
+		PriceID:        price.ID,
+		PriceType:      price.Type,
+		Currency:       sub.Currency,
+		BillingPeriod:  price.BillingPeriod,
+		InvoiceCadence: price.InvoiceCadence,
+		TrialPeriod:    0,
+		StartDate:      time.Now(),
+		EndDate:        time.Time{},
+		Metadata: map[string]string{
+			"addon_id":        addonID,
+			"subscription_id": sub.ID,
+			"addon_quantity":  "1",
+			"addon_status":    string(types.AddonStatusActive),
+		},
+		EnvironmentID: sub.EnvironmentID,
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}
+
+	// Set price-related fields
+	if price.Type == types.PRICE_TYPE_USAGE && price.MeterID != "" && priceResponse.Meter != nil {
+		lineItem.MeterID = price.MeterID
+		lineItem.MeterDisplayName = priceResponse.Meter.Name
+		lineItem.DisplayName = priceResponse.Meter.Name
+		lineItem.Quantity = decimal.Zero
+	} else {
+		lineItem.DisplayName = addonName
+		lineItem.Quantity = decimal.NewFromInt(1)
+	}
+
+	return lineItem
 }
