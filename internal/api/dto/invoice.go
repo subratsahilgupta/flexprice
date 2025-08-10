@@ -406,6 +406,9 @@ func (c *InvoiceCoupon) ApplyDiscount(originalPrice decimal.Decimal) decimal.Dec
 func (c *InvoiceLineItemCoupon) CalculateDiscount(originalPrice decimal.Decimal) decimal.Decimal {
 	switch c.Type {
 	case types.CouponTypeFixed:
+		if originalPrice.LessThan(*c.AmountOff) {
+			return originalPrice
+		}
 		return *c.AmountOff
 	case types.CouponTypePercentage:
 		return originalPrice.Mul(*c.PercentageOff).Div(decimal.NewFromInt(100))
