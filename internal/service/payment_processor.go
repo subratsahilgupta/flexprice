@@ -233,12 +233,26 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 	// Create payment link using the specified gateway
 	gatewayService := NewPaymentGatewayService(p.ServiceParams)
 
+	// Extract success and cancel URLs from metadata
+	successURL := ""
+	cancelURL := ""
+	if paymentObj.Metadata != nil {
+		if url, exists := paymentObj.Metadata["success_url"]; exists {
+			successURL = url
+		}
+		if url, exists := paymentObj.Metadata["cancel_url"]; exists {
+			cancelURL = url
+		}
+	}
+
 	// Convert to payment link request
 	paymentLinkReq := &dto.CreatePaymentLinkRequest{
 		InvoiceID:  paymentObj.DestinationID,
 		CustomerID: invoice.CustomerID,
 		Amount:     paymentObj.Amount,
 		Currency:   paymentObj.Currency,
+		SuccessURL: successURL,
+		CancelURL:  cancelURL,
 		Gateway: func() *types.PaymentGatewayType {
 			if paymentObj.PaymentGateway != nil {
 				gatewayType := types.PaymentGatewayType(*paymentObj.PaymentGateway)
