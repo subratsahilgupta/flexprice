@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/auth"
+	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/costsheet"
 	"github.com/flexprice/flexprice/internal/domain/coupon"
 	"github.com/flexprice/flexprice/internal/domain/coupon_application"
@@ -15,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
@@ -160,6 +162,14 @@ func NewCreditNoteRepository(p RepositoryParams) creditnote.Repository {
 
 func NewCreditNoteLineItemRepository(p RepositoryParams) creditnote.CreditNoteLineItemRepository {
 	return entRepo.NewCreditNoteLineItemRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewConnectionRepository(p RepositoryParams) connection.Repository {
+	return entRepo.NewConnectionRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewEntityIntegrationMappingRepository(p RepositoryParams) entityintegrationmapping.Repository {
+	return entRepo.NewEntityIntegrationMappingRepository(p.EntClient, p.Logger, p.Cache)
 }
 
 func NewTaxRateRepository(p RepositoryParams) taxrate.Repository {

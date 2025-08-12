@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/auth"
+	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/coupon"
 	"github.com/flexprice/flexprice/internal/domain/coupon_application"
 	"github.com/flexprice/flexprice/internal/domain/coupon_association"
@@ -15,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
@@ -44,33 +46,35 @@ import (
 
 // Stores holds all the repository interfaces for testing
 type Stores struct {
-	CreditGrantRepo            creditgrant.Repository
-	CreditGrantApplicationRepo creditgrantapplication.Repository
-	SubscriptionRepo           subscription.Repository
-	EventRepo                  events.Repository
-	PlanRepo                   plan.Repository
-	PriceRepo                  price.Repository
-	MeterRepo                  meter.Repository
-	CustomerRepo               customer.Repository
-	InvoiceRepo                invoice.Repository
-	WalletRepo                 wallet.Repository
-	PaymentRepo                payment.Repository
-	AuthRepo                   auth.Repository
-	UserRepo                   user.Repository
-	TenantRepo                 tenant.Repository
-	EnvironmentRepo            environment.Repository
-	EntitlementRepo            entitlement.Repository
-	FeatureRepo                feature.Repository
-	TaskRepo                   task.Repository
-	SecretRepo                 secret.Repository
-	CreditNoteRepo             creditnote.Repository
-	CreditNoteLineItemRepo     creditnote.CreditNoteLineItemRepository
-	TaxRateRepo                taxrate.Repository
-	TaxAppliedRepo             taxapplied.Repository
-	TaxAssociationRepo         taxassociation.Repository
-	CouponRepo                 coupon.Repository
-	CouponAssociationRepo      coupon_association.Repository
-	CouponApplicationRepo      coupon_application.Repository
+	CreditGrantRepo              creditgrant.Repository
+	CreditGrantApplicationRepo   creditgrantapplication.Repository
+	SubscriptionRepo             subscription.Repository
+	EventRepo                    events.Repository
+	PlanRepo                     plan.Repository
+	PriceRepo                    price.Repository
+	MeterRepo                    meter.Repository
+	CustomerRepo                 customer.Repository
+	InvoiceRepo                  invoice.Repository
+	WalletRepo                   wallet.Repository
+	PaymentRepo                  payment.Repository
+	AuthRepo                     auth.Repository
+	UserRepo                     user.Repository
+	TenantRepo                   tenant.Repository
+	EnvironmentRepo              environment.Repository
+	EntitlementRepo              entitlement.Repository
+	FeatureRepo                  feature.Repository
+	TaskRepo                     task.Repository
+	SecretRepo                   secret.Repository
+	CreditNoteRepo               creditnote.Repository
+	CreditNoteLineItemRepo       creditnote.CreditNoteLineItemRepository
+	TaxRateRepo                  taxrate.Repository
+	TaxAppliedRepo               taxapplied.Repository
+	TaxAssociationRepo           taxassociation.Repository
+	CouponRepo                   coupon.Repository
+	CouponAssociationRepo        coupon_association.Repository
+	CouponApplicationRepo        coupon_application.Repository
+	ConnectionRepo               connection.Repository
+	EntityIntegrationMappingRepo entityintegrationmapping.Repository
 }
 
 // BaseServiceTestSuite provides common functionality for all service test suites
@@ -96,6 +100,9 @@ func (s *BaseServiceTestSuite) SetupSuite() {
 	cfg := &config.Configuration{
 		Logging: config.LoggingConfig{
 			Level: types.LogLevelInfo,
+		},
+		Secrets: config.SecretsConfig{
+			EncryptionKey: "test-encryption-key-for-unit-tests-only",
 		},
 	}
 	var err error
@@ -130,33 +137,35 @@ func (s *BaseServiceTestSuite) setupContext() {
 
 func (s *BaseServiceTestSuite) setupStores() {
 	s.stores = Stores{
-		SubscriptionRepo:           NewInMemorySubscriptionStore(),
-		EventRepo:                  NewInMemoryEventStore(),
-		PlanRepo:                   NewInMemoryPlanStore(),
-		PriceRepo:                  NewInMemoryPriceStore(),
-		MeterRepo:                  NewInMemoryMeterStore(),
-		CustomerRepo:               NewInMemoryCustomerStore(),
-		InvoiceRepo:                NewInMemoryInvoiceStore(),
-		WalletRepo:                 NewInMemoryWalletStore(),
-		PaymentRepo:                NewInMemoryPaymentStore(),
-		AuthRepo:                   NewInMemoryAuthRepository(),
-		UserRepo:                   NewInMemoryUserStore(),
-		TenantRepo:                 NewInMemoryTenantStore(),
-		EnvironmentRepo:            NewInMemoryEnvironmentStore(),
-		EntitlementRepo:            NewInMemoryEntitlementStore(),
-		FeatureRepo:                NewInMemoryFeatureStore(),
-		TaskRepo:                   NewInMemoryTaskStore(),
-		SecretRepo:                 NewInMemorySecretStore(),
-		CreditGrantRepo:            NewInMemoryCreditGrantStore(),
-		CreditGrantApplicationRepo: NewInMemoryCreditGrantApplicationStore(),
-		CreditNoteRepo:             NewInMemoryCreditNoteStore(),
-		CreditNoteLineItemRepo:     NewInMemoryCreditNoteLineItemStore(),
-		TaxRateRepo:                NewInMemoryTaxRateStore(),
-		TaxAppliedRepo:             NewInMemoryTaxAppliedStore(),
-		TaxAssociationRepo:         NewInMemoryTaxAssociationStore(),
-		CouponRepo:                 NewInMemoryCouponStore(),
-		CouponAssociationRepo:      NewInMemoryCouponAssociationStore(),
-		CouponApplicationRepo:      NewInMemoryCouponApplicationStore(),
+		SubscriptionRepo:             NewInMemorySubscriptionStore(),
+		EventRepo:                    NewInMemoryEventStore(),
+		PlanRepo:                     NewInMemoryPlanStore(),
+		PriceRepo:                    NewInMemoryPriceStore(),
+		MeterRepo:                    NewInMemoryMeterStore(),
+		CustomerRepo:                 NewInMemoryCustomerStore(),
+		InvoiceRepo:                  NewInMemoryInvoiceStore(),
+		WalletRepo:                   NewInMemoryWalletStore(),
+		PaymentRepo:                  NewInMemoryPaymentStore(),
+		AuthRepo:                     NewInMemoryAuthRepository(),
+		UserRepo:                     NewInMemoryUserStore(),
+		TenantRepo:                   NewInMemoryTenantStore(),
+		EnvironmentRepo:              NewInMemoryEnvironmentStore(),
+		EntitlementRepo:              NewInMemoryEntitlementStore(),
+		FeatureRepo:                  NewInMemoryFeatureStore(),
+		TaskRepo:                     NewInMemoryTaskStore(),
+		SecretRepo:                   NewInMemorySecretStore(),
+		CreditGrantRepo:              NewInMemoryCreditGrantStore(),
+		CreditGrantApplicationRepo:   NewInMemoryCreditGrantApplicationStore(),
+		CreditNoteRepo:               NewInMemoryCreditNoteStore(),
+		CreditNoteLineItemRepo:       NewInMemoryCreditNoteLineItemStore(),
+		TaxRateRepo:                  NewInMemoryTaxRateStore(),
+		TaxAppliedRepo:               NewInMemoryTaxAppliedStore(),
+		TaxAssociationRepo:           NewInMemoryTaxAssociationStore(),
+		CouponRepo:                   NewInMemoryCouponStore(),
+		CouponAssociationRepo:        NewInMemoryCouponAssociationStore(),
+		CouponApplicationRepo:        NewInMemoryCouponApplicationStore(),
+		ConnectionRepo:               NewInMemoryConnectionStore(),
+		EntityIntegrationMappingRepo: NewInMemoryEntityIntegrationMappingStore(),
 	}
 
 	s.db = NewMockPostgresClient(s.logger)
@@ -193,6 +202,8 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.CreditGrantApplicationRepo.(*InMemoryCreditGrantApplicationStore).Clear()
 	s.stores.CreditNoteRepo.(*InMemoryCreditNoteStore).Clear()
 	s.stores.CreditNoteLineItemRepo.(*InMemoryCreditNoteLineItemStore).Clear()
+	s.stores.ConnectionRepo.(*InMemoryConnectionStore).Clear()
+	s.stores.EntityIntegrationMappingRepo.(*InMemoryEntityIntegrationMappingStore).Clear()
 	s.stores.TaxRateRepo.(*InMemoryTaxRateStore).Clear()
 	s.stores.TaxAppliedRepo.(*InMemoryTaxAppliedStore).Clear()
 	s.stores.TaxAssociationRepo.(*InMemoryTaxAssociationStore).Clear()

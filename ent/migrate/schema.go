@@ -137,6 +137,33 @@ var (
 			},
 		},
 	}
+	// ConnectionsColumns holds the columns for the "connections" table.
+	ConnectionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "provider_type", Type: field.TypeEnum, Enums: []string{"flexprice", "stripe", "razorpay"}, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "encrypted_secret_data", Type: field.TypeJSON, Nullable: true},
+	}
+	// ConnectionsTable holds the schema information for the "connections" table.
+	ConnectionsTable = &schema.Table{
+		Name:       "connections",
+		Columns:    ConnectionsColumns,
+		PrimaryKey: []*schema.Column{ConnectionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "connection_tenant_id_environment_id_provider_type",
+				Unique:  false,
+				Columns: []*schema.Column{ConnectionsColumns[1], ConnectionsColumns[7], ConnectionsColumns[9]},
+			},
+		},
+	}
 	// CostsheetColumns holds the columns for the "costsheet" table.
 	CostsheetColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -618,6 +645,14 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7]},
 			},
+			{
+				Name:    "idx_customer_tenant_environment_email",
+				Unique:  false,
+				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7], CustomersColumns[10]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "email IS NOT NULL AND email != '' AND status = 'published'",
+				},
+			},
 		},
 	}
 	// EntitlementsColumns holds the columns for the "entitlements" table.
@@ -672,6 +707,43 @@ var (
 				Name:    "entitlement_tenant_id_environment_id_feature_id",
 				Unique:  false,
 				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7], EntitlementsColumns[10]},
+			},
+		},
+	}
+	// EntityIntegrationMappingsColumns holds the columns for the "entity_integration_mappings" table.
+	EntityIntegrationMappingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "entity_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "entity_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "provider_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "provider_entity_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+	}
+	// EntityIntegrationMappingsTable holds the schema information for the "entity_integration_mappings" table.
+	EntityIntegrationMappingsTable = &schema.Table{
+		Name:       "entity_integration_mappings",
+		Columns:    EntityIntegrationMappingsColumns,
+		PrimaryKey: []*schema.Column{EntityIntegrationMappingsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idx_entity_integration_mapping_unique",
+				Unique:  true,
+				Columns: []*schema.Column{EntityIntegrationMappingsColumns[1], EntityIntegrationMappingsColumns[7], EntityIntegrationMappingsColumns[9], EntityIntegrationMappingsColumns[8], EntityIntegrationMappingsColumns[10]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'published'",
+				},
+			},
+			{
+				Name:    "entityintegrationmapping_provider_type_provider_entity_id",
+				Unique:  false,
+				Columns: []*schema.Column{EntityIntegrationMappingsColumns[10], EntityIntegrationMappingsColumns[11]},
 			},
 		},
 	}
@@ -1009,6 +1081,8 @@ var (
 		{Name: "payment_method_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "payment_gateway", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "gateway_payment_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "gateway_tracking_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "gateway_metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
 		{Name: "payment_status", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -1029,12 +1103,12 @@ var (
 			{
 				Name:    "idx_tenant_destination_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[9], PaymentsColumns[10], PaymentsColumns[17], PaymentsColumns[2]},
+				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[9], PaymentsColumns[10], PaymentsColumns[19], PaymentsColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_payment_method_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[11], PaymentsColumns[12], PaymentsColumns[17], PaymentsColumns[2]},
+				Columns: []*schema.Column{PaymentsColumns[1], PaymentsColumns[7], PaymentsColumns[11], PaymentsColumns[12], PaymentsColumns[19], PaymentsColumns[2]},
 			},
 			{
 				Name:    "idx_tenant_gateway_payment",
@@ -1952,6 +2026,7 @@ var (
 		AddonAssociationsTable,
 		AuthsTable,
 		BillingSequencesTable,
+		ConnectionsTable,
 		CostsheetTable,
 		CouponsTable,
 		CouponApplicationsTable,
@@ -1962,6 +2037,7 @@ var (
 		CreditNoteLineItemsTable,
 		CustomersTable,
 		EntitlementsTable,
+		EntityIntegrationMappingsTable,
 		EnvironmentsTable,
 		FeaturesTable,
 		InvoicesTable,

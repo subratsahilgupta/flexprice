@@ -14,33 +14,36 @@ import (
 )
 
 type Handlers struct {
-	Events            *v1.EventsHandler
-	Meter             *v1.MeterHandler
-	Auth              *v1.AuthHandler
-	User              *v1.UserHandler
-	Environment       *v1.EnvironmentHandler
-	Health            *v1.HealthHandler
-	Price             *v1.PriceHandler
-	Customer          *v1.CustomerHandler
-	Plan              *v1.PlanHandler
-	Subscription      *v1.SubscriptionHandler
-	SubscriptionPause *v1.SubscriptionPauseHandler
-	Wallet            *v1.WalletHandler
-	Tenant            *v1.TenantHandler
-	Invoice           *v1.InvoiceHandler
-	Feature           *v1.FeatureHandler
-	Entitlement       *v1.EntitlementHandler
-	CreditGrant       *v1.CreditGrantHandler
-	Payment           *v1.PaymentHandler
-	Task              *v1.TaskHandler
-	Secret            *v1.SecretHandler
-	CostSheet         *v1.CostSheetHandler
-	CreditNote        *v1.CreditNoteHandler
-	Tax               *v1.TaxHandler
-	Coupon            *v1.CouponHandler
-	PriceUnit         *v1.PriceUnitHandler
-	Webhook           *v1.WebhookHandler
-	Addon             *v1.AddonHandler
+	Events                   *v1.EventsHandler
+	Meter                    *v1.MeterHandler
+	Auth                     *v1.AuthHandler
+	User                     *v1.UserHandler
+	Environment              *v1.EnvironmentHandler
+	Health                   *v1.HealthHandler
+	Price                    *v1.PriceHandler
+	Customer                 *v1.CustomerHandler
+	Connection               *v1.ConnectionHandler
+	Plan                     *v1.PlanHandler
+	Subscription             *v1.SubscriptionHandler
+	SubscriptionPause        *v1.SubscriptionPauseHandler
+	Wallet                   *v1.WalletHandler
+	Tenant                   *v1.TenantHandler
+	Invoice                  *v1.InvoiceHandler
+	Feature                  *v1.FeatureHandler
+	Entitlement              *v1.EntitlementHandler
+	CreditGrant              *v1.CreditGrantHandler
+	Payment                  *v1.PaymentHandler
+	Task                     *v1.TaskHandler
+	Secret                   *v1.SecretHandler
+	CostSheet                *v1.CostSheetHandler
+	CreditNote               *v1.CreditNoteHandler
+	Tax                      *v1.TaxHandler
+	Coupon                   *v1.CouponHandler
+	PriceUnit                *v1.PriceUnitHandler
+	Webhook                  *v1.WebhookHandler
+	Addon                    *v1.AddonHandler
+	EntityIntegrationMapping *v1.EntityIntegrationMappingHandler
+	Integration              *v1.IntegrationHandler
 	// Portal handlers
 	Onboarding *v1.OnboardingHandler
 	// Cron jobs : TODO: move crons out of API based architecture
@@ -348,6 +351,17 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			}
 		}
 
+		// Connection routes
+		connections := v1Private.Group("/connections")
+		{
+			connections.POST("", handlers.Connection.CreateConnection)
+			connections.GET("", handlers.Connection.GetConnections)
+			connections.GET("/:id", handlers.Connection.GetConnection)
+			connections.PUT("/:id", handlers.Connection.UpdateConnection)
+			connections.DELETE("/:id", handlers.Connection.DeleteConnection)
+			connections.POST("/search", handlers.Connection.ListConnectionsByFilter)
+		}
+
 		// Cost sheet routes
 		costSheet := v1Private.Group("/costs")
 		{
@@ -369,63 +383,85 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			creditNotes.POST("/:id/finalize", handlers.CreditNote.FinalizeCreditNote)
 		}
 
-		// Coupon routes
-		coupon := v1Private.Group("/coupons")
+		// Entity Integration Mapping routes
+		entityIntegrationMappings := v1Private.Group("/entity-integration-mappings")
 		{
-			coupon.POST("", handlers.Coupon.CreateCoupon)
-			coupon.GET("", handlers.Coupon.ListCouponsByFilter)
-			coupon.GET("/:id", handlers.Coupon.GetCoupon)
-			coupon.PUT("/:id", handlers.Coupon.UpdateCoupon)
-			coupon.DELETE("/:id", handlers.Coupon.DeleteCoupon)
-			coupon.POST("/search", handlers.Coupon.ListCouponsByFilter)
+			entityIntegrationMappings.POST("", handlers.EntityIntegrationMapping.CreateEntityIntegrationMapping)
+			entityIntegrationMappings.GET("", handlers.EntityIntegrationMapping.ListEntityIntegrationMappings)
+			entityIntegrationMappings.GET("/:id", handlers.EntityIntegrationMapping.GetEntityIntegrationMapping)
+			entityIntegrationMappings.DELETE("/:id", handlers.EntityIntegrationMapping.DeleteEntityIntegrationMapping)
 		}
 
-		// Admin routes (API Key only)
-		adminRoutes := v1Private.Group("/admin")
-		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, secretService, logger))
+		// Integration routes
+		integration := v1Private.Group("/integration")
 		{
-			// All admin routes to go here
-		}
-
-		// Portal routes (UI-specific endpoints)
-		portalRoutes := v1Private.Group("/portal")
-		{
-			onboarding := portalRoutes.Group("/onboarding")
+			integration.POST("/sync/:entity_type/:entity_id", handlers.Integration.SyncEntityToProviders)
+			integration.GET("/providers", handlers.Integration.GetAvailableProviders)
+			// Coupon routes
+			coupon := v1Private.Group("/coupons")
 			{
-				onboarding.POST("/events", handlers.Onboarding.GenerateEvents)
-				onboarding.POST("/setup", handlers.Onboarding.SetupDemo)
+				coupon.POST("", handlers.Coupon.CreateCoupon)
+				coupon.GET("", handlers.Coupon.ListCouponsByFilter)
+				coupon.GET("/:id", handlers.Coupon.GetCoupon)
+				coupon.PUT("/:id", handlers.Coupon.UpdateCoupon)
+				coupon.DELETE("/:id", handlers.Coupon.DeleteCoupon)
+				coupon.POST("/search", handlers.Coupon.ListCouponsByFilter)
+			}
+
+			// Admin routes (API Key only)
+			adminRoutes := v1Private.Group("/admin")
+			adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, secretService, logger))
+			{
+				// All admin routes to go here
+			}
+
+			// Portal routes (UI-specific endpoints)
+			portalRoutes := v1Private.Group("/portal")
+			{
+				onboarding := portalRoutes.Group("/onboarding")
+				{
+					onboarding.POST("/events", handlers.Onboarding.GenerateEvents)
+					onboarding.POST("/setup", handlers.Onboarding.SetupDemo)
+				}
+			}
+
+			// Webhook routes
+			webhookGroup := v1Private.Group("/webhooks")
+			{
+				webhookGroup.GET("/dashboard", handlers.Webhook.GetDashboardURL)
 			}
 		}
 
-		// Webhook routes
-		webhookGroup := v1Private.Group("/webhooks")
+		// Public webhook endpoints (no authentication required)
+		webhooks := v1Public.Group("/webhooks")
 		{
-			webhookGroup.GET("/dashboard", handlers.Webhook.GetDashboardURL)
+			// Stripe webhook endpoint: POST /v1/webhooks/stripe/{tenant_id}/{environment_id}
+			webhooks.POST("/stripe/:tenant_id/:environment_id", handlers.Webhook.HandleStripeWebhook)
 		}
-	}
 
-	// Cron routes
-	// TODO: move crons out of API based architecture
-	cron := v1Private.Group("/cron")
-	// Subscription related cron jobs
-	subscriptionGroup := cron.Group("/subscriptions")
-	{
-		subscriptionGroup.POST("/update-periods", handlers.CronSubscription.UpdateBillingPeriods)
-		subscriptionGroup.POST("/generate-invoice", handlers.CronSubscription.GenerateInvoice)
-	}
+		// Cron routes
+		// TODO: move crons out of API based architecture
+		cron := v1Private.Group("/cron")
+		// Subscription related cron jobs
+		subscriptionGroup := cron.Group("/subscriptions")
+		{
+			subscriptionGroup.POST("/update-periods", handlers.CronSubscription.UpdateBillingPeriods)
+			subscriptionGroup.POST("/generate-invoice", handlers.CronSubscription.GenerateInvoice)
+		}
 
-	// Wallet related cron jobs
-	walletGroup := cron.Group("/wallets")
-	{
-		walletGroup.POST("/expire-credits", handlers.CronWallet.ExpireCredits)
-		walletGroup.POST("/check-alerts", handlers.CronWallet.CheckAlerts)
-	}
+		// Wallet related cron jobs
+		walletGroup := cron.Group("/wallets")
+		{
+			walletGroup.POST("/expire-credits", handlers.CronWallet.ExpireCredits)
+			walletGroup.POST("/check-alerts", handlers.CronWallet.CheckAlerts)
+		}
 
-	// Credit grant related cron jobs
-	creditGrantGroup := cron.Group("/creditgrants")
-	{
-		creditGrantGroup.POST("/process-scheduled-applications", handlers.CronCreditGrant.ProcessScheduledCreditGrantApplications)
-	}
+		// Credit grant related cron jobs
+		creditGrantGroup := cron.Group("/creditgrants")
+		{
+			creditGrantGroup.POST("/process-scheduled-applications", handlers.CronCreditGrant.ProcessScheduledCreditGrantApplications)
+		}
 
-	return router
+		return router
+	}
 }

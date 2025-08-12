@@ -53,6 +53,7 @@ func (s *CustomerServiceSuite) SetupTest() {
 		TaxRateRepo:        s.GetStores().TaxRateRepo,
 		TaxAppliedRepo:     s.GetStores().TaxAppliedRepo,
 		TaxAssociationRepo: s.GetStores().TaxAssociationRepo,
+		ConnectionRepo:     s.GetStores().ConnectionRepo,
 	})
 
 }

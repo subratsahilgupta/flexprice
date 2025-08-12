@@ -16,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/ent/addonassociation"
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
+	"github.com/flexprice/flexprice/ent/connection"
 	"github.com/flexprice/flexprice/ent/costsheet"
 	"github.com/flexprice/flexprice/ent/coupon"
 	"github.com/flexprice/flexprice/ent/couponapplication"
@@ -26,6 +27,7 @@ import (
 	"github.com/flexprice/flexprice/ent/creditnotelineitem"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/entitlement"
+	"github.com/flexprice/flexprice/ent/entityintegrationmapping"
 	"github.com/flexprice/flexprice/ent/environment"
 	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/invoice"
@@ -115,6 +117,7 @@ func checkColumn(table, column string) error {
 			addonassociation.Table:          addonassociation.ValidColumn,
 			auth.Table:                      auth.ValidColumn,
 			billingsequence.Table:           billingsequence.ValidColumn,
+			connection.Table:                connection.ValidColumn,
 			costsheet.Table:                 costsheet.ValidColumn,
 			coupon.Table:                    coupon.ValidColumn,
 			couponapplication.Table:         couponapplication.ValidColumn,
@@ -125,6 +128,7 @@ func checkColumn(table, column string) error {
 			creditnotelineitem.Table:        creditnotelineitem.ValidColumn,
 			customer.Table:                  customer.ValidColumn,
 			entitlement.Table:               entitlement.ValidColumn,
+			entityintegrationmapping.Table:  entityintegrationmapping.ValidColumn,
 			environment.Table:               environment.ValidColumn,
 			feature.Table:                   feature.ValidColumn,
 			invoice.Table:                   invoice.ValidColumn,

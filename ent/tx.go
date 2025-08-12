@@ -22,6 +22,8 @@ type Tx struct {
 	Auth *AuthClient
 	// BillingSequence is the client for interacting with the BillingSequence builders.
 	BillingSequence *BillingSequenceClient
+	// Connection is the client for interacting with the Connection builders.
+	Connection *ConnectionClient
 	// Costsheet is the client for interacting with the Costsheet builders.
 	Costsheet *CostsheetClient
 	// Coupon is the client for interacting with the Coupon builders.
@@ -42,6 +44,8 @@ type Tx struct {
 	Customer *CustomerClient
 	// Entitlement is the client for interacting with the Entitlement builders.
 	Entitlement *EntitlementClient
+	// EntityIntegrationMapping is the client for interacting with the EntityIntegrationMapping builders.
+	EntityIntegrationMapping *EntityIntegrationMappingClient
 	// Environment is the client for interacting with the Environment builders.
 	Environment *EnvironmentClient
 	// Feature is the client for interacting with the Feature builders.
@@ -227,6 +231,7 @@ func (tx *Tx) init() {
 	tx.AddonAssociation = NewAddonAssociationClient(tx.config)
 	tx.Auth = NewAuthClient(tx.config)
 	tx.BillingSequence = NewBillingSequenceClient(tx.config)
+	tx.Connection = NewConnectionClient(tx.config)
 	tx.Costsheet = NewCostsheetClient(tx.config)
 	tx.Coupon = NewCouponClient(tx.config)
 	tx.CouponApplication = NewCouponApplicationClient(tx.config)
@@ -237,6 +242,7 @@ func (tx *Tx) init() {
 	tx.CreditNoteLineItem = NewCreditNoteLineItemClient(tx.config)
 	tx.Customer = NewCustomerClient(tx.config)
 	tx.Entitlement = NewEntitlementClient(tx.config)
+	tx.EntityIntegrationMapping = NewEntityIntegrationMappingClient(tx.config)
 	tx.Environment = NewEnvironmentClient(tx.config)
 	tx.Feature = NewFeatureClient(tx.config)
 	tx.Invoice = NewInvoiceClient(tx.config)

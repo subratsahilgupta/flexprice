@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/ent/addonassociation"
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
+	"github.com/flexprice/flexprice/ent/connection"
 	"github.com/flexprice/flexprice/ent/costsheet"
 	"github.com/flexprice/flexprice/ent/coupon"
 	"github.com/flexprice/flexprice/ent/couponapplication"
@@ -19,6 +20,7 @@ import (
 	"github.com/flexprice/flexprice/ent/creditnotelineitem"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/entitlement"
+	"github.com/flexprice/flexprice/ent/entityintegrationmapping"
 	"github.com/flexprice/flexprice/ent/environment"
 	"github.com/flexprice/flexprice/ent/feature"
 	"github.com/flexprice/flexprice/ent/invoice"
@@ -193,6 +195,39 @@ func init() {
 	billingsequence.DefaultUpdatedAt = billingsequenceDescUpdatedAt.Default.(func() time.Time)
 	// billingsequence.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	billingsequence.UpdateDefaultUpdatedAt = billingsequenceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	connectionMixin := schema.Connection{}.Mixin()
+	connectionMixinFields0 := connectionMixin[0].Fields()
+	_ = connectionMixinFields0
+	connectionMixinFields1 := connectionMixin[1].Fields()
+	_ = connectionMixinFields1
+	connectionFields := schema.Connection{}.Fields()
+	_ = connectionFields
+	// connectionDescTenantID is the schema descriptor for tenant_id field.
+	connectionDescTenantID := connectionMixinFields0[0].Descriptor()
+	// connection.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	connection.TenantIDValidator = connectionDescTenantID.Validators[0].(func(string) error)
+	// connectionDescStatus is the schema descriptor for status field.
+	connectionDescStatus := connectionMixinFields0[1].Descriptor()
+	// connection.DefaultStatus holds the default value on creation for the status field.
+	connection.DefaultStatus = connectionDescStatus.Default.(string)
+	// connectionDescCreatedAt is the schema descriptor for created_at field.
+	connectionDescCreatedAt := connectionMixinFields0[2].Descriptor()
+	// connection.DefaultCreatedAt holds the default value on creation for the created_at field.
+	connection.DefaultCreatedAt = connectionDescCreatedAt.Default.(func() time.Time)
+	// connectionDescUpdatedAt is the schema descriptor for updated_at field.
+	connectionDescUpdatedAt := connectionMixinFields0[3].Descriptor()
+	// connection.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	connection.DefaultUpdatedAt = connectionDescUpdatedAt.Default.(func() time.Time)
+	// connection.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	connection.UpdateDefaultUpdatedAt = connectionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// connectionDescEnvironmentID is the schema descriptor for environment_id field.
+	connectionDescEnvironmentID := connectionMixinFields1[0].Descriptor()
+	// connection.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	connection.DefaultEnvironmentID = connectionDescEnvironmentID.Default.(string)
+	// connectionDescName is the schema descriptor for name field.
+	connectionDescName := connectionFields[1].Descriptor()
+	// connection.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	connection.NameValidator = connectionDescName.Validators[0].(func(string) error)
 	costsheetMixin := schema.Costsheet{}.Mixin()
 	costsheetMixinFields0 := costsheetMixin[0].Fields()
 	_ = costsheetMixinFields0
@@ -673,6 +708,51 @@ func init() {
 	entitlementDescID := entitlementFields[0].Descriptor()
 	// entitlement.IDValidator is a validator for the "id" field. It is called by the builders before save.
 	entitlement.IDValidator = entitlementDescID.Validators[0].(func(string) error)
+	entityintegrationmappingMixin := schema.EntityIntegrationMapping{}.Mixin()
+	entityintegrationmappingMixinFields0 := entityintegrationmappingMixin[0].Fields()
+	_ = entityintegrationmappingMixinFields0
+	entityintegrationmappingMixinFields1 := entityintegrationmappingMixin[1].Fields()
+	_ = entityintegrationmappingMixinFields1
+	entityintegrationmappingFields := schema.EntityIntegrationMapping{}.Fields()
+	_ = entityintegrationmappingFields
+	// entityintegrationmappingDescTenantID is the schema descriptor for tenant_id field.
+	entityintegrationmappingDescTenantID := entityintegrationmappingMixinFields0[0].Descriptor()
+	// entityintegrationmapping.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	entityintegrationmapping.TenantIDValidator = entityintegrationmappingDescTenantID.Validators[0].(func(string) error)
+	// entityintegrationmappingDescStatus is the schema descriptor for status field.
+	entityintegrationmappingDescStatus := entityintegrationmappingMixinFields0[1].Descriptor()
+	// entityintegrationmapping.DefaultStatus holds the default value on creation for the status field.
+	entityintegrationmapping.DefaultStatus = entityintegrationmappingDescStatus.Default.(string)
+	// entityintegrationmappingDescCreatedAt is the schema descriptor for created_at field.
+	entityintegrationmappingDescCreatedAt := entityintegrationmappingMixinFields0[2].Descriptor()
+	// entityintegrationmapping.DefaultCreatedAt holds the default value on creation for the created_at field.
+	entityintegrationmapping.DefaultCreatedAt = entityintegrationmappingDescCreatedAt.Default.(func() time.Time)
+	// entityintegrationmappingDescUpdatedAt is the schema descriptor for updated_at field.
+	entityintegrationmappingDescUpdatedAt := entityintegrationmappingMixinFields0[3].Descriptor()
+	// entityintegrationmapping.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	entityintegrationmapping.DefaultUpdatedAt = entityintegrationmappingDescUpdatedAt.Default.(func() time.Time)
+	// entityintegrationmapping.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	entityintegrationmapping.UpdateDefaultUpdatedAt = entityintegrationmappingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// entityintegrationmappingDescEnvironmentID is the schema descriptor for environment_id field.
+	entityintegrationmappingDescEnvironmentID := entityintegrationmappingMixinFields1[0].Descriptor()
+	// entityintegrationmapping.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	entityintegrationmapping.DefaultEnvironmentID = entityintegrationmappingDescEnvironmentID.Default.(string)
+	// entityintegrationmappingDescEntityID is the schema descriptor for entity_id field.
+	entityintegrationmappingDescEntityID := entityintegrationmappingFields[1].Descriptor()
+	// entityintegrationmapping.EntityIDValidator is a validator for the "entity_id" field. It is called by the builders before save.
+	entityintegrationmapping.EntityIDValidator = entityintegrationmappingDescEntityID.Validators[0].(func(string) error)
+	// entityintegrationmappingDescEntityType is the schema descriptor for entity_type field.
+	entityintegrationmappingDescEntityType := entityintegrationmappingFields[2].Descriptor()
+	// entityintegrationmapping.EntityTypeValidator is a validator for the "entity_type" field. It is called by the builders before save.
+	entityintegrationmapping.EntityTypeValidator = entityintegrationmappingDescEntityType.Validators[0].(func(string) error)
+	// entityintegrationmappingDescProviderType is the schema descriptor for provider_type field.
+	entityintegrationmappingDescProviderType := entityintegrationmappingFields[3].Descriptor()
+	// entityintegrationmapping.ProviderTypeValidator is a validator for the "provider_type" field. It is called by the builders before save.
+	entityintegrationmapping.ProviderTypeValidator = entityintegrationmappingDescProviderType.Validators[0].(func(string) error)
+	// entityintegrationmappingDescProviderEntityID is the schema descriptor for provider_entity_id field.
+	entityintegrationmappingDescProviderEntityID := entityintegrationmappingFields[4].Descriptor()
+	// entityintegrationmapping.ProviderEntityIDValidator is a validator for the "provider_entity_id" field. It is called by the builders before save.
+	entityintegrationmapping.ProviderEntityIDValidator = entityintegrationmappingDescProviderEntityID.Validators[0].(func(string) error)
 	environmentMixin := schema.Environment{}.Mixin()
 	environmentMixinFields0 := environmentMixin[0].Fields()
 	_ = environmentMixinFields0
@@ -998,19 +1078,19 @@ func init() {
 	// payment.PaymentMethodTypeValidator is a validator for the "payment_method_type" field. It is called by the builders before save.
 	payment.PaymentMethodTypeValidator = paymentDescPaymentMethodType.Validators[0].(func(string) error)
 	// paymentDescAmount is the schema descriptor for amount field.
-	paymentDescAmount := paymentFields[8].Descriptor()
+	paymentDescAmount := paymentFields[10].Descriptor()
 	// payment.DefaultAmount holds the default value on creation for the amount field.
 	payment.DefaultAmount = paymentDescAmount.Default.(decimal.Decimal)
 	// paymentDescCurrency is the schema descriptor for currency field.
-	paymentDescCurrency := paymentFields[9].Descriptor()
+	paymentDescCurrency := paymentFields[11].Descriptor()
 	// payment.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	payment.CurrencyValidator = paymentDescCurrency.Validators[0].(func(string) error)
 	// paymentDescPaymentStatus is the schema descriptor for payment_status field.
-	paymentDescPaymentStatus := paymentFields[10].Descriptor()
+	paymentDescPaymentStatus := paymentFields[12].Descriptor()
 	// payment.PaymentStatusValidator is a validator for the "payment_status" field. It is called by the builders before save.
 	payment.PaymentStatusValidator = paymentDescPaymentStatus.Validators[0].(func(string) error)
 	// paymentDescTrackAttempts is the schema descriptor for track_attempts field.
-	paymentDescTrackAttempts := paymentFields[11].Descriptor()
+	paymentDescTrackAttempts := paymentFields[13].Descriptor()
 	// payment.DefaultTrackAttempts holds the default value on creation for the track_attempts field.
 	payment.DefaultTrackAttempts = paymentDescTrackAttempts.Default.(bool)
 	paymentattemptMixin := schema.PaymentAttempt{}.Mixin()

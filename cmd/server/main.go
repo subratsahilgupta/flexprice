@@ -40,6 +40,7 @@ import (
 	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
 	_ "github.com/flexprice/flexprice/docs/swagger"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/security"
 	"github.com/gin-gonic/gin"
 )
 
@@ -73,6 +74,9 @@ func main() {
 
 			// Logger
 			logger.NewLogger,
+
+			// Security
+			security.NewEncryptionService,
 
 			// storage
 			s3.NewService,
@@ -140,6 +144,8 @@ func main() {
 			repository.NewCreditGrantApplicationRepository,
 			repository.NewCreditNoteRepository,
 			repository.NewCreditNoteLineItemRepository,
+			repository.NewConnectionRepository,
+			repository.NewEntityIntegrationMappingRepository,
 			repository.NewTaxRateRepository,
 			repository.NewTaxAssociationRepository,
 			repository.NewCouponRepository,
@@ -192,6 +198,10 @@ func main() {
 			service.NewCreditGrantService,
 			service.NewCostSheetService,
 			service.NewCreditNoteService,
+			service.NewConnectionService,
+			service.NewStripeService,
+			service.NewEntityIntegrationMappingService,
+			service.NewIntegrationService,
 			service.NewTaxService,
 			service.NewCouponService,
 			service.NewPriceUnitService,
@@ -245,6 +255,10 @@ func provideHandlers(
 	creditGrantService service.CreditGrantService,
 	costSheetService service.CostSheetService,
 	creditNoteService service.CreditNoteService,
+	stripeService *service.StripeService,
+	connectionService service.ConnectionService,
+	entityIntegrationMappingService service.EntityIntegrationMappingService,
+	integrationService service.IntegrationService,
 	priceUnitService *service.PriceUnitService,
 	svixClient *svix.Client,
 	taxService service.TaxService,
@@ -252,37 +266,40 @@ func provideHandlers(
 	addonService service.AddonService,
 ) api.Handlers {
 	return api.Handlers{
-		Events:            v1.NewEventsHandler(eventService, eventPostProcessingService, logger),
-		Meter:             v1.NewMeterHandler(meterService, logger),
-		Auth:              v1.NewAuthHandler(cfg, authService, logger),
-		User:              v1.NewUserHandler(userService, logger),
-		Environment:       v1.NewEnvironmentHandler(environmentService, logger),
-		Health:            v1.NewHealthHandler(logger),
-		Price:             v1.NewPriceHandler(priceService, logger),
-		Customer:          v1.NewCustomerHandler(customerService, billingService, logger),
-		Plan:              v1.NewPlanHandler(planService, entitlementService, creditGrantService, logger),
-		Subscription:      v1.NewSubscriptionHandler(subscriptionService, logger),
-		SubscriptionPause: v1.NewSubscriptionPauseHandler(subscriptionService, logger),
-		Wallet:            v1.NewWalletHandler(walletService, logger),
-		Tenant:            v1.NewTenantHandler(tenantService, logger),
-		Invoice:           v1.NewInvoiceHandler(invoiceService, temporalService, logger),
-		Feature:           v1.NewFeatureHandler(featureService, logger),
-		Entitlement:       v1.NewEntitlementHandler(entitlementService, logger),
-		Payment:           v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
-		Task:              v1.NewTaskHandler(taskService, logger),
-		Secret:            v1.NewSecretHandler(secretService, logger),
-		Tax:               v1.NewTaxHandler(taxService, logger),
-		Onboarding:        v1.NewOnboardingHandler(onboardingService, logger),
-		CronSubscription:  cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
-		CronWallet:        cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService, environmentService),
-		CreditGrant:       v1.NewCreditGrantHandler(creditGrantService, logger),
-		CostSheet:         v1.NewCostSheetHandler(costSheetService, logger),
-		CronCreditGrant:   cron.NewCreditGrantCronHandler(creditGrantService, logger),
-		CreditNote:        v1.NewCreditNoteHandler(creditNoteService, logger),
-		PriceUnit:         v1.NewPriceUnitHandler(priceUnitService, logger),
-		Webhook:           v1.NewWebhookHandler(cfg, svixClient, logger),
-		Coupon:            v1.NewCouponHandler(couponService, logger),
-		Addon:             v1.NewAddonHandler(addonService, logger),
+		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, logger),
+		Meter:                    v1.NewMeterHandler(meterService, logger),
+		Auth:                     v1.NewAuthHandler(cfg, authService, logger),
+		User:                     v1.NewUserHandler(userService, logger),
+		Environment:              v1.NewEnvironmentHandler(environmentService, logger),
+		Health:                   v1.NewHealthHandler(logger),
+		Price:                    v1.NewPriceHandler(priceService, logger),
+		Customer:                 v1.NewCustomerHandler(customerService, billingService, logger),
+		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, logger),
+		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
+		SubscriptionPause:        v1.NewSubscriptionPauseHandler(subscriptionService, logger),
+		Wallet:                   v1.NewWalletHandler(walletService, logger),
+		Tenant:                   v1.NewTenantHandler(tenantService, logger),
+		Invoice:                  v1.NewInvoiceHandler(invoiceService, temporalService, logger),
+		Feature:                  v1.NewFeatureHandler(featureService, logger),
+		Entitlement:              v1.NewEntitlementHandler(entitlementService, logger),
+		Payment:                  v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
+		Task:                     v1.NewTaskHandler(taskService, logger),
+		Secret:                   v1.NewSecretHandler(secretService, logger),
+		Tax:                      v1.NewTaxHandler(taxService, logger),
+		Onboarding:               v1.NewOnboardingHandler(onboardingService, logger),
+		CronSubscription:         cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
+		CronWallet:               cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService, environmentService),
+		CreditGrant:              v1.NewCreditGrantHandler(creditGrantService, logger),
+		CostSheet:                v1.NewCostSheetHandler(costSheetService, logger),
+		CronCreditGrant:          cron.NewCreditGrantCronHandler(creditGrantService, logger),
+		CreditNote:               v1.NewCreditNoteHandler(creditNoteService, logger),
+		Connection:               v1.NewConnectionHandler(connectionService, logger),
+		EntityIntegrationMapping: v1.NewEntityIntegrationMappingHandler(entityIntegrationMappingService, logger),
+		Integration:              v1.NewIntegrationHandler(integrationService, logger),
+		PriceUnit:                v1.NewPriceUnitHandler(priceUnitService, logger),
+		Webhook:                  v1.NewWebhookHandler(cfg, svixClient, logger, stripeService),
+		Coupon:                   v1.NewCouponHandler(couponService, logger),
+		Addon:                    v1.NewAddonHandler(addonService, logger),
 	}
 }
 
