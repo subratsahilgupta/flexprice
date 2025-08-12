@@ -144,6 +144,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 				priceUnit.GET("/code/:code", handlers.PriceUnit.GetByCode)
 				priceUnit.PUT("/:id", handlers.PriceUnit.UpdatePriceUnit)
 				priceUnit.DELETE("/:id", handlers.PriceUnit.DeletePriceUnit)
+				priceUnit.POST("/search", handlers.PriceUnit.ListPriceUnitsByFilter)
 			}
 		}
 
