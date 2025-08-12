@@ -499,7 +499,7 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 			}).Mark(ierr.ErrVersionConflict)
 	}
 	r.DeleteCache(ctx, inv.ID)
-	return nil
+return nil
 }
 
 func (r *invoiceRepository) Delete(ctx context.Context, id string) error {

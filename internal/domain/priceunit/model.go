@@ -18,11 +18,8 @@ type PriceUnit struct {
 	BaseCurrency   string
 	ConversionRate decimal.Decimal
 	Precision      int
-	Status         types.Status
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	TenantID       string
 	EnvironmentID  string
+	types.BaseModel
 }
 
 // NewPriceUnit creates a new pricing unit with validation
@@ -39,11 +36,14 @@ func NewPriceUnit(
 		BaseCurrency:   baseCurrency,
 		ConversionRate: conversionRate,
 		Precision:      precision,
-		Status:         types.StatusPublished,
-		TenantID:       tenantID,
-		EnvironmentID:  environmentID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		BaseModel: types.BaseModel{
+			TenantID:  tenantID,
+			Status:    types.StatusPublished,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			CreatedBy: types.DefaultUserID,
+			UpdatedBy: types.DefaultUserID,
+		},
 	}
 
 	if err := unit.Validate(); err != nil {
@@ -138,11 +138,14 @@ func FromEnt(e *ent.PriceUnit) *PriceUnit {
 		BaseCurrency:   e.BaseCurrency,
 		ConversionRate: e.ConversionRate,
 		Precision:      e.Precision,
-		Status:         types.Status(e.Status),
-		CreatedAt:      e.CreatedAt,
-		UpdatedAt:      e.UpdatedAt,
-		TenantID:       e.TenantID,
-		EnvironmentID:  e.EnvironmentID,
+		BaseModel: types.BaseModel{
+			TenantID:  e.TenantID,
+			Status:    types.Status(e.Status),
+			CreatedAt: e.CreatedAt,
+			UpdatedAt: e.UpdatedAt,
+			CreatedBy: e.CreatedBy,
+			UpdatedBy: e.UpdatedBy,
+		},
 	}
 }
 
