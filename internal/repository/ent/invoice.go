@@ -7,11 +7,14 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/ent/couponapplication"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
+	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainInvoice "github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/dsl"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -84,6 +87,7 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetSubtotal(inv.Subtotal).
 		SetUpdatedAt(inv.UpdatedAt).
 		SetCreatedBy(inv.CreatedBy).
+		SetTotalTax(inv.TotalTax).
 		SetUpdatedBy(inv.UpdatedBy).
 		SetNillablePeriodStart(inv.PeriodStart).
 		SetNillablePeriodEnd(inv.PeriodEnd).
@@ -165,6 +169,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			SetCurrency(inv.Currency).
 			SetAmountDue(inv.AmountDue).
 			SetAmountPaid(inv.AmountPaid).
+			SetTotalTax(inv.TotalTax).
 			SetAmountRemaining(inv.AmountRemaining).
 			SetIdempotencyKey(lo.FromPtr(inv.IdempotencyKey)).
 			SetInvoiceNumber(lo.FromPtr(inv.InvoiceNumber)).
@@ -238,12 +243,16 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 					SetInvoiceID(invoice.ID).
 					SetCustomerID(item.CustomerID).
 					SetNillableSubscriptionID(item.SubscriptionID).
-					SetNillablePlanID(item.PlanID).
+					SetNillableEntityID(item.EntityID).
+					SetNillableEntityType(item.EntityType).
 					SetNillablePlanDisplayName(item.PlanDisplayName).
 					SetNillablePriceType(item.PriceType).
 					SetNillablePriceID(item.PriceID).
 					SetNillableMeterID(item.MeterID).
 					SetNillableMeterDisplayName(item.MeterDisplayName).
+					SetNillablePriceUnitID(item.PriceUnitID).
+					SetNillablePriceUnit(item.PriceUnit).
+					SetNillablePriceUnitAmount(item.PriceUnitAmount).
 					SetNillableDisplayName(item.DisplayName).
 					SetAmount(item.Amount).
 					SetQuantity(item.Quantity).
@@ -264,7 +273,13 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 				return ierr.WithError(err).WithHint("line item creation failed").Mark(ierr.ErrDatabase)
 			}
 		}
-		*inv = *domainInvoice.FromEnt(invoice)
+
+		invoiceWithLineItems, err := r.Get(ctx, invoice.ID)
+		if err != nil {
+			r.logger.Error("failed to get invoice with line items", "error", err)
+			return err
+		}
+		*inv = *invoiceWithLineItems
 		return nil
 	})
 }
@@ -299,12 +314,15 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 				SetInvoiceID(invoiceID).
 				SetCustomerID(item.CustomerID).
 				SetNillableSubscriptionID(item.SubscriptionID).
-				SetNillablePlanID(item.PlanID).
+				SetNillableEntityID(item.EntityID).
+				SetNillableEntityType(item.EntityType).
 				SetNillablePlanDisplayName(item.PlanDisplayName).
 				SetNillablePriceType(item.PriceType).
 				SetNillablePriceID(item.PriceID).
 				SetNillableMeterID(item.MeterID).
 				SetNillableMeterDisplayName(item.MeterDisplayName).
+				SetNillablePriceUnitID(item.PriceUnitID).
+				SetNillablePriceUnit(item.PriceUnit).
 				SetNillableDisplayName(item.DisplayName).
 				SetAmount(item.Amount).
 				SetQuantity(item.Quantity).
@@ -432,6 +450,9 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetAmountDue(inv.AmountDue).
 		SetAmountPaid(inv.AmountPaid).
 		SetAmountRemaining(inv.AmountRemaining).
+		SetSubtotal(inv.Subtotal).
+		SetTotalTax(inv.TotalTax).
+		SetTotal(inv.Total).
 		SetDescription(inv.Description).
 		SetNillableDueDate(inv.DueDate).
 		SetNillablePaidAt(inv.PaidAt).
@@ -444,6 +465,9 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetRefundedAmount(inv.RefundedAmount).
 		SetUpdatedAt(time.Now()).
 		SetUpdatedBy(types.GetUserID(ctx)).
+		SetTotal(inv.Total).
+		SetSubtotal(inv.Subtotal).
+		SetTotalDiscount(inv.TotalDiscount).
 		AddVersion(1) // Increment version atomically
 
 	// Execute update
@@ -475,7 +499,7 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 			}).Mark(ierr.ErrVersionConflict)
 	}
 	r.DeleteCache(ctx, inv.ID)
-	return nil
+return nil
 }
 
 func (r *invoiceRepository) Delete(ctx context.Context, id string) error {
@@ -533,12 +557,21 @@ func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilte
 	query := client.Invoice.Query().
 		WithLineItems(func(q *ent.InvoiceLineItemQuery) {
 			q.Where(invoicelineitem.Status(string(types.StatusPublished)))
+		}).
+		WithCouponApplications(func(q *ent.CouponApplicationQuery) {
+			q.Where(couponapplication.Status(string(types.StatusPublished)))
 		})
 
 	// Apply common query options
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
 	// Apply entity-specific filters
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to apply query options").
+			Mark(ierr.ErrDatabase)
+	}
 
 	invoices, err := query.All(ctx)
 	if err != nil {
@@ -570,7 +603,13 @@ func (r *invoiceRepository) Count(ctx context.Context, filter *types.InvoiceFilt
 	query := client.Invoice.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		SetSpanError(span, err)
+		return 0, ierr.WithError(err).
+			WithHint("Failed to apply query options").
+			Mark(ierr.ErrDatabase)
+	}
 
 	count, err := query.Count(ctx)
 	if err != nil {
@@ -767,20 +806,77 @@ func (o InvoiceQueryOptions) ApplyPaginationFilter(query InvoiceQuery, limit int
 
 func (o InvoiceQueryOptions) GetFieldName(field string) string {
 	switch field {
+	case "invoice_number":
+		return invoice.FieldInvoiceNumber
+	case "invoice_type":
+		return invoice.FieldInvoiceType
+	case "invoice_status":
+		return invoice.FieldInvoiceStatus
+	case "payment_status":
+		return invoice.FieldPaymentStatus
+	case "status":
+		return invoice.FieldStatus
+	case "amount_due":
+		return invoice.FieldAmountDue
+	case "amount_paid":
+		return invoice.FieldAmountPaid
+	case "amount_remaining":
+		return invoice.FieldAmountRemaining
+	case "adjustment_amount":
+		return invoice.FieldAdjustmentAmount
+	case "refunded_amount":
+		return invoice.FieldRefundedAmount
+	case "subtotal":
+		return invoice.FieldSubtotal
+	case "total":
+		return invoice.FieldTotal
+	case "currency":
+		return invoice.FieldCurrency
+	case "due_date":
+		return invoice.FieldDueDate
+	case "period_start":
+		return invoice.FieldPeriodStart
+	case "period_end":
+		return invoice.FieldPeriodEnd
+	case "billing_period":
+		return invoice.FieldBillingPeriod
+	case "paid_at":
+		return invoice.FieldPaidAt
+	case "voided_at":
+		return invoice.FieldVoidedAt
+	case "finalized_at":
+		return invoice.FieldFinalizedAt
 	case "created_at":
 		return invoice.FieldCreatedAt
 	case "updated_at":
 		return invoice.FieldUpdatedAt
-	case "invoice_number":
-		return invoice.FieldInvoiceNumber
+	case "idempotency_key":
+		return invoice.FieldIdempotencyKey
+	case "customer_id":
+		return invoice.FieldCustomerID
+	case "subscription_id":
+		return invoice.FieldSubscriptionID
+	case "description":
+		return invoice.FieldDescription
 	default:
-		return field
+		// unknown field
+		return ""
 	}
 }
 
-func (o InvoiceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.InvoiceFilter, query InvoiceQuery) InvoiceQuery {
+func (o InvoiceQueryOptions) GetFieldResolver(field string) (string, error) {
+	fieldName := o.GetFieldName(field)
+	if fieldName == "" {
+		return "", ierr.NewErrorf("unknown field name '%s' in invoice query", field).
+			Mark(ierr.ErrValidation)
+	}
+	return fieldName, nil
+}
+
+func (o InvoiceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.InvoiceFilter, query InvoiceQuery) (InvoiceQuery, error) {
+	var err error
 	if f == nil {
-		return query
+		return query, nil
 	}
 
 	// Apply entity-specific filters
@@ -827,7 +923,32 @@ func (o InvoiceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types
 		}
 	}
 
-	return query
+	if f.Filters != nil {
+		query, err = dsl.ApplyFilters[InvoiceQuery, predicate.Invoice](
+			query,
+			f.Filters,
+			o.GetFieldResolver,
+			func(p dsl.Predicate) predicate.Invoice { return predicate.Invoice(p) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply sorts using the generic function
+	if f.Sort != nil {
+		query, err = dsl.ApplySorts[InvoiceQuery, invoice.OrderOption](
+			query,
+			f.Sort,
+			o.GetFieldResolver,
+			func(o dsl.OrderFunc) invoice.OrderOption { return invoice.OrderOption(o) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return query, nil
 }
 
 func (r *invoiceRepository) SetCache(ctx context.Context, inv *domainInvoice.Invoice) {

@@ -60,6 +60,7 @@ type TenantResponse struct {
 	Status         string                `json:"status"`
 	CreatedAt      string                `json:"created_at"`
 	UpdatedAt      string                `json:"updated_at"`
+	Metadata       *types.Metadata       `json:"metadata,omitempty"`
 }
 
 type AssignTenantRequest struct {
@@ -109,12 +110,14 @@ func NewTenantResponse(t *tenant.Tenant) *TenantResponse {
 		CreatedAt:      t.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:      t.UpdatedAt.Format(time.RFC3339),
 		BillingDetails: &billingDetails,
+		Metadata:       &t.Metadata,
 	}
 }
 
 type UpdateTenantRequest struct {
 	Name           string                `json:"name,omitempty"`
 	BillingDetails *TenantBillingDetails `json:"billing_details,omitempty"`
+	Metadata       *types.Metadata       `json:"metadata,omitempty"`
 }
 
 func (r *UpdateTenantRequest) Validate() error {

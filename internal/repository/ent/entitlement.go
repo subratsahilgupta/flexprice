@@ -6,12 +6,15 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/entitlement"
+	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainEntitlement "github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/dsl"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
 
 type entitlementRepository struct {
@@ -35,9 +38,10 @@ func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "entitlement", "create", map[string]interface{}{
-		"plan_id":    e.PlanID,
-		"feature_id": e.FeatureID,
-		"tenant_id":  e.TenantID,
+		"entity_type": e.EntityType,
+		"entity_id":   e.EntityID,
+		"feature_id":  e.FeatureID,
+		"tenant_id":   e.TenantID,
 	})
 	defer FinishSpan(span)
 
@@ -48,7 +52,8 @@ func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement
 
 	result, err := client.Entitlement.Create().
 		SetID(e.ID).
-		SetPlanID(e.PlanID).
+		SetEntityType(string(e.EntityType)).
+		SetEntityID(e.EntityID).
 		SetFeatureID(e.FeatureID).
 		SetFeatureType(string(e.FeatureType)).
 		SetIsEnabled(e.IsEnabled).
@@ -71,16 +76,18 @@ func (r *entitlementRepository) Create(ctx context.Context, e *domainEntitlement
 			return nil, ierr.WithError(err).
 				WithHint("An entitlement with this plan and feature already exists").
 				WithReportableDetails(map[string]interface{}{
-					"plan_id":    e.PlanID,
-					"feature_id": e.FeatureID,
+					"entity_type": e.EntityType,
+					"entity_id":   e.EntityID,
+					"feature_id":  e.FeatureID,
 				}).
 				Mark(ierr.ErrAlreadyExists)
 		}
 		return nil, ierr.WithError(err).
 			WithHint("Failed to create entitlement").
 			WithReportableDetails(map[string]interface{}{
-				"plan_id":    e.PlanID,
-				"feature_id": e.FeatureID,
+				"entity_type": e.EntityType,
+				"entity_id":   e.EntityID,
+				"feature_id":  e.FeatureID,
 			}).
 			Mark(ierr.ErrDatabase)
 	}
@@ -146,7 +153,8 @@ func (r *entitlementRepository) List(ctx context.Context, filter *types.Entitlem
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "entitlement", "list", map[string]interface{}{
 		"tenant_id":    types.GetTenantID(ctx),
-		"plan_ids":     filter.PlanIDs,
+		"entity_type":  filter.EntityType,
+		"entity_ids":   filter.EntityIDs,
 		"feature_ids":  filter.FeatureIDs,
 		"feature_type": filter.FeatureType,
 	})
@@ -155,7 +163,13 @@ func (r *entitlementRepository) List(ctx context.Context, filter *types.Entitlem
 	query := client.Entitlement.Query()
 
 	// Apply entity-specific filters
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to apply query options").
+			Mark(ierr.ErrDatabase)
+	}
 
 	// Apply common query options
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
@@ -166,7 +180,8 @@ func (r *entitlementRepository) List(ctx context.Context, filter *types.Entitlem
 		return nil, ierr.WithError(err).
 			WithHint("Failed to list entitlements").
 			WithReportableDetails(map[string]interface{}{
-				"plan_ids":     filter.PlanIDs,
+				"entity_type":  filter.EntityType,
+				"entity_ids":   filter.EntityIDs,
 				"feature_ids":  filter.FeatureIDs,
 				"feature_type": filter.FeatureType,
 			}).
@@ -182,7 +197,8 @@ func (r *entitlementRepository) Count(ctx context.Context, filter *types.Entitle
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "entitlement", "count", map[string]interface{}{
 		"tenant_id":    types.GetTenantID(ctx),
-		"plan_ids":     filter.PlanIDs,
+		"entity_type":  filter.EntityType,
+		"entity_ids":   filter.EntityIDs,
 		"feature_ids":  filter.FeatureIDs,
 		"feature_type": filter.FeatureType,
 	})
@@ -191,7 +207,13 @@ func (r *entitlementRepository) Count(ctx context.Context, filter *types.Entitle
 	query := client.Entitlement.Query()
 
 	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
-	query = r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		SetSpanError(span, err)
+		return 0, ierr.WithError(err).
+			WithHint("Failed to apply query options").
+			Mark(ierr.ErrDatabase)
+	}
 
 	count, err := query.Count(ctx)
 	if err != nil {
@@ -199,7 +221,8 @@ func (r *entitlementRepository) Count(ctx context.Context, filter *types.Entitle
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count entitlements").
 			WithReportableDetails(map[string]interface{}{
-				"plan_ids":     filter.PlanIDs,
+				"entity_type":  filter.EntityType,
+				"entity_ids":   filter.EntityIDs,
 				"feature_ids":  filter.FeatureIDs,
 				"feature_type": filter.FeatureType,
 			}).
@@ -246,7 +269,8 @@ func (r *entitlementRepository) Update(ctx context.Context, e *domainEntitlement
 	span := StartRepositorySpan(ctx, "entitlement", "update", map[string]interface{}{
 		"entitlement_id": e.ID,
 		"tenant_id":      e.TenantID,
-		"plan_id":        e.PlanID,
+		"entity_type":    e.EntityType,
+		"entity_id":      e.EntityID,
 		"feature_id":     e.FeatureID,
 	})
 	defer FinishSpan(span)
@@ -256,7 +280,8 @@ func (r *entitlementRepository) Update(ctx context.Context, e *domainEntitlement
 			entitlement.TenantID(e.TenantID),
 			entitlement.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
-		SetPlanID(e.PlanID).
+		SetEntityType(string(e.EntityType)).
+		SetEntityID(e.EntityID).
 		SetFeatureID(e.FeatureID).
 		SetFeatureType(string(e.FeatureType)).
 		SetIsEnabled(e.IsEnabled).
@@ -354,7 +379,8 @@ func (r *entitlementRepository) CreateBulk(ctx context.Context, entitlements []*
 
 		builders[i] = client.Entitlement.Create().
 			SetID(e.ID).
-			SetPlanID(e.PlanID).
+			SetEntityType(string(e.EntityType)).
+			SetEntityID(e.EntityID).
 			SetFeatureID(e.FeatureID).
 			SetFeatureType(string(e.FeatureType)).
 			SetIsEnabled(e.IsEnabled).
@@ -425,8 +451,9 @@ func (r *entitlementRepository) DeleteBulk(ctx context.Context, ids []string) er
 func (r *entitlementRepository) ListByPlanIDs(ctx context.Context, planIDs []string) ([]*domainEntitlement.Entitlement, error) {
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "entitlement", "list_by_plan_ids", map[string]interface{}{
-		"plan_ids":  planIDs,
-		"tenant_id": types.GetTenantID(ctx),
+		"entity_type": types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+		"entity_ids":  planIDs,
+		"tenant_id":   types.GetTenantID(ctx),
 	})
 	defer FinishSpan(span)
 
@@ -439,7 +466,8 @@ func (r *entitlementRepository) ListByPlanIDs(ctx context.Context, planIDs []str
 	// Create a filter with plan IDs
 	filter := &types.EntitlementFilter{
 		QueryFilter: types.NewNoLimitQueryFilter(),
-		PlanIDs:     planIDs,
+		EntityType:  lo.ToPtr(types.ENTITLEMENT_ENTITY_TYPE_PLAN),
+		EntityIDs:   planIDs,
 	}
 
 	// Use the existing List method
@@ -465,6 +493,33 @@ func (r *entitlementRepository) ListByFeatureIDs(ctx context.Context, featureIDs
 	filter := &types.EntitlementFilter{
 		QueryFilter: types.NewNoLimitQueryFilter(),
 		FeatureIDs:  featureIDs,
+	}
+
+	// Use the existing List method
+	return r.List(ctx, filter)
+}
+
+// ListByAddonIDs retrieves all entitlements for the given addon IDs
+func (r *entitlementRepository) ListByAddonIDs(ctx context.Context, addonIDs []string) ([]*domainEntitlement.Entitlement, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "entitlement", "list_by_addon_ids", map[string]interface{}{
+		"entity_type": types.ENTITLEMENT_ENTITY_TYPE_ADDON,
+		"entity_ids":  addonIDs,
+		"tenant_id":   types.GetTenantID(ctx),
+	})
+	defer FinishSpan(span)
+
+	if len(addonIDs) == 0 {
+		return []*domainEntitlement.Entitlement{}, nil
+	}
+
+	r.log.Debugw("listing entitlements by addon IDs", "addon_ids", addonIDs)
+
+	// Create a filter with addon IDs
+	filter := &types.EntitlementFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		EntityType:  lo.ToPtr(types.ENTITLEMENT_ENTITY_TYPE_ADDON),
+		EntityIDs:   addonIDs,
 	}
 
 	// Use the existing List method
@@ -523,14 +578,24 @@ func (o EntitlementQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o EntitlementQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.EntitlementFilter, query EntitlementQuery) EntitlementQuery {
+func (o EntitlementQueryOptions) GetFieldResolver(field string) (string, error) {
+	fieldName := o.GetFieldName(field)
+	if fieldName == "" {
+		return "", ierr.NewErrorf("unknown field name '%s' in entitlement query", field).
+			Mark(ierr.ErrValidation)
+	}
+	return fieldName, nil
+}
+
+func (o EntitlementQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.EntitlementFilter, query EntitlementQuery) (EntitlementQuery, error) {
+	var err error
 	if f == nil {
-		return query
+		return query, nil
 	}
 
-	// Apply plan ID filter if specified
-	if len(f.PlanIDs) > 0 {
-		query = query.Where(entitlement.PlanIDIn(f.PlanIDs...))
+	// Apply entity ID filter if specified
+	if len(f.EntityIDs) > 0 {
+		query = query.Where(entitlement.EntityIDIn(f.EntityIDs...))
 	}
 
 	// Apply feature IDs filter if specified
@@ -558,7 +623,32 @@ func (o EntitlementQueryOptions) applyEntityQueryOptions(_ context.Context, f *t
 		}
 	}
 
-	return query
+	if f.Filters != nil {
+		query, err = dsl.ApplyFilters[EntitlementQuery, predicate.Entitlement](
+			query,
+			f.Filters,
+			o.GetFieldResolver,
+			func(p dsl.Predicate) predicate.Entitlement { return predicate.Entitlement(p) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply sorts using the generic function
+	if f.Sort != nil {
+		query, err = dsl.ApplySorts[EntitlementQuery, entitlement.OrderOption](
+			query,
+			f.Sort,
+			o.GetFieldResolver,
+			func(o dsl.OrderFunc) entitlement.OrderOption { return entitlement.OrderOption(o) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return query, nil
 }
 
 func (r *entitlementRepository) SetCache(ctx context.Context, entitlement *domainEntitlement.Entitlement) {

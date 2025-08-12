@@ -29,9 +29,9 @@ func NewInvoiceHandler(invoiceService service.InvoiceService, temporalService *t
 	}
 }
 
-// CreateInvoice godoc
-// @Summary Create a new invoice
-// @Description Create a new invoice with the provided details
+// CreateOneOffInvoice godoc
+// @Summary Create a new one off invoice
+// @Description Create a new one off invoice with the provided details
 // @Tags Invoices
 // @Accept json
 // @Produce json
@@ -40,7 +40,7 @@ func NewInvoiceHandler(invoiceService service.InvoiceService, temporalService *t
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
 // @Router /invoices [post]
-func (h *InvoiceHandler) CreateInvoice(c *gin.Context) {
+func (h *InvoiceHandler) CreateOneOffInvoice(c *gin.Context) {
 	var req dto.CreateInvoiceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Errorw("failed to bind request", "error", err)
@@ -48,7 +48,7 @@ func (h *InvoiceHandler) CreateInvoice(c *gin.Context) {
 		return
 	}
 
-	invoice, err := h.invoiceService.CreateInvoice(c.Request.Context(), req)
+	invoice, err := h.invoiceService.CreateOneOffInvoice(c.Request.Context(), req)
 	if err != nil {
 		h.logger.Errorw("failed to create invoice", "error", err)
 		c.Error(err)
@@ -65,6 +65,7 @@ func (h *InvoiceHandler) CreateInvoice(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path string true "Invoice ID"
+// @Param expand_by_source query bool false "Include source-level price breakdown for usage line items"
 // @Success 200 {object} dto.InvoiceResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
@@ -76,10 +77,21 @@ func (h *InvoiceHandler) GetInvoice(c *gin.Context) {
 		return
 	}
 
+	expandBySource := c.DefaultQuery("expand_by_source", "false") == "true"
+
 	invoice, err := h.invoiceService.GetInvoice(c.Request.Context(), id)
 	if err != nil {
 		c.Error(err)
 		return
+	}
+
+	if expandBySource {
+		usageAnalytics, err := h.invoiceService.CalculatePriceBreakdown(c.Request.Context(), invoice)
+		if err != nil {
+			c.Error(err)
+			return
+		}
+		invoice.WithUsageAnalytics(usageAnalytics)
 	}
 
 	c.JSON(http.StatusOK, invoice)
@@ -413,4 +425,105 @@ func (h *InvoiceHandler) RecalculateInvoice(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, invoice)
+}
+
+// UpdateInvoice godoc
+// @Summary Update an invoice
+// @Description Update invoice details like PDF URL
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Param id path string true "Invoice ID"
+// @Param request body dto.UpdateInvoiceRequest true "Invoice Update Request"
+// @Success 200 {object} dto.InvoiceResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /invoices/{id} [put]
+func (h *InvoiceHandler) UpdateInvoice(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
+		return
+	}
+
+	var req dto.UpdateInvoiceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Errorw("failed to bind request", "error", err)
+		c.Error(ierr.WithError(err).WithHint("invalid request").Mark(ierr.ErrValidation))
+		return
+	}
+
+	invoice, err := h.invoiceService.UpdateInvoice(c.Request.Context(), id, req)
+	if err != nil {
+		h.logger.Errorw("failed to update invoice", "error", err, "invoice_id", id)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, invoice)
+}
+
+// ListInvoicesByFilter godoc
+// @Summary List invoices by filter
+// @Description List invoices by filter
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param filter body types.InvoiceFilter true "Filter"
+// @Success 200 {object} dto.ListInvoicesResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /invoices/search [post]
+func (h *InvoiceHandler) ListInvoicesByFilter(c *gin.Context) {
+	var filter types.InvoiceFilter
+	if err := c.ShouldBindJSON(&filter); err != nil {
+		h.logger.Error("Failed to bind request body", "error", err)
+		c.Error(ierr.WithError(err).WithHint("invalid request body").Mark(ierr.ErrValidation))
+		return
+	}
+
+	if err := filter.Validate(); err != nil {
+		h.logger.Error("Invalid filter parameters", "error", err)
+		c.Error(ierr.WithError(err).WithHint("invalid filter parameters").Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.invoiceService.ListInvoices(c.Request.Context(), &filter)
+	if err != nil {
+		h.logger.Error("Failed to list invoices", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// TriggerCommunication godoc
+// @Summary Trigger communication webhook for an invoice
+// @Description Triggers a communication webhook event containing all information about the invoice
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Param id path string true "Invoice ID"
+// @Success 200 {object} gin.H
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /invoices/{id}/comms/trigger [post]
+func (h *InvoiceHandler) TriggerCommunication(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
+		return
+	}
+
+	if err := h.invoiceService.TriggerCommunication(c.Request.Context(), id); err != nil {
+		h.logger.Errorw("failed to trigger communication", "error", err, "invoice_id", id)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "communication triggered successfully"})
 }

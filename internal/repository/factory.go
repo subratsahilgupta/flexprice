@@ -3,9 +3,14 @@ package repository
 import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
+	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/costsheet"
+	"github.com/flexprice/flexprice/internal/domain/coupon"
+	"github.com/flexprice/flexprice/internal/domain/coupon_application"
+	"github.com/flexprice/flexprice/internal/domain/coupon_association"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
@@ -20,9 +25,13 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/task"
+	taxrate "github.com/flexprice/flexprice/internal/domain/tax"
+	taxapplied "github.com/flexprice/flexprice/internal/domain/taxapplied"
+	"github.com/flexprice/flexprice/internal/domain/taxassociation"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
@@ -83,6 +92,10 @@ func NewSubscriptionScheduleRepository(p RepositoryParams) subscription.Subscrip
 	return entRepo.NewSubscriptionScheduleRepository(p.EntClient, p.Logger, p.Cache)
 }
 
+func NewSubscriptionLineItemRepository(p RepositoryParams) subscription.LineItemRepository {
+	return entRepo.NewSubscriptionLineItemRepository(p.EntClient)
+}
+
 func NewWalletRepository(p RepositoryParams) wallet.Repository {
 	return entRepo.NewWalletRepository(p.EntClient, p.Logger, p.Cache)
 }
@@ -131,6 +144,18 @@ func NewCreditGrantApplicationRepository(p RepositoryParams) creditgrantapplicat
 	return entRepo.NewCreditGrantApplicationRepository(p.EntClient, p.Logger, p.Cache)
 }
 
+func NewCouponRepository(p RepositoryParams) coupon.Repository {
+	return entRepo.NewCouponRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewCouponAssociationRepository(p RepositoryParams) coupon_association.Repository {
+	return entRepo.NewCouponAssociationRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewCouponApplicationRepository(p RepositoryParams) coupon_application.Repository {
+	return entRepo.NewCouponApplicationRepository(p.EntClient, p.Logger, p.Cache)
+}
+
 func NewCreditNoteRepository(p RepositoryParams) creditnote.Repository {
 	return entRepo.NewCreditNoteRepository(p.EntClient, p.Logger, p.Cache)
 }
@@ -145,4 +170,28 @@ func NewConnectionRepository(p RepositoryParams) connection.Repository {
 
 func NewEntityIntegrationMappingRepository(p RepositoryParams) entityintegrationmapping.Repository {
 	return entRepo.NewEntityIntegrationMappingRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewTaxRateRepository(p RepositoryParams) taxrate.Repository {
+	return entRepo.NewTaxRateRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewTaxAssociationRepository(p RepositoryParams) taxassociation.Repository {
+	return entRepo.NewTaxAssociationRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewTaxAppliedRepository(p RepositoryParams) taxapplied.Repository {
+	return entRepo.NewTaxAppliedRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewPriceUnitRepository(p RepositoryParams) priceunit.Repository {
+	return entRepo.NewPriceUnitRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewAddonRepository(p RepositoryParams) addon.Repository {
+	return entRepo.NewAddonRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewAddonAssociationRepository(p RepositoryParams) addonassociation.Repository {
+	return entRepo.NewAddonAssociationRepository(p.EntClient, p.Logger, p.Cache)
 }

@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/couponapplication"
 	"github.com/flexprice/flexprice/ent/invoice"
 	"github.com/flexprice/flexprice/ent/invoicelineitem"
 	"github.com/shopspring/decimal"
@@ -138,16 +139,30 @@ func (ilic *InvoiceLineItemCreate) SetNillableSubscriptionID(s *string) *Invoice
 	return ilic
 }
 
-// SetPlanID sets the "plan_id" field.
-func (ilic *InvoiceLineItemCreate) SetPlanID(s string) *InvoiceLineItemCreate {
-	ilic.mutation.SetPlanID(s)
+// SetEntityID sets the "entity_id" field.
+func (ilic *InvoiceLineItemCreate) SetEntityID(s string) *InvoiceLineItemCreate {
+	ilic.mutation.SetEntityID(s)
 	return ilic
 }
 
-// SetNillablePlanID sets the "plan_id" field if the given value is not nil.
-func (ilic *InvoiceLineItemCreate) SetNillablePlanID(s *string) *InvoiceLineItemCreate {
+// SetNillableEntityID sets the "entity_id" field if the given value is not nil.
+func (ilic *InvoiceLineItemCreate) SetNillableEntityID(s *string) *InvoiceLineItemCreate {
 	if s != nil {
-		ilic.SetPlanID(*s)
+		ilic.SetEntityID(*s)
+	}
+	return ilic
+}
+
+// SetEntityType sets the "entity_type" field.
+func (ilic *InvoiceLineItemCreate) SetEntityType(s string) *InvoiceLineItemCreate {
+	ilic.mutation.SetEntityType(s)
+	return ilic
+}
+
+// SetNillableEntityType sets the "entity_type" field if the given value is not nil.
+func (ilic *InvoiceLineItemCreate) SetNillableEntityType(s *string) *InvoiceLineItemCreate {
+	if s != nil {
+		ilic.SetEntityType(*s)
 	}
 	return ilic
 }
@@ -218,6 +233,48 @@ func (ilic *InvoiceLineItemCreate) SetMeterDisplayName(s string) *InvoiceLineIte
 func (ilic *InvoiceLineItemCreate) SetNillableMeterDisplayName(s *string) *InvoiceLineItemCreate {
 	if s != nil {
 		ilic.SetMeterDisplayName(*s)
+	}
+	return ilic
+}
+
+// SetPriceUnitID sets the "price_unit_id" field.
+func (ilic *InvoiceLineItemCreate) SetPriceUnitID(s string) *InvoiceLineItemCreate {
+	ilic.mutation.SetPriceUnitID(s)
+	return ilic
+}
+
+// SetNillablePriceUnitID sets the "price_unit_id" field if the given value is not nil.
+func (ilic *InvoiceLineItemCreate) SetNillablePriceUnitID(s *string) *InvoiceLineItemCreate {
+	if s != nil {
+		ilic.SetPriceUnitID(*s)
+	}
+	return ilic
+}
+
+// SetPriceUnit sets the "price_unit" field.
+func (ilic *InvoiceLineItemCreate) SetPriceUnit(s string) *InvoiceLineItemCreate {
+	ilic.mutation.SetPriceUnit(s)
+	return ilic
+}
+
+// SetNillablePriceUnit sets the "price_unit" field if the given value is not nil.
+func (ilic *InvoiceLineItemCreate) SetNillablePriceUnit(s *string) *InvoiceLineItemCreate {
+	if s != nil {
+		ilic.SetPriceUnit(*s)
+	}
+	return ilic
+}
+
+// SetPriceUnitAmount sets the "price_unit_amount" field.
+func (ilic *InvoiceLineItemCreate) SetPriceUnitAmount(d decimal.Decimal) *InvoiceLineItemCreate {
+	ilic.mutation.SetPriceUnitAmount(d)
+	return ilic
+}
+
+// SetNillablePriceUnitAmount sets the "price_unit_amount" field if the given value is not nil.
+func (ilic *InvoiceLineItemCreate) SetNillablePriceUnitAmount(d *decimal.Decimal) *InvoiceLineItemCreate {
+	if d != nil {
+		ilic.SetPriceUnitAmount(*d)
 	}
 	return ilic
 }
@@ -315,6 +372,21 @@ func (ilic *InvoiceLineItemCreate) SetInvoice(i *Invoice) *InvoiceLineItemCreate
 	return ilic.SetInvoiceID(i.ID)
 }
 
+// AddCouponApplicationIDs adds the "coupon_applications" edge to the CouponApplication entity by IDs.
+func (ilic *InvoiceLineItemCreate) AddCouponApplicationIDs(ids ...string) *InvoiceLineItemCreate {
+	ilic.mutation.AddCouponApplicationIDs(ids...)
+	return ilic
+}
+
+// AddCouponApplications adds the "coupon_applications" edges to the CouponApplication entity.
+func (ilic *InvoiceLineItemCreate) AddCouponApplications(c ...*CouponApplication) *InvoiceLineItemCreate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return ilic.AddCouponApplicationIDs(ids...)
+}
+
 // Mutation returns the InvoiceLineItemMutation object of the builder.
 func (ilic *InvoiceLineItemCreate) Mutation() *InvoiceLineItemMutation {
 	return ilic.mutation
@@ -366,6 +438,10 @@ func (ilic *InvoiceLineItemCreate) defaults() {
 		v := invoicelineitem.DefaultEnvironmentID
 		ilic.mutation.SetEnvironmentID(v)
 	}
+	if _, ok := ilic.mutation.EntityType(); !ok {
+		v := invoicelineitem.DefaultEntityType
+		ilic.mutation.SetEntityType(v)
+	}
 	if _, ok := ilic.mutation.Amount(); !ok {
 		v := invoicelineitem.DefaultAmount
 		ilic.mutation.SetAmount(v)
@@ -410,6 +486,9 @@ func (ilic *InvoiceLineItemCreate) check() error {
 		if err := invoicelineitem.CustomerIDValidator(v); err != nil {
 			return &ValidationError{Name: "customer_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceLineItem.customer_id": %w`, err)}
 		}
+	}
+	if _, ok := ilic.mutation.EntityType(); !ok {
+		return &ValidationError{Name: "entity_type", err: errors.New(`ent: missing required field "InvoiceLineItem.entity_type"`)}
 	}
 	if _, ok := ilic.mutation.Amount(); !ok {
 		return &ValidationError{Name: "amount", err: errors.New(`ent: missing required field "InvoiceLineItem.amount"`)}
@@ -499,9 +578,13 @@ func (ilic *InvoiceLineItemCreate) createSpec() (*InvoiceLineItem, *sqlgraph.Cre
 		_spec.SetField(invoicelineitem.FieldSubscriptionID, field.TypeString, value)
 		_node.SubscriptionID = &value
 	}
-	if value, ok := ilic.mutation.PlanID(); ok {
-		_spec.SetField(invoicelineitem.FieldPlanID, field.TypeString, value)
-		_node.PlanID = &value
+	if value, ok := ilic.mutation.EntityID(); ok {
+		_spec.SetField(invoicelineitem.FieldEntityID, field.TypeString, value)
+		_node.EntityID = &value
+	}
+	if value, ok := ilic.mutation.EntityType(); ok {
+		_spec.SetField(invoicelineitem.FieldEntityType, field.TypeString, value)
+		_node.EntityType = value
 	}
 	if value, ok := ilic.mutation.PlanDisplayName(); ok {
 		_spec.SetField(invoicelineitem.FieldPlanDisplayName, field.TypeString, value)
@@ -522,6 +605,18 @@ func (ilic *InvoiceLineItemCreate) createSpec() (*InvoiceLineItem, *sqlgraph.Cre
 	if value, ok := ilic.mutation.MeterDisplayName(); ok {
 		_spec.SetField(invoicelineitem.FieldMeterDisplayName, field.TypeString, value)
 		_node.MeterDisplayName = &value
+	}
+	if value, ok := ilic.mutation.PriceUnitID(); ok {
+		_spec.SetField(invoicelineitem.FieldPriceUnitID, field.TypeString, value)
+		_node.PriceUnitID = &value
+	}
+	if value, ok := ilic.mutation.PriceUnit(); ok {
+		_spec.SetField(invoicelineitem.FieldPriceUnit, field.TypeString, value)
+		_node.PriceUnit = &value
+	}
+	if value, ok := ilic.mutation.PriceUnitAmount(); ok {
+		_spec.SetField(invoicelineitem.FieldPriceUnitAmount, field.TypeOther, value)
+		_node.PriceUnitAmount = &value
 	}
 	if value, ok := ilic.mutation.DisplayName(); ok {
 		_spec.SetField(invoicelineitem.FieldDisplayName, field.TypeString, value)
@@ -566,6 +661,22 @@ func (ilic *InvoiceLineItemCreate) createSpec() (*InvoiceLineItem, *sqlgraph.Cre
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.InvoiceID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := ilic.mutation.CouponApplicationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   invoicelineitem.CouponApplicationsTable,
+			Columns: []string{invoicelineitem.CouponApplicationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponapplication.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

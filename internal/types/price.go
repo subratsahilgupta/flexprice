@@ -21,9 +21,58 @@ type BillingTier string
 // PriceType is the type of the price ex USAGE, FIXED
 type PriceType string
 
+// PriceScope indicates whether a price is at the plan level or subscription level
+type PriceScope string
+
+// PriceUnitType is the type of the price unit- Fiat, Custom, Crypto
+type PriceUnitType string
+
+// PriceEntityType is the type of the entity that the price is associated with
+// i.e. PLAN, SUBSCRIPTION, ADDON, PRICE
+// If price is created for plan then it will have PLAN as entity type with entity id as plan id
+// If prices is create for subscription then it will have SUBSCRIPTION as entity type with enitiy id as subscription id
+// If prices is create for addon then it will have ADDON as entity type with enitiy id as addon id
+// If prices is create for price overrides in subscription creation	 then it will have PRICE as entity type with enitiy id as price id
+type PriceEntityType string
+
+const (
+	PRICE_ENTITY_TYPE_PLAN         PriceEntityType = "PLAN"
+	PRICE_ENTITY_TYPE_SUBSCRIPTION PriceEntityType = "SUBSCRIPTION"
+	PRICE_ENTITY_TYPE_ADDON        PriceEntityType = "ADDON"
+	PRICE_ENTITY_TYPE_PRICE        PriceEntityType = "PRICE"
+)
+
+func (p PriceEntityType) Validate() error {
+	allowed := []PriceEntityType{
+		PRICE_ENTITY_TYPE_PLAN,
+		PRICE_ENTITY_TYPE_SUBSCRIPTION,
+		PRICE_ENTITY_TYPE_ADDON,
+		PRICE_ENTITY_TYPE_PRICE,
+	}
+	if !lo.Contains(allowed, p) {
+		return ierr.NewError("invalid price entity type").
+			WithHint("Invalid price entity type").
+			WithReportableDetails(map[string]interface{}{
+				"price_entity_type": p,
+				"allowed":           allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+const (
+	PRICE_UNIT_TYPE_FIAT   PriceUnitType = "FIAT"
+	PRICE_UNIT_TYPE_CUSTOM PriceUnitType = "CUSTOM"
+)
+
 const (
 	PRICE_TYPE_USAGE PriceType = "USAGE"
 	PRICE_TYPE_FIXED PriceType = "FIXED"
+
+	// Price scope constants
+	PRICE_SCOPE_PLAN         PriceScope = "PLAN"
+	PRICE_SCOPE_SUBSCRIPTION PriceScope = "SUBSCRIPTION"
 
 	// Billing model for a flat fee per unit
 	BILLING_MODEL_FLAT_FEE BillingModel = "FLAT_FEE"
@@ -157,12 +206,51 @@ func (p PriceType) Validate() error {
 	return nil
 }
 
+func (p PriceScope) Validate() error {
+	allowed := []PriceScope{
+		PRICE_SCOPE_PLAN,
+		PRICE_SCOPE_SUBSCRIPTION,
+	}
+	if !lo.Contains(allowed, p) {
+		return ierr.NewError("invalid price scope").
+			WithHint("Invalid price scope").
+			WithReportableDetails(map[string]interface{}{
+				"price_scope": p,
+				"allowed":     allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+func (p PriceUnitType) Validate() error {
+	allowed := []PriceUnitType{
+		PRICE_UNIT_TYPE_FIAT,
+		PRICE_UNIT_TYPE_CUSTOM,
+	}
+	if !lo.Contains(allowed, p) {
+		return ierr.NewError("invalid price unit type").
+			WithHint("Price unit type must be either FIAT or CUSTOM").
+			WithReportableDetails(map[string]interface{}{
+				"price_unit_type": p,
+				"allowed":         allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
 // PriceFilter represents filters for price queries
 type PriceFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
-	PlanIDs  []string `json:"plan_ids,omitempty" form:"plan_ids"`
 	PriceIDs []string `json:"price_ids,omitempty" form:"price_ids"`
+	// Price override filtering fields
+	PlanIDs        []string         `json:"plan_ids,omitempty" form:"plan_ids"`
+	EntityType     *PriceEntityType `json:"entity_type,omitempty" form:"entity_type"`
+	EntityIDs      []string         `json:"entity_ids,omitempty" form:"entity_ids"`
+	SubscriptionID *string          `json:"subscription_id,omitempty" form:"subscription_id"`
+	ParentPriceID  *string          `json:"parent_price_id,omitempty" form:"parent_price_id"`
+	MeterIDs       []string         `json:"meter_ids,omitempty" form:"meter_ids"`
 }
 
 // NewPriceFilter creates a new PriceFilter with default values
@@ -192,14 +280,6 @@ func (f PriceFilter) Validate() error {
 		}
 	}
 
-	for _, planID := range f.PlanIDs {
-		if planID == "" {
-			return ierr.NewError("plan id can not be empty").
-				WithHint("Plan ID cannot be empty").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
 	for _, priceID := range f.PriceIDs {
 		if priceID == "" {
 			return ierr.NewError("price id can not be empty").
@@ -208,13 +288,57 @@ func (f PriceFilter) Validate() error {
 		}
 	}
 
-	return nil
-}
+	for _, planID := range f.PlanIDs {
+		if planID == "" {
+			return ierr.NewError("plan id can not be empty").
+				WithHint("Plan ID cannot be empty").
+				Mark(ierr.ErrValidation)
+		}
+	}
 
-// WithPlanIDs adds plan IDs to the filter
-func (f *PriceFilter) WithPlanIDs(planIDs []string) *PriceFilter {
-	f.PlanIDs = planIDs
-	return f
+	// Validate entity type if provided
+	if f.EntityType != nil {
+		if err := f.EntityType.Validate(); err != nil {
+			return err
+		}
+	}
+
+	// Validate subscription ID if provided
+	if f.SubscriptionID != nil && *f.SubscriptionID == "" {
+		return ierr.NewError("subscription ID can not be empty").
+			WithHint("Subscription ID cannot be empty").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate parent price ID if provided
+	if f.ParentPriceID != nil && *f.ParentPriceID == "" {
+		return ierr.NewError("parent price ID can not be empty").
+			WithHint("Parent price ID cannot be empty").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate entity IDs if provided
+	if len(f.EntityIDs) > 0 {
+		for _, entityID := range f.EntityIDs {
+			if entityID == "" {
+				return ierr.NewError("entity ID can not be empty").
+					WithHint("Entity ID cannot be empty").
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+
+	// Validate meter IDs if provided
+	if len(f.MeterIDs) > 0 {
+		for _, meterID := range f.MeterIDs {
+			if meterID == "" {
+				return ierr.NewError("meter ID can not be empty").
+					WithHint("Meter ID cannot be empty").
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+	return nil
 }
 
 // WithPriceIDs adds price IDs to the filter
@@ -229,9 +353,33 @@ func (f *PriceFilter) WithStatus(status Status) *PriceFilter {
 	return f
 }
 
+// WithEntityType sets the entity type on the filter
+func (f *PriceFilter) WithEntityType(entityType PriceEntityType) *PriceFilter {
+	f.EntityType = &entityType
+	return f
+}
+
+// WithEntityIDs adds entity IDs to the filter
+func (f *PriceFilter) WithEntityIDs(entityIDs []string) *PriceFilter {
+	f.EntityIDs = entityIDs
+	return f
+}
+
 // WithExpand sets the expand field on the filter
 func (f *PriceFilter) WithExpand(expand string) *PriceFilter {
 	f.Expand = &expand
+	return f
+}
+
+// WithSubscriptionID sets the subscription ID filter
+func (f *PriceFilter) WithSubscriptionID(subscriptionID string) *PriceFilter {
+	f.SubscriptionID = &subscriptionID
+	return f
+}
+
+// WithParentPriceID sets the parent price ID filter
+func (f *PriceFilter) WithParentPriceID(parentPriceID string) *PriceFilter {
+	f.ParentPriceID = &parentPriceID
 	return f
 }
 

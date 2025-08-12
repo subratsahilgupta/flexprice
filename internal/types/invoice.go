@@ -6,6 +6,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// InvoiceLineItemEntityType is the type of the source of a invoice line item
+// It is optional and can be used to differentiate between plan and addon line items
+type InvoiceLineItemEntityType string
+
+const (
+	InvoiceLineItemEntityTypePlan  InvoiceLineItemEntityType = "plan"
+	InvoiceLineItemEntityTypeAddon InvoiceLineItemEntityType = "addon"
+)
+
 // InvoiceCadence defines when an invoice is generated relative to the billing period
 // ARREAR: Invoice generated at the end of the billing period (after service delivery)
 // ADVANCE: Invoice generated at the beginning of the billing period (before service delivery)
@@ -150,6 +159,8 @@ type InvoiceFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
 
+	Filters []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
+	Sort    []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
 	// invoice_ids restricts results to invoices with the specified IDs
 	// Use this to retrieve specific invoices when you know their exact identifiers
 	InvoiceIDs []string `json:"invoice_ids,omitempty" form:"invoice_ids"`

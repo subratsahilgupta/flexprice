@@ -22,6 +22,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
+	"github.com/flexprice/flexprice/internal/pyroscope"
 	"github.com/flexprice/flexprice/internal/repository"
 	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/sentry"
@@ -82,6 +83,7 @@ func main() {
 
 			// Monitoring
 			sentry.NewSentryService,
+			pyroscope.NewPyroscopeService,
 
 			// Cache
 			cache.Initialize,
@@ -135,6 +137,7 @@ func main() {
 			repository.NewEntitlementRepository,
 			repository.NewPaymentRepository,
 			repository.NewTaskRepository,
+			repository.NewTaxAppliedRepository,
 			repository.NewSecretRepository,
 			repository.NewCreditGrantRepository,
 			repository.NewCostSheetRepository,
@@ -143,6 +146,15 @@ func main() {
 			repository.NewCreditNoteLineItemRepository,
 			repository.NewConnectionRepository,
 			repository.NewEntityIntegrationMappingRepository,
+			repository.NewTaxRateRepository,
+			repository.NewTaxAssociationRepository,
+			repository.NewCouponRepository,
+			repository.NewCouponAssociationRepository,
+			repository.NewCouponApplicationRepository,
+			repository.NewPriceUnitRepository,
+			repository.NewAddonRepository,
+			repository.NewAddonAssociationRepository,
+			repository.NewSubscriptionLineItemRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -159,16 +171,13 @@ func main() {
 	// Service layer
 	opts = append(opts,
 		fx.Provide(
+			// Services
 			service.NewServiceParams,
-
-			// Core services
 			service.NewTenantService,
 			service.NewAuthService,
 			service.NewUserService,
 			service.NewEnvAccessService,
 			service.NewEnvironmentService,
-
-			// Business services
 			service.NewMeterService,
 			service.NewEventService,
 			service.NewEventPostProcessingService,
@@ -193,6 +202,10 @@ func main() {
 			service.NewStripeService,
 			service.NewEntityIntegrationMappingService,
 			service.NewIntegrationService,
+			service.NewTaxService,
+			service.NewCouponService,
+			service.NewPriceUnitService,
+			service.NewAddonService,
 		),
 	)
 
@@ -205,6 +218,7 @@ func main() {
 		),
 		fx.Invoke(
 			sentry.RegisterHooks,
+			pyroscope.RegisterHooks,
 			startServer,
 		),
 	)
@@ -245,7 +259,11 @@ func provideHandlers(
 	connectionService service.ConnectionService,
 	entityIntegrationMappingService service.EntityIntegrationMappingService,
 	integrationService service.IntegrationService,
+	priceUnitService *service.PriceUnitService,
 	svixClient *svix.Client,
+	taxService service.TaxService,
+	couponService service.CouponService,
+	addonService service.AddonService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, logger),
@@ -267,17 +285,21 @@ func provideHandlers(
 		Payment:                  v1.NewPaymentHandler(paymentService, paymentProcessorService, logger),
 		Task:                     v1.NewTaskHandler(taskService, logger),
 		Secret:                   v1.NewSecretHandler(secretService, logger),
+		Tax:                      v1.NewTaxHandler(taxService, logger),
 		Onboarding:               v1.NewOnboardingHandler(onboardingService, logger),
+		CronSubscription:         cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
+		CronWallet:               cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService, environmentService),
 		CreditGrant:              v1.NewCreditGrantHandler(creditGrantService, logger),
 		CostSheet:                v1.NewCostSheetHandler(costSheetService, logger),
+		CronCreditGrant:          cron.NewCreditGrantCronHandler(creditGrantService, logger),
 		CreditNote:               v1.NewCreditNoteHandler(creditNoteService, logger),
 		Connection:               v1.NewConnectionHandler(connectionService, logger),
 		EntityIntegrationMapping: v1.NewEntityIntegrationMappingHandler(entityIntegrationMappingService, logger),
 		Integration:              v1.NewIntegrationHandler(integrationService, logger),
-		CronWallet:               cron.NewWalletCronHandler(logger, temporalService, walletService, tenantService),
-		CronSubscription:         cron.NewSubscriptionHandler(subscriptionService, temporalService, logger),
-		CronCreditGrant:          cron.NewCreditGrantCronHandler(creditGrantService, logger),
+		PriceUnit:                v1.NewPriceUnitHandler(priceUnitService, logger),
 		Webhook:                  v1.NewWebhookHandler(cfg, svixClient, logger, stripeService),
+		Coupon:                   v1.NewCouponHandler(couponService, logger),
+		Addon:                    v1.NewAddonHandler(addonService, logger),
 	}
 }
 

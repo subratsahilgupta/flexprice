@@ -2,9 +2,14 @@ package service
 
 import (
 	"github.com/flexprice/flexprice/internal/config"
+	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	costsheet "github.com/flexprice/flexprice/internal/domain/costsheet"
+	"github.com/flexprice/flexprice/internal/domain/coupon"
+	"github.com/flexprice/flexprice/internal/domain/coupon_application"
+	"github.com/flexprice/flexprice/internal/domain/coupon_association"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
@@ -19,9 +24,13 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/task"
+	taxrate "github.com/flexprice/flexprice/internal/domain/tax"
+	taxapplied "github.com/flexprice/flexprice/internal/domain/taxapplied"
+	taxassociation "github.com/flexprice/flexprice/internal/domain/taxassociation"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
@@ -50,10 +59,12 @@ type ServiceParams struct {
 	ProcessedEventRepo           events.ProcessedEventRepository
 	MeterRepo                    meter.Repository
 	PriceRepo                    price.Repository
+	PriceUnitRepo                priceunit.Repository
 	CustomerRepo                 customer.Repository
 	PlanRepo                     plan.Repository
 	SubRepo                      subscription.Repository
 	SubscriptionScheduleRepo     subscription.SubscriptionScheduleRepository
+	SubscriptionLineItemRepo     subscription.LineItemRepository
 	WalletRepo                   wallet.Repository
 	TenantRepo                   tenant.Repository
 	InvoiceRepo                  invoice.Repository
@@ -68,6 +79,14 @@ type ServiceParams struct {
 	CreditNoteRepo               creditnote.Repository
 	CreditNoteLineItemRepo       creditnote.CreditNoteLineItemRepository
 	CreditGrantApplicationRepo   creditgrantapplication.Repository
+	TaxRateRepo                  taxrate.Repository
+	TaxAssociationRepo           taxassociation.Repository
+	TaxAppliedRepo               taxapplied.Repository
+	CouponRepo                   coupon.Repository
+	CouponAssociationRepo        coupon_association.Repository
+	CouponApplicationRepo        coupon_application.Repository
+	AddonRepo                    addon.Repository
+	AddonAssociationRepo         addonassociation.Repository
 	ConnectionRepo               connection.Repository
 	EntityIntegrationMappingRepo entityintegrationmapping.Repository
 
@@ -91,10 +110,12 @@ func NewServiceParams(
 	processedEventRepo events.ProcessedEventRepository,
 	meterRepo meter.Repository,
 	priceRepo price.Repository,
+	priceUnitRepo priceunit.Repository,
 	customerRepo customer.Repository,
 	planRepo plan.Repository,
 	subRepo subscription.Repository,
 	subscriptionScheduleRepo subscription.SubscriptionScheduleRepository,
+	subscriptionLineItemRepo subscription.LineItemRepository,
 	walletRepo wallet.Repository,
 	tenantRepo tenant.Repository,
 	invoiceRepo invoice.Repository,
@@ -107,12 +128,20 @@ func NewServiceParams(
 	creditGrantRepo creditgrant.Repository,
 	creditNoteRepo creditnote.Repository,
 	creditNoteLineItemRepo creditnote.CreditNoteLineItemRepository,
+	taxConfigRepo taxassociation.Repository,
+	taskRepo task.Repository,
+	costSheetRepo costsheet.Repository,
+	taxAppliedRepo taxapplied.Repository,
+	taxRateRepo taxrate.Repository,
+	couponRepo coupon.Repository,
+	couponAssociationRepo coupon_association.Repository,
+	couponApplicationRepo coupon_application.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
 	s3Service s3.Service,
 	client httpclient.Client,
-	taskRepo task.Repository,
-	costSheetRepo costsheet.Repository,
+	addonRepo addon.Repository,
+	addonAssociationRepo addonassociation.Repository,
 	connectionRepo connection.Repository,
 	entityIntegrationMappingRepo entityintegrationmapping.Repository,
 ) ServiceParams {
@@ -127,10 +156,12 @@ func NewServiceParams(
 		ProcessedEventRepo:           processedEventRepo,
 		MeterRepo:                    meterRepo,
 		PriceRepo:                    priceRepo,
+		PriceUnitRepo:                priceUnitRepo,
 		CustomerRepo:                 customerRepo,
 		PlanRepo:                     planRepo,
 		SubRepo:                      subRepo,
 		SubscriptionScheduleRepo:     subscriptionScheduleRepo,
+		SubscriptionLineItemRepo:     subscriptionLineItemRepo,
 		WalletRepo:                   walletRepo,
 		TenantRepo:                   tenantRepo,
 		InvoiceRepo:                  invoiceRepo,
@@ -141,14 +172,22 @@ func NewServiceParams(
 		EnvironmentRepo:              environmentRepo,
 		CreditGrantRepo:              creditGrantRepo,
 		CreditGrantApplicationRepo:   creditGrantApplicationRepo,
-		EventPublisher:               eventPublisher,
-		WebhookPublisher:             webhookPublisher,
-		S3:                           s3Service,
-		Client:                       client,
 		TaskRepo:                     taskRepo,
 		CostSheetRepo:                costSheetRepo,
 		CreditNoteRepo:               creditNoteRepo,
 		CreditNoteLineItemRepo:       creditNoteLineItemRepo,
+		TaxRateRepo:                  taxRateRepo,
+		TaxAssociationRepo:           taxConfigRepo,
+		TaxAppliedRepo:               taxAppliedRepo,
+		EventPublisher:               eventPublisher,
+		WebhookPublisher:             webhookPublisher,
+		S3:                           s3Service,
+		Client:                       client,
+		CouponRepo:                   couponRepo,
+		CouponAssociationRepo:        couponAssociationRepo,
+		CouponApplicationRepo:        couponApplicationRepo,
+		AddonRepo:                    addonRepo,
+		AddonAssociationRepo:         addonAssociationRepo,
 		ConnectionRepo:               connectionRepo,
 		EntityIntegrationMappingRepo: entityIntegrationMappingRepo,
 	}

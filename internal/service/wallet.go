@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -60,6 +61,18 @@ type WalletService interface {
 
 	// GetCustomerWallets retrieves all wallets for a customer
 	GetCustomerWallets(ctx context.Context, req *dto.GetCustomerWalletsRequest) ([]*dto.WalletBalanceResponse, error)
+
+	// GetWallets retrieves wallets based on filter
+	GetWallets(ctx context.Context, filter *types.WalletFilter) (*types.ListResponse[*wallet.Wallet], error)
+
+	// UpdateWalletAlertState updates the alert state of a wallet
+	UpdateWalletAlertState(ctx context.Context, walletID string, state types.AlertState) error
+
+	// PublishEvent publishes a webhook event for a wallet
+	PublishEvent(ctx context.Context, eventName string, w *wallet.Wallet) error
+
+	// CheckBalanceThresholds checks if wallet balance is below threshold and triggers alerts
+	CheckBalanceThresholds(ctx context.Context, w *wallet.Wallet, balance *dto.WalletBalanceResponse) error
 }
 
 type walletService struct {
@@ -384,98 +397,126 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 	return paymentID, err
 }
 
+// GetWalletBalance calculates the real-time available balance for a wallet
+// It considers:
+// 1. Current wallet balance
+// 2. Unpaid invoices
+// 3. Current period charges (usage charges with entitlements)
 func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error) {
-	response := &dto.WalletBalanceResponse{
-		RealTimeBalance: lo.ToPtr(decimal.Zero),
+	if walletID == "" {
+		return nil, ierr.NewError("wallet_id is required").
+			WithHint("Wallet ID is required").
+			Mark(ierr.ErrValidation)
 	}
 
+	// Get wallet details
 	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
 	if err != nil {
 		return nil, err
 	}
 
+	// Safety check: Return zero balance for inactive wallets
+	// This prevents any calculations on invalid wallet states
 	if w.WalletStatus != types.WalletStatusActive {
-		response.Wallet = w
-		response.RealTimeBalance = lo.ToPtr(decimal.Zero)
-		response.RealTimeCreditBalance = lo.ToPtr(decimal.Zero)
-		response.BalanceUpdatedAt = lo.ToPtr(w.UpdatedAt)
-		return response, nil
+		return &dto.WalletBalanceResponse{
+			Wallet:                w,
+			RealTimeBalance:       lo.ToPtr(decimal.Zero),
+			RealTimeCreditBalance: lo.ToPtr(decimal.Zero),
+			BalanceUpdatedAt:      lo.ToPtr(w.UpdatedAt),
+			UnpaidInvoiceAmount:   lo.ToPtr(decimal.Zero),
+			CurrentPeriodUsage:    lo.ToPtr(decimal.Zero),
+		}, nil
 	}
 
-	// Get invoice summary for unpaid amounts
+	// STEP 1: Get all unpaid invoices for the customer
+	// This includes any previously generated invoices that haven't been paid
 	invoiceService := NewInvoiceService(s.ServiceParams)
-
 	invoiceSummary, err := invoiceService.GetCustomerInvoiceSummary(ctx, w.CustomerID, w.Currency)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get current period usage for active subscriptions
-	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	s.Logger.Infow("unpaid invoice summary",
+		"customer_id", w.CustomerID,
+		"currency", w.Currency,
+		"total_unpaid", invoiceSummary.TotalUnpaidAmount,
+		"total_overdue", invoiceSummary.TotalOverdueAmount)
 
-	filter := types.NewSubscriptionFilter()
-	filter.CustomerID = w.CustomerID
-	filter.SubscriptionStatus = []types.SubscriptionStatus{
-		types.SubscriptionStatusActive,
-	}
-
-	subscriptionsResp, err := subscriptionService.ListSubscriptions(ctx, filter)
+	// STEP 2: Get all active subscriptions to calculate current usage
+	subscriptions, err := s.SubRepo.ListByCustomerID(ctx, w.CustomerID)
 	if err != nil {
 		return nil, err
 	}
 
-	currentPeriodUsage := decimal.Zero
-	for _, sub := range subscriptionsResp.Items {
-		// Skip subscriptions with different currency
-		if !types.IsMatchingCurrency(sub.Subscription.Currency, w.Currency) {
-			continue
-		}
-
-		// Get current period usage for subscription
-		usageResp, err := subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
-			SubscriptionID: sub.Subscription.ID,
-			StartTime:      sub.Subscription.CurrentPeriodStart,
-			EndTime:        sub.Subscription.CurrentPeriodEnd,
-			LifetimeUsage:  false, // Only get current period usage
-		})
-		if err != nil {
-			s.Logger.Errorw("failed to get current period usage",
-				"wallet_id", walletID,
+	// Filter subscriptions by currency
+	filteredSubscriptions := make([]*subscription.Subscription, 0)
+	for _, sub := range subscriptions {
+		if sub.Currency == w.Currency {
+			filteredSubscriptions = append(filteredSubscriptions, sub)
+			s.Logger.Infow("found matching subscription",
 				"subscription_id", sub.ID,
-				"error", err,
-			)
-			continue
-		}
-
-		if usageResp.Amount > 0 {
-			currentPeriodUsage = currentPeriodUsage.Add(decimal.NewFromFloat(usageResp.Amount))
+				"currency", sub.Currency,
+				"period_start", sub.CurrentPeriodStart,
+				"period_end", sub.CurrentPeriodEnd)
 		}
 	}
 
-	// Calculate real-time balance:
-	// wallet_balance - (unpaid_invoices + current_period_usage)
-	// NOTE: in future, we can add a feature to allow customers to set a threshold for real-time balance
-	// NOTE: in future we can restrict a wallet balance to be adjusted only for usage or fixed amount
-	realTimeBalance := w.Balance.
-		Sub(invoiceSummary.TotalUnpaidAmount).
-		Sub(currentPeriodUsage)
+	// Initialize billing service
+	billingService := NewBillingService(s.ServiceParams)
 
-	s.Logger.Debugw("calculated real-time balance",
-		"wallet_id", walletID,
+	// Calculate total pending charges (usage)
+	totalPendingCharges := decimal.Zero
+	for _, sub := range filteredSubscriptions {
+		// Get current period
+		periodStart := sub.CurrentPeriodStart
+		periodEnd := sub.CurrentPeriodEnd
+
+		// Get usage data for current period
+		subscriptionService := NewSubscriptionService(s.ServiceParams)
+		usage, err := subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
+			SubscriptionID: sub.ID,
+			StartTime:      periodStart,
+			EndTime:        periodEnd,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Calculate usage charges
+		usageCharges, usageTotal, err := billingService.CalculateUsageCharges(ctx, sub, usage, periodStart, periodEnd)
+		if err != nil {
+			return nil, err
+		}
+
+		s.Logger.Infow("subscription charges details",
+			"subscription_id", sub.ID,
+			"usage_total", usageTotal,
+			"num_usage_charges", len(usageCharges))
+
+		totalPendingCharges = totalPendingCharges.Add(usageTotal)
+	}
+
+	// Calculate real-time balance
+	realTimeBalance := w.Balance.Sub(invoiceSummary.TotalUnpaidAmount).Sub(totalPendingCharges)
+
+	s.Logger.Debugw("detailed balance calculation",
+		"wallet_id", w.ID,
 		"current_balance", w.Balance,
 		"unpaid_invoices", invoiceSummary.TotalUnpaidAmount,
-		"current_period_usage", currentPeriodUsage,
+		"pending_charges", totalPendingCharges,
 		"real_time_balance", realTimeBalance,
-		"currency", w.Currency,
-	)
+		"credit_balance", w.CreditBalance)
+
+	// Convert real-time balance to credit balance
+	realTimeCreditBalance := s.GetCreditsFromCurrencyAmount(realTimeBalance, w.ConversionRate)
 
 	return &dto.WalletBalanceResponse{
 		Wallet:                w,
-		RealTimeBalance:       lo.ToPtr(realTimeBalance),
-		RealTimeCreditBalance: lo.ToPtr(s.GetCreditsFromCurrencyAmount(realTimeBalance, w.ConversionRate)),
-		BalanceUpdatedAt:      lo.ToPtr(time.Now().UTC()),
-		UnpaidInvoiceAmount:   lo.ToPtr(invoiceSummary.TotalUnpaidAmount),
-		CurrentPeriodUsage:    lo.ToPtr(currentPeriodUsage),
+		RealTimeBalance:       &realTimeBalance,
+		RealTimeCreditBalance: &realTimeCreditBalance,
+		BalanceUpdatedAt:      lo.ToPtr(w.UpdatedAt),
+		UnpaidInvoiceAmount:   &invoiceSummary.TotalUnpaidAmount,
+		CurrentPeriodUsage:    &totalPendingCharges,
 	}, nil
 }
 
@@ -568,6 +609,33 @@ func (s *walletService) UpdateWallet(ctx context.Context, id string, req *dto.Up
 	}
 	if req.Config != nil {
 		existing.Config = *req.Config
+	}
+
+	// Update alert config
+	if req.AlertEnabled != nil {
+		existing.AlertEnabled = *req.AlertEnabled
+		// If alerts are disabled, clear the config and state
+		if !*req.AlertEnabled {
+			existing.AlertConfig = nil
+			existing.AlertState = string(types.AlertStateOk)
+		}
+	}
+
+	// Update alert config if provided and alerts are enabled
+	if req.AlertConfig != nil {
+		if !existing.AlertEnabled {
+			return nil, ierr.NewError("cannot set alert config when alerts are disabled").
+				WithHint("Enable alerts first before setting alert config").
+				Mark(ierr.ErrValidation)
+		}
+
+		// Convert AlertConfig to types.AlertConfig
+		existing.AlertConfig = &types.AlertConfig{
+			Threshold: &types.AlertThreshold{
+				Type:  req.AlertConfig.Threshold.Type,
+				Value: req.AlertConfig.Threshold.Value,
+			},
+		}
 	}
 
 	// Update wallet
@@ -954,4 +1022,255 @@ func (s *walletService) GetCustomerWallets(ctx context.Context, req *dto.GetCust
 		}
 	}
 	return response, nil
+}
+
+// GetWallets retrieves wallets based on filter
+func (s *walletService) GetWallets(ctx context.Context, filter *types.WalletFilter) (*types.ListResponse[*wallet.Wallet], error) {
+	if filter == nil {
+		filter = types.NewWalletFilter()
+	}
+	if err := filter.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Get wallets using filter
+	wallets, err := s.WalletRepo.GetWalletsByFilter(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.ListResponse[*wallet.Wallet]{
+		Items: wallets,
+		Pagination: types.PaginationResponse{
+			Total:  len(wallets),
+			Limit:  50,
+			Offset: 0,
+		},
+	}, nil
+}
+
+// UpdateWalletAlertState updates the alert state of a wallet
+func (s *walletService) UpdateWalletAlertState(ctx context.Context, walletID string, state types.AlertState) error {
+	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
+	if err != nil {
+		return err
+	}
+
+	// Update alert state directly
+	w.AlertState = string(state)
+
+	return s.WalletRepo.UpdateWallet(ctx, walletID, w)
+}
+
+// PublishEvent publishes a webhook event for a wallet
+func (s *walletService) PublishEvent(ctx context.Context, eventName string, w *wallet.Wallet) error {
+	if s.WebhookPublisher == nil {
+		s.Logger.Warnw("webhook publisher not initialized", "event", eventName)
+		return nil
+	}
+
+	// Get real-time balance
+	balance, err := s.GetWalletBalance(ctx, w.ID)
+	if err != nil {
+		s.Logger.Errorw("failed to get wallet balance for webhook",
+			"wallet_id", w.ID,
+			"error", err,
+		)
+		return err
+	}
+
+	// Create internal event
+	internalEvent := &webhookDto.InternalWalletEvent{
+		EventType: eventName,
+		WalletID:  w.ID,
+		TenantID:  w.TenantID,
+		Balance:   balance,
+	}
+
+	// Add alert info for alert events
+	if w.AlertConfig != nil && w.AlertConfig.Threshold != nil {
+		currentBalance := balance.RealTimeBalance
+		if currentBalance == nil {
+			currentBalance = &w.Balance
+		}
+		creditBalance := balance.RealTimeCreditBalance
+		if creditBalance == nil {
+			creditBalance = &w.CreditBalance
+		}
+
+		internalEvent.Alert = &webhookDto.WalletAlertInfo{
+			State:          w.AlertState,
+			Threshold:      w.AlertConfig.Threshold.Value,
+			CurrentBalance: *currentBalance,
+			CreditBalance:  *creditBalance,
+			AlertConfig:    w.AlertConfig,
+			AlertType:      getAlertType(eventName),
+		}
+
+		s.Logger.Infow("added alert info to webhook event",
+			"wallet_id", w.ID,
+			"alert_state", w.AlertState,
+			"alert_type", getAlertType(eventName),
+			"threshold", w.AlertConfig.Threshold.Value,
+			"current_balance", *currentBalance,
+			"credit_balance", *creditBalance,
+		)
+	}
+
+	// Convert to JSON
+	eventJSON, err := json.Marshal(internalEvent)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to marshal internal event").
+			Mark(ierr.ErrInternal)
+	}
+
+	webhookEvent := &types.WebhookEvent{
+		ID:            types.GenerateUUID(),
+		EventName:     eventName,
+		TenantID:      w.TenantID,
+		EnvironmentID: w.EnvironmentID,
+		UserID:        types.GetUserID(ctx),
+		Timestamp:     time.Now().UTC(),
+		Payload:       eventJSON,
+	}
+
+	s.Logger.Infow("publishing webhook event",
+		"event_id", webhookEvent.ID,
+		"event_name", eventName,
+		"wallet_id", w.ID,
+		"alert_state", w.AlertState,
+		"alert_config", w.AlertConfig,
+	)
+
+	return s.WebhookPublisher.PublishWebhook(ctx, webhookEvent)
+}
+
+func getAlertType(eventName string) string {
+	switch eventName {
+	case types.WebhookEventWalletCreditBalanceDropped:
+		return "credit_balance"
+	case types.WebhookEventWalletOngoingBalanceDropped:
+		return "ongoing_balance"
+	default:
+		return ""
+	}
+}
+
+// CheckBalanceThresholds checks if wallet balance is below threshold and triggers alerts
+func (s *walletService) CheckBalanceThresholds(ctx context.Context, w *wallet.Wallet, balance *dto.WalletBalanceResponse) error {
+	// Skip if alerts not enabled or no config
+	if !w.AlertEnabled || w.AlertConfig == nil || w.AlertConfig.Threshold == nil {
+		return nil
+	}
+
+	threshold := w.AlertConfig.Threshold.Value
+	currentBalance := balance.RealTimeBalance
+	if currentBalance == nil {
+		currentBalance = &w.Balance
+	}
+	creditBalance := balance.RealTimeCreditBalance
+	if creditBalance == nil {
+		creditBalance = &w.CreditBalance
+	}
+
+	s.Logger.Infow("checking balance thresholds",
+		"wallet_id", w.ID,
+		"threshold", threshold,
+		"current_balance", currentBalance,
+		"credit_balance", creditBalance,
+		"alert_state", w.AlertState,
+	)
+
+	// Check if any balance is below threshold
+	isCurrentBalanceBelowThreshold := currentBalance.LessThanOrEqual(threshold)
+	isCreditBalanceBelowThreshold := creditBalance.LessThanOrEqual(threshold)
+	isAnyBalanceBelowThreshold := isCurrentBalanceBelowThreshold || isCreditBalanceBelowThreshold
+
+	// Handle balance above threshold (recovery)
+	if !isAnyBalanceBelowThreshold {
+		s.Logger.Infow("all balances above threshold - checking recovery",
+			"wallet_id", w.ID,
+			"threshold", threshold,
+			"current_balance", currentBalance,
+			"credit_balance", creditBalance,
+			"alert_state", w.AlertState,
+		)
+
+		// If current state is alert, update to ok (recovery)
+		if w.AlertState == string(types.AlertStateAlert) {
+			if err := s.UpdateWalletAlertState(ctx, w.ID, types.AlertStateOk); err != nil {
+				s.Logger.Errorw("failed to update wallet alert state",
+					"wallet_id", w.ID,
+					"error", err,
+				)
+				return err
+			}
+			s.Logger.Infow("wallet recovered from alert state",
+				"wallet_id", w.ID,
+			)
+			return s.PublishEvent(ctx, types.WebhookEventWalletUpdated, w)
+		}
+		return nil
+	}
+
+	// Skip if already in alert state
+	if w.AlertState == string(types.AlertStateAlert) {
+		s.Logger.Infow("skipping alert - already in alert state",
+			"wallet_id", w.ID,
+		)
+		return nil
+	}
+
+	s.Logger.Infow("balance below/equal threshold - triggering alert",
+		"wallet_id", w.ID,
+		"threshold", threshold,
+		"current_balance", currentBalance,
+		"credit_balance", creditBalance,
+	)
+
+	// Update wallet state to alert
+	if err := s.UpdateWalletAlertState(ctx, w.ID, types.AlertStateAlert); err != nil {
+		s.Logger.Errorw("failed to update wallet alert state",
+			"wallet_id", w.ID,
+			"error", err,
+		)
+		return err
+	}
+
+	// Trigger alerts based on which balance is below threshold
+	var errs []error
+	if isCreditBalanceBelowThreshold {
+		s.Logger.Infow("triggering credit balance alert",
+			"wallet_id", w.ID,
+			"credit_balance", creditBalance,
+			"threshold", threshold,
+		)
+		if err := s.PublishEvent(ctx, types.WebhookEventWalletCreditBalanceDropped, w); err != nil {
+			s.Logger.Errorw("failed to publish credit balance alert",
+				"wallet_id", w.ID,
+				"error", err,
+			)
+			errs = append(errs, err)
+		}
+	}
+	if isCurrentBalanceBelowThreshold {
+		s.Logger.Infow("triggering ongoing balance alert",
+			"wallet_id", w.ID,
+			"balance", currentBalance,
+			"threshold", threshold,
+		)
+		if err := s.PublishEvent(ctx, types.WebhookEventWalletOngoingBalanceDropped, w); err != nil {
+			s.Logger.Errorw("failed to publish ongoing balance alert",
+				"wallet_id", w.ID,
+				"error", err,
+			)
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		return errs[0] // Return first error
+	}
+	return nil
 }

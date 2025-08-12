@@ -8,6 +8,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// SubscriptionLineItemEntitiyType is the type of the source of a subscription line item
+// It is optional and can be used to differentiate between plan and addon line items
+type SubscriptionLineItemEntitiyType string
+
+const (
+	SubscriptionLineItemEntitiyTypePlan  SubscriptionLineItemEntitiyType = "plan"
+	SubscriptionLineItemEntitiyTypeAddon SubscriptionLineItemEntitiyType = "addon"
+)
+
 // SubscriptionStatus is the status of a subscription
 // For now taking inspiration from Stripe's subscription statuses
 // https://stripe.com/docs/api/subscriptions/object#subscription_object-status
@@ -102,8 +111,10 @@ type SubscriptionFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
 
-	SubscriptionIDs []string `json:"subscription_ids,omitempty" form:"subscription_ids"`
+	Filters []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
+	Sort    []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
 
+	SubscriptionIDs []string `json:"subscription_ids,omitempty" form:"subscription_ids"`
 	// CustomerID filters by customer ID
 	CustomerID string `json:"customer_id,omitempty" form:"customer_id"`
 	// PlanID filters by plan ID

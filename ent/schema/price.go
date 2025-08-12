@@ -7,6 +7,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -32,62 +33,111 @@ func (Price) Fields() []ent.Field {
 			}).
 			Unique().
 			Immutable(),
+
 		field.Float("amount").
 			SchemaType(map[string]string{
 				"postgres": "numeric(25,15)",
 			}),
+
 		field.String("currency").
 			SchemaType(map[string]string{
 				"postgres": "varchar(3)",
 			}).
 			NotEmpty(),
+
 		field.String("display_amount").
 			SchemaType(map[string]string{
 				"postgres": "varchar(255)",
 			}).
 			NotEmpty(),
-		field.String("plan_id").
+
+		// price_unit_type is the type of the price unit- Fiat, Custom
+		field.String("price_unit_type").
+			SchemaType(map[string]string{
+				"postgres": "varchar(20)",
+			}).
+			NotEmpty().
+			Default(string(types.PRICE_UNIT_TYPE_FIAT)),
+
+		// price_unit_id is the id of the price unit
+		field.String("price_unit_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			NotEmpty(),
+			Optional(),
+		// price_unit is the code of the price unit
+		field.String("price_unit").
+			SchemaType(map[string]string{
+				"postgres": "varchar(3)",
+			}).
+			Optional(),
+
+		// price_unit_amount is the amount of the price unit
+		field.Float("price_unit_amount").
+			SchemaType(map[string]string{
+				"postgres": "numeric(25,15)",
+			}).
+			Optional(),
+
+		// display_price_unit_amount is the amount of the price unit in the display currency
+		field.String("display_price_unit_amount").
+			SchemaType(map[string]string{
+				"postgres": "varchar(255)",
+			}).
+			Optional(),
+
+		// conversion_rate is the conversion rate of the price unit to the fiat currency
+		field.Float("conversion_rate").
+			SchemaType(map[string]string{
+				"postgres": "numeric(25,15)",
+			}).
+			Optional(),
+
 		field.String("type").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
 			NotEmpty(),
+
 		field.String("billing_period").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
 			NotEmpty(),
+
 		field.Int("billing_period_count").
 			NonNegative(),
+
 		field.String("billing_model").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
 			NotEmpty(),
+
 		field.String("billing_cadence").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
 			NotEmpty(),
+
 		field.String("invoice_cadence").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
 			Optional(). // TODO: Remove this once we have migrated all the data
 			Immutable(),
+
 		field.Int("trial_period").
 			Default(0).
 			Immutable(),
+
 		field.String("meter_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
 			Optional().
 			Nillable(),
+
 		field.JSON("filter_values", map[string][]string{}).
 			Optional(),
 		field.String("tier_mode").
@@ -96,19 +146,52 @@ func (Price) Fields() []ent.Field {
 			}).
 			Optional().
 			Nillable(),
+
 		field.JSON("tiers", []PriceTier{}).
 			Optional(),
+
+		field.JSON("price_unit_tiers", []PriceTier{}).
+			Optional(),
+
 		field.JSON("transform_quantity", TransformQuantity{}).
 			Optional(),
+
 		field.String("lookup_key").
 			SchemaType(map[string]string{
 				"postgres": "varchar(255)",
 			}).
 			Optional(),
+
 		field.Text("description").
 			Optional(),
+
 		field.JSON("metadata", map[string]string{}).
 			Optional(),
+
+		// Price override fields
+		field.String("entity_type").
+			SchemaType(map[string]string{
+				"postgres": "varchar(20)",
+			}).
+			Immutable().
+			Nillable().
+			Default(string(types.PRICE_ENTITY_TYPE_PLAN)).
+			Optional(),
+
+		field.String("entity_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Immutable().
+			Nillable().
+			Optional(),
+
+		field.String("parent_price_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Optional().
+			Nillable(),
 	}
 }
 
@@ -116,6 +199,9 @@ func (Price) Fields() []ent.Field {
 func (Price) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("costsheet", Costsheet.Type),
+		edge.To("price_unit_edge", PriceUnit.Type).
+			Field("price_unit_id").
+			Unique(),
 	}
 }
 

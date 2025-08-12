@@ -40,8 +40,10 @@ type InvoiceLineItem struct {
 	CustomerID string `json:"customer_id,omitempty"`
 	// SubscriptionID holds the value of the "subscription_id" field.
 	SubscriptionID *string `json:"subscription_id,omitempty"`
-	// PlanID holds the value of the "plan_id" field.
-	PlanID *string `json:"plan_id,omitempty"`
+	// EntityID holds the value of the "entity_id" field.
+	EntityID *string `json:"entity_id,omitempty"`
+	// EntityType holds the value of the "entity_type" field.
+	EntityType string `json:"entity_type,omitempty"`
 	// PlanDisplayName holds the value of the "plan_display_name" field.
 	PlanDisplayName *string `json:"plan_display_name,omitempty"`
 	// PriceID holds the value of the "price_id" field.
@@ -52,6 +54,12 @@ type InvoiceLineItem struct {
 	MeterID *string `json:"meter_id,omitempty"`
 	// MeterDisplayName holds the value of the "meter_display_name" field.
 	MeterDisplayName *string `json:"meter_display_name,omitempty"`
+	// PriceUnitID holds the value of the "price_unit_id" field.
+	PriceUnitID *string `json:"price_unit_id,omitempty"`
+	// PriceUnit holds the value of the "price_unit" field.
+	PriceUnit *string `json:"price_unit,omitempty"`
+	// PriceUnitAmount holds the value of the "price_unit_amount" field.
+	PriceUnitAmount *decimal.Decimal `json:"price_unit_amount,omitempty"`
 	// DisplayName holds the value of the "display_name" field.
 	DisplayName *string `json:"display_name,omitempty"`
 	// Amount holds the value of the "amount" field.
@@ -76,9 +84,11 @@ type InvoiceLineItem struct {
 type InvoiceLineItemEdges struct {
 	// Invoice holds the value of the invoice edge.
 	Invoice *Invoice `json:"invoice,omitempty"`
+	// Invoice line item can have multiple coupon applications
+	CouponApplications []*CouponApplication `json:"coupon_applications,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // InvoiceOrErr returns the Invoice value or an error if the edge
@@ -92,16 +102,27 @@ func (e InvoiceLineItemEdges) InvoiceOrErr() (*Invoice, error) {
 	return nil, &NotLoadedError{edge: "invoice"}
 }
 
+// CouponApplicationsOrErr returns the CouponApplications value or an error if the edge
+// was not loaded in eager-loading.
+func (e InvoiceLineItemEdges) CouponApplicationsOrErr() ([]*CouponApplication, error) {
+	if e.loadedTypes[1] {
+		return e.CouponApplications, nil
+	}
+	return nil, &NotLoadedError{edge: "coupon_applications"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*InvoiceLineItem) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case invoicelineitem.FieldPriceUnitAmount:
+			values[i] = &sql.NullScanner{S: new(decimal.Decimal)}
 		case invoicelineitem.FieldMetadata:
 			values[i] = new([]byte)
 		case invoicelineitem.FieldAmount, invoicelineitem.FieldQuantity:
 			values[i] = new(decimal.Decimal)
-		case invoicelineitem.FieldID, invoicelineitem.FieldTenantID, invoicelineitem.FieldStatus, invoicelineitem.FieldCreatedBy, invoicelineitem.FieldUpdatedBy, invoicelineitem.FieldEnvironmentID, invoicelineitem.FieldInvoiceID, invoicelineitem.FieldCustomerID, invoicelineitem.FieldSubscriptionID, invoicelineitem.FieldPlanID, invoicelineitem.FieldPlanDisplayName, invoicelineitem.FieldPriceID, invoicelineitem.FieldPriceType, invoicelineitem.FieldMeterID, invoicelineitem.FieldMeterDisplayName, invoicelineitem.FieldDisplayName, invoicelineitem.FieldCurrency:
+		case invoicelineitem.FieldID, invoicelineitem.FieldTenantID, invoicelineitem.FieldStatus, invoicelineitem.FieldCreatedBy, invoicelineitem.FieldUpdatedBy, invoicelineitem.FieldEnvironmentID, invoicelineitem.FieldInvoiceID, invoicelineitem.FieldCustomerID, invoicelineitem.FieldSubscriptionID, invoicelineitem.FieldEntityID, invoicelineitem.FieldEntityType, invoicelineitem.FieldPlanDisplayName, invoicelineitem.FieldPriceID, invoicelineitem.FieldPriceType, invoicelineitem.FieldMeterID, invoicelineitem.FieldMeterDisplayName, invoicelineitem.FieldPriceUnitID, invoicelineitem.FieldPriceUnit, invoicelineitem.FieldDisplayName, invoicelineitem.FieldCurrency:
 			values[i] = new(sql.NullString)
 		case invoicelineitem.FieldCreatedAt, invoicelineitem.FieldUpdatedAt, invoicelineitem.FieldPeriodStart, invoicelineitem.FieldPeriodEnd:
 			values[i] = new(sql.NullTime)
@@ -187,12 +208,18 @@ func (ili *InvoiceLineItem) assignValues(columns []string, values []any) error {
 				ili.SubscriptionID = new(string)
 				*ili.SubscriptionID = value.String
 			}
-		case invoicelineitem.FieldPlanID:
+		case invoicelineitem.FieldEntityID:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field plan_id", values[i])
+				return fmt.Errorf("unexpected type %T for field entity_id", values[i])
 			} else if value.Valid {
-				ili.PlanID = new(string)
-				*ili.PlanID = value.String
+				ili.EntityID = new(string)
+				*ili.EntityID = value.String
+			}
+		case invoicelineitem.FieldEntityType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field entity_type", values[i])
+			} else if value.Valid {
+				ili.EntityType = value.String
 			}
 		case invoicelineitem.FieldPlanDisplayName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -228,6 +255,27 @@ func (ili *InvoiceLineItem) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				ili.MeterDisplayName = new(string)
 				*ili.MeterDisplayName = value.String
+			}
+		case invoicelineitem.FieldPriceUnitID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field price_unit_id", values[i])
+			} else if value.Valid {
+				ili.PriceUnitID = new(string)
+				*ili.PriceUnitID = value.String
+			}
+		case invoicelineitem.FieldPriceUnit:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field price_unit", values[i])
+			} else if value.Valid {
+				ili.PriceUnit = new(string)
+				*ili.PriceUnit = value.String
+			}
+		case invoicelineitem.FieldPriceUnitAmount:
+			if value, ok := values[i].(*sql.NullScanner); !ok {
+				return fmt.Errorf("unexpected type %T for field price_unit_amount", values[i])
+			} else if value.Valid {
+				ili.PriceUnitAmount = new(decimal.Decimal)
+				*ili.PriceUnitAmount = *value.S.(*decimal.Decimal)
 			}
 		case invoicelineitem.FieldDisplayName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -294,6 +342,11 @@ func (ili *InvoiceLineItem) QueryInvoice() *InvoiceQuery {
 	return NewInvoiceLineItemClient(ili.config).QueryInvoice(ili)
 }
 
+// QueryCouponApplications queries the "coupon_applications" edge of the InvoiceLineItem entity.
+func (ili *InvoiceLineItem) QueryCouponApplications() *CouponApplicationQuery {
+	return NewInvoiceLineItemClient(ili.config).QueryCouponApplications(ili)
+}
+
 // Update returns a builder for updating this InvoiceLineItem.
 // Note that you need to call InvoiceLineItem.Unwrap() before calling this method if this InvoiceLineItem
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -349,10 +402,13 @@ func (ili *InvoiceLineItem) String() string {
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
-	if v := ili.PlanID; v != nil {
-		builder.WriteString("plan_id=")
+	if v := ili.EntityID; v != nil {
+		builder.WriteString("entity_id=")
 		builder.WriteString(*v)
 	}
+	builder.WriteString(", ")
+	builder.WriteString("entity_type=")
+	builder.WriteString(ili.EntityType)
 	builder.WriteString(", ")
 	if v := ili.PlanDisplayName; v != nil {
 		builder.WriteString("plan_display_name=")
@@ -377,6 +433,21 @@ func (ili *InvoiceLineItem) String() string {
 	if v := ili.MeterDisplayName; v != nil {
 		builder.WriteString("meter_display_name=")
 		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := ili.PriceUnitID; v != nil {
+		builder.WriteString("price_unit_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := ili.PriceUnit; v != nil {
+		builder.WriteString("price_unit=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := ili.PriceUnitAmount; v != nil {
+		builder.WriteString("price_unit_amount=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	if v := ili.DisplayName; v != nil {

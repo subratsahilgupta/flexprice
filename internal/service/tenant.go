@@ -147,7 +147,7 @@ func (s *tenantService) onboardTenantOnFreePlan(ctx context.Context, t *tenant.T
 		BillingCadence:     freePrice.BillingCadence,
 		BillingPeriod:      freePrice.BillingPeriod,
 		BillingPeriodCount: freePrice.BillingPeriodCount,
-		StartDate:          time.Now(),
+		StartDate:          lo.ToPtr(time.Now().UTC()),
 		BillingCycle:       types.BillingCycleAnniversary,
 	})
 	if err != nil {
@@ -236,6 +236,10 @@ func (s *tenantService) UpdateTenant(ctx context.Context, id string, req dto.Upd
 	// Update the name if it is provided
 	if req.Name != "" {
 		existingTenant.Name = req.Name
+	}
+
+	if req.Metadata != nil {
+		existingTenant.Metadata = lo.FromPtr(req.Metadata)
 	}
 
 	// Update the timestamp

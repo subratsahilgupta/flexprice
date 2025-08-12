@@ -35,8 +35,10 @@ const (
 	FieldCustomerID = "customer_id"
 	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
 	FieldSubscriptionID = "subscription_id"
-	// FieldPlanID holds the string denoting the plan_id field in the database.
-	FieldPlanID = "plan_id"
+	// FieldEntityID holds the string denoting the entity_id field in the database.
+	FieldEntityID = "entity_id"
+	// FieldEntityType holds the string denoting the entity_type field in the database.
+	FieldEntityType = "entity_type"
 	// FieldPlanDisplayName holds the string denoting the plan_display_name field in the database.
 	FieldPlanDisplayName = "plan_display_name"
 	// FieldPriceID holds the string denoting the price_id field in the database.
@@ -47,6 +49,12 @@ const (
 	FieldMeterID = "meter_id"
 	// FieldMeterDisplayName holds the string denoting the meter_display_name field in the database.
 	FieldMeterDisplayName = "meter_display_name"
+	// FieldPriceUnitID holds the string denoting the price_unit_id field in the database.
+	FieldPriceUnitID = "price_unit_id"
+	// FieldPriceUnit holds the string denoting the price_unit field in the database.
+	FieldPriceUnit = "price_unit"
+	// FieldPriceUnitAmount holds the string denoting the price_unit_amount field in the database.
+	FieldPriceUnitAmount = "price_unit_amount"
 	// FieldDisplayName holds the string denoting the display_name field in the database.
 	FieldDisplayName = "display_name"
 	// FieldAmount holds the string denoting the amount field in the database.
@@ -63,6 +71,8 @@ const (
 	FieldMetadata = "metadata"
 	// EdgeInvoice holds the string denoting the invoice edge name in mutations.
 	EdgeInvoice = "invoice"
+	// EdgeCouponApplications holds the string denoting the coupon_applications edge name in mutations.
+	EdgeCouponApplications = "coupon_applications"
 	// Table holds the table name of the invoicelineitem in the database.
 	Table = "invoice_line_items"
 	// InvoiceTable is the table that holds the invoice relation/edge.
@@ -72,6 +82,13 @@ const (
 	InvoiceInverseTable = "invoices"
 	// InvoiceColumn is the table column denoting the invoice relation/edge.
 	InvoiceColumn = "invoice_id"
+	// CouponApplicationsTable is the table that holds the coupon_applications relation/edge.
+	CouponApplicationsTable = "coupon_applications"
+	// CouponApplicationsInverseTable is the table name for the CouponApplication entity.
+	// It exists in this package in order to avoid circular dependency with the "couponapplication" package.
+	CouponApplicationsInverseTable = "coupon_applications"
+	// CouponApplicationsColumn is the table column denoting the coupon_applications relation/edge.
+	CouponApplicationsColumn = "invoice_line_item_id"
 )
 
 // Columns holds all SQL columns for invoicelineitem fields.
@@ -87,12 +104,16 @@ var Columns = []string{
 	FieldInvoiceID,
 	FieldCustomerID,
 	FieldSubscriptionID,
-	FieldPlanID,
+	FieldEntityID,
+	FieldEntityType,
 	FieldPlanDisplayName,
 	FieldPriceID,
 	FieldPriceType,
 	FieldMeterID,
 	FieldMeterDisplayName,
+	FieldPriceUnitID,
+	FieldPriceUnit,
+	FieldPriceUnitAmount,
 	FieldDisplayName,
 	FieldAmount,
 	FieldQuantity,
@@ -129,6 +150,8 @@ var (
 	InvoiceIDValidator func(string) error
 	// CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
 	CustomerIDValidator func(string) error
+	// DefaultEntityType holds the default value on creation for the "entity_type" field.
+	DefaultEntityType string
 	// DefaultAmount holds the default value on creation for the "amount" field.
 	DefaultAmount decimal.Decimal
 	// DefaultQuantity holds the default value on creation for the "quantity" field.
@@ -195,9 +218,14 @@ func BySubscriptionID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionID, opts...).ToFunc()
 }
 
-// ByPlanID orders the results by the plan_id field.
-func ByPlanID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPlanID, opts...).ToFunc()
+// ByEntityID orders the results by the entity_id field.
+func ByEntityID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEntityID, opts...).ToFunc()
+}
+
+// ByEntityType orders the results by the entity_type field.
+func ByEntityType(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEntityType, opts...).ToFunc()
 }
 
 // ByPlanDisplayName orders the results by the plan_display_name field.
@@ -223,6 +251,21 @@ func ByMeterID(opts ...sql.OrderTermOption) OrderOption {
 // ByMeterDisplayName orders the results by the meter_display_name field.
 func ByMeterDisplayName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMeterDisplayName, opts...).ToFunc()
+}
+
+// ByPriceUnitID orders the results by the price_unit_id field.
+func ByPriceUnitID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceUnitID, opts...).ToFunc()
+}
+
+// ByPriceUnit orders the results by the price_unit field.
+func ByPriceUnit(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceUnit, opts...).ToFunc()
+}
+
+// ByPriceUnitAmount orders the results by the price_unit_amount field.
+func ByPriceUnitAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPriceUnitAmount, opts...).ToFunc()
 }
 
 // ByDisplayName orders the results by the display_name field.
@@ -261,10 +304,31 @@ func ByInvoiceField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newInvoiceStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByCouponApplicationsCount orders the results by coupon_applications count.
+func ByCouponApplicationsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCouponApplicationsStep(), opts...)
+	}
+}
+
+// ByCouponApplications orders the results by coupon_applications terms.
+func ByCouponApplications(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCouponApplicationsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newInvoiceStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(InvoiceInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, InvoiceTable, InvoiceColumn),
+	)
+}
+func newCouponApplicationsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CouponApplicationsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CouponApplicationsTable, CouponApplicationsColumn),
 	)
 }

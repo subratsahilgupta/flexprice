@@ -38,15 +38,14 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 	r.log.Debugw("creating price",
 		"price_id", p.ID,
 		"tenant_id", p.TenantID,
-		"plan_id", p.PlanID,
 		"lookup_key", p.LookupKey,
 	)
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "price", "create", map[string]interface{}{
-		"price_id":   p.ID,
-		"tenant_id":  p.TenantID,
-		"plan_id":    p.PlanID,
+		"price_id":  p.ID,
+		"tenant_id": p.TenantID,
+
 		"lookup_key": p.LookupKey,
 	})
 	defer FinishSpan(span)
@@ -57,13 +56,13 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 	}
 
 	// Create the price using the standard Ent API
-	price, err := client.Price.Create().
+	priceBuilder := client.Price.Create().
 		SetID(p.ID).
 		SetTenantID(p.TenantID).
 		SetAmount(p.Amount.InexactFloat64()).
 		SetCurrency(p.Currency).
 		SetDisplayAmount(p.DisplayAmount).
-		SetPlanID(p.PlanID).
+		SetPriceUnitType(string(p.PriceUnitType)).
 		SetType(string(p.Type)).
 		SetBillingPeriod(string(p.BillingPeriod)).
 		SetBillingPeriodCount(p.BillingPeriodCount).
@@ -74,6 +73,7 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetTrialPeriod(p.TrialPeriod).
 		SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 		SetTiers(p.ToEntTiers()).
+		SetPriceUnitTiers(p.ToPriceUnitTiers()).
 		SetTransformQuantity(schema.TransformQuantity(p.TransformQuantity)).
 		SetLookupKey(p.LookupKey).
 		SetDescription(p.Description).
@@ -84,7 +84,27 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetCreatedBy(p.CreatedBy).
 		SetUpdatedBy(p.UpdatedBy).
 		SetEnvironmentID(p.EnvironmentID).
-		Save(ctx)
+		SetNillableParentPriceID(lo.ToPtr(p.ParentPriceID)).
+		SetEntityType(string(p.EntityType)).
+		SetEntityID(p.EntityID)
+
+	if p.PriceUnitID != "" {
+		priceBuilder.SetPriceUnitID(p.PriceUnitID)
+	}
+	if p.PriceUnit != "" {
+		priceBuilder.SetPriceUnit(p.PriceUnit)
+	}
+	if !p.PriceUnitAmount.IsZero() {
+		priceBuilder.SetPriceUnitAmount(p.PriceUnitAmount.InexactFloat64())
+	}
+	if p.DisplayPriceUnitAmount != "" {
+		priceBuilder.SetDisplayPriceUnitAmount(p.DisplayPriceUnitAmount)
+	}
+	if !p.ConversionRate.IsZero() {
+		priceBuilder.SetConversionRate(p.ConversionRate.InexactFloat64())
+	}
+
+	price, err := priceBuilder.Save(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
@@ -260,6 +280,7 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price) erro
 		).
 		SetAmount(p.Amount.InexactFloat64()).
 		SetDisplayAmount(p.DisplayAmount).
+		SetPriceUnitType(string(p.PriceUnitType)).
 		SetType(string(p.Type)).
 		SetBillingPeriod(string(p.BillingPeriod)).
 		SetBillingPeriodCount(p.BillingPeriodCount).
@@ -268,6 +289,7 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price) erro
 		SetNillableMeterID(lo.ToPtr(p.MeterID)).
 		SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 		SetTiers(p.ToEntTiers()).
+		SetPriceUnitTiers(p.ToPriceUnitTiers()).
 		SetTransformQuantity(schema.TransformQuantity(p.TransformQuantity)).
 		SetLookupKey(p.LookupKey).
 		SetDescription(p.Description).
@@ -373,7 +395,8 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 			SetAmount(p.Amount.InexactFloat64()).
 			SetCurrency(p.Currency).
 			SetDisplayAmount(p.DisplayAmount).
-			SetPlanID(p.PlanID).
+			SetEntityID(p.EntityID).
+			SetEntityType(string(p.EntityType)).
 			SetType(string(p.Type)).
 			SetBillingPeriod(string(p.BillingPeriod)).
 			SetBillingPeriodCount(p.BillingPeriodCount).
@@ -384,6 +407,7 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 			SetNillableMeterID(lo.ToPtr(p.MeterID)).
 			SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 			SetTiers(p.ToEntTiers()).
+			SetPriceUnitTiers(p.ToEntTiers()).
 			SetTransformQuantity(schema.TransformQuantity(p.TransformQuantity)).
 			SetLookupKey(p.LookupKey).
 			SetDescription(p.Description).
@@ -507,14 +531,24 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 		return query
 	}
 
-	// Apply plan IDs filter if specified
-	if len(f.PlanIDs) > 0 {
-		query = query.Where(price.PlanIDIn(f.PlanIDs...))
-	}
-
 	// Apply price IDs filter if specified
 	if len(f.PriceIDs) > 0 {
 		query = query.Where(price.IDIn(f.PriceIDs...))
+	}
+
+	// entity type filter
+	if f.EntityType != nil {
+		query = query.Where(price.EntityType(string(*f.EntityType)))
+	}
+
+	// entity id filter
+	if f.EntityIDs != nil {
+		query = query.Where(price.EntityIDIn(f.EntityIDs...))
+	}
+
+	// meter id filter
+	if len(f.MeterIDs) > 0 {
+		query = query.Where(price.MeterIDIn(f.MeterIDs...))
 	}
 
 	// Apply time range filters if specified

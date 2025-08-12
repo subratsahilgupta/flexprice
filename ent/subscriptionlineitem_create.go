@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/shopspring/decimal"
@@ -124,16 +125,30 @@ func (slic *SubscriptionLineItemCreate) SetCustomerID(s string) *SubscriptionLin
 	return slic
 }
 
-// SetPlanID sets the "plan_id" field.
-func (slic *SubscriptionLineItemCreate) SetPlanID(s string) *SubscriptionLineItemCreate {
-	slic.mutation.SetPlanID(s)
+// SetEntityID sets the "entity_id" field.
+func (slic *SubscriptionLineItemCreate) SetEntityID(s string) *SubscriptionLineItemCreate {
+	slic.mutation.SetEntityID(s)
 	return slic
 }
 
-// SetNillablePlanID sets the "plan_id" field if the given value is not nil.
-func (slic *SubscriptionLineItemCreate) SetNillablePlanID(s *string) *SubscriptionLineItemCreate {
+// SetNillableEntityID sets the "entity_id" field if the given value is not nil.
+func (slic *SubscriptionLineItemCreate) SetNillableEntityID(s *string) *SubscriptionLineItemCreate {
 	if s != nil {
-		slic.SetPlanID(*s)
+		slic.SetEntityID(*s)
+	}
+	return slic
+}
+
+// SetEntityType sets the "entity_type" field.
+func (slic *SubscriptionLineItemCreate) SetEntityType(s string) *SubscriptionLineItemCreate {
+	slic.mutation.SetEntityType(s)
+	return slic
+}
+
+// SetNillableEntityType sets the "entity_type" field if the given value is not nil.
+func (slic *SubscriptionLineItemCreate) SetNillableEntityType(s *string) *SubscriptionLineItemCreate {
+	if s != nil {
+		slic.SetEntityType(*s)
 	}
 	return slic
 }
@@ -196,6 +211,34 @@ func (slic *SubscriptionLineItemCreate) SetMeterDisplayName(s string) *Subscript
 func (slic *SubscriptionLineItemCreate) SetNillableMeterDisplayName(s *string) *SubscriptionLineItemCreate {
 	if s != nil {
 		slic.SetMeterDisplayName(*s)
+	}
+	return slic
+}
+
+// SetPriceUnitID sets the "price_unit_id" field.
+func (slic *SubscriptionLineItemCreate) SetPriceUnitID(s string) *SubscriptionLineItemCreate {
+	slic.mutation.SetPriceUnitID(s)
+	return slic
+}
+
+// SetNillablePriceUnitID sets the "price_unit_id" field if the given value is not nil.
+func (slic *SubscriptionLineItemCreate) SetNillablePriceUnitID(s *string) *SubscriptionLineItemCreate {
+	if s != nil {
+		slic.SetPriceUnitID(*s)
+	}
+	return slic
+}
+
+// SetPriceUnit sets the "price_unit" field.
+func (slic *SubscriptionLineItemCreate) SetPriceUnit(s string) *SubscriptionLineItemCreate {
+	slic.mutation.SetPriceUnit(s)
+	return slic
+}
+
+// SetNillablePriceUnit sets the "price_unit" field if the given value is not nil.
+func (slic *SubscriptionLineItemCreate) SetNillablePriceUnit(s *string) *SubscriptionLineItemCreate {
+	if s != nil {
+		slic.SetPriceUnit(*s)
 	}
 	return slic
 }
@@ -313,6 +356,21 @@ func (slic *SubscriptionLineItemCreate) SetSubscription(s *Subscription) *Subscr
 	return slic.SetSubscriptionID(s.ID)
 }
 
+// AddCouponAssociationIDs adds the "coupon_associations" edge to the CouponAssociation entity by IDs.
+func (slic *SubscriptionLineItemCreate) AddCouponAssociationIDs(ids ...string) *SubscriptionLineItemCreate {
+	slic.mutation.AddCouponAssociationIDs(ids...)
+	return slic
+}
+
+// AddCouponAssociations adds the "coupon_associations" edges to the CouponAssociation entity.
+func (slic *SubscriptionLineItemCreate) AddCouponAssociations(c ...*CouponAssociation) *SubscriptionLineItemCreate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return slic.AddCouponAssociationIDs(ids...)
+}
+
 // Mutation returns the SubscriptionLineItemMutation object of the builder.
 func (slic *SubscriptionLineItemCreate) Mutation() *SubscriptionLineItemMutation {
 	return slic.mutation
@@ -364,6 +422,10 @@ func (slic *SubscriptionLineItemCreate) defaults() {
 		v := subscriptionlineitem.DefaultEnvironmentID
 		slic.mutation.SetEnvironmentID(v)
 	}
+	if _, ok := slic.mutation.EntityType(); !ok {
+		v := subscriptionlineitem.DefaultEntityType
+		slic.mutation.SetEntityType(v)
+	}
 	if _, ok := slic.mutation.Quantity(); !ok {
 		v := subscriptionlineitem.DefaultQuantity
 		slic.mutation.SetQuantity(v)
@@ -408,6 +470,9 @@ func (slic *SubscriptionLineItemCreate) check() error {
 		if err := subscriptionlineitem.CustomerIDValidator(v); err != nil {
 			return &ValidationError{Name: "customer_id", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.customer_id": %w`, err)}
 		}
+	}
+	if _, ok := slic.mutation.EntityType(); !ok {
+		return &ValidationError{Name: "entity_type", err: errors.New(`ent: missing required field "SubscriptionLineItem.entity_type"`)}
 	}
 	if _, ok := slic.mutation.PriceID(); !ok {
 		return &ValidationError{Name: "price_id", err: errors.New(`ent: missing required field "SubscriptionLineItem.price_id"`)}
@@ -509,9 +574,13 @@ func (slic *SubscriptionLineItemCreate) createSpec() (*SubscriptionLineItem, *sq
 		_spec.SetField(subscriptionlineitem.FieldCustomerID, field.TypeString, value)
 		_node.CustomerID = value
 	}
-	if value, ok := slic.mutation.PlanID(); ok {
-		_spec.SetField(subscriptionlineitem.FieldPlanID, field.TypeString, value)
-		_node.PlanID = &value
+	if value, ok := slic.mutation.EntityID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldEntityID, field.TypeString, value)
+		_node.EntityID = &value
+	}
+	if value, ok := slic.mutation.EntityType(); ok {
+		_spec.SetField(subscriptionlineitem.FieldEntityType, field.TypeString, value)
+		_node.EntityType = value
 	}
 	if value, ok := slic.mutation.PlanDisplayName(); ok {
 		_spec.SetField(subscriptionlineitem.FieldPlanDisplayName, field.TypeString, value)
@@ -532,6 +601,14 @@ func (slic *SubscriptionLineItemCreate) createSpec() (*SubscriptionLineItem, *sq
 	if value, ok := slic.mutation.MeterDisplayName(); ok {
 		_spec.SetField(subscriptionlineitem.FieldMeterDisplayName, field.TypeString, value)
 		_node.MeterDisplayName = &value
+	}
+	if value, ok := slic.mutation.PriceUnitID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldPriceUnitID, field.TypeString, value)
+		_node.PriceUnitID = &value
+	}
+	if value, ok := slic.mutation.PriceUnit(); ok {
+		_spec.SetField(subscriptionlineitem.FieldPriceUnit, field.TypeString, value)
+		_node.PriceUnit = &value
 	}
 	if value, ok := slic.mutation.DisplayName(); ok {
 		_spec.SetField(subscriptionlineitem.FieldDisplayName, field.TypeString, value)
@@ -584,6 +661,22 @@ func (slic *SubscriptionLineItemCreate) createSpec() (*SubscriptionLineItem, *sq
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.SubscriptionID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := slic.mutation.CouponAssociationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionlineitem.CouponAssociationsTable,
+			Columns: []string{subscriptionlineitem.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

@@ -6,6 +6,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -43,12 +44,18 @@ func (SubscriptionLineItem) Fields() []ent.Field {
 			}).
 			NotEmpty().
 			Immutable(),
-		field.String("plan_id").
+		field.String("entity_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
 			Optional().
 			Nillable(),
+		field.String("entity_type").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Default(string(types.InvoiceLineItemEntityTypePlan)).
+			Immutable(),
 		field.String("plan_display_name").
 			Optional().
 			Nillable(),
@@ -70,6 +77,18 @@ func (SubscriptionLineItem) Fields() []ent.Field {
 			Optional().
 			Nillable(),
 		field.String("meter_display_name").
+			Optional().
+			Nillable(),
+		field.String("price_unit_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Optional().
+			Nillable(),
+		field.String("price_unit").
+			SchemaType(map[string]string{
+				"postgres": "varchar(3)",
+			}).
 			Optional().
 			Nillable(),
 		field.String("display_name").
@@ -121,6 +140,8 @@ func (SubscriptionLineItem) Edges() []ent.Edge {
 			Unique().
 			Required().
 			Immutable(),
+		edge.To("coupon_associations", CouponAssociation.Type).
+			Comment("Subscription line item can have multiple coupon associations"),
 	}
 }
 
@@ -129,7 +150,7 @@ func (SubscriptionLineItem) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "environment_id", "subscription_id", "status"),
 		index.Fields("tenant_id", "environment_id", "customer_id", "status"),
-		index.Fields("tenant_id", "environment_id", "plan_id", "status"),
+		index.Fields("tenant_id", "environment_id", "entity_id", "entity_type", "status"),
 		index.Fields("tenant_id", "environment_id", "price_id", "status"),
 		index.Fields("tenant_id", "environment_id", "meter_id", "status"),
 		index.Fields("start_date", "end_date"),

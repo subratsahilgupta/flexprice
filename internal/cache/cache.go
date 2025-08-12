@@ -31,7 +31,6 @@ type Cache interface {
 const (
 	PrefixSecret                   = "secret:v1:"
 	PrefixCustomer                 = "customer:v1:"
-	PrefixConnection               = "connection:v1:"
 	PrefixUser                     = "user:v1:"
 	PrefixTenant                   = "tenant:v1:"
 	PrefixPlan                     = "plan:v1:"
@@ -46,7 +45,16 @@ const (
 	PrefixPayment                  = "payment:v1:"
 	PrefixCreditGrantApplication   = "creditgrantapplication:v1:"
 	PrefixCreditNote               = "creditnote:v1:"
+	PrefixTaxRate                  = "taxrate:v1:"
+	PrefixTaxAssociation           = "taxassociation:v1:"
+	PrefixTaxApplied               = "taxapplied:v1:"
+	PrefixCoupon                   = "coupon:v1:"
+	PrefixCouponAssociation        = "couponassociation:v1:"
+	PrefixCouponApplication        = "couponapplication:v1:"
+	PrefixAddon                    = "addon:v1:"
+	PrefixAddonAssociation         = "addonassociation:v1:"
 	PrefixEntityIntegrationMapping = "entity_integration_mapping:v1:"
+	PrefixConnection               = "connection:v1:"
 )
 
 // GenerateKey creates a cache key from a prefix and a set of parameters

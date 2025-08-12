@@ -38,8 +38,10 @@ type SubscriptionLineItem struct {
 	SubscriptionID string `json:"subscription_id,omitempty"`
 	// CustomerID holds the value of the "customer_id" field.
 	CustomerID string `json:"customer_id,omitempty"`
-	// PlanID holds the value of the "plan_id" field.
-	PlanID *string `json:"plan_id,omitempty"`
+	// EntityID holds the value of the "entity_id" field.
+	EntityID *string `json:"entity_id,omitempty"`
+	// EntityType holds the value of the "entity_type" field.
+	EntityType string `json:"entity_type,omitempty"`
 	// PlanDisplayName holds the value of the "plan_display_name" field.
 	PlanDisplayName *string `json:"plan_display_name,omitempty"`
 	// PriceID holds the value of the "price_id" field.
@@ -50,6 +52,10 @@ type SubscriptionLineItem struct {
 	MeterID *string `json:"meter_id,omitempty"`
 	// MeterDisplayName holds the value of the "meter_display_name" field.
 	MeterDisplayName *string `json:"meter_display_name,omitempty"`
+	// PriceUnitID holds the value of the "price_unit_id" field.
+	PriceUnitID *string `json:"price_unit_id,omitempty"`
+	// PriceUnit holds the value of the "price_unit" field.
+	PriceUnit *string `json:"price_unit,omitempty"`
 	// DisplayName holds the value of the "display_name" field.
 	DisplayName *string `json:"display_name,omitempty"`
 	// Quantity holds the value of the "quantity" field.
@@ -78,9 +84,11 @@ type SubscriptionLineItem struct {
 type SubscriptionLineItemEdges struct {
 	// Subscription holds the value of the subscription edge.
 	Subscription *Subscription `json:"subscription,omitempty"`
+	// Subscription line item can have multiple coupon associations
+	CouponAssociations []*CouponAssociation `json:"coupon_associations,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // SubscriptionOrErr returns the Subscription value or an error if the edge
@@ -94,6 +102,15 @@ func (e SubscriptionLineItemEdges) SubscriptionOrErr() (*Subscription, error) {
 	return nil, &NotLoadedError{edge: "subscription"}
 }
 
+// CouponAssociationsOrErr returns the CouponAssociations value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionLineItemEdges) CouponAssociationsOrErr() ([]*CouponAssociation, error) {
+	if e.loadedTypes[1] {
+		return e.CouponAssociations, nil
+	}
+	return nil, &NotLoadedError{edge: "coupon_associations"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*SubscriptionLineItem) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -105,7 +122,7 @@ func (*SubscriptionLineItem) scanValues(columns []string) ([]any, error) {
 			values[i] = new(decimal.Decimal)
 		case subscriptionlineitem.FieldTrialPeriod:
 			values[i] = new(sql.NullInt64)
-		case subscriptionlineitem.FieldID, subscriptionlineitem.FieldTenantID, subscriptionlineitem.FieldStatus, subscriptionlineitem.FieldCreatedBy, subscriptionlineitem.FieldUpdatedBy, subscriptionlineitem.FieldEnvironmentID, subscriptionlineitem.FieldSubscriptionID, subscriptionlineitem.FieldCustomerID, subscriptionlineitem.FieldPlanID, subscriptionlineitem.FieldPlanDisplayName, subscriptionlineitem.FieldPriceID, subscriptionlineitem.FieldPriceType, subscriptionlineitem.FieldMeterID, subscriptionlineitem.FieldMeterDisplayName, subscriptionlineitem.FieldDisplayName, subscriptionlineitem.FieldCurrency, subscriptionlineitem.FieldBillingPeriod, subscriptionlineitem.FieldInvoiceCadence:
+		case subscriptionlineitem.FieldID, subscriptionlineitem.FieldTenantID, subscriptionlineitem.FieldStatus, subscriptionlineitem.FieldCreatedBy, subscriptionlineitem.FieldUpdatedBy, subscriptionlineitem.FieldEnvironmentID, subscriptionlineitem.FieldSubscriptionID, subscriptionlineitem.FieldCustomerID, subscriptionlineitem.FieldEntityID, subscriptionlineitem.FieldEntityType, subscriptionlineitem.FieldPlanDisplayName, subscriptionlineitem.FieldPriceID, subscriptionlineitem.FieldPriceType, subscriptionlineitem.FieldMeterID, subscriptionlineitem.FieldMeterDisplayName, subscriptionlineitem.FieldPriceUnitID, subscriptionlineitem.FieldPriceUnit, subscriptionlineitem.FieldDisplayName, subscriptionlineitem.FieldCurrency, subscriptionlineitem.FieldBillingPeriod, subscriptionlineitem.FieldInvoiceCadence:
 			values[i] = new(sql.NullString)
 		case subscriptionlineitem.FieldCreatedAt, subscriptionlineitem.FieldUpdatedAt, subscriptionlineitem.FieldStartDate, subscriptionlineitem.FieldEndDate:
 			values[i] = new(sql.NullTime)
@@ -184,12 +201,18 @@ func (sli *SubscriptionLineItem) assignValues(columns []string, values []any) er
 			} else if value.Valid {
 				sli.CustomerID = value.String
 			}
-		case subscriptionlineitem.FieldPlanID:
+		case subscriptionlineitem.FieldEntityID:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field plan_id", values[i])
+				return fmt.Errorf("unexpected type %T for field entity_id", values[i])
 			} else if value.Valid {
-				sli.PlanID = new(string)
-				*sli.PlanID = value.String
+				sli.EntityID = new(string)
+				*sli.EntityID = value.String
+			}
+		case subscriptionlineitem.FieldEntityType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field entity_type", values[i])
+			} else if value.Valid {
+				sli.EntityType = value.String
 			}
 		case subscriptionlineitem.FieldPlanDisplayName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -224,6 +247,20 @@ func (sli *SubscriptionLineItem) assignValues(columns []string, values []any) er
 			} else if value.Valid {
 				sli.MeterDisplayName = new(string)
 				*sli.MeterDisplayName = value.String
+			}
+		case subscriptionlineitem.FieldPriceUnitID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field price_unit_id", values[i])
+			} else if value.Valid {
+				sli.PriceUnitID = new(string)
+				*sli.PriceUnitID = value.String
+			}
+		case subscriptionlineitem.FieldPriceUnit:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field price_unit", values[i])
+			} else if value.Valid {
+				sli.PriceUnit = new(string)
+				*sli.PriceUnit = value.String
 			}
 		case subscriptionlineitem.FieldDisplayName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -302,6 +339,11 @@ func (sli *SubscriptionLineItem) QuerySubscription() *SubscriptionQuery {
 	return NewSubscriptionLineItemClient(sli.config).QuerySubscription(sli)
 }
 
+// QueryCouponAssociations queries the "coupon_associations" edge of the SubscriptionLineItem entity.
+func (sli *SubscriptionLineItem) QueryCouponAssociations() *CouponAssociationQuery {
+	return NewSubscriptionLineItemClient(sli.config).QueryCouponAssociations(sli)
+}
+
 // Update returns a builder for updating this SubscriptionLineItem.
 // Note that you need to call SubscriptionLineItem.Unwrap() before calling this method if this SubscriptionLineItem
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -352,10 +394,13 @@ func (sli *SubscriptionLineItem) String() string {
 	builder.WriteString("customer_id=")
 	builder.WriteString(sli.CustomerID)
 	builder.WriteString(", ")
-	if v := sli.PlanID; v != nil {
-		builder.WriteString("plan_id=")
+	if v := sli.EntityID; v != nil {
+		builder.WriteString("entity_id=")
 		builder.WriteString(*v)
 	}
+	builder.WriteString(", ")
+	builder.WriteString("entity_type=")
+	builder.WriteString(sli.EntityType)
 	builder.WriteString(", ")
 	if v := sli.PlanDisplayName; v != nil {
 		builder.WriteString("plan_display_name=")
@@ -377,6 +422,16 @@ func (sli *SubscriptionLineItem) String() string {
 	builder.WriteString(", ")
 	if v := sli.MeterDisplayName; v != nil {
 		builder.WriteString("meter_display_name=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := sli.PriceUnitID; v != nil {
+		builder.WriteString("price_unit_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := sli.PriceUnit; v != nil {
+		builder.WriteString("price_unit=")
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")

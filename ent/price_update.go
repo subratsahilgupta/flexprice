@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/ent/costsheet"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/price"
+	"github.com/flexprice/flexprice/ent/priceunit"
 	"github.com/flexprice/flexprice/ent/schema"
 )
 
@@ -120,17 +121,131 @@ func (pu *PriceUpdate) SetNillableDisplayAmount(s *string) *PriceUpdate {
 	return pu
 }
 
-// SetPlanID sets the "plan_id" field.
-func (pu *PriceUpdate) SetPlanID(s string) *PriceUpdate {
-	pu.mutation.SetPlanID(s)
+// SetPriceUnitType sets the "price_unit_type" field.
+func (pu *PriceUpdate) SetPriceUnitType(s string) *PriceUpdate {
+	pu.mutation.SetPriceUnitType(s)
 	return pu
 }
 
-// SetNillablePlanID sets the "plan_id" field if the given value is not nil.
-func (pu *PriceUpdate) SetNillablePlanID(s *string) *PriceUpdate {
+// SetNillablePriceUnitType sets the "price_unit_type" field if the given value is not nil.
+func (pu *PriceUpdate) SetNillablePriceUnitType(s *string) *PriceUpdate {
 	if s != nil {
-		pu.SetPlanID(*s)
+		pu.SetPriceUnitType(*s)
 	}
+	return pu
+}
+
+// SetPriceUnitID sets the "price_unit_id" field.
+func (pu *PriceUpdate) SetPriceUnitID(s string) *PriceUpdate {
+	pu.mutation.SetPriceUnitID(s)
+	return pu
+}
+
+// SetNillablePriceUnitID sets the "price_unit_id" field if the given value is not nil.
+func (pu *PriceUpdate) SetNillablePriceUnitID(s *string) *PriceUpdate {
+	if s != nil {
+		pu.SetPriceUnitID(*s)
+	}
+	return pu
+}
+
+// ClearPriceUnitID clears the value of the "price_unit_id" field.
+func (pu *PriceUpdate) ClearPriceUnitID() *PriceUpdate {
+	pu.mutation.ClearPriceUnitID()
+	return pu
+}
+
+// SetPriceUnit sets the "price_unit" field.
+func (pu *PriceUpdate) SetPriceUnit(s string) *PriceUpdate {
+	pu.mutation.SetPriceUnit(s)
+	return pu
+}
+
+// SetNillablePriceUnit sets the "price_unit" field if the given value is not nil.
+func (pu *PriceUpdate) SetNillablePriceUnit(s *string) *PriceUpdate {
+	if s != nil {
+		pu.SetPriceUnit(*s)
+	}
+	return pu
+}
+
+// ClearPriceUnit clears the value of the "price_unit" field.
+func (pu *PriceUpdate) ClearPriceUnit() *PriceUpdate {
+	pu.mutation.ClearPriceUnit()
+	return pu
+}
+
+// SetPriceUnitAmount sets the "price_unit_amount" field.
+func (pu *PriceUpdate) SetPriceUnitAmount(f float64) *PriceUpdate {
+	pu.mutation.ResetPriceUnitAmount()
+	pu.mutation.SetPriceUnitAmount(f)
+	return pu
+}
+
+// SetNillablePriceUnitAmount sets the "price_unit_amount" field if the given value is not nil.
+func (pu *PriceUpdate) SetNillablePriceUnitAmount(f *float64) *PriceUpdate {
+	if f != nil {
+		pu.SetPriceUnitAmount(*f)
+	}
+	return pu
+}
+
+// AddPriceUnitAmount adds f to the "price_unit_amount" field.
+func (pu *PriceUpdate) AddPriceUnitAmount(f float64) *PriceUpdate {
+	pu.mutation.AddPriceUnitAmount(f)
+	return pu
+}
+
+// ClearPriceUnitAmount clears the value of the "price_unit_amount" field.
+func (pu *PriceUpdate) ClearPriceUnitAmount() *PriceUpdate {
+	pu.mutation.ClearPriceUnitAmount()
+	return pu
+}
+
+// SetDisplayPriceUnitAmount sets the "display_price_unit_amount" field.
+func (pu *PriceUpdate) SetDisplayPriceUnitAmount(s string) *PriceUpdate {
+	pu.mutation.SetDisplayPriceUnitAmount(s)
+	return pu
+}
+
+// SetNillableDisplayPriceUnitAmount sets the "display_price_unit_amount" field if the given value is not nil.
+func (pu *PriceUpdate) SetNillableDisplayPriceUnitAmount(s *string) *PriceUpdate {
+	if s != nil {
+		pu.SetDisplayPriceUnitAmount(*s)
+	}
+	return pu
+}
+
+// ClearDisplayPriceUnitAmount clears the value of the "display_price_unit_amount" field.
+func (pu *PriceUpdate) ClearDisplayPriceUnitAmount() *PriceUpdate {
+	pu.mutation.ClearDisplayPriceUnitAmount()
+	return pu
+}
+
+// SetConversionRate sets the "conversion_rate" field.
+func (pu *PriceUpdate) SetConversionRate(f float64) *PriceUpdate {
+	pu.mutation.ResetConversionRate()
+	pu.mutation.SetConversionRate(f)
+	return pu
+}
+
+// SetNillableConversionRate sets the "conversion_rate" field if the given value is not nil.
+func (pu *PriceUpdate) SetNillableConversionRate(f *float64) *PriceUpdate {
+	if f != nil {
+		pu.SetConversionRate(*f)
+	}
+	return pu
+}
+
+// AddConversionRate adds f to the "conversion_rate" field.
+func (pu *PriceUpdate) AddConversionRate(f float64) *PriceUpdate {
+	pu.mutation.AddConversionRate(f)
+	return pu
+}
+
+// ClearConversionRate clears the value of the "conversion_rate" field.
+func (pu *PriceUpdate) ClearConversionRate() *PriceUpdate {
+	pu.mutation.ClearConversionRate()
 	return pu
 }
 
@@ -281,6 +396,24 @@ func (pu *PriceUpdate) ClearTiers() *PriceUpdate {
 	return pu
 }
 
+// SetPriceUnitTiers sets the "price_unit_tiers" field.
+func (pu *PriceUpdate) SetPriceUnitTiers(st []schema.PriceTier) *PriceUpdate {
+	pu.mutation.SetPriceUnitTiers(st)
+	return pu
+}
+
+// AppendPriceUnitTiers appends st to the "price_unit_tiers" field.
+func (pu *PriceUpdate) AppendPriceUnitTiers(st []schema.PriceTier) *PriceUpdate {
+	pu.mutation.AppendPriceUnitTiers(st)
+	return pu
+}
+
+// ClearPriceUnitTiers clears the value of the "price_unit_tiers" field.
+func (pu *PriceUpdate) ClearPriceUnitTiers() *PriceUpdate {
+	pu.mutation.ClearPriceUnitTiers()
+	return pu
+}
+
 // SetTransformQuantity sets the "transform_quantity" field.
 func (pu *PriceUpdate) SetTransformQuantity(sq schema.TransformQuantity) *PriceUpdate {
 	pu.mutation.SetTransformQuantity(sq)
@@ -353,6 +486,26 @@ func (pu *PriceUpdate) ClearMetadata() *PriceUpdate {
 	return pu
 }
 
+// SetParentPriceID sets the "parent_price_id" field.
+func (pu *PriceUpdate) SetParentPriceID(s string) *PriceUpdate {
+	pu.mutation.SetParentPriceID(s)
+	return pu
+}
+
+// SetNillableParentPriceID sets the "parent_price_id" field if the given value is not nil.
+func (pu *PriceUpdate) SetNillableParentPriceID(s *string) *PriceUpdate {
+	if s != nil {
+		pu.SetParentPriceID(*s)
+	}
+	return pu
+}
+
+// ClearParentPriceID clears the value of the "parent_price_id" field.
+func (pu *PriceUpdate) ClearParentPriceID() *PriceUpdate {
+	pu.mutation.ClearParentPriceID()
+	return pu
+}
+
 // AddCostsheetIDs adds the "costsheet" edge to the Costsheet entity by IDs.
 func (pu *PriceUpdate) AddCostsheetIDs(ids ...string) *PriceUpdate {
 	pu.mutation.AddCostsheetIDs(ids...)
@@ -366,6 +519,25 @@ func (pu *PriceUpdate) AddCostsheet(c ...*Costsheet) *PriceUpdate {
 		ids[i] = c[i].ID
 	}
 	return pu.AddCostsheetIDs(ids...)
+}
+
+// SetPriceUnitEdgeID sets the "price_unit_edge" edge to the PriceUnit entity by ID.
+func (pu *PriceUpdate) SetPriceUnitEdgeID(id string) *PriceUpdate {
+	pu.mutation.SetPriceUnitEdgeID(id)
+	return pu
+}
+
+// SetNillablePriceUnitEdgeID sets the "price_unit_edge" edge to the PriceUnit entity by ID if the given value is not nil.
+func (pu *PriceUpdate) SetNillablePriceUnitEdgeID(id *string) *PriceUpdate {
+	if id != nil {
+		pu = pu.SetPriceUnitEdgeID(*id)
+	}
+	return pu
+}
+
+// SetPriceUnitEdge sets the "price_unit_edge" edge to the PriceUnit entity.
+func (pu *PriceUpdate) SetPriceUnitEdge(p *PriceUnit) *PriceUpdate {
+	return pu.SetPriceUnitEdgeID(p.ID)
 }
 
 // Mutation returns the PriceMutation object of the builder.
@@ -392,6 +564,12 @@ func (pu *PriceUpdate) RemoveCostsheet(c ...*Costsheet) *PriceUpdate {
 		ids[i] = c[i].ID
 	}
 	return pu.RemoveCostsheetIDs(ids...)
+}
+
+// ClearPriceUnitEdge clears the "price_unit_edge" edge to the PriceUnit entity.
+func (pu *PriceUpdate) ClearPriceUnitEdge() *PriceUpdate {
+	pu.mutation.ClearPriceUnitEdge()
+	return pu
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -442,9 +620,9 @@ func (pu *PriceUpdate) check() error {
 			return &ValidationError{Name: "display_amount", err: fmt.Errorf(`ent: validator failed for field "Price.display_amount": %w`, err)}
 		}
 	}
-	if v, ok := pu.mutation.PlanID(); ok {
-		if err := price.PlanIDValidator(v); err != nil {
-			return &ValidationError{Name: "plan_id", err: fmt.Errorf(`ent: validator failed for field "Price.plan_id": %w`, err)}
+	if v, ok := pu.mutation.PriceUnitType(); ok {
+		if err := price.PriceUnitTypeValidator(v); err != nil {
+			return &ValidationError{Name: "price_unit_type", err: fmt.Errorf(`ent: validator failed for field "Price.price_unit_type": %w`, err)}
 		}
 	}
 	if v, ok := pu.mutation.GetType(); ok {
@@ -517,8 +695,38 @@ func (pu *PriceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := pu.mutation.DisplayAmount(); ok {
 		_spec.SetField(price.FieldDisplayAmount, field.TypeString, value)
 	}
-	if value, ok := pu.mutation.PlanID(); ok {
-		_spec.SetField(price.FieldPlanID, field.TypeString, value)
+	if value, ok := pu.mutation.PriceUnitType(); ok {
+		_spec.SetField(price.FieldPriceUnitType, field.TypeString, value)
+	}
+	if value, ok := pu.mutation.PriceUnit(); ok {
+		_spec.SetField(price.FieldPriceUnit, field.TypeString, value)
+	}
+	if pu.mutation.PriceUnitCleared() {
+		_spec.ClearField(price.FieldPriceUnit, field.TypeString)
+	}
+	if value, ok := pu.mutation.PriceUnitAmount(); ok {
+		_spec.SetField(price.FieldPriceUnitAmount, field.TypeFloat64, value)
+	}
+	if value, ok := pu.mutation.AddedPriceUnitAmount(); ok {
+		_spec.AddField(price.FieldPriceUnitAmount, field.TypeFloat64, value)
+	}
+	if pu.mutation.PriceUnitAmountCleared() {
+		_spec.ClearField(price.FieldPriceUnitAmount, field.TypeFloat64)
+	}
+	if value, ok := pu.mutation.DisplayPriceUnitAmount(); ok {
+		_spec.SetField(price.FieldDisplayPriceUnitAmount, field.TypeString, value)
+	}
+	if pu.mutation.DisplayPriceUnitAmountCleared() {
+		_spec.ClearField(price.FieldDisplayPriceUnitAmount, field.TypeString)
+	}
+	if value, ok := pu.mutation.ConversionRate(); ok {
+		_spec.SetField(price.FieldConversionRate, field.TypeFloat64, value)
+	}
+	if value, ok := pu.mutation.AddedConversionRate(); ok {
+		_spec.AddField(price.FieldConversionRate, field.TypeFloat64, value)
+	}
+	if pu.mutation.ConversionRateCleared() {
+		_spec.ClearField(price.FieldConversionRate, field.TypeFloat64)
 	}
 	if value, ok := pu.mutation.GetType(); ok {
 		_spec.SetField(price.FieldType, field.TypeString, value)
@@ -570,6 +778,17 @@ func (pu *PriceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if pu.mutation.TiersCleared() {
 		_spec.ClearField(price.FieldTiers, field.TypeJSON)
 	}
+	if value, ok := pu.mutation.PriceUnitTiers(); ok {
+		_spec.SetField(price.FieldPriceUnitTiers, field.TypeJSON, value)
+	}
+	if value, ok := pu.mutation.AppendedPriceUnitTiers(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, price.FieldPriceUnitTiers, value)
+		})
+	}
+	if pu.mutation.PriceUnitTiersCleared() {
+		_spec.ClearField(price.FieldPriceUnitTiers, field.TypeJSON)
+	}
 	if value, ok := pu.mutation.TransformQuantity(); ok {
 		_spec.SetField(price.FieldTransformQuantity, field.TypeJSON, value)
 	}
@@ -593,6 +812,18 @@ func (pu *PriceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if pu.mutation.MetadataCleared() {
 		_spec.ClearField(price.FieldMetadata, field.TypeJSON)
+	}
+	if pu.mutation.EntityTypeCleared() {
+		_spec.ClearField(price.FieldEntityType, field.TypeString)
+	}
+	if pu.mutation.EntityIDCleared() {
+		_spec.ClearField(price.FieldEntityID, field.TypeString)
+	}
+	if value, ok := pu.mutation.ParentPriceID(); ok {
+		_spec.SetField(price.FieldParentPriceID, field.TypeString, value)
+	}
+	if pu.mutation.ParentPriceIDCleared() {
+		_spec.ClearField(price.FieldParentPriceID, field.TypeString)
 	}
 	if pu.mutation.CostsheetCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -632,6 +863,35 @@ func (pu *PriceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(costsheet.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if pu.mutation.PriceUnitEdgeCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   price.PriceUnitEdgeTable,
+			Columns: []string{price.PriceUnitEdgeColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(priceunit.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := pu.mutation.PriceUnitEdgeIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   price.PriceUnitEdgeTable,
+			Columns: []string{price.PriceUnitEdgeColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(priceunit.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
@@ -748,17 +1008,131 @@ func (puo *PriceUpdateOne) SetNillableDisplayAmount(s *string) *PriceUpdateOne {
 	return puo
 }
 
-// SetPlanID sets the "plan_id" field.
-func (puo *PriceUpdateOne) SetPlanID(s string) *PriceUpdateOne {
-	puo.mutation.SetPlanID(s)
+// SetPriceUnitType sets the "price_unit_type" field.
+func (puo *PriceUpdateOne) SetPriceUnitType(s string) *PriceUpdateOne {
+	puo.mutation.SetPriceUnitType(s)
 	return puo
 }
 
-// SetNillablePlanID sets the "plan_id" field if the given value is not nil.
-func (puo *PriceUpdateOne) SetNillablePlanID(s *string) *PriceUpdateOne {
+// SetNillablePriceUnitType sets the "price_unit_type" field if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillablePriceUnitType(s *string) *PriceUpdateOne {
 	if s != nil {
-		puo.SetPlanID(*s)
+		puo.SetPriceUnitType(*s)
 	}
+	return puo
+}
+
+// SetPriceUnitID sets the "price_unit_id" field.
+func (puo *PriceUpdateOne) SetPriceUnitID(s string) *PriceUpdateOne {
+	puo.mutation.SetPriceUnitID(s)
+	return puo
+}
+
+// SetNillablePriceUnitID sets the "price_unit_id" field if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillablePriceUnitID(s *string) *PriceUpdateOne {
+	if s != nil {
+		puo.SetPriceUnitID(*s)
+	}
+	return puo
+}
+
+// ClearPriceUnitID clears the value of the "price_unit_id" field.
+func (puo *PriceUpdateOne) ClearPriceUnitID() *PriceUpdateOne {
+	puo.mutation.ClearPriceUnitID()
+	return puo
+}
+
+// SetPriceUnit sets the "price_unit" field.
+func (puo *PriceUpdateOne) SetPriceUnit(s string) *PriceUpdateOne {
+	puo.mutation.SetPriceUnit(s)
+	return puo
+}
+
+// SetNillablePriceUnit sets the "price_unit" field if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillablePriceUnit(s *string) *PriceUpdateOne {
+	if s != nil {
+		puo.SetPriceUnit(*s)
+	}
+	return puo
+}
+
+// ClearPriceUnit clears the value of the "price_unit" field.
+func (puo *PriceUpdateOne) ClearPriceUnit() *PriceUpdateOne {
+	puo.mutation.ClearPriceUnit()
+	return puo
+}
+
+// SetPriceUnitAmount sets the "price_unit_amount" field.
+func (puo *PriceUpdateOne) SetPriceUnitAmount(f float64) *PriceUpdateOne {
+	puo.mutation.ResetPriceUnitAmount()
+	puo.mutation.SetPriceUnitAmount(f)
+	return puo
+}
+
+// SetNillablePriceUnitAmount sets the "price_unit_amount" field if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillablePriceUnitAmount(f *float64) *PriceUpdateOne {
+	if f != nil {
+		puo.SetPriceUnitAmount(*f)
+	}
+	return puo
+}
+
+// AddPriceUnitAmount adds f to the "price_unit_amount" field.
+func (puo *PriceUpdateOne) AddPriceUnitAmount(f float64) *PriceUpdateOne {
+	puo.mutation.AddPriceUnitAmount(f)
+	return puo
+}
+
+// ClearPriceUnitAmount clears the value of the "price_unit_amount" field.
+func (puo *PriceUpdateOne) ClearPriceUnitAmount() *PriceUpdateOne {
+	puo.mutation.ClearPriceUnitAmount()
+	return puo
+}
+
+// SetDisplayPriceUnitAmount sets the "display_price_unit_amount" field.
+func (puo *PriceUpdateOne) SetDisplayPriceUnitAmount(s string) *PriceUpdateOne {
+	puo.mutation.SetDisplayPriceUnitAmount(s)
+	return puo
+}
+
+// SetNillableDisplayPriceUnitAmount sets the "display_price_unit_amount" field if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillableDisplayPriceUnitAmount(s *string) *PriceUpdateOne {
+	if s != nil {
+		puo.SetDisplayPriceUnitAmount(*s)
+	}
+	return puo
+}
+
+// ClearDisplayPriceUnitAmount clears the value of the "display_price_unit_amount" field.
+func (puo *PriceUpdateOne) ClearDisplayPriceUnitAmount() *PriceUpdateOne {
+	puo.mutation.ClearDisplayPriceUnitAmount()
+	return puo
+}
+
+// SetConversionRate sets the "conversion_rate" field.
+func (puo *PriceUpdateOne) SetConversionRate(f float64) *PriceUpdateOne {
+	puo.mutation.ResetConversionRate()
+	puo.mutation.SetConversionRate(f)
+	return puo
+}
+
+// SetNillableConversionRate sets the "conversion_rate" field if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillableConversionRate(f *float64) *PriceUpdateOne {
+	if f != nil {
+		puo.SetConversionRate(*f)
+	}
+	return puo
+}
+
+// AddConversionRate adds f to the "conversion_rate" field.
+func (puo *PriceUpdateOne) AddConversionRate(f float64) *PriceUpdateOne {
+	puo.mutation.AddConversionRate(f)
+	return puo
+}
+
+// ClearConversionRate clears the value of the "conversion_rate" field.
+func (puo *PriceUpdateOne) ClearConversionRate() *PriceUpdateOne {
+	puo.mutation.ClearConversionRate()
 	return puo
 }
 
@@ -909,6 +1283,24 @@ func (puo *PriceUpdateOne) ClearTiers() *PriceUpdateOne {
 	return puo
 }
 
+// SetPriceUnitTiers sets the "price_unit_tiers" field.
+func (puo *PriceUpdateOne) SetPriceUnitTiers(st []schema.PriceTier) *PriceUpdateOne {
+	puo.mutation.SetPriceUnitTiers(st)
+	return puo
+}
+
+// AppendPriceUnitTiers appends st to the "price_unit_tiers" field.
+func (puo *PriceUpdateOne) AppendPriceUnitTiers(st []schema.PriceTier) *PriceUpdateOne {
+	puo.mutation.AppendPriceUnitTiers(st)
+	return puo
+}
+
+// ClearPriceUnitTiers clears the value of the "price_unit_tiers" field.
+func (puo *PriceUpdateOne) ClearPriceUnitTiers() *PriceUpdateOne {
+	puo.mutation.ClearPriceUnitTiers()
+	return puo
+}
+
 // SetTransformQuantity sets the "transform_quantity" field.
 func (puo *PriceUpdateOne) SetTransformQuantity(sq schema.TransformQuantity) *PriceUpdateOne {
 	puo.mutation.SetTransformQuantity(sq)
@@ -981,6 +1373,26 @@ func (puo *PriceUpdateOne) ClearMetadata() *PriceUpdateOne {
 	return puo
 }
 
+// SetParentPriceID sets the "parent_price_id" field.
+func (puo *PriceUpdateOne) SetParentPriceID(s string) *PriceUpdateOne {
+	puo.mutation.SetParentPriceID(s)
+	return puo
+}
+
+// SetNillableParentPriceID sets the "parent_price_id" field if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillableParentPriceID(s *string) *PriceUpdateOne {
+	if s != nil {
+		puo.SetParentPriceID(*s)
+	}
+	return puo
+}
+
+// ClearParentPriceID clears the value of the "parent_price_id" field.
+func (puo *PriceUpdateOne) ClearParentPriceID() *PriceUpdateOne {
+	puo.mutation.ClearParentPriceID()
+	return puo
+}
+
 // AddCostsheetIDs adds the "costsheet" edge to the Costsheet entity by IDs.
 func (puo *PriceUpdateOne) AddCostsheetIDs(ids ...string) *PriceUpdateOne {
 	puo.mutation.AddCostsheetIDs(ids...)
@@ -994,6 +1406,25 @@ func (puo *PriceUpdateOne) AddCostsheet(c ...*Costsheet) *PriceUpdateOne {
 		ids[i] = c[i].ID
 	}
 	return puo.AddCostsheetIDs(ids...)
+}
+
+// SetPriceUnitEdgeID sets the "price_unit_edge" edge to the PriceUnit entity by ID.
+func (puo *PriceUpdateOne) SetPriceUnitEdgeID(id string) *PriceUpdateOne {
+	puo.mutation.SetPriceUnitEdgeID(id)
+	return puo
+}
+
+// SetNillablePriceUnitEdgeID sets the "price_unit_edge" edge to the PriceUnit entity by ID if the given value is not nil.
+func (puo *PriceUpdateOne) SetNillablePriceUnitEdgeID(id *string) *PriceUpdateOne {
+	if id != nil {
+		puo = puo.SetPriceUnitEdgeID(*id)
+	}
+	return puo
+}
+
+// SetPriceUnitEdge sets the "price_unit_edge" edge to the PriceUnit entity.
+func (puo *PriceUpdateOne) SetPriceUnitEdge(p *PriceUnit) *PriceUpdateOne {
+	return puo.SetPriceUnitEdgeID(p.ID)
 }
 
 // Mutation returns the PriceMutation object of the builder.
@@ -1020,6 +1451,12 @@ func (puo *PriceUpdateOne) RemoveCostsheet(c ...*Costsheet) *PriceUpdateOne {
 		ids[i] = c[i].ID
 	}
 	return puo.RemoveCostsheetIDs(ids...)
+}
+
+// ClearPriceUnitEdge clears the "price_unit_edge" edge to the PriceUnit entity.
+func (puo *PriceUpdateOne) ClearPriceUnitEdge() *PriceUpdateOne {
+	puo.mutation.ClearPriceUnitEdge()
+	return puo
 }
 
 // Where appends a list predicates to the PriceUpdate builder.
@@ -1083,9 +1520,9 @@ func (puo *PriceUpdateOne) check() error {
 			return &ValidationError{Name: "display_amount", err: fmt.Errorf(`ent: validator failed for field "Price.display_amount": %w`, err)}
 		}
 	}
-	if v, ok := puo.mutation.PlanID(); ok {
-		if err := price.PlanIDValidator(v); err != nil {
-			return &ValidationError{Name: "plan_id", err: fmt.Errorf(`ent: validator failed for field "Price.plan_id": %w`, err)}
+	if v, ok := puo.mutation.PriceUnitType(); ok {
+		if err := price.PriceUnitTypeValidator(v); err != nil {
+			return &ValidationError{Name: "price_unit_type", err: fmt.Errorf(`ent: validator failed for field "Price.price_unit_type": %w`, err)}
 		}
 	}
 	if v, ok := puo.mutation.GetType(); ok {
@@ -1175,8 +1612,38 @@ func (puo *PriceUpdateOne) sqlSave(ctx context.Context) (_node *Price, err error
 	if value, ok := puo.mutation.DisplayAmount(); ok {
 		_spec.SetField(price.FieldDisplayAmount, field.TypeString, value)
 	}
-	if value, ok := puo.mutation.PlanID(); ok {
-		_spec.SetField(price.FieldPlanID, field.TypeString, value)
+	if value, ok := puo.mutation.PriceUnitType(); ok {
+		_spec.SetField(price.FieldPriceUnitType, field.TypeString, value)
+	}
+	if value, ok := puo.mutation.PriceUnit(); ok {
+		_spec.SetField(price.FieldPriceUnit, field.TypeString, value)
+	}
+	if puo.mutation.PriceUnitCleared() {
+		_spec.ClearField(price.FieldPriceUnit, field.TypeString)
+	}
+	if value, ok := puo.mutation.PriceUnitAmount(); ok {
+		_spec.SetField(price.FieldPriceUnitAmount, field.TypeFloat64, value)
+	}
+	if value, ok := puo.mutation.AddedPriceUnitAmount(); ok {
+		_spec.AddField(price.FieldPriceUnitAmount, field.TypeFloat64, value)
+	}
+	if puo.mutation.PriceUnitAmountCleared() {
+		_spec.ClearField(price.FieldPriceUnitAmount, field.TypeFloat64)
+	}
+	if value, ok := puo.mutation.DisplayPriceUnitAmount(); ok {
+		_spec.SetField(price.FieldDisplayPriceUnitAmount, field.TypeString, value)
+	}
+	if puo.mutation.DisplayPriceUnitAmountCleared() {
+		_spec.ClearField(price.FieldDisplayPriceUnitAmount, field.TypeString)
+	}
+	if value, ok := puo.mutation.ConversionRate(); ok {
+		_spec.SetField(price.FieldConversionRate, field.TypeFloat64, value)
+	}
+	if value, ok := puo.mutation.AddedConversionRate(); ok {
+		_spec.AddField(price.FieldConversionRate, field.TypeFloat64, value)
+	}
+	if puo.mutation.ConversionRateCleared() {
+		_spec.ClearField(price.FieldConversionRate, field.TypeFloat64)
 	}
 	if value, ok := puo.mutation.GetType(); ok {
 		_spec.SetField(price.FieldType, field.TypeString, value)
@@ -1228,6 +1695,17 @@ func (puo *PriceUpdateOne) sqlSave(ctx context.Context) (_node *Price, err error
 	if puo.mutation.TiersCleared() {
 		_spec.ClearField(price.FieldTiers, field.TypeJSON)
 	}
+	if value, ok := puo.mutation.PriceUnitTiers(); ok {
+		_spec.SetField(price.FieldPriceUnitTiers, field.TypeJSON, value)
+	}
+	if value, ok := puo.mutation.AppendedPriceUnitTiers(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, price.FieldPriceUnitTiers, value)
+		})
+	}
+	if puo.mutation.PriceUnitTiersCleared() {
+		_spec.ClearField(price.FieldPriceUnitTiers, field.TypeJSON)
+	}
 	if value, ok := puo.mutation.TransformQuantity(); ok {
 		_spec.SetField(price.FieldTransformQuantity, field.TypeJSON, value)
 	}
@@ -1251,6 +1729,18 @@ func (puo *PriceUpdateOne) sqlSave(ctx context.Context) (_node *Price, err error
 	}
 	if puo.mutation.MetadataCleared() {
 		_spec.ClearField(price.FieldMetadata, field.TypeJSON)
+	}
+	if puo.mutation.EntityTypeCleared() {
+		_spec.ClearField(price.FieldEntityType, field.TypeString)
+	}
+	if puo.mutation.EntityIDCleared() {
+		_spec.ClearField(price.FieldEntityID, field.TypeString)
+	}
+	if value, ok := puo.mutation.ParentPriceID(); ok {
+		_spec.SetField(price.FieldParentPriceID, field.TypeString, value)
+	}
+	if puo.mutation.ParentPriceIDCleared() {
+		_spec.ClearField(price.FieldParentPriceID, field.TypeString)
 	}
 	if puo.mutation.CostsheetCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1290,6 +1780,35 @@ func (puo *PriceUpdateOne) sqlSave(ctx context.Context) (_node *Price, err error
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(costsheet.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if puo.mutation.PriceUnitEdgeCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   price.PriceUnitEdgeTable,
+			Columns: []string{price.PriceUnitEdgeColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(priceunit.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := puo.mutation.PriceUnitEdgeIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   price.PriceUnitEdgeTable,
+			Columns: []string{price.PriceUnitEdgeColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(priceunit.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {

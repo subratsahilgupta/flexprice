@@ -26,7 +26,7 @@ type CreateSubscriptionRequest struct {
 	PlanID             string               `json:"plan_id" validate:"required"`
 	Currency           string               `json:"currency" validate:"required,len=3"`
 	LookupKey          string               `json:"lookup_key"`
-	StartDate          time.Time            `json:"start_date" validate:"required"`
+	StartDate          *time.Time           `json:"start_date,omitempty"`
 	EndDate            *time.Time           `json:"end_date,omitempty"`
 	TrialStart         *time.Time           `json:"trial_start,omitempty"`
 	TrialEnd           *time.Time           `json:"trial_end,omitempty"`
@@ -50,6 +50,29 @@ type CreateSubscriptionRequest struct {
 	OverageFactor *decimal.Decimal `json:"overage_factor,omitempty"`
 	// Phases represents an optional timeline of subscription phases
 	Phases []SubscriptionSchedulePhaseInput `json:"phases,omitempty" validate:"omitempty,dive"`
+	// tax_rate_overrides is the tax rate overrides	to be applied to the subscription
+	TaxRateOverrides []*TaxRateOverride `json:"tax_rate_overrides,omitempty"`
+	// SubscriptionCoupons is a list of coupon IDs to be applied to the subscription
+	Coupons []string `json:"coupons,omitempty"`
+	// SubscriptionLineItemsCoupons is a list of coupon IDs to be applied to the subscription line items
+	LineItemCoupons map[string][]string `json:"line_item_coupons,omitempty"`
+	// OverrideLineItems allows customizing specific prices for this subscription
+	OverrideLineItems []OverrideLineItemRequest `json:"override_line_items,omitempty" validate:"omitempty,dive"`
+	// Addons represents addons to be added to the subscription during creation
+	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
+}
+
+// AddAddonRequest is used by body-based endpoint /subscriptions/addon
+type AddAddonRequest struct {
+	SubscriptionID                string `json:"subscription_id" validate:"required"`
+	AddAddonToSubscriptionRequest `json:",inline"`
+}
+
+// RemoveAddonRequest is used by body-based endpoint /subscriptions/addon (DELETE)
+type RemoveAddonRequest struct {
+	SubscriptionID string `json:"subscription_id" validate:"required"`
+	AddonID        string `json:"addon_id" validate:"required"`
+	Reason         string `json:"reason"`
 }
 
 type UpdateSubscriptionRequest struct {
@@ -64,6 +87,8 @@ type SubscriptionResponse struct {
 	Customer *CustomerResponse `json:"customer"`
 	// Schedule is included when the subscription has a schedule
 	Schedule *SubscriptionScheduleResponse `json:"schedule,omitempty"`
+	// CouponAssociations are the coupon associations for this subscription
+	CouponAssociations []*CouponAssociationResponse `json:"coupon_associations,omitempty"`
 }
 
 // ListSubscriptionsResponse represents the response for listing subscriptions
@@ -99,11 +124,17 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		return err
 	}
 
-	if r.EndDate != nil && r.EndDate.Before(r.StartDate) {
+	// Set default start date if not provided
+	if r.StartDate == nil {
+		now := time.Now().UTC()
+		r.StartDate = &now
+	}
+
+	if r.EndDate != nil && r.EndDate.Before(*r.StartDate) {
 		return ierr.NewError("end_date cannot be before start_date").
 			WithHint("End date must be after start date").
 			WithReportableDetails(map[string]interface{}{
-				"start_date": r.StartDate,
+				"start_date": *r.StartDate,
 				"end_date":   *r.EndDate,
 			}).
 			Mark(ierr.ErrValidation)
@@ -124,30 +155,30 @@ func (r *CreateSubscriptionRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.StartDate.After(time.Now().UTC()) {
+	if r.StartDate != nil && r.StartDate.After(time.Now().UTC()) {
 		return ierr.NewError("start_date cannot be in the future").
 			WithHint("Start date must be in the past or present").
 			WithReportableDetails(map[string]interface{}{
-				"start_date": r.StartDate,
+				"start_date": *r.StartDate,
 			}).
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.TrialStart != nil && r.TrialStart.After(r.StartDate) {
+	if r.TrialStart != nil && r.TrialStart.After(*r.StartDate) {
 		return ierr.NewError("trial_start cannot be after start_date").
 			WithHint("Trial start date must be before or equal to start date").
 			WithReportableDetails(map[string]interface{}{
-				"start_date":  r.StartDate,
+				"start_date":  *r.StartDate,
 				"trial_start": *r.TrialStart,
 			}).
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.TrialEnd != nil && r.TrialEnd.Before(r.StartDate) {
+	if r.TrialEnd != nil && r.TrialEnd.Before(*r.StartDate) {
 		return ierr.NewError("trial_end cannot be before start_date").
 			WithHint("Trial end date must be after or equal to start date").
 			WithReportableDetails(map[string]interface{}{
-				"start_date": r.StartDate,
+				"start_date": *r.StartDate,
 				"trial_end":  *r.TrialEnd,
 			}).
 			Mark(ierr.ErrValidation)
@@ -196,11 +227,11 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	// Validate phases if provided
 	if len(r.Phases) > 0 {
 		// First phase must start on or after subscription start date
-		if r.Phases[0].StartDate.Before(r.StartDate) {
+		if r.Phases[0].StartDate.Before(*r.StartDate) {
 			return ierr.NewError("first phase start date cannot be before subscription start date").
 				WithHint("The first phase must start on or after the subscription start date").
 				WithReportableDetails(map[string]interface{}{
-					"subscription_start_date": r.StartDate,
+					"subscription_start_date": *r.StartDate,
 					"first_phase_start_date":  r.Phases[0].StartDate,
 				}).
 				Mark(ierr.ErrValidation)
@@ -241,14 +272,80 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		}
 	}
 
+	// taxrate overrides validation
+	if len(r.TaxRateOverrides) > 0 {
+		for _, taxRateOverride := range r.TaxRateOverrides {
+			if err := taxRateOverride.Validate(); err != nil {
+				return ierr.NewError("invalid tax rate override").
+					WithHint("Tax rate override validation failed").
+					WithReportableDetails(map[string]interface{}{
+						"error":             err.Error(),
+						"tax_rate_override": taxRateOverride,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+
+	// Validate subscription coupons if provided
+	if len(r.Coupons) > 0 {
+		// Validate that coupon IDs are not empty
+		for i, couponID := range r.Coupons {
+			if couponID == "" {
+				return ierr.NewError("subscription coupon ID cannot be empty").
+					WithHint("All subscription coupon IDs must be valid").
+					WithReportableDetails(map[string]interface{}{
+						"index": i,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+
+	if len(r.LineItemCoupons) > 0 {
+		for priceID, couponIDs := range r.LineItemCoupons {
+			if len(couponIDs) == 0 {
+				return ierr.NewError("subscription line item coupon IDs cannot be empty").
+					WithHint("All subscription line item coupon IDs must be valid").
+					WithReportableDetails(map[string]interface{}{
+						"price_id": priceID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+	// Validate override line items if provided
+	if len(r.OverrideLineItems) > 0 {
+		priceIDsSeen := make(map[string]bool)
+		for i, override := range r.OverrideLineItems {
+			if err := override.Validate(); err != nil {
+				return ierr.NewError(fmt.Sprintf("invalid override line item at index %d", i)).
+					WithHint("Override line item validation failed").
+					WithReportableDetails(map[string]interface{}{
+						"index": i,
+						"error": err.Error(),
+					}).
+					Mark(ierr.ErrValidation)
+			}
+
+			// Check for duplicate price IDs
+			if priceIDsSeen[override.PriceID] {
+				return ierr.NewError(fmt.Sprintf("duplicate price_id in override line items at index %d", i)).
+					WithHint("Each price can only be overridden once per subscription").
+					WithReportableDetails(map[string]interface{}{
+						"price_id": override.PriceID,
+						"index":    i,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+			priceIDsSeen[override.PriceID] = true
+		}
+	}
+
 	return nil
 }
 
 func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscription.Subscription {
-	now := time.Now().UTC()
-	if r.StartDate.IsZero() {
-		r.StartDate = now
-	}
 
 	sub := &subscription.Subscription{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
@@ -257,14 +354,14 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		Currency:           strings.ToLower(r.Currency),
 		LookupKey:          r.LookupKey,
 		SubscriptionStatus: types.SubscriptionStatusActive,
-		StartDate:          r.StartDate,
+		StartDate:          *r.StartDate,
 		EndDate:            r.EndDate,
 		TrialStart:         r.TrialStart,
 		TrialEnd:           r.TrialEnd,
 		BillingCadence:     r.BillingCadence,
 		BillingPeriod:      r.BillingPeriod,
 		BillingPeriodCount: r.BillingPeriodCount,
-		BillingAnchor:      r.StartDate,
+		BillingAnchor:      *r.StartDate,
 		Metadata:           r.Metadata,
 		EnvironmentID:      types.GetEnvironmentID(ctx),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
@@ -296,6 +393,54 @@ type SubscriptionLineItemRequest struct {
 // SubscriptionLineItemResponse represents the response for a subscription line item
 type SubscriptionLineItemResponse struct {
 	*subscription.SubscriptionLineItem
+}
+
+// OverrideLineItemRequest represents a price override for a specific subscription
+type OverrideLineItemRequest struct {
+	// PriceID references the plan price to override
+	PriceID string `json:"price_id" validate:"required"`
+	// Quantity for this line item (optional)
+	Quantity *decimal.Decimal `json:"quantity,omitempty"`
+	// Amount is the new price amount that overrides the original price (optional)
+	Amount *decimal.Decimal `json:"amount,omitempty"`
+}
+
+// Validate validates the override line item request
+func (r *OverrideLineItemRequest) Validate() error {
+	if r.PriceID == "" {
+		return ierr.NewError("price_id is required for override line items").
+			WithHint("Price ID must be specified for price overrides").
+			Mark(ierr.ErrValidation)
+	}
+
+	// At least one override field (quantity or amount) must be provided
+	if r.Quantity == nil && r.Amount == nil {
+		return ierr.NewError("at least one override field (quantity or amount) must be provided").
+			WithHint("Specify either quantity, amount, or both for price override").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate amount if provided
+	if r.Amount != nil && r.Amount.IsNegative() {
+		return ierr.NewError("amount must be non-negative").
+			WithHint("Override amount cannot be negative").
+			WithReportableDetails(map[string]interface{}{
+				"amount": r.Amount.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate quantity if provided
+	if r.Quantity != nil && r.Quantity.IsNegative() {
+		return ierr.NewError("quantity must be non-negative").
+			WithHint("Override quantity cannot be negative").
+			WithReportableDetails(map[string]interface{}{
+				"quantity": r.Quantity.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }
 
 // ToSubscriptionLineItem converts a request to a domain subscription line item

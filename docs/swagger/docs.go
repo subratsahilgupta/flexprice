@@ -902,6 +902,393 @@ const docTemplate = `{
                 }
             }
         },
+        "/coupons": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Lists coupons with filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Coupons"
+                ],
+                "summary": "List coupons with filtering",
+                "parameters": [
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "coupon_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListCouponsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Creates a new coupon",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Coupons"
+                ],
+                "summary": "Create a new coupon",
+                "parameters": [
+                    {
+                        "description": "Coupon request",
+                        "name": "coupon",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateCouponRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CouponResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/coupons/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieves a coupon by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Coupons"
+                ],
+                "summary": "Get a coupon by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Coupon ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CouponResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Updates an existing coupon",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Coupons"
+                ],
+                "summary": "Update a coupon",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Coupon ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Coupon update request",
+                        "name": "coupon",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateCouponRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CouponResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Deletes a coupon",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Coupons"
+                ],
+                "summary": "Delete a coupon",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Coupon ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/creditgrants": {
             "get": {
                 "security": [
@@ -2474,13 +2861,7 @@ const docTemplate = `{
                             "type": "string"
                         },
                         "collectionFormat": "csv",
-                        "description": "Specific filters for entitlements",
                         "name": "plan_ids",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "sort",
                         "in": "query"
                     },
                     {
@@ -2558,6 +2939,57 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/dto.EntitlementResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/entitlements/search": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List entitlements by filter",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entitlements"
+                ],
+                "summary": "List entitlements by filter",
+                "parameters": [
+                    {
+                        "description": "Filter",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.EntitlementFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListEntitlementsResponse"
                         }
                     },
                     "400": {
@@ -4177,11 +4609,6 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "name": "sort",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
                         "name": "start_time",
                         "in": "query"
                     },
@@ -4319,6 +4746,57 @@ const docTemplate = `{
                 }
             }
         },
+        "/invoices/search": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List invoices by filter",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "List invoices by filter",
+                "parameters": [
+                    {
+                        "description": "Filter",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.InvoiceFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListInvoicesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/invoices/{id}": {
             "get": {
                 "description": "Get detailed information about an invoice",
@@ -4346,6 +4824,63 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/dto.InvoiceResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update invoice details like PDF URL",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Update an invoice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invoice ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Invoice Update Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateInvoiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.InvoiceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
@@ -5121,11 +5656,6 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "name": "sort",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
                         "name": "start_time",
                         "in": "query"
                     },
@@ -5199,6 +5729,57 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/dto.PlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/plans/search": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List plans by filter",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plans"
+                ],
+                "summary": "List plans by filter",
+                "parameters": [
+                    {
+                        "description": "Filter",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.PlanFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListPlansResponse"
                         }
                     },
                     "400": {
@@ -5609,6 +6190,11 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "name": "parent_price_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "array",
                         "items": {
                             "type": "string"
@@ -5624,6 +6210,20 @@ const docTemplate = `{
                         },
                         "collectionFormat": "csv",
                         "name": "price_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "PLAN",
+                            "SUBSCRIPTION"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "PRICE_SCOPE_PLAN",
+                            "PRICE_SCOPE_SUBSCRIPTION"
+                        ],
+                        "description": "Price override filtering fields",
+                        "name": "scope",
                         "in": "query"
                     },
                     {
@@ -5649,6 +6249,11 @@ const docTemplate = `{
                             "StatusArchived"
                         ],
                         "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "subscription_id",
                         "in": "query"
                     }
                 ],
@@ -5679,7 +6284,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Create a new price with the specified configuration",
+                "description": "Create a new price with the specified configuration. Supports both regular and price unit configurations.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5716,6 +6321,286 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/prices/units": {
+            "get": {
+                "description": "Get a paginated list of price units with optional filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Price Units"
+                ],
+                "summary": "List price units",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit number of results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset for pagination",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order (asc/desc)",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListPriceUnitsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new price unit with the provided details",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Price Units"
+                ],
+                "summary": "Create a new price unit",
+                "parameters": [
+                    {
+                        "description": "Price unit details",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreatePriceUnitRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PriceUnitResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/prices/units/code/{code}": {
+            "get": {
+                "description": "Get a price unit by code",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Price Units"
+                ],
+                "summary": "Get a price unit by code",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Price unit code",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PriceUnitResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/prices/units/{id}": {
+            "get": {
+                "description": "Get a price unit by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Price Units"
+                ],
+                "summary": "Get a price unit by ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Price unit ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PriceUnitResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an existing price unit with the provided details. Only name, symbol, precision, and conversion_rate can be updated. Status changes are not allowed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Price Units"
+                ],
+                "summary": "Update a price unit",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Price unit ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Price unit details to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdatePriceUnitRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PriceUnitResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Archive an existing price unit. The unit will be marked as archived and cannot be used in new prices.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Price Units"
+                ],
+                "summary": "Archive a price unit",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Price unit ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -6280,11 +7165,6 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "name": "sort",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
                         "name": "start_time",
                         "in": "query"
                     },
@@ -6393,6 +7273,57 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/dto.SubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions/search": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List subscriptions by filter",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "List subscriptions by filter",
+                "parameters": [
+                    {
+                        "description": "Filter",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.SubscriptionFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListSubscriptionsResponse"
                         }
                     },
                     "400": {
@@ -7967,6 +8898,127 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "coupon.Coupon": {
+            "type": "object",
+            "properties": {
+                "amount_off": {
+                    "type": "number"
+                },
+                "cadence": {
+                    "$ref": "#/definitions/types.CouponCadence"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "duration_in_periods": {
+                    "type": "integer"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "max_redemptions": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "percentage_off": {
+                    "type": "number"
+                },
+                "redeem_after": {
+                    "type": "string"
+                },
+                "redeem_before": {
+                    "type": "string"
+                },
+                "rules": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_redemptions": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.CouponType"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "coupon_association.CouponAssociation": {
+            "type": "object",
+            "properties": {
+                "coupon": {
+                    "$ref": "#/definitions/coupon.Coupon"
+                },
+                "coupon_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "description": "Mandatory",
+                    "type": "string"
+                },
+                "subscription_line_item_id": {
+                    "description": "Optional",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "creditnote.CreditNoteLineItem": {
             "type": "object",
             "properties": {
@@ -8168,6 +9220,14 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.AlertConfig": {
+            "type": "object",
+            "properties": {
+                "threshold": {
+                    "$ref": "#/definitions/dto.Threshold"
+                }
+            }
+        },
         "dto.AuthResponse": {
             "type": "object",
             "properties": {
@@ -8338,6 +9398,202 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CouponApplicationResponse": {
+            "type": "object",
+            "properties": {
+                "applied_at": {
+                    "type": "string"
+                },
+                "coupon_association_id": {
+                    "type": "string"
+                },
+                "coupon_id": {
+                    "type": "string"
+                },
+                "coupon_snapshot": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "discount_percentage": {
+                    "type": "number"
+                },
+                "discount_type": {
+                    "$ref": "#/definitions/types.CouponType"
+                },
+                "discounted_amount": {
+                    "type": "number"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "final_price": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "invoice_line_item_id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "original_price": {
+                    "type": "number"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CouponAssociationResponse": {
+            "type": "object",
+            "properties": {
+                "coupon": {
+                    "$ref": "#/definitions/coupon.Coupon"
+                },
+                "coupon_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "description": "Mandatory",
+                    "type": "string"
+                },
+                "subscription_line_item_id": {
+                    "description": "Optional",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CouponResponse": {
+            "type": "object",
+            "properties": {
+                "amount_off": {
+                    "type": "number"
+                },
+                "cadence": {
+                    "$ref": "#/definitions/types.CouponCadence"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "duration_in_periods": {
+                    "type": "integer"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "max_redemptions": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "percentage_off": {
+                    "type": "number"
+                },
+                "redeem_after": {
+                    "type": "string"
+                },
+                "redeem_before": {
+                    "type": "string"
+                },
+                "rules": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_redemptions": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.CouponType"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.CreateAPIKeyRequest": {
             "type": "object",
             "required": [
@@ -8406,6 +9662,73 @@ const docTemplate = `{
                 "price_id": {
                     "description": "PriceID references the price configuration",
                     "type": "string"
+                }
+            }
+        },
+        "dto.CreateCouponRequest": {
+            "type": "object",
+            "required": [
+                "cadence",
+                "name",
+                "type"
+            ],
+            "properties": {
+                "amount_off": {
+                    "type": "number"
+                },
+                "cadence": {
+                    "enum": [
+                        "once",
+                        "repeated",
+                        "forever"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.CouponCadence"
+                        }
+                    ]
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "duration_in_periods": {
+                    "type": "integer"
+                },
+                "max_redemptions": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "percentage_off": {
+                    "type": "number"
+                },
+                "redeem_after": {
+                    "type": "string"
+                },
+                "redeem_before": {
+                    "type": "string"
+                },
+                "rules": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "type": {
+                    "enum": [
+                        "fixed",
+                        "percentage"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.CouponType"
+                        }
+                    ]
                 }
             }
         },
@@ -8778,6 +10101,14 @@ const docTemplate = `{
                     "description": "price_type indicates the type of pricing (fixed, usage, tiered, etc.)",
                     "type": "string"
                 },
+                "price_unit": {
+                    "description": "price_unit is the optional 3-digit ISO code of the price unit associated with this line item",
+                    "type": "string"
+                },
+                "price_unit_amount": {
+                    "description": "price_unit_amount is the optional amount converted to the price unit currency",
+                    "type": "number"
+                },
                 "quantity": {
                     "description": "quantity is the quantity of units for this line item",
                     "type": "number"
@@ -8814,6 +10145,13 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "coupons": {
+                    "description": "coupons",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "currency": {
                     "description": "currency is the three-letter ISO currency code (e.g., USD, EUR) for the invoice",
                     "type": "string"
@@ -8840,6 +10178,10 @@ const docTemplate = `{
                 },
                 "invoice_number": {
                     "description": "invoice_number is an optional human-readable identifier for the invoice",
+                    "type": "string"
+                },
+                "invoice_pdf_url": {
+                    "description": "invoice_pdf_url is the URL where customers can download the PDF version of this invoice",
                     "type": "string"
                 },
                 "invoice_status": {
@@ -9019,6 +10361,7 @@ const docTemplate = `{
                 "billing_period_count",
                 "currency",
                 "invoice_cadence",
+                "price_unit_type",
                 "type"
             ],
             "properties": {
@@ -9070,6 +10413,12 @@ const docTemplate = `{
                 },
                 "plan_id": {
                     "type": "string"
+                },
+                "price_unit_config": {
+                    "$ref": "#/definitions/dto.PriceUnitConfig"
+                },
+                "price_unit_type": {
+                    "$ref": "#/definitions/types.PriceUnitType"
                 },
                 "tier_mode": {
                     "$ref": "#/definitions/types.BillingTier"
@@ -9135,6 +10484,7 @@ const docTemplate = `{
                 "billing_period_count",
                 "currency",
                 "invoice_cadence",
+                "price_unit_type",
                 "type"
             ],
             "properties": {
@@ -9187,6 +10537,12 @@ const docTemplate = `{
                 "plan_id": {
                     "type": "string"
                 },
+                "price_unit_config": {
+                    "$ref": "#/definitions/dto.PriceUnitConfig"
+                },
+                "price_unit_type": {
+                    "$ref": "#/definitions/types.PriceUnitType"
+                },
                 "tier_mode": {
                     "$ref": "#/definitions/types.BillingTier"
                 },
@@ -9221,6 +10577,39 @@ const docTemplate = `{
                 },
                 "up_to": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.CreatePriceUnitRequest": {
+            "type": "object",
+            "required": [
+                "base_currency",
+                "code",
+                "conversion_rate",
+                "name",
+                "symbol"
+            ],
+            "properties": {
+                "base_currency": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "conversion_rate": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "precision": {
+                    "type": "integer",
+                    "maximum": 8,
+                    "minimum": 0
+                },
+                "symbol": {
+                    "type": "string",
+                    "maxLength": 10
                 }
             }
         },
@@ -9291,6 +10680,13 @@ const docTemplate = `{
                     "description": "OverageFactor is a multiplier applied to usage beyond the commitment amount",
                     "type": "number"
                 },
+                "override_line_items": {
+                    "description": "OverrideLineItems allows customizing specific prices for this subscription",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.OverrideLineItemRequest"
+                    }
+                },
                 "phases": {
                     "description": "Phases represents an optional timeline of subscription phases",
                     "type": "array",
@@ -9303,6 +10699,13 @@ const docTemplate = `{
                 },
                 "start_date": {
                     "type": "string"
+                },
+                "subscription_coupons": {
+                    "description": "SubscriptionCoupons is a list of coupon IDs to be applied to the subscription",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "trial_end": {
                     "type": "string"
@@ -9362,6 +10765,18 @@ const docTemplate = `{
                 "currency"
             ],
             "properties": {
+                "alert_config": {
+                    "description": "alert_config is the alert configuration for the wallet (optional)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.AlertConfig"
+                        }
+                    ]
+                },
+                "alert_enabled": {
+                    "description": "alert_enabled is the flag to enable alerts for the wallet\ndefaults to true, can be explicitly set to false to disable alerts",
+                    "type": "boolean"
+                },
                 "auto_topup_amount": {
                     "type": "number"
                 },
@@ -10557,6 +11972,18 @@ const docTemplate = `{
                     "description": "price_type indicates the type of pricing (fixed, usage, tiered, etc.)",
                     "type": "string"
                 },
+                "price_unit": {
+                    "description": "price_unit is the optional 3-digit ISO code of the price unit associated with this line item",
+                    "type": "string"
+                },
+                "price_unit_amount": {
+                    "description": "price_unit_amount is the optional amount converted to the price unit currency",
+                    "type": "number"
+                },
+                "price_unit_id": {
+                    "description": "price_unit_id is the optional unique identifier of the price unit associated with this line item",
+                    "type": "string"
+                },
                 "quantity": {
                     "description": "quantity is the quantity of units for this line item",
                     "type": "number"
@@ -10609,6 +12036,13 @@ const docTemplate = `{
                 "billing_sequence": {
                     "description": "billing_sequence is the optional sequence number for billing cycles",
                     "type": "integer"
+                },
+                "coupon_applications": {
+                    "description": "coupon_applications contains the coupon applications associated with this invoice",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CouponApplicationResponse"
+                    }
                 },
                 "created_at": {
                     "description": "created_at is the timestamp when this invoice was created",
@@ -10741,6 +12175,10 @@ const docTemplate = `{
                     "description": "total is the total amount of the invoice including taxes and discounts",
                     "type": "number"
                 },
+                "total_discount": {
+                    "description": "total_discount is the total discount amount from coupon applications",
+                    "type": "number"
+                },
                 "updated_at": {
                     "description": "updated_at is the timestamp when this invoice was last updated",
                     "type": "string"
@@ -10801,6 +12239,20 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.ListCouponsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CouponResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
                 }
             }
         },
@@ -10943,6 +12395,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.PlanResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "dto.ListPriceUnitsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.PriceUnitResponse"
                     }
                 },
                 "pagination": {
@@ -11095,6 +12561,26 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string",
                     "example": "2024-03-20T15:04:05Z"
+                }
+            }
+        },
+        "dto.OverrideLineItemRequest": {
+            "type": "object",
+            "required": [
+                "price_id"
+            ],
+            "properties": {
+                "amount": {
+                    "description": "Amount is the new price amount that overrides the original price (optional)",
+                    "type": "number"
+                },
+                "price_id": {
+                    "description": "PriceID references the plan price to override",
+                    "type": "string"
+                },
+                "quantity": {
+                    "description": "Quantity for this line item (optional)",
+                    "type": "number"
                 }
             }
         },
@@ -11334,6 +12820,10 @@ const docTemplate = `{
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
                     "type": "integer"
                 },
+                "conversion_rate": {
+                    "description": "ConversionRate is the rate of the price unit to the base currency\nFor BTC: 1 BTC = 100000000 USD",
+                    "type": "number"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -11350,6 +12840,10 @@ const docTemplate = `{
                 },
                 "display_amount": {
                     "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
+                    "type": "string"
+                },
+                "display_price_unit_amount": {
+                    "description": "DisplayPriceUnitAmount is the formatted amount with price unit symbol\nFor BTC: 0.00000001 BTC",
                     "type": "string"
                 },
                 "environment_id": {
@@ -11377,12 +12871,55 @@ const docTemplate = `{
                     "description": "MeterID is the id of the meter for usage based pricing",
                     "type": "string"
                 },
+                "parent_price_id": {
+                    "description": "ParentPriceID references the original price (only set when scope is SUBSCRIPTION)",
+                    "type": "string"
+                },
                 "plan_id": {
                     "description": "PlanID is the id of the plan for plan based pricing",
                     "type": "string"
                 },
+                "price_unit": {
+                    "description": "PriceUnit 3 digit ISO currency code in lowercase ex btc\nFor BTC: btc",
+                    "type": "string"
+                },
+                "price_unit_amount": {
+                    "description": "PriceUnitAmount is the amount stored in price unit\nFor BTC: 0.00000001 means 0.00000001 BTC",
+                    "type": "number"
+                },
+                "price_unit_id": {
+                    "description": "PriceUnitID is the id of the price unit",
+                    "type": "string"
+                },
+                "price_unit_tiers": {
+                    "description": "PriceUnitTiers are the tiers for the price unit",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "price_unit_type": {
+                    "description": "PriceUnitType is the type of the price unit- Fiat, Custom, Crypto",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceUnitType"
+                        }
+                    ]
+                },
+                "scope": {
+                    "description": "Price override fields\nScope indicates if this is a plan-level or subscription-level price",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceScope"
+                        }
+                    ]
+                },
                 "status": {
                     "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "description": "SubscriptionID references the subscription (only set when scope is SUBSCRIPTION)",
+                    "type": "string"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -11410,6 +12947,61 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.PriceUnitConfig": {
+            "type": "object",
+            "required": [
+                "price_unit"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "price_unit": {
+                    "type": "string"
+                },
+                "price_unit_tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreatePriceTier"
+                    }
+                }
+            }
+        },
+        "dto.PriceUnitResponse": {
+            "type": "object",
+            "properties": {
+                "base_currency": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "conversion_rate": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "precision": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "symbol": {
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -11614,6 +13206,12 @@ const docTemplate = `{
                 "price_type": {
                     "$ref": "#/definitions/types.PriceType"
                 },
+                "price_unit": {
+                    "type": "string"
+                },
+                "price_unit_id": {
+                    "type": "string"
+                },
                 "quantity": {
                     "type": "number"
                 },
@@ -11755,6 +13353,13 @@ const docTemplate = `{
                 "commitment_amount": {
                     "description": "CommitmentAmount is the minimum amount a customer commits to paying for a billing period",
                     "type": "number"
+                },
+                "coupon_associations": {
+                    "description": "CouponAssociations are the coupon associations for this subscription",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CouponAssociationResponse"
+                    }
                 },
                 "created_at": {
                     "type": "string"
@@ -12139,6 +13744,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -12147,6 +13755,18 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.Threshold": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "description": "amount",
+                    "type": "string"
+                },
+                "value": {
+                    "type": "number"
                 }
             }
         },
@@ -12215,6 +13835,20 @@ const docTemplate = `{
                 },
                 "status": {
                     "description": "Status updates the costsheet's status (optional)",
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UpdateCouponRequest": {
+            "type": "object",
+            "properties": {
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
                     "type": "string"
                 }
             }
@@ -12326,6 +13960,15 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "unit_singular": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.UpdateInvoiceRequest": {
+            "type": "object",
+            "properties": {
+                "invoice_pdf_url": {
+                    "description": "invoice_pdf_url is the URL where customers can download the PDF version of this invoice",
                     "type": "string"
                 }
             }
@@ -12479,6 +14122,7 @@ const docTemplate = `{
                 "billing_period_count",
                 "currency",
                 "invoice_cadence",
+                "price_unit_type",
                 "type"
             ],
             "properties": {
@@ -12534,6 +14178,12 @@ const docTemplate = `{
                 },
                 "plan_id": {
                     "type": "string"
+                },
+                "price_unit_config": {
+                    "$ref": "#/definitions/dto.PriceUnitConfig"
+                },
+                "price_unit_type": {
+                    "$ref": "#/definitions/types.PriceUnitType"
                 },
                 "tier_mode": {
                     "$ref": "#/definitions/types.BillingTier"
@@ -12604,6 +14254,26 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdatePriceUnitRequest": {
+            "type": "object",
+            "properties": {
+                "conversion_rate": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "precision": {
+                    "type": "integer",
+                    "maximum": 8,
+                    "minimum": 0
+                },
+                "symbol": {
+                    "type": "string",
+                    "maxLength": 10
+                }
+            }
+        },
         "dto.UpdateTaskStatusRequest": {
             "type": "object",
             "required": [
@@ -12621,6 +14291,9 @@ const docTemplate = `{
                 "billing_details": {
                     "$ref": "#/definitions/dto.TenantBillingDetails"
                 },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
                 "name": {
                     "type": "string"
                 }
@@ -12629,6 +14302,12 @@ const docTemplate = `{
         "dto.UpdateWalletRequest": {
             "type": "object",
             "properties": {
+                "alert_config": {
+                    "$ref": "#/definitions/dto.AlertConfig"
+                },
+                "alert_enabled": {
+                    "type": "boolean"
+                },
                 "auto_topup_amount": {
                     "type": "number"
                 },
@@ -12743,6 +14422,15 @@ const docTemplate = `{
         "dto.WalletBalanceResponse": {
             "type": "object",
             "properties": {
+                "alert_config": {
+                    "$ref": "#/definitions/types.AlertConfig"
+                },
+                "alert_enabled": {
+                    "type": "boolean"
+                },
+                "alert_state": {
+                    "type": "string"
+                },
                 "auto_topup_amount": {
                     "type": "number"
                 },
@@ -12829,6 +14517,15 @@ const docTemplate = `{
         "dto.WalletResponse": {
             "type": "object",
             "properties": {
+                "alert_config": {
+                    "$ref": "#/definitions/types.AlertConfig"
+                },
+                "alert_enabled": {
+                    "type": "boolean"
+                },
+                "alert_state": {
+                    "type": "string"
+                },
                 "auto_topup_amount": {
                     "type": "number"
                 },
@@ -13074,6 +14771,10 @@ const docTemplate = `{
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
                     "type": "integer"
                 },
+                "conversion_rate": {
+                    "description": "ConversionRate is the rate of the price unit to the base currency\nFor BTC: 1 BTC = 100000000 USD",
+                    "type": "number"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -13090,6 +14791,10 @@ const docTemplate = `{
                 },
                 "display_amount": {
                     "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
+                    "type": "string"
+                },
+                "display_price_unit_amount": {
+                    "description": "DisplayPriceUnitAmount is the formatted amount with price unit symbol\nFor BTC: 0.00000001 BTC",
                     "type": "string"
                 },
                 "environment_id": {
@@ -13114,12 +14819,55 @@ const docTemplate = `{
                     "description": "MeterID is the id of the meter for usage based pricing",
                     "type": "string"
                 },
+                "parent_price_id": {
+                    "description": "ParentPriceID references the original price (only set when scope is SUBSCRIPTION)",
+                    "type": "string"
+                },
                 "plan_id": {
                     "description": "PlanID is the id of the plan for plan based pricing",
                     "type": "string"
                 },
+                "price_unit": {
+                    "description": "PriceUnit 3 digit ISO currency code in lowercase ex btc\nFor BTC: btc",
+                    "type": "string"
+                },
+                "price_unit_amount": {
+                    "description": "PriceUnitAmount is the amount stored in price unit\nFor BTC: 0.00000001 means 0.00000001 BTC",
+                    "type": "number"
+                },
+                "price_unit_id": {
+                    "description": "PriceUnitID is the id of the price unit",
+                    "type": "string"
+                },
+                "price_unit_tiers": {
+                    "description": "PriceUnitTiers are the tiers for the price unit",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "price_unit_type": {
+                    "description": "PriceUnitType is the type of the price unit- Fiat, Custom, Crypto",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceUnitType"
+                        }
+                    ]
+                },
+                "scope": {
+                    "description": "Price override fields\nScope indicates if this is a plan-level or subscription-level price",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceScope"
+                        }
+                    ]
+                },
                 "status": {
                     "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "description": "SubscriptionID references the subscription (only set when scope is SUBSCRIPTION)",
+                    "type": "string"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -13269,6 +15017,12 @@ const docTemplate = `{
                 "price_type": {
                     "$ref": "#/definitions/types.PriceType"
                 },
+                "price_unit": {
+                    "type": "string"
+                },
+                "price_unit_id": {
+                    "type": "string"
+                },
                 "quantity": {
                     "type": "number"
                 },
@@ -13396,6 +15150,26 @@ const docTemplate = `{
                 "AggregationSumWithMultiplier"
             ]
         },
+        "types.AlertConfig": {
+            "type": "object",
+            "properties": {
+                "threshold": {
+                    "$ref": "#/definitions/types.AlertThreshold"
+                }
+            }
+        },
+        "types.AlertThreshold": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "description": "amount",
+                    "type": "string"
+                },
+                "value": {
+                    "type": "number"
+                }
+            }
+        },
         "types.AutoTopupTrigger": {
             "type": "string",
             "enum": [
@@ -13472,70 +15246,29 @@ const docTemplate = `{
                 "BILLING_TIER_SLAB"
             ]
         },
-        "types.ConnectionFilter": {
-            "type": "object",
-            "properties": {
-                "connection_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "end_time": {
-                    "type": "string"
-                },
-                "expand": {
-                    "type": "string"
-                },
-                "filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.FilterCondition"
-                    }
-                },
-                "limit": {
-                    "type": "integer",
-                    "maximum": 1000,
-                    "minimum": 1
-                },
-                "offset": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "order": {
-                    "type": "string",
-                    "enum": [
-                        "asc",
-                        "desc"
-                    ]
-                },
-                "provider_type": {
-                    "$ref": "#/definitions/types.SecretProvider"
-                },
-                "sort": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.SortCondition"
-                    }
-                },
-                "start_time": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                }
-            }
+        "types.CouponCadence": {
+            "type": "string",
+            "enum": [
+                "once",
+                "repeated",
+                "forever"
+            ],
+            "x-enum-varnames": [
+                "CouponCadenceOnce",
+                "CouponCadenceRepeated",
+                "CouponCadenceForever"
+            ]
         },
-        "types.ConnectionMetadata": {
-            "type": "object",
-            "properties": {
-                "generic": {
-                    "$ref": "#/definitions/types.GenericConnectionMetadata"
-                },
-                "stripe": {
-                    "$ref": "#/definitions/types.StripeConnectionMetadata"
-                }
-            }
+        "types.CouponType": {
+            "type": "string",
+            "enum": [
+                "fixed",
+                "percentage"
+            ],
+            "x-enum-varnames": [
+                "CouponTypeFixed",
+                "CouponTypePercentage"
+            ]
         },
         "types.CreditGrantCadence": {
             "type": "string",
@@ -13728,6 +15461,70 @@ const docTemplate = `{
                 "DataTypeDate",
                 "DataTypeArray"
             ]
+        },
+        "types.EntitlementFilter": {
+            "type": "object",
+            "properties": {
+                "end_time": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "feature_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "feature_type": {
+                    "$ref": "#/definitions/types.FeatureType"
+                },
+                "filters": {
+                    "description": "Specific filters for entitlements",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "is_enabled": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "plan_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                }
+            }
         },
         "types.EntityType": {
             "type": "string",
@@ -13925,6 +15722,100 @@ const docTemplate = `{
                 "InvoiceCadenceAdvance"
             ]
         },
+        "types.InvoiceFilter": {
+            "type": "object",
+            "properties": {
+                "amount_due_gt": {
+                    "description": "amount_due_gt filters invoices with a total amount due greater than the specified value\nUseful for finding invoices above a certain threshold or identifying high-value invoices",
+                    "type": "number"
+                },
+                "amount_remaining_gt": {
+                    "description": "amount_remaining_gt filters invoices with an outstanding balance greater than the specified value\nUseful for finding invoices that still have significant unpaid amounts",
+                    "type": "number"
+                },
+                "customer_id": {
+                    "description": "customer_id filters invoices for a specific customer using FlexPrice's internal customer ID\nThis is the ID returned by FlexPrice when creating or retrieving customers",
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "external_customer_id": {
+                    "description": "external_customer_id filters invoices for a customer using your system's customer identifier\nThis is the ID you provided when creating the customer in FlexPrice",
+                    "type": "string"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "invoice_ids": {
+                    "description": "invoice_ids restricts results to invoices with the specified IDs\nUse this to retrieve specific invoices when you know their exact identifiers",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "invoice_status": {
+                    "description": "invoice_status filters by the current state of invoices in their lifecycle\nMultiple statuses can be specified to include invoices in any of the listed states",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.InvoiceStatus"
+                    }
+                },
+                "invoice_type": {
+                    "description": "invoice_type filters by the nature of the invoice (SUBSCRIPTION, ONE_OFF, or CREDIT)\nUse this to separate recurring charges from one-time fees or credit adjustments",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceType"
+                        }
+                    ]
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "payment_status": {
+                    "description": "payment_status filters by the payment state of invoices\nMultiple statuses can be specified to include invoices with any of the listed payment states",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.PaymentStatus"
+                    }
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "description": "subscription_id filters invoices generated for a specific subscription\nOnly returns invoices that were created as part of the specified subscription's billing",
+                    "type": "string"
+                }
+            }
+        },
         "types.InvoiceStatus": {
             "type": "string",
             "enum": [
@@ -14061,6 +15952,69 @@ const docTemplate = `{
                 "PaymentStatusPartiallyRefunded"
             ]
         },
+        "types.PlanFilter": {
+            "type": "object",
+            "properties": {
+                "end_time": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "filters": {
+                    "description": "filters allows complex filtering based on multiple fields",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "plan_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                }
+            }
+        },
+        "types.PriceScope": {
+            "type": "string",
+            "enum": [
+                "PLAN",
+                "SUBSCRIPTION"
+            ],
+            "x-enum-varnames": [
+                "PRICE_SCOPE_PLAN",
+                "PRICE_SCOPE_SUBSCRIPTION"
+            ]
+        },
         "types.PriceType": {
             "type": "string",
             "enum": [
@@ -14070,6 +16024,17 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "PRICE_TYPE_USAGE",
                 "PRICE_TYPE_FIXED"
+            ]
+        },
+        "types.PriceUnitType": {
+            "type": "string",
+            "enum": [
+                "FIAT",
+                "CUSTOM"
+            ],
+            "x-enum-varnames": [
+                "PRICE_UNIT_TYPE_FIAT",
+                "PRICE_UNIT_TYPE_CUSTOM"
             ]
         },
         "types.QueryFilter": {
@@ -14198,20 +16163,91 @@ const docTemplate = `{
                 "StatusArchived"
             ]
         },
-        "types.StripeConnectionMetadata": {
+        "types.SubscriptionFilter": {
             "type": "object",
             "properties": {
-                "account_id": {
+                "active_at": {
+                    "description": "ActiveAt filters subscriptions that are active at the given time",
                     "type": "string"
                 },
-                "publishable_key": {
+                "billing_cadence": {
+                    "description": "BillingCadence filters by billing cadence",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.BillingCadence"
+                    }
+                },
+                "billing_period": {
+                    "description": "BillingPeriod filters by billing period",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.BillingPeriod"
+                    }
+                },
+                "customer_id": {
+                    "description": "CustomerID filters by customer ID",
                     "type": "string"
                 },
-                "secret_key": {
+                "end_time": {
                     "type": "string"
                 },
-                "webhook_secret": {
+                "expand": {
                     "type": "string"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "plan_id": {
+                    "description": "PlanID filters by plan ID",
+                    "type": "string"
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "subscription_status": {
+                    "description": "SubscriptionStatus filters by subscription status",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SubscriptionStatus"
+                    }
+                },
+                "with_line_items": {
+                    "description": "WithLineItems includes line items in the response",
+                    "type": "boolean"
                 }
             }
         },

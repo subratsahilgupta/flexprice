@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/shopspring/decimal"
@@ -69,23 +70,23 @@ func (sliu *SubscriptionLineItemUpdate) ClearUpdatedBy() *SubscriptionLineItemUp
 	return sliu
 }
 
-// SetPlanID sets the "plan_id" field.
-func (sliu *SubscriptionLineItemUpdate) SetPlanID(s string) *SubscriptionLineItemUpdate {
-	sliu.mutation.SetPlanID(s)
+// SetEntityID sets the "entity_id" field.
+func (sliu *SubscriptionLineItemUpdate) SetEntityID(s string) *SubscriptionLineItemUpdate {
+	sliu.mutation.SetEntityID(s)
 	return sliu
 }
 
-// SetNillablePlanID sets the "plan_id" field if the given value is not nil.
-func (sliu *SubscriptionLineItemUpdate) SetNillablePlanID(s *string) *SubscriptionLineItemUpdate {
+// SetNillableEntityID sets the "entity_id" field if the given value is not nil.
+func (sliu *SubscriptionLineItemUpdate) SetNillableEntityID(s *string) *SubscriptionLineItemUpdate {
 	if s != nil {
-		sliu.SetPlanID(*s)
+		sliu.SetEntityID(*s)
 	}
 	return sliu
 }
 
-// ClearPlanID clears the value of the "plan_id" field.
-func (sliu *SubscriptionLineItemUpdate) ClearPlanID() *SubscriptionLineItemUpdate {
-	sliu.mutation.ClearPlanID()
+// ClearEntityID clears the value of the "entity_id" field.
+func (sliu *SubscriptionLineItemUpdate) ClearEntityID() *SubscriptionLineItemUpdate {
+	sliu.mutation.ClearEntityID()
 	return sliu
 }
 
@@ -180,6 +181,46 @@ func (sliu *SubscriptionLineItemUpdate) SetNillableMeterDisplayName(s *string) *
 // ClearMeterDisplayName clears the value of the "meter_display_name" field.
 func (sliu *SubscriptionLineItemUpdate) ClearMeterDisplayName() *SubscriptionLineItemUpdate {
 	sliu.mutation.ClearMeterDisplayName()
+	return sliu
+}
+
+// SetPriceUnitID sets the "price_unit_id" field.
+func (sliu *SubscriptionLineItemUpdate) SetPriceUnitID(s string) *SubscriptionLineItemUpdate {
+	sliu.mutation.SetPriceUnitID(s)
+	return sliu
+}
+
+// SetNillablePriceUnitID sets the "price_unit_id" field if the given value is not nil.
+func (sliu *SubscriptionLineItemUpdate) SetNillablePriceUnitID(s *string) *SubscriptionLineItemUpdate {
+	if s != nil {
+		sliu.SetPriceUnitID(*s)
+	}
+	return sliu
+}
+
+// ClearPriceUnitID clears the value of the "price_unit_id" field.
+func (sliu *SubscriptionLineItemUpdate) ClearPriceUnitID() *SubscriptionLineItemUpdate {
+	sliu.mutation.ClearPriceUnitID()
+	return sliu
+}
+
+// SetPriceUnit sets the "price_unit" field.
+func (sliu *SubscriptionLineItemUpdate) SetPriceUnit(s string) *SubscriptionLineItemUpdate {
+	sliu.mutation.SetPriceUnit(s)
+	return sliu
+}
+
+// SetNillablePriceUnit sets the "price_unit" field if the given value is not nil.
+func (sliu *SubscriptionLineItemUpdate) SetNillablePriceUnit(s *string) *SubscriptionLineItemUpdate {
+	if s != nil {
+		sliu.SetPriceUnit(*s)
+	}
+	return sliu
+}
+
+// ClearPriceUnit clears the value of the "price_unit" field.
+func (sliu *SubscriptionLineItemUpdate) ClearPriceUnit() *SubscriptionLineItemUpdate {
+	sliu.mutation.ClearPriceUnit()
 	return sliu
 }
 
@@ -318,9 +359,45 @@ func (sliu *SubscriptionLineItemUpdate) ClearMetadata() *SubscriptionLineItemUpd
 	return sliu
 }
 
+// AddCouponAssociationIDs adds the "coupon_associations" edge to the CouponAssociation entity by IDs.
+func (sliu *SubscriptionLineItemUpdate) AddCouponAssociationIDs(ids ...string) *SubscriptionLineItemUpdate {
+	sliu.mutation.AddCouponAssociationIDs(ids...)
+	return sliu
+}
+
+// AddCouponAssociations adds the "coupon_associations" edges to the CouponAssociation entity.
+func (sliu *SubscriptionLineItemUpdate) AddCouponAssociations(c ...*CouponAssociation) *SubscriptionLineItemUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return sliu.AddCouponAssociationIDs(ids...)
+}
+
 // Mutation returns the SubscriptionLineItemMutation object of the builder.
 func (sliu *SubscriptionLineItemUpdate) Mutation() *SubscriptionLineItemMutation {
 	return sliu.mutation
+}
+
+// ClearCouponAssociations clears all "coupon_associations" edges to the CouponAssociation entity.
+func (sliu *SubscriptionLineItemUpdate) ClearCouponAssociations() *SubscriptionLineItemUpdate {
+	sliu.mutation.ClearCouponAssociations()
+	return sliu
+}
+
+// RemoveCouponAssociationIDs removes the "coupon_associations" edge to CouponAssociation entities by IDs.
+func (sliu *SubscriptionLineItemUpdate) RemoveCouponAssociationIDs(ids ...string) *SubscriptionLineItemUpdate {
+	sliu.mutation.RemoveCouponAssociationIDs(ids...)
+	return sliu
+}
+
+// RemoveCouponAssociations removes "coupon_associations" edges to CouponAssociation entities.
+func (sliu *SubscriptionLineItemUpdate) RemoveCouponAssociations(c ...*CouponAssociation) *SubscriptionLineItemUpdate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return sliu.RemoveCouponAssociationIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -412,11 +489,11 @@ func (sliu *SubscriptionLineItemUpdate) sqlSave(ctx context.Context) (n int, err
 	if sliu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldEnvironmentID, field.TypeString)
 	}
-	if value, ok := sliu.mutation.PlanID(); ok {
-		_spec.SetField(subscriptionlineitem.FieldPlanID, field.TypeString, value)
+	if value, ok := sliu.mutation.EntityID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldEntityID, field.TypeString, value)
 	}
-	if sliu.mutation.PlanIDCleared() {
-		_spec.ClearField(subscriptionlineitem.FieldPlanID, field.TypeString)
+	if sliu.mutation.EntityIDCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldEntityID, field.TypeString)
 	}
 	if value, ok := sliu.mutation.PlanDisplayName(); ok {
 		_spec.SetField(subscriptionlineitem.FieldPlanDisplayName, field.TypeString, value)
@@ -444,6 +521,18 @@ func (sliu *SubscriptionLineItemUpdate) sqlSave(ctx context.Context) (n int, err
 	}
 	if sliu.mutation.MeterDisplayNameCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldMeterDisplayName, field.TypeString)
+	}
+	if value, ok := sliu.mutation.PriceUnitID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldPriceUnitID, field.TypeString, value)
+	}
+	if sliu.mutation.PriceUnitIDCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldPriceUnitID, field.TypeString)
+	}
+	if value, ok := sliu.mutation.PriceUnit(); ok {
+		_spec.SetField(subscriptionlineitem.FieldPriceUnit, field.TypeString, value)
+	}
+	if sliu.mutation.PriceUnitCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldPriceUnit, field.TypeString)
 	}
 	if value, ok := sliu.mutation.DisplayName(); ok {
 		_spec.SetField(subscriptionlineitem.FieldDisplayName, field.TypeString, value)
@@ -486,6 +575,51 @@ func (sliu *SubscriptionLineItemUpdate) sqlSave(ctx context.Context) (n int, err
 	}
 	if sliu.mutation.MetadataCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldMetadata, field.TypeJSON)
+	}
+	if sliu.mutation.CouponAssociationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionlineitem.CouponAssociationsTable,
+			Columns: []string{subscriptionlineitem.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := sliu.mutation.RemovedCouponAssociationsIDs(); len(nodes) > 0 && !sliu.mutation.CouponAssociationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionlineitem.CouponAssociationsTable,
+			Columns: []string{subscriptionlineitem.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := sliu.mutation.CouponAssociationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionlineitem.CouponAssociationsTable,
+			Columns: []string{subscriptionlineitem.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, sliu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -547,23 +681,23 @@ func (sliuo *SubscriptionLineItemUpdateOne) ClearUpdatedBy() *SubscriptionLineIt
 	return sliuo
 }
 
-// SetPlanID sets the "plan_id" field.
-func (sliuo *SubscriptionLineItemUpdateOne) SetPlanID(s string) *SubscriptionLineItemUpdateOne {
-	sliuo.mutation.SetPlanID(s)
+// SetEntityID sets the "entity_id" field.
+func (sliuo *SubscriptionLineItemUpdateOne) SetEntityID(s string) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.SetEntityID(s)
 	return sliuo
 }
 
-// SetNillablePlanID sets the "plan_id" field if the given value is not nil.
-func (sliuo *SubscriptionLineItemUpdateOne) SetNillablePlanID(s *string) *SubscriptionLineItemUpdateOne {
+// SetNillableEntityID sets the "entity_id" field if the given value is not nil.
+func (sliuo *SubscriptionLineItemUpdateOne) SetNillableEntityID(s *string) *SubscriptionLineItemUpdateOne {
 	if s != nil {
-		sliuo.SetPlanID(*s)
+		sliuo.SetEntityID(*s)
 	}
 	return sliuo
 }
 
-// ClearPlanID clears the value of the "plan_id" field.
-func (sliuo *SubscriptionLineItemUpdateOne) ClearPlanID() *SubscriptionLineItemUpdateOne {
-	sliuo.mutation.ClearPlanID()
+// ClearEntityID clears the value of the "entity_id" field.
+func (sliuo *SubscriptionLineItemUpdateOne) ClearEntityID() *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.ClearEntityID()
 	return sliuo
 }
 
@@ -658,6 +792,46 @@ func (sliuo *SubscriptionLineItemUpdateOne) SetNillableMeterDisplayName(s *strin
 // ClearMeterDisplayName clears the value of the "meter_display_name" field.
 func (sliuo *SubscriptionLineItemUpdateOne) ClearMeterDisplayName() *SubscriptionLineItemUpdateOne {
 	sliuo.mutation.ClearMeterDisplayName()
+	return sliuo
+}
+
+// SetPriceUnitID sets the "price_unit_id" field.
+func (sliuo *SubscriptionLineItemUpdateOne) SetPriceUnitID(s string) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.SetPriceUnitID(s)
+	return sliuo
+}
+
+// SetNillablePriceUnitID sets the "price_unit_id" field if the given value is not nil.
+func (sliuo *SubscriptionLineItemUpdateOne) SetNillablePriceUnitID(s *string) *SubscriptionLineItemUpdateOne {
+	if s != nil {
+		sliuo.SetPriceUnitID(*s)
+	}
+	return sliuo
+}
+
+// ClearPriceUnitID clears the value of the "price_unit_id" field.
+func (sliuo *SubscriptionLineItemUpdateOne) ClearPriceUnitID() *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.ClearPriceUnitID()
+	return sliuo
+}
+
+// SetPriceUnit sets the "price_unit" field.
+func (sliuo *SubscriptionLineItemUpdateOne) SetPriceUnit(s string) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.SetPriceUnit(s)
+	return sliuo
+}
+
+// SetNillablePriceUnit sets the "price_unit" field if the given value is not nil.
+func (sliuo *SubscriptionLineItemUpdateOne) SetNillablePriceUnit(s *string) *SubscriptionLineItemUpdateOne {
+	if s != nil {
+		sliuo.SetPriceUnit(*s)
+	}
+	return sliuo
+}
+
+// ClearPriceUnit clears the value of the "price_unit" field.
+func (sliuo *SubscriptionLineItemUpdateOne) ClearPriceUnit() *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.ClearPriceUnit()
 	return sliuo
 }
 
@@ -796,9 +970,45 @@ func (sliuo *SubscriptionLineItemUpdateOne) ClearMetadata() *SubscriptionLineIte
 	return sliuo
 }
 
+// AddCouponAssociationIDs adds the "coupon_associations" edge to the CouponAssociation entity by IDs.
+func (sliuo *SubscriptionLineItemUpdateOne) AddCouponAssociationIDs(ids ...string) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.AddCouponAssociationIDs(ids...)
+	return sliuo
+}
+
+// AddCouponAssociations adds the "coupon_associations" edges to the CouponAssociation entity.
+func (sliuo *SubscriptionLineItemUpdateOne) AddCouponAssociations(c ...*CouponAssociation) *SubscriptionLineItemUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return sliuo.AddCouponAssociationIDs(ids...)
+}
+
 // Mutation returns the SubscriptionLineItemMutation object of the builder.
 func (sliuo *SubscriptionLineItemUpdateOne) Mutation() *SubscriptionLineItemMutation {
 	return sliuo.mutation
+}
+
+// ClearCouponAssociations clears all "coupon_associations" edges to the CouponAssociation entity.
+func (sliuo *SubscriptionLineItemUpdateOne) ClearCouponAssociations() *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.ClearCouponAssociations()
+	return sliuo
+}
+
+// RemoveCouponAssociationIDs removes the "coupon_associations" edge to CouponAssociation entities by IDs.
+func (sliuo *SubscriptionLineItemUpdateOne) RemoveCouponAssociationIDs(ids ...string) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.RemoveCouponAssociationIDs(ids...)
+	return sliuo
+}
+
+// RemoveCouponAssociations removes "coupon_associations" edges to CouponAssociation entities.
+func (sliuo *SubscriptionLineItemUpdateOne) RemoveCouponAssociations(c ...*CouponAssociation) *SubscriptionLineItemUpdateOne {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return sliuo.RemoveCouponAssociationIDs(ids...)
 }
 
 // Where appends a list predicates to the SubscriptionLineItemUpdate builder.
@@ -920,11 +1130,11 @@ func (sliuo *SubscriptionLineItemUpdateOne) sqlSave(ctx context.Context) (_node 
 	if sliuo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldEnvironmentID, field.TypeString)
 	}
-	if value, ok := sliuo.mutation.PlanID(); ok {
-		_spec.SetField(subscriptionlineitem.FieldPlanID, field.TypeString, value)
+	if value, ok := sliuo.mutation.EntityID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldEntityID, field.TypeString, value)
 	}
-	if sliuo.mutation.PlanIDCleared() {
-		_spec.ClearField(subscriptionlineitem.FieldPlanID, field.TypeString)
+	if sliuo.mutation.EntityIDCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldEntityID, field.TypeString)
 	}
 	if value, ok := sliuo.mutation.PlanDisplayName(); ok {
 		_spec.SetField(subscriptionlineitem.FieldPlanDisplayName, field.TypeString, value)
@@ -952,6 +1162,18 @@ func (sliuo *SubscriptionLineItemUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if sliuo.mutation.MeterDisplayNameCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldMeterDisplayName, field.TypeString)
+	}
+	if value, ok := sliuo.mutation.PriceUnitID(); ok {
+		_spec.SetField(subscriptionlineitem.FieldPriceUnitID, field.TypeString, value)
+	}
+	if sliuo.mutation.PriceUnitIDCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldPriceUnitID, field.TypeString)
+	}
+	if value, ok := sliuo.mutation.PriceUnit(); ok {
+		_spec.SetField(subscriptionlineitem.FieldPriceUnit, field.TypeString, value)
+	}
+	if sliuo.mutation.PriceUnitCleared() {
+		_spec.ClearField(subscriptionlineitem.FieldPriceUnit, field.TypeString)
 	}
 	if value, ok := sliuo.mutation.DisplayName(); ok {
 		_spec.SetField(subscriptionlineitem.FieldDisplayName, field.TypeString, value)
@@ -994,6 +1216,51 @@ func (sliuo *SubscriptionLineItemUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if sliuo.mutation.MetadataCleared() {
 		_spec.ClearField(subscriptionlineitem.FieldMetadata, field.TypeJSON)
+	}
+	if sliuo.mutation.CouponAssociationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionlineitem.CouponAssociationsTable,
+			Columns: []string{subscriptionlineitem.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := sliuo.mutation.RemovedCouponAssociationsIDs(); len(nodes) > 0 && !sliuo.mutation.CouponAssociationsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionlineitem.CouponAssociationsTable,
+			Columns: []string{subscriptionlineitem.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := sliuo.mutation.CouponAssociationsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionlineitem.CouponAssociationsTable,
+			Columns: []string{subscriptionlineitem.CouponAssociationsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(couponassociation.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &SubscriptionLineItem{config: sliuo.config}
 	_spec.Assign = _node.assignValues
