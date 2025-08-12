@@ -41,6 +41,7 @@ type InvoiceService interface {
 	RecalculateInvoiceAmounts(ctx context.Context, invoiceID string) error
 	UpdateInvoice(ctx context.Context, id string, req dto.UpdateInvoiceRequest) (*dto.InvoiceResponse, error)
 	CalculatePriceBreakdown(ctx context.Context, inv *dto.InvoiceResponse) (map[string][]dto.SourceUsageItem, error)
+	TriggerCommunication(ctx context.Context, id string) error
 }
 
 type invoiceService struct {
@@ -1542,7 +1543,7 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, fina
 		// STEP 4: Create new line items from the fresh calculation
 		newLineItems := make([]*invoice.InvoiceLineItem, len(newInvoiceReq.LineItems))
 		for i, lineItemReq := range newInvoiceReq.LineItems {
-			
+
 			lineItem := &invoice.InvoiceLineItem{
 				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
 				InvoiceID:       inv.ID,
@@ -1781,4 +1782,16 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 
 	// Return the updated invoice
 	return s.GetInvoice(ctx, id)
+}
+
+func (s *invoiceService) TriggerCommunication(ctx context.Context, id string) error {
+	// Get invoice to verify it exists
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Publish webhook event
+	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceCommunicationTriggered, inv.ID)
+	return nil
 }
