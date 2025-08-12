@@ -546,6 +546,11 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 		query = query.Where(price.EntityIDIn(f.EntityIDs...))
 	}
 
+	// meter id filter
+	if len(f.MeterIDs) > 0 {
+		query = query.Where(price.MeterIDIn(f.MeterIDs...))
+	}
+
 	// Apply time range filters if specified
 	if f.TimeRangeFilter != nil {
 		if f.StartTime != nil {

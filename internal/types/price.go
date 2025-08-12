@@ -250,6 +250,7 @@ type PriceFilter struct {
 	EntityIDs      []string         `json:"entity_ids,omitempty" form:"entity_ids"`
 	SubscriptionID *string          `json:"subscription_id,omitempty" form:"subscription_id"`
 	ParentPriceID  *string          `json:"parent_price_id,omitempty" form:"parent_price_id"`
+	MeterIDs       []string         `json:"meter_ids,omitempty" form:"meter_ids"`
 }
 
 // NewPriceFilter creates a new PriceFilter with default values
@@ -316,6 +317,27 @@ func (f PriceFilter) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
+	// Validate entity IDs if provided
+	if len(f.EntityIDs) > 0 {
+		for _, entityID := range f.EntityIDs {
+			if entityID == "" {
+				return ierr.NewError("entity ID can not be empty").
+					WithHint("Entity ID cannot be empty").
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+
+	// Validate meter IDs if provided
+	if len(f.MeterIDs) > 0 {
+		for _, meterID := range f.MeterIDs {
+			if meterID == "" {
+				return ierr.NewError("meter ID can not be empty").
+					WithHint("Meter ID cannot be empty").
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
 	return nil
 }
 
