@@ -3,7 +3,6 @@ package payload
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
@@ -32,11 +31,11 @@ func (b *CommunicationPayloadBuilder) BuildPayload(ctx context.Context, eventTyp
 
 	invoiceID, tenantID := parsedPayload.InvoiceID, parsedPayload.TenantID
 	if invoiceID == "" || tenantID == "" {
-		return nil, ierr.NewError("invalid data type for communication event").
+		return nil, ierr.NewError("missing required field(s) for communication event").
 			WithHint("Please provide a valid invoice ID and tenant ID").
 			WithReportableDetails(map[string]any{
-				"expected": "string",
-				"got":      fmt.Sprintf("%T", data),
+				"invoice_id": invoiceID,
+				"tenant_id":  tenantID,
 			}).
 			Mark(ierr.ErrInvalidOperation)
 	}

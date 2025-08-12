@@ -511,7 +511,7 @@ func (h *InvoiceHandler) ListInvoicesByFilter(c *gin.Context) {
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /invoices/{id}/commtrigger [post]
+// @Router /invoices/{id}/comms/trigger [post]
 func (h *InvoiceHandler) TriggerCommunication(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
