@@ -499,3 +499,31 @@ func (h *InvoiceHandler) ListInvoicesByFilter(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
+// TriggerCommunication godoc
+// @Summary Trigger communication webhook for an invoice
+// @Description Triggers a communication webhook event containing all information about the invoice
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Param id path string true "Invoice ID"
+// @Success 200 {object} gin.H
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /invoices/{id}/comms/trigger [post]
+func (h *InvoiceHandler) TriggerCommunication(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
+		return
+	}
+
+	if err := h.invoiceService.TriggerCommunication(c.Request.Context(), id); err != nil {
+		h.logger.Errorw("failed to trigger communication", "error", err, "invoice_id", id)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "communication triggered successfully"})
+}
