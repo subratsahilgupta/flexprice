@@ -638,18 +638,18 @@ func (h *WebhookHandler) handleCheckoutSessionAsyncPaymentSucceeded(c *gin.Conte
 		return
 	}
 
-	// Reconcile payment with invoice if payment succeeded
-	if paymentStatus == string(types.PaymentStatusSucceeded) {
-		if err := h.stripeService.ReconcilePaymentWithInvoice(c.Request.Context(), payment.ID, payment.Amount); err != nil {
-			h.logger.Errorw("failed to reconcile payment with invoice",
-				"error", err,
-				"payment_id", payment.ID,
-				"invoice_id", payment.DestinationID,
-			)
-			// Don't fail the webhook if reconciliation fails, but log the error
-			// The payment is still marked as succeeded
-		}
-	}
+	// // Reconcile payment with invoice if payment succeeded
+	// if paymentStatus == string(types.PaymentStatusSucceeded) {
+	// 	if err := h.stripeService.ReconcilePaymentWithInvoice(c.Request.Context(), payment.ID, payment.Amount); err != nil {
+	// 		h.logger.Errorw("failed to reconcile payment with invoice",
+	// 			"error", err,
+	// 			"payment_id", payment.ID,
+	// 			"invoice_id", payment.DestinationID,
+	// 		)
+	// 		// Don't fail the webhook if reconciliation fails, but log the error
+	// 		// The payment is still marked as succeeded
+	// 	}
+	// }
 
 	h.logger.Infow("successfully updated payment status from async webhook",
 		"payment_id", payment.ID,
