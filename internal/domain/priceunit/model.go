@@ -166,6 +166,12 @@ type PriceUnitFilter struct {
 	// TimeRangeFilter allows filtering by time periods
 	TimeRangeFilter *types.TimeRangeFilter
 
+	// Filters allows complex filtering based on multiple fields
+	Filters []*types.FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
+
+	// Sort allows sorting by multiple fields
+	Sort []*types.SortCondition `json:"sort,omitempty" form:"sort" validate:"omitempty"`
+
 	// Status filters by price unit status
 	Status types.Status `json:"status,omitempty" form:"status"`
 
