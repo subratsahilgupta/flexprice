@@ -342,25 +342,15 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 			Mark(ierr.ErrValidation)
 	}
 
-	// Check if customer has Stripe customer ID, if not create one
+	// Check if customer has Stripe customer ID, if not return error
 	stripeCustomerID, exists := customerResp.Customer.Metadata["stripe_customer_id"]
 	if !exists || stripeCustomerID == "" {
-		// Create customer in Stripe if not exists
-		if err := s.CreateCustomerInStripe(ctx, req.CustomerID); err != nil {
-			return nil, ierr.NewError("failed to create customer in Stripe").
-				WithHint("Unable to create customer in Stripe").
-				WithReportableDetails(map[string]interface{}{
-					"customer_id": req.CustomerID,
-					"error":       err.Error(),
-				}).
-				Mark(ierr.ErrSystem)
-		}
-		// Get the updated customer to get the Stripe customer ID
-		customerResp, err = customerService.GetCustomer(ctx, req.CustomerID)
-		if err != nil {
-			return nil, err
-		}
-		stripeCustomerID = customerResp.Customer.Metadata["stripe_customer_id"]
+		return nil, ierr.NewError("customer does not have Stripe customer ID").
+			WithHint("Unable to create payment link for customer").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Get Stripe configuration
