@@ -1,8 +1,6 @@
 package priceunit
 
 import (
-	"time"
-
 	"github.com/flexprice/flexprice/ent"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -11,46 +9,15 @@ import (
 
 // PriceUnit represents a unit of pricing in the domain
 type PriceUnit struct {
-	ID             string
-	Name           string
-	Code           string
-	Symbol         string
-	BaseCurrency   string
-	ConversionRate decimal.Decimal
-	Precision      int
-	EnvironmentID  string
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Code           string          `json:"code"`
+	Symbol         string          `json:"symbol"`
+	BaseCurrency   string          `json:"base_currency"`
+	ConversionRate decimal.Decimal `json:"conversion_rate"`
+	Precision      int             `json:"precision"`
+	EnvironmentID  string          `json:"environment_id"`
 	types.BaseModel
-}
-
-// NewPriceUnit creates a new pricing unit with validation
-func NewPriceUnit(
-	name, code, symbol, baseCurrency string,
-	conversionRate decimal.Decimal,
-	precision int,
-	tenantID, environmentID string,
-) (*PriceUnit, error) {
-	unit := &PriceUnit{
-		Name:           name,
-		Code:           code,
-		Symbol:         symbol,
-		BaseCurrency:   baseCurrency,
-		ConversionRate: conversionRate,
-		Precision:      precision,
-		BaseModel: types.BaseModel{
-			TenantID:  tenantID,
-			Status:    types.StatusPublished,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			CreatedBy: types.DefaultUserID,
-			UpdatedBy: types.DefaultUserID,
-		},
-	}
-
-	if err := unit.Validate(); err != nil {
-		return nil, err
-	}
-
-	return unit, nil
 }
 
 // Validate validates the price unit
