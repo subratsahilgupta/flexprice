@@ -3,7 +3,9 @@ package dto
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/types"
@@ -17,8 +19,8 @@ type SettingResponse struct {
 	EnvironmentID string                 `json:"environment_id"`
 	TenantID      string                 `json:"tenant_id"`
 	Status        string                 `json:"status"`
-	CreatedAt     string                 `json:"created_at"`
-	UpdatedAt     string                 `json:"updated_at"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 	CreatedBy     string                 `json:"created_by,omitempty"`
 	UpdatedBy     string                 `json:"updated_by,omitempty"`
 }
@@ -39,7 +41,13 @@ func (r *CreateSettingRequest) Validate() error {
 		return errors.New("key cannot exceed 255 characters")
 	}
 
-	// Value is optional, so no validation needed for it
+	// Only validate value if it's provided
+	if r.Value != nil {
+		if err := r.ValidateValueByKey(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -50,8 +58,20 @@ type UpdateSettingRequest struct {
 
 // Validate validates the UpdateSettingRequest
 func (r *UpdateSettingRequest) Validate() error {
-	// Value is optional for updates, so no validation needed for it
+	if r.Value == nil {
+		return errors.New("value is required for updates")
+	}
+
 	return nil
+}
+
+// ValidateValueByKey validates the value field based on the specific setting key
+func (r *UpdateSettingRequest) ValidateValueByKey(key string) error {
+	if r.Value == nil {
+		return errors.New("value cannot be nil")
+	}
+
+	return validateSettingValue(key, *r.Value)
 }
 
 // SettingFromDomain converts a domain setting to DTO
@@ -67,8 +87,8 @@ func SettingFromDomain(s *settings.Setting) *SettingResponse {
 		EnvironmentID: s.EnvironmentID,
 		TenantID:      s.TenantID,
 		Status:        string(s.Status),
-		CreatedAt:     s.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:     s.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:     s.BaseModel.CreatedAt,
+		UpdatedAt:     s.BaseModel.UpdatedAt,
 		CreatedBy:     s.CreatedBy,
 		UpdatedBy:     s.UpdatedBy,
 	}
@@ -88,14 +108,6 @@ func SettingsFromDomain(settingsList []*settings.Setting) []*SettingResponse {
 	return result
 }
 
-func (r *UpdateSettingRequest) ToSetting() (*settings.Setting, error) {
-	setting := &settings.Setting{
-		Value: *r.Value,
-	}
-
-	return setting, nil
-}
-
 func (r *CreateSettingRequest) ToSetting(ctx context.Context) *settings.Setting {
 	return &settings.Setting{
 		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SETTING),
@@ -104,4 +116,140 @@ func (r *CreateSettingRequest) ToSetting(ctx context.Context) *settings.Setting 
 		Key:           r.Key,
 		Value:         r.Value,
 	}
+}
+
+// ValidateValueByKey validates the value field based on the specific setting key
+func (r *CreateSettingRequest) ValidateValueByKey() error {
+	if r.Value == nil {
+		return errors.New("value cannot be nil")
+	}
+	return validateSettingValue(r.Key, r.Value)
+}
+
+// validateSettingValue validates a setting value based on its key
+func validateSettingValue(key string, value map[string]interface{}) error {
+	switch types.SettingKey(key) {
+	case types.SettingKeyInvoiceConfig:
+		return validateInvoiceConfig(value)
+	default:
+		// For unknown keys, just validate that it's a valid JSON object
+		if value == nil {
+			return errors.New("value cannot be nil")
+		}
+		return nil
+	}
+}
+
+// validateInvoiceConfig validates invoice configuration settings
+func validateInvoiceConfig(value map[string]interface{}) error {
+	if value == nil {
+		return errors.New("invoice_config value cannot be nil")
+	}
+
+	// Validate prefix
+	prefixRaw, exists := value["prefix"]
+	if !exists {
+		return errors.New("invoice_config: 'prefix' is required")
+	}
+	prefix, ok := prefixRaw.(string)
+	if !ok {
+		return fmt.Errorf("invoice_config: 'prefix' must be a string, got %T", prefixRaw)
+	}
+	if strings.TrimSpace(prefix) == "" {
+		return errors.New("invoice_config: 'prefix' cannot be empty")
+	}
+
+	// Validate format
+	formatRaw, exists := value["format"]
+	if !exists {
+		return errors.New("invoice_config: 'format' is required")
+	}
+	_, ok = formatRaw.(string)
+	if !ok {
+		return fmt.Errorf("invoice_config: 'format' must be a string, got %T", formatRaw)
+	}
+
+	// Validate start_sequence
+	startSeqRaw, exists := value["start_sequence"]
+	if !exists {
+		return errors.New("invoice_config: 'start_sequence' is required")
+	}
+
+	// Convert and validate start_sequence
+	var startSeq int
+	switch v := startSeqRaw.(type) {
+	case int:
+		startSeq = v
+	case float64:
+		// Check if it's a whole number
+		if v != float64(int(v)) {
+			return errors.New("invoice_config: 'start_sequence' must be a whole number")
+		}
+		startSeq = int(v)
+	default:
+		return fmt.Errorf("invoice_config: 'start_sequence' must be an integer, got %T", startSeqRaw)
+	}
+
+	// Validate range
+	if startSeq < 1 {
+		return errors.New("invoice_config: 'start_sequence' must be greater than 0")
+	}
+
+	return nil
+}
+
+// GetTypedValue safely extracts and converts a typed value from the settings map
+func GetTypedValue[T any](value map[string]interface{}, key string) (T, error) {
+	var zero T
+
+	raw, exists := value[key]
+	if !exists {
+		return zero, fmt.Errorf("key '%s' not found", key)
+	}
+
+	typed, ok := raw.(T)
+	if !ok {
+		return zero, fmt.Errorf("key '%s' expected type %T but got %T", key, zero, raw)
+	}
+
+	return typed, nil
+}
+
+// GetInvoiceConfigSafely safely extracts invoice configuration from settings value
+func GetInvoiceConfigSafely(value map[string]interface{}) (*types.InvoiceConfig, error) {
+	if err := validateInvoiceConfig(value); err != nil {
+		return nil, err
+	}
+
+	// Extract with proper error handling
+	prefix, err := GetTypedValue[string](value, "prefix")
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract prefix: %w", err)
+	}
+
+	format, err := GetTypedValue[string](value, "format")
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract format: %w", err)
+	}
+
+	// Handle start_sequence with proper conversion
+	var startSequence int
+	startSeqRaw := value["start_sequence"]
+	switch v := startSeqRaw.(type) {
+	case int:
+		startSequence = v
+	case float64:
+		if v != float64(int(v)) {
+			return nil, errors.New("start_sequence must be a whole number")
+		}
+		startSequence = int(v)
+	default:
+		return nil, fmt.Errorf("start_sequence must be an integer, got %T", startSeqRaw)
+	}
+
+	return &types.InvoiceConfig{
+		InvoiceNumberPrefix:        prefix,
+		InvoiceNumberFormat:        format,
+		InvoiceNumberStartSequence: startSequence,
+	}, nil
 }

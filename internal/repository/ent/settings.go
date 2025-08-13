@@ -162,48 +162,14 @@ func (r *settingsRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *settingsRepository) Get(ctx context.Context, key string) (*domainSettings.Setting, error) {
+func (r *settingsRepository) Get(ctx context.Context, id string) (*domainSettings.Setting, error) {
 	// Try to get from cache first
-	if cachedSetting := r.GetCache(ctx, key); cachedSetting != nil {
+	if cachedSetting := r.GetCache(ctx, id); cachedSetting != nil {
 		return cachedSetting, nil
 	}
 
 	client := r.client.Querier(ctx)
-	r.log.Debugw("getting setting", "key", key)
-
-	s, err := client.Settings.Query().
-		Where(
-			settings.Key(key),
-			settings.TenantID(types.GetTenantID(ctx)),
-			settings.EnvironmentID(types.GetEnvironmentID(ctx)),
-			settings.Status(string(types.StatusPublished)),
-		).
-		Only(ctx)
-
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, ierr.WithError(err).
-				WithHintf("Setting with key %s was not found", key).
-				WithReportableDetails(map[string]any{
-					"key": key,
-				}).
-				Mark(ierr.ErrNotFound)
-		}
-		return nil, ierr.WithError(err).
-			WithHint("Failed to get setting").
-			Mark(ierr.ErrDatabase)
-	}
-
-	setting := domainSettings.FromEnt(s)
-
-	// Set cache
-	r.SetCache(ctx, setting)
-	return setting, nil
-}
-
-func (r *settingsRepository) GetByID(ctx context.Context, id string) (*domainSettings.Setting, error) {
-	client := r.client.Querier(ctx)
-	r.log.Debugw("getting setting by ID", "setting_id", id)
+	r.log.Debugw("getting setting", "id", id)
 
 	s, err := client.Settings.Query().
 		Where(
@@ -219,7 +185,7 @@ func (r *settingsRepository) GetByID(ctx context.Context, id string) (*domainSet
 			return nil, ierr.WithError(err).
 				WithHintf("Setting with ID %s was not found", id).
 				WithReportableDetails(map[string]any{
-					"setting_id": id,
+					"id": id,
 				}).
 				Mark(ierr.ErrNotFound)
 		}
@@ -228,7 +194,11 @@ func (r *settingsRepository) GetByID(ctx context.Context, id string) (*domainSet
 			Mark(ierr.ErrDatabase)
 	}
 
-	return domainSettings.FromEnt(s), nil
+	setting := domainSettings.FromEnt(s)
+
+	// Set cache
+	r.SetCache(ctx, setting)
+	return setting, nil
 }
 
 func (r *settingsRepository) GetByKey(ctx context.Context, key string) (*domainSettings.Setting, error) {
@@ -268,48 +238,6 @@ func (r *settingsRepository) GetByKey(ctx context.Context, key string) (*domainS
 	// Set cache
 	r.SetCache(ctx, setting)
 	return setting, nil
-}
-
-func (r *settingsRepository) UpsertByKey(ctx context.Context, key string, s *domainSettings.Setting) error {
-	client := r.client.Querier(ctx)
-
-	r.log.Debugw("upserting setting",
-		"tenant_id", s.TenantID,
-		"key", s.Key,
-	)
-
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
-	// Set environment ID from context if not already set
-	if s.EnvironmentID == "" {
-		s.EnvironmentID = types.GetEnvironmentID(ctx)
-	}
-
-	// Try to find existing setting
-	existing, err := client.Settings.Query().
-		Where(
-			settings.Key(key),
-			settings.TenantID(tenantID),
-			settings.EnvironmentID(environmentID),
-			settings.Status(string(types.StatusPublished)),
-		).
-		Only(ctx)
-
-	if err != nil && !ent.IsNotFound(err) {
-		return ierr.WithError(err).
-			WithHint("Failed to check existing setting").
-			Mark(ierr.ErrDatabase)
-	}
-
-	if existing != nil {
-		// Update existing
-		s.ID = existing.ID
-		return r.Update(ctx, s)
-	} else {
-		// Create new
-		return r.Create(ctx, s)
-	}
 }
 
 func (r *settingsRepository) DeleteByKey(ctx context.Context, key string) error {

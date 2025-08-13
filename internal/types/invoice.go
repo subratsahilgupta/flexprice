@@ -154,6 +154,12 @@ const (
 	InvoiceDefaultDueDays = 1
 )
 
+type InvoiceConfig struct {
+	InvoiceNumberPrefix        string `json:"prefix"`
+	InvoiceNumberFormat        string `json:"format"`
+	InvoiceNumberStartSequence int    `json:"start_sequence"`
+}
+
 // InvoiceFilter represents the filter options for listing invoices
 type InvoiceFilter struct {
 	*QueryFilter

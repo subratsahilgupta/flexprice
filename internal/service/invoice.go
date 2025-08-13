@@ -169,7 +169,21 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		if req.InvoiceNumber != nil {
 			invoiceNumber = *req.InvoiceNumber
 		} else {
-			invoiceNumber, err = s.InvoiceRepo.GetNextInvoiceNumber(ctx)
+			settingsService := NewSettingsService(s.ServiceParams)
+			invoiceConfigResponse, err := settingsService.GetSettingByKey(ctx, types.SettingKeyInvoiceConfig.String())
+			if err != nil {
+				return err
+			}
+
+			// Use the safe conversion function
+			invoiceConfig, err := dto.GetInvoiceConfigSafely(invoiceConfigResponse.Value)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHint("Failed to parse invoice configuration").
+					Mark(ierr.ErrValidation)
+			}
+
+			invoiceNumber, err = s.InvoiceRepo.GetNextInvoiceNumber(ctx, invoiceConfig)
 			if err != nil {
 				return err
 			}
