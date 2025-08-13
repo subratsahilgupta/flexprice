@@ -275,7 +275,7 @@ func (s *billingService) CalculateUsageCharges(
 							dailyUsage := dailyResult.Value
 
 							// Calculate overage for this day: max(0, daily_usage - daily_limit)
-							dailyOverage := decimal.Max(dailyUsage.Sub(dailyLimit), decimal.Zero)
+							dailyOverage := decimal.Max(decimal.Zero, dailyUsage.Sub(dailyLimit))
 
 							if dailyOverage.GreaterThan(decimal.Zero) {
 								// Add to total billable quantity
