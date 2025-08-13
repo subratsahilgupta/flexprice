@@ -74,22 +74,16 @@ func (s *settingsService) updateSetting(ctx context.Context, setting *settings.S
 
 func (s *settingsService) UpdateSettingByKey(ctx context.Context, key string, req *dto.UpdateSettingRequest) (*dto.SettingResponse, error) {
 	// STEP 1: Validate the request
-	if err := req.Validate(); err != nil {
+	if err := req.Validate(key); err != nil {
 		return nil, err
 	}
 
-	// STEP 2: Validate value based on key
-	if err := req.ValidateValueByKey(key); err != nil {
-		return nil, err
-	}
-
-	// STEP 3: Check if the setting exists
+	// STEP 2: Check if the setting exists
 	setting, err := s.SettingsRepo.GetByKey(ctx, key)
-
 	if ent.IsNotFound(err) {
 		createReq := &dto.CreateSettingRequest{
 			Key:   key,
-			Value: *req.Value,
+			Value: req.Value,
 		}
 		if err := createReq.Validate(); err != nil {
 			return nil, err
@@ -101,7 +95,7 @@ func (s *settingsService) UpdateSettingByKey(ctx context.Context, key string, re
 		return nil, err
 	}
 
-	setting.Value = *req.Value
+	setting.Value = req.Value
 	return s.updateSetting(ctx, setting)
 }
 
