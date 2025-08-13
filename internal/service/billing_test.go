@@ -1348,3 +1348,114 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithEntitlements() {
 		})
 	}
 }
+
+func (s *BillingServiceSuite) TestCalculateUsageChargesWithDailyReset() {
+	// Setup test data for daily usage calculation
+	ctx := s.GetContext()
+
+	// Create test feature with daily reset
+	testFeature := &feature.Feature{
+		ID:          "feat_daily_123",
+		Name:        "Daily API Calls",
+		Description: "API calls with daily reset",
+		Type:        types.FeatureTypeMetered,
+		MeterID:     s.testData.meters.apiCalls.ID,
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().FeatureRepo.Create(ctx, testFeature))
+
+	// Create entitlement with daily reset
+	entitlement := &entitlement.Entitlement{
+		ID:               "ent_daily_123",
+		EntityType:       types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+		EntityID:         s.testData.plan.ID,
+		FeatureID:        testFeature.ID,
+		FeatureType:      types.FeatureTypeMetered,
+		IsEnabled:        true,
+		UsageLimit:       lo.ToPtr(int64(10)), // 10 requests per day
+		UsageResetPeriod: types.BILLING_PERIOD_DAILY,
+		IsSoftLimit:      false,
+		BaseModel:        types.GetDefaultBaseModel(ctx),
+	}
+	_, err := s.GetStores().EntitlementRepo.Create(ctx, entitlement)
+	s.NoError(err)
+
+	// Create test events for different days
+	// Day 1: 15 requests (5 over limit)
+	// Day 2: 3 requests (0 over limit)
+	// Day 3: 12 requests (2 over limit)
+	eventDates := []time.Time{
+		s.testData.now.Add(-48 * time.Hour), // Day 1
+		s.testData.now.Add(-24 * time.Hour), // Day 2
+		s.testData.now,                      // Day 3
+	}
+
+	for i, eventDate := range eventDates {
+		var eventCount int
+		switch i {
+		case 0:
+			eventCount = 15 // Day 1: 15 requests
+		case 1:
+			eventCount = 3 // Day 2: 3 requests
+		case 2:
+			eventCount = 12 // Day 3: 12 requests
+		}
+
+		for j := 0; j < eventCount; j++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           s.testData.subscription.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          eventDate,
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(ctx, event))
+		}
+	}
+
+	// Create usage data that would normally come from GetUsageBySubscription
+	usage := &dto.GetUsageBySubscriptionResponse{
+		StartTime: s.testData.subscription.CurrentPeriodStart,
+		EndTime:   s.testData.subscription.CurrentPeriodEnd,
+		Currency:  s.testData.subscription.Currency,
+		Charges: []*dto.SubscriptionUsageByMetersResponse{
+			{
+				Price:     s.testData.prices.apiCalls,
+				Quantity:  30,  // Total usage across all days (15+3+12)
+				Amount:    0.6, // $0.6 without entitlement adjustment (30 * 0.02)
+				IsOverage: false,
+				MeterID:   s.testData.meters.apiCalls.ID,
+			},
+		},
+	}
+
+	// Calculate charges
+	lineItems, totalAmount, err := s.service.CalculateUsageCharges(
+		ctx,
+		s.testData.subscription,
+		usage,
+		s.testData.subscription.CurrentPeriodStart,
+		s.testData.subscription.CurrentPeriodEnd,
+	)
+
+	s.NoError(err)
+	s.Len(lineItems, 1, "Should have one line item for daily usage")
+
+	// Expected calculation:
+	// Day 1: 15 - 10 = 5 overage
+	// Day 2: 3 - 10 = 0 overage (max(0, -7) = 0)
+	// Day 3: 12 - 10 = 2 overage
+	// Total overage: 5 + 0 + 2 = 7 requests
+	// Total cost: 7 * $0.02 = $0.14 (using tiered pricing)
+	expectedQuantity := decimal.NewFromInt(7)
+
+	s.True(expectedQuantity.Equal(lineItems[0].Quantity),
+		"Expected quantity %s, got %s", expectedQuantity, lineItems[0].Quantity)
+
+	// Check that the amount is calculated correctly
+	s.True(totalAmount.GreaterThan(decimal.Zero), "Should have positive total amount")
+
+	// Check metadata indicates daily reset
+	s.Equal("daily", lineItems[0].Metadata["usage_reset_period"])
+}
