@@ -240,10 +240,10 @@ func (s *billingService) CalculateUsageCharges(
 						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
 						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
 						quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
-					}
 
-					// case 2 : when the usage reset period is daily
-					if matchingEntitlement.UsageResetPeriod == types.BILLING_PERIOD_DAILY {
+					} else if matchingEntitlement.UsageResetPeriod == types.BILLING_PERIOD_DAILY {
+
+						// case 2 : when the usage reset period is daily
 						// For daily reset periods, we need to fetch usage with daily window size
 						// and calculate overage per day, then sum the total overage
 
@@ -268,7 +268,6 @@ func (s *billingService) CalculateUsageCharges(
 							StartTime:          periodStart,
 							EndTime:            periodEnd,
 							WindowSize:         types.WindowSizeDay, // Use daily window size
-							Filters:            make(map[string][]string),
 						}
 
 						// Add meter filters
@@ -317,6 +316,10 @@ func (s *billingService) CalculateUsageCharges(
 
 						// Use the total billable quantity for calculation
 						quantityForCalculation = totalBillableQuantity
+					} else {
+						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
+						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
+						quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
 					}
 
 					// Recalculate the amount based on the adjusted quantity
