@@ -55,7 +55,7 @@ const (
 	PrefixAddonAssociation         = "addonassociation:v1:"
 	PrefixEntityIntegrationMapping = "entity_integration_mapping:v1:"
 	PrefixConnection               = "connection:v1:"
-	PrefixSetting                  = "setting:v1:"
+	PrefixSettings                 = "settings:v1:"
 )
 
 // GenerateKey creates a cache key from a prefix and a set of parameters

@@ -99,6 +99,7 @@ func (r *settingsRepository) Update(ctx context.Context, s *domainSettings.Setti
 			settings.ID(s.ID),
 			settings.TenantID(s.TenantID),
 			settings.EnvironmentID(types.GetEnvironmentID(ctx)),
+			settings.Status(string(types.StatusPublished)),
 		).
 		SetValue(s.Value).
 		SetUpdatedAt(time.Now().UTC()).
@@ -137,6 +138,7 @@ func (r *settingsRepository) Delete(ctx context.Context, id string) error {
 			settings.ID(id),
 			settings.TenantID(types.GetTenantID(ctx)),
 			settings.EnvironmentID(types.GetEnvironmentID(ctx)),
+			settings.Status(string(types.StatusPublished)),
 		).
 		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
@@ -174,6 +176,7 @@ func (r *settingsRepository) Get(ctx context.Context, key string) (*domainSettin
 			settings.Key(key),
 			settings.TenantID(types.GetTenantID(ctx)),
 			settings.EnvironmentID(types.GetEnvironmentID(ctx)),
+			settings.Status(string(types.StatusPublished)),
 		).
 		Only(ctx)
 
@@ -207,6 +210,7 @@ func (r *settingsRepository) GetByID(ctx context.Context, id string) (*domainSet
 			settings.ID(id),
 			settings.TenantID(types.GetTenantID(ctx)),
 			settings.EnvironmentID(types.GetEnvironmentID(ctx)),
+			settings.Status(string(types.StatusPublished)),
 		).
 		Only(ctx)
 
@@ -241,6 +245,7 @@ func (r *settingsRepository) GetByKey(ctx context.Context, key string) (*domainS
 			settings.Key(key),
 			settings.TenantID(types.GetTenantID(ctx)),
 			settings.EnvironmentID(types.GetEnvironmentID(ctx)),
+			settings.Status(string(types.StatusPublished)),
 		).
 		Only(ctx)
 
@@ -265,13 +270,16 @@ func (r *settingsRepository) GetByKey(ctx context.Context, key string) (*domainS
 	return setting, nil
 }
 
-func (r *settingsRepository) UpsertByKey(ctx context.Context, s *domainSettings.Setting) error {
+func (r *settingsRepository) UpsertByKey(ctx context.Context, key string, s *domainSettings.Setting) error {
 	client := r.client.Querier(ctx)
 
 	r.log.Debugw("upserting setting",
 		"tenant_id", s.TenantID,
 		"key", s.Key,
 	)
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
 
 	// Set environment ID from context if not already set
 	if s.EnvironmentID == "" {
@@ -281,9 +289,10 @@ func (r *settingsRepository) UpsertByKey(ctx context.Context, s *domainSettings.
 	// Try to find existing setting
 	existing, err := client.Settings.Query().
 		Where(
-			settings.Key(s.Key),
-			settings.TenantID(s.TenantID),
-			settings.EnvironmentID(s.EnvironmentID),
+			settings.Key(key),
+			settings.TenantID(tenantID),
+			settings.EnvironmentID(environmentID),
+			settings.Status(string(types.StatusPublished)),
 		).
 		Only(ctx)
 
@@ -319,6 +328,7 @@ func (r *settingsRepository) DeleteByKey(ctx context.Context, key string) error 
 			settings.Key(key),
 			settings.TenantID(types.GetTenantID(ctx)),
 			settings.EnvironmentID(types.GetEnvironmentID(ctx)),
+			settings.Status(string(types.StatusPublished)),
 		).
 		SetStatus(string(types.StatusArchived)).
 		SetUpdatedAt(time.Now().UTC()).
