@@ -88,6 +88,11 @@ var commands = []Command{
 		Description: "Add a new user to a tenant",
 		Run:         internal.AddNewUserToTenant,
 	},
+	{
+		Name:        "migrate-invoice-sequences",
+		Description: "Migrate invoice sequences to include environment isolation",
+		Run:         internal.MigrateInvoiceSequences,
+	},
 }
 
 // runBulkReprocessEventsCommand wraps the bulk reprocess events with command line parameters

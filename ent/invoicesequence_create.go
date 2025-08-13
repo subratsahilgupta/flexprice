@@ -26,6 +26,20 @@ func (isc *InvoiceSequenceCreate) SetTenantID(s string) *InvoiceSequenceCreate {
 	return isc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (isc *InvoiceSequenceCreate) SetEnvironmentID(s string) *InvoiceSequenceCreate {
+	isc.mutation.SetEnvironmentID(s)
+	return isc
+}
+
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (isc *InvoiceSequenceCreate) SetNillableEnvironmentID(s *string) *InvoiceSequenceCreate {
+	if s != nil {
+		isc.SetEnvironmentID(*s)
+	}
+	return isc
+}
+
 // SetYearMonth sets the "year_month" field.
 func (isc *InvoiceSequenceCreate) SetYearMonth(s string) *InvoiceSequenceCreate {
 	isc.mutation.SetYearMonth(s)
@@ -179,6 +193,10 @@ func (isc *InvoiceSequenceCreate) createSpec() (*InvoiceSequence, *sqlgraph.Crea
 	if value, ok := isc.mutation.TenantID(); ok {
 		_spec.SetField(invoicesequence.FieldTenantID, field.TypeString, value)
 		_node.TenantID = value
+	}
+	if value, ok := isc.mutation.EnvironmentID(); ok {
+		_spec.SetField(invoicesequence.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := isc.mutation.YearMonth(); ok {
 		_spec.SetField(invoicesequence.FieldYearMonth, field.TypeString, value)
