@@ -3,7 +3,10 @@ package repository
 import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/clickhouse"
+	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/auth"
+	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/costsheet"
 	"github.com/flexprice/flexprice/internal/domain/coupon"
 	"github.com/flexprice/flexprice/internal/domain/coupon_application"
@@ -13,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
@@ -25,6 +29,9 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/task"
+	taxrate "github.com/flexprice/flexprice/internal/domain/tax"
+	taxapplied "github.com/flexprice/flexprice/internal/domain/taxapplied"
+	"github.com/flexprice/flexprice/internal/domain/taxassociation"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
@@ -83,6 +90,10 @@ func NewSubscriptionRepository(p RepositoryParams) subscription.Repository {
 
 func NewSubscriptionScheduleRepository(p RepositoryParams) subscription.SubscriptionScheduleRepository {
 	return entRepo.NewSubscriptionScheduleRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewSubscriptionLineItemRepository(p RepositoryParams) subscription.LineItemRepository {
+	return entRepo.NewSubscriptionLineItemRepository(p.EntClient)
 }
 
 func NewWalletRepository(p RepositoryParams) wallet.Repository {
@@ -153,6 +164,34 @@ func NewCreditNoteLineItemRepository(p RepositoryParams) creditnote.CreditNoteLi
 	return entRepo.NewCreditNoteLineItemRepository(p.EntClient, p.Logger, p.Cache)
 }
 
+func NewConnectionRepository(p RepositoryParams) connection.Repository {
+	return entRepo.NewConnectionRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewEntityIntegrationMappingRepository(p RepositoryParams) entityintegrationmapping.Repository {
+	return entRepo.NewEntityIntegrationMappingRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewTaxRateRepository(p RepositoryParams) taxrate.Repository {
+	return entRepo.NewTaxRateRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewTaxAssociationRepository(p RepositoryParams) taxassociation.Repository {
+	return entRepo.NewTaxAssociationRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewTaxAppliedRepository(p RepositoryParams) taxapplied.Repository {
+	return entRepo.NewTaxAppliedRepository(p.EntClient, p.Logger, p.Cache)
+}
+
 func NewPriceUnitRepository(p RepositoryParams) priceunit.Repository {
 	return entRepo.NewPriceUnitRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewAddonRepository(p RepositoryParams) addon.Repository {
+	return entRepo.NewAddonRepository(p.EntClient, p.Logger, p.Cache)
+}
+
+func NewAddonAssociationRepository(p RepositoryParams) addonassociation.Repository {
+	return entRepo.NewAddonAssociationRepository(p.EntClient, p.Logger, p.Cache)
 }

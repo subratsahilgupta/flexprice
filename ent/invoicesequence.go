@@ -19,6 +19,8 @@ type InvoiceSequence struct {
 	ID int `json:"id,omitempty"`
 	// TenantID holds the value of the "tenant_id" field.
 	TenantID string `json:"tenant_id,omitempty"`
+	// EnvironmentID holds the value of the "environment_id" field.
+	EnvironmentID string `json:"environment_id,omitempty"`
 	// YearMonth holds the value of the "year_month" field.
 	YearMonth string `json:"year_month,omitempty"`
 	// LastValue holds the value of the "last_value" field.
@@ -37,7 +39,7 @@ func (*InvoiceSequence) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case invoicesequence.FieldID, invoicesequence.FieldLastValue:
 			values[i] = new(sql.NullInt64)
-		case invoicesequence.FieldTenantID, invoicesequence.FieldYearMonth:
+		case invoicesequence.FieldTenantID, invoicesequence.FieldEnvironmentID, invoicesequence.FieldYearMonth:
 			values[i] = new(sql.NullString)
 		case invoicesequence.FieldCreatedAt, invoicesequence.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -67,6 +69,12 @@ func (is *InvoiceSequence) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field tenant_id", values[i])
 			} else if value.Valid {
 				is.TenantID = value.String
+			}
+		case invoicesequence.FieldEnvironmentID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field environment_id", values[i])
+			} else if value.Valid {
+				is.EnvironmentID = value.String
 			}
 		case invoicesequence.FieldYearMonth:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -130,6 +138,9 @@ func (is *InvoiceSequence) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", is.ID))
 	builder.WriteString("tenant_id=")
 	builder.WriteString(is.TenantID)
+	builder.WriteString(", ")
+	builder.WriteString("environment_id=")
+	builder.WriteString(is.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("year_month=")
 	builder.WriteString(is.YearMonth)
