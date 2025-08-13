@@ -151,6 +151,7 @@ func (s *StripeService) CreateCustomerInStripe(ctx context.Context, customerID s
 		Metadata: map[string]string{
 			"flexprice_customer_id": ourCustomer.ID,
 			"flexprice_environment": ourCustomer.EnvironmentID,
+			"external_id":           ourCustomer.ExternalID,
 		},
 	}
 
@@ -222,8 +223,8 @@ func (s *StripeService) CreateCustomerFromStripe(ctx context.Context, stripeCust
 			return err
 		}
 	} else {
-		// Generate external ID if not present
-		externalID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER)
+		// When syncing from Stripe webhook, set external_id as stripe_customer_id
+		externalID = stripeCustomer.ID
 	}
 
 	// Create new customer using DTO
