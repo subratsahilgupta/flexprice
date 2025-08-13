@@ -25,7 +25,7 @@ func (InvoiceSequence) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			NotEmpty(),
+			Optional(),
 		field.String("year_month").
 			SchemaType(map[string]string{
 				"postgres": "varchar(6)",

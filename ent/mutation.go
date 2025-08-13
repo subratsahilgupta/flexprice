@@ -25979,9 +25979,22 @@ func (m *InvoiceSequenceMutation) OldEnvironmentID(ctx context.Context) (v strin
 	return oldValue.EnvironmentID, nil
 }
 
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (m *InvoiceSequenceMutation) ClearEnvironmentID() {
+	m.environment_id = nil
+	m.clearedFields[invoicesequence.FieldEnvironmentID] = struct{}{}
+}
+
+// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
+func (m *InvoiceSequenceMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[invoicesequence.FieldEnvironmentID]
+	return ok
+}
+
 // ResetEnvironmentID resets all changes to the "environment_id" field.
 func (m *InvoiceSequenceMutation) ResetEnvironmentID() {
 	m.environment_id = nil
+	delete(m.clearedFields, invoicesequence.FieldEnvironmentID)
 }
 
 // SetYearMonth sets the "year_month" field.
@@ -26337,7 +26350,11 @@ func (m *InvoiceSequenceMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *InvoiceSequenceMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(invoicesequence.FieldEnvironmentID) {
+		fields = append(fields, invoicesequence.FieldEnvironmentID)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -26350,6 +26367,11 @@ func (m *InvoiceSequenceMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *InvoiceSequenceMutation) ClearField(name string) error {
+	switch name {
+	case invoicesequence.FieldEnvironmentID:
+		m.ClearEnvironmentID()
+		return nil
+	}
 	return fmt.Errorf("unknown InvoiceSequence nullable field %s", name)
 }
 

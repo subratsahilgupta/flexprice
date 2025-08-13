@@ -56,6 +56,12 @@ func (isu *InvoiceSequenceUpdate) SetNillableEnvironmentID(s *string) *InvoiceSe
 	return isu
 }
 
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (isu *InvoiceSequenceUpdate) ClearEnvironmentID() *InvoiceSequenceUpdate {
+	isu.mutation.ClearEnvironmentID()
+	return isu
+}
+
 // SetYearMonth sets the "year_month" field.
 func (isu *InvoiceSequenceUpdate) SetYearMonth(s string) *InvoiceSequenceUpdate {
 	isu.mutation.SetYearMonth(s)
@@ -145,11 +151,6 @@ func (isu *InvoiceSequenceUpdate) check() error {
 			return &ValidationError{Name: "tenant_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.tenant_id": %w`, err)}
 		}
 	}
-	if v, ok := isu.mutation.EnvironmentID(); ok {
-		if err := invoicesequence.EnvironmentIDValidator(v); err != nil {
-			return &ValidationError{Name: "environment_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.environment_id": %w`, err)}
-		}
-	}
 	if v, ok := isu.mutation.YearMonth(); ok {
 		if err := invoicesequence.YearMonthValidator(v); err != nil {
 			return &ValidationError{Name: "year_month", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.year_month": %w`, err)}
@@ -175,6 +176,9 @@ func (isu *InvoiceSequenceUpdate) sqlSave(ctx context.Context) (n int, err error
 	}
 	if value, ok := isu.mutation.EnvironmentID(); ok {
 		_spec.SetField(invoicesequence.FieldEnvironmentID, field.TypeString, value)
+	}
+	if isu.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(invoicesequence.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := isu.mutation.YearMonth(); ok {
 		_spec.SetField(invoicesequence.FieldYearMonth, field.TypeString, value)
@@ -233,6 +237,12 @@ func (isuo *InvoiceSequenceUpdateOne) SetNillableEnvironmentID(s *string) *Invoi
 	if s != nil {
 		isuo.SetEnvironmentID(*s)
 	}
+	return isuo
+}
+
+// ClearEnvironmentID clears the value of the "environment_id" field.
+func (isuo *InvoiceSequenceUpdateOne) ClearEnvironmentID() *InvoiceSequenceUpdateOne {
+	isuo.mutation.ClearEnvironmentID()
 	return isuo
 }
 
@@ -338,11 +348,6 @@ func (isuo *InvoiceSequenceUpdateOne) check() error {
 			return &ValidationError{Name: "tenant_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.tenant_id": %w`, err)}
 		}
 	}
-	if v, ok := isuo.mutation.EnvironmentID(); ok {
-		if err := invoicesequence.EnvironmentIDValidator(v); err != nil {
-			return &ValidationError{Name: "environment_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.environment_id": %w`, err)}
-		}
-	}
 	if v, ok := isuo.mutation.YearMonth(); ok {
 		if err := invoicesequence.YearMonthValidator(v); err != nil {
 			return &ValidationError{Name: "year_month", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.year_month": %w`, err)}
@@ -385,6 +390,9 @@ func (isuo *InvoiceSequenceUpdateOne) sqlSave(ctx context.Context) (_node *Invoi
 	}
 	if value, ok := isuo.mutation.EnvironmentID(); ok {
 		_spec.SetField(invoicesequence.FieldEnvironmentID, field.TypeString, value)
+	}
+	if isuo.mutation.EnvironmentIDCleared() {
+		_spec.ClearField(invoicesequence.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := isuo.mutation.YearMonth(); ok {
 		_spec.SetField(invoicesequence.FieldYearMonth, field.TypeString, value)

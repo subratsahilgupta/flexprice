@@ -32,6 +32,14 @@ func (isc *InvoiceSequenceCreate) SetEnvironmentID(s string) *InvoiceSequenceCre
 	return isc
 }
 
+// SetNillableEnvironmentID sets the "environment_id" field if the given value is not nil.
+func (isc *InvoiceSequenceCreate) SetNillableEnvironmentID(s *string) *InvoiceSequenceCreate {
+	if s != nil {
+		isc.SetEnvironmentID(*s)
+	}
+	return isc
+}
+
 // SetYearMonth sets the "year_month" field.
 func (isc *InvoiceSequenceCreate) SetYearMonth(s string) *InvoiceSequenceCreate {
 	isc.mutation.SetYearMonth(s)
@@ -137,14 +145,6 @@ func (isc *InvoiceSequenceCreate) check() error {
 	if v, ok := isc.mutation.TenantID(); ok {
 		if err := invoicesequence.TenantIDValidator(v); err != nil {
 			return &ValidationError{Name: "tenant_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.tenant_id": %w`, err)}
-		}
-	}
-	if _, ok := isc.mutation.EnvironmentID(); !ok {
-		return &ValidationError{Name: "environment_id", err: errors.New(`ent: missing required field "InvoiceSequence.environment_id"`)}
-	}
-	if v, ok := isc.mutation.EnvironmentID(); ok {
-		if err := invoicesequence.EnvironmentIDValidator(v); err != nil {
-			return &ValidationError{Name: "environment_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.environment_id": %w`, err)}
 		}
 	}
 	if _, ok := isc.mutation.YearMonth(); !ok {

@@ -204,6 +204,16 @@ func EnvironmentIDHasSuffix(v string) predicate.InvoiceSequence {
 	return predicate.InvoiceSequence(sql.FieldHasSuffix(FieldEnvironmentID, v))
 }
 
+// EnvironmentIDIsNil applies the IsNil predicate on the "environment_id" field.
+func EnvironmentIDIsNil() predicate.InvoiceSequence {
+	return predicate.InvoiceSequence(sql.FieldIsNull(FieldEnvironmentID))
+}
+
+// EnvironmentIDNotNil applies the NotNil predicate on the "environment_id" field.
+func EnvironmentIDNotNil() predicate.InvoiceSequence {
+	return predicate.InvoiceSequence(sql.FieldNotNull(FieldEnvironmentID))
+}
+
 // EnvironmentIDEqualFold applies the EqualFold predicate on the "environment_id" field.
 func EnvironmentIDEqualFold(v string) predicate.InvoiceSequence {
 	return predicate.InvoiceSequence(sql.FieldEqualFold(FieldEnvironmentID, v))

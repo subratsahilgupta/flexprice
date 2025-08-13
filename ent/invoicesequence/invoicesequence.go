@@ -53,8 +53,6 @@ func ValidColumn(column string) bool {
 var (
 	// TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
 	TenantIDValidator func(string) error
-	// EnvironmentIDValidator is a validator for the "environment_id" field. It is called by the builders before save.
-	EnvironmentIDValidator func(string) error
 	// YearMonthValidator is a validator for the "year_month" field. It is called by the builders before save.
 	YearMonthValidator func(string) error
 	// DefaultLastValue holds the default value on creation for the "last_value" field.

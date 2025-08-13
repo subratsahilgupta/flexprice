@@ -889,10 +889,6 @@ func init() {
 	invoicesequenceDescTenantID := invoicesequenceFields[0].Descriptor()
 	// invoicesequence.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
 	invoicesequence.TenantIDValidator = invoicesequenceDescTenantID.Validators[0].(func(string) error)
-	// invoicesequenceDescEnvironmentID is the schema descriptor for environment_id field.
-	invoicesequenceDescEnvironmentID := invoicesequenceFields[1].Descriptor()
-	// invoicesequence.EnvironmentIDValidator is a validator for the "environment_id" field. It is called by the builders before save.
-	invoicesequence.EnvironmentIDValidator = invoicesequenceDescEnvironmentID.Validators[0].(func(string) error)
 	// invoicesequenceDescYearMonth is the schema descriptor for year_month field.
 	invoicesequenceDescYearMonth := invoicesequenceFields[2].Descriptor()
 	// invoicesequence.YearMonthValidator is a validator for the "year_month" field. It is called by the builders before save.
