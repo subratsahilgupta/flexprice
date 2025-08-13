@@ -207,6 +207,13 @@ func (s *billingService) CalculateUsageCharges(
 			continue
 		}
 
+		// Get customer for usage request
+		customer, err := s.CustomerRepo.Get(ctx, sub.CustomerID)
+		if err != nil {
+			return nil, decimal.Zero, err
+		}
+		eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
+
 		// Process each matching charge individually (normal and overage charges)
 		for _, matchingCharge := range matchingCharges {
 			quantityForCalculation := decimal.NewFromFloat(matchingCharge.Quantity)
@@ -236,36 +243,17 @@ func (s *billingService) CalculateUsageCharges(
 						// For daily reset periods, we need to fetch usage with daily window size
 						// and calculate overage per day, then sum the total overage
 
-						// Get customer for usage request
-						customer, err := s.CustomerRepo.Get(ctx, sub.CustomerID)
-						if err != nil {
-							return nil, decimal.Zero, err
-						}
-
-						// Get meter for this line item
-						meter, err := s.MeterRepo.GetMeter(ctx, item.MeterID)
-						if err != nil {
-							return nil, decimal.Zero, err
-						}
-
 						// Create usage request with daily window size
 						usageRequest := &dto.GetUsageByMeterRequest{
 							MeterID:            item.MeterID,
 							PriceID:            item.PriceID,
-							Meter:              meter,
 							ExternalCustomerID: customer.ExternalID,
 							StartTime:          periodStart,
 							EndTime:            periodEnd,
 							WindowSize:         types.WindowSizeDay, // Use daily window size
 						}
 
-						// Add meter filters
-						for _, filter := range meter.Filters {
-							usageRequest.Filters[filter.Key] = filter.Values
-						}
-
 						// Get usage data with daily windows
-						eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
 						usageResult, err := eventService.GetUsageByMeter(ctx, usageRequest)
 						if err != nil {
 							return nil, decimal.Zero, err
