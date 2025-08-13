@@ -1454,7 +1454,7 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithDailyReset() {
 		"Expected quantity %s, got %s", expectedQuantity, lineItems[0].Quantity)
 
 	// Check that the amount is calculated correctly
-	s.True(totalAmount.GreaterThan(decimal.Zero), "Should have positive total amount")
+	s.Equal(decimal.NewFromFloat(0.14), totalAmount, "Should have correct total amount for daily overage")
 
 	// Check metadata indicates daily reset
 	s.Equal("daily", lineItems[0].Metadata["usage_reset_period"])
