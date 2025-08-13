@@ -55,7 +55,6 @@ type PaymentResponse struct {
 	GatewayTrackingID *string                      `json:"gateway_tracking_id,omitempty"`
 	GatewayMetadata   types.Metadata               `json:"gateway_metadata,omitempty"`
 	PaymentURL        *string                      `json:"payment_url,omitempty"`
-	SessionID         *string                      `json:"session_id,omitempty"`
 	Metadata          types.Metadata               `json:"metadata,omitempty"`
 	SucceededAt       *time.Time                   `json:"succeeded_at,omitempty"`
 	FailedAt          *time.Time                   `json:"failed_at,omitempty"`
@@ -119,13 +118,10 @@ func NewPaymentResponse(p *payment.Payment) *PaymentResponse {
 		UpdatedBy:         p.UpdatedBy,
 	}
 
-	// Extract payment URL and session ID from gateway metadata for payment links
+	// Extract payment URL from gateway metadata for payment links
 	if p.PaymentMethodType == types.PaymentMethodTypePaymentLink && p.GatewayMetadata != nil {
 		if paymentURL, exists := p.GatewayMetadata["payment_url"]; exists {
 			resp.PaymentURL = &paymentURL
-		}
-		if sessionID, exists := p.GatewayMetadata["session_id"]; exists {
-			resp.SessionID = &sessionID
 		}
 	}
 
