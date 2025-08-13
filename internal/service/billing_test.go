@@ -246,7 +246,7 @@ func (s *BillingServiceSuite) setupTestData() {
 		PlanID:             s.testData.plan.ID,
 		CustomerID:         s.testData.customer.ID,
 		StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
-		CurrentPeriodStart: s.testData.now.Add(-24 * time.Hour),
+		CurrentPeriodStart: s.testData.now.Add(-48 * time.Hour),
 		CurrentPeriodEnd:   s.testData.now.Add(6 * 24 * time.Hour),
 		Currency:           "usd",
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
@@ -1353,6 +1353,9 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithDailyReset() {
 	// Setup test data for daily usage calculation
 	ctx := s.GetContext()
 
+	// Clear the event store to start with a clean slate
+	s.eventRepo.Clear()
+
 	// Create test feature with daily reset
 	testFeature := &feature.Feature{
 		ID:          "feat_daily_123",
@@ -1380,14 +1383,15 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithDailyReset() {
 	_, err := s.GetStores().EntitlementRepo.Create(ctx, entitlement)
 	s.NoError(err)
 
-	// Create test events for different days
-	// Day 1: 15 requests (5 over limit)
-	// Day 2: 3 requests (0 over limit)
-	// Day 3: 12 requests (2 over limit)
+	// Create test events for different days within the subscription period
+	// We need to use different calendar days for daily reset to work properly
+	// Day 1: 15 requests (5 over limit) - 2 days ago
+	// Day 2: 3 requests (0 over limit) - yesterday
+	// Day 3: 12 requests (2 over limit) - today
 	eventDates := []time.Time{
-		s.testData.now.Add(-48 * time.Hour), // Day 1
-		s.testData.now.Add(-24 * time.Hour), // Day 2
-		s.testData.now,                      // Day 3
+		s.testData.now.Add(-48 * time.Hour), // Day 1 - 2 days ago
+		s.testData.now.Add(-24 * time.Hour), // Day 2 - yesterday
+		s.testData.now,                      // Day 3 - today
 	}
 
 	for i, eventDate := range eventDates {

@@ -333,6 +333,11 @@ func (s *billingService) CalculateUsageCharges(
 				displayName = lo.ToPtr(fmt.Sprintf("%s (Overage)", item.DisplayName))
 			}
 
+			// Add usage reset period metadata if entitlement has daily reset
+			if !matchingCharge.IsOverage && ok && matchingEntitlement.IsEnabled && matchingEntitlement.UsageResetPeriod == types.BILLING_PERIOD_DAILY {
+				metadata["usage_reset_period"] = "daily"
+			}
+
 			s.Logger.Debugw("usage charges for line item",
 				"amount", matchingCharge.Amount,
 				"quantity", matchingCharge.Quantity,
