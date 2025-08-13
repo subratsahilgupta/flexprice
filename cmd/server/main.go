@@ -155,6 +155,7 @@ func main() {
 			repository.NewAddonRepository,
 			repository.NewAddonAssociationRepository,
 			repository.NewSubscriptionLineItemRepository,
+			repository.NewSettingsRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -206,6 +207,7 @@ func main() {
 			service.NewCouponService,
 			service.NewPriceUnitService,
 			service.NewAddonService,
+			service.NewSettingsService,
 		),
 	)
 
@@ -264,6 +266,7 @@ func provideHandlers(
 	taxService service.TaxService,
 	couponService service.CouponService,
 	addonService service.AddonService,
+	settingsService service.SettingsService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, logger),
@@ -300,6 +303,7 @@ func provideHandlers(
 		Webhook:                  v1.NewWebhookHandler(cfg, svixClient, logger, stripeService),
 		Coupon:                   v1.NewCouponHandler(couponService, logger),
 		Addon:                    v1.NewAddonHandler(addonService, logger),
+		Settings:                 v1.NewSettingsHandler(settingsService, logger),
 	}
 }
 

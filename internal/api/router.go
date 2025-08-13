@@ -44,6 +44,8 @@ type Handlers struct {
 	Addon                    *v1.AddonHandler
 	EntityIntegrationMapping *v1.EntityIntegrationMappingHandler
 	Integration              *v1.IntegrationHandler
+	Settings                 *v1.SettingsHandler
+
 	// Portal handlers
 	Onboarding *v1.OnboardingHandler
 	// Cron jobs : TODO: move crons out of API based architecture
@@ -460,6 +462,14 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		creditGrantGroup := cron.Group("/creditgrants")
 		{
 			creditGrantGroup.POST("/process-scheduled-applications", handlers.CronCreditGrant.ProcessScheduledCreditGrantApplications)
+		}
+
+		// Settings routes
+		settings := v1Private.Group("/settings")
+		{
+			settings.GET("/:key", handlers.Settings.GetSettingByKey)
+			settings.PUT("/:key", handlers.Settings.UpdateSettingByKey)
+			settings.DELETE("/:key", handlers.Settings.DeleteSettingByKey)
 		}
 
 		return router

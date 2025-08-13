@@ -104,6 +104,7 @@ const (
 	UUID_PREFIX_ADDON                       = "addon"
 	UUID_PREFIX_ADDON_ASSOCIATION           = "addon_assoc"
 	UUID_PREFIX_WEBHOOK_EVENT               = "webhook"
+	UUID_PREFIX_SETTING                     = "setting"
 )
 
 const (
