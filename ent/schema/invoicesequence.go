@@ -21,6 +21,11 @@ func (InvoiceSequence) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			NotEmpty(),
+		field.String("environment_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			NotEmpty(),
 		field.String("year_month").
 			SchemaType(map[string]string{
 				"postgres": "varchar(6)",
@@ -54,7 +59,7 @@ func (InvoiceSequence) Edges() []ent.Edge {
 // Indexes of the InvoiceSequence.
 func (InvoiceSequence) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "year_month").
+		index.Fields("tenant_id", "environment_id", "year_month").
 			Unique(),
 	}
 }

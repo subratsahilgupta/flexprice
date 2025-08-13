@@ -26,6 +26,12 @@ func (isc *InvoiceSequenceCreate) SetTenantID(s string) *InvoiceSequenceCreate {
 	return isc
 }
 
+// SetEnvironmentID sets the "environment_id" field.
+func (isc *InvoiceSequenceCreate) SetEnvironmentID(s string) *InvoiceSequenceCreate {
+	isc.mutation.SetEnvironmentID(s)
+	return isc
+}
+
 // SetYearMonth sets the "year_month" field.
 func (isc *InvoiceSequenceCreate) SetYearMonth(s string) *InvoiceSequenceCreate {
 	isc.mutation.SetYearMonth(s)
@@ -133,6 +139,14 @@ func (isc *InvoiceSequenceCreate) check() error {
 			return &ValidationError{Name: "tenant_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.tenant_id": %w`, err)}
 		}
 	}
+	if _, ok := isc.mutation.EnvironmentID(); !ok {
+		return &ValidationError{Name: "environment_id", err: errors.New(`ent: missing required field "InvoiceSequence.environment_id"`)}
+	}
+	if v, ok := isc.mutation.EnvironmentID(); ok {
+		if err := invoicesequence.EnvironmentIDValidator(v); err != nil {
+			return &ValidationError{Name: "environment_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceSequence.environment_id": %w`, err)}
+		}
+	}
 	if _, ok := isc.mutation.YearMonth(); !ok {
 		return &ValidationError{Name: "year_month", err: errors.New(`ent: missing required field "InvoiceSequence.year_month"`)}
 	}
@@ -179,6 +193,10 @@ func (isc *InvoiceSequenceCreate) createSpec() (*InvoiceSequence, *sqlgraph.Crea
 	if value, ok := isc.mutation.TenantID(); ok {
 		_spec.SetField(invoicesequence.FieldTenantID, field.TypeString, value)
 		_node.TenantID = value
+	}
+	if value, ok := isc.mutation.EnvironmentID(); ok {
+		_spec.SetField(invoicesequence.FieldEnvironmentID, field.TypeString, value)
+		_node.EnvironmentID = value
 	}
 	if value, ok := isc.mutation.YearMonth(); ok {
 		_spec.SetField(invoicesequence.FieldYearMonth, field.TypeString, value)

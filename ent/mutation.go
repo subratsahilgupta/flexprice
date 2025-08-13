@@ -25798,19 +25798,20 @@ func (m *InvoiceLineItemMutation) ResetEdge(name string) error {
 // InvoiceSequenceMutation represents an operation that mutates the InvoiceSequence nodes in the graph.
 type InvoiceSequenceMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *int
-	tenant_id     *string
-	year_month    *string
-	last_value    *int64
-	addlast_value *int64
-	created_at    *time.Time
-	updated_at    *time.Time
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*InvoiceSequence, error)
-	predicates    []predicate.InvoiceSequence
+	op             Op
+	typ            string
+	id             *int
+	tenant_id      *string
+	environment_id *string
+	year_month     *string
+	last_value     *int64
+	addlast_value  *int64
+	created_at     *time.Time
+	updated_at     *time.Time
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*InvoiceSequence, error)
+	predicates     []predicate.InvoiceSequence
 }
 
 var _ ent.Mutation = (*InvoiceSequenceMutation)(nil)
@@ -25945,6 +25946,42 @@ func (m *InvoiceSequenceMutation) OldTenantID(ctx context.Context) (v string, er
 // ResetTenantID resets all changes to the "tenant_id" field.
 func (m *InvoiceSequenceMutation) ResetTenantID() {
 	m.tenant_id = nil
+}
+
+// SetEnvironmentID sets the "environment_id" field.
+func (m *InvoiceSequenceMutation) SetEnvironmentID(s string) {
+	m.environment_id = &s
+}
+
+// EnvironmentID returns the value of the "environment_id" field in the mutation.
+func (m *InvoiceSequenceMutation) EnvironmentID() (r string, exists bool) {
+	v := m.environment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnvironmentID returns the old "environment_id" field's value of the InvoiceSequence entity.
+// If the InvoiceSequence object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceSequenceMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnvironmentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnvironmentID: %w", err)
+	}
+	return oldValue.EnvironmentID, nil
+}
+
+// ResetEnvironmentID resets all changes to the "environment_id" field.
+func (m *InvoiceSequenceMutation) ResetEnvironmentID() {
+	m.environment_id = nil
 }
 
 // SetYearMonth sets the "year_month" field.
@@ -26145,9 +26182,12 @@ func (m *InvoiceSequenceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceSequenceMutation) Fields() []string {
-	fields := make([]string, 0, 5)
+	fields := make([]string, 0, 6)
 	if m.tenant_id != nil {
 		fields = append(fields, invoicesequence.FieldTenantID)
+	}
+	if m.environment_id != nil {
+		fields = append(fields, invoicesequence.FieldEnvironmentID)
 	}
 	if m.year_month != nil {
 		fields = append(fields, invoicesequence.FieldYearMonth)
@@ -26171,6 +26211,8 @@ func (m *InvoiceSequenceMutation) Field(name string) (ent.Value, bool) {
 	switch name {
 	case invoicesequence.FieldTenantID:
 		return m.TenantID()
+	case invoicesequence.FieldEnvironmentID:
+		return m.EnvironmentID()
 	case invoicesequence.FieldYearMonth:
 		return m.YearMonth()
 	case invoicesequence.FieldLastValue:
@@ -26190,6 +26232,8 @@ func (m *InvoiceSequenceMutation) OldField(ctx context.Context, name string) (en
 	switch name {
 	case invoicesequence.FieldTenantID:
 		return m.OldTenantID(ctx)
+	case invoicesequence.FieldEnvironmentID:
+		return m.OldEnvironmentID(ctx)
 	case invoicesequence.FieldYearMonth:
 		return m.OldYearMonth(ctx)
 	case invoicesequence.FieldLastValue:
@@ -26213,6 +26257,13 @@ func (m *InvoiceSequenceMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTenantID(v)
+		return nil
+	case invoicesequence.FieldEnvironmentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnvironmentID(v)
 		return nil
 	case invoicesequence.FieldYearMonth:
 		v, ok := value.(string)
@@ -26308,6 +26359,9 @@ func (m *InvoiceSequenceMutation) ResetField(name string) error {
 	switch name {
 	case invoicesequence.FieldTenantID:
 		m.ResetTenantID()
+		return nil
+	case invoicesequence.FieldEnvironmentID:
+		m.ResetEnvironmentID()
 		return nil
 	case invoicesequence.FieldYearMonth:
 		m.ResetYearMonth()

@@ -889,20 +889,24 @@ func init() {
 	invoicesequenceDescTenantID := invoicesequenceFields[0].Descriptor()
 	// invoicesequence.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
 	invoicesequence.TenantIDValidator = invoicesequenceDescTenantID.Validators[0].(func(string) error)
+	// invoicesequenceDescEnvironmentID is the schema descriptor for environment_id field.
+	invoicesequenceDescEnvironmentID := invoicesequenceFields[1].Descriptor()
+	// invoicesequence.EnvironmentIDValidator is a validator for the "environment_id" field. It is called by the builders before save.
+	invoicesequence.EnvironmentIDValidator = invoicesequenceDescEnvironmentID.Validators[0].(func(string) error)
 	// invoicesequenceDescYearMonth is the schema descriptor for year_month field.
-	invoicesequenceDescYearMonth := invoicesequenceFields[1].Descriptor()
+	invoicesequenceDescYearMonth := invoicesequenceFields[2].Descriptor()
 	// invoicesequence.YearMonthValidator is a validator for the "year_month" field. It is called by the builders before save.
 	invoicesequence.YearMonthValidator = invoicesequenceDescYearMonth.Validators[0].(func(string) error)
 	// invoicesequenceDescLastValue is the schema descriptor for last_value field.
-	invoicesequenceDescLastValue := invoicesequenceFields[2].Descriptor()
+	invoicesequenceDescLastValue := invoicesequenceFields[3].Descriptor()
 	// invoicesequence.DefaultLastValue holds the default value on creation for the last_value field.
 	invoicesequence.DefaultLastValue = invoicesequenceDescLastValue.Default.(int64)
 	// invoicesequenceDescCreatedAt is the schema descriptor for created_at field.
-	invoicesequenceDescCreatedAt := invoicesequenceFields[3].Descriptor()
+	invoicesequenceDescCreatedAt := invoicesequenceFields[4].Descriptor()
 	// invoicesequence.DefaultCreatedAt holds the default value on creation for the created_at field.
 	invoicesequence.DefaultCreatedAt = invoicesequenceDescCreatedAt.Default.(func() time.Time)
 	// invoicesequenceDescUpdatedAt is the schema descriptor for updated_at field.
-	invoicesequenceDescUpdatedAt := invoicesequenceFields[4].Descriptor()
+	invoicesequenceDescUpdatedAt := invoicesequenceFields[5].Descriptor()
 	// invoicesequence.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	invoicesequence.DefaultUpdatedAt = invoicesequenceDescUpdatedAt.Default.(func() time.Time)
 	// invoicesequence.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
