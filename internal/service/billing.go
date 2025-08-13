@@ -225,18 +225,7 @@ func (s *billingService) CalculateUsageCharges(
 
 					// case 1 : when the usage reset period is billing period
 					if matchingEntitlement.UsageResetPeriod == sub.BillingPeriod {
-						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
-						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
-						quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
-					}
 
-					// case 2 : when the usage reset period is daily
-					// consider the usage reset period
-					// TODO: Suppport other reset periods i.e. weekly, monthly, yearly
-					// usage limit is set, so we decrement the usage quantity by the already entitled usage
-
-					// case 1 : when the usage reset period is billing period
-					if matchingEntitlement.UsageResetPeriod == sub.BillingPeriod {
 						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
 						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
 						quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
