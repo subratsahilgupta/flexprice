@@ -32,7 +32,7 @@ func GetDefaultSettings() map[SettingKey]DefaultSettingValue {
 			DefaultValue: map[string]interface{}{
 				"prefix":         "INV",
 				"format":         "YYYYMM",
-				"start_sequence": 0,
+				"start_sequence": 1,
 			},
 			Description: "Default configuration for invoice generation and management",
 			Required:    true,

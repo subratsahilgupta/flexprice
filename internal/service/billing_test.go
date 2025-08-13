@@ -93,6 +93,7 @@ func (s *BillingServiceSuite) setupService() {
 		TaxRateRepo:           s.GetStores().TaxRateRepo,
 		TaxAssociationRepo:    s.GetStores().TaxAssociationRepo,
 		TaxAppliedRepo:        s.GetStores().TaxAppliedRepo,
+		SettingsRepo:          s.GetStores().SettingsRepo,
 		EventPublisher:        s.GetPublisher(),
 		WebhookPublisher:      s.GetWebhookPublisher(),
 	})

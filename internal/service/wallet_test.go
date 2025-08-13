@@ -79,6 +79,7 @@ func (s *WalletServiceSuite) setupService() {
 		InvoiceRepo:      stores.InvoiceRepo,
 		EntitlementRepo:  stores.EntitlementRepo,
 		FeatureRepo:      stores.FeatureRepo,
+		SettingsRepo:     stores.SettingsRepo,
 		EventPublisher:   s.GetPublisher(),
 		WebhookPublisher: s.GetWebhookPublisher(),
 	})
@@ -98,6 +99,7 @@ func (s *WalletServiceSuite) setupService() {
 		CouponRepo:            stores.CouponRepo,
 		CouponAssociationRepo: stores.CouponAssociationRepo,
 		CouponApplicationRepo: stores.CouponApplicationRepo,
+		SettingsRepo:          stores.SettingsRepo,
 		EventPublisher:        s.GetPublisher(),
 		WebhookPublisher:      s.GetWebhookPublisher(),
 	})

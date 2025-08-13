@@ -31,7 +31,7 @@ func GetInvoiceConfigSafely(value map[string]interface{}) (*types.InvoiceConfig,
 	invoiceConfig := &types.InvoiceConfig{
 		InvoiceNumberPrefix:        value["prefix"].(string),
 		InvoiceNumberFormat:        value["format"].(string),
-		InvoiceNumberStartSequence: int(value["start_sequence"].(float64)),
+		InvoiceNumberStartSequence: value["start_sequence"].(int),
 	}
 
 	return invoiceConfig, nil
