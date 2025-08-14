@@ -223,12 +223,6 @@ func (s *priceService) createPriceWithUnitConfig(ctx context.Context, req dto.Cr
 		return nil, err
 	}
 
-	if req.PlanID == "" {
-		return nil, ierr.NewError("plan_id is required").
-			WithHint("Plan ID is required").
-			Mark(ierr.ErrValidation)
-	}
-
 	// Parse price unit amount - this is the amount in the price unit currency
 	priceUnitAmount := decimal.Zero
 	if req.BillingModel != types.BILLING_MODEL_TIERED {
