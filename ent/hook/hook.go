@@ -345,6 +345,18 @@ func (f SecretFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, erro
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SecretMutation", m)
 }
 
+// The SettingsFunc type is an adapter to allow the use of ordinary
+// function as Settings mutator.
+type SettingsFunc func(context.Context, *ent.SettingsMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SettingsFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SettingsMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SettingsMutation", m)
+}
+
 // The SubscriptionFunc type is an adapter to allow the use of ordinary
 // function as Subscription mutator.
 type SubscriptionFunc func(context.Context, *ent.SubscriptionMutation) (ent.Value, error)
