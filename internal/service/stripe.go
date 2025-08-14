@@ -578,8 +578,12 @@ func (s *StripeService) ReconcilePaymentWithInvoice(ctx context.Context, payment
 
 	// Determine payment status
 	var newPaymentStatus types.PaymentStatus
-	if newAmountRemaining.IsZero() || newAmountRemaining.IsNegative() {
+	if newAmountRemaining.IsZero() {
 		newPaymentStatus = types.PaymentStatusSucceeded
+	} else if newAmountRemaining.IsNegative() {
+		// Invoice is overpaid
+		newPaymentStatus = types.PaymentStatusOverpaid
+		// For overpaid invoices, amount_remaining should be 0
 		newAmountRemaining = decimal.Zero
 	} else {
 		newPaymentStatus = types.PaymentStatusPending
