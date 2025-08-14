@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type SettingKey string
@@ -31,8 +32,9 @@ func GetDefaultSettings() map[SettingKey]DefaultSettingValue {
 			Key: SettingKeyInvoiceConfig,
 			DefaultValue: map[string]interface{}{
 				"prefix":         "INV",
-				"format":         "YYYYMM",
+				"format":         string(InvoiceNumberFormatYYYYMM),
 				"start_sequence": 1,
+				"timezone":       "UTC",
 			},
 			Description: "Default configuration for invoice generation and management",
 			Required:    true,
@@ -84,9 +86,29 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 	if !exists {
 		return errors.New("invoice_config: 'format' is required")
 	}
-	_, ok = formatRaw.(string)
+	formatStr, ok := formatRaw.(string)
 	if !ok {
 		return fmt.Errorf("invoice_config: 'format' must be a string, got %T", formatRaw)
+	}
+
+	// Validate against enum values
+	format := InvoiceNumberFormat(formatStr)
+	validFormats := []InvoiceNumberFormat{
+		InvoiceNumberFormatYYYYMM,
+		InvoiceNumberFormatYYYYMMDD,
+		InvoiceNumberFormatYYMMDD,
+		InvoiceNumberFormatYY,
+		InvoiceNumberFormatYYYY,
+	}
+	found := false
+	for _, validFormat := range validFormats {
+		if format == validFormat {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("invoice_config: 'format' must be one of %v, got %s", validFormats, formatStr)
 	}
 
 	// Validate start_sequence
@@ -108,8 +130,27 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 		return fmt.Errorf("invoice_config: 'start_sequence' must be an integer, got %T", startSeqRaw)
 	}
 
-	if startSeq < 1 {
-		return errors.New("invoice_config: 'start_sequence' must be greater than 0")
+	if startSeq < 0 {
+		return errors.New("invoice_config: 'start_sequence' must be greater than or equal to 0")
+	}
+
+	// Validate timezone
+	timezoneRaw, exists := value["timezone"]
+	if !exists {
+		return errors.New("invoice_config: 'timezone' is required")
+	}
+	timezone, ok := timezoneRaw.(string)
+	if !ok {
+		return fmt.Errorf("invoice_config: 'timezone' must be a string, got %T", timezoneRaw)
+	}
+	if strings.TrimSpace(timezone) == "" {
+		return errors.New("invoice_config: 'timezone' cannot be empty")
+	}
+
+	// Validate timezone by trying to load it
+	_, err := time.LoadLocation(timezone)
+	if err != nil {
+		return fmt.Errorf("invoice_config: invalid timezone '%s': %v", timezone, err)
 	}
 
 	return nil

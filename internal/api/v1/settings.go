@@ -25,17 +25,6 @@ func NewSettingsHandler(
 	}
 }
 
-// @Summary Get a setting by key
-// @Description Get a setting by key
-// @Tags Settings
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param key path string true "Setting Key"
-// @Success 200 {object} dto.SettingResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /settings/{key} [get]
 func (h *SettingsHandler) GetSettingByKey(c *gin.Context) {
 	key := c.Param("key")
 
@@ -48,19 +37,6 @@ func (h *SettingsHandler) GetSettingByKey(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// @Summary Update a setting
-// @Description Update an existing setting
-// @Tags Settings
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param key path string true "Setting Key"
-// @Param setting body dto.UpdateSettingRequest true "Setting update data"
-// @Success 200 {object} dto.SettingResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /settings/{key} [put]
 func (h *SettingsHandler) UpdateSettingByKey(c *gin.Context) {
 	key := c.Param("key")
 
@@ -81,19 +57,6 @@ func (h *SettingsHandler) UpdateSettingByKey(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// @Summary Delete a setting
-// @Description Delete an existing setting
-// @Tags Settings
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param key path string true "Setting Key"
-// @Param setting body dto.UpdateSettingRequest true "Setting update data"
-// @Success 200 {object} dto.SettingResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /settings/{key} [delete]
 func (h *SettingsHandler) DeleteSettingByKey(c *gin.Context) {
 	key := c.Param("key")
 

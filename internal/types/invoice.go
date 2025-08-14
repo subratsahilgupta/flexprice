@@ -154,10 +154,46 @@ const (
 	InvoiceDefaultDueDays = 1
 )
 
+type InvoiceNumberFormat string
+
+const (
+	InvoiceNumberFormatYYYYMM   InvoiceNumberFormat = "YYYYMM"
+	InvoiceNumberFormatYYYYMMDD InvoiceNumberFormat = "YYYYMMDD"
+	InvoiceNumberFormatYYMMDD   InvoiceNumberFormat = "YYMMDD"
+	InvoiceNumberFormatYY       InvoiceNumberFormat = "YY"
+	InvoiceNumberFormatYYYY     InvoiceNumberFormat = "YYYY"
+)
+
+// InvoiceConfig represents the configuration for automatic invoice number generation.
+// It defines the format and sequencing rules used to create unique, human-readable invoice numbers.
+//
+// Fields:
+//   - InvoiceNumberPrefix: A string prefix for all invoice numbers (e.g., "INV", "BILL")
+//   - InvoiceNumberFormat: Date format template using Go time format (e.g., "YYYYMM" for year-month)
+//   - InvoiceNumberStartSequence: Starting number for the sequence counter (typically 1)
+//   - InvoiceNumberTimezone: Timezone for date formatting (e.g., "UTC", "America/New_York")
+//
+// Generated invoice numbers follow the pattern: {prefix}-{formatted_date}-{5-digit_sequence}
+//
+// Example configuration:
+//
+//	InvoiceNumberPrefix: "INV"
+//	InvoiceNumberFormat: "YYYYMM"
+//	InvoiceNumberStartSequence: 1
+//	InvoiceNumberTimezone: "UTC"
+//
+// Generated invoice numbers for January 2025:
+//
+//	"INV-202501-00001"
+//	"INV-202501-00002"
+//	"INV-202501-00003"
+//
+// Note: Sequences reset monthly and are tenant-environment-scoped for isolation.
 type InvoiceConfig struct {
-	InvoiceNumberPrefix        string `json:"prefix"`
-	InvoiceNumberFormat        string `json:"format"`
-	InvoiceNumberStartSequence int    `json:"start_sequence"`
+	InvoiceNumberPrefix        string              `json:"prefix"`
+	InvoiceNumberFormat        InvoiceNumberFormat `json:"format"`
+	InvoiceNumberStartSequence int                 `json:"start_sequence"`
+	InvoiceNumberTimezone      string              `json:"timezone"`
 }
 
 // InvoiceFilter represents the filter options for listing invoices

@@ -683,17 +683,28 @@ func (r *invoiceRepository) ExistsForPeriod(ctx context.Context, subscriptionID 
 	return exists, nil
 }
 
-func (r *invoiceRepository) getYearMonth(format string) string {
-	now := time.Now()
+func (r *invoiceRepository) getYearMonth(format types.InvoiceNumberFormat, timezone string) string {
+
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		// If timezone parsing fails, fall back to UTC
+		loc = time.UTC
+	}
+
+	// Get current time in the specified timezone
+	now := time.Now().In(loc)
+
 	switch format {
-	case "YYYYMM":
+	case types.InvoiceNumberFormatYYYYMM:
 		return now.Format("200601")
-	case "YYYY":
+	case types.InvoiceNumberFormatYYYY:
 		return now.Format("2006")
-	case "YYMMDD":
+	case types.InvoiceNumberFormatYYMMDD:
 		return now.Format("060102")
-	case "YYYYMMDD":
+	case types.InvoiceNumberFormatYYYYMMDD:
 		return now.Format("20060102")
+	case types.InvoiceNumberFormatYY:
+		return now.Format("06")
 	default:
 		// Default to YYYYMM if format is not recognized
 		return now.Format("200601")
@@ -706,7 +717,7 @@ func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context, invoiceCon
 	span := StartRepositorySpan(ctx, "invoice", "get_next_invoice_number", map[string]interface{}{})
 	defer FinishSpan(span)
 
-	yearMonth := r.getYearMonth(invoiceConfig.InvoiceNumberFormat) // YYYYMM
+	yearMonth := r.getYearMonth(invoiceConfig.InvoiceNumberFormat, invoiceConfig.InvoiceNumberTimezone)
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 

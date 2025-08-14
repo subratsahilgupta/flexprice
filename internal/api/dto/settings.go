@@ -23,14 +23,15 @@ type SettingResponse struct {
 	UpdatedBy     string                 `json:"updated_by,omitempty"`
 }
 
-func GetInvoiceConfigSafely(value map[string]interface{}) (*types.InvoiceConfig, error) {
+func ConvertToInvoiceConfig(value map[string]interface{}) (*types.InvoiceConfig, error) {
 	if value == nil {
 		return nil, errors.New("invoice_config value cannot be nil")
 	}
 
 	invoiceConfig := &types.InvoiceConfig{
 		InvoiceNumberPrefix:        value["prefix"].(string),
-		InvoiceNumberFormat:        value["format"].(string),
+		InvoiceNumberFormat:        types.InvoiceNumberFormat(value["format"].(string)),
+		InvoiceNumberTimezone:      value["timezone"].(string),
 		InvoiceNumberStartSequence: value["start_sequence"].(int),
 	}
 

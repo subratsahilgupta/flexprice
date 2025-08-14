@@ -176,7 +176,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 			}
 
 			// Use the safe conversion function
-			invoiceConfig, err := dto.GetInvoiceConfigSafely(invoiceConfigResponse.Value)
+			invoiceConfig, err := dto.ConvertToInvoiceConfig(invoiceConfigResponse.Value)
 			if err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to parse invoice configuration").
