@@ -231,19 +231,21 @@ func (s *priceService) createPriceWithUnitConfig(ctx context.Context, req dto.Cr
 
 	// Parse price unit amount - this is the amount in the price unit currency
 	priceUnitAmount := decimal.Zero
-	if req.PriceUnitConfig.Amount == "" {
-		return nil, ierr.NewError("price_unit_config.amount is required").
-			WithHint("Amount in price unit currency is required for price unit config").
-			Mark(ierr.ErrValidation)
-	}
+	if req.BillingModel != types.BILLING_MODEL_TIERED {
+		if req.PriceUnitConfig.Amount == "" {
+			return nil, ierr.NewError("price_unit_config.amount is required when billing model is not TIERED").
+				WithHint("Amount in price unit currency is required for price unit config").
+				Mark(ierr.ErrValidation)
+		}
 
-	var err error
-	priceUnitAmount, err = decimal.NewFromString(req.PriceUnitConfig.Amount)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Price unit amount must be a valid decimal number").
-			WithReportableDetails(map[string]interface{}{"amount": req.PriceUnitConfig.Amount}).
-			Mark(ierr.ErrValidation)
+		var err error
+		priceUnitAmount, err = decimal.NewFromString(req.PriceUnitConfig.Amount)
+		if err != nil {
+			return nil, ierr.WithError(err).
+				WithHint("Price unit amount must be a valid decimal number").
+				WithReportableDetails(map[string]interface{}{"amount": req.PriceUnitConfig.Amount}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 
 	// Fetch the price unit by code, tenant, and environment
