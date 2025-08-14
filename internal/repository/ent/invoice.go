@@ -757,9 +757,6 @@ func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context, invoiceCon
 	sequenceFormat := fmt.Sprintf("%%0%dd", invoiceConfig.InvoiceNumberSuffixLength)
 	paddedSequence := fmt.Sprintf(sequenceFormat, lastValue)
 
-	fmt.Println("sequenceFormat", sequenceFormat)
-	fmt.Println("paddedSequence", paddedSequence)
-
 	return fmt.Sprintf("%s%s%s%s%s", invoiceConfig.InvoiceNumberPrefix, invoiceConfig.InvoiceNumberSeparator, yearMonth, invoiceConfig.InvoiceNumberSeparator, paddedSequence), nil
 }
 
