@@ -717,7 +717,7 @@ func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context, invoiceCon
 	span := StartRepositorySpan(ctx, "invoice", "get_next_invoice_number", map[string]interface{}{})
 	defer FinishSpan(span)
 
-	yearMonth := r.getYearMonth(invoiceConfig.InvoiceNumberFormat, invoiceConfig.InvoiceNumberTimezone)
+	yearMonth := r.getYearMonth(invoiceConfig.InvoiceNumberFormat, types.ResolveTimezone(invoiceConfig.InvoiceNumberTimezone))
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 

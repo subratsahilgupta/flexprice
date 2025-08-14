@@ -32,7 +32,7 @@ func ConvertToInvoiceConfig(value map[string]interface{}) (*types.InvoiceConfig,
 		InvoiceNumberPrefix:        value["prefix"].(string),
 		InvoiceNumberFormat:        types.InvoiceNumberFormat(value["format"].(string)),
 		InvoiceNumberTimezone:      value["timezone"].(string),
-		InvoiceNumberStartSequence: value["start_sequence"].(int),
+		InvoiceNumberStartSequence: int(value["start_sequence"].(float64)),
 	}
 
 	return invoiceConfig, nil
