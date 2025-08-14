@@ -49,6 +49,6 @@ func (Settings) Edges() []ent.Edge {
 // Indexes of the Settings.
 func (Settings) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("tenant_id", "environment_id", "key"),
+		index.Fields("tenant_id", "environment_id", "status", "key").Unique(),
 	}
 }
