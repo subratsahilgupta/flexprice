@@ -753,7 +753,11 @@ func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context, invoiceCon
 		"year_month", yearMonth,
 		"sequence", lastValue)
 
-	return fmt.Sprintf("%s-%s-%05d", invoiceConfig.InvoiceNumberPrefix, yearMonth, lastValue), nil
+	// Format the sequence number with the specified suffix length
+	sequenceFormat := fmt.Sprintf("%%0%dd", invoiceConfig.InvoiceNumberSuffixLength)
+	paddedSequence := fmt.Sprintf(sequenceFormat, lastValue)
+
+	return fmt.Sprintf("%s%s%s%s%s", invoiceConfig.InvoiceNumberPrefix, invoiceConfig.InvoiceNumberSeparator, yearMonth, invoiceConfig.InvoiceNumberSeparator, paddedSequence), nil
 }
 
 func (r *invoiceRepository) GetNextBillingSequence(ctx context.Context, subscriptionID string) (int, error) {

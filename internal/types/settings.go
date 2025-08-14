@@ -35,6 +35,8 @@ func GetDefaultSettings() map[SettingKey]DefaultSettingValue {
 				"format":         string(InvoiceNumberFormatYYYYMM),
 				"start_sequence": 1,
 				"timezone":       "UTC",
+				"separator":      "-",
+				"suffix_length":  5,
 			},
 			Description: "Default configuration for invoice generation and management",
 			Required:    true,
@@ -150,6 +152,40 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 	// Validate timezone by trying to load it (support both IANA names and common abbreviations)
 	if err := validateTimezone(timezone); err != nil {
 		return fmt.Errorf("invoice_config: invalid timezone '%s': %v", timezone, err)
+	}
+
+	// Validate separator
+	separatorRaw, exists := value["separator"]
+	if !exists {
+		return errors.New("invoice_config: 'separator' is required")
+	}
+	_, separatorOk := separatorRaw.(string)
+	if !separatorOk {
+		return fmt.Errorf("invoice_config: 'separator' must be a string, got %T", separatorRaw)
+	}
+	// Note: Empty separator ("") is allowed to generate invoice numbers without separators
+
+	// Validate suffix_length
+	suffixLengthRaw, exists := value["suffix_length"]
+	if !exists {
+		return errors.New("invoice_config: 'suffix_length' is required")
+	}
+
+	var suffixLength int
+	switch v := suffixLengthRaw.(type) {
+	case int:
+		suffixLength = v
+	case float64:
+		if v != float64(int(v)) {
+			return errors.New("invoice_config: 'suffix_length' must be a whole number")
+		}
+		suffixLength = int(v)
+	default:
+		return fmt.Errorf("invoice_config: 'suffix_length' must be an integer, got %T", suffixLengthRaw)
+	}
+
+	if suffixLength < 1 || suffixLength > 10 {
+		return errors.New("invoice_config: 'suffix_length' must be between 1 and 10")
 	}
 
 	return nil

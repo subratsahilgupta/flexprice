@@ -202,10 +202,6 @@ func (r *settingsRepository) Get(ctx context.Context, id string) (*domainSetting
 }
 
 func (r *settingsRepository) GetByKey(ctx context.Context, key string) (*domainSettings.Setting, error) {
-	// Try to get from cache first
-	if cachedSetting := r.GetCache(ctx, key); cachedSetting != nil {
-		return cachedSetting, nil
-	}
 
 	client := r.client.Querier(ctx)
 	r.log.Debugw("getting setting by key", "key", key)
@@ -234,9 +230,6 @@ func (r *settingsRepository) GetByKey(ctx context.Context, key string) (*domainS
 	}
 
 	setting := domainSettings.FromEnt(s)
-
-	// Set cache
-	r.SetCache(ctx, setting)
 	return setting, nil
 }
 

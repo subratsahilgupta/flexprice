@@ -34,11 +34,24 @@ func ConvertToInvoiceConfig(value map[string]interface{}) (*types.InvoiceConfig,
 	case float64:
 		startSeq = int(v)
 	}
+
+	var suffixLength int
+	switch v := value["suffix_length"].(type) {
+	case int:
+		suffixLength = v
+	case int64:
+		suffixLength = int(v)
+	case float64:
+		suffixLength = int(v)
+	}
+
 	invoiceConfig := &types.InvoiceConfig{
 		InvoiceNumberPrefix:        value["prefix"].(string),
 		InvoiceNumberFormat:        types.InvoiceNumberFormat(value["format"].(string)),
 		InvoiceNumberTimezone:      value["timezone"].(string),
 		InvoiceNumberStartSequence: startSeq,
+		InvoiceNumberSeparator:     value["separator"].(string),
+		InvoiceNumberSuffixLength:  suffixLength,
 	}
 
 	return invoiceConfig, nil
