@@ -26,6 +26,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	"github.com/flexprice/flexprice/internal/domain/secret"
+	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/task"
 	taxrate "github.com/flexprice/flexprice/internal/domain/tax"
@@ -89,6 +90,7 @@ type ServiceParams struct {
 	AddonAssociationRepo         addonassociation.Repository
 	ConnectionRepo               connection.Repository
 	EntityIntegrationMappingRepo entityintegrationmapping.Repository
+	SettingsRepo                 settings.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -144,6 +146,7 @@ func NewServiceParams(
 	addonAssociationRepo addonassociation.Repository,
 	connectionRepo connection.Repository,
 	entityIntegrationMappingRepo entityintegrationmapping.Repository,
+	settingsRepo settings.Repository,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:                       logger,
@@ -190,5 +193,6 @@ func NewServiceParams(
 		AddonAssociationRepo:         addonAssociationRepo,
 		ConnectionRepo:               connectionRepo,
 		EntityIntegrationMappingRepo: entityIntegrationMappingRepo,
+		SettingsRepo:                 settingsRepo,
 	}
 }

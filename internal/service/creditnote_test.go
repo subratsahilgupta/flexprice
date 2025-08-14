@@ -80,6 +80,7 @@ func (s *CreditNoteServiceSuite) setupService() {
 		WebhookPublisher:           s.GetWebhookPublisher(),
 		TaxRateRepo:                s.GetStores().TaxRateRepo,
 		TaxAppliedRepo:             s.GetStores().TaxAppliedRepo,
+		SettingsRepo:               s.GetStores().SettingsRepo,
 	})
 }
 

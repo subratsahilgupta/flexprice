@@ -207,7 +207,7 @@ func (s *InMemoryInvoiceStore) ExistsForPeriod(ctx context.Context, subscription
 	return false, nil
 }
 
-func (s *InMemoryInvoiceStore) GetNextInvoiceNumber(ctx context.Context) (string, error) {
+func (s *InMemoryInvoiceStore) GetNextInvoiceNumber(ctx context.Context, invoiceConfig *types.InvoiceConfig) (string, error) {
 	filter := types.NewNoLimitInvoiceFilter()
 	invoices, err := s.List(ctx, filter)
 	if err != nil {

@@ -90,6 +90,7 @@ func (s *SubscriptionServiceSuite) setupService() {
 		CouponRepo:                 s.GetStores().CouponRepo,
 		CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
 		CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+		SettingsRepo:               s.GetStores().SettingsRepo,
 		EventPublisher:             s.GetPublisher(),
 		WebhookPublisher:           s.GetWebhookPublisher(),
 	})
