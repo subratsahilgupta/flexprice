@@ -24,15 +24,21 @@ type SettingResponse struct {
 }
 
 func ConvertToInvoiceConfig(value map[string]interface{}) (*types.InvoiceConfig, error) {
-	if value == nil {
-		return nil, errors.New("invoice_config value cannot be nil")
-	}
 
+	var startSeq int
+	switch v := value["start_sequence"].(type) {
+	case int:
+		startSeq = v
+	case int64:
+		startSeq = int(v)
+	case float64:
+		startSeq = int(v)
+	}
 	invoiceConfig := &types.InvoiceConfig{
 		InvoiceNumberPrefix:        value["prefix"].(string),
 		InvoiceNumberFormat:        types.InvoiceNumberFormat(value["format"].(string)),
 		InvoiceNumberTimezone:      value["timezone"].(string),
-		InvoiceNumberStartSequence: int(value["start_sequence"].(float64)),
+		InvoiceNumberStartSequence: startSeq,
 	}
 
 	return invoiceConfig, nil
