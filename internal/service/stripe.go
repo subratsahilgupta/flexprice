@@ -466,12 +466,13 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 
 	// Create checkout session parameters
 	params := &stripe.CheckoutSessionParams{
-		LineItems:  lineItems,
-		Mode:       stripe.String("payment"),
-		SuccessURL: stripe.String(successURL),
-		CancelURL:  stripe.String(cancelURL),
-		Metadata:   metadata,
-		Customer:   stripe.String(stripeCustomerID),
+		LineItems:           lineItems,
+		Mode:                stripe.String("payment"),
+		AllowPromotionCodes: stripe.Bool(true),
+		SuccessURL:          stripe.String(successURL),
+		CancelURL:           stripe.String(cancelURL),
+		Metadata:            metadata,
+		Customer:            stripe.String(stripeCustomerID),
 	}
 
 	// Don't create payment record here - it should be created by the main payment flow
