@@ -460,6 +460,25 @@ func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceRespo
 		response.PlanID = price.EntityID
 	}
 
+	if price.MeterID != "" {
+		meterService := NewMeterService(s.MeterRepo)
+		meter, err := meterService.GetMeter(ctx, price.MeterID)
+		if err != nil {
+			s.Logger.Warnw("failed to fetch meter", "meter_id", price.MeterID, "error", err)
+			return nil, err
+		}
+		response.Meter = dto.ToMeterResponse(meter)
+	}
+
+	if price.PriceUnitID != "" {
+		priceUnit, err := s.PriceUnitRepo.GetByID(ctx, price.PriceUnitID)
+		if err != nil {
+			s.Logger.Warnw("failed to fetch price unit", "price_unit_id", price.PriceUnitID, "error", err)
+			return nil, err
+		}
+		response.PricingUnit = &dto.PriceUnitResponse{PriceUnit: priceUnit}
+	}
+
 	return response, nil
 }
 
@@ -470,12 +489,11 @@ func (s *priceService) GetPricesByPlanID(ctx context.Context, planID string) (*d
 			Mark(ierr.ErrValidation)
 	}
 
-	// Use unlimited filter to fetch plan-scoped prices only
 	priceFilter := types.NewNoLimitPriceFilter().
 		WithEntityIDs([]string{planID}).
 		WithStatus(types.StatusPublished).
 		WithEntityType(types.PRICE_ENTITY_TYPE_PLAN).
-		WithExpand(string(types.ExpandMeters))
+		WithExpand(string(types.ExpandMeters) + "," + string(types.ExpandPriceUnit))
 
 	response, err := s.GetPrices(ctx, priceFilter)
 	if err != nil {
@@ -498,7 +516,7 @@ func (s *priceService) GetPricesBySubscriptionID(ctx context.Context, subscripti
 		WithSubscriptionID(subscriptionID).
 		WithEntityType(types.PRICE_ENTITY_TYPE_SUBSCRIPTION).
 		WithStatus(types.StatusPublished).
-		WithExpand(string(types.ExpandMeters))
+		WithExpand(string(types.ExpandMeters) + "," + string(types.ExpandPriceUnit))
 
 	response, err := s.GetPrices(ctx, priceFilter)
 	if err != nil {
@@ -520,7 +538,7 @@ func (s *priceService) GetPricesByAddonID(ctx context.Context, addonID string) (
 		WithEntityIDs([]string{addonID}).
 		WithEntityType(types.PRICE_ENTITY_TYPE_ADDON).
 		WithStatus(types.StatusPublished).
-		WithExpand(string(types.ExpandMeters))
+		WithExpand(string(types.ExpandMeters) + "," + string(types.ExpandPriceUnit))
 
 	response, err := s.GetPrices(ctx, priceFilter)
 	if err != nil {
@@ -572,6 +590,30 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		s.Logger.Debugw("fetched meters for prices", "count", len(metersResponse.Items))
 	}
 
+	// If price units are requested to be expanded, fetch all price units in one query
+	var priceUnitsByID map[string]*dto.PriceUnitResponse
+	if filter.GetExpand().Has(types.ExpandPriceUnit) && len(prices) > 0 {
+		// Collect unique price unit IDs
+		priceUnitIDs := make(map[string]bool)
+		for _, p := range prices {
+			if p.PriceUnitID != "" {
+				priceUnitIDs[p.PriceUnitID] = true
+			}
+		}
+
+		priceUnitsByID = make(map[string]*dto.PriceUnitResponse)
+		for priceUnitID := range priceUnitIDs {
+			priceUnit, err := s.PriceUnitRepo.GetByID(ctx, priceUnitID)
+			if err != nil {
+				s.Logger.Warnw("failed to fetch price unit", "price_unit_id", priceUnitID, "error", err)
+				continue
+			}
+			priceUnitsByID[priceUnitID] = &dto.PriceUnitResponse{PriceUnit: priceUnit}
+		}
+
+		s.Logger.Debugw("fetched price units for prices", "count", len(priceUnitsByID))
+	}
+
 	// Build response with expanded fields
 	for i, p := range prices {
 		response.Items[i] = &dto.PriceResponse{Price: p}
@@ -580,6 +622,13 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		if filter.GetExpand().Has(types.ExpandMeters) && p.MeterID != "" {
 			if m, ok := metersByID[p.MeterID]; ok {
 				response.Items[i].Meter = m
+			}
+		}
+
+		// Add price unit if requested and available
+		if filter.GetExpand().Has(types.ExpandPriceUnit) && p.PriceUnitID != "" {
+			if pu, ok := priceUnitsByID[p.PriceUnitID]; ok {
+				response.Items[i].PricingUnit = pu
 			}
 		}
 	}

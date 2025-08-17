@@ -598,7 +598,8 @@ type UpdatePriceRequest struct {
 
 type PriceResponse struct {
 	*price.Price
-	Meter *MeterResponse `json:"meter,omitempty"`
+	Meter       *MeterResponse     `json:"meter,omitempty"`
+	PricingUnit *PriceUnitResponse `json:"pricing_unit,omitempty"`
 
 	// TODO: Remove this once we have a proper price entity type
 	PlanID string `json:"plan_id,omitempty"`
