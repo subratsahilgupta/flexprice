@@ -194,54 +194,26 @@ func (s *PriceUnitService) Update(ctx context.Context, id string, req *dto.Updat
 		return nil, err
 	}
 
-	// Track if any changes were made
-	hasChanges := false
-	changes := make(map[string]interface{})
-
-	// Update fields if provided and different from current values
-	if req.Name != "" {
-		if req.Name != existingUnit.Name {
-			existingUnit.Name = req.Name
-			hasChanges = true
-			changes["name"] = req.Name
-		}
-	}
-	if req.Symbol != "" {
-		if req.Symbol != existingUnit.Symbol {
-			existingUnit.Symbol = req.Symbol
-			hasChanges = true
-			changes["symbol"] = req.Symbol
-		}
-	}
-	if req.Precision != 0 {
-		if req.Precision != existingUnit.Precision {
-			existingUnit.Precision = req.Precision
-			hasChanges = true
-			changes["precision"] = req.Precision
-		}
-	}
-	if req.ConversionRate != nil {
-		if !req.ConversionRate.Equal(existingUnit.ConversionRate) {
-			existingUnit.ConversionRate = *req.ConversionRate
-			hasChanges = true
-			changes["conversion_rate"] = req.ConversionRate.String()
-		}
+	// Only name can be updated
+	if req.Name == "" {
+		return nil, ierr.NewError("name is required").
+			WithMessage("name is required for update").
+			WithHint("Please provide a name to update").
+			Mark(ierr.ErrValidation)
 	}
 
-	// Check if any changes were actually made
-	if !hasChanges {
-		return nil, ierr.NewError("no changes detected").
-			WithMessage("provided values are the same as current values").
-			WithHint("Provide different values to update the price unit").
+	if req.Name == existingUnit.Name {
+		return nil, ierr.NewError("same name provided").
+			WithMessage("new name is same as current name").
+			WithHint("Please provide a different name").
 			WithReportableDetails(map[string]interface{}{
-				"id":              id,
-				"name":            existingUnit.Name,
-				"symbol":          existingUnit.Symbol,
-				"precision":       existingUnit.Precision,
-				"conversion_rate": existingUnit.ConversionRate,
+				"id":           id,
+				"current_name": existingUnit.Name,
 			}).
 			Mark(ierr.ErrValidation)
 	}
+
+	existingUnit.Name = req.Name
 
 	existingUnit.UpdatedAt = time.Now().UTC()
 

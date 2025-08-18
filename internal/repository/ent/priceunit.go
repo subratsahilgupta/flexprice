@@ -267,11 +267,9 @@ func (r *priceUnitRepository) Update(ctx context.Context, unit *domainPriceUnit.
 			priceunit.TenantID(types.GetTenantID(ctx)),
 			priceunit.EnvironmentID(types.GetEnvironmentID(ctx)),
 		).
+		// Only name and status are allowed to be updated. All other fields are immutable
+		// after creation to maintain data consistency.
 		SetName(unit.Name).
-		SetSymbol(unit.Symbol).
-		SetPrecision(unit.Precision).
-		SetConversionRate(unit.ConversionRate).
-		SetStatus(string(unit.Status)).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		Save(ctx)
