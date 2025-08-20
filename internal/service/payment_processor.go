@@ -233,16 +233,38 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 	// Create payment link using the specified gateway
 	gatewayService := NewPaymentGatewayService(p.ServiceParams)
 
-	// Extract success and cancel URLs from metadata
+	// Extract success URL, cancel URL, connection ID, and connection name from gateway metadata
 	successURL := ""
 	cancelURL := ""
-	if paymentObj.Metadata != nil {
-		if url, exists := paymentObj.Metadata["success_url"]; exists {
+	connectionID := ""
+	connectionName := ""
+	if paymentObj.GatewayMetadata != nil {
+		if url, exists := paymentObj.GatewayMetadata["success_url"]; exists {
 			successURL = url
 		}
-		if url, exists := paymentObj.Metadata["cancel_url"]; exists {
+		if url, exists := paymentObj.GatewayMetadata["cancel_url"]; exists {
 			cancelURL = url
 		}
+		if id, exists := paymentObj.GatewayMetadata["connection_id"]; exists {
+			connectionID = id
+		}
+		if name, exists := paymentObj.GatewayMetadata["connection_name"]; exists {
+			connectionName = name
+		}
+	}
+
+	// Prepare metadata for payment link request (include connection info from gateway metadata)
+	linkMetadata := paymentObj.Metadata
+	if linkMetadata == nil {
+		linkMetadata = types.Metadata{}
+	}
+
+	// Add connection info to metadata if available
+	if connectionID != "" {
+		linkMetadata["connection_id"] = connectionID
+	}
+	if connectionName != "" {
+		linkMetadata["connection_name"] = connectionName
 	}
 
 	// Convert to payment link request
@@ -260,7 +282,7 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 			}
 			return nil
 		}(),
-		Metadata: paymentObj.Metadata,
+		Metadata: linkMetadata,
 	}
 
 	paymentLinkResp, err := gatewayService.CreatePaymentLink(ctx, paymentLinkReq)
