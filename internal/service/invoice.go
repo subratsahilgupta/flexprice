@@ -612,6 +612,10 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		return ierr.NewError("invoice is not in draft status").WithHint("invoice must be in draft status to be finalized").Mark(ierr.ErrValidation)
 	}
 
+	if inv.Total.IsZero() {
+		inv.PaymentStatus = types.PaymentStatusSucceeded
+	}
+
 	now := time.Now().UTC()
 	inv.InvoiceStatus = types.InvoiceStatusFinalized
 	inv.FinalizedAt = &now
