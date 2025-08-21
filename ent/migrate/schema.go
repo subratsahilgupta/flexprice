@@ -148,7 +148,7 @@ var (
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
 		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
-		{Name: "provider_type", Type: field.TypeEnum, Enums: []string{"flexprice", "stripe", "razorpay"}, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "provider_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "encrypted_secret_data", Type: field.TypeJSON, Nullable: true},
 	}
 	// ConnectionsTable holds the schema information for the "connections" table.
@@ -949,7 +949,7 @@ var (
 		{Name: "customer_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "subscription_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "entity_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
-		{Name: "entity_type", Type: field.TypeString, Default: "plan", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "entity_type", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "plan_display_name", Type: field.TypeString, Nullable: true},
 		{Name: "price_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "price_type", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -1383,9 +1383,9 @@ var (
 		PrimaryKey: []*schema.Column{SettingsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "settings_tenant_id_environment_id_key",
-				Unique:  false,
-				Columns: []*schema.Column{SettingsColumns[1], SettingsColumns[7], SettingsColumns[8]},
+				Name:    "settings_tenant_id_environment_id_status_key",
+				Unique:  true,
+				Columns: []*schema.Column{SettingsColumns[1], SettingsColumns[7], SettingsColumns[2], SettingsColumns[8]},
 			},
 		},
 	}

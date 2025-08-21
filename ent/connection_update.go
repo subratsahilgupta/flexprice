@@ -83,15 +83,15 @@ func (cu *ConnectionUpdate) SetNillableName(s *string) *ConnectionUpdate {
 }
 
 // SetProviderType sets the "provider_type" field.
-func (cu *ConnectionUpdate) SetProviderType(ct connection.ProviderType) *ConnectionUpdate {
-	cu.mutation.SetProviderType(ct)
+func (cu *ConnectionUpdate) SetProviderType(s string) *ConnectionUpdate {
+	cu.mutation.SetProviderType(s)
 	return cu
 }
 
 // SetNillableProviderType sets the "provider_type" field if the given value is not nil.
-func (cu *ConnectionUpdate) SetNillableProviderType(ct *connection.ProviderType) *ConnectionUpdate {
-	if ct != nil {
-		cu.SetProviderType(*ct)
+func (cu *ConnectionUpdate) SetNillableProviderType(s *string) *ConnectionUpdate {
+	if s != nil {
+		cu.SetProviderType(*s)
 	}
 	return cu
 }
@@ -198,7 +198,7 @@ func (cu *ConnectionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		_spec.SetField(connection.FieldName, field.TypeString, value)
 	}
 	if value, ok := cu.mutation.ProviderType(); ok {
-		_spec.SetField(connection.FieldProviderType, field.TypeEnum, value)
+		_spec.SetField(connection.FieldProviderType, field.TypeString, value)
 	}
 	if value, ok := cu.mutation.EncryptedSecretData(); ok {
 		_spec.SetField(connection.FieldEncryptedSecretData, field.TypeJSON, value)
@@ -281,15 +281,15 @@ func (cuo *ConnectionUpdateOne) SetNillableName(s *string) *ConnectionUpdateOne 
 }
 
 // SetProviderType sets the "provider_type" field.
-func (cuo *ConnectionUpdateOne) SetProviderType(ct connection.ProviderType) *ConnectionUpdateOne {
-	cuo.mutation.SetProviderType(ct)
+func (cuo *ConnectionUpdateOne) SetProviderType(s string) *ConnectionUpdateOne {
+	cuo.mutation.SetProviderType(s)
 	return cuo
 }
 
 // SetNillableProviderType sets the "provider_type" field if the given value is not nil.
-func (cuo *ConnectionUpdateOne) SetNillableProviderType(ct *connection.ProviderType) *ConnectionUpdateOne {
-	if ct != nil {
-		cuo.SetProviderType(*ct)
+func (cuo *ConnectionUpdateOne) SetNillableProviderType(s *string) *ConnectionUpdateOne {
+	if s != nil {
+		cuo.SetProviderType(*s)
 	}
 	return cuo
 }
@@ -426,7 +426,7 @@ func (cuo *ConnectionUpdateOne) sqlSave(ctx context.Context) (_node *Connection,
 		_spec.SetField(connection.FieldName, field.TypeString, value)
 	}
 	if value, ok := cuo.mutation.ProviderType(); ok {
-		_spec.SetField(connection.FieldProviderType, field.TypeEnum, value)
+		_spec.SetField(connection.FieldProviderType, field.TypeString, value)
 	}
 	if value, ok := cuo.mutation.EncryptedSecretData(); ok {
 		_spec.SetField(connection.FieldEncryptedSecretData, field.TypeJSON, value)

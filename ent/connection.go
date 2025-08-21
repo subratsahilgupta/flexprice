@@ -35,7 +35,7 @@ type Connection struct {
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// ProviderType holds the value of the "provider_type" field.
-	ProviderType connection.ProviderType `json:"provider_type,omitempty"`
+	ProviderType string `json:"provider_type,omitempty"`
 	// EncryptedSecretData holds the value of the "encrypted_secret_data" field.
 	EncryptedSecretData map[string]interface{} `json:"encrypted_secret_data,omitempty"`
 	selectValues        sql.SelectValues
@@ -125,7 +125,7 @@ func (c *Connection) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field provider_type", values[i])
 			} else if value.Valid {
-				c.ProviderType = connection.ProviderType(value.String)
+				c.ProviderType = value.String
 			}
 		case connection.FieldEncryptedSecretData:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -196,7 +196,7 @@ func (c *Connection) String() string {
 	builder.WriteString(c.Name)
 	builder.WriteString(", ")
 	builder.WriteString("provider_type=")
-	builder.WriteString(fmt.Sprintf("%v", c.ProviderType))
+	builder.WriteString(c.ProviderType)
 	builder.WriteString(", ")
 	builder.WriteString("encrypted_secret_data=")
 	builder.WriteString(fmt.Sprintf("%v", c.EncryptedSecretData))
