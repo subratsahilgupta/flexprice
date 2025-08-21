@@ -24,6 +24,7 @@ const (
 // subscription event names
 const (
 	WebhookEventSubscriptionCreated   = "subscription.created"
+	WebhookEventSubscriptionActivated = "subscription.activated"
 	WebhookEventSubscriptionPaused    = "subscription.paused"
 	WebhookEventSubscriptionCancelled = "subscription.cancelled"
 	WebhookEventSubscriptionResumed   = "subscription.resumed"

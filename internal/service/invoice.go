@@ -200,6 +200,11 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		inv.IdempotencyKey = &idempKey
 		inv.BillingSequence = billingSeq
 
+		// Set correct billing reason based on billing sequence for subscription invoices
+		if req.SubscriptionID != nil && billingSeq != nil && lo.FromPtr(billingSeq) == 1 {
+			inv.BillingReason = string(types.InvoiceBillingReasonSubscriptionCreate)
+		}
+
 		// Setting default values
 		if req.InvoiceType == types.InvoiceTypeOneOff || req.InvoiceType == types.InvoiceTypeCredit {
 			if req.InvoiceStatus == nil {

@@ -22,6 +22,7 @@ type SubscriptionService interface {
 	CreateSubscription(ctx context.Context, req dto.CreateSubscriptionRequest) (*dto.SubscriptionResponse, error)
 	GetSubscription(ctx context.Context, id string) (*dto.SubscriptionResponse, error)
 	CancelSubscription(ctx context.Context, id string, cancelAtPeriodEnd bool) error
+	ActivateIncompleteSubscription(ctx context.Context, subscriptionID string) error
 	ListSubscriptions(ctx context.Context, filter *types.SubscriptionFilter) (*dto.ListSubscriptionsResponse, error)
 	GetUsageBySubscription(ctx context.Context, req *dto.GetUsageBySubscriptionRequest) (*dto.GetUsageBySubscriptionResponse, error)
 	UpdateBillingPeriods(ctx context.Context) (*dto.SubscriptionUpdatePeriodResponse, error)
@@ -170,7 +171,6 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 	sub.CurrentPeriodStart = sub.StartDate
 	sub.CurrentPeriodEnd = nextBillingDate
-	sub.SubscriptionStatus = types.SubscriptionStatusActive
 
 	// Convert line items
 	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(validPrices))
@@ -252,6 +252,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	// Create response object
 	response := &dto.SubscriptionResponse{Subscription: sub}
 
+	invoiceService := NewInvoiceService(s.ServiceParams)
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Create subscription with line items
 		err = s.SubRepo.CreateWithLineItems(ctx, sub, sub.LineItems)
@@ -333,18 +334,24 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		// Create invoice for the subscription (in case it has advance charges)
-		invoiceService := NewInvoiceService(s.ServiceParams)
 		_, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 			SubscriptionID: sub.ID,
 			PeriodStart:    sub.CurrentPeriodStart,
 			PeriodEnd:      sub.CurrentPeriodEnd,
 			ReferencePoint: types.ReferencePointPeriodStart,
 		})
-		return err
+		if err != nil {
+			return err
+		}
+
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	// Update response to ensure it has the latest subscription data
+	response.Subscription = sub
 
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionCreated, sub.ID)
 	return response, nil
@@ -3234,4 +3241,51 @@ func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, price
 	}
 
 	return lineItem
+}
+
+// ActivateIncompleteSubscription activates a subscription that is in incomplete status
+// after the first invoice has been successfully paid
+func (s *subscriptionService) ActivateIncompleteSubscription(ctx context.Context, subscriptionID string) error {
+	s.Logger.Infow("activating incomplete subscription", "subscription_id", subscriptionID)
+
+	// Get the subscription
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to get subscription").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": subscriptionID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Check if subscription is in incomplete status
+	if sub.SubscriptionStatus != types.SubscriptionStatusIncomplete {
+		//
+		return nil
+	}
+
+	// Update subscription status to active
+	sub.SubscriptionStatus = types.SubscriptionStatusActive
+
+	// Update the subscription in database
+	err = s.SubRepo.Update(ctx, sub)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to update subscription status").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": subscriptionID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	s.Logger.Infow("successfully activated incomplete subscription",
+		"subscription_id", subscriptionID,
+		"previous_status", types.SubscriptionStatusIncomplete,
+		"new_status", types.SubscriptionStatusActive)
+
+	// Publish webhook event for subscription activation
+	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionActivated, subscriptionID)
+
+	return nil
 }

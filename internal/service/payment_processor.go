@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -455,6 +456,13 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 		return err
 	}
 
+	// Check if this is the first invoice payment for an incomplete subscription
+	if err := p.handleIncompleteSubcriptionPayment(ctx, invoice); err != nil {
+		p.Logger.Errorw("failed to handle incomplete subscription payment",
+			"invoice_id", invoice.ID,
+			"error", err)
+	}
+
 	return nil
 }
 
@@ -510,4 +518,44 @@ func (p *paymentProcessor) publishWebhookEvent(ctx context.Context, eventName st
 	if err := p.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
 		p.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
 	}
+}
+
+// handleIncompleteSubcriptionPayment checks if the paid invoice is the first invoice for a subscription
+// and activates the subscription if it's currently in incomplete status
+func (p *paymentProcessor) handleIncompleteSubcriptionPayment(ctx context.Context, invoice *invoice.Invoice) error {
+	// Only process subscription invoices that are fully paid
+	if invoice.SubscriptionID == nil || !invoice.AmountRemaining.IsZero() {
+		return nil
+	}
+
+	// Check if this is the first invoice (billing_reason = subscription_create)
+	if invoice.BillingReason != string(types.InvoiceBillingReasonSubscriptionCreate) {
+		return nil
+	}
+
+	p.Logger.Infow("processing first invoice payment for subscription activation",
+		"invoice_id", invoice.ID,
+		"subscription_id", *invoice.SubscriptionID,
+		"billing_reason", invoice.BillingReason)
+
+	// Get the subscription service
+	subscriptionService := NewSubscriptionService(p.ServiceParams)
+
+	// Activate the incomplete subscription
+	err := subscriptionService.ActivateIncompleteSubscription(ctx, *invoice.SubscriptionID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to activate incomplete subscription after first invoice payment").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": *invoice.SubscriptionID,
+				"invoice_id":      invoice.ID,
+			}).
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	p.Logger.Infow("successfully activated subscription after first invoice payment",
+		"invoice_id", invoice.ID,
+		"subscription_id", *invoice.SubscriptionID)
+
+	return nil
 }

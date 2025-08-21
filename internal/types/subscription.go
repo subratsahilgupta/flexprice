@@ -60,6 +60,37 @@ func (s SubscriptionStatus) Validate() error {
 	return nil
 }
 
+// CollectionMethod determines how invoices are collected for subscriptions
+type CollectionMethod string
+
+const (
+	// CollectionMethodChargeAutomatically waits for payment confirmation before activation
+	CollectionMethodChargeAutomatically CollectionMethod = "charge_automatically"
+	// CollectionMethodSendInvoice activates subscription immediately, invoice is sent for payment
+	CollectionMethodSendInvoice CollectionMethod = "send_invoice"
+)
+
+func (c CollectionMethod) String() string {
+	return string(c)
+}
+
+func (c CollectionMethod) Validate() error {
+	allowed := []CollectionMethod{
+		CollectionMethodChargeAutomatically,
+		CollectionMethodSendInvoice,
+	}
+	if !lo.Contains(allowed, c) {
+		return ierr.NewError("invalid collection method").
+			WithHint("Invalid collection method").
+			WithReportableDetails(map[string]any{
+				"collection_method": c,
+				"allowed_values":    allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
 // PauseStatus represents the pause state of a subscription
 type PauseStatus string
 

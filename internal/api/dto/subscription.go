@@ -60,6 +60,11 @@ type CreateSubscriptionRequest struct {
 	OverrideLineItems []OverrideLineItemRequest `json:"override_line_items,omitempty" validate:"omitempty,dive"`
 	// Addons represents addons to be added to the subscription during creation
 	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
+
+	// CollectionMethod determines how invoices are collected
+	// "charge_automatically" - subscription waits for payment confirmation before activation
+	// "send_invoice" - subscription activates immediately, invoice is sent for payment
+	CollectionMethod *types.CollectionMethod `json:"collection_method,omitempty"`
 }
 
 // AddAddonRequest is used by body-based endpoint /subscriptions/addon
@@ -89,6 +94,8 @@ type SubscriptionResponse struct {
 	Schedule *SubscriptionScheduleResponse `json:"schedule,omitempty"`
 	// CouponAssociations are the coupon associations for this subscription
 	CouponAssociations []*CouponAssociationResponse `json:"coupon_associations,omitempty"`
+	// FirstInvoiceID is the ID of the first invoice created for this subscription (internal use)
+	FirstInvoiceID *string `json:"-"`
 }
 
 // ListSubscriptionsResponse represents the response for listing subscriptions
@@ -122,6 +129,13 @@ func (r *CreateSubscriptionRequest) Validate() error {
 
 	if err := r.BillingCycle.Validate(); err != nil {
 		return err
+	}
+
+	// Validate collection method if provided
+	if r.CollectionMethod != nil {
+		if err := r.CollectionMethod.Validate(); err != nil {
+			return err
+		}
 	}
 
 	// Set default start date if not provided
@@ -346,6 +360,19 @@ func (r *CreateSubscriptionRequest) Validate() error {
 }
 
 func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscription.Subscription {
+	// Determine initial subscription status based on collection method and payment behavior
+	initialStatus := types.SubscriptionStatusActive
+
+	// Set status based on collection method
+	if r.CollectionMethod != nil {
+		if *r.CollectionMethod == types.CollectionMethodChargeAutomatically {
+			// charge_automatically: wait for payment confirmation before activation
+			initialStatus = types.SubscriptionStatusIncomplete
+		} else if *r.CollectionMethod == types.CollectionMethodSendInvoice {
+			// send_invoice: activate immediately, invoice is sent for payment
+			initialStatus = types.SubscriptionStatusActive
+		}
+	}
 
 	sub := &subscription.Subscription{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
@@ -353,7 +380,7 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		PlanID:             r.PlanID,
 		Currency:           strings.ToLower(r.Currency),
 		LookupKey:          r.LookupKey,
-		SubscriptionStatus: types.SubscriptionStatusActive,
+		SubscriptionStatus: initialStatus,
 		StartDate:          *r.StartDate,
 		EndDate:            r.EndDate,
 		TrialStart:         r.TrialStart,
