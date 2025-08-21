@@ -62,7 +62,7 @@ type CreateSubscriptionRequest struct {
 	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
 
 	// CollectionMethod determines how invoices are collected
-	// "charge_automatically" - subscription waits for payment confirmation before activation
+	// "default_incomplete" - subscription waits for payment confirmation before activation
 	// "send_invoice" - subscription activates immediately, invoice is sent for payment
 	CollectionMethod *types.CollectionMethod `json:"collection_method,omitempty"`
 }
@@ -94,8 +94,6 @@ type SubscriptionResponse struct {
 	Schedule *SubscriptionScheduleResponse `json:"schedule,omitempty"`
 	// CouponAssociations are the coupon associations for this subscription
 	CouponAssociations []*CouponAssociationResponse `json:"coupon_associations,omitempty"`
-	// FirstInvoiceID is the ID of the first invoice created for this subscription (internal use)
-	FirstInvoiceID *string `json:"-"`
 }
 
 // ListSubscriptionsResponse represents the response for listing subscriptions
@@ -365,8 +363,8 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 
 	// Set status based on collection method
 	if r.CollectionMethod != nil {
-		if *r.CollectionMethod == types.CollectionMethodChargeAutomatically {
-			// charge_automatically: wait for payment confirmation before activation
+		if *r.CollectionMethod == types.CollectionMethodDefaultIncomplete {
+			// default_incomplete: wait for payment confirmation before activation
 			initialStatus = types.SubscriptionStatusIncomplete
 		} else if *r.CollectionMethod == types.CollectionMethodSendInvoice {
 			// send_invoice: activate immediately, invoice is sent for payment

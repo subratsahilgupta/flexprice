@@ -736,7 +736,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 				BillingPeriodCount: 1,
 				BillingCycle:       types.BillingCycleAnniversary,
-				CollectionMethod:   lo.ToPtr(types.CollectionMethodChargeAutomatically),
+				CollectionMethod:   lo.ToPtr(types.CollectionMethodDefaultIncomplete),
 			},
 			wantErr: false,
 		},
@@ -804,7 +804,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 
 			// Verify collection method behavior
 			if tc.input.CollectionMethod != nil {
-				if *tc.input.CollectionMethod == types.CollectionMethodChargeAutomatically {
+				if *tc.input.CollectionMethod == types.CollectionMethodDefaultIncomplete {
 					// charge_automatically should create incomplete subscription
 					s.Equal(types.SubscriptionStatusIncomplete, resp.SubscriptionStatus,
 						"charge_automatically subscription should be incomplete")
@@ -845,7 +845,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithCollectionMethod() 
 		},
 		{
 			name:                  "charge_automatically_creates_incomplete_subscription",
-			collectionMethod:      lo.ToPtr(types.CollectionMethodChargeAutomatically),
+			collectionMethod:      lo.ToPtr(types.CollectionMethodDefaultIncomplete),
 			expectedStatus:        types.SubscriptionStatusIncomplete,
 			expectedStatusMessage: "charge_automatically should create incomplete subscription",
 			description:           "Subscription with charge_automatically should wait for payment",
@@ -914,7 +914,7 @@ func (s *SubscriptionServiceSuite) TestCollectionMethodValidation() {
 		},
 		{
 			name:             "valid_charge_automatically",
-			collectionMethod: types.CollectionMethodChargeAutomatically,
+			collectionMethod: types.CollectionMethodDefaultIncomplete,
 			expectError:      false,
 			description:      "charge_automatically should be a valid collection method",
 		},

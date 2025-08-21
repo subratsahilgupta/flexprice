@@ -457,7 +457,7 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 	}
 
 	// Check if this is the first invoice payment for an incomplete subscription
-	if err := p.handleIncompleteSubcriptionPayment(ctx, invoice); err != nil {
+	if err := p.handleIncompleteSubscriptionPayment(ctx, invoice); err != nil {
 		p.Logger.Errorw("failed to handle incomplete subscription payment",
 			"invoice_id", invoice.ID,
 			"error", err)
@@ -520,9 +520,9 @@ func (p *paymentProcessor) publishWebhookEvent(ctx context.Context, eventName st
 	}
 }
 
-// handleIncompleteSubcriptionPayment checks if the paid invoice is the first invoice for a subscription
+// handleIncompleteSubscriptionPayment checks if the paid invoice is the first invoice for a subscription
 // and activates the subscription if it's currently in incomplete status
-func (p *paymentProcessor) handleIncompleteSubcriptionPayment(ctx context.Context, invoice *invoice.Invoice) error {
+func (p *paymentProcessor) handleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error {
 	// Only process subscription invoices that are fully paid
 	if invoice.SubscriptionID == nil || !invoice.AmountRemaining.IsZero() {
 		return nil

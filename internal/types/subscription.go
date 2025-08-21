@@ -64,8 +64,8 @@ func (s SubscriptionStatus) Validate() error {
 type CollectionMethod string
 
 const (
-	// CollectionMethodChargeAutomatically waits for payment confirmation before activation
-	CollectionMethodChargeAutomatically CollectionMethod = "charge_automatically"
+	// CollectionMethodDefaultIncomplete waits for payment confirmation before activation
+	CollectionMethodDefaultIncomplete CollectionMethod = "default_incomplete"
 	// CollectionMethodSendInvoice activates subscription immediately, invoice is sent for payment
 	CollectionMethodSendInvoice CollectionMethod = "send_invoice"
 )
@@ -76,7 +76,7 @@ func (c CollectionMethod) String() string {
 
 func (c CollectionMethod) Validate() error {
 	allowed := []CollectionMethod{
-		CollectionMethodChargeAutomatically,
+		CollectionMethodDefaultIncomplete,
 		CollectionMethodSendInvoice,
 	}
 	if !lo.Contains(allowed, c) {

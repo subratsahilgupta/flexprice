@@ -340,11 +340,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			PeriodEnd:      sub.CurrentPeriodEnd,
 			ReferencePoint: types.ReferencePointPeriodStart,
 		})
-		if err != nil {
-			return err
-		}
 
-		return nil
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -3261,7 +3258,7 @@ func (s *subscriptionService) ActivateIncompleteSubscription(ctx context.Context
 
 	// Check if subscription is in incomplete status
 	if sub.SubscriptionStatus != types.SubscriptionStatusIncomplete {
-		//
+		// If the subscription is not in incomplete status, do nothing
 		return nil
 	}
 
