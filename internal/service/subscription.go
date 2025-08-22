@@ -253,6 +253,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	response := &dto.SubscriptionResponse{Subscription: sub}
 
 	invoiceService := NewInvoiceService(s.ServiceParams)
+	var invoice *dto.InvoiceResponse
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Create subscription with line items
 		err = s.SubRepo.CreateWithLineItems(ctx, sub, sub.LineItems)
@@ -334,7 +335,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		// Create invoice for the subscription (in case it has advance charges)
-		_, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+		invoice, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 			SubscriptionID: sub.ID,
 			PeriodStart:    sub.CurrentPeriodStart,
 			PeriodEnd:      sub.CurrentPeriodEnd,
@@ -345,6 +346,15 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// if the subscription is created with incomplete status, but it dosent create an invoice, we need to mark it as active
+	if sub.SubscriptionStatus == types.SubscriptionStatusIncomplete && (invoice == nil || invoice.PaymentStatus == types.PaymentStatusSucceeded) {
+		sub.SubscriptionStatus = types.SubscriptionStatusActive
+		err = s.SubRepo.Update(ctx, sub)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Update response to ensure it has the latest subscription data
