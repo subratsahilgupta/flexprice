@@ -45,23 +45,16 @@ type PriceUnitConfig struct {
 }
 
 type CreatePriceTier struct {
-	// UpTo is the quantity up to which this tier applies. It is null for the last tier.
+	// up_to is the quantity up to which this tier applies. It is null for the last tier.
 	// IMPORTANT: Tier boundaries are INCLUSIVE.
-	// - If up_to is 1000, then quantity 1000 belongs to this tier
-	// - If up_to is 1000, then quantity 1001 belongs to the next tier
-	// - This behavior is consistent across both VOLUME and SLAB modes
-	//
-	// Examples:
-	// - Tier 1: up_to: 1000, unit_amount: "0.10" (quantities 0-1000 inclusive)
-	// - Tier 2: up_to: 5000, unit_amount: "0.08" (quantities 1001-5000 inclusive)
-	// - Tier 3: unit_amount: "0.05" (quantities 5001+ unlimited)
+	// - If up_to is 1000, then quantity less than or equal to 1000 belongs to this tier
+	// - This behavior is consistent across both VOLUME and SLAB tier modes
 	UpTo *uint64 `json:"up_to"`
 
-	// UnitAmount is the amount per unit for the given tier (required)
-	// Can be zero (0.00) for free tiers or positive values for paid tiers
+	// unit_amount is the amount per unit for the given tier
 	UnitAmount string `json:"unit_amount" validate:"required"`
 
-	// FlatAmount is the flat amount for the given tier (optional)
+	// flat_amount is the flat amount for the given tier (optional)
 	// Applied on top of unit_amount*quantity. Useful for cases like "2.7% + 5c"
 	FlatAmount *string `json:"flat_amount" validate:"omitempty"`
 }
