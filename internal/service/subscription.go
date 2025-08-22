@@ -348,7 +348,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		return nil, err
 	}
 
-	// if the subscription is created with incomplete status, but it dosent create an invoice, we need to mark it as active
+	// if the subscription is created with incomplete status, but it doesn't create an invoice, we need to mark it as active
+	// This applies regardless of collection method - if there's no invoice to pay, the subscription should be active
 	if sub.SubscriptionStatus == types.SubscriptionStatusIncomplete && (invoice == nil || invoice.PaymentStatus == types.PaymentStatusSucceeded) {
 		sub.SubscriptionStatus = types.SubscriptionStatusActive
 		err = s.SubRepo.Update(ctx, sub)

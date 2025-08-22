@@ -805,9 +805,10 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			// Verify collection method behavior
 			if tc.input.CollectionMethod != nil {
 				if *tc.input.CollectionMethod == types.CollectionMethodDefaultIncomplete {
-					// charge_automatically should create incomplete subscription
-					s.Equal(types.SubscriptionStatusIncomplete, resp.SubscriptionStatus,
-						"charge_automatically subscription should be incomplete")
+					// charge_automatically should create active subscription when no invoice is created
+					// (usage-based plan with advance cadence doesn't create invoice at subscription time)
+					s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus,
+						"charge_automatically subscription should be active when no invoice is created")
 				} else if *tc.input.CollectionMethod == types.CollectionMethodSendInvoice {
 					// send_invoice should create active subscription
 					s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus,
@@ -844,11 +845,11 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithCollectionMethod() 
 			description:           "Subscription with send_invoice should be activated immediately",
 		},
 		{
-			name:                  "charge_automatically_creates_incomplete_subscription",
+			name:                  "charge_automatically_creates_active_subscription_when_no_invoice",
 			collectionMethod:      lo.ToPtr(types.CollectionMethodDefaultIncomplete),
-			expectedStatus:        types.SubscriptionStatusIncomplete,
-			expectedStatusMessage: "charge_automatically should create incomplete subscription",
-			description:           "Subscription with charge_automatically should wait for payment",
+			expectedStatus:        types.SubscriptionStatusActive,
+			expectedStatusMessage: "charge_automatically should create active subscription when no invoice is created",
+			description:           "Subscription with charge_automatically should be active when no invoice is created (usage-based plan with advance cadence)",
 		},
 		{
 			name:                  "nil_collection_method_defaults_to_active",
