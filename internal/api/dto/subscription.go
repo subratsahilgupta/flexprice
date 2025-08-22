@@ -61,7 +61,7 @@ type CreateSubscriptionRequest struct {
 	// Addons represents addons to be added to the subscription during creation
 	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
 
-	// CollectionMethod determines how invoices are collected
+	// collection_method determines how invoices are collected
 	// "default_incomplete" - subscription waits for payment confirmation before activation
 	// "send_invoice" - subscription activates immediately, invoice is sent for payment
 	CollectionMethod *types.CollectionMethod `json:"collection_method,omitempty"`

@@ -64,9 +64,9 @@ func (s SubscriptionStatus) Validate() error {
 type CollectionMethod string
 
 const (
-	// CollectionMethodDefaultIncomplete waits for payment confirmation before activation
+	// default_incomplete waits for payment confirmation before activation
 	CollectionMethodDefaultIncomplete CollectionMethod = "default_incomplete"
-	// CollectionMethodSendInvoice activates subscription immediately, invoice is sent for payment
+	// send_invoice activates subscription immediately, invoice is sent for payment
 	CollectionMethodSendInvoice CollectionMethod = "send_invoice"
 )
 
