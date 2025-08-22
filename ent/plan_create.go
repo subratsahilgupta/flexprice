@@ -223,10 +223,6 @@ func (pc *PlanCreate) defaults() {
 		v := plan.DefaultEnvironmentID
 		pc.mutation.SetEnvironmentID(v)
 	}
-	if _, ok := pc.mutation.Metadata(); !ok {
-		v := plan.DefaultMetadata
-		pc.mutation.SetMetadata(v)
-	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -247,9 +243,6 @@ func (pc *PlanCreate) check() error {
 	}
 	if _, ok := pc.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Plan.updated_at"`)}
-	}
-	if _, ok := pc.mutation.Metadata(); !ok {
-		return &ValidationError{Name: "metadata", err: errors.New(`ent: missing required field "Plan.metadata"`)}
 	}
 	if _, ok := pc.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "Plan.name"`)}

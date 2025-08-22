@@ -579,6 +579,16 @@ func EnvironmentIDContainsFold(v string) predicate.Customer {
 	return predicate.Customer(sql.FieldContainsFold(FieldEnvironmentID, v))
 }
 
+// MetadataIsNil applies the IsNil predicate on the "metadata" field.
+func MetadataIsNil() predicate.Customer {
+	return predicate.Customer(sql.FieldIsNull(FieldMetadata))
+}
+
+// MetadataNotNil applies the NotNil predicate on the "metadata" field.
+func MetadataNotNil() predicate.Customer {
+	return predicate.Customer(sql.FieldNotNull(FieldMetadata))
+}
+
 // ExternalIDEQ applies the EQ predicate on the "external_id" field.
 func ExternalIDEQ(v string) predicate.Customer {
 	return predicate.Customer(sql.FieldEQ(FieldExternalID, v))

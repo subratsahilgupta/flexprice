@@ -17235,9 +17235,22 @@ func (m *CustomerMutation) OldMetadata(ctx context.Context) (v map[string]string
 	return oldValue.Metadata, nil
 }
 
+// ClearMetadata clears the value of the "metadata" field.
+func (m *CustomerMutation) ClearMetadata() {
+	m.metadata = nil
+	m.clearedFields[customer.FieldMetadata] = struct{}{}
+}
+
+// MetadataCleared returns if the "metadata" field was cleared in this mutation.
+func (m *CustomerMutation) MetadataCleared() bool {
+	_, ok := m.clearedFields[customer.FieldMetadata]
+	return ok
+}
+
 // ResetMetadata resets all changes to the "metadata" field.
 func (m *CustomerMutation) ResetMetadata() {
 	m.metadata = nil
+	delete(m.clearedFields, customer.FieldMetadata)
 }
 
 // SetExternalID sets the "external_id" field.
@@ -17993,6 +18006,9 @@ func (m *CustomerMutation) ClearedFields() []string {
 	if m.FieldCleared(customer.FieldEnvironmentID) {
 		fields = append(fields, customer.FieldEnvironmentID)
 	}
+	if m.FieldCleared(customer.FieldMetadata) {
+		fields = append(fields, customer.FieldMetadata)
+	}
 	if m.FieldCleared(customer.FieldEmail) {
 		fields = append(fields, customer.FieldEmail)
 	}
@@ -18036,6 +18052,9 @@ func (m *CustomerMutation) ClearField(name string) error {
 		return nil
 	case customer.FieldEnvironmentID:
 		m.ClearEnvironmentID()
+		return nil
+	case customer.FieldMetadata:
+		m.ClearMetadata()
 		return nil
 	case customer.FieldEmail:
 		m.ClearEmail()
@@ -33135,9 +33154,22 @@ func (m *PlanMutation) OldMetadata(ctx context.Context) (v map[string]string, er
 	return oldValue.Metadata, nil
 }
 
+// ClearMetadata clears the value of the "metadata" field.
+func (m *PlanMutation) ClearMetadata() {
+	m.metadata = nil
+	m.clearedFields[plan.FieldMetadata] = struct{}{}
+}
+
+// MetadataCleared returns if the "metadata" field was cleared in this mutation.
+func (m *PlanMutation) MetadataCleared() bool {
+	_, ok := m.clearedFields[plan.FieldMetadata]
+	return ok
+}
+
 // ResetMetadata resets all changes to the "metadata" field.
 func (m *PlanMutation) ResetMetadata() {
 	m.metadata = nil
+	delete(m.clearedFields, plan.FieldMetadata)
 }
 
 // SetLookupKey sets the "lookup_key" field.
@@ -33582,6 +33614,9 @@ func (m *PlanMutation) ClearedFields() []string {
 	if m.FieldCleared(plan.FieldEnvironmentID) {
 		fields = append(fields, plan.FieldEnvironmentID)
 	}
+	if m.FieldCleared(plan.FieldMetadata) {
+		fields = append(fields, plan.FieldMetadata)
+	}
 	if m.FieldCleared(plan.FieldLookupKey) {
 		fields = append(fields, plan.FieldLookupKey)
 	}
@@ -33610,6 +33645,9 @@ func (m *PlanMutation) ClearField(name string) error {
 		return nil
 	case plan.FieldEnvironmentID:
 		m.ClearEnvironmentID()
+		return nil
+	case plan.FieldMetadata:
+		m.ClearMetadata()
 		return nil
 	case plan.FieldLookupKey:
 		m.ClearLookupKey()

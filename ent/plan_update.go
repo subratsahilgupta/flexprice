@@ -75,6 +75,12 @@ func (pu *PlanUpdate) SetMetadata(m map[string]string) *PlanUpdate {
 	return pu
 }
 
+// ClearMetadata clears the value of the "metadata" field.
+func (pu *PlanUpdate) ClearMetadata() *PlanUpdate {
+	pu.mutation.ClearMetadata()
+	return pu
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (pu *PlanUpdate) SetLookupKey(s string) *PlanUpdate {
 	pu.mutation.SetLookupKey(s)
@@ -249,6 +255,9 @@ func (pu *PlanUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := pu.mutation.Metadata(); ok {
 		_spec.SetField(plan.FieldMetadata, field.TypeJSON, value)
 	}
+	if pu.mutation.MetadataCleared() {
+		_spec.ClearField(plan.FieldMetadata, field.TypeJSON)
+	}
 	if value, ok := pu.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)
 	}
@@ -372,6 +381,12 @@ func (puo *PlanUpdateOne) ClearUpdatedBy() *PlanUpdateOne {
 // SetMetadata sets the "metadata" field.
 func (puo *PlanUpdateOne) SetMetadata(m map[string]string) *PlanUpdateOne {
 	puo.mutation.SetMetadata(m)
+	return puo
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (puo *PlanUpdateOne) ClearMetadata() *PlanUpdateOne {
+	puo.mutation.ClearMetadata()
 	return puo
 }
 
@@ -578,6 +593,9 @@ func (puo *PlanUpdateOne) sqlSave(ctx context.Context) (_node *Plan, err error) 
 	}
 	if value, ok := puo.mutation.Metadata(); ok {
 		_spec.SetField(plan.FieldMetadata, field.TypeJSON, value)
+	}
+	if puo.mutation.MetadataCleared() {
+		_spec.ClearField(plan.FieldMetadata, field.TypeJSON)
 	}
 	if value, ok := puo.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)

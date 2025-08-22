@@ -283,10 +283,6 @@ func (cc *CustomerCreate) defaults() {
 		v := customer.DefaultEnvironmentID
 		cc.mutation.SetEnvironmentID(v)
 	}
-	if _, ok := cc.mutation.Metadata(); !ok {
-		v := customer.DefaultMetadata
-		cc.mutation.SetMetadata(v)
-	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -307,9 +303,6 @@ func (cc *CustomerCreate) check() error {
 	}
 	if _, ok := cc.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Customer.updated_at"`)}
-	}
-	if _, ok := cc.mutation.Metadata(); !ok {
-		return &ValidationError{Name: "metadata", err: errors.New(`ent: missing required field "Customer.metadata"`)}
 	}
 	if _, ok := cc.mutation.ExternalID(); !ok {
 		return &ValidationError{Name: "external_id", err: errors.New(`ent: missing required field "Customer.external_id"`)}

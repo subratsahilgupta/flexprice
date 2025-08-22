@@ -74,6 +74,12 @@ func (cu *CustomerUpdate) SetMetadata(m map[string]string) *CustomerUpdate {
 	return cu
 }
 
+// ClearMetadata clears the value of the "metadata" field.
+func (cu *CustomerUpdate) ClearMetadata() *CustomerUpdate {
+	cu.mutation.ClearMetadata()
+	return cu
+}
+
 // SetExternalID sets the "external_id" field.
 func (cu *CustomerUpdate) SetExternalID(s string) *CustomerUpdate {
 	cu.mutation.SetExternalID(s)
@@ -331,6 +337,9 @@ func (cu *CustomerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := cu.mutation.Metadata(); ok {
 		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
 	}
+	if cu.mutation.MetadataCleared() {
+		_spec.ClearField(customer.FieldMetadata, field.TypeJSON)
+	}
 	if value, ok := cu.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)
 	}
@@ -442,6 +451,12 @@ func (cuo *CustomerUpdateOne) ClearUpdatedBy() *CustomerUpdateOne {
 // SetMetadata sets the "metadata" field.
 func (cuo *CustomerUpdateOne) SetMetadata(m map[string]string) *CustomerUpdateOne {
 	cuo.mutation.SetMetadata(m)
+	return cuo
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (cuo *CustomerUpdateOne) ClearMetadata() *CustomerUpdateOne {
+	cuo.mutation.ClearMetadata()
 	return cuo
 }
 
@@ -731,6 +746,9 @@ func (cuo *CustomerUpdateOne) sqlSave(ctx context.Context) (_node *Customer, err
 	}
 	if value, ok := cuo.mutation.Metadata(); ok {
 		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
+	}
+	if cuo.mutation.MetadataCleared() {
+		_spec.ClearField(customer.FieldMetadata, field.TypeJSON)
 	}
 	if value, ok := cuo.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)
