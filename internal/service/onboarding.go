@@ -377,13 +377,12 @@ func (s *onboardingService) OnboardNewUserWithTenant(ctx context.Context, userID
 		return err
 	}
 
-	// Create default environments (development, production)
+	// Create default environments (development, production, sandbox)
 	envTypes := []types.EnvironmentType{
 		types.EnvironmentDevelopment,
 		types.EnvironmentProduction,
 	}
 
-	sandboxEnvironmentID := ""
 	for _, envType := range envTypes {
 		env := &environment.Environment{
 			ID:   types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENVIRONMENT),
@@ -399,18 +398,9 @@ func (s *onboardingService) OnboardNewUserWithTenant(ctx context.Context, userID
 			},
 		}
 
-		if envType == types.EnvironmentDevelopment {
-			sandboxEnvironmentID = env.ID
-		}
-
 		if err := s.EnvironmentRepo.Create(ctx, env); err != nil {
 			return err
 		}
-	}
-
-	err = s.SetupSandboxEnvironment(ctx, tenantID, userID, sandboxEnvironmentID)
-	if err != nil {
-		return err
 	}
 
 	return nil

@@ -499,7 +499,7 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 			}).Mark(ierr.ErrVersionConflict)
 	}
 	r.DeleteCache(ctx, inv.ID)
-return nil
+	return nil
 }
 
 func (r *invoiceRepository) Delete(ctx context.Context, id string) error {
@@ -683,32 +683,65 @@ func (r *invoiceRepository) ExistsForPeriod(ctx context.Context, subscriptionID 
 	return exists, nil
 }
 
-func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context) (string, error) {
+func (r *invoiceRepository) getYearMonth(format types.InvoiceNumberFormat, timezone string) string {
+
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		// If timezone parsing fails, fall back to UTC
+		loc = time.UTC
+	}
+
+	// Get current time in the specified timezone
+	now := time.Now().In(loc)
+
+	switch format {
+	case types.InvoiceNumberFormatYYYYMM:
+		return now.Format("200601")
+	case types.InvoiceNumberFormatYYYY:
+		return now.Format("2006")
+	case types.InvoiceNumberFormatYYMMDD:
+		return now.Format("060102")
+	case types.InvoiceNumberFormatYYYYMMDD:
+		return now.Format("20060102")
+	case types.InvoiceNumberFormatYY:
+		return now.Format("06")
+	default:
+		// Default to YYYYMM if format is not recognized
+		return now.Format("200601")
+	}
+}
+
+func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context, invoiceConfig *types.InvoiceConfig) (string, error) {
+
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "invoice", "get_next_invoice_number", map[string]interface{}{})
 	defer FinishSpan(span)
 
-	yearMonth := time.Now().Format("200601") // YYYYMM
+	yearMonth := r.getYearMonth(invoiceConfig.InvoiceNumberFormat, types.ResolveTimezone(invoiceConfig.InvoiceNumberTimezone))
 	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
 
 	// Use raw SQL for atomic increment since ent doesn't support RETURNING with OnConflict
 	query := `
-		INSERT INTO invoice_sequences (tenant_id, year_month, last_value, created_at, updated_at)
-		VALUES ($1, $2, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-		ON CONFLICT (tenant_id, year_month) DO UPDATE
+		INSERT INTO invoice_sequences (tenant_id,environment_id,year_month, last_value, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT (tenant_id, environment_id, year_month) DO UPDATE
 		SET last_value = invoice_sequences.last_value + 1,
 			updated_at = CURRENT_TIMESTAMP
 		RETURNING last_value`
 
 	var lastValue int64
-	rows, err := r.client.Querier(ctx).QueryContext(ctx, query, tenantID, yearMonth)
+	rows, err := r.client.Querier(ctx).QueryContext(ctx, query, tenantID, environmentID, yearMonth, invoiceConfig.InvoiceNumberStartSequence)
 	if err != nil {
 		return "", ierr.WithError(err).WithHint("invoice number generation failed").Mark(ierr.ErrDatabase)
 	}
 	defer rows.Close()
 
 	if !rows.Next() {
-		return "", ierr.WithError(err).WithHint("no sequence value returned").Mark(ierr.ErrDatabase)
+		if err := rows.Err(); err != nil {
+			return "", ierr.WithError(err).WithHint("failed to fetch sequence value").Mark(ierr.ErrDatabase)
+		}
+		return "", ierr.NewError("no sequence value returned").Mark(ierr.ErrInternal)
 	}
 
 	if err := rows.Scan(&lastValue); err != nil {
@@ -720,7 +753,11 @@ func (r *invoiceRepository) GetNextInvoiceNumber(ctx context.Context) (string, e
 		"year_month", yearMonth,
 		"sequence", lastValue)
 
-	return fmt.Sprintf("INV-%s-%05d", yearMonth, lastValue), nil
+	// Format the sequence number with the specified suffix length
+	sequenceFormat := fmt.Sprintf("%%0%dd", invoiceConfig.InvoiceNumberSuffixLength)
+	paddedSequence := fmt.Sprintf(sequenceFormat, lastValue)
+
+	return fmt.Sprintf("%s%s%s%s%s", invoiceConfig.InvoiceNumberPrefix, invoiceConfig.InvoiceNumberSeparator, yearMonth, invoiceConfig.InvoiceNumberSeparator, paddedSequence), nil
 }
 
 func (r *invoiceRepository) GetNextBillingSequence(ctx context.Context, subscriptionID string) (int, error) {
@@ -748,7 +785,10 @@ func (r *invoiceRepository) GetNextBillingSequence(ctx context.Context, subscrip
 	defer rows.Close()
 
 	if !rows.Next() {
-		return 0, ierr.WithError(err).WithHint("no sequence value returned").Mark(ierr.ErrDatabase)
+		if err := rows.Err(); err != nil {
+			return 0, ierr.WithError(err).WithHint("failed to fetch billing sequence value").Mark(ierr.ErrDatabase)
+		}
+		return 0, ierr.NewError("no billing sequence value returned").Mark(ierr.ErrInternal)
 	}
 
 	if err := rows.Scan(&lastSequence); err != nil {

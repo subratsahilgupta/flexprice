@@ -59,7 +59,7 @@ func (r *connectionRepository) Create(ctx context.Context, c *domainConnection.C
 		SetID(c.ID).
 		SetTenantID(c.TenantID).
 		SetName(c.Name).
-		SetProviderType(connection.ProviderType(c.ProviderType)).
+		SetProviderType(string(c.ProviderType)).
 		SetEncryptedSecretData(encryptedSecretDataMap).
 		SetStatus(string(c.Status)).
 		SetCreatedAt(c.CreatedAt).
@@ -425,7 +425,7 @@ func (o ConnectionQueryOptions) applyEntityQueryOptions(_ context.Context, f *ty
 	}
 
 	if f.ProviderType != "" {
-		query = query.Where(connection.ProviderTypeEQ(connection.ProviderType(f.ProviderType)))
+		query = query.Where(connection.ProviderTypeEQ(string(f.ProviderType)))
 	}
 
 	if len(f.ConnectionIDs) > 0 {

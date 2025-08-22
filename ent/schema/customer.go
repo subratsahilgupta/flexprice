@@ -20,6 +20,7 @@ func (Customer) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
 		baseMixin.EnvironmentMixin{},
+		baseMixin.MetadataMixin{},
 	}
 }
 
@@ -77,9 +78,6 @@ func (Customer) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(2)",
 			}).
-			Optional(),
-		// Metadata as JSON field
-		field.JSON("metadata", map[string]string{}).
 			Optional(),
 	}
 }

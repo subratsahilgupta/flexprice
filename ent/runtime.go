@@ -34,6 +34,7 @@ import (
 	"github.com/flexprice/flexprice/ent/priceunit"
 	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/ent/secret"
+	"github.com/flexprice/flexprice/ent/settings"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/subscriptionpause"
@@ -228,6 +229,10 @@ func init() {
 	connectionDescName := connectionFields[1].Descriptor()
 	// connection.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	connection.NameValidator = connectionDescName.Validators[0].(func(string) error)
+	// connectionDescProviderType is the schema descriptor for provider_type field.
+	connectionDescProviderType := connectionFields[2].Descriptor()
+	// connection.ProviderTypeValidator is a validator for the "provider_type" field. It is called by the builders before save.
+	connection.ProviderTypeValidator = connectionDescProviderType.Validators[0].(func(string) error)
 	costsheetMixin := schema.Costsheet{}.Mixin()
 	costsheetMixinFields0 := costsheetMixin[0].Fields()
 	_ = costsheetMixinFields0
@@ -947,10 +952,6 @@ func init() {
 	invoicelineitemDescCustomerID := invoicelineitemFields[2].Descriptor()
 	// invoicelineitem.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
 	invoicelineitem.CustomerIDValidator = invoicelineitemDescCustomerID.Validators[0].(func(string) error)
-	// invoicelineitemDescEntityType is the schema descriptor for entity_type field.
-	invoicelineitemDescEntityType := invoicelineitemFields[5].Descriptor()
-	// invoicelineitem.DefaultEntityType holds the default value on creation for the entity_type field.
-	invoicelineitem.DefaultEntityType = invoicelineitemDescEntityType.Default.(string)
 	// invoicelineitemDescAmount is the schema descriptor for amount field.
 	invoicelineitemDescAmount := invoicelineitemFields[15].Descriptor()
 	// invoicelineitem.DefaultAmount holds the default value on creation for the amount field.
@@ -1354,6 +1355,43 @@ func init() {
 	secretDescPermissions := secretFields[6].Descriptor()
 	// secret.DefaultPermissions holds the default value on creation for the permissions field.
 	secret.DefaultPermissions = secretDescPermissions.Default.([]string)
+	settingsMixin := schema.Settings{}.Mixin()
+	settingsMixinFields0 := settingsMixin[0].Fields()
+	_ = settingsMixinFields0
+	settingsMixinFields1 := settingsMixin[1].Fields()
+	_ = settingsMixinFields1
+	settingsFields := schema.Settings{}.Fields()
+	_ = settingsFields
+	// settingsDescTenantID is the schema descriptor for tenant_id field.
+	settingsDescTenantID := settingsMixinFields0[0].Descriptor()
+	// settings.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	settings.TenantIDValidator = settingsDescTenantID.Validators[0].(func(string) error)
+	// settingsDescStatus is the schema descriptor for status field.
+	settingsDescStatus := settingsMixinFields0[1].Descriptor()
+	// settings.DefaultStatus holds the default value on creation for the status field.
+	settings.DefaultStatus = settingsDescStatus.Default.(string)
+	// settingsDescCreatedAt is the schema descriptor for created_at field.
+	settingsDescCreatedAt := settingsMixinFields0[2].Descriptor()
+	// settings.DefaultCreatedAt holds the default value on creation for the created_at field.
+	settings.DefaultCreatedAt = settingsDescCreatedAt.Default.(func() time.Time)
+	// settingsDescUpdatedAt is the schema descriptor for updated_at field.
+	settingsDescUpdatedAt := settingsMixinFields0[3].Descriptor()
+	// settings.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	settings.DefaultUpdatedAt = settingsDescUpdatedAt.Default.(func() time.Time)
+	// settings.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	settings.UpdateDefaultUpdatedAt = settingsDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// settingsDescEnvironmentID is the schema descriptor for environment_id field.
+	settingsDescEnvironmentID := settingsMixinFields1[0].Descriptor()
+	// settings.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	settings.DefaultEnvironmentID = settingsDescEnvironmentID.Default.(string)
+	// settingsDescKey is the schema descriptor for key field.
+	settingsDescKey := settingsFields[1].Descriptor()
+	// settings.KeyValidator is a validator for the "key" field. It is called by the builders before save.
+	settings.KeyValidator = settingsDescKey.Validators[0].(func(string) error)
+	// settingsDescValue is the schema descriptor for value field.
+	settingsDescValue := settingsFields[2].Descriptor()
+	// settings.DefaultValue holds the default value on creation for the value field.
+	settings.DefaultValue = settingsDescValue.Default.(map[string]interface{})
 	subscriptionMixin := schema.Subscription{}.Mixin()
 	subscriptionMixinFields0 := subscriptionMixin[0].Fields()
 	_ = subscriptionMixinFields0

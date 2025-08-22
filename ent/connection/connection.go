@@ -3,7 +3,6 @@
 package connection
 
 import (
-	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -78,31 +77,9 @@ var (
 	DefaultEnvironmentID string
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// ProviderTypeValidator is a validator for the "provider_type" field. It is called by the builders before save.
+	ProviderTypeValidator func(string) error
 )
-
-// ProviderType defines the type for the "provider_type" enum field.
-type ProviderType string
-
-// ProviderType values.
-const (
-	ProviderTypeFlexprice ProviderType = "flexprice"
-	ProviderTypeStripe    ProviderType = "stripe"
-	ProviderTypeRazorpay  ProviderType = "razorpay"
-)
-
-func (pt ProviderType) String() string {
-	return string(pt)
-}
-
-// ProviderTypeValidator is a validator for the "provider_type" field enum values. It is called by the builders before save.
-func ProviderTypeValidator(pt ProviderType) error {
-	switch pt {
-	case ProviderTypeFlexprice, ProviderTypeStripe, ProviderTypeRazorpay:
-		return nil
-	default:
-		return fmt.Errorf("connection: invalid enum value for provider_type field: %q", pt)
-	}
-}
 
 // OrderOption defines the ordering options for the Connection queries.
 type OrderOption func(*sql.Selector)

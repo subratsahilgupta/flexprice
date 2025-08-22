@@ -8,7 +8,6 @@ import (
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/shopspring/decimal"
 )
 
 // Price holds the schema definition for the Price entity.
@@ -147,13 +146,13 @@ func (Price) Fields() []ent.Field {
 			Optional().
 			Nillable(),
 
-		field.JSON("tiers", []PriceTier{}).
+		field.JSON("tiers", []*types.PriceTier{}).
 			Optional(),
 
-		field.JSON("price_unit_tiers", []PriceTier{}).
+		field.JSON("price_unit_tiers", []*types.PriceTier{}).
 			Optional(),
 
-		field.JSON("transform_quantity", TransformQuantity{}).
+		field.JSON("transform_quantity", types.TransformQuantity{}).
 			Optional(),
 
 		field.String("lookup_key").
@@ -213,16 +212,4 @@ func (Price) Indexes() []ent.Index {
 			Annotations(entsql.IndexWhere("status = 'published' AND lookup_key IS NOT NULL AND lookup_key != ''")),
 		index.Fields("tenant_id", "environment_id"),
 	}
-}
-
-// Additional types needed for JSON fields
-type PriceTier struct {
-	UpTo       *uint64          `json:"up_to"`
-	UnitAmount decimal.Decimal  `json:"unit_amount"`
-	FlatAmount *decimal.Decimal `json:"flat_amount,omitempty"`
-}
-
-type TransformQuantity struct {
-	DivideBy int    `json:"divide_by,omitempty"`
-	Round    string `json:"round,omitempty"`
 }

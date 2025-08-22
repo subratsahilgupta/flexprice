@@ -27,6 +27,8 @@ const (
 	FieldUpdatedBy = "updated_by"
 	// FieldEnvironmentID holds the string denoting the environment_id field in the database.
 	FieldEnvironmentID = "environment_id"
+	// FieldMetadata holds the string denoting the metadata field in the database.
+	FieldMetadata = "metadata"
 	// FieldExternalID holds the string denoting the external_id field in the database.
 	FieldExternalID = "external_id"
 	// FieldName holds the string denoting the name field in the database.
@@ -45,8 +47,6 @@ const (
 	FieldAddressPostalCode = "address_postal_code"
 	// FieldAddressCountry holds the string denoting the address_country field in the database.
 	FieldAddressCountry = "address_country"
-	// FieldMetadata holds the string denoting the metadata field in the database.
-	FieldMetadata = "metadata"
 	// Table holds the table name of the customer in the database.
 	Table = "customers"
 )
@@ -61,6 +61,7 @@ var Columns = []string{
 	FieldCreatedBy,
 	FieldUpdatedBy,
 	FieldEnvironmentID,
+	FieldMetadata,
 	FieldExternalID,
 	FieldName,
 	FieldEmail,
@@ -70,7 +71,6 @@ var Columns = []string{
 	FieldAddressState,
 	FieldAddressPostalCode,
 	FieldAddressCountry,
-	FieldMetadata,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).

@@ -26,6 +26,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/secret"
+	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/task"
 	taxrate "github.com/flexprice/flexprice/internal/domain/tax"
@@ -75,6 +76,7 @@ type Stores struct {
 	CouponApplicationRepo        coupon_application.Repository
 	ConnectionRepo               connection.Repository
 	EntityIntegrationMappingRepo entityintegrationmapping.Repository
+	SettingsRepo                 settings.Repository
 }
 
 // BaseServiceTestSuite provides common functionality for all service test suites
@@ -166,6 +168,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 		CouponApplicationRepo:        NewInMemoryCouponApplicationStore(),
 		ConnectionRepo:               NewInMemoryConnectionStore(),
 		EntityIntegrationMappingRepo: NewInMemoryEntityIntegrationMappingStore(),
+		SettingsRepo:                 NewInMemorySettingsStore(),
 	}
 
 	s.db = NewMockPostgresClient(s.logger)
@@ -210,6 +213,7 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.CouponRepo.(*InMemoryCouponStore).Clear()
 	s.stores.CouponAssociationRepo.(*InMemoryCouponAssociationStore).Clear()
 	s.stores.CouponApplicationRepo.(*InMemoryCouponApplicationStore).Clear()
+	s.stores.SettingsRepo.(*InMemorySettingsStore).Clear()
 }
 
 func (s *BaseServiceTestSuite) ClearStores() {

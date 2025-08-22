@@ -90,6 +90,9 @@ type PriceUnit func(*sql.Selector)
 // Secret is the predicate function for secret builders.
 type Secret func(*sql.Selector)
 
+// Settings is the predicate function for settings builders.
+type Settings func(*sql.Selector)
+
 // Subscription is the predicate function for subscription builders.
 type Subscription func(*sql.Selector)
 

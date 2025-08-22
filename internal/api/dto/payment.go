@@ -22,6 +22,10 @@ type CreatePaymentRequest struct {
 	PaymentGateway    *types.PaymentGatewayType    `json:"payment_gateway,omitempty"`
 	Amount            decimal.Decimal              `json:"amount" binding:"required"`
 	Currency          string                       `json:"currency" binding:"required"`
+	SuccessURL        string                       `json:"success_url,omitempty"`
+	CancelURL         string                       `json:"cancel_url,omitempty"`
+	ConnectionID      string                       `json:"connection_id,omitempty"`
+	ConnectionName    string                       `json:"connection_name,omitempty"`
 	Metadata          types.Metadata               `json:"metadata,omitempty"`
 	ProcessPayment    bool                         `json:"process_payment" default:"true"`
 }
@@ -158,6 +162,23 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 		return nil, err
 	}
 
+	// Initialize gateway metadata for storing payment link related fields
+	gatewayMetadata := types.Metadata{}
+
+	// Store SuccessURL, CancelURL, ConnectionID, and ConnectionName in gateway metadata if provided
+	if r.SuccessURL != "" {
+		gatewayMetadata["success_url"] = r.SuccessURL
+	}
+	if r.CancelURL != "" {
+		gatewayMetadata["cancel_url"] = r.CancelURL
+	}
+	if r.ConnectionID != "" {
+		gatewayMetadata["connection_id"] = r.ConnectionID
+	}
+	if r.ConnectionName != "" {
+		gatewayMetadata["connection_name"] = r.ConnectionName
+	}
+
 	p := &payment.Payment{
 		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PAYMENT),
 		IdempotencyKey:    r.IdempotencyKey,
@@ -168,6 +189,7 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 		Amount:            r.Amount,
 		Currency:          strings.ToLower(r.Currency),
 		Metadata:          r.Metadata,
+		GatewayMetadata:   gatewayMetadata,
 		EnvironmentID:     types.GetEnvironmentID(ctx),
 		BaseModel:         types.GetDefaultBaseModel(ctx),
 	}

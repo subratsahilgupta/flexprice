@@ -110,6 +110,12 @@ func (cc *CustomerCreate) SetNillableEnvironmentID(s *string) *CustomerCreate {
 	return cc
 }
 
+// SetMetadata sets the "metadata" field.
+func (cc *CustomerCreate) SetMetadata(m map[string]string) *CustomerCreate {
+	cc.mutation.SetMetadata(m)
+	return cc
+}
+
 // SetExternalID sets the "external_id" field.
 func (cc *CustomerCreate) SetExternalID(s string) *CustomerCreate {
 	cc.mutation.SetExternalID(s)
@@ -217,12 +223,6 @@ func (cc *CustomerCreate) SetNillableAddressCountry(s *string) *CustomerCreate {
 	if s != nil {
 		cc.SetAddressCountry(*s)
 	}
-	return cc
-}
-
-// SetMetadata sets the "metadata" field.
-func (cc *CustomerCreate) SetMetadata(m map[string]string) *CustomerCreate {
-	cc.mutation.SetMetadata(m)
 	return cc
 }
 
@@ -383,6 +383,10 @@ func (cc *CustomerCreate) createSpec() (*Customer, *sqlgraph.CreateSpec) {
 		_spec.SetField(customer.FieldEnvironmentID, field.TypeString, value)
 		_node.EnvironmentID = value
 	}
+	if value, ok := cc.mutation.Metadata(); ok {
+		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
+		_node.Metadata = value
+	}
 	if value, ok := cc.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)
 		_node.ExternalID = value
@@ -418,10 +422,6 @@ func (cc *CustomerCreate) createSpec() (*Customer, *sqlgraph.CreateSpec) {
 	if value, ok := cc.mutation.AddressCountry(); ok {
 		_spec.SetField(customer.FieldAddressCountry, field.TypeString, value)
 		_node.AddressCountry = value
-	}
-	if value, ok := cc.mutation.Metadata(); ok {
-		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
-		_node.Metadata = value
 	}
 	return _node, _spec
 }

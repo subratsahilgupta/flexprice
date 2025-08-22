@@ -80,7 +80,7 @@ func (h *PriceHandler) CreateBulkPrice(c *gin.Context) {
 }
 
 // @Summary Get a price by ID
-// @Description Get a price by ID
+// @Description Get a price by ID with expanded meter and price unit information
 // @Tags Prices
 // @Accept json
 // @Produce json

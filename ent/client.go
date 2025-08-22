@@ -43,6 +43,7 @@ import (
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/priceunit"
 	"github.com/flexprice/flexprice/ent/secret"
+	"github.com/flexprice/flexprice/ent/settings"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/subscriptionpause"
@@ -121,6 +122,8 @@ type Client struct {
 	PriceUnit *PriceUnitClient
 	// Secret is the client for interacting with the Secret builders.
 	Secret *SecretClient
+	// Settings is the client for interacting with the Settings builders.
+	Settings *SettingsClient
 	// Subscription is the client for interacting with the Subscription builders.
 	Subscription *SubscriptionClient
 	// SubscriptionLineItem is the client for interacting with the SubscriptionLineItem builders.
@@ -186,6 +189,7 @@ func (c *Client) init() {
 	c.Price = NewPriceClient(c.config)
 	c.PriceUnit = NewPriceUnitClient(c.config)
 	c.Secret = NewSecretClient(c.config)
+	c.Settings = NewSettingsClient(c.config)
 	c.Subscription = NewSubscriptionClient(c.config)
 	c.SubscriptionLineItem = NewSubscriptionLineItemClient(c.config)
 	c.SubscriptionPause = NewSubscriptionPauseClient(c.config)
@@ -319,6 +323,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Price:                     NewPriceClient(cfg),
 		PriceUnit:                 NewPriceUnitClient(cfg),
 		Secret:                    NewSecretClient(cfg),
+		Settings:                  NewSettingsClient(cfg),
 		Subscription:              NewSubscriptionClient(cfg),
 		SubscriptionLineItem:      NewSubscriptionLineItemClient(cfg),
 		SubscriptionPause:         NewSubscriptionPauseClient(cfg),
@@ -379,6 +384,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Price:                     NewPriceClient(cfg),
 		PriceUnit:                 NewPriceUnitClient(cfg),
 		Secret:                    NewSecretClient(cfg),
+		Settings:                  NewSettingsClient(cfg),
 		Subscription:              NewSubscriptionClient(cfg),
 		SubscriptionLineItem:      NewSubscriptionLineItemClient(cfg),
 		SubscriptionPause:         NewSubscriptionPauseClient(cfg),
@@ -426,10 +432,10 @@ func (c *Client) Use(hooks ...Hook) {
 		c.CreditGrantApplication, c.CreditNote, c.CreditNoteLineItem, c.Customer,
 		c.Entitlement, c.EntityIntegrationMapping, c.Environment, c.Feature, c.Invoice,
 		c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt,
-		c.Plan, c.Price, c.PriceUnit, c.Secret, c.Subscription, c.SubscriptionLineItem,
-		c.SubscriptionPause, c.SubscriptionSchedule, c.SubscriptionSchedulePhase,
-		c.Task, c.TaxApplied, c.TaxAssociation, c.TaxRate, c.Tenant, c.User, c.Wallet,
-		c.WalletTransaction,
+		c.Plan, c.Price, c.PriceUnit, c.Secret, c.Settings, c.Subscription,
+		c.SubscriptionLineItem, c.SubscriptionPause, c.SubscriptionSchedule,
+		c.SubscriptionSchedulePhase, c.Task, c.TaxApplied, c.TaxAssociation, c.TaxRate,
+		c.Tenant, c.User, c.Wallet, c.WalletTransaction,
 	} {
 		n.Use(hooks...)
 	}
@@ -444,10 +450,10 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.CreditGrantApplication, c.CreditNote, c.CreditNoteLineItem, c.Customer,
 		c.Entitlement, c.EntityIntegrationMapping, c.Environment, c.Feature, c.Invoice,
 		c.InvoiceLineItem, c.InvoiceSequence, c.Meter, c.Payment, c.PaymentAttempt,
-		c.Plan, c.Price, c.PriceUnit, c.Secret, c.Subscription, c.SubscriptionLineItem,
-		c.SubscriptionPause, c.SubscriptionSchedule, c.SubscriptionSchedulePhase,
-		c.Task, c.TaxApplied, c.TaxAssociation, c.TaxRate, c.Tenant, c.User, c.Wallet,
-		c.WalletTransaction,
+		c.Plan, c.Price, c.PriceUnit, c.Secret, c.Settings, c.Subscription,
+		c.SubscriptionLineItem, c.SubscriptionPause, c.SubscriptionSchedule,
+		c.SubscriptionSchedulePhase, c.Task, c.TaxApplied, c.TaxAssociation, c.TaxRate,
+		c.Tenant, c.User, c.Wallet, c.WalletTransaction,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -512,6 +518,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PriceUnit.mutate(ctx, m)
 	case *SecretMutation:
 		return c.Secret.mutate(ctx, m)
+	case *SettingsMutation:
+		return c.Settings.mutate(ctx, m)
 	case *SubscriptionMutation:
 		return c.Subscription.mutate(ctx, m)
 	case *SubscriptionLineItemMutation:
@@ -4747,6 +4755,139 @@ func (c *SecretClient) mutate(ctx context.Context, m *SecretMutation) (Value, er
 	}
 }
 
+// SettingsClient is a client for the Settings schema.
+type SettingsClient struct {
+	config
+}
+
+// NewSettingsClient returns a client for the Settings from the given config.
+func NewSettingsClient(c config) *SettingsClient {
+	return &SettingsClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `settings.Hooks(f(g(h())))`.
+func (c *SettingsClient) Use(hooks ...Hook) {
+	c.hooks.Settings = append(c.hooks.Settings, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `settings.Intercept(f(g(h())))`.
+func (c *SettingsClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Settings = append(c.inters.Settings, interceptors...)
+}
+
+// Create returns a builder for creating a Settings entity.
+func (c *SettingsClient) Create() *SettingsCreate {
+	mutation := newSettingsMutation(c.config, OpCreate)
+	return &SettingsCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Settings entities.
+func (c *SettingsClient) CreateBulk(builders ...*SettingsCreate) *SettingsCreateBulk {
+	return &SettingsCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SettingsClient) MapCreateBulk(slice any, setFunc func(*SettingsCreate, int)) *SettingsCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SettingsCreateBulk{err: fmt.Errorf("calling to SettingsClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SettingsCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SettingsCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Settings.
+func (c *SettingsClient) Update() *SettingsUpdate {
+	mutation := newSettingsMutation(c.config, OpUpdate)
+	return &SettingsUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SettingsClient) UpdateOne(s *Settings) *SettingsUpdateOne {
+	mutation := newSettingsMutation(c.config, OpUpdateOne, withSettings(s))
+	return &SettingsUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SettingsClient) UpdateOneID(id string) *SettingsUpdateOne {
+	mutation := newSettingsMutation(c.config, OpUpdateOne, withSettingsID(id))
+	return &SettingsUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Settings.
+func (c *SettingsClient) Delete() *SettingsDelete {
+	mutation := newSettingsMutation(c.config, OpDelete)
+	return &SettingsDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SettingsClient) DeleteOne(s *Settings) *SettingsDeleteOne {
+	return c.DeleteOneID(s.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SettingsClient) DeleteOneID(id string) *SettingsDeleteOne {
+	builder := c.Delete().Where(settings.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SettingsDeleteOne{builder}
+}
+
+// Query returns a query builder for Settings.
+func (c *SettingsClient) Query() *SettingsQuery {
+	return &SettingsQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSettings},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Settings entity by its id.
+func (c *SettingsClient) Get(ctx context.Context, id string) (*Settings, error) {
+	return c.Query().Where(settings.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SettingsClient) GetX(ctx context.Context, id string) *Settings {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SettingsClient) Hooks() []Hook {
+	return c.hooks.Settings
+}
+
+// Interceptors returns the client interceptors.
+func (c *SettingsClient) Interceptors() []Interceptor {
+	return c.inters.Settings
+}
+
+func (c *SettingsClient) mutate(ctx context.Context, m *SettingsMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SettingsCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SettingsUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SettingsUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SettingsDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Settings mutation op: %q", m.Op())
+	}
+}
+
 // SubscriptionClient is a client for the Subscription schema.
 type SubscriptionClient struct {
 	config
@@ -6676,7 +6817,7 @@ type (
 		CreditNote, CreditNoteLineItem, Customer, Entitlement,
 		EntityIntegrationMapping, Environment, Feature, Invoice, InvoiceLineItem,
 		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, PriceUnit,
-		Secret, Subscription, SubscriptionLineItem, SubscriptionPause,
+		Secret, Settings, Subscription, SubscriptionLineItem, SubscriptionPause,
 		SubscriptionSchedule, SubscriptionSchedulePhase, Task, TaxApplied,
 		TaxAssociation, TaxRate, Tenant, User, Wallet, WalletTransaction []ent.Hook
 	}
@@ -6686,7 +6827,7 @@ type (
 		CreditNote, CreditNoteLineItem, Customer, Entitlement,
 		EntityIntegrationMapping, Environment, Feature, Invoice, InvoiceLineItem,
 		InvoiceSequence, Meter, Payment, PaymentAttempt, Plan, Price, PriceUnit,
-		Secret, Subscription, SubscriptionLineItem, SubscriptionPause,
+		Secret, Settings, Subscription, SubscriptionLineItem, SubscriptionPause,
 		SubscriptionSchedule, SubscriptionSchedulePhase, Task, TaxApplied,
 		TaxAssociation, TaxRate, Tenant, User, Wallet,
 		WalletTransaction []ent.Interceptor

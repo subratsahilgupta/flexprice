@@ -32,7 +32,7 @@ type Repository interface {
 
 	// GetNextInvoiceNumber generates and returns the next invoice number for a tenant
 	// Format: INV-YYYYMM-XXXXX
-	GetNextInvoiceNumber(ctx context.Context) (string, error)
+	GetNextInvoiceNumber(ctx context.Context, invoiceConfig *types.InvoiceConfig) (string, error)
 
 	// GetNextBillingSequence returns the next billing sequence number for a subscription
 	GetNextBillingSequence(ctx context.Context, subscriptionID string) (int, error)

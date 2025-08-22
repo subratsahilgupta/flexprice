@@ -117,8 +117,8 @@ func (cc *ConnectionCreate) SetName(s string) *ConnectionCreate {
 }
 
 // SetProviderType sets the "provider_type" field.
-func (cc *ConnectionCreate) SetProviderType(ct connection.ProviderType) *ConnectionCreate {
-	cc.mutation.SetProviderType(ct)
+func (cc *ConnectionCreate) SetProviderType(s string) *ConnectionCreate {
+	cc.mutation.SetProviderType(s)
 	return cc
 }
 
@@ -290,7 +290,7 @@ func (cc *ConnectionCreate) createSpec() (*Connection, *sqlgraph.CreateSpec) {
 		_node.Name = value
 	}
 	if value, ok := cc.mutation.ProviderType(); ok {
-		_spec.SetField(connection.FieldProviderType, field.TypeEnum, value)
+		_spec.SetField(connection.FieldProviderType, field.TypeString, value)
 		_node.ProviderType = value
 	}
 	if value, ok := cc.mutation.EncryptedSecretData(); ok {

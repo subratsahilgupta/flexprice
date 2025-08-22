@@ -16,7 +16,7 @@ import (
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/priceunit"
-	"github.com/flexprice/flexprice/ent/schema"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // PriceUpdate is the builder for updating Price entities.
@@ -379,14 +379,14 @@ func (pu *PriceUpdate) ClearTierMode() *PriceUpdate {
 }
 
 // SetTiers sets the "tiers" field.
-func (pu *PriceUpdate) SetTiers(st []schema.PriceTier) *PriceUpdate {
-	pu.mutation.SetTiers(st)
+func (pu *PriceUpdate) SetTiers(tt []*types.PriceTier) *PriceUpdate {
+	pu.mutation.SetTiers(tt)
 	return pu
 }
 
-// AppendTiers appends st to the "tiers" field.
-func (pu *PriceUpdate) AppendTiers(st []schema.PriceTier) *PriceUpdate {
-	pu.mutation.AppendTiers(st)
+// AppendTiers appends tt to the "tiers" field.
+func (pu *PriceUpdate) AppendTiers(tt []*types.PriceTier) *PriceUpdate {
+	pu.mutation.AppendTiers(tt)
 	return pu
 }
 
@@ -397,14 +397,14 @@ func (pu *PriceUpdate) ClearTiers() *PriceUpdate {
 }
 
 // SetPriceUnitTiers sets the "price_unit_tiers" field.
-func (pu *PriceUpdate) SetPriceUnitTiers(st []schema.PriceTier) *PriceUpdate {
-	pu.mutation.SetPriceUnitTiers(st)
+func (pu *PriceUpdate) SetPriceUnitTiers(tt []*types.PriceTier) *PriceUpdate {
+	pu.mutation.SetPriceUnitTiers(tt)
 	return pu
 }
 
-// AppendPriceUnitTiers appends st to the "price_unit_tiers" field.
-func (pu *PriceUpdate) AppendPriceUnitTiers(st []schema.PriceTier) *PriceUpdate {
-	pu.mutation.AppendPriceUnitTiers(st)
+// AppendPriceUnitTiers appends tt to the "price_unit_tiers" field.
+func (pu *PriceUpdate) AppendPriceUnitTiers(tt []*types.PriceTier) *PriceUpdate {
+	pu.mutation.AppendPriceUnitTiers(tt)
 	return pu
 }
 
@@ -415,15 +415,15 @@ func (pu *PriceUpdate) ClearPriceUnitTiers() *PriceUpdate {
 }
 
 // SetTransformQuantity sets the "transform_quantity" field.
-func (pu *PriceUpdate) SetTransformQuantity(sq schema.TransformQuantity) *PriceUpdate {
-	pu.mutation.SetTransformQuantity(sq)
+func (pu *PriceUpdate) SetTransformQuantity(tq types.TransformQuantity) *PriceUpdate {
+	pu.mutation.SetTransformQuantity(tq)
 	return pu
 }
 
 // SetNillableTransformQuantity sets the "transform_quantity" field if the given value is not nil.
-func (pu *PriceUpdate) SetNillableTransformQuantity(sq *schema.TransformQuantity) *PriceUpdate {
-	if sq != nil {
-		pu.SetTransformQuantity(*sq)
+func (pu *PriceUpdate) SetNillableTransformQuantity(tq *types.TransformQuantity) *PriceUpdate {
+	if tq != nil {
+		pu.SetTransformQuantity(*tq)
 	}
 	return pu
 }
@@ -1266,14 +1266,14 @@ func (puo *PriceUpdateOne) ClearTierMode() *PriceUpdateOne {
 }
 
 // SetTiers sets the "tiers" field.
-func (puo *PriceUpdateOne) SetTiers(st []schema.PriceTier) *PriceUpdateOne {
-	puo.mutation.SetTiers(st)
+func (puo *PriceUpdateOne) SetTiers(tt []*types.PriceTier) *PriceUpdateOne {
+	puo.mutation.SetTiers(tt)
 	return puo
 }
 
-// AppendTiers appends st to the "tiers" field.
-func (puo *PriceUpdateOne) AppendTiers(st []schema.PriceTier) *PriceUpdateOne {
-	puo.mutation.AppendTiers(st)
+// AppendTiers appends tt to the "tiers" field.
+func (puo *PriceUpdateOne) AppendTiers(tt []*types.PriceTier) *PriceUpdateOne {
+	puo.mutation.AppendTiers(tt)
 	return puo
 }
 
@@ -1284,14 +1284,14 @@ func (puo *PriceUpdateOne) ClearTiers() *PriceUpdateOne {
 }
 
 // SetPriceUnitTiers sets the "price_unit_tiers" field.
-func (puo *PriceUpdateOne) SetPriceUnitTiers(st []schema.PriceTier) *PriceUpdateOne {
-	puo.mutation.SetPriceUnitTiers(st)
+func (puo *PriceUpdateOne) SetPriceUnitTiers(tt []*types.PriceTier) *PriceUpdateOne {
+	puo.mutation.SetPriceUnitTiers(tt)
 	return puo
 }
 
-// AppendPriceUnitTiers appends st to the "price_unit_tiers" field.
-func (puo *PriceUpdateOne) AppendPriceUnitTiers(st []schema.PriceTier) *PriceUpdateOne {
-	puo.mutation.AppendPriceUnitTiers(st)
+// AppendPriceUnitTiers appends tt to the "price_unit_tiers" field.
+func (puo *PriceUpdateOne) AppendPriceUnitTiers(tt []*types.PriceTier) *PriceUpdateOne {
+	puo.mutation.AppendPriceUnitTiers(tt)
 	return puo
 }
 
@@ -1302,15 +1302,15 @@ func (puo *PriceUpdateOne) ClearPriceUnitTiers() *PriceUpdateOne {
 }
 
 // SetTransformQuantity sets the "transform_quantity" field.
-func (puo *PriceUpdateOne) SetTransformQuantity(sq schema.TransformQuantity) *PriceUpdateOne {
-	puo.mutation.SetTransformQuantity(sq)
+func (puo *PriceUpdateOne) SetTransformQuantity(tq types.TransformQuantity) *PriceUpdateOne {
+	puo.mutation.SetTransformQuantity(tq)
 	return puo
 }
 
 // SetNillableTransformQuantity sets the "transform_quantity" field if the given value is not nil.
-func (puo *PriceUpdateOne) SetNillableTransformQuantity(sq *schema.TransformQuantity) *PriceUpdateOne {
-	if sq != nil {
-		puo.SetTransformQuantity(*sq)
+func (puo *PriceUpdateOne) SetNillableTransformQuantity(tq *types.TransformQuantity) *PriceUpdateOne {
+	if tq != nil {
+		puo.SetTransformQuantity(*tq)
 	}
 	return puo
 }

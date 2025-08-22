@@ -550,6 +550,16 @@ func EnvironmentIDContainsFold(v string) predicate.Plan {
 	return predicate.Plan(sql.FieldContainsFold(FieldEnvironmentID, v))
 }
 
+// MetadataIsNil applies the IsNil predicate on the "metadata" field.
+func MetadataIsNil() predicate.Plan {
+	return predicate.Plan(sql.FieldIsNull(FieldMetadata))
+}
+
+// MetadataNotNil applies the NotNil predicate on the "metadata" field.
+func MetadataNotNil() predicate.Plan {
+	return predicate.Plan(sql.FieldNotNull(FieldMetadata))
+}
+
 // LookupKeyEQ applies the EQ predicate on the "lookup_key" field.
 func LookupKeyEQ(v string) predicate.Plan {
 	return predicate.Plan(sql.FieldEQ(FieldLookupKey, v))
