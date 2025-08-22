@@ -166,12 +166,103 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.AddAddonToSubscriptionRequest:
+    properties:
+      addon_id:
+        type: string
+      end_date:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      start_date:
+        type: string
+    required:
+    - addon_id
+    type: object
   dto.AddSchedulePhaseRequest:
     properties:
       phase:
         $ref: '#/definitions/dto.SubscriptionSchedulePhaseInput'
     required:
     - phase
+    type: object
+  dto.AddonAssociationResponse:
+    properties:
+      addon_id:
+        type: string
+      addon_status:
+        $ref: '#/definitions/types.AddonStatus'
+      cancellation_reason:
+        type: string
+      cancelled_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      end_date:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.AddonAssociationEntityType'
+      environment_id:
+        type: string
+      id:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      start_date:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  dto.AddonResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      entitlements:
+        items:
+          $ref: '#/definitions/dto.EntitlementResponse'
+        type: array
+      environment_id:
+        type: string
+      id:
+        type: string
+      lookup_key:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      prices:
+        description: Optional expanded fields
+        items:
+          $ref: '#/definitions/dto.PriceResponse'
+        type: array
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      type:
+        $ref: '#/definitions/types.AddonType'
+      updated_at:
+        type: string
+      updated_by:
+        type: string
     type: object
   dto.Address:
     properties:
@@ -281,8 +372,6 @@ definitions:
         type: string
       created_by:
         type: string
-      encrypted_secret_data:
-        $ref: '#/definitions/types.ConnectionMetadata'
       environment_id:
         type: string
       id:
@@ -495,6 +584,99 @@ definitions:
       secret:
         $ref: '#/definitions/dto.SecretResponse'
     type: object
+  dto.CreateAddonRequest:
+    properties:
+      description:
+        type: string
+      lookup_key:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      type:
+        $ref: '#/definitions/types.AddonType'
+    required:
+    - lookup_key
+    - name
+    - type
+    type: object
+  dto.CreateAddonResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      entitlements:
+        items:
+          $ref: '#/definitions/dto.EntitlementResponse'
+        type: array
+      environment_id:
+        type: string
+      id:
+        type: string
+      lookup_key:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      prices:
+        description: Optional expanded fields
+        items:
+          $ref: '#/definitions/dto.PriceResponse'
+        type: array
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      type:
+        $ref: '#/definitions/types.AddonType'
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  dto.CreateBulkEntitlementRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.CreateEntitlementRequest'
+        maxItems: 100
+        minItems: 1
+        type: array
+    required:
+    - items
+    type: object
+  dto.CreateBulkEntitlementResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.EntitlementResponse'
+        type: array
+    type: object
+  dto.CreateBulkPriceRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.CreatePriceRequest'
+        maxItems: 100
+        minItems: 1
+        type: array
+    required:
+    - items
+    type: object
+  dto.CreateBulkPriceResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.PriceResponse'
+        type: array
+    type: object
   dto.CreateConnectionRequest:
     properties:
       encrypted_secret_data:
@@ -663,39 +845,67 @@ definitions:
     - reason
     type: object
   dto.CreateCustomerRequest:
+    description: Request object for creating a new customer in the system
     properties:
       address_city:
+        description: address_city is the city name with maximum 100 characters
         maxLength: 100
         type: string
       address_country:
+        description: address_country is the two-letter ISO 3166-1 alpha-2 country
+          code
         type: string
       address_line1:
+        description: address_line1 is the primary address line with maximum 255 characters
         maxLength: 255
         type: string
       address_line2:
+        description: address_line2 is the secondary address line with maximum 255
+          characters
         maxLength: 255
         type: string
       address_postal_code:
+        description: address_postal_code is the ZIP code or postal code with maximum
+          20 characters
         maxLength: 20
         type: string
       address_state:
+        description: address_state is the state, province, or region name with maximum
+          100 characters
         maxLength: 100
         type: string
       email:
+        description: email is the customer's email address and must be a valid email
+          format if provided
         type: string
       external_id:
+        description: external_id is the unique identifier from your system to reference
+          this customer (required)
         type: string
       metadata:
         additionalProperties:
           type: string
+        description: metadata contains additional key-value pairs for storing extra
+          information
         type: object
       name:
+        description: name is the full name or company name of the customer
         type: string
+      tax_rate_overrides:
+        description: tax_rate_overrides contains tax rate configurations to be linked
+          to this customer
+        items:
+          $ref: '#/definitions/dto.TaxRateOverride'
+        type: array
     required:
     - external_id
     type: object
   dto.CreateEntitlementRequest:
     properties:
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.EntitlementEntityType'
       feature_id:
         type: string
       feature_type:
@@ -796,6 +1006,14 @@ definitions:
         description: display_name is the optional human-readable name for this line
           item
         type: string
+      entity_id:
+        description: entity_id is the optional unique identifier of the entity associated
+          with this line item
+        type: string
+      entity_type:
+        description: entity_type is the optional type of the entity associated with
+          this line item
+        type: string
       metadata:
         allOf:
         - $ref: '#/definitions/types.Metadata'
@@ -822,8 +1040,9 @@ definitions:
           plan
         type: string
       plan_id:
-        description: plan_id is the optional unique identifier of the plan associated
-          with this line item
+        description: |-
+          TODO: !REMOVE after migration
+          plan_id is the optional unique identifier of the plan associated with this line item
         type: string
       price_id:
         description: price_id is the optional unique identifier of the price associated
@@ -893,6 +1112,11 @@ definitions:
         description: idempotency_key is an optional key used to prevent duplicate
           invoice creation
         type: string
+      invoice_coupons:
+        description: Invoice Coupns
+        items:
+          $ref: '#/definitions/dto.InvoiceCoupon'
+        type: array
       invoice_number:
         description: invoice_number is an optional human-readable identifier for the
           invoice
@@ -911,6 +1135,11 @@ definitions:
         - $ref: '#/definitions/types.InvoiceType'
         description: invoice_type indicates the type of invoice (subscription, one_time,
           etc.)
+      line_item_coupons:
+        description: Invoice Line Item Coupons
+        items:
+          $ref: '#/definitions/dto.InvoiceLineItemCoupon'
+        type: array
       line_items:
         description: line_items contains the individual items that make up this invoice
         items:
@@ -932,6 +1161,13 @@ definitions:
       period_start:
         description: period_start is the start date of the billing period
         type: string
+      prepared_tax_rates:
+        description: |-
+          prepared_tax_rates contains the tax rates pre-resolved by the caller (e.g., billing service)
+          These are applied at invoice level by the invoice service without further resolution
+        items:
+          $ref: '#/definitions/dto.TaxRateResponse'
+        type: array
       subscription_id:
         description: subscription_id is the optional unique identifier of the subscription
           associated with this invoice
@@ -939,6 +1175,17 @@ definitions:
       subtotal:
         description: subtotal is the amount before taxes and discounts are applied
         type: number
+      tax_rate_overrides:
+        description: tax_rate_overrides is the tax rate overrides to be applied to
+          the invoice
+        items:
+          $ref: '#/definitions/dto.TaxRateOverride'
+        type: array
+      tax_rates:
+        description: tax_rates
+        items:
+          type: string
+        type: array
       total:
         description: total is the total amount of the invoice including taxes and
           discounts
@@ -976,6 +1223,12 @@ definitions:
     properties:
       amount:
         type: number
+      cancel_url:
+        type: string
+      connection_id:
+        type: string
+      connection_name:
+        type: string
       currency:
         type: string
       destination_id:
@@ -995,6 +1248,8 @@ definitions:
       process_payment:
         default: true
         type: boolean
+      success_url:
+        type: string
     required:
     - amount
     - currency
@@ -1004,6 +1259,10 @@ definitions:
     type: object
   dto.CreatePlanEntitlementRequest:
     properties:
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.EntitlementEntityType'
       feature_id:
         type: string
       feature_type:
@@ -1041,6 +1300,15 @@ definitions:
         type: string
       description:
         type: string
+      entity_id:
+        description: 'TODO: this will be required in the future as we will not allow
+          prices to be created without an entity id'
+        type: string
+      entity_type:
+        allOf:
+        - $ref: '#/definitions/types.PriceEntityType'
+        description: 'TODO: this will be required in the future as we will not allow
+          prices to be created without an entity type'
       filter_values:
         additionalProperties:
           items:
@@ -1058,6 +1326,7 @@ definitions:
       meter_id:
         type: string
       plan_id:
+        description: 'TODO: This is deprecated and will be removed in the future'
         type: string
       price_unit_config:
         $ref: '#/definitions/dto.PriceUnitConfig'
@@ -1099,6 +1368,8 @@ definitions:
         type: array
       lookup_key:
         type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
       name:
         type: string
       prices:
@@ -1125,6 +1396,15 @@ definitions:
         type: string
       description:
         type: string
+      entity_id:
+        description: 'TODO: this will be required in the future as we will not allow
+          prices to be created without an entity id'
+        type: string
+      entity_type:
+        allOf:
+        - $ref: '#/definitions/types.PriceEntityType'
+        description: 'TODO: this will be required in the future as we will not allow
+          prices to be created without an entity type'
       filter_values:
         additionalProperties:
           items:
@@ -1142,6 +1422,7 @@ definitions:
       meter_id:
         type: string
       plan_id:
+        description: 'TODO: This is deprecated and will be removed in the future'
         type: string
       price_unit_config:
         $ref: '#/definitions/dto.PriceUnitConfig'
@@ -1172,10 +1453,19 @@ definitions:
   dto.CreatePriceTier:
     properties:
       flat_amount:
+        description: |-
+          flat_amount is the flat amount for the given tier (optional)
+          Applied on top of unit_amount*quantity. Useful for cases like "2.7$ + 5c"
         type: string
       unit_amount:
+        description: unit_amount is the amount per unit for the given tier
         type: string
       up_to:
+        description: |-
+          up_to is the quantity up to which this tier applies. It is null for the last tier.
+          IMPORTANT: Tier boundaries are INCLUSIVE.
+          - If up_to is 1000, then quantity less than or equal to 1000 belongs to this tier
+          - This behavior is consistent across both VOLUME and SLAB tier modes
         type: integer
     required:
     - unit_amount
@@ -1206,6 +1496,12 @@ definitions:
     type: object
   dto.CreateSubscriptionRequest:
     properties:
+      addons:
+        description: Addons represents addons to be added to the subscription during
+          creation
+        items:
+          $ref: '#/definitions/dto.AddAddonToSubscriptionRequest'
+        type: array
       billing_cadence:
         $ref: '#/definitions/types.BillingCadence'
       billing_cycle:
@@ -1224,10 +1520,23 @@ definitions:
       billing_period_count:
         minimum: 1
         type: integer
+      collection_method:
+        allOf:
+        - $ref: '#/definitions/types.CollectionMethod'
+        description: |-
+          collection_method determines how invoices are collected
+          "default_incomplete" - subscription waits for payment confirmation before activation
+          "send_invoice" - subscription activates immediately, invoice is sent for payment
       commitment_amount:
         description: CommitmentAmount is the minimum amount a customer commits to
           paying for a billing period
         type: number
+      coupons:
+        description: SubscriptionCoupons is a list of coupon IDs to be applied to
+          the subscription
+        items:
+          type: string
+        type: array
       credit_grants:
         description: Credit grants to be applied when subscription is created
         items:
@@ -1247,6 +1556,14 @@ definitions:
           external_customer_id is the customer id in your DB
           and must be same as what you provided as external_id while creating the customer in flexprice.
         type: string
+      line_item_coupons:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        description: SubscriptionLineItemsCoupons is a list of coupon IDs to be applied
+          to the subscription line items
+        type: object
       lookup_key:
         type: string
       metadata:
@@ -1272,11 +1589,11 @@ definitions:
         type: string
       start_date:
         type: string
-      subscription_coupons:
-        description: SubscriptionCoupons is a list of coupon IDs to be applied to
-          the subscription
+      tax_rate_overrides:
+        description: "tax_rate_overrides is the tax rate overrides\tto be applied
+          to the subscription"
         items:
-          type: string
+          $ref: '#/definitions/dto.TaxRateOverride'
         type: array
       trial_end:
         type: string
@@ -1288,7 +1605,6 @@ definitions:
     - billing_period_count
     - currency
     - plan_id
-    - start_date
     type: object
   dto.CreateTaskRequest:
     properties:
@@ -1310,6 +1626,69 @@ definitions:
     - file_type
     - file_url
     - task_type
+    type: object
+  dto.CreateTaxAssociationRequest:
+    properties:
+      auto_apply:
+        type: boolean
+      currency:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.TaxRateEntityType'
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      priority:
+        type: integer
+      tax_rate_code:
+        type: string
+    required:
+    - entity_id
+    - entity_type
+    - tax_rate_code
+    type: object
+  dto.CreateTaxRateRequest:
+    properties:
+      code:
+        description: code is the unique alphanumeric case sensitive identifier for
+          the tax rate (required)
+        type: string
+      description:
+        description: description is an optional text description providing details
+          about the tax rate
+        type: string
+      fixed_value:
+        description: fixed_value is the fixed monetary amount when tax_rate_type is
+          "fixed"
+        type: number
+      metadata:
+        additionalProperties:
+          type: string
+        description: metadata contains additional key-value pairs for storing extra
+          information
+        type: object
+      name:
+        description: name is the human-readable name for the tax rate (required)
+        type: string
+      percentage_value:
+        description: percentage_value is the percentage value (0-100) when tax_rate_type
+          is "percentage"
+        type: number
+      scope:
+        allOf:
+        - $ref: '#/definitions/types.TaxRateScope'
+        description: scope defines where this tax rate applies
+      tax_rate_type:
+        allOf:
+        - $ref: '#/definitions/types.TaxRateType'
+        description: tax_rate_type determines how the tax is calculated ("percentage"
+          or "fixed")
+    required:
+    - code
+    - name
     type: object
   dto.CreateTenantRequest:
     properties:
@@ -1595,6 +1974,7 @@ definitions:
         type: array
     type: object
   dto.CustomerResponse:
+    description: Customer response object containing all customer information
     properties:
       address_city:
         description: AddressCity is the city of the customer's address
@@ -1663,10 +2043,16 @@ definitions:
     type: object
   dto.EntitlementResponse:
     properties:
+      addon:
+        $ref: '#/definitions/dto.AddonResponse'
       created_at:
         type: string
       created_by:
         type: string
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.EntitlementEntityType'
       environment_id:
         type: string
       feature:
@@ -1684,6 +2070,7 @@ definitions:
       plan:
         $ref: '#/definitions/dto.PlanResponse'
       plan_id:
+        description: 'TODO: Remove this once we have a proper entitlement entity type'
         type: string
       static_value:
         type: string
@@ -1704,12 +2091,14 @@ definitions:
     properties:
       entitlement_id:
         type: string
+      entity_id:
+        type: string
+      entity_name:
+        type: string
+      entity_type:
+        $ref: '#/definitions/dto.EntitlementSourceEntityType'
       is_enabled:
         type: boolean
-      plan_id:
-        type: string
-      plan_name:
-        type: string
       quantity:
         type: integer
       static_value:
@@ -1719,6 +2108,14 @@ definitions:
       usage_limit:
         type: integer
     type: object
+  dto.EntitlementSourceEntityType:
+    enum:
+    - plan
+    - addon
+    type: string
+    x-enum-varnames:
+    - EntitlementSourceEntityTypePlan
+    - EntitlementSourceEntityTypeAddon
   dto.EntityIntegrationMappingResponse:
     properties:
       created_at:
@@ -1726,31 +2123,16 @@ definitions:
       created_by:
         type: string
       entity_id:
-        description: EntityID is the FlexPrice entity ID (e.g., customer_id, plan_id,
-          etc.)
         type: string
       entity_type:
-        allOf:
-        - $ref: '#/definitions/types.IntegrationEntityType'
-        description: EntityType is the type of entity (e.g., customer, plan, invoice,
-          subscription, etc.)
+        $ref: '#/definitions/types.IntegrationEntityType'
       environment_id:
-        description: EnvironmentID is the environment identifier
         type: string
       id:
-        description: ID is the unique identifier for the mapping
         type: string
-      metadata:
-        additionalProperties: true
-        description: Metadata contains provider-specific data
-        type: object
       provider_entity_id:
-        description: ProviderEntityID is the provider's entity ID (e.g., stripe_customer_id,
-          etc.)
         type: string
       provider_type:
-        description: ProviderType is the payment provider type (e.g., stripe, razorpay,
-          etc.)
         type: string
       status:
         $ref: '#/definitions/types.Status'
@@ -1986,6 +2368,11 @@ definitions:
     type: object
   dto.GetUsageByMeterRequest:
     properties:
+      bucket_size:
+        allOf:
+        - $ref: '#/definitions/types.WindowSize'
+        description: Optional, only used for MAX aggregation with windowing
+        example: HOUR
       customer_id:
         example: customer456
         type: string
@@ -2063,6 +2450,11 @@ definitions:
     properties:
       aggregation_type:
         $ref: '#/definitions/types.AggregationType'
+      bucket_size:
+        allOf:
+        - $ref: '#/definitions/types.WindowSize'
+        description: Optional, only used for MAX aggregation with windowing
+        example: HOUR
       customer_id:
         example: customer456
         type: string
@@ -2142,6 +2534,35 @@ definitions:
     - event_name
     - external_customer_id
     type: object
+  dto.InvoiceCoupon:
+    properties:
+      amount_off:
+        type: number
+      coupon_association_id:
+        type: string
+      coupon_id:
+        type: string
+      percentage_off:
+        type: number
+      type:
+        $ref: '#/definitions/types.CouponType'
+    type: object
+  dto.InvoiceLineItemCoupon:
+    properties:
+      amount_off:
+        type: number
+      coupon_association_id:
+        type: string
+      coupon_id:
+        type: string
+      line_item_id:
+        description: ID of the invoice line item this coupon applies to
+        type: string
+      percentage_off:
+        type: number
+      type:
+        $ref: '#/definitions/types.CouponType'
+    type: object
   dto.InvoiceLineItemResponse:
     properties:
       amount:
@@ -2165,6 +2586,14 @@ definitions:
       display_name:
         description: display_name is the optional human-readable name for this line
           item
+        type: string
+      entity_id:
+        description: entity_id is the optional unique identifier of the entity associated
+          with this line item
+        type: string
+      entity_type:
+        description: entity_type is the optional type of the entity associated with
+          this line item
         type: string
       id:
         description: id is the unique identifier for this line item
@@ -2243,6 +2672,11 @@ definitions:
         description: updated_by is the identifier of the user who last updated this
           line item
         type: string
+      usage_analytics:
+        description: usage_analytics contains usage analytics for this line item
+        items:
+          $ref: '#/definitions/dto.SourceUsageItem'
+        type: array
     type: object
   dto.InvoiceResponse:
     properties:
@@ -2337,6 +2771,10 @@ definitions:
         - $ref: '#/definitions/types.Metadata'
         description: metadata contains additional custom key-value pairs for storing
           extra information
+      overpaid_amount:
+        description: overpaid_amount is the amount overpaid if payment_status is OVERPAID
+          (amount_paid - total)
+        type: number
       paid_at:
         description: paid_at is the timestamp when this invoice was paid
         type: string
@@ -2366,6 +2804,12 @@ definitions:
       subtotal:
         description: subtotal is the amount before taxes and discounts are applied
         type: number
+      taxes:
+        description: tax_applied_records contains the tax applied records associated
+          with this invoice
+        items:
+          $ref: '#/definitions/dto.TaxAppliedResponse'
+        type: array
       tenant_id:
         description: tenant_id is the unique identifier of the tenant this invoice
           belongs to
@@ -2376,6 +2820,9 @@ definitions:
         type: number
       total_discount:
         description: total_discount is the total discount amount from coupon applications
+        type: number
+      total_tax:
+        description: total_tax is the total tax amount for this invoice
         type: number
       updated_at:
         description: updated_at is the timestamp when this invoice was last updated
@@ -2397,6 +2844,15 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  dto.ListAddonsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.AddonResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.ListConnectionsResponse:
     properties:
@@ -2448,6 +2904,7 @@ definitions:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.ListCustomersResponse:
+    description: Response object for listing customers with pagination
     properties:
       items:
         items:
@@ -2551,12 +3008,19 @@ definitions:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
   dto.ListSubscriptionPausesResponse:
+    description: Response object for listing subscription pauses with total count
     properties:
       items:
+        description: |-
+          List of subscription pause objects
+          @Description Array of subscription pauses
         items:
           $ref: '#/definitions/dto.SubscriptionPauseResponse'
         type: array
       total:
+        description: |-
+          Total number of pauses
+          @Description Total count of subscription pauses in the response
         type: integer
     type: object
   dto.ListSubscriptionsResponse:
@@ -2573,6 +3037,15 @@ definitions:
       items:
         items:
           $ref: '#/definitions/dto.TaskResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
+  dto.ListTaxAssociationsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.TaxAssociationResponse'
         type: array
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
@@ -2647,22 +3120,53 @@ definitions:
     - price_id
     type: object
   dto.PauseSubscriptionRequest:
+    description: Request object for pausing an active subscription with various pause
+      modes and options
     properties:
       dry_run:
+        description: |-
+          Whether to perform a dry run
+          @Description If true, validates the request and shows impact without actually pausing the subscription
+          @Example false
         type: boolean
       metadata:
         additionalProperties:
           type: string
+        description: |-
+          Additional metadata as key-value pairs
+          @Description Optional metadata for storing additional information about the pause
+          @Example {"requested_by": "customer", "channel": "support_ticket"}
         type: object
       pause_days:
+        description: |-
+          Duration of the pause in days
+          @Description Number of days to pause the subscription. Cannot be used together with pause_end. Must be greater than 0
+          @Example 30
         type: integer
       pause_end:
+        description: |-
+          End date for the subscription pause
+          @Description ISO 8601 timestamp when the pause should end. Cannot be used together with pause_days. Must be after pause_start
+          @Example "2024-02-15T00:00:00Z"
         type: string
       pause_mode:
-        $ref: '#/definitions/types.PauseMode'
+        allOf:
+        - $ref: '#/definitions/types.PauseMode'
+        description: |-
+          Mode for pausing the subscription
+          @Description Determines when the pause takes effect. "immediate" pauses right away, "scheduled" pauses at a specified time
+          @Enum immediate,scheduled
       pause_start:
+        description: |-
+          Start date for the subscription pause
+          @Description ISO 8601 timestamp when the pause should begin. Required when pause_mode is "scheduled"
+          @Example "2024-01-15T00:00:00Z"
         type: string
       reason:
+        description: |-
+          Reason for pausing the subscription
+          @Description Optional reason for the pause. Maximum 255 characters
+          @Example "Customer requested temporary suspension"
         maxLength: 255
         type: string
     required:
@@ -2739,8 +3243,6 @@ definitions:
         type: string
       refunded_at:
         type: string
-      session_id:
-        type: string
       succeeded_at:
         type: string
       tenant_id:
@@ -2774,9 +3276,12 @@ definitions:
         type: string
       lookup_key:
         type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
       name:
         type: string
       prices:
+        description: 'TODO: Add inline addons'
         items:
           $ref: '#/definitions/dto.PriceResponse'
         type: array
@@ -2832,6 +3337,13 @@ definitions:
           DisplayPriceUnitAmount is the formatted amount with price unit symbol
           For BTC: 0.00000001 BTC
         type: string
+      entity_id:
+        description: EntityID holds the value of the "entity_id" field.
+        type: string
+      entity_type:
+        allOf:
+        - $ref: '#/definitions/types.PriceEntityType'
+        description: EntityType holds the value of the "entity_type" field.
       environment_id:
         description: EnvironmentID is the environment identifier for the price
         type: string
@@ -2851,11 +3363,11 @@ definitions:
         description: MeterID is the id of the meter for usage based pricing
         type: string
       parent_price_id:
-        description: ParentPriceID references the original price (only set when scope
+        description: ParentPriceID references the parent price (only set when scope
           is SUBSCRIPTION)
         type: string
       plan_id:
-        description: PlanID is the id of the plan for plan based pricing
+        description: 'TODO: Remove this once we have a proper price entity type'
         type: string
       price_unit:
         description: |-
@@ -2879,18 +3391,10 @@ definitions:
         allOf:
         - $ref: '#/definitions/types.PriceUnitType'
         description: PriceUnitType is the type of the price unit- Fiat, Custom, Crypto
-      scope:
-        allOf:
-        - $ref: '#/definitions/types.PriceScope'
-        description: |-
-          Price override fields
-          Scope indicates if this is a plan-level or subscription-level price
+      pricing_unit:
+        $ref: '#/definitions/dto.PriceUnitResponse'
       status:
         $ref: '#/definitions/types.Status'
-      subscription_id:
-        description: SubscriptionID references the subscription (only set when scope
-          is SUBSCRIPTION)
-        type: string
       tenant_id:
         type: string
       tier_mode:
@@ -2936,6 +3440,10 @@ definitions:
         type: number
       created_at:
         type: string
+      created_by:
+        type: string
+      environment_id:
+        type: string
       id:
         type: string
       name:
@@ -2946,7 +3454,11 @@ definitions:
         $ref: '#/definitions/types.Status'
       symbol:
         type: string
+      tenant_id:
+        type: string
       updated_at:
+        type: string
+      updated_by:
         type: string
     type: object
   dto.ROIResponse:
@@ -2975,16 +3487,42 @@ definitions:
       revenue:
         type: number
     type: object
+  dto.RemoveAddonRequest:
+    properties:
+      addon_id:
+        type: string
+      reason:
+        type: string
+      subscription_id:
+        type: string
+    required:
+    - addon_id
+    - subscription_id
+    type: object
   dto.ResumeSubscriptionRequest:
+    description: Request object for resuming a paused subscription
     properties:
       dry_run:
+        description: |-
+          Whether to perform a dry run
+          @Description If true, validates the request and shows impact without actually resuming the subscription
+          @Example false
         type: boolean
       metadata:
         additionalProperties:
           type: string
+        description: |-
+          Additional metadata as key-value pairs
+          @Description Optional metadata for storing additional information about the resume operation
+          @Example {"resumed_by": "admin", "reason": "issue_resolved"}
         type: object
       resume_mode:
-        $ref: '#/definitions/types.ResumeMode'
+        allOf:
+        - $ref: '#/definitions/types.ResumeMode'
+        description: |-
+          Mode for resuming the subscription
+          @Description Determines how the subscription should be resumed
+          @Enum immediate,scheduled
     required:
     - resume_mode
     type: object
@@ -3029,6 +3567,26 @@ definitions:
     required:
     - email
     type: object
+  dto.SourceUsageItem:
+    properties:
+      cost:
+        description: cost is the cost attributed to this source for the line item
+        type: string
+      event_count:
+        description: event_count is the number of events from this source (optional)
+        type: integer
+      percentage:
+        description: percentage is the percentage of total line item cost from this
+          source (optional)
+        type: string
+      source:
+        description: source is the name of the event source
+        type: string
+      usage:
+        description: usage is the total usage amount from this source (optional, for
+          additional context)
+        type: string
+    type: object
   dto.SubscriptionLineItemRequest:
     properties:
       display_name:
@@ -3061,6 +3619,10 @@ definitions:
         type: string
       end_date:
         type: string
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.SubscriptionLineItemEntitiyType'
       environment_id:
         type: string
       id:
@@ -3076,8 +3638,6 @@ definitions:
       meter_id:
         type: string
       plan_display_name:
-        type: string
-      plan_id:
         type: string
       price_id:
         type: string
@@ -3105,6 +3665,7 @@ definitions:
         type: string
     type: object
   dto.SubscriptionPauseResponse:
+    description: Response object containing subscription pause information
     properties:
       created_at:
         type: string
@@ -3441,6 +4002,157 @@ definitions:
       updated_by:
         type: string
     type: object
+  dto.TaxAppliedResponse:
+    properties:
+      applied_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.TaxRateEntityType'
+      environment_id:
+        type: string
+      id:
+        type: string
+      idempotency_key:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      status:
+        $ref: '#/definitions/types.Status'
+      tax_amount:
+        type: number
+      tax_association_id:
+        type: string
+      tax_rate_id:
+        type: string
+      taxable_amount:
+        type: number
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  dto.TaxAssociationResponse:
+    properties:
+      auto_apply:
+        type: boolean
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.TaxRateEntityType'
+      environment_id:
+        type: string
+      id:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      priority:
+        type: integer
+      status:
+        type: string
+      tax_rate:
+        $ref: '#/definitions/dto.TaxRateResponse'
+      tax_rate_id:
+        type: string
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      valid_from:
+        type: string
+      valid_to:
+        type: string
+    type: object
+  dto.TaxAssociationUpdateRequest:
+    properties:
+      auto_apply:
+        type: boolean
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      priority:
+        type: integer
+    type: object
+  dto.TaxRateOverride:
+    properties:
+      auto_apply:
+        default: true
+        type: boolean
+      currency:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      priority:
+        type: integer
+      tax_rate_code:
+        type: string
+    required:
+    - currency
+    - tax_rate_code
+    type: object
+  dto.TaxRateResponse:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      environment_id:
+        type: string
+      fixed_value:
+        type: number
+      id:
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      percentage_value:
+        type: number
+      scope:
+        $ref: '#/definitions/types.TaxRateScope'
+      status:
+        $ref: '#/definitions/types.Status'
+      tax_rate_status:
+        $ref: '#/definitions/types.TaxRateStatus'
+      tax_rate_type:
+        $ref: '#/definitions/types.TaxRateType'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   dto.TenantBillingDetails:
     properties:
       address:
@@ -3528,6 +4240,16 @@ definitions:
     - idempotency_key
     - transaction_reason
     type: object
+  dto.UpdateAddonRequest:
+    properties:
+      description:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+    type: object
   dto.UpdateConnectionRequest:
     properties:
       name:
@@ -3562,33 +4284,52 @@ definitions:
         type: string
     type: object
   dto.UpdateCustomerRequest:
+    description: Request object for updating an existing customer. All fields are
+      optional - only provided fields will be updated
     properties:
       address_city:
+        description: address_city is the updated city name with maximum 100 characters
         maxLength: 100
         type: string
       address_country:
+        description: address_country is the updated two-letter ISO 3166-1 alpha-2
+          country code
         type: string
       address_line1:
+        description: address_line1 is the updated primary address line with maximum
+          255 characters
         maxLength: 255
         type: string
       address_line2:
+        description: address_line2 is the updated secondary address line with maximum
+          255 characters
         maxLength: 255
         type: string
       address_postal_code:
+        description: address_postal_code is the updated postal code with maximum 20
+          characters
         maxLength: 20
         type: string
       address_state:
+        description: address_state is the updated state, province, or region name
+          with maximum 100 characters
         maxLength: 100
         type: string
       email:
+        description: email is the updated email address and must be a valid email
+          format if provided
         type: string
       external_id:
+        description: external_id is the updated external identifier for the customer
         type: string
       metadata:
         additionalProperties:
           type: string
+        description: metadata contains updated key-value pairs that will replace existing
+          metadata
         type: object
       name:
+        description: name is the updated name or company name for the customer
         type: string
     type: object
   dto.UpdateEntitlementRequest:
@@ -3707,6 +4448,10 @@ definitions:
     type: object
   dto.UpdatePlanEntitlementRequest:
     properties:
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.EntitlementEntityType'
       feature_id:
         type: string
       feature_type:
@@ -3748,6 +4493,15 @@ definitions:
         type: string
       description:
         type: string
+      entity_id:
+        description: 'TODO: this will be required in the future as we will not allow
+          prices to be created without an entity id'
+        type: string
+      entity_type:
+        allOf:
+        - $ref: '#/definitions/types.PriceEntityType'
+        description: 'TODO: this will be required in the future as we will not allow
+          prices to be created without an entity type'
       filter_values:
         additionalProperties:
           items:
@@ -3769,6 +4523,7 @@ definitions:
       meter_id:
         type: string
       plan_id:
+        description: 'TODO: This is deprecated and will be removed in the future'
         type: string
       price_unit_config:
         $ref: '#/definitions/dto.PriceUnitConfig'
@@ -3810,6 +4565,8 @@ definitions:
         type: array
       lookup_key:
         type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
       name:
         type: string
       prices:
@@ -3848,6 +4605,30 @@ definitions:
         $ref: '#/definitions/types.TaskStatus'
     required:
     - task_status
+    type: object
+  dto.UpdateTaxRateRequest:
+    properties:
+      code:
+        description: code is the updated unique alphanumeric identifier for the tax
+          rate
+        type: string
+      description:
+        description: description is the updated text description for the tax rate
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        description: metadata contains updated key-value pairs that will replace existing
+          metadata
+        type: object
+      name:
+        description: name is the updated human-readable name for the tax rate
+        type: string
+      tax_rate_status:
+        allOf:
+        - $ref: '#/definitions/types.TaxRateStatus'
+        description: tax_rate_type determines how the tax is calculated ("percentage"
+          or "fixed")
     type: object
   dto.UpdateTenantRequest:
     properties:
@@ -4119,6 +4900,12 @@ definitions:
     type: object
   meter.Aggregation:
     properties:
+      bucket_size:
+        allOf:
+        - $ref: '#/definitions/types.WindowSize'
+        description: |-
+          BucketSize is used only for MAX aggregation when windowed aggregation is needed
+          It defines the size of time windows to calculate max values within
       field:
         description: |-
           Field is the key in $event.properties on which the aggregation is to be applied
@@ -4128,7 +4915,7 @@ definitions:
         description: |-
           Multiplier is the multiplier for the aggregation
           For ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000
-          to scale up by a factor of 1000
+          to scale up by a factor of 1000. If not provided, it will be null.
         type: number
       type:
         $ref: '#/definitions/types.AggregationType'
@@ -4210,6 +4997,13 @@ definitions:
           DisplayPriceUnitAmount is the formatted amount with price unit symbol
           For BTC: 0.00000001 BTC
         type: string
+      entity_id:
+        description: EntityID holds the value of the "entity_id" field.
+        type: string
+      entity_type:
+        allOf:
+        - $ref: '#/definitions/types.PriceEntityType'
+        description: EntityType holds the value of the "entity_type" field.
       environment_id:
         description: EnvironmentID is the environment identifier for the price
         type: string
@@ -4227,11 +5021,8 @@ definitions:
         description: MeterID is the id of the meter for usage based pricing
         type: string
       parent_price_id:
-        description: ParentPriceID references the original price (only set when scope
+        description: ParentPriceID references the parent price (only set when scope
           is SUBSCRIPTION)
-        type: string
-      plan_id:
-        description: PlanID is the id of the plan for plan based pricing
         type: string
       price_unit:
         description: |-
@@ -4255,18 +5046,8 @@ definitions:
         allOf:
         - $ref: '#/definitions/types.PriceUnitType'
         description: PriceUnitType is the type of the price unit- Fiat, Custom, Crypto
-      scope:
-        allOf:
-        - $ref: '#/definitions/types.PriceScope'
-        description: |-
-          Price override fields
-          Scope indicates if this is a plan-level or subscription-level price
       status:
         $ref: '#/definitions/types.Status'
-      subscription_id:
-        description: SubscriptionID references the subscription (only set when scope
-          is SUBSCRIPTION)
-        type: string
       tenant_id:
         type: string
       tier_mode:
@@ -4293,15 +5074,18 @@ definitions:
     properties:
       flat_amount:
         description: |-
-          FlatAmount is the flat amount for the given tier and it is applied
-          on top of the unit amount*quantity. It solves cases in banking like 2.7% + 5c
+          flat_amount is the flat amount for the given tier (optional)
+          Applied on top of unit_amount*quantity. Useful for cases like "2.7$ + 5c"
         type: number
       unit_amount:
-        description: UnitAmount is the amount per unit for the given tier
+        description: unit_amount is the amount per unit for the given tier
         type: number
       up_to:
-        description: Upto is the quantity up to which this tier applies. It is null
-          for the last tier
+        description: |-
+          up_to is the quantity up to which this tier applies. It is null for the last tier.
+          IMPORTANT: Tier boundaries are INCLUSIVE.
+          - If up_to is 1000, then quantity less than or equal to 1000 belongs to this tier
+          - This behavior is consistent across both VOLUME and SLAB tier modes
         type: integer
     type: object
   price.TransformQuantity:
@@ -4312,6 +5096,37 @@ definitions:
       round:
         description: up or down
         type: string
+    type: object
+  priceunit.PriceUnitFilter:
+    properties:
+      environment_id:
+        description: EnvironmentID filters by specific environment ID
+        type: string
+      filters:
+        description: Filters allows complex filtering based on multiple fields
+        items:
+          $ref: '#/definitions/types.FilterCondition'
+        type: array
+      queryFilter:
+        allOf:
+        - $ref: '#/definitions/types.QueryFilter'
+        description: QueryFilter contains pagination and basic query parameters
+      sort:
+        description: Sort allows sorting by multiple fields
+        items:
+          $ref: '#/definitions/types.SortCondition'
+        type: array
+      status:
+        allOf:
+        - $ref: '#/definitions/types.Status'
+        description: Status filters by price unit status
+      tenant_id:
+        description: TenantID filters by specific tenant ID
+        type: string
+      timeRangeFilter:
+        allOf:
+        - $ref: '#/definitions/types.TimeRangeFilter'
+        description: TimeRangeFilter allows filtering by time periods
     type: object
   service.SyncPlanPricesResponse:
     properties:
@@ -4349,6 +5164,10 @@ definitions:
         type: string
       end_date:
         type: string
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.SubscriptionLineItemEntitiyType'
       environment_id:
         type: string
       id:
@@ -4364,8 +5183,6 @@ definitions:
       meter_id:
         type: string
       plan_display_name:
-        type: string
-      plan_id:
         type: string
       price_id:
         type: string
@@ -4444,6 +5261,76 @@ definitions:
       updated_by:
         type: string
     type: object
+  types.AddonAssociationEntityType:
+    enum:
+    - subscription
+    - plan
+    - addon
+    type: string
+    x-enum-varnames:
+    - AddonAssociationEntityTypeSubscription
+    - AddonAssociationEntityTypePlan
+    - AddonAssociationEntityTypeAddon
+  types.AddonFilter:
+    properties:
+      addon_ids:
+        items:
+          type: string
+        type: array
+      addon_type:
+        $ref: '#/definitions/types.AddonType'
+      end_time:
+        type: string
+      expand:
+        type: string
+      filters:
+        description: filters allows complex filtering based on multiple fields
+        items:
+          $ref: '#/definitions/types.FilterCondition'
+        type: array
+      limit:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      lookup_keys:
+        items:
+          type: string
+        type: array
+      offset:
+        minimum: 0
+        type: integer
+      order:
+        enum:
+        - asc
+        - desc
+        type: string
+      sort:
+        items:
+          $ref: '#/definitions/types.SortCondition'
+        type: array
+      start_time:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+    type: object
+  types.AddonStatus:
+    enum:
+    - active
+    - cancelled
+    - paused
+    type: string
+    x-enum-varnames:
+    - AddonStatusActive
+    - AddonStatusCancelled
+    - AddonStatusPaused
+  types.AddonType:
+    enum:
+    - onetime
+    - multiple
+    type: string
+    x-enum-varnames:
+    - AddonTypeOnetime
+    - AddonTypeMultiple
   types.AggregationType:
     enum:
     - COUNT
@@ -4452,6 +5339,7 @@ definitions:
     - COUNT_UNIQUE
     - LATEST
     - SUM_WITH_MULTIPLIER
+    - MAX
     type: string
     x-enum-comments:
       AggregationSumWithMultiplier: Sum with a multiplier - [sum(value) * multiplier]
@@ -4462,6 +5350,7 @@ definitions:
     - ""
     - ""
     - Sum with a multiplier - [sum(value) * multiplier]
+    - ""
     x-enum-varnames:
     - AggregationCount
     - AggregationSum
@@ -4469,6 +5358,7 @@ definitions:
     - AggregationCountUnique
     - AggregationLatest
     - AggregationSumWithMultiplier
+    - AggregationMax
   types.AlertConfig:
     properties:
       threshold:
@@ -4540,6 +5430,58 @@ definitions:
     x-enum-varnames:
     - BILLING_TIER_VOLUME
     - BILLING_TIER_SLAB
+  types.CollectionMethod:
+    enum:
+    - default_incomplete
+    - send_invoice
+    type: string
+    x-enum-varnames:
+    - CollectionMethodDefaultIncomplete
+    - CollectionMethodSendInvoice
+  types.ConnectionFilter:
+    properties:
+      connection_ids:
+        items:
+          type: string
+        type: array
+      end_time:
+        type: string
+      expand:
+        type: string
+      filters:
+        items:
+          $ref: '#/definitions/types.FilterCondition'
+        type: array
+      limit:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      offset:
+        minimum: 0
+        type: integer
+      order:
+        enum:
+        - asc
+        - desc
+        type: string
+      provider_type:
+        $ref: '#/definitions/types.SecretProvider'
+      sort:
+        items:
+          $ref: '#/definitions/types.SortCondition'
+        type: array
+      start_time:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+    type: object
+  types.ConnectionMetadata:
+    properties:
+      generic:
+        $ref: '#/definitions/types.GenericConnectionMetadata'
+      stripe:
+        $ref: '#/definitions/types.StripeConnectionMetadata'
+    type: object
   types.CouponCadence:
     enum:
     - once
@@ -4703,10 +5645,26 @@ definitions:
     - DataTypeNumber
     - DataTypeDate
     - DataTypeArray
+  types.EntitlementEntityType:
+    enum:
+    - PLAN
+    - SUBSCRIPTION
+    - ADDON
+    type: string
+    x-enum-varnames:
+    - ENTITLEMENT_ENTITY_TYPE_PLAN
+    - ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
+    - ENTITLEMENT_ENTITY_TYPE_ADDON
   types.EntitlementFilter:
     properties:
       end_time:
         type: string
+      entity_ids:
+        items:
+          type: string
+        type: array
+      entity_type:
+        $ref: '#/definitions/types.EntitlementEntityType'
       expand:
         type: string
       feature_ids:
@@ -5069,6 +6027,7 @@ definitions:
     - PENDING
     - PROCESSING
     - SUCCEEDED
+    - OVERPAID
     - FAILED
     - REFUNDED
     - PARTIALLY_REFUNDED
@@ -5078,6 +6037,7 @@ definitions:
     - PaymentStatusPending
     - PaymentStatusProcessing
     - PaymentStatusSucceeded
+    - PaymentStatusOverpaid
     - PaymentStatusFailed
     - PaymentStatusRefunded
     - PaymentStatusPartiallyRefunded
@@ -5085,6 +6045,12 @@ definitions:
     properties:
       end_time:
         type: string
+      entity_ids:
+        items:
+          type: string
+        type: array
+      entity_type:
+        $ref: '#/definitions/types.EntitlementEntityType'
       expand:
         type: string
       filters:
@@ -5117,14 +6083,18 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
     type: object
-  types.PriceScope:
+  types.PriceEntityType:
     enum:
     - PLAN
     - SUBSCRIPTION
+    - ADDON
+    - PRICE
     type: string
     x-enum-varnames:
-    - PRICE_SCOPE_PLAN
-    - PRICE_SCOPE_SUBSCRIPTION
+    - PRICE_ENTITY_TYPE_PLAN
+    - PRICE_ENTITY_TYPE_SUBSCRIPTION
+    - PRICE_ENTITY_TYPE_ADDON
+    - PRICE_ENTITY_TYPE_PRICE
   types.PriceType:
     enum:
     - USAGE
@@ -5233,6 +6203,17 @@ definitions:
     - StatusPublished
     - StatusDeleted
     - StatusArchived
+  types.StripeConnectionMetadata:
+    properties:
+      account_id:
+        type: string
+      publishable_key:
+        type: string
+      secret_key:
+        type: string
+      webhook_secret:
+        type: string
+    type: object
   types.SubscriptionFilter:
     properties:
       active_at:
@@ -5295,6 +6276,14 @@ definitions:
         description: WithLineItems includes line items in the response
         type: boolean
     type: object
+  types.SubscriptionLineItemEntitiyType:
+    enum:
+    - plan
+    - addon
+    type: string
+    x-enum-varnames:
+    - SubscriptionLineItemEntitiyTypePlan
+    - SubscriptionLineItemEntitiyTypeAddon
   types.SubscriptionScheduleStatus:
     enum:
     - ACTIVE
@@ -5345,6 +6334,85 @@ definitions:
     x-enum-varnames:
     - TaskTypeImport
     - TaskTypeExport
+  types.TaxAssociationFilter:
+    properties:
+      auto_apply:
+        type: boolean
+      currency:
+        type: string
+      end_time:
+        type: string
+      entity_id:
+        type: string
+      entity_type:
+        $ref: '#/definitions/types.TaxRateEntityType'
+      expand:
+        type: string
+      limit:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      offset:
+        minimum: 0
+        type: integer
+      order:
+        enum:
+        - asc
+        - desc
+        type: string
+      sort:
+        type: string
+      start_time:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tax_association_ids:
+        items:
+          type: string
+        type: array
+      tax_rate_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  types.TaxRateEntityType:
+    enum:
+    - customer
+    - subscription
+    - invoice
+    - tenant
+    type: string
+    x-enum-varnames:
+    - TaxRateEntityTypeCustomer
+    - TaxRateEntityTypeSubscription
+    - TaxRateEntityTypeInvoice
+    - TaxRateEntityTypeTenant
+  types.TaxRateScope:
+    enum:
+    - INTERNAL
+    - EXTERNAL
+    - ONETIME
+    type: string
+    x-enum-varnames:
+    - TaxRateScopeInternal
+    - TaxRateScopeExternal
+    - TaxRateScopeOneTime
+  types.TaxRateStatus:
+    enum:
+    - ACTIVE
+    - INACTIVE
+    type: string
+    x-enum-varnames:
+    - TaxRateStatusActive
+    - TaxRateStatusInactive
+  types.TaxRateType:
+    enum:
+    - percentage
+    - fixed
+    type: string
+    x-enum-varnames:
+    - TaxRateTypePercentage
+    - TaxRateTypeFixed
   types.TimeRangeFilter:
     properties:
       end_time:
@@ -5466,6 +6534,271 @@ info:
   title: FlexPrice API
   version: "1.0"
 paths:
+  /addons:
+    get:
+      description: Get addons with optional filtering
+      parameters:
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: addon_ids
+        type: array
+      - enum:
+        - onetime
+        - multiple
+        in: query
+        name: addon_type
+        type: string
+        x-enum-varnames:
+        - AddonTypeOnetime
+        - AddonTypeMultiple
+      - in: query
+        name: end_time
+        type: string
+      - in: query
+        name: expand
+        type: string
+      - in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: lookup_keys
+        type: array
+      - in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListAddonsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List addons
+      tags:
+      - Addons
+    post:
+      consumes:
+      - application/json
+      description: Create a new addon
+      parameters:
+      - description: Addon Request
+        in: body
+        name: addon
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateAddonRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CreateAddonResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create addon
+      tags:
+      - Addons
+  /addons/{id}:
+    delete:
+      description: Delete an addon
+      parameters:
+      - description: Addon ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete addon
+      tags:
+      - Addons
+    get:
+      description: Get an addon by ID
+      parameters:
+      - description: Addon ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AddonResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get addon
+      tags:
+      - Addons
+    put:
+      consumes:
+      - application/json
+      description: Update an existing addon
+      parameters:
+      - description: Addon ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update Addon Request
+        in: body
+        name: addon
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateAddonRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AddonResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update addon
+      tags:
+      - Addons
+  /addons/lookup/{lookup_key}:
+    get:
+      description: Get an addon by lookup key
+      parameters:
+      - description: Addon Lookup Key
+        in: path
+        name: lookup_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AddonResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get addon by lookup key
+      tags:
+      - Addons
+  /addons/search:
+    post:
+      consumes:
+      - application/json
+      description: List addons by filter
+      parameters:
+      - description: Filter
+        in: body
+        name: filter
+        required: true
+        schema:
+          $ref: '#/definitions/types.AddonFilter'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListAddonsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List addons by filter
+      tags:
+      - Addons
   /auth/login:
     post:
       consumes:
@@ -6109,6 +7442,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
+      - ApiKeyAuth: []
       summary: List coupons with filtering
       tags:
       - Coupons
@@ -6151,6 +7485,7 @@ paths:
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
+      - ApiKeyAuth: []
       - ApiKeyAuth: []
       summary: Create a new coupon
       tags:
@@ -6197,6 +7532,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
+      - ApiKeyAuth: []
       summary: Delete a coupon
       tags:
       - Coupons
@@ -6238,6 +7574,7 @@ paths:
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
+      - ApiKeyAuth: []
       - ApiKeyAuth: []
       summary: Get a coupon by ID
       tags:
@@ -6286,6 +7623,7 @@ paths:
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
+      - ApiKeyAuth: []
       - ApiKeyAuth: []
       summary: Update a coupon
       tags:
@@ -6605,6 +7943,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
+      - ApiKeyAuth: []
       summary: List credit notes with filtering
       tags:
       - Credit Notes
@@ -6647,6 +7986,7 @@ paths:
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
+      - ApiKeyAuth: []
       - ApiKeyAuth: []
       summary: Create a new credit note
       tags:
@@ -6691,6 +8031,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
+      - ApiKeyAuth: []
       summary: Get a credit note by ID
       tags:
       - Credit Notes
@@ -6734,6 +8075,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
+      - ApiKeyAuth: []
       summary: Process a draft credit note
       tags:
       - Credit Notes
@@ -6776,6 +8118,7 @@ paths:
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
+      - ApiKeyAuth: []
       - ApiKeyAuth: []
       summary: Void a credit note
       tags:
@@ -7253,6 +8596,23 @@ paths:
       - in: query
         name: end_time
         type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: entity_ids
+        type: array
+      - enum:
+        - PLAN
+        - SUBSCRIPTION
+        - ADDON
+        in: query
+        name: entity_type
+        type: string
+        x-enum-varnames:
+        - ENTITLEMENT_ENTITY_TYPE_PLAN
+        - ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
+        - ENTITLEMENT_ENTITY_TYPE_ADDON
       - in: query
         name: expand
         type: string
@@ -7459,6 +8819,38 @@ paths:
       summary: Update an entitlement
       tags:
       - Entitlements
+  /entitlements/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Create multiple entitlements with the specified configurations
+      parameters:
+      - description: Bulk entitlement configuration
+        in: body
+        name: entitlements
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateBulkEntitlementRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CreateBulkEntitlementResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create multiple entitlements in bulk
+      tags:
+      - Entitlements
   /entitlements/search:
     post:
       consumes:
@@ -7491,6 +8883,174 @@ paths:
       summary: List entitlements by filter
       tags:
       - Entitlements
+  /entity-integration-mappings:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a list of entity integration mappings with optional filtering
+      parameters:
+      - description: Filter by FlexPrice entity ID
+        in: query
+        name: entity_id
+        type: string
+      - description: Filter by entity type
+        in: query
+        name: entity_type
+        type: string
+      - description: Filter by provider type
+        in: query
+        name: provider_type
+        type: string
+      - description: Filter by provider entity ID
+        in: query
+        name: provider_entity_id
+        type: string
+      - description: 'Number of results to return (default: 20, max: 100)'
+        in: query
+        name: limit
+        type: integer
+      - description: 'Pagination offset (default: 0)'
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListEntityIntegrationMappingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List entity integration mappings
+      tags:
+      - Entity Integration Mappings
+    post:
+      consumes:
+      - application/json
+      description: Create a new entity integration mapping
+      parameters:
+      - description: Entity integration mapping data
+        in: body
+        name: entity_integration_mapping
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateEntityIntegrationMappingRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create entity integration mapping
+      tags:
+      - Entity Integration Mappings
+  /entity-integration-mappings/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an entity integration mapping
+      parameters:
+      - description: Entity integration mapping ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete entity integration mapping
+      tags:
+      - Entity Integration Mappings
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a specific entity integration mapping by ID
+      parameters:
+      - description: Entity integration mapping ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.EntityIntegrationMappingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get entity integration mapping
+      tags:
+      - Entity Integration Mappings
   /environments:
     get:
       consumes:
@@ -8263,6 +9823,7 @@ paths:
           - PENDING
           - PROCESSING
           - SUCCEEDED
+          - OVERPAID
           - FAILED
           - REFUNDED
           - PARTIALLY_REFUNDED
@@ -8304,13 +9865,15 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: List invoices
       tags:
       - Invoices
     post:
       consumes:
       - application/json
-      description: Create a new invoice with the provided details
+      description: Create a new one off invoice with the provided details
       parameters:
       - description: Invoice details
         in: body
@@ -8333,7 +9896,9 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
-      summary: Create a new invoice
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new one off invoice
       tags:
       - Invoices
   /invoices/{id}:
@@ -8347,6 +9912,10 @@ paths:
         name: id
         required: true
         type: string
+      - description: Include source-level price breakdown for usage line items
+        in: query
+        name: expand_by_source
+        type: boolean
       produces:
       - application/json
       responses:
@@ -8362,6 +9931,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get an invoice by ID
       tags:
       - Invoices
@@ -8400,7 +9971,45 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Update an invoice
+      tags:
+      - Invoices
+  /invoices/{id}/comms/trigger:
+    post:
+      consumes:
+      - application/json
+      description: Triggers a communication webhook event containing all information
+        about the invoice
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Trigger communication webhook for an invoice
       tags:
       - Invoices
   /invoices/{id}/finalize:
@@ -8429,6 +10038,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Finalize an invoice
       tags:
       - Invoices
@@ -8503,6 +10114,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Attempt payment for an invoice
       tags:
       - Invoices
@@ -8536,6 +10149,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get PDF for an invoice
       tags:
       - Invoices
@@ -8575,6 +10190,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Recalculate invoice totals and line items
       tags:
       - Invoices
@@ -8604,6 +10221,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Void an invoice
       tags:
       - Invoices
@@ -8634,6 +10253,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get a preview invoice
       tags:
       - Invoices
@@ -8925,6 +10546,23 @@ paths:
       - in: query
         name: end_time
         type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: entity_ids
+        type: array
+      - enum:
+        - PLAN
+        - SUBSCRIPTION
+        - ADDON
+        in: query
+        name: entity_type
+        type: string
+        x-enum-varnames:
+        - ENTITLEMENT_ENTITY_TYPE_PLAN
+        - ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
+        - ENTITLEMENT_ENTITY_TYPE_ADDON
       - in: query
         name: expand
         type: string
@@ -9273,6 +10911,25 @@ paths:
       - in: query
         name: end_time
         type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: entity_ids
+        type: array
+      - enum:
+        - PLAN
+        - SUBSCRIPTION
+        - ADDON
+        - PRICE
+        in: query
+        name: entity_type
+        type: string
+        x-enum-varnames:
+        - PRICE_ENTITY_TYPE_PLAN
+        - PRICE_ENTITY_TYPE_SUBSCRIPTION
+        - PRICE_ENTITY_TYPE_ADDON
+        - PRICE_ENTITY_TYPE_PRICE
       - in: query
         name: expand
         type: string
@@ -9281,6 +10938,12 @@ paths:
         minimum: 1
         name: limit
         type: integer
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: meter_ids
+        type: array
       - in: query
         minimum: 0
         name: offset
@@ -9295,6 +10958,7 @@ paths:
         name: parent_price_id
         type: string
       - collectionFormat: csv
+        description: Price override filtering fields
         in: query
         items:
           type: string
@@ -9306,16 +10970,6 @@ paths:
           type: string
         name: price_ids
         type: array
-      - description: Price override filtering fields
-        enum:
-        - PLAN
-        - SUBSCRIPTION
-        in: query
-        name: scope
-        type: string
-        x-enum-varnames:
-        - PRICE_SCOPE_PLAN
-        - PRICE_SCOPE_SUBSCRIPTION
       - in: query
         name: sort
         type: string
@@ -9422,7 +11076,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get a price by ID
+      description: Get a price by ID with expanded meter and price unit information
       parameters:
       - description: Price ID
         in: path
@@ -9485,6 +11139,39 @@ paths:
       summary: Update a price
       tags:
       - Prices
+  /prices/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Create multiple prices with the specified configurations. Supports
+        both regular and price unit configurations.
+      parameters:
+      - description: Bulk price configuration
+        in: body
+        name: prices
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateBulkPriceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CreateBulkPriceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create multiple prices in bulk
+      tags:
+      - Prices
   /prices/units:
     get:
       consumes:
@@ -9522,6 +11209,8 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: List price units
       tags:
       - Price Units
@@ -9547,6 +11236,8 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Create a new price unit
       tags:
       - Price Units
@@ -9577,6 +11268,8 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Archive a price unit
       tags:
       - Price Units
@@ -9605,6 +11298,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get a price unit by ID
       tags:
       - Price Units
@@ -9641,6 +11336,8 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Update a price unit
       tags:
       - Price Units
@@ -9670,7 +11367,41 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get a price unit by code
+      tags:
+      - Price Units
+  /prices/units/search:
+    post:
+      consumes:
+      - application/json
+      description: List price units by filter
+      parameters:
+      - description: Filter
+        in: body
+        name: filter
+        required: true
+        schema:
+          $ref: '#/definitions/priceunit.PriceUnitFilter'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListPriceUnitsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List price units by filter
       tags:
       - Price Units
   /secrets/api/keys:
@@ -9706,6 +11437,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: List API keys
       tags:
       - secrets
@@ -9735,6 +11468,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Create a new API key
       tags:
       - secrets
@@ -9762,6 +11497,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Delete an API key
       tags:
       - secrets
@@ -9789,6 +11526,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Delete an integration
       tags:
       - Integrations
@@ -9818,6 +11557,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get integration details
       tags:
       - Integrations
@@ -9852,6 +11593,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Create or update an integration
       tags:
       - Integrations
@@ -9872,6 +11615,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: List linked integrations
       tags:
       - Integrations
@@ -10127,6 +11872,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Pause a subscription
       tags:
       - Subscriptions
@@ -10236,7 +11983,72 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Resume a paused subscription
+      tags:
+      - Subscriptions
+  /subscriptions/addon:
+    delete:
+      consumes:
+      - application/json
+      description: Remove an addon from a subscription
+      parameters:
+      - description: Remove Addon Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.RemoveAddonRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Remove addon from subscription
+      tags:
+      - Subscriptions
+    post:
+      consumes:
+      - application/json
+      description: Add an addon to a subscription
+      parameters:
+      - description: Add Addon Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.AddAddonToSubscriptionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AddonAssociationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Add addon to subscription
       tags:
       - Subscriptions
   /subscriptions/search:
@@ -10398,6 +12210,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: List tasks
       tags:
       - Tasks
@@ -10427,6 +12241,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Create a new task
       tags:
       - Tasks
@@ -10456,6 +12272,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Get a task by ID
       tags:
       - Tasks
@@ -10489,6 +12307,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Process a task
       tags:
       - Tasks
@@ -10528,9 +12348,383 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Update task status
       tags:
       - Tasks
+  /taxes/associations:
+    get:
+      consumes:
+      - application/json
+      description: List tax associations
+      parameters:
+      - description: Tax Association Filter
+        in: body
+        name: tax_association
+        required: true
+        schema:
+          $ref: '#/definitions/types.TaxAssociationFilter'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListTaxAssociationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List tax associations
+      tags:
+      - Tax Associations
+    post:
+      consumes:
+      - application/json
+      description: Create a new tax association
+      parameters:
+      - description: Tax Config Request
+        in: body
+        name: tax_config
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateTaxAssociationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TaxAssociationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create Tax Association
+      tags:
+      - Tax Associations
+  /taxes/associations/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a tax association by ID
+      parameters:
+      - description: Tax Config ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TaxAssociationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete tax association
+      tags:
+      - Tax Associations
+    get:
+      consumes:
+      - application/json
+      description: Get a tax association by ID
+      parameters:
+      - description: Tax Config ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TaxAssociationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get Tax Association
+      tags:
+      - Tax Associations
+    put:
+      consumes:
+      - application/json
+      description: Update a tax association by ID
+      parameters:
+      - description: Tax Config ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Tax Config Request
+        in: body
+        name: tax_config
+        required: true
+        schema:
+          $ref: '#/definitions/dto.TaxAssociationUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TaxAssociationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update tax association
+      tags:
+      - Tax Associations
+  /taxes/rates:
+    get:
+      consumes:
+      - application/json
+      description: Get tax rates
+      parameters:
+      - in: query
+        name: end_time
+        type: string
+      - in: query
+        name: expand
+        type: string
+      - in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      - in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - enum:
+        - INTERNAL
+        - EXTERNAL
+        - ONETIME
+        in: query
+        name: scope
+        type: string
+        x-enum-varnames:
+        - TaxRateScopeInternal
+        - TaxRateScopeExternal
+        - TaxRateScopeOneTime
+      - in: query
+        name: start_time
+        type: string
+      - enum:
+        - published
+        - deleted
+        - archived
+        in: query
+        name: status
+        type: string
+        x-enum-varnames:
+        - StatusPublished
+        - StatusDeleted
+        - StatusArchived
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: taxrate_codes
+        type: array
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: taxrate_ids
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.TaxRateResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get tax rates
+      tags:
+      - Tax Rates
+    post:
+      consumes:
+      - application/json
+      description: Create a tax rate
+      parameters:
+      - description: Tax rate to create
+        in: body
+        name: tax_rate
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateTaxRateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.TaxRateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a tax rate
+      tags:
+      - Tax Rates
+  /taxes/rates/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a tax rate
+      parameters:
+      - description: Tax rate ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a tax rate
+      tags:
+      - Tax Rates
+    get:
+      consumes:
+      - application/json
+      description: Get a tax rate
+      parameters:
+      - description: Tax rate ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TaxRateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a tax rate
+      tags:
+      - Tax Rates
+    put:
+      consumes:
+      - application/json
+      description: Update a tax rate
+      parameters:
+      - description: Tax rate ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Tax rate to update
+        in: body
+        name: tax_rate
+        required: true
+        schema:
+          $ref: '#/definitions/dto.UpdateTaxRateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.TaxRateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update a tax rate
+      tags:
+      - Tax Rates
   /tenant/billing:
     get:
       consumes:
@@ -10786,6 +12980,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Update a wallet
       tags:
       - Wallets
@@ -10854,6 +13050,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
       summary: Terminate a wallet
       tags:
       - Wallets

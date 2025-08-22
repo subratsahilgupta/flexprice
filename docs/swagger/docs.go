@@ -15,6 +15,420 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/addons": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get addons with optional filtering",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addons"
+                ],
+                "summary": "List addons",
+                "parameters": [
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "addon_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "onetime",
+                            "multiple"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "AddonTypeOnetime",
+                            "AddonTypeMultiple"
+                        ],
+                        "name": "addon_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "lookup_keys",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListAddonsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a new addon",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addons"
+                ],
+                "summary": "Create addon",
+                "parameters": [
+                    {
+                        "description": "Addon Request",
+                        "name": "addon",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateAddonRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateAddonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/addons/lookup/{lookup_key}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get an addon by lookup key",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addons"
+                ],
+                "summary": "Get addon by lookup key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Addon Lookup Key",
+                        "name": "lookup_key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AddonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/addons/search": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List addons by filter",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addons"
+                ],
+                "summary": "List addons by filter",
+                "parameters": [
+                    {
+                        "description": "Filter",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.AddonFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListAddonsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/addons/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get an addon by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addons"
+                ],
+                "summary": "Get addon",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Addon ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AddonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update an existing addon",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addons"
+                ],
+                "summary": "Update addon",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Addon ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update Addon Request",
+                        "name": "addon",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateAddonRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AddonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Delete an addon",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Addons"
+                ],
+                "summary": "Delete addon",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Addon ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Login a user",
@@ -907,6 +1321,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "ApiKeyAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Lists coupons with filtering",
@@ -1016,6 +1433,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "ApiKeyAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Creates a new coupon",
@@ -1085,6 +1505,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "ApiKeyAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Retrieves a coupon by ID",
@@ -1148,6 +1571,9 @@ const docTemplate = `{
             },
             "put": {
                 "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
                     {
                         "ApiKeyAuth": []
                     }
@@ -1222,6 +1648,9 @@ const docTemplate = `{
             },
             "delete": {
                 "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
                     {
                         "ApiKeyAuth": []
                     }
@@ -1626,6 +2055,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "ApiKeyAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Lists credit notes with filtering",
@@ -1782,6 +2214,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "ApiKeyAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Creates a new credit note",
@@ -1851,6 +2286,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "ApiKeyAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Retrieves a credit note by ID",
@@ -1918,6 +2356,9 @@ const docTemplate = `{
                 "security": [
                     {
                         "ApiKeyAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
                     }
                 ],
                 "description": "Processes a draft credit note",
@@ -1983,6 +2424,9 @@ const docTemplate = `{
         "/creditnotes/{id}/void": {
             "post": {
                 "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
                     {
                         "ApiKeyAuth": []
                     }
@@ -2800,6 +3244,30 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "entity_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "PLAN",
+                            "SUBSCRIPTION",
+                            "ADDON"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "ENTITLEMENT_ENTITY_TYPE_PLAN",
+                            "ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION",
+                            "ENTITLEMENT_ENTITY_TYPE_ADDON"
+                        ],
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "name": "expand",
                         "in": "query"
@@ -2939,6 +3407,57 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/dto.EntitlementResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/entitlements/bulk": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create multiple entitlements with the specified configurations",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Entitlements"
+                ],
+                "summary": "Create multiple entitlements in bulk",
+                "parameters": [
+                    {
+                        "description": "Bulk entitlement configuration",
+                        "name": "entitlements",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateBulkEntitlementRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateBulkEntitlementResponse"
                         }
                     },
                     "400": {
@@ -4479,6 +4998,11 @@ const docTemplate = `{
         },
         "/invoices": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "List invoices with optional filtering",
                 "consumes": [
                     "application/json"
@@ -4596,6 +5120,7 @@ const docTemplate = `{
                                 "PENDING",
                                 "PROCESSING",
                                 "SUCCEEDED",
+                                "OVERPAID",
                                 "FAILED",
                                 "REFUNDED",
                                 "PARTIALLY_REFUNDED"
@@ -4656,7 +5181,12 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Create a new invoice with the provided details",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a new one off invoice with the provided details",
                 "consumes": [
                     "application/json"
                 ],
@@ -4666,7 +5196,7 @@ const docTemplate = `{
                 "tags": [
                     "Invoices"
                 ],
-                "summary": "Create a new invoice",
+                "summary": "Create a new one off invoice",
                 "parameters": [
                     {
                         "description": "Invoice details",
@@ -4702,6 +5232,11 @@ const docTemplate = `{
         },
         "/invoices/preview": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a preview invoice",
                 "consumes": [
                     "application/json"
@@ -4799,6 +5334,11 @@ const docTemplate = `{
         },
         "/invoices/{id}": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get detailed information about an invoice",
                 "consumes": [
                     "application/json"
@@ -4817,6 +5357,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include source-level price breakdown for usage line items",
+                        "name": "expand_by_source",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4841,6 +5387,11 @@ const docTemplate = `{
                 }
             },
             "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Update invoice details like PDF URL",
                 "consumes": [
                     "application/json"
@@ -4898,8 +5449,68 @@ const docTemplate = `{
                 }
             }
         },
+        "/invoices/{id}/comms/trigger": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Triggers a communication webhook event containing all information about the invoice",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Trigger communication webhook for an invoice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invoice ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/invoices/{id}/finalize": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Finalize a draft invoice",
                 "consumes": [
                     "application/json"
@@ -5008,6 +5619,11 @@ const docTemplate = `{
         },
         "/invoices/{id}/payment/attempt": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Attempt to pay an invoice using customer's available wallets",
                 "consumes": [
                     "application/json"
@@ -5058,6 +5674,11 @@ const docTemplate = `{
         },
         "/invoices/{id}/pdf": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Retrieve the PDF document for a specific invoice by its ID",
                 "tags": [
                     "Invoices"
@@ -5108,6 +5729,11 @@ const docTemplate = `{
         },
         "/invoices/{id}/recalculate": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Recalculate totals and line items for a draft invoice, useful when subscription line items or usage data has changed",
                 "consumes": [
                     "application/json"
@@ -5164,6 +5790,11 @@ const docTemplate = `{
         },
         "/invoices/{id}/void": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Void an invoice that hasn't been paid",
                 "consumes": [
                     "application/json"
@@ -5616,6 +6247,30 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "entity_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "PLAN",
+                            "SUBSCRIPTION",
+                            "ADDON"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "ENTITLEMENT_ENTITY_TYPE_PLAN",
+                            "ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION",
+                            "ENTITLEMENT_ENTITY_TYPE_ADDON"
+                        ],
+                        "name": "entity_type",
                         "in": "query"
                     },
                     {
@@ -6163,6 +6818,32 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "entity_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "PLAN",
+                            "SUBSCRIPTION",
+                            "ADDON",
+                            "PRICE"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "PRICE_ENTITY_TYPE_PLAN",
+                            "PRICE_ENTITY_TYPE_SUBSCRIPTION",
+                            "PRICE_ENTITY_TYPE_ADDON",
+                            "PRICE_ENTITY_TYPE_PRICE"
+                        ],
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "name": "expand",
                         "in": "query"
@@ -6172,6 +6853,15 @@ const docTemplate = `{
                         "minimum": 1,
                         "type": "integer",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "meter_ids",
                         "in": "query"
                     },
                     {
@@ -6200,6 +6890,7 @@ const docTemplate = `{
                             "type": "string"
                         },
                         "collectionFormat": "csv",
+                        "description": "Price override filtering fields",
                         "name": "plan_ids",
                         "in": "query"
                     },
@@ -6210,20 +6901,6 @@ const docTemplate = `{
                         },
                         "collectionFormat": "csv",
                         "name": "price_ids",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "PLAN",
-                            "SUBSCRIPTION"
-                        ],
-                        "type": "string",
-                        "x-enum-varnames": [
-                            "PRICE_SCOPE_PLAN",
-                            "PRICE_SCOPE_SUBSCRIPTION"
-                        ],
-                        "description": "Price override filtering fields",
-                        "name": "scope",
                         "in": "query"
                     },
                     {
@@ -6328,8 +7005,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/prices/bulk": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create multiple prices with the specified configurations. Supports both regular and price unit configurations.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Prices"
+                ],
+                "summary": "Create multiple prices in bulk",
+                "parameters": [
+                    {
+                        "description": "Bulk price configuration",
+                        "name": "prices",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateBulkPriceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateBulkPriceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/prices/units": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a paginated list of price units with optional filtering",
                 "consumes": [
                     "application/json"
@@ -6389,6 +7122,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Create a new price unit with the provided details",
                 "consumes": [
                     "application/json"
@@ -6429,6 +7167,11 @@ const docTemplate = `{
         },
         "/prices/units/code/{code}": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a price unit by code",
                 "consumes": [
                     "application/json"
@@ -6471,8 +7214,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/prices/units/search": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List price units by filter",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Price Units"
+                ],
+                "summary": "List price units by filter",
+                "parameters": [
+                    {
+                        "description": "Filter",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/priceunit.PriceUnitFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListPriceUnitsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/prices/units/{id}": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a price unit by ID",
                 "consumes": [
                     "application/json"
@@ -6515,6 +7314,11 @@ const docTemplate = `{
                 }
             },
             "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Update an existing price unit with the provided details. Only name, symbol, precision, and conversion_rate can be updated. Status changes are not allowed.",
                 "consumes": [
                     "application/json"
@@ -6566,6 +7370,11 @@ const docTemplate = `{
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Archive an existing price unit. The unit will be marked as archived and cannot be used in new prices.",
                 "consumes": [
                     "application/json"
@@ -6615,7 +7424,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get a price by ID",
+                "description": "Get a price by ID with expanded meter and price unit information",
                 "consumes": [
                     "application/json"
                 ],
@@ -6762,6 +7571,11 @@ const docTemplate = `{
         },
         "/secrets/api/keys": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a paginated list of API keys",
                 "consumes": [
                     "application/json"
@@ -6815,6 +7629,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Create a new API key with the specified type and permissions",
                 "consumes": [
                     "application/json"
@@ -6861,6 +7680,11 @@ const docTemplate = `{
         },
         "/secrets/api/keys/{id}": {
             "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Delete an API key by ID",
                 "consumes": [
                     "application/json"
@@ -6902,6 +7726,11 @@ const docTemplate = `{
         },
         "/secrets/integrations/linked": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get a list of unique providers which have a valid linked integration secret",
                 "consumes": [
                     "application/json"
@@ -6931,6 +7760,11 @@ const docTemplate = `{
         },
         "/secrets/integrations/{id}": {
             "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Delete integration credentials",
                 "consumes": [
                     "application/json"
@@ -6972,6 +7806,11 @@ const docTemplate = `{
         },
         "/secrets/integrations/{provider}": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get details of a specific integration",
                 "consumes": [
                     "application/json"
@@ -7014,6 +7853,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Create or update integration credentials",
                 "consumes": [
                     "application/json"
@@ -7290,6 +8134,106 @@ const docTemplate = `{
                 }
             }
         },
+        "/subscriptions/addon": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Add an addon to a subscription",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Add addon to subscription",
+                "parameters": [
+                    {
+                        "description": "Add Addon Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.AddAddonToSubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.AddonAssociationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Remove an addon from a subscription",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Remove addon from subscription",
+                "parameters": [
+                    {
+                        "description": "Remove Addon Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.RemoveAddonRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/subscriptions/search": {
             "post": {
                 "security": [
@@ -7495,6 +8439,11 @@ const docTemplate = `{
         },
         "/subscriptions/{id}/pause": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Pause a subscription with the specified parameters",
                 "consumes": [
                     "application/json"
@@ -7662,6 +8611,11 @@ const docTemplate = `{
         },
         "/subscriptions/{id}/resume": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Resume a paused subscription with the specified parameters",
                 "consumes": [
                     "application/json"
@@ -7721,6 +8675,11 @@ const docTemplate = `{
         },
         "/tasks": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "List tasks with optional filtering",
                 "consumes": [
                     "application/json"
@@ -7863,6 +8822,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Create a new import/export task",
                 "consumes": [
                     "application/json"
@@ -7909,6 +8873,11 @@ const docTemplate = `{
         },
         "/tasks/{id}": {
             "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Get detailed information about a task",
                 "consumes": [
                     "application/json"
@@ -7953,6 +8922,11 @@ const docTemplate = `{
         },
         "/tasks/{id}/process": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Start processing a task",
                 "consumes": [
                     "application/json"
@@ -8003,6 +8977,11 @@ const docTemplate = `{
         },
         "/tasks/{id}/status": {
             "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Update the status of a task",
                 "consumes": [
                     "application/json"
@@ -8047,6 +9026,586 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxes/associations": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List tax associations",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Associations"
+                ],
+                "summary": "List tax associations",
+                "parameters": [
+                    {
+                        "description": "Tax Association Filter",
+                        "name": "tax_association",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.TaxAssociationFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListTaxAssociationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a new tax association",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Associations"
+                ],
+                "summary": "Create Tax Association",
+                "parameters": [
+                    {
+                        "description": "Tax Config Request",
+                        "name": "tax_config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateTaxAssociationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaxAssociationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxes/associations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get a tax association by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Associations"
+                ],
+                "summary": "Get Tax Association",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tax Config ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaxAssociationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update a tax association by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Associations"
+                ],
+                "summary": "Update tax association",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tax Config ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Tax Config Request",
+                        "name": "tax_config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaxAssociationUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaxAssociationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Delete a tax association by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Associations"
+                ],
+                "summary": "Delete tax association",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tax Config ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaxAssociationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxes/rates": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get tax rates",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Rates"
+                ],
+                "summary": "Get tax rates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "INTERNAL",
+                            "EXTERNAL",
+                            "ONETIME"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "TaxRateScopeInternal",
+                            "TaxRateScopeExternal",
+                            "TaxRateScopeOneTime"
+                        ],
+                        "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "published",
+                            "deleted",
+                            "archived"
+                        ],
+                        "type": "string",
+                        "x-enum-varnames": [
+                            "StatusPublished",
+                            "StatusDeleted",
+                            "StatusArchived"
+                        ],
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "taxrate_codes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "taxrate_ids",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.TaxRateResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a tax rate",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Rates"
+                ],
+                "summary": "Create a tax rate",
+                "parameters": [
+                    {
+                        "description": "Tax rate to create",
+                        "name": "tax_rate",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateTaxRateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaxRateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/taxes/rates/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get a tax rate",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Rates"
+                ],
+                "summary": "Get a tax rate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tax rate ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaxRateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update a tax rate",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Rates"
+                ],
+                "summary": "Update a tax rate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tax rate ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Tax rate to update",
+                        "name": "tax_rate",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.UpdateTaxRateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.TaxRateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Delete a tax rate",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tax Rates"
+                ],
+                "summary": "Delete a tax rate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tax rate ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -8409,6 +9968,11 @@ const docTemplate = `{
                 }
             },
             "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Update a wallet's details including auto top-up configuration",
                 "consumes": [
                     "application/json"
@@ -8523,6 +10087,11 @@ const docTemplate = `{
         },
         "/wallets/{id}/terminate": {
             "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Terminates a wallet by closing it and debiting remaining balance",
                 "consumes": [
                     "application/json"
@@ -9140,6 +10709,27 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.AddAddonToSubscriptionRequest": {
+            "type": "object",
+            "required": [
+                "addon_id"
+            ],
+            "properties": {
+                "addon_id": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "start_date": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.AddSchedulePhaseRequest": {
             "type": "object",
             "required": [
@@ -9148,6 +10738,121 @@ const docTemplate = `{
             "properties": {
                 "phase": {
                     "$ref": "#/definitions/dto.SubscriptionSchedulePhaseInput"
+                }
+            }
+        },
+        "dto.AddonAssociationResponse": {
+            "type": "object",
+            "properties": {
+                "addon_id": {
+                    "type": "string"
+                },
+                "addon_status": {
+                    "$ref": "#/definitions/types.AddonStatus"
+                },
+                "cancellation_reason": {
+                    "type": "string"
+                },
+                "cancelled_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.AddonAssociationEntityType"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.AddonResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "entitlements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EntitlementResponse"
+                    }
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prices": {
+                    "description": "Optional expanded fields",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.PriceResponse"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.AddonType"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
                 }
             }
         },
@@ -9308,9 +11013,6 @@ const docTemplate = `{
                 },
                 "created_by": {
                     "type": "string"
-                },
-                "encrypted_secret_data": {
-                    "$ref": "#/definitions/types.ConnectionMetadata"
                 },
                 "environment_id": {
                     "type": "string"
@@ -9629,6 +11331,144 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreateAddonRequest": {
+            "type": "object",
+            "required": [
+                "lookup_key",
+                "name",
+                "type"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.AddonType"
+                }
+            }
+        },
+        "dto.CreateAddonResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "entitlements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EntitlementResponse"
+                    }
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prices": {
+                    "description": "Optional expanded fields",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.PriceResponse"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.AddonType"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CreateBulkEntitlementRequest": {
+            "type": "object",
+            "required": [
+                "items"
+            ],
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/dto.CreateEntitlementRequest"
+                    }
+                }
+            }
+        },
+        "dto.CreateBulkEntitlementResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EntitlementResponse"
+                    }
+                }
+            }
+        },
+        "dto.CreateBulkPriceRequest": {
+            "type": "object",
+            "required": [
+                "items"
+            ],
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/dto.CreatePriceRequest"
+                    }
+                }
+            }
+        },
+        "dto.CreateBulkPriceResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.PriceResponse"
+                    }
+                }
+            }
+        },
         "dto.CreateConnectionRequest": {
             "type": "object",
             "required": [
@@ -9865,48 +11705,66 @@ const docTemplate = `{
             }
         },
         "dto.CreateCustomerRequest": {
+            "description": "Request object for creating a new customer in the system",
             "type": "object",
             "required": [
                 "external_id"
             ],
             "properties": {
                 "address_city": {
+                    "description": "address_city is the city name with maximum 100 characters",
                     "type": "string",
                     "maxLength": 100
                 },
                 "address_country": {
+                    "description": "address_country is the two-letter ISO 3166-1 alpha-2 country code",
                     "type": "string"
                 },
                 "address_line1": {
+                    "description": "address_line1 is the primary address line with maximum 255 characters",
                     "type": "string",
                     "maxLength": 255
                 },
                 "address_line2": {
+                    "description": "address_line2 is the secondary address line with maximum 255 characters",
                     "type": "string",
                     "maxLength": 255
                 },
                 "address_postal_code": {
+                    "description": "address_postal_code is the ZIP code or postal code with maximum 20 characters",
                     "type": "string",
                     "maxLength": 20
                 },
                 "address_state": {
+                    "description": "address_state is the state, province, or region name with maximum 100 characters",
                     "type": "string",
                     "maxLength": 100
                 },
                 "email": {
+                    "description": "email is the customer's email address and must be a valid email format if provided",
                     "type": "string"
                 },
                 "external_id": {
+                    "description": "external_id is the unique identifier from your system to reference this customer (required)",
                     "type": "string"
                 },
                 "metadata": {
+                    "description": "metadata contains additional key-value pairs for storing extra information",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
                 },
                 "name": {
+                    "description": "name is the full name or company name of the customer",
                     "type": "string"
+                },
+                "tax_rate_overrides": {
+                    "description": "tax_rate_overrides contains tax rate configurations to be linked to this customer",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.TaxRateOverride"
+                    }
                 }
             }
         },
@@ -9917,6 +11775,12 @@ const docTemplate = `{
                 "feature_type"
             ],
             "properties": {
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntitlementEntityType"
+                },
                 "feature_id": {
                     "type": "string"
                 },
@@ -10061,6 +11925,14 @@ const docTemplate = `{
                     "description": "display_name is the optional human-readable name for this line item",
                     "type": "string"
                 },
+                "entity_id": {
+                    "description": "entity_id is the optional unique identifier of the entity associated with this line item",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "description": "entity_type is the optional type of the entity associated with this line item",
+                    "type": "string"
+                },
                 "metadata": {
                     "description": "metadata contains additional custom key-value pairs for storing extra information about this line item",
                     "allOf": [
@@ -10090,7 +11962,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "plan_id": {
-                    "description": "plan_id is the optional unique identifier of the plan associated with this line item",
+                    "description": "TODO: !REMOVE after migration\nplan_id is the optional unique identifier of the plan associated with this line item",
                     "type": "string"
                 },
                 "price_id": {
@@ -10176,6 +12048,13 @@ const docTemplate = `{
                     "description": "idempotency_key is an optional key used to prevent duplicate invoice creation",
                     "type": "string"
                 },
+                "invoice_coupons": {
+                    "description": "Invoice Coupns",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.InvoiceCoupon"
+                    }
+                },
                 "invoice_number": {
                     "description": "invoice_number is an optional human-readable identifier for the invoice",
                     "type": "string"
@@ -10199,6 +12078,13 @@ const docTemplate = `{
                             "$ref": "#/definitions/types.InvoiceType"
                         }
                     ]
+                },
+                "line_item_coupons": {
+                    "description": "Invoice Line Item Coupons",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.InvoiceLineItemCoupon"
+                    }
                 },
                 "line_items": {
                     "description": "line_items contains the individual items that make up this invoice",
@@ -10231,6 +12117,13 @@ const docTemplate = `{
                     "description": "period_start is the start date of the billing period",
                     "type": "string"
                 },
+                "prepared_tax_rates": {
+                    "description": "prepared_tax_rates contains the tax rates pre-resolved by the caller (e.g., billing service)\nThese are applied at invoice level by the invoice service without further resolution",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.TaxRateResponse"
+                    }
+                },
                 "subscription_id": {
                     "description": "subscription_id is the optional unique identifier of the subscription associated with this invoice",
                     "type": "string"
@@ -10238,6 +12131,20 @@ const docTemplate = `{
                 "subtotal": {
                     "description": "subtotal is the amount before taxes and discounts are applied",
                     "type": "number"
+                },
+                "tax_rate_overrides": {
+                    "description": "tax_rate_overrides is the tax rate overrides to be applied to the invoice",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.TaxRateOverride"
+                    }
+                },
+                "tax_rates": {
+                    "description": "tax_rates",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "total": {
                     "description": "total is the total amount of the invoice including taxes and discounts",
@@ -10289,6 +12196,15 @@ const docTemplate = `{
                 "amount": {
                     "type": "number"
                 },
+                "cancel_url": {
+                    "type": "string"
+                },
+                "connection_id": {
+                    "type": "string"
+                },
+                "connection_name": {
+                    "type": "string"
+                },
                 "currency": {
                     "type": "string"
                 },
@@ -10316,6 +12232,9 @@ const docTemplate = `{
                 "process_payment": {
                     "type": "boolean",
                     "default": true
+                },
+                "success_url": {
+                    "type": "string"
                 }
             }
         },
@@ -10326,6 +12245,12 @@ const docTemplate = `{
                 "feature_type"
             ],
             "properties": {
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntitlementEntityType"
+                },
                 "feature_id": {
                     "type": "string"
                 },
@@ -10387,6 +12312,18 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "entity_id": {
+                    "description": "TODO: this will be required in the future as we will not allow prices to be created without an entity id",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "description": "TODO: this will be required in the future as we will not allow prices to be created without an entity type",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceEntityType"
+                        }
+                    ]
+                },
                 "filter_values": {
                     "type": "object",
                     "additionalProperties": {
@@ -10412,6 +12349,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "plan_id": {
+                    "description": "TODO: This is deprecated and will be removed in the future",
                     "type": "string"
                 },
                 "price_unit_config": {
@@ -10464,6 +12402,9 @@ const docTemplate = `{
                 "lookup_key": {
                     "type": "string"
                 },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -10510,6 +12451,18 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "entity_id": {
+                    "description": "TODO: this will be required in the future as we will not allow prices to be created without an entity id",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "description": "TODO: this will be required in the future as we will not allow prices to be created without an entity type",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceEntityType"
+                        }
+                    ]
+                },
                 "filter_values": {
                     "type": "object",
                     "additionalProperties": {
@@ -10535,6 +12488,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "plan_id": {
+                    "description": "TODO: This is deprecated and will be removed in the future",
                     "type": "string"
                 },
                 "price_unit_config": {
@@ -10570,12 +12524,15 @@ const docTemplate = `{
             ],
             "properties": {
                 "flat_amount": {
+                    "description": "flat_amount is the flat amount for the given tier (optional)\nApplied on top of unit_amount*quantity. Useful for cases like \"2.7$ + 5c\"",
                     "type": "string"
                 },
                 "unit_amount": {
+                    "description": "unit_amount is the amount per unit for the given tier",
                     "type": "string"
                 },
                 "up_to": {
+                    "description": "up_to is the quantity up to which this tier applies. It is null for the last tier.\nIMPORTANT: Tier boundaries are INCLUSIVE.\n- If up_to is 1000, then quantity less than or equal to 1000 belongs to this tier\n- This behavior is consistent across both VOLUME and SLAB tier modes",
                     "type": "integer"
                 }
             }
@@ -10620,10 +12577,16 @@ const docTemplate = `{
                 "billing_period",
                 "billing_period_count",
                 "currency",
-                "plan_id",
-                "start_date"
+                "plan_id"
             ],
             "properties": {
+                "addons": {
+                    "description": "Addons represents addons to be added to the subscription during creation",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AddAddonToSubscriptionRequest"
+                    }
+                },
                 "billing_cadence": {
                     "$ref": "#/definitions/types.BillingCadence"
                 },
@@ -10642,9 +12605,24 @@ const docTemplate = `{
                     "type": "integer",
                     "minimum": 1
                 },
+                "collection_method": {
+                    "description": "collection_method determines how invoices are collected\n\"default_incomplete\" - subscription waits for payment confirmation before activation\n\"send_invoice\" - subscription activates immediately, invoice is sent for payment",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.CollectionMethod"
+                        }
+                    ]
+                },
                 "commitment_amount": {
                     "description": "CommitmentAmount is the minimum amount a customer commits to paying for a billing period",
                     "type": "number"
+                },
+                "coupons": {
+                    "description": "SubscriptionCoupons is a list of coupon IDs to be applied to the subscription",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "credit_grants": {
                     "description": "Credit grants to be applied when subscription is created",
@@ -10666,6 +12644,16 @@ const docTemplate = `{
                 "external_customer_id": {
                     "description": "external_customer_id is the customer id in your DB\nand must be same as what you provided as external_id while creating the customer in flexprice.",
                     "type": "string"
+                },
+                "line_item_coupons": {
+                    "description": "SubscriptionLineItemsCoupons is a list of coupon IDs to be applied to the subscription line items",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
                 },
                 "lookup_key": {
                     "type": "string"
@@ -10700,11 +12688,11 @@ const docTemplate = `{
                 "start_date": {
                     "type": "string"
                 },
-                "subscription_coupons": {
-                    "description": "SubscriptionCoupons is a list of coupon IDs to be applied to the subscription",
+                "tax_rate_overrides": {
+                    "description": "tax_rate_overrides is the tax rate overrides\tto be applied to the subscription",
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "$ref": "#/definitions/dto.TaxRateOverride"
                     }
                 },
                 "trial_end": {
@@ -10742,6 +12730,92 @@ const docTemplate = `{
                 },
                 "task_type": {
                     "$ref": "#/definitions/types.TaskType"
+                }
+            }
+        },
+        "dto.CreateTaxAssociationRequest": {
+            "type": "object",
+            "required": [
+                "entity_id",
+                "entity_type",
+                "tax_rate_code"
+            ],
+            "properties": {
+                "auto_apply": {
+                    "type": "boolean"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.TaxRateEntityType"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "tax_rate_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CreateTaxRateRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "name"
+            ],
+            "properties": {
+                "code": {
+                    "description": "code is the unique alphanumeric case sensitive identifier for the tax rate (required)",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "description is an optional text description providing details about the tax rate",
+                    "type": "string"
+                },
+                "fixed_value": {
+                    "description": "fixed_value is the fixed monetary amount when tax_rate_type is \"fixed\"",
+                    "type": "number"
+                },
+                "metadata": {
+                    "description": "metadata contains additional key-value pairs for storing extra information",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "name is the human-readable name for the tax rate (required)",
+                    "type": "string"
+                },
+                "percentage_value": {
+                    "description": "percentage_value is the percentage value (0-100) when tax_rate_type is \"percentage\"",
+                    "type": "number"
+                },
+                "scope": {
+                    "description": "scope defines where this tax rate applies",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxRateScope"
+                        }
+                    ]
+                },
+                "tax_rate_type": {
+                    "description": "tax_rate_type determines how the tax is calculated (\"percentage\" or \"fixed\")",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxRateType"
+                        }
+                    ]
                 }
             }
         },
@@ -11121,6 +13195,7 @@ const docTemplate = `{
             }
         },
         "dto.CustomerResponse": {
+            "description": "Customer response object containing all customer information",
             "type": "object",
             "properties": {
                 "address_city": {
@@ -11217,11 +13292,20 @@ const docTemplate = `{
         "dto.EntitlementResponse": {
             "type": "object",
             "properties": {
+                "addon": {
+                    "$ref": "#/definitions/dto.AddonResponse"
+                },
                 "created_at": {
                     "type": "string"
                 },
                 "created_by": {
                     "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntitlementEntityType"
                 },
                 "environment_id": {
                     "type": "string"
@@ -11248,6 +13332,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/dto.PlanResponse"
                 },
                 "plan_id": {
+                    "description": "TODO: Remove this once we have a proper entitlement entity type",
                     "type": "string"
                 },
                 "static_value": {
@@ -11279,14 +13364,17 @@ const docTemplate = `{
                 "entitlement_id": {
                     "type": "string"
                 },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_name": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/dto.EntitlementSourceEntityType"
+                },
                 "is_enabled": {
                     "type": "boolean"
-                },
-                "plan_id": {
-                    "type": "string"
-                },
-                "plan_name": {
-                    "type": "string"
                 },
                 "quantity": {
                     "type": "integer"
@@ -11302,6 +13390,17 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.EntitlementSourceEntityType": {
+            "type": "string",
+            "enum": [
+                "plan",
+                "addon"
+            ],
+            "x-enum-varnames": [
+                "EntitlementSourceEntityTypePlan",
+                "EntitlementSourceEntityTypeAddon"
+            ]
+        },
         "dto.EntityIntegrationMappingResponse": {
             "type": "object",
             "properties": {
@@ -11312,36 +13411,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "entity_id": {
-                    "description": "EntityID is the FlexPrice entity ID (e.g., customer_id, plan_id, etc.)",
                     "type": "string"
                 },
                 "entity_type": {
-                    "description": "EntityType is the type of entity (e.g., customer, plan, invoice, subscription, etc.)",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.IntegrationEntityType"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.IntegrationEntityType"
                 },
                 "environment_id": {
-                    "description": "EnvironmentID is the environment identifier",
                     "type": "string"
                 },
                 "id": {
-                    "description": "ID is the unique identifier for the mapping",
                     "type": "string"
                 },
-                "metadata": {
-                    "description": "Metadata contains provider-specific data",
-                    "type": "object",
-                    "additionalProperties": true
-                },
                 "provider_entity_id": {
-                    "description": "ProviderEntityID is the provider's entity ID (e.g., stripe_customer_id, etc.)",
                     "type": "string"
                 },
                 "provider_type": {
-                    "description": "ProviderType is the payment provider type (e.g., stripe, razorpay, etc.)",
                     "type": "string"
                 },
                 "status": {
@@ -11678,6 +13762,15 @@ const docTemplate = `{
                 "meter_id"
             ],
             "properties": {
+                "bucket_size": {
+                    "description": "Optional, only used for MAX aggregation with windowing",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ],
+                    "example": "HOUR"
+                },
                 "customer_id": {
                     "type": "string",
                     "example": "customer456"
@@ -11790,6 +13883,15 @@ const docTemplate = `{
                 "aggregation_type": {
                     "$ref": "#/definitions/types.AggregationType"
                 },
+                "bucket_size": {
+                    "description": "Optional, only used for MAX aggregation with windowing",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ],
+                    "example": "HOUR"
+                },
                 "customer_id": {
                     "type": "string",
                     "example": "customer456"
@@ -11897,6 +13999,50 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.InvoiceCoupon": {
+            "type": "object",
+            "properties": {
+                "amount_off": {
+                    "type": "number"
+                },
+                "coupon_association_id": {
+                    "type": "string"
+                },
+                "coupon_id": {
+                    "type": "string"
+                },
+                "percentage_off": {
+                    "type": "number"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.CouponType"
+                }
+            }
+        },
+        "dto.InvoiceLineItemCoupon": {
+            "type": "object",
+            "properties": {
+                "amount_off": {
+                    "type": "number"
+                },
+                "coupon_association_id": {
+                    "type": "string"
+                },
+                "coupon_id": {
+                    "type": "string"
+                },
+                "line_item_id": {
+                    "description": "ID of the invoice line item this coupon applies to",
+                    "type": "string"
+                },
+                "percentage_off": {
+                    "type": "number"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.CouponType"
+                }
+            }
+        },
         "dto.InvoiceLineItemResponse": {
             "type": "object",
             "properties": {
@@ -11922,6 +14068,14 @@ const docTemplate = `{
                 },
                 "display_name": {
                     "description": "display_name is the optional human-readable name for this line item",
+                    "type": "string"
+                },
+                "entity_id": {
+                    "description": "entity_id is the optional unique identifier of the entity associated with this line item",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "description": "entity_type is the optional type of the entity associated with this line item",
                     "type": "string"
                 },
                 "id": {
@@ -12007,6 +14161,13 @@ const docTemplate = `{
                 "updated_by": {
                     "description": "updated_by is the identifier of the user who last updated this line item",
                     "type": "string"
+                },
+                "usage_analytics": {
+                    "description": "usage_analytics contains usage analytics for this line item",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.SourceUsageItem"
+                    }
                 }
             }
         },
@@ -12127,6 +14288,10 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "overpaid_amount": {
+                    "description": "overpaid_amount is the amount overpaid if payment_status is OVERPAID (amount_paid - total)",
+                    "type": "number"
+                },
                 "paid_at": {
                     "description": "paid_at is the timestamp when this invoice was paid",
                     "type": "string"
@@ -12167,6 +14332,13 @@ const docTemplate = `{
                     "description": "subtotal is the amount before taxes and discounts are applied",
                     "type": "number"
                 },
+                "taxes": {
+                    "description": "tax_applied_records contains the tax applied records associated with this invoice",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.TaxAppliedResponse"
+                    }
+                },
                 "tenant_id": {
                     "description": "tenant_id is the unique identifier of the tenant this invoice belongs to",
                     "type": "string"
@@ -12177,6 +14349,10 @@ const docTemplate = `{
                 },
                 "total_discount": {
                     "description": "total_discount is the total discount amount from coupon applications",
+                    "type": "number"
+                },
+                "total_tax": {
+                    "description": "total_tax is the total tax amount for this invoice",
                     "type": "number"
                 },
                 "updated_at": {
@@ -12205,6 +14381,20 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "dto.ListAddonsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.AddonResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
                 }
             }
         },
@@ -12285,6 +14475,7 @@ const docTemplate = `{
             }
         },
         "dto.ListCustomersResponse": {
+            "description": "Response object for listing customers with pagination",
             "type": "object",
             "properties": {
                 "items": {
@@ -12445,15 +14636,18 @@ const docTemplate = `{
             }
         },
         "dto.ListSubscriptionPausesResponse": {
+            "description": "Response object for listing subscription pauses with total count",
             "type": "object",
             "properties": {
                 "items": {
+                    "description": "List of subscription pause objects\n@Description Array of subscription pauses",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.SubscriptionPauseResponse"
                     }
                 },
                 "total": {
+                    "description": "Total number of pauses\n@Description Total count of subscription pauses in the response",
                     "type": "integer"
                 }
             }
@@ -12479,6 +14673,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.TaskResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "dto.ListTaxAssociationsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.TaxAssociationResponse"
                     }
                 },
                 "pagination": {
@@ -12585,33 +14793,45 @@ const docTemplate = `{
             }
         },
         "dto.PauseSubscriptionRequest": {
+            "description": "Request object for pausing an active subscription with various pause modes and options",
             "type": "object",
             "required": [
                 "pause_mode"
             ],
             "properties": {
                 "dry_run": {
+                    "description": "Whether to perform a dry run\n@Description If true, validates the request and shows impact without actually pausing the subscription\n@Example false",
                     "type": "boolean"
                 },
                 "metadata": {
+                    "description": "Additional metadata as key-value pairs\n@Description Optional metadata for storing additional information about the pause\n@Example {\"requested_by\": \"customer\", \"channel\": \"support_ticket\"}",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
                 },
                 "pause_days": {
+                    "description": "Duration of the pause in days\n@Description Number of days to pause the subscription. Cannot be used together with pause_end. Must be greater than 0\n@Example 30",
                     "type": "integer"
                 },
                 "pause_end": {
+                    "description": "End date for the subscription pause\n@Description ISO 8601 timestamp when the pause should end. Cannot be used together with pause_days. Must be after pause_start\n@Example \"2024-02-15T00:00:00Z\"",
                     "type": "string"
                 },
                 "pause_mode": {
-                    "$ref": "#/definitions/types.PauseMode"
+                    "description": "Mode for pausing the subscription\n@Description Determines when the pause takes effect. \"immediate\" pauses right away, \"scheduled\" pauses at a specified time\n@Enum immediate,scheduled",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PauseMode"
+                        }
+                    ]
                 },
                 "pause_start": {
+                    "description": "Start date for the subscription pause\n@Description ISO 8601 timestamp when the pause should begin. Required when pause_mode is \"scheduled\"\n@Example \"2024-01-15T00:00:00Z\"",
                     "type": "string"
                 },
                 "reason": {
+                    "description": "Reason for pausing the subscription\n@Description Optional reason for the pause. Maximum 255 characters\n@Example \"Customer requested temporary suspension\"",
                     "type": "string",
                     "maxLength": 255
                 }
@@ -12724,9 +14944,6 @@ const docTemplate = `{
                 "refunded_at": {
                     "type": "string"
                 },
-                "session_id": {
-                    "type": "string"
-                },
                 "succeeded_at": {
                     "type": "string"
                 },
@@ -12777,10 +14994,14 @@ const docTemplate = `{
                 "lookup_key": {
                     "type": "string"
                 },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
                 "name": {
                     "type": "string"
                 },
                 "prices": {
+                    "description": "TODO: Add inline addons",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.PriceResponse"
@@ -12846,6 +15067,18 @@ const docTemplate = `{
                     "description": "DisplayPriceUnitAmount is the formatted amount with price unit symbol\nFor BTC: 0.00000001 BTC",
                     "type": "string"
                 },
+                "entity_id": {
+                    "description": "EntityID holds the value of the \"entity_id\" field.",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "description": "EntityType holds the value of the \"entity_type\" field.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceEntityType"
+                        }
+                    ]
+                },
                 "environment_id": {
                     "description": "EnvironmentID is the environment identifier for the price",
                     "type": "string"
@@ -12872,11 +15105,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent_price_id": {
-                    "description": "ParentPriceID references the original price (only set when scope is SUBSCRIPTION)",
+                    "description": "ParentPriceID references the parent price (only set when scope is SUBSCRIPTION)",
                     "type": "string"
                 },
                 "plan_id": {
-                    "description": "PlanID is the id of the plan for plan based pricing",
+                    "description": "TODO: Remove this once we have a proper price entity type",
                     "type": "string"
                 },
                 "price_unit": {
@@ -12906,20 +15139,11 @@ const docTemplate = `{
                         }
                     ]
                 },
-                "scope": {
-                    "description": "Price override fields\nScope indicates if this is a plan-level or subscription-level price",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PriceScope"
-                        }
-                    ]
+                "pricing_unit": {
+                    "$ref": "#/definitions/dto.PriceUnitResponse"
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
-                },
-                "subscription_id": {
-                    "description": "SubscriptionID references the subscription (only set when scope is SUBSCRIPTION)",
-                    "type": "string"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -12986,6 +15210,12 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -13001,7 +15231,13 @@ const docTemplate = `{
                 "symbol": {
                     "type": "string"
                 },
+                "tenant_id": {
+                    "type": "string"
+                },
                 "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
                     "type": "string"
                 }
             }
@@ -13043,23 +15279,49 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.RemoveAddonRequest": {
+            "type": "object",
+            "required": [
+                "addon_id",
+                "subscription_id"
+            ],
+            "properties": {
+                "addon_id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ResumeSubscriptionRequest": {
+            "description": "Request object for resuming a paused subscription",
             "type": "object",
             "required": [
                 "resume_mode"
             ],
             "properties": {
                 "dry_run": {
+                    "description": "Whether to perform a dry run\n@Description If true, validates the request and shows impact without actually resuming the subscription\n@Example false",
                     "type": "boolean"
                 },
                 "metadata": {
+                    "description": "Additional metadata as key-value pairs\n@Description Optional metadata for storing additional information about the resume operation\n@Example {\"resumed_by\": \"admin\", \"reason\": \"issue_resolved\"}",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
                 },
                 "resume_mode": {
-                    "$ref": "#/definitions/types.ResumeMode"
+                    "description": "Mode for resuming the subscription\n@Description Determines how the subscription should be resumed\n@Enum immediate,scheduled",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ResumeMode"
+                        }
+                    ]
                 }
             }
         },
@@ -13125,6 +15387,31 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.SourceUsageItem": {
+            "type": "object",
+            "properties": {
+                "cost": {
+                    "description": "cost is the cost attributed to this source for the line item",
+                    "type": "string"
+                },
+                "event_count": {
+                    "description": "event_count is the number of events from this source (optional)",
+                    "type": "integer"
+                },
+                "percentage": {
+                    "description": "percentage is the percentage of total line item cost from this source (optional)",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "source is the name of the event source",
+                    "type": "string"
+                },
+                "usage": {
+                    "description": "usage is the total usage amount from this source (optional, for additional context)",
+                    "type": "string"
+                }
+            }
+        },
         "dto.SubscriptionLineItemRequest": {
             "type": "object",
             "required": [
@@ -13173,6 +15460,12 @@ const docTemplate = `{
                 "end_date": {
                     "type": "string"
                 },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.SubscriptionLineItemEntitiyType"
+                },
                 "environment_id": {
                     "type": "string"
                 },
@@ -13195,9 +15488,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "plan_display_name": {
-                    "type": "string"
-                },
-                "plan_id": {
                     "type": "string"
                 },
                 "price_id": {
@@ -13239,6 +15529,7 @@ const docTemplate = `{
             }
         },
         "dto.SubscriptionPauseResponse": {
+            "description": "Response object containing subscription pause information",
             "type": "object",
             "properties": {
                 "created_at": {
@@ -13701,6 +15992,234 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.TaxAppliedResponse": {
+            "type": "object",
+            "properties": {
+                "applied_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.TaxRateEntityType"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tax_amount": {
+                    "type": "number"
+                },
+                "tax_association_id": {
+                    "type": "string"
+                },
+                "tax_rate_id": {
+                    "type": "string"
+                },
+                "taxable_amount": {
+                    "type": "number"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.TaxAssociationResponse": {
+            "type": "object",
+            "properties": {
+                "auto_apply": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.TaxRateEntityType"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tax_rate": {
+                    "$ref": "#/definitions/dto.TaxRateResponse"
+                },
+                "tax_rate_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "valid_to": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.TaxAssociationUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "auto_apply": {
+                    "type": "boolean"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "priority": {
+                    "type": "integer"
+                }
+            }
+        },
+        "dto.TaxRateOverride": {
+            "type": "object",
+            "required": [
+                "currency",
+                "tax_rate_code"
+            ],
+            "properties": {
+                "auto_apply": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "tax_rate_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.TaxRateResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "fixed_value": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "percentage_value": {
+                    "type": "number"
+                },
+                "scope": {
+                    "$ref": "#/definitions/types.TaxRateScope"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tax_rate_status": {
+                    "$ref": "#/definitions/types.TaxRateStatus"
+                },
+                "tax_rate_type": {
+                    "$ref": "#/definitions/types.TaxRateType"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.TenantBillingDetails": {
             "type": "object",
             "properties": {
@@ -13814,6 +16333,21 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.UpdateAddonRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.UpdateConnectionRequest": {
             "type": "object",
             "properties": {
@@ -13865,44 +16399,55 @@ const docTemplate = `{
             }
         },
         "dto.UpdateCustomerRequest": {
+            "description": "Request object for updating an existing customer. All fields are optional - only provided fields will be updated",
             "type": "object",
             "properties": {
                 "address_city": {
+                    "description": "address_city is the updated city name with maximum 100 characters",
                     "type": "string",
                     "maxLength": 100
                 },
                 "address_country": {
+                    "description": "address_country is the updated two-letter ISO 3166-1 alpha-2 country code",
                     "type": "string"
                 },
                 "address_line1": {
+                    "description": "address_line1 is the updated primary address line with maximum 255 characters",
                     "type": "string",
                     "maxLength": 255
                 },
                 "address_line2": {
+                    "description": "address_line2 is the updated secondary address line with maximum 255 characters",
                     "type": "string",
                     "maxLength": 255
                 },
                 "address_postal_code": {
+                    "description": "address_postal_code is the updated postal code with maximum 20 characters",
                     "type": "string",
                     "maxLength": 20
                 },
                 "address_state": {
+                    "description": "address_state is the updated state, province, or region name with maximum 100 characters",
                     "type": "string",
                     "maxLength": 100
                 },
                 "email": {
+                    "description": "email is the updated email address and must be a valid email format if provided",
                     "type": "string"
                 },
                 "external_id": {
+                    "description": "external_id is the updated external identifier for the customer",
                     "type": "string"
                 },
                 "metadata": {
+                    "description": "metadata contains updated key-value pairs that will replace existing metadata",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
                 },
                 "name": {
+                    "description": "name is the updated name or company name for the customer",
                     "type": "string"
                 }
             }
@@ -14083,6 +16628,12 @@ const docTemplate = `{
                 "feature_type"
             ],
             "properties": {
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntitlementEntityType"
+                },
                 "feature_id": {
                     "type": "string"
                 },
@@ -14148,6 +16699,18 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "entity_id": {
+                    "description": "TODO: this will be required in the future as we will not allow prices to be created without an entity id",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "description": "TODO: this will be required in the future as we will not allow prices to be created without an entity type",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceEntityType"
+                        }
+                    ]
+                },
                 "filter_values": {
                     "type": "object",
                     "additionalProperties": {
@@ -14177,6 +16740,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "plan_id": {
+                    "description": "TODO: This is deprecated and will be removed in the future",
                     "type": "string"
                 },
                 "price_unit_config": {
@@ -14225,6 +16789,9 @@ const docTemplate = `{
                 },
                 "lookup_key": {
                     "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
                 },
                 "name": {
                     "type": "string"
@@ -14282,6 +16849,38 @@ const docTemplate = `{
             "properties": {
                 "task_status": {
                     "$ref": "#/definitions/types.TaskStatus"
+                }
+            }
+        },
+        "dto.UpdateTaxRateRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "code is the updated unique alphanumeric identifier for the tax rate",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "description is the updated text description for the tax rate",
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "metadata contains updated key-value pairs that will replace existing metadata",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "name is the updated human-readable name for the tax rate",
+                    "type": "string"
+                },
+                "tax_rate_status": {
+                    "description": "tax_rate_type determines how the tax is calculated (\"percentage\" or \"fixed\")",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxRateStatus"
+                        }
+                    ]
                 }
             }
         },
@@ -14694,12 +17293,20 @@ const docTemplate = `{
         "meter.Aggregation": {
             "type": "object",
             "properties": {
+                "bucket_size": {
+                    "description": "BucketSize is used only for MAX aggregation when windowed aggregation is needed\nIt defines the size of time windows to calculate max values within",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ]
+                },
                 "field": {
                     "description": "Field is the key in $event.properties on which the aggregation is to be applied\nFor ex if the aggregation type is sum for API usage, the field could be \"duration_ms\"",
                     "type": "string"
                 },
                 "multiplier": {
-                    "description": "Multiplier is the multiplier for the aggregation\nFor ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000\nto scale up by a factor of 1000",
+                    "description": "Multiplier is the multiplier for the aggregation\nFor ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000\nto scale up by a factor of 1000. If not provided, it will be null.",
                     "type": "number"
                 },
                 "type": {
@@ -14797,6 +17404,18 @@ const docTemplate = `{
                     "description": "DisplayPriceUnitAmount is the formatted amount with price unit symbol\nFor BTC: 0.00000001 BTC",
                     "type": "string"
                 },
+                "entity_id": {
+                    "description": "EntityID holds the value of the \"entity_id\" field.",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "description": "EntityType holds the value of the \"entity_type\" field.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.PriceEntityType"
+                        }
+                    ]
+                },
                 "environment_id": {
                     "description": "EnvironmentID is the environment identifier for the price",
                     "type": "string"
@@ -14820,11 +17439,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "parent_price_id": {
-                    "description": "ParentPriceID references the original price (only set when scope is SUBSCRIPTION)",
-                    "type": "string"
-                },
-                "plan_id": {
-                    "description": "PlanID is the id of the plan for plan based pricing",
+                    "description": "ParentPriceID references the parent price (only set when scope is SUBSCRIPTION)",
                     "type": "string"
                 },
                 "price_unit": {
@@ -14854,20 +17469,8 @@ const docTemplate = `{
                         }
                     ]
                 },
-                "scope": {
-                    "description": "Price override fields\nScope indicates if this is a plan-level or subscription-level price",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PriceScope"
-                        }
-                    ]
-                },
                 "status": {
                     "$ref": "#/definitions/types.Status"
-                },
-                "subscription_id": {
-                    "description": "SubscriptionID references the subscription (only set when scope is SUBSCRIPTION)",
-                    "type": "string"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -14903,15 +17506,15 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "flat_amount": {
-                    "description": "FlatAmount is the flat amount for the given tier and it is applied\non top of the unit amount*quantity. It solves cases in banking like 2.7% + 5c",
+                    "description": "flat_amount is the flat amount for the given tier (optional)\nApplied on top of unit_amount*quantity. Useful for cases like \"2.7$ + 5c\"",
                     "type": "number"
                 },
                 "unit_amount": {
-                    "description": "UnitAmount is the amount per unit for the given tier",
+                    "description": "unit_amount is the amount per unit for the given tier",
                     "type": "number"
                 },
                 "up_to": {
-                    "description": "Upto is the quantity up to which this tier applies. It is null for the last tier",
+                    "description": "up_to is the quantity up to which this tier applies. It is null for the last tier.\nIMPORTANT: Tier boundaries are INCLUSIVE.\n- If up_to is 1000, then quantity less than or equal to 1000 belongs to this tier\n- This behavior is consistent across both VOLUME and SLAB tier modes",
                     "type": "integer"
                 }
             }
@@ -14926,6 +17529,57 @@ const docTemplate = `{
                 "round": {
                     "description": "up or down",
                     "type": "string"
+                }
+            }
+        },
+        "priceunit.PriceUnitFilter": {
+            "type": "object",
+            "properties": {
+                "environment_id": {
+                    "description": "EnvironmentID filters by specific environment ID",
+                    "type": "string"
+                },
+                "filters": {
+                    "description": "Filters allows complex filtering based on multiple fields",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "queryFilter": {
+                    "description": "QueryFilter contains pagination and basic query parameters",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.QueryFilter"
+                        }
+                    ]
+                },
+                "sort": {
+                    "description": "Sort allows sorting by multiple fields",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "status": {
+                    "description": "Status filters by price unit status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Status"
+                        }
+                    ]
+                },
+                "tenant_id": {
+                    "description": "TenantID filters by specific tenant ID",
+                    "type": "string"
+                },
+                "timeRangeFilter": {
+                    "description": "TimeRangeFilter allows filtering by time periods",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TimeRangeFilter"
+                        }
+                    ]
                 }
             }
         },
@@ -14984,6 +17638,12 @@ const docTemplate = `{
                 "end_date": {
                     "type": "string"
                 },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.SubscriptionLineItemEntitiyType"
+                },
                 "environment_id": {
                     "type": "string"
                 },
@@ -15006,9 +17666,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "plan_display_name": {
-                    "type": "string"
-                },
-                "plan_id": {
                     "type": "string"
                 },
                 "price_id": {
@@ -15120,6 +17777,104 @@ const docTemplate = `{
                 }
             }
         },
+        "types.AddonAssociationEntityType": {
+            "type": "string",
+            "enum": [
+                "subscription",
+                "plan",
+                "addon"
+            ],
+            "x-enum-varnames": [
+                "AddonAssociationEntityTypeSubscription",
+                "AddonAssociationEntityTypePlan",
+                "AddonAssociationEntityTypeAddon"
+            ]
+        },
+        "types.AddonFilter": {
+            "type": "object",
+            "properties": {
+                "addon_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "addon_type": {
+                    "$ref": "#/definitions/types.AddonType"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "filters": {
+                    "description": "filters allows complex filtering based on multiple fields",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "lookup_keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                }
+            }
+        },
+        "types.AddonStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "cancelled",
+                "paused"
+            ],
+            "x-enum-varnames": [
+                "AddonStatusActive",
+                "AddonStatusCancelled",
+                "AddonStatusPaused"
+            ]
+        },
+        "types.AddonType": {
+            "type": "string",
+            "enum": [
+                "onetime",
+                "multiple"
+            ],
+            "x-enum-varnames": [
+                "AddonTypeOnetime",
+                "AddonTypeMultiple"
+            ]
+        },
         "types.AggregationType": {
             "type": "string",
             "enum": [
@@ -15128,7 +17883,8 @@ const docTemplate = `{
                 "AVG",
                 "COUNT_UNIQUE",
                 "LATEST",
-                "SUM_WITH_MULTIPLIER"
+                "SUM_WITH_MULTIPLIER",
+                "MAX"
             ],
             "x-enum-comments": {
                 "AggregationSumWithMultiplier": "Sum with a multiplier - [sum(value) * multiplier]"
@@ -15139,7 +17895,8 @@ const docTemplate = `{
                 "",
                 "",
                 "",
-                "Sum with a multiplier - [sum(value) * multiplier]"
+                "Sum with a multiplier - [sum(value) * multiplier]",
+                ""
             ],
             "x-enum-varnames": [
                 "AggregationCount",
@@ -15147,7 +17904,8 @@ const docTemplate = `{
                 "AggregationAvg",
                 "AggregationCountUnique",
                 "AggregationLatest",
-                "AggregationSumWithMultiplier"
+                "AggregationSumWithMultiplier",
+                "AggregationMax"
             ]
         },
         "types.AlertConfig": {
@@ -15245,6 +18003,82 @@ const docTemplate = `{
                 "BILLING_TIER_VOLUME",
                 "BILLING_TIER_SLAB"
             ]
+        },
+        "types.CollectionMethod": {
+            "type": "string",
+            "enum": [
+                "default_incomplete",
+                "send_invoice"
+            ],
+            "x-enum-varnames": [
+                "CollectionMethodDefaultIncomplete",
+                "CollectionMethodSendInvoice"
+            ]
+        },
+        "types.ConnectionFilter": {
+            "type": "object",
+            "properties": {
+                "connection_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "provider_type": {
+                    "$ref": "#/definitions/types.SecretProvider"
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                }
+            }
+        },
+        "types.ConnectionMetadata": {
+            "type": "object",
+            "properties": {
+                "generic": {
+                    "$ref": "#/definitions/types.GenericConnectionMetadata"
+                },
+                "stripe": {
+                    "$ref": "#/definitions/types.StripeConnectionMetadata"
+                }
+            }
         },
         "types.CouponCadence": {
             "type": "string",
@@ -15462,11 +18296,33 @@ const docTemplate = `{
                 "DataTypeArray"
             ]
         },
+        "types.EntitlementEntityType": {
+            "type": "string",
+            "enum": [
+                "PLAN",
+                "SUBSCRIPTION",
+                "ADDON"
+            ],
+            "x-enum-varnames": [
+                "ENTITLEMENT_ENTITY_TYPE_PLAN",
+                "ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION",
+                "ENTITLEMENT_ENTITY_TYPE_ADDON"
+            ]
+        },
         "types.EntitlementFilter": {
             "type": "object",
             "properties": {
                 "end_time": {
                     "type": "string"
+                },
+                "entity_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntitlementEntityType"
                 },
                 "expand": {
                     "type": "string"
@@ -15938,6 +18794,7 @@ const docTemplate = `{
                 "PENDING",
                 "PROCESSING",
                 "SUCCEEDED",
+                "OVERPAID",
                 "FAILED",
                 "REFUNDED",
                 "PARTIALLY_REFUNDED"
@@ -15947,6 +18804,7 @@ const docTemplate = `{
                 "PaymentStatusPending",
                 "PaymentStatusProcessing",
                 "PaymentStatusSucceeded",
+                "PaymentStatusOverpaid",
                 "PaymentStatusFailed",
                 "PaymentStatusRefunded",
                 "PaymentStatusPartiallyRefunded"
@@ -15957,6 +18815,15 @@ const docTemplate = `{
             "properties": {
                 "end_time": {
                     "type": "string"
+                },
+                "entity_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntitlementEntityType"
                 },
                 "expand": {
                     "type": "string"
@@ -16004,15 +18871,19 @@ const docTemplate = `{
                 }
             }
         },
-        "types.PriceScope": {
+        "types.PriceEntityType": {
             "type": "string",
             "enum": [
                 "PLAN",
-                "SUBSCRIPTION"
+                "SUBSCRIPTION",
+                "ADDON",
+                "PRICE"
             ],
             "x-enum-varnames": [
-                "PRICE_SCOPE_PLAN",
-                "PRICE_SCOPE_SUBSCRIPTION"
+                "PRICE_ENTITY_TYPE_PLAN",
+                "PRICE_ENTITY_TYPE_SUBSCRIPTION",
+                "PRICE_ENTITY_TYPE_ADDON",
+                "PRICE_ENTITY_TYPE_PRICE"
             ]
         },
         "types.PriceType": {
@@ -16163,6 +19034,23 @@ const docTemplate = `{
                 "StatusArchived"
             ]
         },
+        "types.StripeConnectionMetadata": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "publishable_key": {
+                    "type": "string"
+                },
+                "secret_key": {
+                    "type": "string"
+                },
+                "webhook_secret": {
+                    "type": "string"
+                }
+            }
+        },
         "types.SubscriptionFilter": {
             "type": "object",
             "properties": {
@@ -16251,6 +19139,17 @@ const docTemplate = `{
                 }
             }
         },
+        "types.SubscriptionLineItemEntitiyType": {
+            "type": "string",
+            "enum": [
+                "plan",
+                "addon"
+            ],
+            "x-enum-varnames": [
+                "SubscriptionLineItemEntitiyTypePlan",
+                "SubscriptionLineItemEntitiyTypeAddon"
+            ]
+        },
         "types.SubscriptionScheduleStatus": {
             "type": "string",
             "enum": [
@@ -16311,6 +19210,116 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "TaskTypeImport",
                 "TaskTypeExport"
+            ]
+        },
+        "types.TaxAssociationFilter": {
+            "type": "object",
+            "properties": {
+                "auto_apply": {
+                    "type": "boolean"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.TaxRateEntityType"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "sort": {
+                    "type": "string"
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tax_association_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tax_rate_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "types.TaxRateEntityType": {
+            "type": "string",
+            "enum": [
+                "customer",
+                "subscription",
+                "invoice",
+                "tenant"
+            ],
+            "x-enum-varnames": [
+                "TaxRateEntityTypeCustomer",
+                "TaxRateEntityTypeSubscription",
+                "TaxRateEntityTypeInvoice",
+                "TaxRateEntityTypeTenant"
+            ]
+        },
+        "types.TaxRateScope": {
+            "type": "string",
+            "enum": [
+                "INTERNAL",
+                "EXTERNAL",
+                "ONETIME"
+            ],
+            "x-enum-varnames": [
+                "TaxRateScopeInternal",
+                "TaxRateScopeExternal",
+                "TaxRateScopeOneTime"
+            ]
+        },
+        "types.TaxRateStatus": {
+            "type": "string",
+            "enum": [
+                "ACTIVE",
+                "INACTIVE"
+            ],
+            "x-enum-varnames": [
+                "TaxRateStatusActive",
+                "TaxRateStatusInactive"
+            ]
+        },
+        "types.TaxRateType": {
+            "type": "string",
+            "enum": [
+                "percentage",
+                "fixed"
+            ],
+            "x-enum-varnames": [
+                "TaxRateTypePercentage",
+                "TaxRateTypeFixed"
             ]
         },
         "types.TimeRangeFilter": {
