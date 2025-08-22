@@ -6,11 +6,12 @@ import (
 )
 
 type Plan struct {
-	ID            string `db:"id" json:"id"`
-	Name          string `db:"name" json:"name"`
-	LookupKey     string `db:"lookup_key" json:"lookup_key"`
-	Description   string `db:"description" json:"description"`
-	EnvironmentID string `db:"environment_id" json:"environment_id"`
+	ID            string         `db:"id" json:"id"`
+	Name          string         `db:"name" json:"name"`
+	LookupKey     string         `db:"lookup_key" json:"lookup_key"`
+	Description   string         `db:"description" json:"description"`
+	EnvironmentID string         `db:"environment_id" json:"environment_id"`
+	Metadata      types.Metadata `db:"metadata" json:"metadata"`
 	types.BaseModel
 }
 
@@ -25,6 +26,7 @@ func FromEnt(e *ent.Plan) *Plan {
 		LookupKey:     e.LookupKey,
 		Description:   e.Description,
 		EnvironmentID: e.EnvironmentID,
+		Metadata:      types.Metadata(e.Metadata),
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

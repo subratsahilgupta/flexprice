@@ -16793,6 +16793,7 @@ type CustomerMutation struct {
 	created_by          *string
 	updated_by          *string
 	environment_id      *string
+	metadata            *map[string]string
 	external_id         *string
 	name                *string
 	email               *string
@@ -16802,7 +16803,6 @@ type CustomerMutation struct {
 	address_state       *string
 	address_postal_code *string
 	address_country     *string
-	metadata            *map[string]string
 	clearedFields       map[string]struct{}
 	done                bool
 	oldValue            func(context.Context) (*Customer, error)
@@ -17202,6 +17202,42 @@ func (m *CustomerMutation) EnvironmentIDCleared() bool {
 func (m *CustomerMutation) ResetEnvironmentID() {
 	m.environment_id = nil
 	delete(m.clearedFields, customer.FieldEnvironmentID)
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *CustomerMutation) SetMetadata(value map[string]string) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *CustomerMutation) Metadata() (r map[string]string, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the Customer entity.
+// If the Customer object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CustomerMutation) OldMetadata(ctx context.Context) (v map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *CustomerMutation) ResetMetadata() {
+	m.metadata = nil
 }
 
 // SetExternalID sets the "external_id" field.
@@ -17619,55 +17655,6 @@ func (m *CustomerMutation) ResetAddressCountry() {
 	delete(m.clearedFields, customer.FieldAddressCountry)
 }
 
-// SetMetadata sets the "metadata" field.
-func (m *CustomerMutation) SetMetadata(value map[string]string) {
-	m.metadata = &value
-}
-
-// Metadata returns the value of the "metadata" field in the mutation.
-func (m *CustomerMutation) Metadata() (r map[string]string, exists bool) {
-	v := m.metadata
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldMetadata returns the old "metadata" field's value of the Customer entity.
-// If the Customer object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CustomerMutation) OldMetadata(ctx context.Context) (v map[string]string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldMetadata requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
-	}
-	return oldValue.Metadata, nil
-}
-
-// ClearMetadata clears the value of the "metadata" field.
-func (m *CustomerMutation) ClearMetadata() {
-	m.metadata = nil
-	m.clearedFields[customer.FieldMetadata] = struct{}{}
-}
-
-// MetadataCleared returns if the "metadata" field was cleared in this mutation.
-func (m *CustomerMutation) MetadataCleared() bool {
-	_, ok := m.clearedFields[customer.FieldMetadata]
-	return ok
-}
-
-// ResetMetadata resets all changes to the "metadata" field.
-func (m *CustomerMutation) ResetMetadata() {
-	m.metadata = nil
-	delete(m.clearedFields, customer.FieldMetadata)
-}
-
 // Where appends a list predicates to the CustomerMutation builder.
 func (m *CustomerMutation) Where(ps ...predicate.Customer) {
 	m.predicates = append(m.predicates, ps...)
@@ -17724,6 +17711,9 @@ func (m *CustomerMutation) Fields() []string {
 	if m.environment_id != nil {
 		fields = append(fields, customer.FieldEnvironmentID)
 	}
+	if m.metadata != nil {
+		fields = append(fields, customer.FieldMetadata)
+	}
 	if m.external_id != nil {
 		fields = append(fields, customer.FieldExternalID)
 	}
@@ -17751,9 +17741,6 @@ func (m *CustomerMutation) Fields() []string {
 	if m.address_country != nil {
 		fields = append(fields, customer.FieldAddressCountry)
 	}
-	if m.metadata != nil {
-		fields = append(fields, customer.FieldMetadata)
-	}
 	return fields
 }
 
@@ -17776,6 +17763,8 @@ func (m *CustomerMutation) Field(name string) (ent.Value, bool) {
 		return m.UpdatedBy()
 	case customer.FieldEnvironmentID:
 		return m.EnvironmentID()
+	case customer.FieldMetadata:
+		return m.Metadata()
 	case customer.FieldExternalID:
 		return m.ExternalID()
 	case customer.FieldName:
@@ -17794,8 +17783,6 @@ func (m *CustomerMutation) Field(name string) (ent.Value, bool) {
 		return m.AddressPostalCode()
 	case customer.FieldAddressCountry:
 		return m.AddressCountry()
-	case customer.FieldMetadata:
-		return m.Metadata()
 	}
 	return nil, false
 }
@@ -17819,6 +17806,8 @@ func (m *CustomerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldUpdatedBy(ctx)
 	case customer.FieldEnvironmentID:
 		return m.OldEnvironmentID(ctx)
+	case customer.FieldMetadata:
+		return m.OldMetadata(ctx)
 	case customer.FieldExternalID:
 		return m.OldExternalID(ctx)
 	case customer.FieldName:
@@ -17837,8 +17826,6 @@ func (m *CustomerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldAddressPostalCode(ctx)
 	case customer.FieldAddressCountry:
 		return m.OldAddressCountry(ctx)
-	case customer.FieldMetadata:
-		return m.OldMetadata(ctx)
 	}
 	return nil, fmt.Errorf("unknown Customer field %s", name)
 }
@@ -17896,6 +17883,13 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetEnvironmentID(v)
+		return nil
+	case customer.FieldMetadata:
+		v, ok := value.(map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
 		return nil
 	case customer.FieldExternalID:
 		v, ok := value.(string)
@@ -17960,13 +17954,6 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAddressCountry(v)
 		return nil
-	case customer.FieldMetadata:
-		v, ok := value.(map[string]string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetMetadata(v)
-		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)
 }
@@ -18027,9 +18014,6 @@ func (m *CustomerMutation) ClearedFields() []string {
 	if m.FieldCleared(customer.FieldAddressCountry) {
 		fields = append(fields, customer.FieldAddressCountry)
 	}
-	if m.FieldCleared(customer.FieldMetadata) {
-		fields = append(fields, customer.FieldMetadata)
-	}
 	return fields
 }
 
@@ -18074,9 +18058,6 @@ func (m *CustomerMutation) ClearField(name string) error {
 	case customer.FieldAddressCountry:
 		m.ClearAddressCountry()
 		return nil
-	case customer.FieldMetadata:
-		m.ClearMetadata()
-		return nil
 	}
 	return fmt.Errorf("unknown Customer nullable field %s", name)
 }
@@ -18106,6 +18087,9 @@ func (m *CustomerMutation) ResetField(name string) error {
 	case customer.FieldEnvironmentID:
 		m.ResetEnvironmentID()
 		return nil
+	case customer.FieldMetadata:
+		m.ResetMetadata()
+		return nil
 	case customer.FieldExternalID:
 		m.ResetExternalID()
 		return nil
@@ -18132,9 +18116,6 @@ func (m *CustomerMutation) ResetField(name string) error {
 		return nil
 	case customer.FieldAddressCountry:
 		m.ResetAddressCountry()
-		return nil
-	case customer.FieldMetadata:
-		m.ResetMetadata()
 		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)
@@ -32715,6 +32696,7 @@ type PlanMutation struct {
 	created_by           *string
 	updated_by           *string
 	environment_id       *string
+	metadata             *map[string]string
 	lookup_key           *string
 	name                 *string
 	description          *string
@@ -33122,6 +33104,42 @@ func (m *PlanMutation) ResetEnvironmentID() {
 	delete(m.clearedFields, plan.FieldEnvironmentID)
 }
 
+// SetMetadata sets the "metadata" field.
+func (m *PlanMutation) SetMetadata(value map[string]string) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *PlanMutation) Metadata() (r map[string]string, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the Plan entity.
+// If the Plan object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PlanMutation) OldMetadata(ctx context.Context) (v map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *PlanMutation) ResetMetadata() {
+	m.metadata = nil
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (m *PlanMutation) SetLookupKey(s string) {
 	m.lookup_key = &s
@@ -33344,7 +33362,7 @@ func (m *PlanMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PlanMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 11)
 	if m.tenant_id != nil {
 		fields = append(fields, plan.FieldTenantID)
 	}
@@ -33365,6 +33383,9 @@ func (m *PlanMutation) Fields() []string {
 	}
 	if m.environment_id != nil {
 		fields = append(fields, plan.FieldEnvironmentID)
+	}
+	if m.metadata != nil {
+		fields = append(fields, plan.FieldMetadata)
 	}
 	if m.lookup_key != nil {
 		fields = append(fields, plan.FieldLookupKey)
@@ -33397,6 +33418,8 @@ func (m *PlanMutation) Field(name string) (ent.Value, bool) {
 		return m.UpdatedBy()
 	case plan.FieldEnvironmentID:
 		return m.EnvironmentID()
+	case plan.FieldMetadata:
+		return m.Metadata()
 	case plan.FieldLookupKey:
 		return m.LookupKey()
 	case plan.FieldName:
@@ -33426,6 +33449,8 @@ func (m *PlanMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldUpdatedBy(ctx)
 	case plan.FieldEnvironmentID:
 		return m.OldEnvironmentID(ctx)
+	case plan.FieldMetadata:
+		return m.OldMetadata(ctx)
 	case plan.FieldLookupKey:
 		return m.OldLookupKey(ctx)
 	case plan.FieldName:
@@ -33489,6 +33514,13 @@ func (m *PlanMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetEnvironmentID(v)
+		return nil
+	case plan.FieldMetadata:
+		v, ok := value.(map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
 		return nil
 	case plan.FieldLookupKey:
 		v, ok := value.(string)
@@ -33613,6 +33645,9 @@ func (m *PlanMutation) ResetField(name string) error {
 		return nil
 	case plan.FieldEnvironmentID:
 		m.ResetEnvironmentID()
+		return nil
+	case plan.FieldMetadata:
+		m.ResetMetadata()
 		return nil
 	case plan.FieldLookupKey:
 		m.ResetLookupKey()

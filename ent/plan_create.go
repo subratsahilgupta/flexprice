@@ -111,6 +111,12 @@ func (pc *PlanCreate) SetNillableEnvironmentID(s *string) *PlanCreate {
 	return pc
 }
 
+// SetMetadata sets the "metadata" field.
+func (pc *PlanCreate) SetMetadata(m map[string]string) *PlanCreate {
+	pc.mutation.SetMetadata(m)
+	return pc
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (pc *PlanCreate) SetLookupKey(s string) *PlanCreate {
 	pc.mutation.SetLookupKey(s)
@@ -217,6 +223,10 @@ func (pc *PlanCreate) defaults() {
 		v := plan.DefaultEnvironmentID
 		pc.mutation.SetEnvironmentID(v)
 	}
+	if _, ok := pc.mutation.Metadata(); !ok {
+		v := plan.DefaultMetadata
+		pc.mutation.SetMetadata(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -237,6 +247,9 @@ func (pc *PlanCreate) check() error {
 	}
 	if _, ok := pc.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Plan.updated_at"`)}
+	}
+	if _, ok := pc.mutation.Metadata(); !ok {
+		return &ValidationError{Name: "metadata", err: errors.New(`ent: missing required field "Plan.metadata"`)}
 	}
 	if _, ok := pc.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "Plan.name"`)}
@@ -308,6 +321,10 @@ func (pc *PlanCreate) createSpec() (*Plan, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.EnvironmentID(); ok {
 		_spec.SetField(plan.FieldEnvironmentID, field.TypeString, value)
 		_node.EnvironmentID = value
+	}
+	if value, ok := pc.mutation.Metadata(); ok {
+		_spec.SetField(plan.FieldMetadata, field.TypeJSON, value)
+		_node.Metadata = value
 	}
 	if value, ok := pc.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)

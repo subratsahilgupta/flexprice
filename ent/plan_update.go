@@ -69,6 +69,12 @@ func (pu *PlanUpdate) ClearUpdatedBy() *PlanUpdate {
 	return pu
 }
 
+// SetMetadata sets the "metadata" field.
+func (pu *PlanUpdate) SetMetadata(m map[string]string) *PlanUpdate {
+	pu.mutation.SetMetadata(m)
+	return pu
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (pu *PlanUpdate) SetLookupKey(s string) *PlanUpdate {
 	pu.mutation.SetLookupKey(s)
@@ -240,6 +246,9 @@ func (pu *PlanUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if pu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(plan.FieldEnvironmentID, field.TypeString)
 	}
+	if value, ok := pu.mutation.Metadata(); ok {
+		_spec.SetField(plan.FieldMetadata, field.TypeJSON, value)
+	}
 	if value, ok := pu.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)
 	}
@@ -357,6 +366,12 @@ func (puo *PlanUpdateOne) SetNillableUpdatedBy(s *string) *PlanUpdateOne {
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (puo *PlanUpdateOne) ClearUpdatedBy() *PlanUpdateOne {
 	puo.mutation.ClearUpdatedBy()
+	return puo
+}
+
+// SetMetadata sets the "metadata" field.
+func (puo *PlanUpdateOne) SetMetadata(m map[string]string) *PlanUpdateOne {
+	puo.mutation.SetMetadata(m)
 	return puo
 }
 
@@ -560,6 +575,9 @@ func (puo *PlanUpdateOne) sqlSave(ctx context.Context) (_node *Plan, err error) 
 	}
 	if puo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(plan.FieldEnvironmentID, field.TypeString)
+	}
+	if value, ok := puo.mutation.Metadata(); ok {
+		_spec.SetField(plan.FieldMetadata, field.TypeJSON, value)
 	}
 	if value, ok := puo.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)
