@@ -3,6 +3,7 @@ package types
 import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 )
 
 // BillingModel is the billing model for the price ex FLAT_FEE, PACKAGE, TIERED
@@ -61,6 +62,33 @@ func (p PriceEntityType) Validate() error {
 	return nil
 }
 
+// Additional types needed for JSON fields
+type PriceTier struct {
+	// UpTo is the quantity up to which this tier applies. It is null for the last tier.
+	// IMPORTANT: Tier boundaries are INCLUSIVE.
+	// - If up_to is 1000, then quantity 1000 belongs to this tier
+	// - If up_to is 1000, then quantity 1001 belongs to the next tier
+	// - This behavior is consistent across both VOLUME and SLAB modes
+	//
+	// Examples:
+	// - Tier 1: up_to: 1000, unit_amount: 0.10 (quantities 0-1000 inclusive)
+	// - Tier 2: up_to: 5000, unit_amount: 0.08 (quantities 1001-5000 inclusive)
+	// - Tier 3: up_to: null, unit_amount: 0.05 (quantities 5001+ unlimited)
+	UpTo *uint64 `json:"up_to"`
+
+	// UnitAmount is the amount per unit for the given tier
+	UnitAmount decimal.Decimal `json:"unit_amount"`
+
+	// FlatAmount is the flat amount for the given tier (optional)
+	// Applied on top of unit_amount*quantity. Useful for cases like "2.7% + 5c"
+	FlatAmount *decimal.Decimal `json:"flat_amount,omitempty"`
+}
+
+type TransformQuantity struct {
+	DivideBy int    `json:"divide_by,omitempty"`
+	Round    string `json:"round,omitempty"`
+}
+
 const (
 	PRICE_UNIT_TYPE_FIAT   PriceUnitType = "FIAT"
 	PRICE_UNIT_TYPE_CUSTOM PriceUnitType = "CUSTOM"
@@ -96,9 +124,11 @@ const (
 	BILLING_CADENCE_ONETIME   BillingCadence = "ONETIME"
 
 	// BILLING_TIER_VOLUME means all units price based on final tier reached.
+	// Tier boundaries are INCLUSIVE: if up_to is 1000, quantity 1000 belongs to this tier
 	BILLING_TIER_VOLUME BillingTier = "VOLUME"
 
 	// BILLING_TIER_SLAB means Tiers apply progressively as quantity increases
+	// Tier boundaries are INCLUSIVE: if up_to is 1000, quantity 1000 belongs to this tier
 	BILLING_TIER_SLAB BillingTier = "SLAB"
 
 	// MAX_BILLING_AMOUNT is the maximum allowed billing amount (as a safeguard)

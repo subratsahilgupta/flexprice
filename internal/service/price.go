@@ -729,12 +729,19 @@ func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Pri
 	case types.BILLING_TIER_VOLUME:
 		selectedTierIndex := len(price.Tiers) - 1
 		// Find the tier that the quantity falls into
+		// up_to is INCLUSIVE - if up_to is 1000, quantity 1000 belongs to this tier
+		// Note: Quantity is already decimal, up_to is converted to decimal for comparison
+		// Edge cases: Handles decimal quantities like 1000.5, 1024.75, etc.
+		// If quantity > up_to (even by small decimals like 1000.001 > 1000), it goes to next tier
 		for i, tier := range price.Tiers {
 			if tier.UpTo == nil {
 				selectedTierIndex = i
 				break
 			}
-			if quantity.LessThan(decimal.NewFromUint64(*tier.UpTo)) {
+			// Use LessThanOrEqual to make up_to INCLUSIVE
+			// Handles decimal quantities: 1000.5 <= 1000.5 (inclusive)
+			// Edge case: 1000.001 > 1000, so 1000.001 goes to next tier
+			if quantity.LessThanOrEqual(decimal.NewFromUint64(*tier.UpTo)) {
 				selectedTierIndex = i
 				break
 			}
@@ -761,6 +768,12 @@ func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Pri
 			var tierQuantity = remainingQuantity
 			if tier.UpTo != nil {
 				upTo := decimal.NewFromUint64(*tier.UpTo)
+				// Use GreaterThan to make up_to INCLUSIVE
+				// If remainingQuantity > upTo, then tierQuantity = upTo (inclusive)
+				// If remainingQuantity <= upTo, then tierQuantity = remainingQuantity
+				// Note: Quantity is already decimal, up_to is converted to decimal for comparison
+				// Edge cases: Handles decimal quantities like 1000.5, 1024.75, etc.
+				// If remainingQuantity > up_to (even by small decimals), excess goes to next tier
 				if remainingQuantity.GreaterThan(upTo) {
 					tierQuantity = upTo
 				}
@@ -877,12 +890,16 @@ func (s *priceService) calculateTieredCostWithBreakup(ctx context.Context, price
 	case types.BILLING_TIER_VOLUME:
 		selectedTierIndex := len(price.Tiers) - 1
 		// Find the tier that the quantity falls into
+		// up_to is INCLUSIVE - if up_to is 1000, quantity 1000 belongs to this tier
 		for i, tier := range price.Tiers {
 			if tier.UpTo == nil {
 				selectedTierIndex = i
 				break
 			}
-			if quantity.LessThan(decimal.NewFromUint64(*tier.UpTo)) {
+			// Use LessThanOrEqual to make up_to INCLUSIVE
+			// Handles decimal quantities: 1000.5 <= 1000.5 (inclusive)
+			// Edge case: 1000.001 > 1000, so 1000.001 goes to next tier
+			if quantity.LessThanOrEqual(decimal.NewFromUint64(*tier.UpTo)) {
 				selectedTierIndex = i
 				break
 			}
@@ -916,6 +933,12 @@ func (s *priceService) calculateTieredCostWithBreakup(ctx context.Context, price
 			var tierQuantity = remainingQuantity
 			if tier.UpTo != nil {
 				upTo := decimal.NewFromUint64(*tier.UpTo)
+				// Use GreaterThan to make up_to INCLUSIVE
+				// If remainingQuantity > upTo, then tierQuantity = upTo (inclusive)
+				// If remainingQuantity <= upTo, then tierQuantity = remainingQuantity
+				// Note: Quantity is already decimal, up_to is converted to decimal for comparison
+				// Edge cases: Handles decimal quantities like 1000.5, 1024.75, etc.
+				// If remainingQuantity > up_to (even by small decimals), excess goes to next tier
 				if remainingQuantity.GreaterThan(upTo) {
 					tierQuantity = upTo
 				}

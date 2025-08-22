@@ -6,7 +6,6 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/price"
-	"github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainPrice "github.com/flexprice/flexprice/internal/domain/price"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -74,7 +73,7 @@ func (r *priceRepository) Create(ctx context.Context, p *domainPrice.Price) erro
 		SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 		SetTiers(p.ToEntTiers()).
 		SetPriceUnitTiers(p.ToPriceUnitTiers()).
-		SetTransformQuantity(schema.TransformQuantity(p.TransformQuantity)).
+		SetTransformQuantity(types.TransformQuantity(p.TransformQuantity)).
 		SetLookupKey(p.LookupKey).
 		SetDescription(p.Description).
 		SetMetadata(map[string]string(p.Metadata)).
@@ -290,7 +289,7 @@ func (r *priceRepository) Update(ctx context.Context, p *domainPrice.Price) erro
 		SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 		SetTiers(p.ToEntTiers()).
 		SetPriceUnitTiers(p.ToPriceUnitTiers()).
-		SetTransformQuantity(schema.TransformQuantity(p.TransformQuantity)).
+		SetTransformQuantity(types.TransformQuantity(p.TransformQuantity)).
 		SetLookupKey(p.LookupKey).
 		SetDescription(p.Description).
 		SetMetadata(map[string]string(p.Metadata)).
@@ -407,8 +406,8 @@ func (r *priceRepository) CreateBulk(ctx context.Context, prices []*domainPrice.
 			SetNillableMeterID(lo.ToPtr(p.MeterID)).
 			SetNillableTierMode(lo.ToPtr(string(p.TierMode))).
 			SetTiers(p.ToEntTiers()).
-			SetPriceUnitTiers(p.ToEntTiers()).
-			SetTransformQuantity(schema.TransformQuantity(p.TransformQuantity)).
+			SetPriceUnitTiers(p.ToPriceUnitTiers()).
+			SetTransformQuantity(types.TransformQuantity(p.TransformQuantity)).
 			SetLookupKey(p.LookupKey).
 			SetDescription(p.Description).
 			SetMetadata(map[string]string(p.Metadata)).

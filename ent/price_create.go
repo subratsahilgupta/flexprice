@@ -13,7 +13,7 @@ import (
 	"github.com/flexprice/flexprice/ent/costsheet"
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/priceunit"
-	"github.com/flexprice/flexprice/ent/schema"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // PriceCreate is the builder for creating a Price entity.
@@ -308,27 +308,27 @@ func (pc *PriceCreate) SetNillableTierMode(s *string) *PriceCreate {
 }
 
 // SetTiers sets the "tiers" field.
-func (pc *PriceCreate) SetTiers(st []schema.PriceTier) *PriceCreate {
-	pc.mutation.SetTiers(st)
+func (pc *PriceCreate) SetTiers(tt []*types.PriceTier) *PriceCreate {
+	pc.mutation.SetTiers(tt)
 	return pc
 }
 
 // SetPriceUnitTiers sets the "price_unit_tiers" field.
-func (pc *PriceCreate) SetPriceUnitTiers(st []schema.PriceTier) *PriceCreate {
-	pc.mutation.SetPriceUnitTiers(st)
+func (pc *PriceCreate) SetPriceUnitTiers(tt []*types.PriceTier) *PriceCreate {
+	pc.mutation.SetPriceUnitTiers(tt)
 	return pc
 }
 
 // SetTransformQuantity sets the "transform_quantity" field.
-func (pc *PriceCreate) SetTransformQuantity(sq schema.TransformQuantity) *PriceCreate {
-	pc.mutation.SetTransformQuantity(sq)
+func (pc *PriceCreate) SetTransformQuantity(tq types.TransformQuantity) *PriceCreate {
+	pc.mutation.SetTransformQuantity(tq)
 	return pc
 }
 
 // SetNillableTransformQuantity sets the "transform_quantity" field if the given value is not nil.
-func (pc *PriceCreate) SetNillableTransformQuantity(sq *schema.TransformQuantity) *PriceCreate {
-	if sq != nil {
-		pc.SetTransformQuantity(*sq)
+func (pc *PriceCreate) SetNillableTransformQuantity(tq *types.TransformQuantity) *PriceCreate {
+	if tq != nil {
+		pc.SetTransformQuantity(*tq)
 	}
 	return pc
 }

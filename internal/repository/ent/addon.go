@@ -475,7 +475,7 @@ func (o AddonQueryOptions) GetFieldName(field string) string {
 	}
 }
 
-func (o AddonQueryOptions) applyEntityQueryOptions(ctx context.Context, f *types.AddonFilter, query AddonQuery) (AddonQuery, error) {
+func (o AddonQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.AddonFilter, query AddonQuery) (AddonQuery, error) {
 	var err error
 	if f == nil {
 		return query, nil

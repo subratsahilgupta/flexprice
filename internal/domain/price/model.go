@@ -7,7 +7,6 @@ import (
 	"math"
 
 	"github.com/flexprice/flexprice/ent"
-	"github.com/flexprice/flexprice/ent/schema"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -28,7 +27,7 @@ type JSONBMetadata map[string]string
 type JSONBFilters map[string][]string
 
 // Price model with JSONB tags
-type 	Price struct {
+type Price struct {
 	// ID uuid identifier for the price
 	ID string `db:"id" json:"id"`
 
@@ -130,8 +129,8 @@ func (p *Price) GetCurrencySymbol() string {
 // ValidateAmount checks if amount is within valid range for price definition
 func (p *Price) ValidateAmount() error {
 	if p.Amount.LessThan(decimal.Zero) {
-		return ierr.NewError("amount must be greater than 0").
-			WithHint("Please provide a positive amount value").
+		return ierr.NewError("amount cannot be negative").
+			WithHint("Please provide a non-negative amount value").
 			WithReportableDetails(map[string]interface{}{
 				"amount": p.Amount.String(),
 			}).
@@ -413,14 +412,14 @@ func FromEntList(list []*ent.Price) []*Price {
 }
 
 // ToEntTiers converts domain tiers to ent tiers
-func (p *Price) ToEntTiers() []schema.PriceTier {
+func (p *Price) ToEntTiers() []*types.PriceTier {
 	if len(p.Tiers) == 0 {
 		return nil
 	}
 
-	tiers := make([]schema.PriceTier, len(p.Tiers))
+	tiers := make([]*types.PriceTier, len(p.Tiers))
 	for i, tier := range p.Tiers {
-		tiers[i] = schema.PriceTier{
+		tiers[i] = &types.PriceTier{
 			UpTo:       tier.UpTo,
 			UnitAmount: tier.UnitAmount,
 			FlatAmount: tier.FlatAmount,
@@ -430,14 +429,14 @@ func (p *Price) ToEntTiers() []schema.PriceTier {
 }
 
 // ToPriceUnitTiers converts domain price unit tiers to ent tiers
-func (p *Price) ToPriceUnitTiers() []schema.PriceTier {
+func (p *Price) ToPriceUnitTiers() []*types.PriceTier {
 	if len(p.PriceUnitTiers) == 0 {
 		return nil
 	}
 
-	tiers := make([]schema.PriceTier, len(p.PriceUnitTiers))
+	tiers := make([]*types.PriceTier, len(p.PriceUnitTiers))
 	for i, tier := range p.PriceUnitTiers {
-		tiers[i] = schema.PriceTier{
+		tiers[i] = &types.PriceTier{
 			UpTo:       tier.UpTo,
 			UnitAmount: tier.UnitAmount,
 			FlatAmount: tier.FlatAmount,
