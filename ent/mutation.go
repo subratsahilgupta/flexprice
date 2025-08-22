@@ -33782,11 +33782,11 @@ type PriceMutation struct {
 	meter_id                  *string
 	filter_values             *map[string][]string
 	tier_mode                 *string
-	tiers                     *[]schema.PriceTier
-	appendtiers               []schema.PriceTier
-	price_unit_tiers          *[]schema.PriceTier
-	appendprice_unit_tiers    []schema.PriceTier
-	transform_quantity        *schema.TransformQuantity
+	tiers                     *[]*types.PriceTier
+	appendtiers               []*types.PriceTier
+	price_unit_tiers          *[]*types.PriceTier
+	appendprice_unit_tiers    []*types.PriceTier
+	transform_quantity        *types.TransformQuantity
 	lookup_key                *string
 	description               *string
 	metadata                  *map[string]string
@@ -35103,13 +35103,13 @@ func (m *PriceMutation) ResetTierMode() {
 }
 
 // SetTiers sets the "tiers" field.
-func (m *PriceMutation) SetTiers(st []schema.PriceTier) {
-	m.tiers = &st
+func (m *PriceMutation) SetTiers(tt []*types.PriceTier) {
+	m.tiers = &tt
 	m.appendtiers = nil
 }
 
 // Tiers returns the value of the "tiers" field in the mutation.
-func (m *PriceMutation) Tiers() (r []schema.PriceTier, exists bool) {
+func (m *PriceMutation) Tiers() (r []*types.PriceTier, exists bool) {
 	v := m.tiers
 	if v == nil {
 		return
@@ -35120,7 +35120,7 @@ func (m *PriceMutation) Tiers() (r []schema.PriceTier, exists bool) {
 // OldTiers returns the old "tiers" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldTiers(ctx context.Context) (v []schema.PriceTier, err error) {
+func (m *PriceMutation) OldTiers(ctx context.Context) (v []*types.PriceTier, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTiers is only allowed on UpdateOne operations")
 	}
@@ -35134,13 +35134,13 @@ func (m *PriceMutation) OldTiers(ctx context.Context) (v []schema.PriceTier, err
 	return oldValue.Tiers, nil
 }
 
-// AppendTiers adds st to the "tiers" field.
-func (m *PriceMutation) AppendTiers(st []schema.PriceTier) {
-	m.appendtiers = append(m.appendtiers, st...)
+// AppendTiers adds tt to the "tiers" field.
+func (m *PriceMutation) AppendTiers(tt []*types.PriceTier) {
+	m.appendtiers = append(m.appendtiers, tt...)
 }
 
 // AppendedTiers returns the list of values that were appended to the "tiers" field in this mutation.
-func (m *PriceMutation) AppendedTiers() ([]schema.PriceTier, bool) {
+func (m *PriceMutation) AppendedTiers() ([]*types.PriceTier, bool) {
 	if len(m.appendtiers) == 0 {
 		return nil, false
 	}
@@ -35168,13 +35168,13 @@ func (m *PriceMutation) ResetTiers() {
 }
 
 // SetPriceUnitTiers sets the "price_unit_tiers" field.
-func (m *PriceMutation) SetPriceUnitTiers(st []schema.PriceTier) {
-	m.price_unit_tiers = &st
+func (m *PriceMutation) SetPriceUnitTiers(tt []*types.PriceTier) {
+	m.price_unit_tiers = &tt
 	m.appendprice_unit_tiers = nil
 }
 
 // PriceUnitTiers returns the value of the "price_unit_tiers" field in the mutation.
-func (m *PriceMutation) PriceUnitTiers() (r []schema.PriceTier, exists bool) {
+func (m *PriceMutation) PriceUnitTiers() (r []*types.PriceTier, exists bool) {
 	v := m.price_unit_tiers
 	if v == nil {
 		return
@@ -35185,7 +35185,7 @@ func (m *PriceMutation) PriceUnitTiers() (r []schema.PriceTier, exists bool) {
 // OldPriceUnitTiers returns the old "price_unit_tiers" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldPriceUnitTiers(ctx context.Context) (v []schema.PriceTier, err error) {
+func (m *PriceMutation) OldPriceUnitTiers(ctx context.Context) (v []*types.PriceTier, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldPriceUnitTiers is only allowed on UpdateOne operations")
 	}
@@ -35199,13 +35199,13 @@ func (m *PriceMutation) OldPriceUnitTiers(ctx context.Context) (v []schema.Price
 	return oldValue.PriceUnitTiers, nil
 }
 
-// AppendPriceUnitTiers adds st to the "price_unit_tiers" field.
-func (m *PriceMutation) AppendPriceUnitTiers(st []schema.PriceTier) {
-	m.appendprice_unit_tiers = append(m.appendprice_unit_tiers, st...)
+// AppendPriceUnitTiers adds tt to the "price_unit_tiers" field.
+func (m *PriceMutation) AppendPriceUnitTiers(tt []*types.PriceTier) {
+	m.appendprice_unit_tiers = append(m.appendprice_unit_tiers, tt...)
 }
 
 // AppendedPriceUnitTiers returns the list of values that were appended to the "price_unit_tiers" field in this mutation.
-func (m *PriceMutation) AppendedPriceUnitTiers() ([]schema.PriceTier, bool) {
+func (m *PriceMutation) AppendedPriceUnitTiers() ([]*types.PriceTier, bool) {
 	if len(m.appendprice_unit_tiers) == 0 {
 		return nil, false
 	}
@@ -35233,12 +35233,12 @@ func (m *PriceMutation) ResetPriceUnitTiers() {
 }
 
 // SetTransformQuantity sets the "transform_quantity" field.
-func (m *PriceMutation) SetTransformQuantity(sq schema.TransformQuantity) {
-	m.transform_quantity = &sq
+func (m *PriceMutation) SetTransformQuantity(tq types.TransformQuantity) {
+	m.transform_quantity = &tq
 }
 
 // TransformQuantity returns the value of the "transform_quantity" field in the mutation.
-func (m *PriceMutation) TransformQuantity() (r schema.TransformQuantity, exists bool) {
+func (m *PriceMutation) TransformQuantity() (r types.TransformQuantity, exists bool) {
 	v := m.transform_quantity
 	if v == nil {
 		return
@@ -35249,7 +35249,7 @@ func (m *PriceMutation) TransformQuantity() (r schema.TransformQuantity, exists 
 // OldTransformQuantity returns the old "transform_quantity" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldTransformQuantity(ctx context.Context) (v schema.TransformQuantity, err error) {
+func (m *PriceMutation) OldTransformQuantity(ctx context.Context) (v types.TransformQuantity, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTransformQuantity is only allowed on UpdateOne operations")
 	}
@@ -36158,21 +36158,21 @@ func (m *PriceMutation) SetField(name string, value ent.Value) error {
 		m.SetTierMode(v)
 		return nil
 	case price.FieldTiers:
-		v, ok := value.([]schema.PriceTier)
+		v, ok := value.([]*types.PriceTier)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTiers(v)
 		return nil
 	case price.FieldPriceUnitTiers:
-		v, ok := value.([]schema.PriceTier)
+		v, ok := value.([]*types.PriceTier)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPriceUnitTiers(v)
 		return nil
 	case price.FieldTransformQuantity:
-		v, ok := value.(schema.TransformQuantity)
+		v, ok := value.(types.TransformQuantity)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

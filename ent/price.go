@@ -12,7 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/priceunit"
-	"github.com/flexprice/flexprice/ent/schema"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // Price is the model entity for the Price schema.
@@ -73,11 +73,11 @@ type Price struct {
 	// TierMode holds the value of the "tier_mode" field.
 	TierMode *string `json:"tier_mode,omitempty"`
 	// Tiers holds the value of the "tiers" field.
-	Tiers []schema.PriceTier `json:"tiers,omitempty"`
+	Tiers []*types.PriceTier `json:"tiers,omitempty"`
 	// PriceUnitTiers holds the value of the "price_unit_tiers" field.
-	PriceUnitTiers []schema.PriceTier `json:"price_unit_tiers,omitempty"`
+	PriceUnitTiers []*types.PriceTier `json:"price_unit_tiers,omitempty"`
 	// TransformQuantity holds the value of the "transform_quantity" field.
-	TransformQuantity schema.TransformQuantity `json:"transform_quantity,omitempty"`
+	TransformQuantity types.TransformQuantity `json:"transform_quantity,omitempty"`
 	// LookupKey holds the value of the "lookup_key" field.
 	LookupKey string `json:"lookup_key,omitempty"`
 	// Description holds the value of the "description" field.
