@@ -55,7 +55,7 @@ type CreatePriceTier struct {
 	UnitAmount string `json:"unit_amount" validate:"required"`
 
 	// flat_amount is the flat amount for the given tier (optional)
-	// Applied on top of unit_amount*quantity. Useful for cases like "2.7% + 5c"
+	// Applied on top of unit_amount*quantity. Useful for cases like "2.7$ + 5c"
 	FlatAmount *string `json:"flat_amount" validate:"omitempty"`
 }
 
