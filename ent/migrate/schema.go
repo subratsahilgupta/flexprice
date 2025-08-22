@@ -615,6 +615,7 @@ var (
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
 		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "external_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "email", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
@@ -624,7 +625,6 @@ var (
 		{Name: "address_state", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(100)"}},
 		{Name: "address_postal_code", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "address_country", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(2)"}},
-		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
 	}
 	// CustomersTable holds the schema information for the "customers" table.
 	CustomersTable = &schema.Table{
@@ -635,7 +635,7 @@ var (
 			{
 				Name:    "idx_tenant_environment_external_id_unique",
 				Unique:  true,
-				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7], CustomersColumns[8]},
+				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7], CustomersColumns[9]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "(external_id IS NOT NULL AND external_id != '') AND status = 'published'",
 				},
@@ -648,7 +648,7 @@ var (
 			{
 				Name:    "idx_customer_tenant_environment_email",
 				Unique:  false,
-				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7], CustomersColumns[10]},
+				Columns: []*schema.Column{CustomersColumns[1], CustomersColumns[7], CustomersColumns[11]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "email IS NOT NULL AND email != '' AND status = 'published'",
 				},
@@ -1182,6 +1182,7 @@ var (
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
 		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "lookup_key", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "name", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
@@ -1195,7 +1196,7 @@ var (
 			{
 				Name:    "idx_tenant_environment_lookup_key",
 				Unique:  true,
-				Columns: []*schema.Column{PlansColumns[1], PlansColumns[7], PlansColumns[8]},
+				Columns: []*schema.Column{PlansColumns[1], PlansColumns[7], PlansColumns[9]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status = 'published' AND lookup_key IS NOT NULL AND lookup_key != ''",
 				},

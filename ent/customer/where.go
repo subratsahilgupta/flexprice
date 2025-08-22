@@ -1234,16 +1234,6 @@ func AddressCountryContainsFold(v string) predicate.Customer {
 	return predicate.Customer(sql.FieldContainsFold(FieldAddressCountry, v))
 }
 
-// MetadataIsNil applies the IsNil predicate on the "metadata" field.
-func MetadataIsNil() predicate.Customer {
-	return predicate.Customer(sql.FieldIsNull(FieldMetadata))
-}
-
-// MetadataNotNil applies the NotNil predicate on the "metadata" field.
-func MetadataNotNil() predicate.Customer {
-	return predicate.Customer(sql.FieldNotNull(FieldMetadata))
-}
-
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Customer) predicate.Customer {
 	return predicate.Customer(sql.AndPredicates(predicates...))

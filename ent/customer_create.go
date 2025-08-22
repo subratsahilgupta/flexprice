@@ -110,6 +110,12 @@ func (cc *CustomerCreate) SetNillableEnvironmentID(s *string) *CustomerCreate {
 	return cc
 }
 
+// SetMetadata sets the "metadata" field.
+func (cc *CustomerCreate) SetMetadata(m map[string]string) *CustomerCreate {
+	cc.mutation.SetMetadata(m)
+	return cc
+}
+
 // SetExternalID sets the "external_id" field.
 func (cc *CustomerCreate) SetExternalID(s string) *CustomerCreate {
 	cc.mutation.SetExternalID(s)
@@ -220,12 +226,6 @@ func (cc *CustomerCreate) SetNillableAddressCountry(s *string) *CustomerCreate {
 	return cc
 }
 
-// SetMetadata sets the "metadata" field.
-func (cc *CustomerCreate) SetMetadata(m map[string]string) *CustomerCreate {
-	cc.mutation.SetMetadata(m)
-	return cc
-}
-
 // SetID sets the "id" field.
 func (cc *CustomerCreate) SetID(s string) *CustomerCreate {
 	cc.mutation.SetID(s)
@@ -283,6 +283,10 @@ func (cc *CustomerCreate) defaults() {
 		v := customer.DefaultEnvironmentID
 		cc.mutation.SetEnvironmentID(v)
 	}
+	if _, ok := cc.mutation.Metadata(); !ok {
+		v := customer.DefaultMetadata
+		cc.mutation.SetMetadata(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -303,6 +307,9 @@ func (cc *CustomerCreate) check() error {
 	}
 	if _, ok := cc.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Customer.updated_at"`)}
+	}
+	if _, ok := cc.mutation.Metadata(); !ok {
+		return &ValidationError{Name: "metadata", err: errors.New(`ent: missing required field "Customer.metadata"`)}
 	}
 	if _, ok := cc.mutation.ExternalID(); !ok {
 		return &ValidationError{Name: "external_id", err: errors.New(`ent: missing required field "Customer.external_id"`)}
@@ -383,6 +390,10 @@ func (cc *CustomerCreate) createSpec() (*Customer, *sqlgraph.CreateSpec) {
 		_spec.SetField(customer.FieldEnvironmentID, field.TypeString, value)
 		_node.EnvironmentID = value
 	}
+	if value, ok := cc.mutation.Metadata(); ok {
+		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
+		_node.Metadata = value
+	}
 	if value, ok := cc.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)
 		_node.ExternalID = value
@@ -418,10 +429,6 @@ func (cc *CustomerCreate) createSpec() (*Customer, *sqlgraph.CreateSpec) {
 	if value, ok := cc.mutation.AddressCountry(); ok {
 		_spec.SetField(customer.FieldAddressCountry, field.TypeString, value)
 		_node.AddressCountry = value
-	}
-	if value, ok := cc.mutation.Metadata(); ok {
-		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
-		_node.Metadata = value
 	}
 	return _node, _spec
 }

@@ -20,6 +20,7 @@ type CreatePlanRequest struct {
 	Prices       []CreatePlanPriceRequest       `json:"prices"`
 	Entitlements []CreatePlanEntitlementRequest `json:"entitlements"`
 	CreditGrants []CreateCreditGrantRequest     `json:"credit_grants"`
+	Metadata     types.Metadata                 `json:"metadata"`
 }
 
 type CreatePlanPriceRequest struct {
@@ -229,6 +230,7 @@ func (r *CreatePlanRequest) ToPlan(ctx context.Context) *plan.Plan {
 		Name:          r.Name,
 		Description:   r.Description,
 		EnvironmentID: types.GetEnvironmentID(ctx),
+		Metadata:      r.Metadata,
 		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}
 	return plan
@@ -267,6 +269,7 @@ type UpdatePlanRequest struct {
 	Prices       []UpdatePlanPriceRequest       `json:"prices,omitempty"`
 	Entitlements []UpdatePlanEntitlementRequest `json:"entitlements,omitempty"`
 	CreditGrants []UpdatePlanCreditGrantRequest `json:"credit_grants,omitempty"`
+	Metadata     types.Metadata                 `json:"metadata,omitempty"`
 }
 
 type UpdatePlanPriceRequest struct {
