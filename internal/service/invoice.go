@@ -43,6 +43,7 @@ type InvoiceService interface {
 	UpdateInvoice(ctx context.Context, id string, req dto.UpdateInvoiceRequest) (*dto.InvoiceResponse, error)
 	CalculatePriceBreakdown(ctx context.Context, inv *dto.InvoiceResponse) (map[string][]dto.SourceUsageItem, error)
 	TriggerCommunication(ctx context.Context, id string) error
+	HandleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error
 }
 
 type invoiceService struct {
@@ -848,6 +849,12 @@ func (s *invoiceService) ReconcilePaymentStatus(ctx context.Context, id string, 
 		}
 
 		inv.PaidAt = &now
+
+		// Check if this is the first invoice (billing_reason = subscription_create)
+		if inv.BillingReason == string(types.InvoiceBillingReasonSubscriptionCreate) {
+			s.HandleIncompleteSubscriptionPayment(ctx, inv)
+		}
+
 	case types.PaymentStatusOverpaid:
 		// Handle additional payments to an already overpaid invoice
 		if amount != nil {
@@ -858,6 +865,10 @@ func (s *invoiceService) ReconcilePaymentStatus(ctx context.Context, id string, 
 		// Status remains OVERPAID
 		if inv.PaidAt == nil {
 			inv.PaidAt = &now
+		}
+		// Check if this is the first invoice (billing_reason = subscription_create)
+		if inv.BillingReason == string(types.InvoiceBillingReasonSubscriptionCreate) {
+			s.HandleIncompleteSubscriptionPayment(ctx, inv)
 		}
 	case types.PaymentStatusFailed:
 		// Don't change amount_paid for failed payments
@@ -1917,5 +1928,45 @@ func (s *invoiceService) TriggerCommunication(ctx context.Context, id string) er
 
 	// Publish webhook event
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceCommunicationTriggered, inv.ID)
+	return nil
+}
+
+// HandleIncompleteSubscriptionPayment checks if the paid invoice is the first invoice for a subscription
+// and activates the subscription if it's currently in incomplete status
+func (s *invoiceService) HandleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error {
+	// Only process subscription invoices that are fully paid
+	if invoice.SubscriptionID == nil || !invoice.AmountRemaining.IsZero() {
+		return nil
+	}
+
+	// Check if this is the first invoice (billing_reason = subscription_create)
+	if invoice.BillingReason != string(types.InvoiceBillingReasonSubscriptionCreate) {
+		return nil
+	}
+
+	s.Logger.Infow("processing first invoice payment for subscription activation",
+		"invoice_id", invoice.ID,
+		"subscription_id", *invoice.SubscriptionID,
+		"billing_reason", invoice.BillingReason)
+
+	// Get the subscription service
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
+
+	// Activate the incomplete subscription
+	err := subscriptionService.ActivateIncompleteSubscription(ctx, *invoice.SubscriptionID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to activate incomplete subscription after first invoice payment").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": *invoice.SubscriptionID,
+				"invoice_id":      invoice.ID,
+			}).
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	s.Logger.Infow("successfully activated subscription after first invoice payment",
+		"invoice_id", invoice.ID,
+		"subscription_id", *invoice.SubscriptionID)
+
 	return nil
 }
