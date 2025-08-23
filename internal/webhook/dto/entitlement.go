@@ -8,9 +8,10 @@ type InternalEntitlementEvent struct {
 }
 
 type EntitlementWebhookPayload struct {
+	EventType   string                   `json:"event_type"`
 	Entitlement *dto.EntitlementResponse `json:"entitlement"`
 }
 
-func NewEntitlementWebhookPayload(entitlement *dto.EntitlementResponse) *EntitlementWebhookPayload {
-	return &EntitlementWebhookPayload{Entitlement: entitlement}
+func NewEntitlementWebhookPayload(entitlement *dto.EntitlementResponse, eventType string) *EntitlementWebhookPayload {
+	return &EntitlementWebhookPayload{EventType: eventType, Entitlement: entitlement}
 }

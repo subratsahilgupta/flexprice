@@ -8,9 +8,10 @@ type InternalCommunicationEvent struct {
 }
 
 type CommunicationWebhookPayload struct {
-	Invoice *dto.InvoiceResponse `json:"invoice"`
+	EventType string               `json:"event_type"`
+	Invoice   *dto.InvoiceResponse `json:"invoice"`
 }
 
-func NewCommunicationWebhookPayload(invoice *dto.InvoiceResponse) *CommunicationWebhookPayload {
-	return &CommunicationWebhookPayload{Invoice: invoice}
+func NewCommunicationWebhookPayload(invoice *dto.InvoiceResponse, eventType string) *CommunicationWebhookPayload {
+	return &CommunicationWebhookPayload{EventType: eventType, Invoice: invoice}
 }
