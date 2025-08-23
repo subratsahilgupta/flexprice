@@ -503,6 +503,22 @@ func (s *InMemoryEventStore) GetUsageWithFilters(ctx context.Context, params *ev
 	return results, nil
 }
 
+func (s *InMemoryEventStore) GetDistinctEventNames(ctx context.Context, externalCustomerID string, startTime, endTime time.Time) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var eventNames []string
+	for _, event := range s.events {
+		if event.ExternalCustomerID == externalCustomerID && event.Timestamp.After(startTime) && event.Timestamp.Before(endTime) {
+			eventNames = append(eventNames, event.EventName)
+		}
+	}
+
+	sort.Strings(eventNames)
+
+	return eventNames, nil
+}
+
 func (s *InMemoryEventStore) matchesBaseFilters(ctx context.Context, event *events.Event, params *events.UsageParams) bool {
 	// check tenant ID
 	tenantID := types.GetTenantID(ctx)
