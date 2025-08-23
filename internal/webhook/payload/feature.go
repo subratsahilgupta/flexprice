@@ -42,7 +42,7 @@ func (b *FeaturePayloadBuilder) BuildPayload(ctx context.Context, eventType stri
 		return nil, err
 	}
 
-	payload := webhookDto.NewFeatureWebhookPayload(feature)
+	payload := webhookDto.NewFeatureWebhookPayload(feature, eventType)
 
 	return json.Marshal(payload)
 }
