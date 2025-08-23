@@ -952,7 +952,6 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 				"customer_id", customer.ID,
 				"external_customer_id", customer.ExternalID,
 				"subscription_id", req.SubscriptionID)
-				"external_customer_id", customer.ExternalID)
 			continue
 		}
 
