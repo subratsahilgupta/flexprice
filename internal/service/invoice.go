@@ -34,6 +34,7 @@ type InvoiceService interface {
 	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetCustomerInvoiceSummary(ctx context.Context, customerID string, currency string) (*dto.CustomerInvoiceSummary, error)
+	GetUnpaidInvoicesToBePaid(ctx context.Context, customerID string, currency string) ([]*dto.InvoiceResponse, decimal.Decimal, error)
 	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
 	AttemptPayment(ctx context.Context, id string) error
 	GetInvoicePDF(ctx context.Context, id string) ([]byte, error)
@@ -1064,6 +1065,43 @@ func (s *invoiceService) GetCustomerInvoiceSummary(ctx context.Context, customer
 	)
 
 	return summary, nil
+}
+
+func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, customerID string, currency string) ([]*dto.InvoiceResponse, decimal.Decimal, error) {
+	unpaidInvoices := make([]*dto.InvoiceResponse, 0)
+	unpaidAmount := decimal.Zero
+
+	filter := types.NewNoLimitInvoiceFilter()
+	filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+	filter.CustomerID = customerID
+	filter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusFinalized}
+	filter.SkipLineItems = true
+
+	invoicesResp, err := s.ListInvoices(ctx, filter)
+	if err != nil {
+		return nil, decimal.Zero, err
+	}
+
+	for _, inv := range invoicesResp.Items {
+		// filter by currency
+		if !types.IsMatchingCurrency(inv.Currency, currency) {
+			continue
+		}
+
+		if inv.AmountRemaining.IsZero() {
+			continue
+		}
+
+		// Skip paid and void invoices
+		if inv.PaymentStatus == types.PaymentStatusSucceeded {
+			continue
+		}
+
+		unpaidInvoices = append(unpaidInvoices, inv)
+		unpaidAmount = unpaidAmount.Add(inv.AmountRemaining)
+	}
+
+	return unpaidInvoices, unpaidAmount, nil
 }
 
 func (s *invoiceService) GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error) {
