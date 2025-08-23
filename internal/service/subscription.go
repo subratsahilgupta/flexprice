@@ -890,6 +890,29 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		"end_time", usageEndTime,
 		"metered_line_items", len(priceIDs))
 
+	// Performance optimization: Get distinct event names for this customer
+	// to filter out meters that have no events, reducing processing from potentially
+	// 400-500 meters down to only 5-7 that have actual usage
+	distinctEventNames, err := s.EventRepo.GetDistinctEventNames(ctx, customer.ExternalID, usageStartTime, usageEndTime)
+	if err != nil {
+		s.Logger.Warnw("failed to get distinct event names, proceeding without optimization",
+			"error", err,
+			"external_customer_id", customer.ExternalID)
+		distinctEventNames = nil // Fallback: process all meters if optimization fails
+	}
+
+	// Create a map for fast event name lookup
+	eventNameExists := make(map[string]bool, len(distinctEventNames))
+	for _, eventName := range distinctEventNames {
+		eventNameExists[eventName] = true
+	}
+
+	s.Logger.Debugw("distinct event names optimization",
+		"external_customer_id", customer.ExternalID,
+		"total_distinct_events", len(distinctEventNames),
+		"total_line_items", len(lineItems),
+		"distinct_event_names", distinctEventNames)
+
 	meterUsageRequests := make([]*dto.GetUsageByMeterRequest, 0, len(lineItems))
 	for _, lineItem := range lineItems {
 		if lineItem.PriceType != types.PRICE_TYPE_USAGE {
@@ -902,6 +925,16 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 		meter := meterMap[lineItem.MeterID]
 		if meter == nil {
+			continue
+		}
+
+		// Performance optimization: Skip meters that don't have any events for this customer
+		// Only skip if we successfully got distinct event names (not nil) and the event doesn't exist
+		if distinctEventNames != nil && !eventNameExists[meter.EventName] {
+			s.Logger.Debugw("skipping meter with no events",
+				"meter_id", lineItem.MeterID,
+				"event_name", meter.EventName,
+				"external_customer_id", customer.ExternalID)
 			continue
 		}
 
@@ -921,6 +954,15 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		}
 		meterUsageRequests = append(meterUsageRequests, usageRequest)
 	}
+
+	s.Logger.Infow("performance optimization results",
+		"subscription_id", req.SubscriptionID,
+		"external_customer_id", customer.ExternalID,
+		"total_line_items", len(lineItems),
+		"total_usage_line_items", len(priceIDs),
+		"meters_with_events", len(meterUsageRequests),
+		"optimization_enabled", distinctEventNames != nil,
+		"meters_skipped", len(priceIDs)-len(meterUsageRequests))
 
 	usageMap, err := eventService.BulkGetUsageByMeter(ctx, meterUsageRequests)
 	if err != nil {
