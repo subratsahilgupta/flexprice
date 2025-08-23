@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/events"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -514,6 +515,7 @@ func (s *InMemoryEventStore) GetDistinctEventNames(ctx context.Context, external
 		}
 	}
 
+	eventNames = lo.Uniq(eventNames)
 	sort.Strings(eventNames)
 
 	return eventNames, nil

@@ -459,26 +459,7 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscription() {
 				EndTime:   s.testData.now.Add(-50 * 24 * time.Hour),
 				Amount:    0,
 				Currency:  "usd",
-				Charges: []*dto.SubscriptionUsageByMetersResponse{
-					{
-						MeterDisplayName: "Storage",
-						Quantity:         decimal.NewFromInt(0).InexactFloat64(),
-						Amount:           0,
-						Price:            s.testData.prices.storage,
-					},
-					{
-						MeterDisplayName: "Storage Archive",
-						Quantity:         decimal.NewFromInt(0).InexactFloat64(),
-						Amount:           0,
-						Price:            s.testData.prices.storageArchive,
-					},
-					{
-						MeterDisplayName: "API Calls",
-						Quantity:         decimal.NewFromInt(0).InexactFloat64(),
-						Amount:           0,
-						Price:            s.testData.prices.apiCalls,
-					},
-				},
+				Charges:   []*dto.SubscriptionUsageByMetersResponse{},
 			},
 			wantErr: false,
 		},

@@ -928,13 +928,30 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			continue
 		}
 
+		if len(distinctEventNames) == 0 {
+			// skip all usage items if distinct event names is nil
+			// which means there is no event data in the database
+			// this is a fallback to ensure that we don't process all meters
+			// if the event data is not available
+
+			s.Logger.Debugw("skipping meter as there are no events",
+				"meter_id", lineItem.MeterID,
+				"event_name", meter.EventName,
+				"customer_id", customer.ID,
+				"external_customer_id", customer.ExternalID,
+				"subscription_id", req.SubscriptionID)
+			continue
+		}
+
 		// Performance optimization: Skip meters that don't have any events for this customer
 		// Only skip if we successfully got distinct event names (not nil) and the event doesn't exist
 		if distinctEventNames != nil && !eventNameExists[meter.EventName] {
 			s.Logger.Debugw("skipping meter with no events",
 				"meter_id", lineItem.MeterID,
 				"event_name", meter.EventName,
-				"external_customer_id", customer.ExternalID)
+				"customer_id", customer.ID,
+				"external_customer_id", customer.ExternalID,
+				"subscription_id", req.SubscriptionID)
 			continue
 		}
 
