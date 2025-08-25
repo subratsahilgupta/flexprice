@@ -167,15 +167,12 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 		return nil, err
 	}
 
-	// Prepare metadata and add SaveCardAndMakeDefault flag
-	metadata := r.Metadata
-	if metadata == nil {
-		metadata = types.Metadata{}
-	}
+	// Prepare gateway metadata with SaveCardAndMakeDefault flag if true
+	var gatewayMetadata types.Metadata
 	if r.SaveCardAndMakeDefault {
-		metadata["save_card_and_make_default"] = "true"
-	} else {
-		metadata["save_card_and_make_default"] = "false"
+		gatewayMetadata = types.Metadata{
+			"save_card_and_make_default": "true",
+		}
 	}
 
 	p := &payment.Payment{
@@ -187,7 +184,8 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 		PaymentMethodID:   r.PaymentMethodID,
 		Amount:            r.Amount,
 		Currency:          strings.ToLower(r.Currency),
-		Metadata:          metadata,
+		Metadata:          r.Metadata,
+		GatewayMetadata:   gatewayMetadata,
 		EnvironmentID:     types.GetEnvironmentID(ctx),
 		BaseModel:         types.GetDefaultBaseModel(ctx),
 	}
