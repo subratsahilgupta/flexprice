@@ -207,7 +207,7 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 				}).
 				Mark(ierr.ErrValidation)
 		}
-	} else if r.PaymentMethodType != types.PaymentMethodTypeCredits && r.PaymentMethodType != types.PaymentMethodTypePaymentLink {
+	} else if r.PaymentMethodType != types.PaymentMethodTypeCredits && r.PaymentMethodType != types.PaymentMethodTypePaymentLink && r.PaymentMethodType != types.PaymentMethodTypeCard {
 		if p.PaymentMethodID == "" {
 			return nil, ierr.NewError("payment method id is required for online payment method type").
 				WithHint("Payment method ID is required for online payment methods").
@@ -217,7 +217,55 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 				Mark(ierr.ErrValidation)
 		}
 		p.TrackAttempts = true
+	} else if r.PaymentMethodType == types.PaymentMethodTypeCard {
+		// For CARD payments, we'll automatically fetch the customer's saved payment method
+		// So payment_method_id is optional - it will be populated during processing
+		p.TrackAttempts = true
 	}
 
 	return p, nil
+}
+
+// GetCustomerPaymentMethodsRequest represents a request to get customer payment methods
+type GetCustomerPaymentMethodsRequest struct {
+	CustomerID string `json:"customer_id" binding:"required"`
+}
+
+// PaymentMethodResponse represents a payment method response
+type PaymentMethodResponse struct {
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"`
+	Customer string                 `json:"customer"`
+	Created  int64                  `json:"created"`
+	Card     *CardDetails           `json:"card,omitempty"`
+	Metadata map[string]interface{} `json:"metadata"`
+}
+
+// CardDetails represents card details in a payment method
+type CardDetails struct {
+	Brand       string `json:"brand"`
+	Last4       string `json:"last4"`
+	ExpMonth    int    `json:"exp_month"`
+	ExpYear     int    `json:"exp_year"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// ChargeSavedPaymentMethodRequest represents a request to charge a saved payment method
+type ChargeSavedPaymentMethodRequest struct {
+	CustomerID      string          `json:"customer_id" binding:"required"`
+	PaymentMethodID string          `json:"payment_method_id" binding:"required"`
+	Amount          decimal.Decimal `json:"amount" binding:"required"`
+	Currency        string          `json:"currency" binding:"required"`
+	InvoiceID       string          `json:"invoice_id,omitempty"`
+}
+
+// PaymentIntentResponse represents a payment intent response
+type PaymentIntentResponse struct {
+	ID            string          `json:"id"`
+	Status        string          `json:"status"`
+	Amount        decimal.Decimal `json:"amount"`
+	Currency      string          `json:"currency"`
+	CustomerID    string          `json:"customer_id"`
+	PaymentMethod string          `json:"payment_method"`
+	CreatedAt     int64           `json:"created_at"`
 }

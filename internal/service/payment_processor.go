@@ -108,13 +108,8 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 			processErr = p.handlePaymentLinkCreation(ctx, paymentObj)
 		}
 	case types.PaymentMethodTypeCard:
-		// TODO: Implement card payment processing
-		processErr = ierr.NewError("card payment processing not implemented").
-			WithHint("Card payment processing is not implemented").
-			WithReportableDetails(map[string]interface{}{
-				"payment_id": paymentObj.ID,
-			}).
-			Mark(ierr.ErrInvalidOperation)
+		// Handle card payment processing
+		processErr = p.handleCardPayment(ctx, paymentObj)
 	case types.PaymentMethodTypeACH:
 		// TODO: Implement ACH payment processing
 		processErr = ierr.NewError("ACH payment processing not implemented").
@@ -510,4 +505,151 @@ func (p *paymentProcessor) publishWebhookEvent(ctx context.Context, eventName st
 	if err := p.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
 		p.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
 	}
+}
+
+// handleCardPayment processes card payments using saved payment methods
+func (p *paymentProcessor) handleCardPayment(ctx context.Context, paymentObj *payment.Payment) error {
+	p.Logger.Infow("processing card payment",
+		"payment_id", paymentObj.ID,
+		"customer_id", paymentObj.Metadata["customer_id"],
+		"payment_method_id", paymentObj.PaymentMethodID,
+		"amount", paymentObj.Amount.String(),
+	)
+
+	// Get customer ID from metadata or destination
+	customerID, exists := paymentObj.Metadata["customer_id"]
+	if !exists || customerID == "" {
+		// Try to get customer from invoice if destination is invoice
+		if paymentObj.DestinationType == types.PaymentDestinationTypeInvoice {
+			invoiceService := NewInvoiceService(p.ServiceParams)
+			invoiceResp, err := invoiceService.GetInvoice(ctx, paymentObj.DestinationID)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHint("Failed to get invoice for card payment").
+					WithReportableDetails(map[string]interface{}{
+						"payment_id": paymentObj.ID,
+						"invoice_id": paymentObj.DestinationID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+			customerID = invoiceResp.CustomerID
+		} else {
+			return ierr.NewError("customer_id not found").
+				WithHint("Customer ID is required for card payments").
+				WithReportableDetails(map[string]interface{}{
+					"payment_id": paymentObj.ID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	p.Logger.Infow("processing card payment for customer",
+		"customer_id", customerID,
+		"payment_id", paymentObj.ID,
+	)
+
+	// Initialize Stripe service
+	stripeService := NewStripeService(p.ServiceParams)
+
+	// If no specific payment method ID is provided, we need to get one
+	if paymentObj.PaymentMethodID == "" {
+		// Get customer's saved payment methods
+		req := &dto.GetCustomerPaymentMethodsRequest{
+			CustomerID: customerID,
+		}
+		paymentMethods, err := stripeService.GetCustomerPaymentMethods(ctx, req)
+		if err != nil {
+			p.Logger.Errorw("failed to get customer payment methods",
+				"error", err,
+				"customer_id", customerID,
+				"payment_id", paymentObj.ID,
+			)
+			return ierr.WithError(err).
+				WithHint("Failed to retrieve customer's saved payment methods").
+				WithReportableDetails(map[string]interface{}{
+					"customer_id": customerID,
+					"payment_id":  paymentObj.ID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		if len(paymentMethods) == 0 {
+			p.Logger.Warnw("customer has no saved payment methods",
+				"customer_id", customerID,
+				"payment_id", paymentObj.ID,
+			)
+			return ierr.NewError("no saved payment methods").
+				WithHint("Customer must have saved payment methods to make card payments. Please make a payment using payment link first to save a card.").
+				WithReportableDetails(map[string]interface{}{
+					"customer_id": customerID,
+					"payment_id":  paymentObj.ID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		// Use the first available payment method
+		paymentObj.PaymentMethodID = paymentMethods[0].ID
+		p.Logger.Infow("selected payment method for card payment",
+			"customer_id", customerID,
+			"payment_id", paymentObj.ID,
+			"payment_method_id", paymentObj.PaymentMethodID,
+		)
+	}
+
+	// Charge the saved payment method
+	chargeReq := &dto.ChargeSavedPaymentMethodRequest{
+		CustomerID:      customerID,
+		PaymentMethodID: paymentObj.PaymentMethodID,
+		Amount:          paymentObj.Amount,
+		Currency:        paymentObj.Currency,
+		InvoiceID:       paymentObj.DestinationID,
+	}
+
+	paymentIntentResp, err := stripeService.ChargeSavedPaymentMethod(ctx, chargeReq)
+	if err != nil {
+		// Update payment status to failed
+		updateReq := &dto.UpdatePaymentRequest{
+			PaymentStatus: lo.ToPtr(string(types.PaymentStatusFailed)),
+			ErrorMessage:  lo.ToPtr(err.Error()),
+			FailedAt:      lo.ToPtr(time.Now().UTC()),
+		}
+
+		paymentService := NewPaymentService(p.ServiceParams)
+		if _, updateErr := paymentService.UpdatePayment(ctx, paymentObj.ID, *updateReq); updateErr != nil {
+			p.Logger.Errorw("failed to update payment status to failed",
+				"error", updateErr,
+				"payment_id", paymentObj.ID,
+			)
+		}
+
+		return err
+	}
+
+	// Update payment with Stripe details
+	updateReq := &dto.UpdatePaymentRequest{
+		PaymentStatus:    lo.ToPtr(string(types.PaymentStatusSucceeded)),
+		GatewayPaymentID: lo.ToPtr(paymentIntentResp.ID),
+		PaymentGateway:   lo.ToPtr(string(types.PaymentGatewayTypeStripe)),
+		PaymentMethodID:  lo.ToPtr(paymentObj.PaymentMethodID),
+		SucceededAt:      lo.ToPtr(time.Now().UTC()),
+	}
+
+	paymentService := NewPaymentService(p.ServiceParams)
+	if _, err := paymentService.UpdatePayment(ctx, paymentObj.ID, *updateReq); err != nil {
+		p.Logger.Errorw("failed to update payment status to succeeded",
+			"error", err,
+			"payment_id", paymentObj.ID,
+		)
+		return err
+	}
+
+	p.Logger.Infow("successfully processed card payment",
+		"payment_id", paymentObj.ID,
+		"customer_id", customerID,
+		"payment_method_id", paymentObj.PaymentMethodID,
+		"payment_intent_id", paymentIntentResp.ID,
+		"amount", paymentObj.Amount.String(),
+	)
+
+	return nil
 }

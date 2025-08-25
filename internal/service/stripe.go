@@ -414,6 +414,10 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 		CancelURL:  stripe.String(cancelURL),
 		Metadata:   metadata,
 		Customer:   stripe.String(stripeCustomerID),
+		// Automatically save payment method for future use
+		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
+			SetupFutureUsage: stripe.String("off_session"),
+		},
 	}
 
 	// Don't create payment record here - it should be created by the main payment flow
@@ -460,6 +464,242 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 	)
 
 	return response, nil
+}
+
+// GetCustomerPaymentMethods retrieves saved payment methods for a customer
+func (s *StripeService) GetCustomerPaymentMethods(ctx context.Context, req *dto.GetCustomerPaymentMethodsRequest) ([]*dto.PaymentMethodResponse, error) {
+	// Get Stripe connection
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe connection").
+			WithHint("Stripe connection not configured for this environment").
+			Mark(ierr.ErrNotFound)
+	}
+
+	stripeConfig, err := s.GetDecryptedStripeConfig(conn)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe configuration").
+			WithHint("Invalid Stripe configuration").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Initialize Stripe client
+	stripeClient := &client.API{}
+	stripeClient.Init(stripeConfig.SecretKey, nil)
+
+	// Get our customer to find Stripe customer ID
+	customerService := NewCustomerService(s.ServiceParams)
+	ourCustomerResp, err := customerService.GetCustomer(ctx, req.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+	ourCustomer := ourCustomerResp.Customer
+
+	stripeCustomerID, exists := ourCustomer.Metadata["stripe_customer_id"]
+	if !exists || stripeCustomerID == "" {
+		// No Stripe customer ID means no saved payment methods
+		s.Logger.Warnw("customer has no stripe_customer_id in metadata",
+			"customer_id", req.CustomerID,
+			"customer_metadata", ourCustomer.Metadata,
+		)
+		return []*dto.PaymentMethodResponse{}, nil
+	}
+
+	s.Logger.Infow("retrieving payment methods for stripe customer",
+		"customer_id", req.CustomerID,
+		"stripe_customer_id", stripeCustomerID,
+	)
+
+	// List payment methods for the customer
+	params := &stripe.PaymentMethodListParams{
+		Customer: stripe.String(stripeCustomerID),
+		Type:     stripe.String("card"),
+	}
+
+	paymentMethods := stripeClient.PaymentMethods.List(params)
+	var responses []*dto.PaymentMethodResponse
+
+	for paymentMethods.Next() {
+		pm := paymentMethods.PaymentMethod()
+		response := &dto.PaymentMethodResponse{
+			ID:       pm.ID,
+			Type:     string(pm.Type),
+			Customer: pm.Customer.ID,
+			Created:  pm.Created,
+			Metadata: make(map[string]interface{}),
+		}
+
+		// Convert metadata from map[string]string to map[string]interface{}
+		for k, v := range pm.Metadata {
+			response.Metadata[k] = v
+		}
+
+		if pm.Card != nil {
+			response.Card = &dto.CardDetails{
+				Brand:       string(pm.Card.Brand),
+				Last4:       pm.Card.Last4,
+				ExpMonth:    int(pm.Card.ExpMonth),
+				ExpYear:     int(pm.Card.ExpYear),
+				Fingerprint: pm.Card.Fingerprint,
+			}
+		}
+
+		responses = append(responses, response)
+	}
+
+	if err := paymentMethods.Err(); err != nil {
+		s.Logger.Errorw("failed to list payment methods",
+			"error", err,
+			"customer_id", req.CustomerID,
+			"stripe_customer_id", stripeCustomerID)
+		return nil, ierr.NewError("failed to list payment methods").
+			WithHint("Unable to retrieve saved payment methods").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+				"error":       err.Error(),
+			}).
+			Mark(ierr.ErrSystem)
+	}
+
+	s.Logger.Infow("successfully retrieved payment methods",
+		"customer_id", req.CustomerID,
+		"stripe_customer_id", stripeCustomerID,
+		"payment_methods_count", len(responses),
+	)
+
+	return responses, nil
+}
+
+// ChargeSavedPaymentMethod charges a customer using their saved payment method
+func (s *StripeService) ChargeSavedPaymentMethod(ctx context.Context, req *dto.ChargeSavedPaymentMethodRequest) (*dto.PaymentIntentResponse, error) {
+	// Get Stripe connection
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe connection").
+			WithHint("Stripe connection not configured for this environment").
+			Mark(ierr.ErrNotFound)
+	}
+
+	stripeConfig, err := s.GetDecryptedStripeConfig(conn)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe configuration").
+			WithHint("Invalid Stripe configuration").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Initialize Stripe client
+	stripeClient := &client.API{}
+	stripeClient.Init(stripeConfig.SecretKey, nil)
+
+	// Get our customer to find Stripe customer ID
+	customerService := NewCustomerService(s.ServiceParams)
+	ourCustomerResp, err := customerService.GetCustomer(ctx, req.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+	ourCustomer := ourCustomerResp.Customer
+
+	stripeCustomerID, exists := ourCustomer.Metadata["stripe_customer_id"]
+	if !exists || stripeCustomerID == "" {
+		return nil, ierr.NewError("customer not found in Stripe").
+			WithHint("Customer must have a Stripe account to use saved payment methods").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Create PaymentIntent with saved payment method
+	amountInCents := req.Amount.Mul(decimal.NewFromInt(100)).IntPart()
+	params := &stripe.PaymentIntentParams{
+		Amount:        stripe.Int64(amountInCents),
+		Currency:      stripe.String(req.Currency),
+		Customer:      stripe.String(stripeCustomerID),
+		PaymentMethod: stripe.String(req.PaymentMethodID),
+		OffSession:    stripe.Bool(true), // Important: indicates off-session payment
+		Confirm:       stripe.Bool(true), // Confirm immediately
+		Metadata: map[string]string{
+			"flexprice_customer_id": req.CustomerID,
+			"environment_id":        types.GetEnvironmentID(ctx),
+			"invoice_id":            req.InvoiceID,
+		},
+	}
+
+	paymentIntent, err := stripeClient.PaymentIntents.New(params)
+	if err != nil {
+		// Handle specific error cases
+		if stripeErr, ok := err.(*stripe.Error); ok {
+			switch stripeErr.Code {
+			case stripe.ErrorCodeAuthenticationRequired:
+				// Payment requires authentication - customer needs to return to complete
+				return nil, ierr.NewError("payment requires authentication").
+					WithHint("Customer must return to complete payment authentication").
+					WithReportableDetails(map[string]interface{}{
+						"customer_id":       req.CustomerID,
+						"payment_method_id": req.PaymentMethodID,
+						"stripe_error_code": stripeErr.Code,
+						"payment_intent_id": stripeErr.PaymentIntent.ID,
+					}).
+					Mark(ierr.ErrInvalidOperation)
+			case stripe.ErrorCodeCardDeclined:
+				// Card was declined
+				return nil, ierr.NewError("payment method declined").
+					WithHint("The saved payment method was declined").
+					WithReportableDetails(map[string]interface{}{
+						"customer_id":       req.CustomerID,
+						"payment_method_id": req.PaymentMethodID,
+						"stripe_error_code": stripeErr.Code,
+					}).
+					Mark(ierr.ErrInvalidOperation)
+			}
+		}
+
+		s.Logger.Errorw("failed to create PaymentIntent with saved payment method",
+			"error", err,
+			"customer_id", req.CustomerID,
+			"payment_method_id", req.PaymentMethodID,
+			"amount", req.Amount.String(),
+		)
+		return nil, ierr.NewError("failed to charge saved payment method").
+			WithHint("Unable to process payment with saved payment method").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id":       req.CustomerID,
+				"payment_method_id": req.PaymentMethodID,
+				"error":             err.Error(),
+			}).
+			Mark(ierr.ErrSystem)
+	}
+
+	response := &dto.PaymentIntentResponse{
+		ID:            paymentIntent.ID,
+		Status:        string(paymentIntent.Status),
+		Amount:        req.Amount,
+		Currency:      req.Currency,
+		CustomerID:    stripeCustomerID,
+		PaymentMethod: req.PaymentMethodID,
+		CreatedAt:     paymentIntent.Created,
+	}
+
+	s.Logger.Infow("successfully charged saved payment method",
+		"payment_intent_id", paymentIntent.ID,
+		"customer_id", req.CustomerID,
+		"payment_method_id", req.PaymentMethodID,
+		"amount", req.Amount.String(),
+		"status", paymentIntent.Status,
+	)
+
+	return response, nil
+}
+
+// HasSavedPaymentMethods checks if a customer has any saved payment methods
+func (s *StripeService) HasSavedPaymentMethods(ctx context.Context, customerID string) (bool, error) {
+	req := &dto.GetCustomerPaymentMethodsRequest{
+		CustomerID: customerID,
+	}
+
+	paymentMethods, err := s.GetCustomerPaymentMethods(ctx, req)
+	if err != nil {
+		return false, err
+	}
+
+	return len(paymentMethods) > 0, nil
 }
 
 // ReconcilePaymentWithInvoice updates the invoice payment status and amounts when a payment succeeds
