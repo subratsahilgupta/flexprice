@@ -65,6 +65,16 @@ type CreateSubscriptionRequest struct {
 	// "default_incomplete" - subscription waits for payment confirmation before activation
 	// "send_invoice" - subscription activates immediately, invoice is sent for payment
 	CollectionMethod *types.CollectionMethod `json:"collection_method,omitempty"`
+
+	// ProrationMode is the mode for proration.
+	// If not set, the default value is none. Possible values are active and none.
+	// Active proration means the proration will be calculated based on the usage.
+	// None proration means the proration will not be calculated.
+	// This is IGNORED when the billing cycle is anniversary.
+	ProrationMode types.ProrationMode `json:"proration_mode"`
+	// Timezone of the customer.
+	// If not set, the default value is UTC.
+	CustomerTimezone string `json:"customer_timezone" validate:"timezone"`
 }
 
 // AddAddonRequest is used by body-based endpoint /subscriptions/addon
@@ -150,6 +160,14 @@ func (r *CreateSubscriptionRequest) Validate() error {
 				"end_date":   *r.EndDate,
 			}).
 			Mark(ierr.ErrValidation)
+	}
+	// If proration mode is not set, set it to none
+	if r.ProrationMode == "" {
+		r.ProrationMode = types.ProrationModeNone
+	}
+
+	if err := r.ProrationMode.Validate(); err != nil {
+		return err
 	}
 
 	if r.BillingPeriodCount < 1 {
@@ -372,6 +390,10 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		}
 	}
 
+	if r.CustomerTimezone == "" {
+		r.CustomerTimezone = "UTC"
+	}
+
 	sub := &subscription.Subscription{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
 		CustomerID:         r.CustomerID,
@@ -391,6 +413,8 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		EnvironmentID:      types.GetEnvironmentID(ctx),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 		BillingCycle:       r.BillingCycle,
+		CustomerTimezone:   r.CustomerTimezone,
+		ProrationMode:      r.ProrationMode,
 	}
 
 	// Set commitment amount and overage factor if provided
