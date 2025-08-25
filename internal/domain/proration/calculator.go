@@ -76,14 +76,16 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 		prorationCoefficient = decimal.NewFromFloat(remainingSeconds).Div(decimal.NewFromFloat(totalSeconds))
 
 	case types.StrategyDayBased:
-		totalDays := daysInDurationWithDST(periodStartInTZ, periodEndInTZ, loc) + 1
+		totalDaysRaw := daysInDurationWithDST(periodStartInTZ, periodEndInTZ, loc)
+		totalDays := totalDaysRaw + 1
 		if totalDays <= 0 {
 			return nil, ierr.NewError("invalid billing period").
 				WithHintf("total days is zero or negative (%v to %v)", params.CurrentPeriodStart, params.CurrentPeriodEnd).
 				Mark(ierr.ErrValidation)
 		}
 
-		remainingDays := daysInDurationWithDST(prorationDateInTZ, periodEndInTZ, loc) + 1
+		remainingDaysRaw := daysInDurationWithDST(prorationDateInTZ, periodEndInTZ, loc)
+		remainingDays := remainingDaysRaw + 1
 		if remainingDays < 0 {
 			remainingDays = 0
 		}
