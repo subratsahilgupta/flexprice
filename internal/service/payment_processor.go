@@ -257,8 +257,8 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 		}(),
 		Metadata: paymentObj.Metadata,
 		SaveCardAndMakeDefault: func() bool {
-			if paymentObj.Metadata != nil {
-				if saveCardStr, exists := paymentObj.Metadata["save_card_and_make_default"]; exists {
+			if paymentObj.GatewayMetadata != nil {
+				if saveCardStr, exists := paymentObj.GatewayMetadata["save_card_and_make_default"]; exists {
 					return saveCardStr == "true"
 				}
 			}
@@ -285,16 +285,10 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 	if paymentObj.GatewayMetadata == nil {
 		paymentObj.GatewayMetadata = types.Metadata{}
 	}
+	// Merge with existing gateway metadata (preserving save_card_and_make_default if set)
 	paymentObj.GatewayMetadata["payment_url"] = paymentLinkResp.PaymentURL
 	paymentObj.GatewayMetadata["gateway"] = paymentLinkResp.Gateway
 	paymentObj.GatewayMetadata["session_id"] = paymentLinkResp.ID
-
-	// Store SaveCardAndMakeDefault flag in gateway metadata for webhook access
-	if paymentObj.Metadata != nil {
-		if saveCardStr, exists := paymentObj.Metadata["save_card_and_make_default"]; exists {
-			paymentObj.GatewayMetadata["save_card_and_make_default"] = saveCardStr
-		}
-	}
 
 	// Update the payment record
 	if err := p.PaymentRepo.Update(ctx, paymentObj); err != nil {

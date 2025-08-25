@@ -475,13 +475,7 @@ func (h *WebhookHandler) handleCheckoutSessionCompleted(c *gin.Context, event *s
 	if paymentStatus == string(types.PaymentStatusSucceeded) && paymentStatusResp.PaymentMethodID != "" {
 		// Get customer ID from payment metadata or destination
 		var customerID string
-		if payment.Metadata != nil {
-			if custID, exists := payment.Metadata["customer_id"]; exists && custID != "" {
-				customerID = custID
-			}
-		}
-
-		if customerID == "" && payment.DestinationType == types.PaymentDestinationTypeInvoice {
+		if payment.DestinationType == types.PaymentDestinationTypeInvoice {
 			// Try to get customer from invoice
 			invoiceService := service.NewInvoiceService(h.stripeService.ServiceParams)
 			invoiceResp, err := invoiceService.GetInvoice(c.Request.Context(), payment.DestinationID)
@@ -504,11 +498,6 @@ func (h *WebhookHandler) handleCheckoutSessionCompleted(c *gin.Context, event *s
 				if setErr := h.stripeService.SetDefaultPaymentMethod(c.Request.Context(), customerID, paymentStatusResp.PaymentMethodID); setErr != nil {
 					h.logger.Errorw("failed to set default payment method in Stripe",
 						"error", setErr,
-						"customer_id", customerID,
-						"payment_method_id", paymentStatusResp.PaymentMethodID,
-					)
-				} else {
-					h.logger.Infow("successfully set payment method as default in Stripe",
 						"customer_id", customerID,
 						"payment_method_id", paymentStatusResp.PaymentMethodID,
 					)
