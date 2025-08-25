@@ -468,6 +468,46 @@ func (h *WebhookHandler) handleCheckoutSessionCompleted(c *gin.Context, event *s
 		return
 	}
 
+	// If payment succeeded and we have a payment method, set it as default in Stripe if customer doesn't have one
+	if paymentStatus == string(types.PaymentStatusSucceeded) && paymentStatusResp.PaymentMethodID != "" {
+		// Get customer ID from payment metadata or destination
+		var customerID string
+		if payment.DestinationType == types.PaymentDestinationTypeInvoice {
+			// Try to get customer from invoice
+			invoiceService := service.NewInvoiceService(h.stripeService.ServiceParams)
+			invoiceResp, err := invoiceService.GetInvoice(c.Request.Context(), payment.DestinationID)
+			if err == nil {
+				customerID = invoiceResp.CustomerID
+			}
+		}
+
+		if customerID != "" {
+			// Check if SaveCardAndMakeDefault was set in gateway metadata
+			saveCardAndMakeDefault := false
+			if payment.GatewayMetadata != nil {
+				if saveCardStr, exists := payment.GatewayMetadata["save_card_and_make_default"]; exists {
+					saveCardAndMakeDefault = saveCardStr == "true"
+				}
+			}
+
+			if saveCardAndMakeDefault {
+				// Set this payment method as default in Stripe
+				if setErr := h.stripeService.SetDefaultPaymentMethod(c.Request.Context(), customerID, paymentStatusResp.PaymentMethodID); setErr != nil {
+					h.logger.Errorw("failed to set default payment method in Stripe",
+						"error", setErr,
+						"customer_id", customerID,
+						"payment_method_id", paymentStatusResp.PaymentMethodID,
+					)
+				}
+			} else {
+				h.logger.Infow("payment was not configured to save card, skipping default assignment",
+					"customer_id", customerID,
+					"payment_method_id", paymentStatusResp.PaymentMethodID,
+					"save_card_and_make_default", saveCardAndMakeDefault,
+				)
+			}
+		}
+	}
 	// Reconcile payment with invoice if payment succeeded or if payment was already succeeded
 	// This handles both new payments and duplicate payments that should result in overpayment
 	if paymentStatus == string(types.PaymentStatusSucceeded) || payment.PaymentStatus == types.PaymentStatusSucceeded {
