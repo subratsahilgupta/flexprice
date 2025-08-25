@@ -256,6 +256,14 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 			return nil
 		}(),
 		Metadata: paymentObj.Metadata,
+		SaveCardAndMakeDefault: func() bool {
+			if paymentObj.Metadata != nil {
+				if saveCardStr, exists := paymentObj.Metadata["save_card_and_make_default"]; exists {
+					return saveCardStr == "true"
+				}
+			}
+			return false
+		}(),
 	}
 
 	paymentLinkResp, err := gatewayService.CreatePaymentLink(ctx, paymentLinkReq)
@@ -280,6 +288,13 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 	paymentObj.GatewayMetadata["payment_url"] = paymentLinkResp.PaymentURL
 	paymentObj.GatewayMetadata["gateway"] = paymentLinkResp.Gateway
 	paymentObj.GatewayMetadata["session_id"] = paymentLinkResp.ID
+
+	// Store SaveCardAndMakeDefault flag in gateway metadata for webhook access
+	if paymentObj.Metadata != nil {
+		if saveCardStr, exists := paymentObj.Metadata["save_card_and_make_default"]; exists {
+			paymentObj.GatewayMetadata["save_card_and_make_default"] = saveCardStr
+		}
+	}
 
 	// Update the payment record
 	if err := p.PaymentRepo.Update(ctx, paymentObj); err != nil {
@@ -553,19 +568,16 @@ func (p *paymentProcessor) handleCardPayment(ctx context.Context, paymentObj *pa
 
 	// If no specific payment method ID is provided, we need to get one
 	if paymentObj.PaymentMethodID == "" {
-		// Get customer's saved payment methods
-		req := &dto.GetCustomerPaymentMethodsRequest{
-			CustomerID: customerID,
-		}
-		paymentMethods, err := stripeService.GetCustomerPaymentMethods(ctx, req)
-		if err != nil {
-			p.Logger.Errorw("failed to get customer payment methods",
+		// Get the default payment method - this is required for card payments
+		defaultPaymentMethod, err := stripeService.GetDefaultPaymentMethod(ctx, customerID)
+		if err != nil || defaultPaymentMethod == nil {
+			p.Logger.Warnw("customer has no default payment method for card payment",
+				"customer_id", customerID,
+				"payment_id", paymentObj.ID,
 				"error", err,
-				"customer_id", customerID,
-				"payment_id", paymentObj.ID,
 			)
-			return ierr.WithError(err).
-				WithHint("Failed to retrieve customer's saved payment methods").
+			return ierr.NewError("no default payment method").
+				WithHint("Customer must have a default payment method to make card payments. Please make a payment using payment link with save_card_and_make_default=true first.").
 				WithReportableDetails(map[string]interface{}{
 					"customer_id": customerID,
 					"payment_id":  paymentObj.ID,
@@ -573,26 +585,18 @@ func (p *paymentProcessor) handleCardPayment(ctx context.Context, paymentObj *pa
 				Mark(ierr.ErrValidation)
 		}
 
-		if len(paymentMethods) == 0 {
-			p.Logger.Warnw("customer has no saved payment methods",
-				"customer_id", customerID,
-				"payment_id", paymentObj.ID,
-			)
-			return ierr.NewError("no saved payment methods").
-				WithHint("Customer must have saved payment methods to make card payments. Please make a payment using payment link first to save a card.").
-				WithReportableDetails(map[string]interface{}{
-					"customer_id": customerID,
-					"payment_id":  paymentObj.ID,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-
-		// Use the first available payment method
-		paymentObj.PaymentMethodID = paymentMethods[0].ID
-		p.Logger.Infow("selected payment method for card payment",
+		// Use the default payment method
+		paymentObj.PaymentMethodID = defaultPaymentMethod.ID
+		p.Logger.Infow("using default payment method for card payment",
 			"customer_id", customerID,
 			"payment_id", paymentObj.ID,
 			"payment_method_id", paymentObj.PaymentMethodID,
+			"card_last4", func() string {
+				if defaultPaymentMethod.Card != nil {
+					return defaultPaymentMethod.Card.Last4
+				}
+				return ""
+			}(),
 		)
 	}
 
