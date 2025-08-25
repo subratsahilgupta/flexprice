@@ -207,6 +207,13 @@ func (s *billingService) CalculateUsageCharges(
 			continue
 		}
 
+		// Get customer for usage request
+		customer, err := s.CustomerRepo.Get(ctx, sub.CustomerID)
+		if err != nil {
+			return nil, decimal.Zero, err
+		}
+		eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
+
 		// Process each matching charge individually (normal and overage charges)
 		for _, matchingCharge := range matchingCharges {
 			quantityForCalculation := decimal.NewFromFloat(matchingCharge.Quantity)
@@ -218,10 +225,79 @@ func (s *billingService) CalculateUsageCharges(
 			// 3. The entitlement is enabled
 			if !matchingCharge.IsOverage && ok && matchingEntitlement.IsEnabled {
 				if matchingEntitlement.UsageLimit != nil {
+
+					// consider the usage reset period
+					// TODO: Suppport other reset periods i.e. weekly, monthly, yearly
 					// usage limit is set, so we decrement the usage quantity by the already entitled usage
-					usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
-					adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
-					quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
+
+					// case 1 : when the usage reset period is billing period
+					if matchingEntitlement.UsageResetPeriod == sub.BillingPeriod {
+
+						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
+						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
+						quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
+
+					} else if matchingEntitlement.UsageResetPeriod == types.BILLING_PERIOD_DAILY {
+
+						// case 2 : when the usage reset period is daily
+						// For daily reset periods, we need to fetch usage with daily window size
+						// and calculate overage per day, then sum the total overage
+
+						// Create usage request with daily window size
+						usageRequest := &dto.GetUsageByMeterRequest{
+							MeterID:            item.MeterID,
+							PriceID:            item.PriceID,
+							ExternalCustomerID: customer.ExternalID,
+							StartTime:          periodStart,
+							EndTime:            periodEnd,
+							WindowSize:         types.WindowSizeDay, // Use daily window size
+						}
+
+						// Get usage data with daily windows
+						usageResult, err := eventService.GetUsageByMeter(ctx, usageRequest)
+						if err != nil {
+							return nil, decimal.Zero, err
+						}
+
+						// Calculate daily limit
+						dailyLimit := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
+						totalBillableQuantity := decimal.Zero
+
+						s.Logger.Debugw("calculating daily usage charges",
+							"subscription_id", sub.ID,
+							"line_item_id", item.ID,
+							"meter_id", item.MeterID,
+							"daily_limit", dailyLimit,
+							"num_daily_windows", len(usageResult.Results))
+
+						// Process each daily window
+						for _, dailyResult := range usageResult.Results {
+							dailyUsage := dailyResult.Value
+
+							// Calculate overage for this day: max(0, daily_usage - daily_limit)
+							dailyOverage := decimal.Max(decimal.Zero, dailyUsage.Sub(dailyLimit))
+
+							if dailyOverage.GreaterThan(decimal.Zero) {
+								// Add to total billable quantity
+								totalBillableQuantity = totalBillableQuantity.Add(dailyOverage)
+
+								s.Logger.Debugw("daily overage calculated",
+									"subscription_id", sub.ID,
+									"line_item_id", item.ID,
+									"date", dailyResult.WindowSize,
+									"daily_usage", dailyUsage,
+									"daily_limit", dailyLimit,
+									"daily_overage", dailyOverage)
+							}
+						}
+
+						// Use the total billable quantity for calculation
+						quantityForCalculation = totalBillableQuantity
+					} else {
+						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
+						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
+						quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
+					}
 
 					// Recalculate the amount based on the adjusted quantity
 					if matchingCharge.Price != nil {
@@ -255,6 +331,11 @@ func (s *billingService) CalculateUsageCharges(
 				metadata["overage_factor"] = fmt.Sprintf("%v", matchingCharge.OverageFactor)
 				metadata["description"] = fmt.Sprintf("%s (Overage Charge)", item.DisplayName)
 				displayName = lo.ToPtr(fmt.Sprintf("%s (Overage)", item.DisplayName))
+			}
+
+			// Add usage reset period metadata if entitlement has daily reset
+			if !matchingCharge.IsOverage && ok && matchingEntitlement.IsEnabled && matchingEntitlement.UsageResetPeriod == types.BILLING_PERIOD_DAILY {
+				metadata["usage_reset_period"] = "daily"
 			}
 
 			s.Logger.Debugw("usage charges for line item",

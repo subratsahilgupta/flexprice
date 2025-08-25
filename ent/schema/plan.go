@@ -21,6 +21,7 @@ func (Plan) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		baseMixin.BaseMixin{},
 		baseMixin.EnvironmentMixin{},
+		baseMixin.MetadataMixin{},
 	}
 }
 

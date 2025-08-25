@@ -68,6 +68,18 @@ func (cu *CustomerUpdate) ClearUpdatedBy() *CustomerUpdate {
 	return cu
 }
 
+// SetMetadata sets the "metadata" field.
+func (cu *CustomerUpdate) SetMetadata(m map[string]string) *CustomerUpdate {
+	cu.mutation.SetMetadata(m)
+	return cu
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (cu *CustomerUpdate) ClearMetadata() *CustomerUpdate {
+	cu.mutation.ClearMetadata()
+	return cu
+}
+
 // SetExternalID sets the "external_id" field.
 func (cu *CustomerUpdate) SetExternalID(s string) *CustomerUpdate {
 	cu.mutation.SetExternalID(s)
@@ -236,18 +248,6 @@ func (cu *CustomerUpdate) ClearAddressCountry() *CustomerUpdate {
 	return cu
 }
 
-// SetMetadata sets the "metadata" field.
-func (cu *CustomerUpdate) SetMetadata(m map[string]string) *CustomerUpdate {
-	cu.mutation.SetMetadata(m)
-	return cu
-}
-
-// ClearMetadata clears the value of the "metadata" field.
-func (cu *CustomerUpdate) ClearMetadata() *CustomerUpdate {
-	cu.mutation.ClearMetadata()
-	return cu
-}
-
 // Mutation returns the CustomerMutation object of the builder.
 func (cu *CustomerUpdate) Mutation() *CustomerMutation {
 	return cu.mutation
@@ -334,6 +334,12 @@ func (cu *CustomerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if cu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(customer.FieldEnvironmentID, field.TypeString)
 	}
+	if value, ok := cu.mutation.Metadata(); ok {
+		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
+	}
+	if cu.mutation.MetadataCleared() {
+		_spec.ClearField(customer.FieldMetadata, field.TypeJSON)
+	}
 	if value, ok := cu.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)
 	}
@@ -381,12 +387,6 @@ func (cu *CustomerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if cu.mutation.AddressCountryCleared() {
 		_spec.ClearField(customer.FieldAddressCountry, field.TypeString)
-	}
-	if value, ok := cu.mutation.Metadata(); ok {
-		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
-	}
-	if cu.mutation.MetadataCleared() {
-		_spec.ClearField(customer.FieldMetadata, field.TypeJSON)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, cu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -445,6 +445,18 @@ func (cuo *CustomerUpdateOne) SetNillableUpdatedBy(s *string) *CustomerUpdateOne
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (cuo *CustomerUpdateOne) ClearUpdatedBy() *CustomerUpdateOne {
 	cuo.mutation.ClearUpdatedBy()
+	return cuo
+}
+
+// SetMetadata sets the "metadata" field.
+func (cuo *CustomerUpdateOne) SetMetadata(m map[string]string) *CustomerUpdateOne {
+	cuo.mutation.SetMetadata(m)
+	return cuo
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (cuo *CustomerUpdateOne) ClearMetadata() *CustomerUpdateOne {
+	cuo.mutation.ClearMetadata()
 	return cuo
 }
 
@@ -616,18 +628,6 @@ func (cuo *CustomerUpdateOne) ClearAddressCountry() *CustomerUpdateOne {
 	return cuo
 }
 
-// SetMetadata sets the "metadata" field.
-func (cuo *CustomerUpdateOne) SetMetadata(m map[string]string) *CustomerUpdateOne {
-	cuo.mutation.SetMetadata(m)
-	return cuo
-}
-
-// ClearMetadata clears the value of the "metadata" field.
-func (cuo *CustomerUpdateOne) ClearMetadata() *CustomerUpdateOne {
-	cuo.mutation.ClearMetadata()
-	return cuo
-}
-
 // Mutation returns the CustomerMutation object of the builder.
 func (cuo *CustomerUpdateOne) Mutation() *CustomerMutation {
 	return cuo.mutation
@@ -744,6 +744,12 @@ func (cuo *CustomerUpdateOne) sqlSave(ctx context.Context) (_node *Customer, err
 	if cuo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(customer.FieldEnvironmentID, field.TypeString)
 	}
+	if value, ok := cuo.mutation.Metadata(); ok {
+		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
+	}
+	if cuo.mutation.MetadataCleared() {
+		_spec.ClearField(customer.FieldMetadata, field.TypeJSON)
+	}
 	if value, ok := cuo.mutation.ExternalID(); ok {
 		_spec.SetField(customer.FieldExternalID, field.TypeString, value)
 	}
@@ -791,12 +797,6 @@ func (cuo *CustomerUpdateOne) sqlSave(ctx context.Context) (_node *Customer, err
 	}
 	if cuo.mutation.AddressCountryCleared() {
 		_spec.ClearField(customer.FieldAddressCountry, field.TypeString)
-	}
-	if value, ok := cuo.mutation.Metadata(); ok {
-		_spec.SetField(customer.FieldMetadata, field.TypeJSON, value)
-	}
-	if cuo.mutation.MetadataCleared() {
-		_spec.ClearField(customer.FieldMetadata, field.TypeJSON)
 	}
 	_node = &Customer{config: cuo.config}
 	_spec.Assign = _node.assignValues

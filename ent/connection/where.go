@@ -104,6 +104,11 @@ func Name(v string) predicate.Connection {
 	return predicate.Connection(sql.FieldEQ(FieldName, v))
 }
 
+// ProviderType applies equality check predicate on the "provider_type" field. It's identical to ProviderTypeEQ.
+func ProviderType(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldEQ(FieldProviderType, v))
+}
+
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.Connection {
 	return predicate.Connection(sql.FieldEQ(FieldTenantID, v))
@@ -605,23 +610,68 @@ func NameContainsFold(v string) predicate.Connection {
 }
 
 // ProviderTypeEQ applies the EQ predicate on the "provider_type" field.
-func ProviderTypeEQ(v ProviderType) predicate.Connection {
+func ProviderTypeEQ(v string) predicate.Connection {
 	return predicate.Connection(sql.FieldEQ(FieldProviderType, v))
 }
 
 // ProviderTypeNEQ applies the NEQ predicate on the "provider_type" field.
-func ProviderTypeNEQ(v ProviderType) predicate.Connection {
+func ProviderTypeNEQ(v string) predicate.Connection {
 	return predicate.Connection(sql.FieldNEQ(FieldProviderType, v))
 }
 
 // ProviderTypeIn applies the In predicate on the "provider_type" field.
-func ProviderTypeIn(vs ...ProviderType) predicate.Connection {
+func ProviderTypeIn(vs ...string) predicate.Connection {
 	return predicate.Connection(sql.FieldIn(FieldProviderType, vs...))
 }
 
 // ProviderTypeNotIn applies the NotIn predicate on the "provider_type" field.
-func ProviderTypeNotIn(vs ...ProviderType) predicate.Connection {
+func ProviderTypeNotIn(vs ...string) predicate.Connection {
 	return predicate.Connection(sql.FieldNotIn(FieldProviderType, vs...))
+}
+
+// ProviderTypeGT applies the GT predicate on the "provider_type" field.
+func ProviderTypeGT(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldGT(FieldProviderType, v))
+}
+
+// ProviderTypeGTE applies the GTE predicate on the "provider_type" field.
+func ProviderTypeGTE(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldGTE(FieldProviderType, v))
+}
+
+// ProviderTypeLT applies the LT predicate on the "provider_type" field.
+func ProviderTypeLT(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldLT(FieldProviderType, v))
+}
+
+// ProviderTypeLTE applies the LTE predicate on the "provider_type" field.
+func ProviderTypeLTE(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldLTE(FieldProviderType, v))
+}
+
+// ProviderTypeContains applies the Contains predicate on the "provider_type" field.
+func ProviderTypeContains(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldContains(FieldProviderType, v))
+}
+
+// ProviderTypeHasPrefix applies the HasPrefix predicate on the "provider_type" field.
+func ProviderTypeHasPrefix(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldHasPrefix(FieldProviderType, v))
+}
+
+// ProviderTypeHasSuffix applies the HasSuffix predicate on the "provider_type" field.
+func ProviderTypeHasSuffix(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldHasSuffix(FieldProviderType, v))
+}
+
+// ProviderTypeEqualFold applies the EqualFold predicate on the "provider_type" field.
+func ProviderTypeEqualFold(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldEqualFold(FieldProviderType, v))
+}
+
+// ProviderTypeContainsFold applies the ContainsFold predicate on the "provider_type" field.
+func ProviderTypeContainsFold(v string) predicate.Connection {
+	return predicate.Connection(sql.FieldContainsFold(FieldProviderType, v))
 }
 
 // EncryptedSecretDataIsNil applies the IsNil predicate on the "encrypted_secret_data" field.

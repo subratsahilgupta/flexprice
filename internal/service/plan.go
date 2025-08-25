@@ -380,6 +380,9 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 	if req.LookupKey != nil {
 		plan.LookupKey = *req.LookupKey
 	}
+	if req.Metadata != nil {
+		plan.Metadata = req.Metadata
+	}
 
 	// Start a transaction for updating plan, prices, and entitlements
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {

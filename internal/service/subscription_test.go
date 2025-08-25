@@ -90,6 +90,7 @@ func (s *SubscriptionServiceSuite) setupService() {
 		CouponRepo:                 s.GetStores().CouponRepo,
 		CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
 		CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+		SettingsRepo:               s.GetStores().SettingsRepo,
 		EventPublisher:             s.GetPublisher(),
 		WebhookPublisher:           s.GetWebhookPublisher(),
 	})
@@ -706,6 +707,73 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 			expectedError: "end_date cannot be before start_date",
 			errorType:     "validation",
 		},
+		// Collection Method Tests
+		{
+			name: "send_invoice_collection_method",
+			input: dto.CreateSubscriptionRequest{
+				CustomerID:         s.testData.customer.ID,
+				PlanID:             s.testData.plan.ID,
+				StartDate:          lo.ToPtr(s.testData.now),
+				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+				CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+			},
+			wantErr: false,
+		},
+		{
+			name: "charge_automatically_collection_method",
+			input: dto.CreateSubscriptionRequest{
+				CustomerID:         s.testData.customer.ID,
+				PlanID:             s.testData.plan.ID,
+				StartDate:          lo.ToPtr(s.testData.now),
+				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+				CollectionMethod:   lo.ToPtr(types.CollectionMethodDefaultIncomplete),
+			},
+			wantErr: false,
+		},
+		{
+			name: "no_collection_method_specified_defaults_to_send_invoice",
+			input: dto.CreateSubscriptionRequest{
+				CustomerID:         s.testData.customer.ID,
+				PlanID:             s.testData.plan.ID,
+				StartDate:          lo.ToPtr(s.testData.now),
+				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+				// CollectionMethod: nil (not specified)
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid_collection_method",
+			input: dto.CreateSubscriptionRequest{
+				CustomerID:         s.testData.customer.ID,
+				PlanID:             s.testData.plan.ID,
+				StartDate:          lo.ToPtr(s.testData.now),
+				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+				CollectionMethod:   lo.ToPtr(types.CollectionMethod("invalid_method")),
+			},
+			wantErr:       true,
+			expectedError: "invalid collection method",
+			errorType:     "validation",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -733,10 +801,144 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				s.Equal(s.testData.customer.ID, resp.CustomerID)
 			}
 			s.Equal(tc.input.PlanID, resp.PlanID)
-			s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus)
+
+			// Verify collection method behavior
+			if tc.input.CollectionMethod != nil {
+				if *tc.input.CollectionMethod == types.CollectionMethodDefaultIncomplete {
+					// charge_automatically should create active subscription when no invoice is created
+					// (usage-based plan with advance cadence doesn't create invoice at subscription time)
+					s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus,
+						"charge_automatically subscription should be active when no invoice is created")
+				} else if *tc.input.CollectionMethod == types.CollectionMethodSendInvoice {
+					// send_invoice should create active subscription
+					s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus,
+						"send_invoice subscription should be active")
+				}
+			} else {
+				// Default behavior should be active (send_invoice)
+				s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus,
+					"default collection method should create active subscription")
+			}
+
 			s.Equal(tc.input.StartDate.Unix(), resp.StartDate.Unix())
 			if tc.input.EndDate != nil {
 				s.Equal(tc.input.EndDate.Unix(), resp.EndDate.Unix())
+			}
+		})
+	}
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithCollectionMethod() {
+	// Test cases specifically for collection method functionality
+	testCases := []struct {
+		name                  string
+		collectionMethod      *types.CollectionMethod
+		expectedStatus        types.SubscriptionStatus
+		expectedStatusMessage string
+		description           string
+	}{
+		{
+			name:                  "send_invoice_creates_active_subscription",
+			collectionMethod:      lo.ToPtr(types.CollectionMethodSendInvoice),
+			expectedStatus:        types.SubscriptionStatusActive,
+			expectedStatusMessage: "send_invoice should create active subscription immediately",
+			description:           "Subscription with send_invoice should be activated immediately",
+		},
+		{
+			name:                  "charge_automatically_creates_active_subscription_when_no_invoice",
+			collectionMethod:      lo.ToPtr(types.CollectionMethodDefaultIncomplete),
+			expectedStatus:        types.SubscriptionStatusActive,
+			expectedStatusMessage: "charge_automatically should create active subscription when no invoice is created",
+			description:           "Subscription with charge_automatically should be active when no invoice is created (usage-based plan with advance cadence)",
+		},
+		{
+			name:                  "nil_collection_method_defaults_to_active",
+			collectionMethod:      nil,
+			expectedStatus:        types.SubscriptionStatusActive,
+			expectedStatusMessage: "nil collection method should default to active",
+			description:           "When no collection method is specified, should default to send_invoice behavior",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Create subscription request
+			req := dto.CreateSubscriptionRequest{
+				CustomerID:         s.testData.customer.ID,
+				PlanID:             s.testData.plan.ID,
+				StartDate:          lo.ToPtr(s.testData.now),
+				EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+				CollectionMethod:   tc.collectionMethod,
+			}
+
+			// Create subscription
+			resp, err := s.service.CreateSubscription(s.GetContext(), req)
+			s.NoError(err, "Failed to create subscription: %s", tc.description)
+			s.NotNil(resp, "Subscription response should not be nil")
+			s.NotEmpty(resp.ID, "Subscription ID should not be empty")
+
+			// Verify subscription status
+			s.Equal(tc.expectedStatus, resp.SubscriptionStatus, tc.expectedStatusMessage)
+
+			// Verify other fields
+			s.Equal(s.testData.customer.ID, resp.CustomerID)
+			s.Equal(s.testData.plan.ID, resp.PlanID)
+			s.Equal(req.StartDate.Unix(), resp.StartDate.Unix())
+			s.Equal(req.EndDate.Unix(), resp.EndDate.Unix())
+
+			// Log the result for debugging
+			s.T().Logf("Test: %s, Collection Method: %v, Status: %s, Description: %s",
+				tc.name, tc.collectionMethod, resp.SubscriptionStatus, tc.description)
+		})
+	}
+}
+
+func (s *SubscriptionServiceSuite) TestCollectionMethodValidation() {
+	// Test collection method validation
+	testCases := []struct {
+		name             string
+		collectionMethod types.CollectionMethod
+		expectError      bool
+		errorMessage     string
+		description      string
+	}{
+		{
+			name:             "valid_send_invoice",
+			collectionMethod: types.CollectionMethodSendInvoice,
+			expectError:      false,
+			description:      "send_invoice should be a valid collection method",
+		},
+		{
+			name:             "valid_charge_automatically",
+			collectionMethod: types.CollectionMethodDefaultIncomplete,
+			expectError:      false,
+			description:      "charge_automatically should be a valid collection method",
+		},
+		{
+			name:             "invalid_collection_method",
+			collectionMethod: types.CollectionMethod("invalid_method"),
+			expectError:      true,
+			errorMessage:     "invalid collection method",
+			description:      "Invalid collection method should be rejected",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Test validation directly
+			err := tc.collectionMethod.Validate()
+			if tc.expectError {
+				s.Error(err, "Expected validation error for: %s", tc.description)
+				if tc.errorMessage != "" {
+					s.Contains(err.Error(), tc.errorMessage)
+				}
+			} else {
+				s.NoError(err, "Expected no validation error for: %s", tc.description)
 			}
 		})
 	}

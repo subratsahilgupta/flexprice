@@ -32,6 +32,8 @@ type Customer struct {
 	UpdatedBy string `json:"updated_by,omitempty"`
 	// EnvironmentID holds the value of the "environment_id" field.
 	EnvironmentID string `json:"environment_id,omitempty"`
+	// Metadata holds the value of the "metadata" field.
+	Metadata map[string]string `json:"metadata,omitempty"`
 	// ExternalID holds the value of the "external_id" field.
 	ExternalID string `json:"external_id,omitempty"`
 	// Name holds the value of the "name" field.
@@ -50,9 +52,7 @@ type Customer struct {
 	AddressPostalCode string `json:"address_postal_code,omitempty"`
 	// AddressCountry holds the value of the "address_country" field.
 	AddressCountry string `json:"address_country,omitempty"`
-	// Metadata holds the value of the "metadata" field.
-	Metadata     map[string]string `json:"metadata,omitempty"`
-	selectValues sql.SelectValues
+	selectValues   sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -129,6 +129,14 @@ func (c *Customer) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				c.EnvironmentID = value.String
 			}
+		case customer.FieldMetadata:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field metadata", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &c.Metadata); err != nil {
+					return fmt.Errorf("unmarshal field metadata: %w", err)
+				}
+			}
 		case customer.FieldExternalID:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field external_id", values[i])
@@ -182,14 +190,6 @@ func (c *Customer) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field address_country", values[i])
 			} else if value.Valid {
 				c.AddressCountry = value.String
-			}
-		case customer.FieldMetadata:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field metadata", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &c.Metadata); err != nil {
-					return fmt.Errorf("unmarshal field metadata: %w", err)
-				}
 			}
 		default:
 			c.selectValues.Set(columns[i], values[i])
@@ -248,6 +248,9 @@ func (c *Customer) String() string {
 	builder.WriteString("environment_id=")
 	builder.WriteString(c.EnvironmentID)
 	builder.WriteString(", ")
+	builder.WriteString("metadata=")
+	builder.WriteString(fmt.Sprintf("%v", c.Metadata))
+	builder.WriteString(", ")
 	builder.WriteString("external_id=")
 	builder.WriteString(c.ExternalID)
 	builder.WriteString(", ")
@@ -274,9 +277,6 @@ func (c *Customer) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("address_country=")
 	builder.WriteString(c.AddressCountry)
-	builder.WriteString(", ")
-	builder.WriteString("metadata=")
-	builder.WriteString(fmt.Sprintf("%v", c.Metadata))
 	builder.WriteByte(')')
 	return builder.String()
 }

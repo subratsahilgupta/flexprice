@@ -111,6 +111,12 @@ func (pc *PlanCreate) SetNillableEnvironmentID(s *string) *PlanCreate {
 	return pc
 }
 
+// SetMetadata sets the "metadata" field.
+func (pc *PlanCreate) SetMetadata(m map[string]string) *PlanCreate {
+	pc.mutation.SetMetadata(m)
+	return pc
+}
+
 // SetLookupKey sets the "lookup_key" field.
 func (pc *PlanCreate) SetLookupKey(s string) *PlanCreate {
 	pc.mutation.SetLookupKey(s)
@@ -308,6 +314,10 @@ func (pc *PlanCreate) createSpec() (*Plan, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.EnvironmentID(); ok {
 		_spec.SetField(plan.FieldEnvironmentID, field.TypeString, value)
 		_node.EnvironmentID = value
+	}
+	if value, ok := pc.mutation.Metadata(); ok {
+		_spec.SetField(plan.FieldMetadata, field.TypeJSON, value)
+		_node.Metadata = value
 	}
 	if value, ok := pc.mutation.LookupKey(); ok {
 		_spec.SetField(plan.FieldLookupKey, field.TypeString, value)

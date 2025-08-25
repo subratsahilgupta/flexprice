@@ -99,6 +99,7 @@ func (s *InvoiceServiceSuite) setupService() {
 		TaxRateRepo:                s.GetStores().TaxRateRepo,
 		TaxAppliedRepo:             s.GetStores().TaxAppliedRepo,
 		TaxAssociationRepo:         s.GetStores().TaxAssociationRepo,
+		SettingsRepo:               s.GetStores().SettingsRepo,
 	})
 }
 

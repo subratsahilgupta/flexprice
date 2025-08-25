@@ -154,6 +154,69 @@ const (
 	InvoiceDefaultDueDays = 1
 )
 
+type InvoiceNumberFormat string
+
+const (
+	InvoiceNumberFormatYYYYMM   InvoiceNumberFormat = "YYYYMM"
+	InvoiceNumberFormatYYYYMMDD InvoiceNumberFormat = "YYYYMMDD"
+	InvoiceNumberFormatYYMMDD   InvoiceNumberFormat = "YYMMDD"
+	InvoiceNumberFormatYY       InvoiceNumberFormat = "YY"
+	InvoiceNumberFormatYYYY     InvoiceNumberFormat = "YYYY"
+)
+
+// InvoiceConfig represents the configuration for automatic invoice number generation.
+// It defines the format and sequencing rules used to create unique, human-readable invoice numbers.
+//
+// Fields:
+//   - InvoiceNumberPrefix: A string prefix for all invoice numbers (e.g., "INV", "BILL")
+//   - InvoiceNumberFormat: Date format template using Go time format (e.g., "YYYYMM" for year-month)
+//   - InvoiceNumberStartSequence: Starting number for the sequence counter (typically 1)
+//   - InvoiceNumberTimezone: Timezone for date formatting (e.g., "UTC", "America/New_York")
+//   - InvoiceNumberSeparator: Character(s) used to separate parts of the invoice number (e.g., "-", "_", or "" for no separator)
+//   - InvoiceNumberSuffixLength: Number of digits for the sequence number suffix (e.g., 5 for "00001")
+//
+// Generated invoice numbers follow the pattern: {prefix}{separator}{formatted_date}{separator}{padded_sequence}
+//
+// Example configuration with separator:
+//
+//	InvoiceNumberPrefix: "INV"
+//	InvoiceNumberFormat: "YYYYMM"
+//	InvoiceNumberStartSequence: 1
+//	InvoiceNumberTimezone: "UTC"
+//	InvoiceNumberSeparator: "-"
+//	InvoiceNumberSuffixLength: 5
+//
+// Generated invoice numbers for January 2025:
+//
+//	"INV-202501-00001"
+//	"INV-202501-00002"
+//	"INV-202501-00003"
+//
+// Example configuration without separator:
+//
+//	InvoiceNumberPrefix: "INV"
+//	InvoiceNumberFormat: "YYYYMM"
+//	InvoiceNumberStartSequence: 1
+//	InvoiceNumberTimezone: "UTC"
+//	InvoiceNumberSeparator: ""
+//	InvoiceNumberSuffixLength: 5
+//
+// Generated invoice numbers for January 2025:
+//
+//	"INV20250100001"
+//	"INV20250100002"
+//	"INV20250100003"
+//
+// Note: Sequences reset monthly and are tenant-environment-scoped for isolation.
+type InvoiceConfig struct {
+	InvoiceNumberPrefix        string              `json:"prefix"`
+	InvoiceNumberFormat        InvoiceNumberFormat `json:"format"`
+	InvoiceNumberStartSequence int                 `json:"start_sequence"`
+	InvoiceNumberTimezone      string              `json:"timezone"`
+	InvoiceNumberSeparator     string              `json:"separator"`
+	InvoiceNumberSuffixLength  int                 `json:"suffix_length"`
+}
+
 // InvoiceFilter represents the filter options for listing invoices
 type InvoiceFilter struct {
 	*QueryFilter

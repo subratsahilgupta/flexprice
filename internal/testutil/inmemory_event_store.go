@@ -101,6 +101,120 @@ func (s *InMemoryEventStore) GetUsage(ctx context.Context, params *events.UsageP
 		Type:      params.AggregationType,
 	}
 
+	// Handle window size for daily aggregation
+	if params.WindowSize == types.WindowSizeDay {
+		// Group events by day
+		dailyBuckets := make(map[time.Time][]*events.Event)
+		for _, event := range filteredEvents {
+			dayStart := truncateToBucket(event.Timestamp, types.WindowSizeDay)
+			dailyBuckets[dayStart] = append(dailyBuckets[dayStart], event)
+		}
+
+		// Sort days
+		days := make([]time.Time, 0, len(dailyBuckets))
+		for day := range dailyBuckets {
+			days = append(days, day)
+		}
+		sort.Slice(days, func(i, j int) bool { return days[i].Before(days[j]) })
+
+		// Calculate aggregation for each day
+		result.Results = make([]events.UsageResult, 0, len(days))
+		var totalValue decimal.Decimal
+
+		for _, day := range days {
+			dayEvents := dailyBuckets[day]
+			var dayValue decimal.Decimal
+
+			switch params.AggregationType {
+			case types.AggregationCount:
+				dayValue = decimal.NewFromInt(int64(len(dayEvents)))
+			case types.AggregationSum:
+				for _, event := range dayEvents {
+					if val, ok := event.Properties[params.PropertyName]; ok {
+						switch v := val.(type) {
+						case float64:
+							dayValue = dayValue.Add(decimal.NewFromFloat(v))
+						case int:
+							dayValue = dayValue.Add(decimal.NewFromInt(int64(v)))
+						case int64:
+							dayValue = dayValue.Add(decimal.NewFromInt(v))
+						case string:
+							if f, err := strconv.ParseFloat(v, 64); err == nil {
+								dayValue = dayValue.Add(decimal.NewFromFloat(f))
+							}
+						}
+					}
+				}
+			}
+
+			result.Results = append(result.Results, events.UsageResult{
+				WindowSize: day,
+				Value:      dayValue,
+			})
+			totalValue = totalValue.Add(dayValue)
+		}
+
+		result.Value = totalValue
+		return result, nil
+	}
+
+	// Handle bucket size for MAX aggregation (existing logic)
+	if params.AggregationType == types.AggregationMax && params.BucketSize != "" {
+		// Group events into buckets by bucket start time
+		buckets := make(map[time.Time]decimal.Decimal)
+		var overallMax decimal.Decimal
+
+		for _, event := range filteredEvents {
+			if val, ok := event.Properties[params.PropertyName]; ok {
+				var f float64
+				switch v := val.(type) {
+				case float64:
+					f = v
+				case int:
+					f = float64(v)
+				case int64:
+					f = float64(v)
+				case string:
+					if parsed, err := strconv.ParseFloat(v, 64); err == nil {
+						f = parsed
+					} else {
+						continue
+					}
+				default:
+					continue
+				}
+
+				bucketStart := truncateToBucket(event.Timestamp, params.BucketSize)
+				current := buckets[bucketStart]
+				if current.IsZero() || decimal.NewFromFloat(f).GreaterThan(current) {
+					buckets[bucketStart] = decimal.NewFromFloat(f)
+				}
+
+				if overallMax.IsZero() || decimal.NewFromFloat(f).GreaterThan(overallMax) {
+					overallMax = decimal.NewFromFloat(f)
+				}
+			}
+		}
+
+		// Convert buckets to sorted results
+		keys := make([]time.Time, 0, len(buckets))
+		for k := range buckets {
+			keys = append(keys, k)
+		}
+		sort.Slice(keys, func(i, j int) bool { return keys[i].Before(keys[j]) })
+
+		result.Results = make([]events.UsageResult, 0, len(keys))
+		for _, k := range keys {
+			result.Results = append(result.Results, events.UsageResult{
+				WindowSize: k,
+				Value:      buckets[k],
+			})
+		}
+		result.Value = overallMax
+		return result, nil
+	}
+
+	// Standard aggregation without windowing
 	switch params.AggregationType {
 	case types.AggregationCount:
 		result.Value = decimal.NewFromInt(int64(len(filteredEvents)))
@@ -124,88 +238,33 @@ func (s *InMemoryEventStore) GetUsage(ctx context.Context, params *events.UsageP
 		}
 		result.Value = sum
 	case types.AggregationMax:
-		// If bucket size is provided, compute per-bucket maximums and overall maximum
-		if params.BucketSize != "" {
-			// Group events into buckets by bucket start time
-			buckets := make(map[time.Time]decimal.Decimal)
-			var overallMax decimal.Decimal
-
-			for _, event := range filteredEvents {
-				if val, ok := event.Properties[params.PropertyName]; ok {
-					var f float64
-					switch v := val.(type) {
-					case float64:
-						f = v
-					case int:
-						f = float64(v)
-					case int64:
-						f = float64(v)
-					case string:
-						if parsed, err := strconv.ParseFloat(v, 64); err == nil {
-							f = parsed
-						} else {
-							continue
-						}
-					default:
+		// Simple max across all filtered events
+		var maxVal decimal.Decimal
+		for _, event := range filteredEvents {
+			if val, ok := event.Properties[params.PropertyName]; ok {
+				var f float64
+				switch v := val.(type) {
+				case float64:
+					f = v
+				case int:
+					f = float64(v)
+				case int64:
+					f = float64(v)
+				case string:
+					if parsed, err := strconv.ParseFloat(v, 64); err == nil {
+						f = parsed
+					} else {
 						continue
 					}
-
-					bucketStart := truncateToBucket(event.Timestamp, params.BucketSize)
-					current := buckets[bucketStart]
-					if current.IsZero() || decimal.NewFromFloat(f).GreaterThan(current) {
-						buckets[bucketStart] = decimal.NewFromFloat(f)
-					}
-
-					if overallMax.IsZero() || decimal.NewFromFloat(f).GreaterThan(overallMax) {
-						overallMax = decimal.NewFromFloat(f)
-					}
+				default:
+					continue
+				}
+				if maxVal.IsZero() || decimal.NewFromFloat(f).GreaterThan(maxVal) {
+					maxVal = decimal.NewFromFloat(f)
 				}
 			}
-
-			// Convert buckets to sorted results
-			keys := make([]time.Time, 0, len(buckets))
-			for k := range buckets {
-				keys = append(keys, k)
-			}
-			sort.Slice(keys, func(i, j int) bool { return keys[i].Before(keys[j]) })
-
-			result.Results = make([]events.UsageResult, 0, len(keys))
-			for _, k := range keys {
-				result.Results = append(result.Results, events.UsageResult{
-					WindowSize: k,
-					Value:      buckets[k],
-				})
-			}
-			result.Value = overallMax
-		} else {
-			// Simple max across all filtered events
-			var maxVal decimal.Decimal
-			for _, event := range filteredEvents {
-				if val, ok := event.Properties[params.PropertyName]; ok {
-					var f float64
-					switch v := val.(type) {
-					case float64:
-						f = v
-					case int:
-						f = float64(v)
-					case int64:
-						f = float64(v)
-					case string:
-						if parsed, err := strconv.ParseFloat(v, 64); err == nil {
-							f = parsed
-						} else {
-							continue
-						}
-					default:
-						continue
-					}
-					if maxVal.IsZero() || decimal.NewFromFloat(f).GreaterThan(maxVal) {
-						maxVal = decimal.NewFromFloat(f)
-					}
-				}
-			}
-			result.Value = maxVal
 		}
+		result.Value = maxVal
 	}
 
 	return result, nil

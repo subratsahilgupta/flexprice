@@ -58,6 +58,7 @@ func (s *AuthServiceSuite) setupService() {
 		EventPublisher:             s.GetPublisher(),
 		TaxAssociationRepo:         s.GetStores().TaxAssociationRepo,
 		TaxRateRepo:                s.GetStores().TaxRateRepo,
+		SettingsRepo:               s.GetStores().SettingsRepo,
 		WebhookPublisher:           s.GetWebhookPublisher(),
 	}, pubSub)
 }
@@ -102,6 +103,7 @@ func (s *AuthServiceSuite) TestSignUp() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
+			s.setupTestData()
 			if tc.setupFunc != nil {
 				tc.setupFunc()
 			}

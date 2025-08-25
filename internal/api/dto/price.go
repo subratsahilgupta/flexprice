@@ -45,8 +45,17 @@ type PriceUnitConfig struct {
 }
 
 type CreatePriceTier struct {
-	UpTo       *uint64 `json:"up_to"`
-	UnitAmount string  `json:"unit_amount" validate:"required"`
+	// up_to is the quantity up to which this tier applies. It is null for the last tier.
+	// IMPORTANT: Tier boundaries are INCLUSIVE.
+	// - If up_to is 1000, then quantity less than or equal to 1000 belongs to this tier
+	// - This behavior is consistent across both VOLUME and SLAB tier modes
+	UpTo *uint64 `json:"up_to"`
+
+	// unit_amount is the amount per unit for the given tier
+	UnitAmount string `json:"unit_amount" validate:"required"`
+
+	// flat_amount is the flat amount for the given tier (optional)
+	// Applied on top of unit_amount*quantity. Useful for cases like "2.7$ + 5c"
 	FlatAmount *string `json:"flat_amount" validate:"omitempty"`
 }
 
@@ -94,10 +103,10 @@ func (r *CreatePriceRequest) Validate() error {
 	}
 
 	// If price unit config is provided, main amount can be empty (will be calculated from price unit)
-	// If no price unit config, main amount is required
+	// If no price unit config, main amount is required and must be non-negative
 	if r.PriceUnitConfig == nil && amount.LessThan(decimal.Zero) {
-		return ierr.NewError("amount must be greater than 0 when price_unit_config is not provided").
-			WithHint("Amount is required when not using price unit config").
+		return ierr.NewError("amount cannot be negative when price_unit_config is not provided").
+			WithHint("Amount cannot be negative when not using price unit config").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -175,10 +184,10 @@ func (r *CreatePriceRequest) Validate() error {
 						Mark(ierr.ErrValidation)
 				}
 
-				// Validate tier unit amount is positive
-				if tierUnitAmount.LessThanOrEqual(decimal.Zero) {
-					return ierr.NewError("tier unit amount must be greater than 0").
-						WithHint("Tier unit amount cannot be zero or negative").
+				// Validate tier unit amount is not negative (allows zero)
+				if tierUnitAmount.LessThan(decimal.Zero) {
+					return ierr.NewError("tier unit amount cannot be negative").
+						WithHint("Tier unit amount cannot be negative").
 						WithReportableDetails(map[string]interface{}{
 							"tier_index":  i,
 							"unit_amount": tier.UnitAmount,
@@ -200,7 +209,7 @@ func (r *CreatePriceRequest) Validate() error {
 					}
 
 					if flatAmount.LessThan(decimal.Zero) {
-						return ierr.NewError("tier flat amount must be greater than or equal to 0").
+						return ierr.NewError("tier flat amount cannot be negative").
 							WithHint("Tier flat amount cannot be negative").
 							WithReportableDetails(map[string]interface{}{
 								"tier_index":  i,
@@ -272,7 +281,7 @@ func (r *CreatePriceRequest) Validate() error {
 
 			if tierAmount.LessThan(decimal.Zero) {
 				return ierr.WithError(err).
-					WithHint("Unit amount must be greater than 0").
+					WithHint("Unit amount cannot be negative").
 					WithReportableDetails(map[string]interface{}{
 						"unit_amount": tier.UnitAmount,
 					}).
@@ -292,7 +301,7 @@ func (r *CreatePriceRequest) Validate() error {
 
 				if flatAmount.LessThan(decimal.Zero) {
 					return ierr.WithError(err).
-						WithHint("Flat amount must be greater than 0").
+						WithHint("Flat amount cannot be negative").
 						WithReportableDetails(map[string]interface{}{
 							"flat_amount": tier.FlatAmount,
 						}).
@@ -337,31 +346,34 @@ func (r *CreatePriceRequest) Validate() error {
 				Mark(ierr.ErrValidation)
 		}
 
-		if r.PriceUnitConfig.Amount == "" {
-			return ierr.NewError("amount is required when price_unit_config is provided").
-				WithHint("Please provide a valid amount").
-				Mark(ierr.ErrValidation)
-		}
+		// Only validate amount if billing model is not TIERED
+		if r.BillingModel != types.BILLING_MODEL_TIERED {
+			if r.PriceUnitConfig.Amount == "" {
+				return ierr.NewError("amount is required when price_unit_config is provided and billing model is not TIERED").
+					WithHint("Please provide a valid amount").
+					Mark(ierr.ErrValidation)
+			}
 
-		// Validate price unit amount is a valid decimal
-		priceUnitAmount, err := decimal.NewFromString(r.PriceUnitConfig.Amount)
-		if err != nil {
-			return ierr.NewError("invalid price unit amount format").
-				WithHint("Price unit amount must be a valid decimal number").
-				WithReportableDetails(map[string]interface{}{
-					"amount": r.PriceUnitConfig.Amount,
-				}).
-				Mark(ierr.ErrValidation)
-		}
+			// Validate price unit amount is a valid decimal
+			priceUnitAmount, err := decimal.NewFromString(r.PriceUnitConfig.Amount)
+			if err != nil {
+				return ierr.NewError("invalid price unit amount format").
+					WithHint("Price unit amount must be a valid decimal number").
+					WithReportableDetails(map[string]interface{}{
+						"amount": r.PriceUnitConfig.Amount,
+					}).
+					Mark(ierr.ErrValidation)
+			}
 
-		// Validate price unit amount is not negative
-		if priceUnitAmount.LessThan(decimal.Zero) {
-			return ierr.NewError("price unit amount cannot be negative").
-				WithHint("Price unit amount must be zero or greater").
-				WithReportableDetails(map[string]interface{}{
-					"amount": r.PriceUnitConfig.Amount,
-				}).
-				Mark(ierr.ErrValidation)
+			// Validate price unit amount is not negative
+			if priceUnitAmount.LessThan(decimal.Zero) {
+				return ierr.NewError("price unit amount cannot be negative").
+					WithHint("Price unit amount cannot be negative").
+					WithReportableDetails(map[string]interface{}{
+						"amount": r.PriceUnitConfig.Amount,
+					}).
+					Mark(ierr.ErrValidation)
+			}
 		}
 
 		// Validate that regular tiers and price unit tiers are not both provided
@@ -391,10 +403,10 @@ func (r *CreatePriceRequest) Validate() error {
 						Mark(ierr.ErrValidation)
 				}
 
-				// Validate tier unit amount is positive
-				if tierUnitAmount.LessThanOrEqual(decimal.Zero) {
-					return ierr.NewError("tier unit amount must be greater than 0").
-						WithHint("Tier unit amount cannot be zero or negative").
+				// Validate tier unit amount is not negative (allows zero)
+				if tierUnitAmount.LessThan(decimal.Zero) {
+					return ierr.NewError("tier unit amount cannot be negative").
+						WithHint("Tier unit amount cannot be negative").
 						WithReportableDetails(map[string]interface{}{
 							"tier_index":  i,
 							"unit_amount": tier.UnitAmount,
@@ -416,7 +428,7 @@ func (r *CreatePriceRequest) Validate() error {
 					}
 
 					if flatAmount.LessThan(decimal.Zero) {
-						return ierr.NewError("tier flat amount must be greater than or equal to 0").
+						return ierr.NewError("tier flat amount cannot be negative").
 							WithHint("Tier flat amount cannot be negative").
 							WithReportableDetails(map[string]interface{}{
 								"tier_index":  i,
@@ -595,7 +607,8 @@ type UpdatePriceRequest struct {
 
 type PriceResponse struct {
 	*price.Price
-	Meter *MeterResponse `json:"meter,omitempty"`
+	Meter       *MeterResponse     `json:"meter,omitempty"`
+	PricingUnit *PriceUnitResponse `json:"pricing_unit,omitempty"`
 
 	// TODO: Remove this once we have a proper price entity type
 	PlanID string `json:"plan_id,omitempty"`

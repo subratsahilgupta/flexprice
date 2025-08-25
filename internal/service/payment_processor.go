@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -228,16 +229,38 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 	// Create payment link using the specified gateway
 	gatewayService := NewPaymentGatewayService(p.ServiceParams)
 
-	// Extract success and cancel URLs from metadata
+	// Extract success URL, cancel URL, connection ID, and connection name from gateway metadata
 	successURL := ""
 	cancelURL := ""
-	if paymentObj.Metadata != nil {
-		if url, exists := paymentObj.Metadata["success_url"]; exists {
+	connectionID := ""
+	connectionName := ""
+	if paymentObj.GatewayMetadata != nil {
+		if url, exists := paymentObj.GatewayMetadata["success_url"]; exists {
 			successURL = url
 		}
-		if url, exists := paymentObj.Metadata["cancel_url"]; exists {
+		if url, exists := paymentObj.GatewayMetadata["cancel_url"]; exists {
 			cancelURL = url
 		}
+		if id, exists := paymentObj.GatewayMetadata["connection_id"]; exists {
+			connectionID = id
+		}
+		if name, exists := paymentObj.GatewayMetadata["connection_name"]; exists {
+			connectionName = name
+		}
+	}
+
+	// Prepare metadata for payment link request (include connection info from gateway metadata)
+	linkMetadata := paymentObj.Metadata
+	if linkMetadata == nil {
+		linkMetadata = types.Metadata{}
+	}
+
+	// Add connection info to metadata if available
+	if connectionID != "" {
+		linkMetadata["connection_id"] = connectionID
+	}
+	if connectionName != "" {
+		linkMetadata["connection_name"] = connectionName
 	}
 
 	// Convert to payment link request
@@ -255,7 +278,6 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 			}
 			return nil
 		}(),
-		Metadata: paymentObj.Metadata,
 		SaveCardAndMakeDefault: func() bool {
 			if paymentObj.GatewayMetadata != nil {
 				if saveCardStr, exists := paymentObj.GatewayMetadata["save_card_and_make_default"]; exists {
@@ -264,6 +286,7 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 			}
 			return false
 		}(),
+		Metadata: linkMetadata,
 	}
 
 	paymentLinkResp, err := gatewayService.CreatePaymentLink(ctx, paymentLinkReq)
@@ -459,6 +482,13 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 		return err
 	}
 
+	// Check if this is the first invoice payment for an incomplete subscription
+	if err := p.handleIncompleteSubscriptionPayment(ctx, invoice); err != nil {
+		p.Logger.Errorw("failed to handle incomplete subscription payment",
+			"invoice_id", invoice.ID,
+			"error", err)
+	}
+
 	return nil
 }
 
@@ -648,6 +678,46 @@ func (p *paymentProcessor) handleCardPayment(ctx context.Context, paymentObj *pa
 		"payment_intent_id", paymentIntentResp.ID,
 		"amount", paymentObj.Amount.String(),
 	)
+
+	return nil
+}
+
+// handleIncompleteSubscriptionPayment checks if the paid invoice is the first invoice for a subscription
+// and activates the subscription if it's currently in incomplete status
+func (p *paymentProcessor) handleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error {
+	// Only process subscription invoices that are fully paid
+	if invoice.SubscriptionID == nil || !invoice.AmountRemaining.IsZero() {
+		return nil
+	}
+
+	// Check if this is the first invoice (billing_reason = subscription_create)
+	if invoice.BillingReason != string(types.InvoiceBillingReasonSubscriptionCreate) {
+		return nil
+	}
+
+	p.Logger.Infow("processing first invoice payment for subscription activation",
+		"invoice_id", invoice.ID,
+		"subscription_id", *invoice.SubscriptionID,
+		"billing_reason", invoice.BillingReason)
+
+	// Get the subscription service
+	subscriptionService := NewSubscriptionService(p.ServiceParams)
+
+	// Activate the incomplete subscription
+	err := subscriptionService.ActivateIncompleteSubscription(ctx, *invoice.SubscriptionID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to activate incomplete subscription after first invoice payment").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": *invoice.SubscriptionID,
+				"invoice_id":      invoice.ID,
+			}).
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	p.Logger.Infow("successfully activated subscription after first invoice payment",
+		"invoice_id", invoice.ID,
+		"subscription_id", *invoice.SubscriptionID)
 
 	return nil
 }

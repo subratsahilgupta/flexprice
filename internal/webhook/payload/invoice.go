@@ -7,6 +7,7 @@ import (
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
+	"github.com/samber/lo"
 )
 
 type InvoicePayloadBuilder struct {
@@ -46,6 +47,13 @@ func (b *InvoicePayloadBuilder) BuildPayload(ctx context.Context, eventType stri
 	if err != nil {
 		return nil, err
 	}
+
+	// inject the invoice pdf url into the invoice response
+	pdfUrl, err := b.services.InvoiceService.GetInvoicePDFUrl(ctx, invoiceID)
+	if err != nil {
+		return nil, err
+	}
+	invoice.InvoicePDFURL = lo.ToPtr(pdfUrl)
 
 	payload := webhookDto.NewInvoiceWebhookPayload(invoice)
 
