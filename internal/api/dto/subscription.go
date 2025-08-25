@@ -74,7 +74,7 @@ type CreateSubscriptionRequest struct {
 	ProrationMode types.ProrationMode `json:"proration_mode"`
 	// Timezone of the customer.
 	// If not set, the default value is UTC.
-	CustomerTimezone string `json:"customer_timezone" validate:"timezone"`
+	CustomerTimezone string `json:"customer_timezone" validate:"omitempty,timezone"`
 }
 
 // AddAddonRequest is used by body-based endpoint /subscriptions/addon
