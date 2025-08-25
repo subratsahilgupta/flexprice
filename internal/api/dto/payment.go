@@ -24,8 +24,6 @@ type CreatePaymentRequest struct {
 	Currency               string                       `json:"currency" binding:"required"`
 	SuccessURL             string                       `json:"success_url,omitempty"`
 	CancelURL              string                       `json:"cancel_url,omitempty"`
-	ConnectionID           string                       `json:"connection_id,omitempty"`
-	ConnectionName         string                       `json:"connection_name,omitempty"`
 	Metadata               types.Metadata               `json:"metadata,omitempty"`
 	ProcessPayment         bool                         `json:"process_payment" default:"true"`
 	SaveCardAndMakeDefault bool                         `json:"save_card_and_make_default" default:"false"`
@@ -174,18 +172,12 @@ func (r *CreatePaymentRequest) ToPayment(ctx context.Context) (*payment.Payment,
 	// Initialize gateway metadata for storing payment link related fields
 	gatewayMetadata := types.Metadata{}
 
-	// Store SuccessURL, CancelURL, ConnectionID, and ConnectionName in gateway metadata if provided
+	// Store SuccessURL and CancelURL in gateway metadata if provided
 	if r.SuccessURL != "" {
 		gatewayMetadata["success_url"] = r.SuccessURL
 	}
 	if r.CancelURL != "" {
 		gatewayMetadata["cancel_url"] = r.CancelURL
-	}
-	if r.ConnectionID != "" {
-		gatewayMetadata["connection_id"] = r.ConnectionID
-	}
-	if r.ConnectionName != "" {
-		gatewayMetadata["connection_name"] = r.ConnectionName
 	}
 	if r.SaveCardAndMakeDefault {
 		gatewayMetadata["save_card_and_make_default"] = "true"
