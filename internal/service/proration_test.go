@@ -150,7 +150,14 @@ func (s *ProrationServiceSuite) setupTestData() {
 	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), s.testData.subscription, s.testData.subscription.LineItems))
 
 	// Create an invoice for the current period
-	nextNumber, err := s.GetStores().InvoiceRepo.GetNextInvoiceNumber(s.GetContext())
+	nextNumber, err := s.GetStores().InvoiceRepo.GetNextInvoiceNumber(s.GetContext(), &types.InvoiceConfig{
+		InvoiceNumberPrefix:        "INV",
+		InvoiceNumberFormat:        types.InvoiceNumberFormatYYYYMM,
+		InvoiceNumberTimezone:      "UTC",
+		InvoiceNumberStartSequence: 1,
+		InvoiceNumberSeparator:     "-",
+		InvoiceNumberSuffixLength:  5,
+	})
 	s.NoError(err)
 
 	nextSeq, err := s.GetStores().InvoiceRepo.GetNextBillingSequence(s.GetContext(), s.testData.subscription.ID)
@@ -616,7 +623,14 @@ func (s *ProrationServiceSuite) TestCalculateAndApplySubscriptionProration() {
 				invoiceRepo.Clear()
 
 				// Create a new invoice for the test
-				nextNumber, err := s.GetStores().InvoiceRepo.GetNextInvoiceNumber(s.GetContext())
+				nextNumber, err := s.GetStores().InvoiceRepo.GetNextInvoiceNumber(s.GetContext(), &types.InvoiceConfig{
+					InvoiceNumberPrefix:        "INV",
+					InvoiceNumberFormat:        types.InvoiceNumberFormatYYYYMM,
+					InvoiceNumberTimezone:      "UTC",
+					InvoiceNumberStartSequence: 1,
+					InvoiceNumberSeparator:     "-",
+					InvoiceNumberSuffixLength:  5,
+				})
 				s.NoError(err)
 
 				nextSeq, err := s.GetStores().InvoiceRepo.GetNextBillingSequence(s.GetContext(), tt.params.Subscription.ID)
