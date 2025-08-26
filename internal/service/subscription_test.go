@@ -1507,6 +1507,246 @@ func (s *SubscriptionServiceSuite) TestSubscriptionWithEndDate() {
 	}
 }
 
+func (s *SubscriptionServiceSuite) TestGetUsageBySubscriptionWithBucketedMaxAggregation() {
+	// Create a bucketed max meter
+	bucketedMaxMeter := &meter.Meter{
+		ID:        "meter_bucketed_max",
+		Name:      "Bucketed Max Usage",
+		EventName: "bucketed_max_event",
+		Aggregation: meter.Aggregation{
+			Type:       types.AggregationMax,
+			Field:      "usage_value",
+			BucketSize: "minute", // Bucketed by minute
+		},
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().MeterRepo.CreateMeter(s.GetContext(), bucketedMaxMeter))
+
+	testCases := []struct {
+		name             string
+		billingModel     types.BillingModel
+		setupPrice       func() *price.Price
+		bucketValues     []decimal.Decimal // Values representing max in each bucket
+		expectedAmount   decimal.Decimal
+		expectedQuantity decimal.Decimal
+		description      string
+	}{
+		{
+			name:         "bucketed_max_flat_fee",
+			billingModel: types.BILLING_MODEL_FLAT_FEE,
+			setupPrice: func() *price.Price {
+				return &price.Price{
+					ID:                 "price_bucketed_flat",
+					Amount:             decimal.NewFromFloat(0.10), // $0.10 per unit
+					Currency:           "usd",
+					EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+					EntityID:           s.testData.plan.ID,
+					Type:               types.PRICE_TYPE_USAGE,
+					BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+					BillingPeriodCount: 1,
+					BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+					BillingCadence:     types.BILLING_CADENCE_RECURRING,
+					InvoiceCadence:     types.InvoiceCadenceArrear,
+					MeterID:            bucketedMaxMeter.ID,
+					BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+				}
+			},
+			bucketValues:     []decimal.Decimal{decimal.NewFromInt(9), decimal.NewFromInt(10)}, // Bucket 1: max(2,5,6,9)=9, Bucket 2: max(10)=10
+			expectedAmount:   decimal.NewFromFloat(1.9),                                        // (9 * 0.10) + (10 * 0.10) = $1.90
+			expectedQuantity: decimal.NewFromInt(19),                                           // 9 + 10 = 19
+			description:      "Flat fee: Bucket1[2,5,6,9]→max=9→9*$0.10=$0.90, Bucket2[10]→max=10→10*$0.10=$1.00, Total=$1.90",
+		},
+		{
+			name:         "bucketed_max_package",
+			billingModel: types.BILLING_MODEL_PACKAGE,
+			setupPrice: func() *price.Price {
+				return &price.Price{
+					ID:                 "price_bucketed_package",
+					Amount:             decimal.NewFromInt(1), // $1.00 per package
+					Currency:           "usd",
+					EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+					EntityID:           s.testData.plan.ID,
+					Type:               types.PRICE_TYPE_USAGE,
+					BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+					BillingPeriodCount: 1,
+					BillingModel:       types.BILLING_MODEL_PACKAGE,
+					BillingCadence:     types.BILLING_CADENCE_RECURRING,
+					InvoiceCadence:     types.InvoiceCadenceArrear,
+					MeterID:            bucketedMaxMeter.ID,
+					TransformQuantity: price.JSONBTransformQuantity{
+						DivideBy: 10, // Package size of 10 units
+						Round:    types.ROUND_UP,
+					},
+					BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+				}
+			},
+			bucketValues:     []decimal.Decimal{decimal.NewFromInt(9), decimal.NewFromInt(10)}, // Bucket 1: max(2,5,6,9)=9, Bucket 2: max(10)=10
+			expectedAmount:   decimal.NewFromInt(2),                                            // Bucket 1: ceil(9/10) = 1 package, Bucket 2: ceil(10/10) = 1 package = $2
+			expectedQuantity: decimal.NewFromInt(19),                                           // 9 + 10 = 19
+			description:      "Package: Bucket1[2,5,6,9]→max=9→ceil(9/10)=1pkg, Bucket2[10]→max=10→ceil(10/10)=1pkg, Total: 1*$1 + 1*$1 = $2",
+		},
+		{
+			name:         "bucketed_max_tiered_slab",
+			billingModel: types.BILLING_MODEL_TIERED,
+			setupPrice: func() *price.Price {
+				upTo10 := uint64(10)
+				return &price.Price{
+					ID:                 "price_bucketed_tiered_slab",
+					Amount:             decimal.Zero,
+					Currency:           "usd",
+					EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+					EntityID:           s.testData.plan.ID,
+					Type:               types.PRICE_TYPE_USAGE,
+					BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+					BillingPeriodCount: 1,
+					BillingModel:       types.BILLING_MODEL_TIERED,
+					BillingCadence:     types.BILLING_CADENCE_RECURRING,
+					InvoiceCadence:     types.InvoiceCadenceArrear,
+					TierMode:           types.BILLING_TIER_SLAB,
+					MeterID:            bucketedMaxMeter.ID,
+					Tiers: []price.PriceTier{
+						{UpTo: &upTo10, UnitAmount: decimal.NewFromFloat(0.10)}, // 0-10 units: $0.10 each
+						{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.05)},     // 10+ units: $0.05 each
+					},
+					BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+				}
+			},
+			bucketValues:     []decimal.Decimal{decimal.NewFromInt(9), decimal.NewFromInt(15)}, // Bucket 1: max(2,5,6,9)=9, Bucket 2: max(10,15)=15
+			expectedAmount:   decimal.NewFromFloat(2.15),                                       // Bucket 1: 9*$0.10=$0.90, Bucket 2: 10*$0.10+5*$0.05=$1.25, Total=$2.15
+			expectedQuantity: decimal.NewFromInt(24),                                           // 9 + 15 = 24
+			description:      "Tiered slab: Bucket1[2,5,6,9]→max=9→9*$0.10=$0.90, Bucket2[10,15]→max=15→10*$0.10+5*$0.05=$1.25, Total=$2.15",
+		},
+		{
+			name:         "bucketed_max_tiered_volume",
+			billingModel: types.BILLING_MODEL_TIERED,
+			setupPrice: func() *price.Price {
+				upTo10 := uint64(10)
+				return &price.Price{
+					ID:                 "price_bucketed_tiered_volume",
+					Amount:             decimal.Zero,
+					Currency:           "usd",
+					EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+					EntityID:           s.testData.plan.ID,
+					Type:               types.PRICE_TYPE_USAGE,
+					BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+					BillingPeriodCount: 1,
+					BillingModel:       types.BILLING_MODEL_TIERED,
+					BillingCadence:     types.BILLING_CADENCE_RECURRING,
+					InvoiceCadence:     types.InvoiceCadenceArrear,
+					TierMode:           types.BILLING_TIER_VOLUME,
+					MeterID:            bucketedMaxMeter.ID,
+					Tiers: []price.PriceTier{
+						{UpTo: &upTo10, UnitAmount: decimal.NewFromFloat(0.10)}, // 0-10 units: $0.10 each
+						{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.05)},     // 10+ units: $0.05 each
+					},
+					BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+				}
+			},
+			bucketValues:     []decimal.Decimal{decimal.NewFromInt(9), decimal.NewFromInt(15)}, // Bucket 1: max(2,5,6,9)=9, Bucket 2: max(10,15)=15
+			expectedAmount:   decimal.NewFromFloat(1.65),                                       // Bucket 1: 9*$0.10=$0.90, Bucket 2: 15*$0.05=$0.75, Total=$1.65
+			expectedQuantity: decimal.NewFromInt(24),                                           // 9 + 15 = 24
+			description:      "Tiered volume: Bucket1[2,5,6,9]→max=9→9*$0.10=$0.90, Bucket2[10,15]→max=15→15*$0.05=$0.75, Total=$1.65",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Create the price for this test case
+			testPrice := tc.setupPrice()
+			s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), testPrice))
+
+			// Create a subscription with the bucketed max meter
+			testSub := &subscription.Subscription{
+				ID:                 fmt.Sprintf("sub_bucketed_max_%s", tc.name),
+				PlanID:             s.testData.plan.ID,
+				CustomerID:         s.testData.customer.ID,
+				StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+				CurrentPeriodStart: s.testData.now.Add(-24 * time.Hour),
+				CurrentPeriodEnd:   s.testData.now.Add(6 * 24 * time.Hour),
+				Currency:           "usd",
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				SubscriptionStatus: types.SubscriptionStatusActive,
+				BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+			}
+
+			// Create line items for the subscription
+			lineItems := []*subscription.SubscriptionLineItem{
+				{
+					ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+					SubscriptionID:   testSub.ID,
+					CustomerID:       testSub.CustomerID,
+					EntityID:         s.testData.plan.ID,
+					EntityType:       types.SubscriptionLineItemEntitiyTypePlan,
+					PlanDisplayName:  s.testData.plan.Name,
+					PriceID:          testPrice.ID,
+					PriceType:        testPrice.Type,
+					MeterID:          bucketedMaxMeter.ID,
+					MeterDisplayName: bucketedMaxMeter.Name,
+					DisplayName:      bucketedMaxMeter.Name,
+					Quantity:         decimal.Zero,
+					Currency:         testSub.Currency,
+					BillingPeriod:    testSub.BillingPeriod,
+					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+				},
+			}
+
+			s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, lineItems))
+
+			// Create some events for the bucketed max meter to pass the optimization filter
+			for i := 0; i < 5; i++ {
+				event := &events.Event{
+					ID:                 s.GetUUID(),
+					TenantID:           testSub.TenantID,
+					EventName:          bucketedMaxMeter.EventName,
+					ExternalCustomerID: s.testData.customer.ExternalID,
+					Timestamp:          s.testData.now.Add(-1 * time.Hour),
+					Properties: map[string]interface{}{
+						"usage_value": float64(i + 1),
+					},
+				}
+				s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+			}
+
+			// Mock the event repository to return bucketed results
+			eventRepo := s.GetStores().EventRepo.(*testutil.InMemoryEventStore)
+			eventRepo.SetMockUsageResults(bucketedMaxMeter.EventName, &events.AggregationResult{
+				Value: decimal.Zero, // Not used for bucketed max
+				Results: []events.UsageResult{
+					{WindowSize: s.testData.now.Add(-2 * time.Hour), Value: tc.bucketValues[0]}, // First bucket
+					{WindowSize: s.testData.now.Add(-1 * time.Hour), Value: tc.bucketValues[1]}, // Second bucket
+				},
+			})
+
+			// Test the usage calculation
+			req := &dto.GetUsageBySubscriptionRequest{
+				SubscriptionID: testSub.ID,
+				StartTime:      s.testData.now.Add(-48 * time.Hour),
+				EndTime:        s.testData.now,
+			}
+
+			resp, err := s.service.GetUsageBySubscription(s.GetContext(), req)
+			s.NoError(err, "Failed to get usage for test case: %s", tc.description)
+			s.NotNil(resp)
+
+			// Verify the results
+			s.Len(resp.Charges, 1, "Should have exactly one charge for bucketed max meter")
+
+			charge := resp.Charges[0]
+			s.Equal(bucketedMaxMeter.Name, charge.MeterDisplayName)
+			s.Equal(tc.expectedQuantity.InexactFloat64(), charge.Quantity, "Quantity mismatch for %s", tc.description)
+			s.Equal(tc.expectedAmount.InexactFloat64(), charge.Amount, "Amount mismatch for %s", tc.description)
+			s.Equal(testPrice, charge.Price)
+
+			// Verify total amount matches expected
+			s.Equal(tc.expectedAmount.InexactFloat64(), resp.Amount, "Total amount mismatch for %s", tc.description)
+
+			s.T().Logf("✅ %s: Quantity=%.2f, Amount=%.2f, Description=%s",
+				tc.name, charge.Quantity, charge.Amount, tc.description)
+		})
+	}
+}
+
 func (s *SubscriptionServiceSuite) TestFilterLineItemsWithEndDate() {
 	// Create billing service
 	billingService := NewBillingService(ServiceParams{

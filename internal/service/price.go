@@ -699,7 +699,7 @@ func (s *priceService) calculateBucketedMaxCost(ctx context.Context, price *pric
 	return totalCost.Round(types.GetCurrencyPrecision(price.Currency))
 }
 
-// calculateSingleValue calculates cost for a single value
+// calculateSingletonCost calculates cost for a single value
 // This is used both for regular values and individual bucket values
 func (s *priceService) calculateSingletonCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal {
 	cost := decimal.Zero
