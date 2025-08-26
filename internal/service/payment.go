@@ -165,6 +165,21 @@ func (s *paymentService) validateInvoicePaymentEligibility(_ context.Context, in
 			Mark(ierr.ErrValidation)
 	}
 
+	// Validate payment amount against invoice remaining balance
+	remainingAmount := invoice.GetRemainingAmount()
+	if p.Amount.GreaterThan(remainingAmount) {
+		return ierr.NewError("payment amount exceeds invoice remaining balance").
+			WithHint("Payment amount cannot be greater than the remaining balance on the invoice").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id":        invoice.ID,
+				"payment_amount":    p.Amount.String(),
+				"invoice_remaining": remainingAmount.String(),
+				"invoice_total":     invoice.AmountDue.String(),
+				"invoice_paid":      invoice.AmountPaid.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	return nil
 }
 
