@@ -95,27 +95,6 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 	// Publish webhook event for customer creation
 	s.publishWebhookEvent(ctx, types.WebhookEventCustomerCreated, cust.ID)
 
-	// Sync customer to all available providers if ConnectionRepo is available
-	if s.ConnectionRepo != nil {
-		integrationService := NewIntegrationService(s.ServiceParams)
-		// Use go routine to avoid blocking the response
-		go func() {
-			// Create a new context with tenant and environment IDs
-			syncCtx := types.SetTenantID(context.Background(), types.GetTenantID(ctx))
-			syncCtx = types.SetEnvironmentID(syncCtx, types.GetEnvironmentID(ctx))
-			syncCtx = types.SetUserID(syncCtx, types.GetUserID(ctx))
-
-			if err := integrationService.SyncEntityToProviders(syncCtx, "customer", cust.ID); err != nil {
-				s.Logger.Errorw("failed to sync customer to providers",
-					"customer_id", cust.ID,
-					"error", err)
-			} else {
-				s.Logger.Infow("customer synced to providers successfully",
-					"customer_id", cust.ID)
-			}
-		}()
-	}
-
 	return &dto.CustomerResponse{Customer: cust}, nil
 }
 

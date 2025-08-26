@@ -110,6 +110,68 @@ func (s *StripeService) GetDecryptedStripeConfig(conn *connection.Connection) (*
 	return tempConn.GetStripeConfig()
 }
 
+// EnsureCustomerSyncedToStripe checks if customer is synced to Stripe and syncs if needed
+func (s *StripeService) EnsureCustomerSyncedToStripe(ctx context.Context, customerID string) error {
+	// Get our customer
+	customerService := NewCustomerService(s.ServiceParams)
+	ourCustomerResp, err := customerService.GetCustomer(ctx, customerID)
+	if err != nil {
+		return err
+	}
+	ourCustomer := ourCustomerResp.Customer
+
+	// Check if customer already has Stripe ID in metadata
+	if stripeID, exists := ourCustomer.Metadata["stripe_customer_id"]; exists && stripeID != "" {
+		s.Logger.Infow("customer already synced to Stripe",
+			"customer_id", customerID,
+			"stripe_customer_id", stripeID)
+		return nil
+	}
+
+	// Check if customer is synced via integration mapping table
+	if s.EntityIntegrationMappingRepo != nil {
+		filter := &types.EntityIntegrationMappingFilter{
+			EntityID:      customerID,
+			EntityType:    types.IntegrationEntityTypeCustomer,
+			ProviderTypes: []string{string(types.SecretProviderStripe)},
+		}
+
+		entityMappingService := NewEntityIntegrationMappingService(s.ServiceParams)
+		existingMappings, err := entityMappingService.GetEntityIntegrationMappings(ctx, filter)
+		if err == nil && existingMappings != nil && len(existingMappings.Items) > 0 {
+			existingMapping := existingMappings.Items[0]
+			s.Logger.Infow("customer already mapped to Stripe via integration mapping",
+				"customer_id", customerID,
+				"stripe_customer_id", existingMapping.ProviderEntityID)
+
+			// Update customer metadata with Stripe ID for faster future lookups
+			updateReq := dto.UpdateCustomerRequest{
+				Metadata: map[string]string{
+					"stripe_customer_id": existingMapping.ProviderEntityID,
+				},
+			}
+			// Merge with existing metadata
+			if ourCustomer.Metadata != nil {
+				for k, v := range ourCustomer.Metadata {
+					updateReq.Metadata[k] = v
+				}
+			}
+			_, err = customerService.UpdateCustomer(ctx, ourCustomer.ID, updateReq)
+			if err != nil {
+				s.Logger.Warnw("failed to update customer metadata with Stripe ID",
+					"customer_id", customerID,
+					"error", err)
+			}
+			return nil
+		}
+	}
+
+	// Customer is not synced, create in Stripe
+	s.Logger.Infow("customer not synced to Stripe, creating in Stripe",
+		"customer_id", customerID)
+	return s.CreateCustomerInStripe(ctx, customerID)
+}
+
 // CreateCustomerInStripe creates a customer in Stripe and updates our customer with Stripe ID
 func (s *StripeService) CreateCustomerInStripe(ctx context.Context, customerID string) error {
 	// Get our customer
@@ -276,15 +338,6 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 
 	// Get customer to verify it exists and check for Stripe customer ID
 	customerService := NewCustomerService(s.ServiceParams)
-	customerResp, err := customerService.GetCustomer(ctx, req.CustomerID)
-	if err != nil {
-		return nil, ierr.NewError("failed to get customer").
-			WithHint("Customer not found").
-			WithReportableDetails(map[string]interface{}{
-				"customer_id": req.CustomerID,
-			}).
-			Mark(ierr.ErrNotFound)
-	}
 
 	// Validate invoice and check payment eligibility
 	invoiceService := NewInvoiceService(s.ServiceParams)
@@ -345,11 +398,32 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 			Mark(ierr.ErrValidation)
 	}
 
-	// Check if customer has Stripe customer ID, if not return error
+	// Ensure customer is synced to Stripe before creating payment link
+	if err := s.EnsureCustomerSyncedToStripe(ctx, req.CustomerID); err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to sync customer to Stripe").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get updated customer to get Stripe customer ID
+	customerResp, err := customerService.GetCustomer(ctx, req.CustomerID)
+	if err != nil {
+		return nil, ierr.NewError("failed to get updated customer").
+			WithHint("Customer not found after sync").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Get Stripe customer ID (should exist after sync)
 	stripeCustomerID, exists := customerResp.Customer.Metadata["stripe_customer_id"]
 	if !exists || stripeCustomerID == "" {
-		return nil, ierr.NewError("customer does not have Stripe customer ID").
-			WithHint("Unable to create payment link for customer").
+		return nil, ierr.NewError("customer does not have Stripe customer ID after sync").
+			WithHint("Failed to sync customer to Stripe").
 			WithReportableDetails(map[string]interface{}{
 				"customer_id": req.CustomerID,
 			}).
@@ -490,9 +564,6 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 			"customer_id", req.CustomerID,
 		)
 	}
-
-	// Don't create payment record here - it should be created by the main payment flow
-	// Just create the Stripe session
 
 	// Create the checkout session
 	session, err := stripeClient.CheckoutSessions.New(params)
@@ -847,6 +918,18 @@ func (s *StripeService) ChargeSavedPaymentMethod(ctx context.Context, req *dto.C
 
 	// Get our customer to find Stripe customer ID
 	customerService := NewCustomerService(s.ServiceParams)
+
+	// Ensure customer is synced to Stripe before charging saved payment method
+	if err := s.EnsureCustomerSyncedToStripe(ctx, req.CustomerID); err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to sync customer to Stripe").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get updated customer to get Stripe customer ID
 	ourCustomerResp, err := customerService.GetCustomer(ctx, req.CustomerID)
 	if err != nil {
 		return nil, err
@@ -855,9 +938,12 @@ func (s *StripeService) ChargeSavedPaymentMethod(ctx context.Context, req *dto.C
 
 	stripeCustomerID, exists := ourCustomer.Metadata["stripe_customer_id"]
 	if !exists || stripeCustomerID == "" {
-		return nil, ierr.NewError("customer not found in Stripe").
-			WithHint("Customer must have a Stripe account to use saved payment methods").
-			Mark(ierr.ErrNotFound)
+		return nil, ierr.NewError("customer not found in Stripe after sync").
+			WithHint("Failed to sync customer to Stripe").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Create PaymentIntent with saved payment method
