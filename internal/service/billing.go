@@ -1274,6 +1274,13 @@ func (s *billingService) GetCustomerEntitlements(ctx context.Context, customerID
 
 func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID string, req *dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error) {
 	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
+	// get customer
+	customer, err := s.CustomerRepo.Get(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+
 	// 1. Get customer entitlements first
 	entitlementsReq := &dto.GetCustomerEntitlementsRequest{
 		SubscriptionIDs: req.SubscriptionIDs,
@@ -1307,10 +1314,14 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 	// 3. Create a map to track usage by feature ID
 	usageByFeature := make(map[string]decimal.Decimal)
 	meterFeatureMap := make(map[string]string)
+	featureMeterMap := make(map[string]string)
+	featureUsageResetPeriodMap := make(map[string]types.BillingPeriod)
 
 	for _, feature := range entitlements.Features {
 		usageByFeature[feature.Feature.ID] = decimal.Zero
 		meterFeatureMap[feature.Feature.MeterID] = feature.Feature.ID
+		featureMeterMap[feature.Feature.ID] = feature.Feature.MeterID
+		featureUsageResetPeriodMap[feature.Feature.ID] = feature.Entitlement.UsageResetPeriod
 	}
 
 	// 4. Get usage for each subscription
@@ -1324,11 +1335,68 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 			return nil, err
 		}
 
+		sub, err := s.SubRepo.Get(ctx, subscriptionID)
+		if err != nil {
+			return nil, err
+		}
+
 		// Add usage if found for this feature
 		for _, charge := range usage.Charges {
 			if featureID, ok := meterFeatureMap[charge.MeterID]; ok {
-				currentUsage := usageByFeature[featureID]
-				usageByFeature[featureID] = currentUsage.Add(decimal.NewFromFloat(charge.Quantity))
+				resetPeriod := featureUsageResetPeriodMap[featureID]
+				if resetPeriod == types.BILLING_PERIOD_DAILY {
+					// Handle daily reset features: get today's usage from daily windows
+					meterID := featureMeterMap[featureID]
+					// Create usage request with daily window size for current billing period
+					usageRequest := &dto.GetUsageByMeterRequest{
+						MeterID:            meterID,
+						ExternalCustomerID: customer.ExternalID,
+						StartTime:          sub.CurrentPeriodStart,
+						EndTime:            sub.CurrentPeriodEnd,
+						WindowSize:         types.WindowSizeDay, // Use daily window size
+					}
+
+					// Get usage data with daily windows
+					usageResult, err := eventService.GetUsageByMeter(ctx, usageRequest)
+					if err != nil {
+						s.Logger.Warnw("failed to get daily usage for feature",
+							"feature_id", featureID,
+							"meter_id", meterID,
+							"subscription_id", subscriptionID,
+							"error", err)
+						continue
+					}
+
+					// Pick the last bucket (today's usage) if available
+					dailyUsage := decimal.Zero
+					today := time.Now().In(sub.CurrentPeriodStart.Location())
+					todayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+					todayEnd := todayStart.AddDate(0, 0, 1)
+					if len(usageResult.Results) > 0 {
+						lastBucket := usageResult.Results[len(usageResult.Results)-1]
+						// check if last bucket is today's usage
+						if (lastBucket.WindowSize.After(todayStart) || lastBucket.WindowSize.Equal(todayStart)) && lastBucket.WindowSize.Before(todayEnd) {
+							dailyUsage = lastBucket.Value
+						}
+
+						s.Logger.Debugw("using daily usage for feature summary",
+							"customer_id", customerID,
+							"external_customer_id", customer.ExternalID,
+							"feature_id", featureID,
+							"meter_id", meterID,
+							"subscription_id", subscriptionID,
+							"today_usage", dailyUsage,
+							"today_start", todayStart,
+							"today_end", todayEnd,
+							"last_bucket", lastBucket.WindowSize,
+							"last_bucket_value", lastBucket.Value,
+							"total_daily_windows", len(usageResult.Results))
+					}
+					usageByFeature[featureID] = dailyUsage
+				} else {
+					currentUsage := usageByFeature[featureID]
+					usageByFeature[featureID] = currentUsage.Add(decimal.NewFromFloat(charge.Quantity))
+				}
 			}
 		}
 	}
