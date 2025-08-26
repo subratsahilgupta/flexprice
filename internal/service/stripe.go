@@ -938,6 +938,31 @@ func (s *StripeService) ChargeSavedPaymentMethod(ctx context.Context, req *dto.C
 			Mark(ierr.ErrValidation)
 	}
 
+	// Get invoice to validate payment amount
+	invoiceService := NewInvoiceService(s.ServiceParams)
+	invoiceResp, err := invoiceService.GetInvoice(ctx, req.InvoiceID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get invoice for payment validation").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id": req.InvoiceID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+	// Validate payment amount against invoice remaining balance
+	if req.Amount.GreaterThan(invoiceResp.AmountRemaining) {
+		return nil, ierr.NewError("payment amount exceeds invoice remaining balance").
+			WithHint("Payment amount cannot be greater than the remaining balance on the invoice").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id":        invoiceResp.ID,
+				"payment_amount":    req.Amount.String(),
+				"invoice_remaining": invoiceResp.AmountRemaining.String(),
+				"invoice_total":     invoiceResp.AmountDue.String(),
+				"invoice_paid":      invoiceResp.AmountPaid.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Create PaymentIntent with saved payment method
 	amountInCents := req.Amount.Mul(decimal.NewFromInt(100)).IntPart()
 	params := &stripe.PaymentIntentParams{
