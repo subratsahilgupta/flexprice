@@ -12,7 +12,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
-	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -105,7 +104,7 @@ func (s *billingService) CalculateFixedCharges(
 		amount := priceService.CalculateCost(ctx, price.Price, item.Quantity)
 
 		// Apply proration if applicable
-		proratedAmount, err := s.applyProrationToLineItem(ctx, sub, item, price.Price, amount, periodStart, periodEnd)
+		proratedAmount, err := s.applyProrationToLineItem(ctx, sub, item, price.Price, amount)
 		if err != nil {
 			s.Logger.Warnw("failed to apply proration to line item, using original amount",
 				"error", err,
@@ -970,9 +969,9 @@ func (s *billingService) applyProrationToLineItem(
 	item *subscription.SubscriptionLineItem,
 	priceData *price.Price,
 	originalAmount decimal.Decimal,
-	periodStart,
-	periodEnd time.Time,
 ) (decimal.Decimal, error) {
+
+	prorationService := NewProrationService(s.ServiceParams)
 	// Check if proration should be applied
 	if sub.BillingCycle != types.BillingCycleCalendar || sub.ProrationMode != types.ProrationModeActive {
 		// No proration needed
@@ -984,102 +983,21 @@ func (s *billingService) applyProrationToLineItem(
 		return originalAmount, nil
 	}
 
-	// Use the existing proration calculator service [[memory:7197325]]
-	prorationService := NewProrationService(s.ServiceParams)
-
-	// For calendar billing, we need to calculate proration against the full calendar period
-	// not just the remaining days in the period
-	var prorationPeriodStart, prorationPeriodEnd time.Time
-	var prorationDate time.Time
-
-	if sub.BillingCycle == types.BillingCycleCalendar {
-		// For calendar billing proration, we need the start of the CURRENT calendar period
-		// not the next billing anchor. CalculateCalendarBillingAnchor returns the next period.
-		switch sub.BillingPeriod {
-		case types.BILLING_PERIOD_MONTHLY:
-			// Get first day of the subscription start month
-			year, month, _ := sub.StartDate.Date()
-			prorationPeriodStart = time.Date(year, month, 1, 0, 0, 0, 0, sub.StartDate.Location())
-		case types.BILLING_PERIOD_ANNUAL:
-			// Get first day of the subscription start year
-			year := sub.StartDate.Year()
-			prorationPeriodStart = time.Date(year, time.January, 1, 0, 0, 0, 0, sub.StartDate.Location())
-		case types.BILLING_PERIOD_WEEKLY:
-			// Get first day of the subscription start week (Sunday)
-			weekday := int(sub.StartDate.Weekday())
-			prorationPeriodStart = sub.StartDate.AddDate(0, 0, -weekday)
-			year, month, day := prorationPeriodStart.Date()
-			prorationPeriodStart = time.Date(year, month, day, 0, 0, 0, 0, sub.StartDate.Location())
-		default:
-			// Fallback to the provided period
-			prorationPeriodStart = periodStart
-		}
-
-		// Calculate the end of the calendar period
-		switch sub.BillingPeriod {
-		case types.BILLING_PERIOD_MONTHLY:
-			prorationPeriodEnd = prorationPeriodStart.AddDate(0, sub.BillingPeriodCount, 0).Add(-time.Second)
-		case types.BILLING_PERIOD_ANNUAL:
-			prorationPeriodEnd = prorationPeriodStart.AddDate(sub.BillingPeriodCount, 0, 0).Add(-time.Second)
-		case types.BILLING_PERIOD_WEEKLY:
-			prorationPeriodEnd = prorationPeriodStart.AddDate(0, 0, 7*sub.BillingPeriodCount).Add(-time.Second)
-		default:
-			// Fallback to the provided period
-			prorationPeriodStart = periodStart
-			prorationPeriodEnd = periodEnd.Add(-time.Second)
-		}
-
-		// Use actual subscription start date as proration date
-		prorationDate = sub.StartDate
-	} else {
-		// For anniversary billing, use the provided period dates
-		prorationPeriodStart = periodStart
-		prorationPeriodEnd = periodEnd.Add(-time.Second)
-		prorationDate = periodStart
-	}
-
-	// Create proration parameters for this line item
-	prorationParams := proration.ProrationParams{
-		SubscriptionID:        sub.ID,
-		LineItemID:            item.ID,
-		PlanPayInAdvance:      priceData.InvoiceCadence == types.InvoiceCadenceAdvance,
-		CurrentPeriodStart:    prorationPeriodStart,
-		CurrentPeriodEnd:      prorationPeriodEnd,
-		Action:                types.ProrationActionAddItem,
-		NewPriceID:            item.PriceID,
-		NewQuantity:           item.Quantity,
-		NewPricePerUnit:       priceData.Amount,
-		ProrationDate:         prorationDate,
-		ProrationBehavior:     types.ProrationBehaviorCreateProrations, // Calculate proration amount
-		CustomerTimezone:      sub.CustomerTimezone,
-		OriginalAmountPaid:    decimal.Zero,
-		PreviousCreditsIssued: decimal.Zero,
-		ProrationStrategy:     types.StrategyDayBased,
-		Currency:              priceData.Currency,
-		PlanDisplayName:       item.PlanDisplayName,
-	}
-
-	// Calculate proration
-	prorationResult, err := prorationService.CalculateProration(ctx, prorationParams)
+	prorationParams, err := prorationService.CreateProrationParamsForLineItem(
+		sub,
+		item,
+		priceData,
+		types.ProrationActionAddItem,
+		types.ProrationBehaviorCreateProrations,
+	)
 	if err != nil {
 		return originalAmount, err
 	}
 
-	// If no proration result, return original amount
-	if prorationResult == nil {
-		return originalAmount, nil
+	prorationResult, err := prorationService.CalculateProration(ctx, prorationParams)
+	if err != nil {
+		return decimal.Zero, err
 	}
-
-	// Log the proration calculation
-	s.Logger.Debugw("applied proration to line item",
-		"subscription_id", sub.ID,
-		"line_item_id", item.ID,
-		"price_id", item.PriceID,
-		"original_amount", originalAmount.String(),
-		"prorated_amount", prorationResult.NetAmount.String(),
-		"proration_date", prorationResult.ProrationDate,
-		"action", prorationResult.Action)
-
 	return prorationResult.NetAmount, nil
 }
 

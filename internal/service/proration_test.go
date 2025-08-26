@@ -355,87 +355,7 @@ func (s *ProrationServiceSuite) TestCalculateProration() {
 	}
 }
 
-func (s *ProrationServiceSuite) TestApplyProration() {
-	tests := []struct {
-		name    string
-		setup   func() *proration.ProrationResult
-		wantErr bool
-	}{
-		{
-			name: "create_new_invoice",
-			setup: func() *proration.ProrationResult {
-				return &proration.ProrationResult{
-					NetAmount:          decimal.NewFromInt(10),
-					Currency:           "usd",
-					Action:             types.ProrationActionUpgrade,
-					ProrationDate:      s.testData.now,
-					CurrentPeriodStart: s.testData.subscription.CurrentPeriodStart,
-					CurrentPeriodEnd:   s.testData.subscription.CurrentPeriodEnd,
-					CreditItems: []proration.ProrationLineItem{
-						{
-							Description: "Credit for unused time",
-							Amount:      decimal.NewFromInt(-5),
-							StartDate:   s.testData.now,
-							EndDate:     s.testData.now.Add(24 * time.Hour),
-							Quantity:    decimal.NewFromInt(1),
-							PriceID:     s.testData.prices.standard.ID,
-							IsCredit:    true,
-						},
-					},
-					ChargeItems: []proration.ProrationLineItem{
-						{
-							Description: "Charge for upgrade",
-							Amount:      decimal.NewFromInt(15),
-							StartDate:   s.testData.now,
-							EndDate:     s.testData.now.Add(24 * time.Hour),
-							Quantity:    decimal.NewFromInt(1),
-							PriceID:     s.testData.prices.premium.ID,
-							IsCredit:    false,
-						},
-					},
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name: "no_action_behavior",
-			setup: func() *proration.ProrationResult {
-				return &proration.ProrationResult{
-					NetAmount:          decimal.NewFromInt(10),
-					Currency:           "usd",
-					CurrentPeriodStart: s.testData.subscription.CurrentPeriodStart,
-					CurrentPeriodEnd:   s.testData.subscription.CurrentPeriodEnd,
-					BillingPeriod:      s.testData.subscription.BillingPeriod,
-				}
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			result := tt.setup()
-			err := s.service.ApplyProration(
-				s.GetContext(),
-				result,
-				types.ProrationBehaviorCreateProrations,
-				types.GetTenantID(s.GetContext()),
-				types.GetEnvironmentID(s.GetContext()),
-				s.testData.subscription.ID,
-				s.testData.subscription.CustomerID,
-			)
-
-			if tt.wantErr {
-				s.Error(err)
-				return
-			}
-
-			s.NoError(err)
-		})
-	}
-}
-
-func (s *ProrationServiceSuite) TestCalculateAndApplySubscriptionProration() {
+func (s *ProrationServiceSuite) TestCalculateSubscriptionProration() {
 	tests := []struct {
 		name    string
 		params  proration.SubscriptionProrationParams
@@ -583,7 +503,7 @@ func (s *ProrationServiceSuite) TestCalculateAndApplySubscriptionProration() {
 				s.NoError(s.GetStores().InvoiceRepo.Create(s.GetContext(), inv))
 			}
 
-			got, err := s.service.CalculateAndApplySubscriptionProration(s.GetContext(), tt.params)
+			got, err := s.service.CalculateSubscriptionProration(s.GetContext(), tt.params)
 			if tt.wantErr {
 				s.Error(err)
 				return

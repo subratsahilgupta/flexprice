@@ -6,13 +6,11 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -59,170 +57,6 @@ func (s *prorationService) CalculateProration(ctx context.Context, params prorat
 	)
 
 	return result, nil
-}
-
-// ApplyProration implements the logic to persist proration effects.
-func (s *prorationService) ApplyProration(ctx context.Context,
-	result *proration.ProrationResult,
-	behavior types.ProrationBehavior,
-	tenantID string,
-	environmentID string,
-	subscriptionID string,
-	customerID string,
-) error {
-	if behavior == types.ProrationBehaviorNone || result == nil {
-		// Nothing to apply for previews or empty results
-		return nil
-	}
-	logger := s.serviceParams.Logger
-
-	logger.Info("applying proration",
-		zap.String("tenant_id", tenantID),
-		zap.String("environment_id", environmentID),
-		zap.String("subscription_id", subscriptionID),
-		zap.String("behavior", string(behavior)),
-	)
-
-	if behavior == types.ProrationBehaviorCreateProrations {
-		// Check if there's an existing invoice for the current period
-		logger.Info("checking for existing invoice",
-			zap.String("subscription_id", subscriptionID),
-			zap.String("period_start", result.ProrationDate.Format(time.RFC3339)),
-			zap.String("period_end", result.ProrationDate.Format(time.RFC3339)),
-		)
-
-		// Create or get invoice for the period
-		var invoiceID string
-		if result.CurrentPeriodStart.IsZero() {
-			// If no period is specified, create a one-off invoice for the proration date
-			invoiceResp, err := s.invoiceService.CreateInvoice(ctx, dto.CreateInvoiceRequest{
-				CustomerID:     customerID,
-				EnvironmentID:  environmentID,
-				SubscriptionID: &subscriptionID,
-				PeriodStart:    &result.ProrationDate,
-				PeriodEnd:      &result.ProrationDate,
-				InvoiceType:    types.InvoiceTypeSubscription,
-				Currency:       result.Currency,
-				AmountDue:      result.NetAmount,
-				InvoiceStatus:  lo.ToPtr(types.InvoiceStatusDraft),
-				PaymentStatus:  lo.ToPtr(types.PaymentStatusPending),
-				DueDate:        lo.ToPtr(result.CurrentPeriodEnd.Add(24 * time.Hour)),
-			})
-			if err != nil {
-				logger.Error("failed to create new invoice",
-					zap.Error(err),
-					zap.String("subscription_id", subscriptionID),
-				)
-				return ierr.NewErrorf("failed to create invoice: %v", err).
-					WithHint("Check if all invoice details are valid").
-					Mark(ierr.ErrSystem)
-			}
-			invoiceID = invoiceResp.ID
-		} else {
-			// Find invoice for the billing period
-			invoices, err := s.invoiceService.ListInvoices(ctx, &types.InvoiceFilter{
-				QueryFilter: types.NewNoLimitQueryFilter(),
-				TimeRangeFilter: &types.TimeRangeFilter{
-					StartTime: &result.CurrentPeriodStart,
-					EndTime:   &result.CurrentPeriodEnd,
-				},
-				SubscriptionID: subscriptionID,
-				InvoiceStatus:  []types.InvoiceStatus{types.InvoiceStatusDraft},
-			})
-			if err != nil {
-				logger.Error("failed to find existing invoice",
-					zap.Error(err),
-					zap.String("subscription_id", subscriptionID),
-				)
-				return ierr.NewErrorf("failed to find existing invoice: %v", err).
-					WithHint("Verify the invoice filter parameters are correct").
-					Mark(ierr.ErrDatabase)
-			}
-
-			if len(invoices.Items) == 0 {
-				// Create new invoice for the period if none exists
-				invoiceResp, err := s.invoiceService.CreateInvoice(ctx, dto.CreateInvoiceRequest{
-					CustomerID:     customerID,
-					EnvironmentID:  environmentID,
-					SubscriptionID: &subscriptionID,
-					PeriodStart:    &result.CurrentPeriodStart,
-					PeriodEnd:      &result.CurrentPeriodEnd,
-					InvoiceType:    types.InvoiceTypeSubscription,
-					Currency:       result.Currency,
-					AmountDue:      result.NetAmount,
-					BillingPeriod:  lo.ToPtr(string(result.BillingPeriod)),
-					InvoiceStatus:  lo.ToPtr(types.InvoiceStatusDraft),
-					PaymentStatus:  lo.ToPtr(types.PaymentStatusPending),
-					DueDate:        lo.ToPtr(result.CurrentPeriodEnd.Add(24 * time.Hour)),
-				})
-				if err != nil {
-					logger.Error("failed to create new invoice",
-						zap.Error(err),
-						zap.String("subscription_id", subscriptionID),
-					)
-					return ierr.NewErrorf("failed to create invoice: %v", err).
-						WithHint("Check if all invoice details are valid").
-						Mark(ierr.ErrSystem)
-				}
-				invoiceID = invoiceResp.ID
-			} else {
-				invoiceID = invoices.Items[0].ID
-			}
-		}
-
-		// Convert proration items to invoice line items
-		var lineItemRequests []dto.CreateInvoiceLineItemRequest
-
-		// Add credit items
-		for _, credit := range result.CreditItems {
-			lineItemRequests = append(lineItemRequests, dto.CreateInvoiceLineItemRequest{
-				PriceID:     &credit.PriceID,
-				DisplayName: &credit.Description,
-				Amount:      credit.Amount,
-				Quantity:    credit.Quantity,
-				PeriodStart: &credit.StartDate,
-				PeriodEnd:   &credit.EndDate,
-			})
-		}
-
-		// Add charge items
-		for _, charge := range result.ChargeItems {
-			lineItemRequests = append(lineItemRequests, dto.CreateInvoiceLineItemRequest{
-				PriceID:     &charge.PriceID,
-				DisplayName: &charge.Description,
-				Amount:      charge.Amount,
-				Quantity:    charge.Quantity,
-				PeriodStart: &charge.StartDate,
-				PeriodEnd:   &charge.EndDate,
-			})
-		}
-
-		// Add line items to invoice using invoice service
-		if err := s.invoiceService.AddInvoiceLineItems(ctx, invoiceID, lineItemRequests); err != nil {
-			logger.Error("failed to add proration line items to invoice",
-				zap.Error(err),
-				zap.String("invoice_id", invoiceID),
-				zap.String("subscription_id", subscriptionID),
-			)
-			return ierr.NewErrorf("failed to add proration line items to invoice %s: %v", invoiceID, err).
-				WithHint("Check if all line item details are valid").
-				Mark(ierr.ErrDatabase)
-		}
-
-		logger.Info("successfully applied proration to invoice",
-			zap.String("invoice_id", invoiceID),
-			zap.String("subscription_id", subscriptionID),
-			zap.Int("credit_items", len(result.CreditItems)),
-			zap.Int("charge_items", len(result.ChargeItems)),
-		)
-
-		return nil
-	}
-
-	// Handle other behaviors if added in the future
-	return ierr.NewErrorf("unsupported proration behavior: %s", behavior).
-		WithHint("Only ProrationBehaviorCreateProrations is currently supported").
-		Mark(ierr.ErrInvalidOperation)
 }
 
 // validateSubscriptionProrationParams validates the parameters for subscription proration calculation
@@ -286,7 +120,7 @@ func (s *prorationService) validateSubscriptionProrationParams(params proration.
 }
 
 // CalculateAndApplySubscriptionProration handles proration for an entire subscription.
-func (s *prorationService) CalculateAndApplySubscriptionProration(
+func (s *prorationService) CalculateSubscriptionProration(
 	ctx context.Context,
 	params proration.SubscriptionProrationParams,
 ) (*proration.SubscriptionProrationResult, error) {
@@ -338,19 +172,23 @@ func (s *prorationService) CalculateAndApplySubscriptionProration(
 			continue
 		}
 
-		prorationParams := s.createProrationParamsForLineItem(
+		prorationParams, err := s.CreateProrationParamsForLineItem(
 			params.Subscription,
 			item,
 			price,
 			types.ProrationActionAddItem,
 			types.ProrationBehaviorCreateProrations,
 		)
-
-		logger.Debugw("calculating proration for line item",
-			"subscription_id", params.Subscription.ID,
-			"line_item_id", item.ID,
-			"price_id", item.PriceID,
-			"action", prorationParams.Action)
+		if err != nil {
+			logger.Errorw("failed to create proration parameters for line item",
+				"error", err,
+				"subscription_id", params.Subscription.ID,
+				"line_item_id", item.ID)
+			errors = append(errors, ierr.NewErrorf("line item %s: %v", item.ID, err).
+				WithHint("Check line item configuration").
+				Mark(ierr.ErrSystem))
+			continue // Skip this item but continue with others
+		}
 
 		prorationResult, err := s.CalculateProration(ctx, prorationParams)
 		if err != nil {
@@ -392,51 +230,17 @@ func (s *prorationService) CalculateAndApplySubscriptionProration(
 		"total_amount", result.TotalProrationAmount.String(),
 		"line_items_processed", len(result.LineItemResults))
 
-	// Apply all prorations atomically
-	err := s.serviceParams.DB.WithTx(ctx, func(ctx context.Context) error {
-		for _, prorationResult := range result.LineItemResults {
-			if err := s.ApplyProration(
-				ctx,
-				prorationResult,
-				types.ProrationBehaviorCreateProrations,
-				types.GetTenantID(ctx),
-				types.GetEnvironmentID(ctx),
-				params.Subscription.ID,
-				params.Subscription.CustomerID,
-			); err != nil {
-				return ierr.NewErrorf("failed to apply proration: %v", err).
-					WithHint("Check if all proration details are valid").
-					Mark(ierr.ErrSystem)
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		s.serviceParams.Logger.Errorw("failed to apply prorations",
-			"error", err,
-			"subscription_id", params.Subscription.ID)
-		return nil, ierr.NewErrorf("failed to apply prorations: %v", err).
-			WithHint("Verify all proration calculations are valid").
-			Mark(ierr.ErrSystem)
-	}
-
-	s.serviceParams.Logger.Infow("successfully applied prorations",
-		"subscription_id", params.Subscription.ID,
-		"total_amount", result.TotalProrationAmount.String(),
-		"line_items_processed", len(result.LineItemResults))
-
 	return result, nil
 }
 
-// Helper method to create proration parameters for a line item
-func (s *prorationService) createProrationParamsForLineItem(
+// Helper method to create proration parameters for a line item (internal use)
+func (s *prorationService) CreateProrationParamsForLineItem(
 	subscription *subscription.Subscription,
 	item *subscription.SubscriptionLineItem,
 	price *price.Price,
 	action types.ProrationAction,
 	behavior types.ProrationBehavior,
-) proration.ProrationParams {
+) (proration.ProrationParams, error) {
 	periodStart, err := types.PreviousBillingDate(
 		subscription.BillingAnchor,
 		subscription.BillingPeriodCount,
@@ -471,5 +275,5 @@ func (s *prorationService) createProrationParamsForLineItem(
 		ProrationStrategy:     types.StrategyDayBased,
 		Currency:              price.Currency,
 		PlanDisplayName:       item.PlanDisplayName,
-	}
+	}, nil
 }

@@ -4,6 +4,8 @@ package proration
 import (
 	"context"
 
+	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -13,23 +15,20 @@ type Service interface {
 	// It does not persist anything or modify the subscription/invoice directly.
 	CalculateProration(ctx context.Context, params ProrationParams) (*ProrationResult, error)
 
-	// ApplyProration takes a ProrationResult and applies it based on the ProrationBehavior.
-	// For ProrationBehaviorCreateInvoiceItems, this typically means creating invoice line items
-	// (or potentially credit notes) via the Invoice service/repository.
-	ApplyProration(ctx context.Context,
-		result *ProrationResult,
+	// CreateProrationParamsForLineItem creates the proration parameters for a given line item.
+	CreateProrationParamsForLineItem(
+		subscription *subscription.Subscription,
+		item *subscription.SubscriptionLineItem,
+		price *price.Price,
+		action types.ProrationAction,
 		behavior types.ProrationBehavior,
-		tenantID string,
-		environmentID string,
-		subscriptionID string,
-		customerID string,
-	) error
+	) (ProrationParams, error)
 
-	// CalculateAndApplySubscriptionProration handles proration for an entire subscription.
+	// CalculateSubscriptionProration handles proration for an entire subscription.
 	// This is used when creating or modifying a subscription that needs proration
 	// (e.g., calendar billing with proration enabled).
 	// It will calculate and apply proration for all applicable line items in a single transaction.
-	CalculateAndApplySubscriptionProration(ctx context.Context, params SubscriptionProrationParams) (*SubscriptionProrationResult, error)
+	CalculateSubscriptionProration(ctx context.Context, params SubscriptionProrationParams) (*SubscriptionProrationResult, error)
 }
 
 // Calculator performs proration calculations.
