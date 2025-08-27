@@ -124,7 +124,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 		}
 
 		// Entitlements are restricted for bucketed max meters
-		if meter.Aggregation.Type == types.AggregationMax && meter.Aggregation.BucketSize != "" {
+		if meter.IsBucketedMaxMeter() {
 			return nil, ierr.NewError("entitlements not supported for bucketed max meters").
 				WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
 				WithReportableDetails(map[string]interface{}{
@@ -245,7 +245,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 				}
 
 				// Bucketed max meters cannot have entitlements
-				if meter.Aggregation.Type == types.AggregationMax && meter.Aggregation.BucketSize != "" {
+				if meter.IsBucketedMaxMeter() {
 					return ierr.NewError("entitlements not supported for bucketed max meters").
 						WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
 						WithReportableDetails(map[string]interface{}{

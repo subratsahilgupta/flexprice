@@ -1693,30 +1693,53 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscriptionWithBucketedMaxAggr
 
 			s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, lineItems))
 
-			// Create some events for the bucketed max meter to pass the optimization filter
-			for i := 0; i < 5; i++ {
+			// Create events in two different minute buckets
+			// First bucket: [2,5,6,9] -> max = 9
+			bucket1Values := []float64{2, 5, 6, 9}
+			bucket1Time := s.testData.now.Add(-2 * time.Minute)
+			for _, value := range bucket1Values {
 				event := &events.Event{
 					ID:                 s.GetUUID(),
 					TenantID:           testSub.TenantID,
 					EventName:          bucketedMaxMeter.EventName,
 					ExternalCustomerID: s.testData.customer.ExternalID,
-					Timestamp:          s.testData.now.Add(-1 * time.Hour),
+					Timestamp:          bucket1Time,
 					Properties: map[string]interface{}{
-						"usage_value": float64(i + 1),
+						"usage_value": value,
 					},
 				}
 				s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
 			}
 
-			// Mock the event repository to return bucketed results
-			eventRepo := s.GetStores().EventRepo.(*testutil.InMemoryEventStore)
-			eventRepo.SetMockUsageResults(bucketedMaxMeter.EventName, &events.AggregationResult{
-				Value: decimal.Zero, // Not used for bucketed max
-				Results: []events.UsageResult{
-					{WindowSize: s.testData.now.Add(-2 * time.Hour), Value: tc.bucketValues[0]}, // First bucket
-					{WindowSize: s.testData.now.Add(-1 * time.Hour), Value: tc.bucketValues[1]}, // Second bucket
-				},
-			})
+			// Second bucket: [10] -> max = 10 (or [10,15] for tiered tests)
+			bucket2Values := []float64{10}
+			if tc.name == "bucketed_max_tiered_slab" || tc.name == "bucketed_max_tiered_volume" {
+				bucket2Values = []float64{10, 15} // For tiered tests we want max=15
+			}
+			bucket2Time := s.testData.now.Add(-1 * time.Minute)
+			for _, value := range bucket2Values {
+				event := &events.Event{
+					ID:                 s.GetUUID(),
+					TenantID:           testSub.TenantID,
+					EventName:          bucketedMaxMeter.EventName,
+					ExternalCustomerID: s.testData.customer.ExternalID,
+					Timestamp:          bucket2Time,
+					Properties: map[string]interface{}{
+						"usage_value": value,
+					},
+				}
+				s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+			}
+
+			// // Mock the event repository to return bucketed results
+			// eventRepo := s.GetStores().EventRepo.(*testutil.InMemoryEventStore)
+			// eventRepo.SetMockUsageResults(bucketedMaxMeter.EventName, &events.AggregationResult{
+			// 	Value: decimal.Zero, // Not used for bucketed max
+			// 	Results: []events.UsageResult{
+			// 		{WindowSize: s.testData.now.Add(-2 * time.Hour), Value: tc.bucketValues[0]}, // First bucket
+			// 		{WindowSize: s.testData.now.Add(-1 * time.Hour), Value: tc.bucketValues[1]}, // Second bucket
+			// 	},
+			// })
 
 			// Test the usage calculation
 			req := &dto.GetUsageBySubscriptionRequest{

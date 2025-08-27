@@ -1033,7 +1033,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 		// Get meter info
 		meterInfo := meterMap[meterID]
-		if priceObj.MeterID != "" && meterInfo != nil && meterInfo.Aggregation.Type == types.AggregationMax && meterInfo.Aggregation.BucketSize != "" {
+		if priceObj.MeterID != "" && meterInfo != nil && meterInfo.ToMeter().IsBucketedMaxMeter() {
 			// For bucketed max, use the array of values
 			bucketedValues := make([]decimal.Decimal, len(usage.Results))
 			for i, result := range usage.Results {

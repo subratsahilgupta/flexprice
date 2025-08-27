@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -185,6 +186,29 @@ func (s *billingService) CalculateUsageCharges(
 	// Create price service once before processing charges
 	priceService := NewPriceService(s.ServiceParams)
 
+	// First collect all meter IDs from line items and charges
+	meterIDs := make([]string, 0)
+	for _, item := range sub.LineItems {
+		if item.PriceType == types.PRICE_TYPE_USAGE && item.MeterID != "" {
+			meterIDs = append(meterIDs, item.MeterID)
+		}
+	}
+	meterIDs = lo.Uniq(meterIDs)
+
+	// Fetch all meters at once
+	meterFilter := types.NewNoLimitMeterFilter()
+	meterFilter.MeterIDs = meterIDs
+	meters, err := s.MeterRepo.List(ctx, meterFilter)
+	if err != nil {
+		return nil, decimal.Zero, err
+	}
+
+	// Create meter lookup map
+	meterMap := make(map[string]*meter.Meter)
+	for _, m := range meters {
+		meterMap[m.ID] = m
+	}
+
 	// Process usage charges from line items
 	for _, item := range sub.LineItems {
 		if item.PriceType != types.PRICE_TYPE_USAGE {
@@ -301,14 +325,19 @@ func (s *billingService) CalculateUsageCharges(
 
 					// Recalculate the amount based on the adjusted quantity
 					if matchingCharge.Price != nil {
-						// Get meter information
-						meter, err := s.MeterRepo.GetMeter(ctx, item.MeterID)
-						if err != nil {
-							return nil, decimal.Zero, err
+						// Get meter from pre-fetched map
+						meter, ok := meterMap[item.MeterID]
+						if !ok {
+							return nil, decimal.Zero, ierr.NewError("meter not found").
+								WithHint(fmt.Sprintf("Meter with ID %s not found", item.MeterID)).
+								WithReportableDetails(map[string]interface{}{
+									"meter_id": item.MeterID,
+								}).
+								Mark(ierr.ErrNotFound)
 						}
 
 						// For bucketed max, we need to process each bucket's max value
-						if meter.Aggregation.Type == types.AggregationMax && meter.Aggregation.BucketSize != "" {
+						if meter.IsBucketedMaxMeter() {
 							// Get usage with bucketed values
 							usageRequest := &dto.GetUsageByMeterRequest{
 								MeterID:            item.MeterID,
@@ -1316,6 +1345,12 @@ func (s *billingService) GetCustomerEntitlements(ctx context.Context, customerID
 
 func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID string, req *dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error) {
 	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
+	// get customer
+	customer, err := s.CustomerRepo.Get(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
 	// 1. Get customer entitlements first
 	entitlementsReq := &dto.GetCustomerEntitlementsRequest{
 		SubscriptionIDs: req.SubscriptionIDs,
@@ -1349,10 +1384,14 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 	// 3. Create a map to track usage by feature ID
 	usageByFeature := make(map[string]decimal.Decimal)
 	meterFeatureMap := make(map[string]string)
+	featureMeterMap := make(map[string]string)
+	featureUsageResetPeriodMap := make(map[string]types.BillingPeriod)
 
 	for _, feature := range entitlements.Features {
 		usageByFeature[feature.Feature.ID] = decimal.Zero
 		meterFeatureMap[feature.Feature.MeterID] = feature.Feature.ID
+		featureMeterMap[feature.Feature.ID] = feature.Feature.MeterID
+		featureUsageResetPeriodMap[feature.Feature.ID] = feature.Entitlement.UsageResetPeriod
 	}
 
 	// 4. Get usage for each subscription
@@ -1366,11 +1405,71 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 			return nil, err
 		}
 
+		sub, err := s.SubRepo.Get(ctx, subscriptionID)
+		if err != nil {
+			return nil, err
+		}
+
 		// Add usage if found for this feature
 		for _, charge := range usage.Charges {
 			if featureID, ok := meterFeatureMap[charge.MeterID]; ok {
-				currentUsage := usageByFeature[featureID]
-				usageByFeature[featureID] = currentUsage.Add(decimal.NewFromFloat(charge.Quantity))
+				// currentUsage := usageByFeature[featureID]
+				// usageByFeature[featureID] = currentUsage.Add(decimal.NewFromFloat(charge.Quantity))
+				resetPeriod := featureUsageResetPeriodMap[featureID]
+				if resetPeriod == types.BILLING_PERIOD_DAILY {
+					// Handle daily reset features: get today's usage from daily windows
+					meterID := featureMeterMap[featureID]
+					// Create usage request with daily window size for current billing period
+					usageRequest := &dto.GetUsageByMeterRequest{
+						MeterID:            meterID,
+						ExternalCustomerID: customer.ExternalID,
+						StartTime:          sub.CurrentPeriodStart,
+						EndTime:            sub.CurrentPeriodEnd,
+						WindowSize:         types.WindowSizeDay, // Use daily window size
+					}
+
+					// Get usage data with daily windows
+					usageResult, err := eventService.GetUsageByMeter(ctx, usageRequest)
+					if err != nil {
+						s.Logger.Warnw("failed to get daily usage for feature",
+							"feature_id", featureID,
+							"meter_id", meterID,
+							"subscription_id", subscriptionID,
+							"error", err)
+						continue
+					}
+
+					// Pick the last bucket (today's usage) if available
+					dailyUsage := decimal.Zero
+					today := time.Now().In(sub.CurrentPeriodStart.Location())
+					todayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+
+					todayEnd := todayStart.AddDate(0, 0, 1)
+					if len(usageResult.Results) > 0 {
+						lastBucket := usageResult.Results[len(usageResult.Results)-1]
+						// check if last bucket is today's usage
+						if (lastBucket.WindowSize.After(todayStart) || lastBucket.WindowSize.Equal(todayStart)) && lastBucket.WindowSize.Before(todayEnd) {
+							dailyUsage = lastBucket.Value
+						}
+
+						s.Logger.Debugw("using daily usage for feature summary",
+							"customer_id", customerID,
+							"external_customer_id", customer.ExternalID,
+							"feature_id", featureID,
+							"meter_id", meterID,
+							"subscription_id", subscriptionID,
+							"today_usage", dailyUsage,
+							"today_start", todayStart,
+							"today_end", todayEnd,
+							"last_bucket", lastBucket.WindowSize,
+							"last_bucket_value", lastBucket.Value,
+							"total_daily_windows", len(usageResult.Results))
+					}
+					usageByFeature[featureID] = dailyUsage
+				} else {
+					currentUsage := usageByFeature[featureID]
+					usageByFeature[featureID] = currentUsage.Add(decimal.NewFromFloat(charge.Quantity))
+				}
 			}
 		}
 	}
