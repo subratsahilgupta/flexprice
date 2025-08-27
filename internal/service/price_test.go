@@ -623,3 +623,189 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_PackageRoundingModes() 
 		})
 	}
 }
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_FlatFee() {
+	price := &price.Price{
+		ID:           "price-bucketed-flat",
+		Amount:       decimal.NewFromFloat(0.10), // $0.10 per unit
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_FLAT_FEE,
+	}
+
+	// Test with multiple bucket values representing max values per time bucket
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(9),  // Bucket 1: max(2,5,6,9) = 9
+		decimal.NewFromInt(10), // Bucket 2: max(10) = 10
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: (9 * 0.10) + (10 * 0.10) = 0.90 + 1.00 = 1.90
+	expected := decimal.NewFromFloat(1.9)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_Package() {
+	price := &price.Price{
+		ID:           "price-bucketed-package",
+		Amount:       decimal.NewFromInt(1), // $1 per package
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_PACKAGE,
+		TransformQuantity: price.JSONBTransformQuantity{
+			DivideBy: 10,             // 10 units per package
+			Round:    types.ROUND_UP, // Round up
+		},
+	}
+
+	// Test with bucket values that require different package allocations
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(9),  // Bucket 1: max(2,5,6,9) = 9 → ceil(9/10) = 1 package
+		decimal.NewFromInt(10), // Bucket 2: max(10) = 10 → ceil(10/10) = 1 package
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: 1 package + 1 package = $2
+	expected := decimal.NewFromInt(2)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_TieredSlab() {
+	upTo10 := uint64(10)
+	upTo20 := uint64(20)
+	price := &price.Price{
+		ID:           "price-bucketed-tiered-slab",
+		Amount:       decimal.Zero,
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_SLAB,
+		Tiers: []price.PriceTier{
+			{UpTo: &upTo10, UnitAmount: decimal.NewFromFloat(0.10)}, // 0-10: $0.10/unit
+			{UpTo: &upTo20, UnitAmount: decimal.NewFromFloat(0.05)}, // 11-20: $0.05/unit
+			{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.02)},     // 21+: $0.02/unit
+		},
+	}
+
+	// Test with bucket values that span different tiers
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(9),  // Bucket 1: max(2,5,6,9) = 9 → 9*$0.10 = $0.90
+		decimal.NewFromInt(15), // Bucket 2: max(10,15) = 15 → 10*$0.10 + 5*$0.05 = $1.25
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: $0.90 + $1.25 = $2.15
+	expected := decimal.NewFromFloat(2.15)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_TieredVolume() {
+	upTo10 := uint64(10)
+	upTo20 := uint64(20)
+	price := &price.Price{
+		ID:           "price-bucketed-tiered-volume",
+		Amount:       decimal.Zero,
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_VOLUME,
+		Tiers: []price.PriceTier{
+			{UpTo: &upTo10, UnitAmount: decimal.NewFromFloat(0.10)}, // 0-10: $0.10/unit
+			{UpTo: &upTo20, UnitAmount: decimal.NewFromFloat(0.05)}, // 11-20: $0.05/unit
+			{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.02)},     // 21+: $0.02/unit
+		},
+	}
+
+	// Test with bucket values that fall into different volume tiers
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(9),  // Bucket 1: max(2,5,6,9) = 9 → tier 1 → 9*$0.10 = $0.90
+		decimal.NewFromInt(15), // Bucket 2: max(10,15) = 15 → tier 2 → 15*$0.05 = $0.75
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: $0.90 + $0.75 = $1.65
+	expected := decimal.NewFromFloat(1.65)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_EmptyBuckets() {
+	price := &price.Price{
+		ID:           "price-bucketed-empty",
+		Amount:       decimal.NewFromFloat(0.10),
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_FLAT_FEE,
+	}
+
+	// Test with empty bucket array
+	bucketedValues := []decimal.Decimal{}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: $0.00 (no buckets to process)
+	expected := decimal.Zero
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for empty bucketed values",
+		expected.String(), result.String())
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_ZeroValues() {
+	price := &price.Price{
+		ID:           "price-bucketed-zero",
+		Amount:       decimal.NewFromFloat(0.10),
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_FLAT_FEE,
+	}
+
+	// Test with zero values in buckets
+	bucketedValues := []decimal.Decimal{
+		decimal.Zero,          // Bucket 1: no usage
+		decimal.NewFromInt(5), // Bucket 2: max = 5
+		decimal.Zero,          // Bucket 3: no usage
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: (0 * 0.10) + (5 * 0.10) + (0 * 0.10) = $0.50
+	expected := decimal.NewFromFloat(0.50)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values with zeros %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_ComplexScenario() {
+	// Test a complex scenario with package billing and multiple buckets
+	price := &price.Price{
+		ID:           "price-bucketed-complex",
+		Amount:       decimal.NewFromInt(5), // $5 per package
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_PACKAGE,
+		TransformQuantity: price.JSONBTransformQuantity{
+			DivideBy: 100,            // 100 units per package
+			Round:    types.ROUND_UP, // Round up
+		},
+	}
+
+	// Test with various bucket values
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(50),  // Bucket 1: max = 50 → ceil(50/100) = 1 package → $5
+		decimal.NewFromInt(150), // Bucket 2: max = 150 → ceil(150/100) = 2 packages → $10
+		decimal.NewFromInt(200), // Bucket 3: max = 200 → ceil(200/100) = 2 packages → $10
+		decimal.NewFromInt(99),  // Bucket 4: max = 99 → ceil(99/100) = 1 package → $5
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: $5 + $10 + $10 + $5 = $30
+	expected := decimal.NewFromInt(30)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for complex bucketed scenario %v",
+		expected.String(), result.String(), bucketedValues)
+}

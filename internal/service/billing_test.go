@@ -1464,3 +1464,229 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithDailyReset() {
 	// Check metadata indicates daily reset
 	s.Equal("daily", lineItems[0].Metadata["usage_reset_period"])
 }
+
+func (s *BillingServiceSuite) TestCalculateUsageChargesWithBucketedMaxAggregation() {
+	ctx := s.GetContext()
+
+	tests := []struct {
+		name             string
+		billingModel     types.BillingModel
+		setupPrice       func() *price.Price
+		bucketValues     []decimal.Decimal // Max values per bucket
+		expectedAmount   decimal.Decimal
+		expectedQuantity decimal.Decimal
+		description      string
+	}{
+		{
+			name:         "bucketed_max_flat_fee",
+			billingModel: types.BILLING_MODEL_FLAT_FEE,
+			setupPrice: func() *price.Price {
+				return &price.Price{
+					ID:                 "price_bucketed_flat",
+					Amount:             decimal.NewFromFloat(0.10), // $0.10 per unit
+					Currency:           "usd",
+					EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+					EntityID:           s.testData.plan.ID,
+					Type:               types.PRICE_TYPE_USAGE,
+					BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+					BillingPeriodCount: 1,
+					BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+					BillingCadence:     types.BILLING_CADENCE_RECURRING,
+					InvoiceCadence:     types.InvoiceCadenceArrear,
+					MeterID:            s.testData.meters.apiCalls.ID,
+					BaseModel:          types.GetDefaultBaseModel(ctx),
+				}
+			},
+			bucketValues:     []decimal.Decimal{decimal.NewFromInt(9), decimal.NewFromInt(10)}, // Bucket 1: max(2,5,6,9)=9, Bucket 2: max(10)=10
+			expectedAmount:   decimal.NewFromFloat(1.9),                                        // (9 * 0.10) + (10 * 0.10) = $1.90
+			expectedQuantity: decimal.NewFromInt(19),                                           // 9 + 10 = 19
+			description:      "Flat fee: Bucket1[2,5,6,9]→max=9, Bucket2[10]→max=10, Total: 9*$0.10 + 10*$0.10 = $1.90",
+		},
+		{
+			name:         "bucketed_max_package",
+			billingModel: types.BILLING_MODEL_PACKAGE,
+			setupPrice: func() *price.Price {
+				return &price.Price{
+					ID:                 "price_bucketed_package",
+					Amount:             decimal.NewFromInt(1), // $1 per package
+					Currency:           "usd",
+					EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+					EntityID:           s.testData.plan.ID,
+					Type:               types.PRICE_TYPE_USAGE,
+					BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+					BillingPeriodCount: 1,
+					BillingModel:       types.BILLING_MODEL_PACKAGE,
+					BillingCadence:     types.BILLING_CADENCE_RECURRING,
+					InvoiceCadence:     types.InvoiceCadenceArrear,
+					MeterID:            s.testData.meters.apiCalls.ID,
+					TransformQuantity: price.JSONBTransformQuantity{
+						DivideBy: 10,   // 10 units per package
+						Round:    "up", // Round up
+					},
+					BaseModel: types.GetDefaultBaseModel(ctx),
+				}
+			},
+			bucketValues:     []decimal.Decimal{decimal.NewFromInt(9), decimal.NewFromInt(10)}, // Bucket 1: max(2,5,6,9)=9, Bucket 2: max(10)=10
+			expectedAmount:   decimal.NewFromInt(2),                                            // Bucket 1: ceil(9/10) = 1 package, Bucket 2: ceil(10/10) = 1 package = $2
+			expectedQuantity: decimal.NewFromInt(19),                                           // 9 + 10 = 19
+			description:      "Package: Bucket1[2,5,6,9]→max=9→ceil(9/10)=1pkg, Bucket2[10]→max=10→ceil(10/10)=1pkg, Total: 1*$1 + 1*$1 = $2",
+		},
+		{
+			name:         "bucketed_max_tiered_slab",
+			billingModel: types.BILLING_MODEL_TIERED,
+			setupPrice: func() *price.Price {
+				upTo10 := uint64(10)
+				upTo20 := uint64(20)
+				return &price.Price{
+					ID:                 "price_bucketed_tiered_slab",
+					Amount:             decimal.Zero,
+					Currency:           "usd",
+					EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+					EntityID:           s.testData.plan.ID,
+					Type:               types.PRICE_TYPE_USAGE,
+					BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+					BillingPeriodCount: 1,
+					BillingModel:       types.BILLING_MODEL_TIERED,
+					BillingCadence:     types.BILLING_CADENCE_RECURRING,
+					InvoiceCadence:     types.InvoiceCadenceArrear,
+					TierMode:           types.BILLING_TIER_SLAB,
+					MeterID:            s.testData.meters.apiCalls.ID,
+					Tiers: []price.PriceTier{
+						{UpTo: &upTo10, UnitAmount: decimal.NewFromFloat(0.10)}, // 0-10: $0.10/unit
+						{UpTo: &upTo20, UnitAmount: decimal.NewFromFloat(0.05)}, // 11-20: $0.05/unit
+						{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.02)},     // 21+: $0.02/unit
+					},
+					BaseModel: types.GetDefaultBaseModel(ctx),
+				}
+			},
+			bucketValues:     []decimal.Decimal{decimal.NewFromInt(9), decimal.NewFromInt(15)}, // Bucket 1: max(2,5,6,9)=9, Bucket 2: max(10,15)=15
+			expectedAmount:   decimal.NewFromFloat(1.65),                                       // Bucket 1: 9*0.10=$0.90, Bucket 2: 10*0.10+5*0.05=$1.25, Total=$1.65
+			expectedQuantity: decimal.NewFromInt(24),                                           // 9 + 15 = 24
+			description:      "Tiered slab: Bucket1[2,5,6,9]→max=9→9*$0.10=$0.90, Bucket2[10,15]→max=15→10*$0.10+5*$0.05=$1.25, Total=$1.65",
+		},
+		{
+			name:         "bucketed_max_tiered_volume",
+			billingModel: types.BILLING_MODEL_TIERED,
+			setupPrice: func() *price.Price {
+				upTo10 := uint64(10)
+				upTo20 := uint64(20)
+				return &price.Price{
+					ID:                 "price_bucketed_tiered_volume",
+					Amount:             decimal.Zero,
+					Currency:           "usd",
+					EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+					EntityID:           s.testData.plan.ID,
+					Type:               types.PRICE_TYPE_USAGE,
+					BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+					BillingPeriodCount: 1,
+					BillingModel:       types.BILLING_MODEL_TIERED,
+					BillingCadence:     types.BILLING_CADENCE_RECURRING,
+					InvoiceCadence:     types.InvoiceCadenceArrear,
+					TierMode:           types.BILLING_TIER_VOLUME,
+					MeterID:            s.testData.meters.apiCalls.ID,
+					Tiers: []price.PriceTier{
+						{UpTo: &upTo10, UnitAmount: decimal.NewFromFloat(0.10)}, // 0-10: $0.10/unit
+						{UpTo: &upTo20, UnitAmount: decimal.NewFromFloat(0.05)}, // 11-20: $0.05/unit
+						{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.02)},     // 21+: $0.02/unit
+					},
+					BaseModel: types.GetDefaultBaseModel(ctx),
+				}
+			},
+			bucketValues:     []decimal.Decimal{decimal.NewFromInt(9), decimal.NewFromInt(15)}, // Bucket 1: max(2,5,6,9)=9, Bucket 2: max(10,15)=15
+			expectedAmount:   decimal.NewFromFloat(1.65),                                       // Bucket 1: 9*0.10=$0.90, Bucket 2: 15*0.05=$0.75, Total=$1.65
+			expectedQuantity: decimal.NewFromInt(24),                                           // 9 + 15 = 24
+			description:      "Tiered volume: Bucket1[2,5,6,9]→max=9→9*$0.10=$0.90, Bucket2[10,15]→max=15→15*$0.05=$0.75, Total=$1.65",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			// Clear stores for clean test
+			s.BaseServiceTestSuite.ClearStores()
+			s.setupTestData()
+
+			// Create bucketed max meter
+			bucketedMaxMeter := &meter.Meter{
+				ID:        "meter_bucketed_max",
+				Name:      "Bucketed Max Meter",
+				EventName: "bucketed_event",
+				Aggregation: meter.Aggregation{
+					Type:       types.AggregationMax,
+					Field:      "value",
+					BucketSize: "minute", // Minute-level buckets
+				},
+				BaseModel: types.GetDefaultBaseModel(ctx),
+			}
+			s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, bucketedMaxMeter))
+
+			// Create price with specific billing model
+			testPrice := tt.setupPrice()
+			testPrice.MeterID = bucketedMaxMeter.ID
+			s.NoError(s.GetStores().PriceRepo.Create(ctx, testPrice))
+
+			// Create subscription line item for this price
+			lineItem := &subscription.SubscriptionLineItem{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:   s.testData.subscription.ID,
+				CustomerID:       s.testData.subscription.CustomerID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntitiyTypePlan,
+				PlanDisplayName:  s.testData.plan.Name,
+				PriceID:          testPrice.ID,
+				PriceType:        testPrice.Type,
+				MeterID:          bucketedMaxMeter.ID,
+				MeterDisplayName: bucketedMaxMeter.Name,
+				DisplayName:      "Bucketed Max Test",
+				Quantity:         decimal.Zero,
+				Currency:         s.testData.subscription.Currency,
+				BillingPeriod:    s.testData.subscription.BillingPeriod,
+				InvoiceCadence:   types.InvoiceCadenceArrear,
+				StartDate:        s.testData.subscription.StartDate,
+				BaseModel:        types.GetDefaultBaseModel(ctx),
+			}
+
+			// Update subscription with new line item
+			s.testData.subscription.LineItems = append(s.testData.subscription.LineItems, lineItem)
+			s.NoError(s.GetStores().SubscriptionRepo.Update(ctx, s.testData.subscription))
+
+			// Create mock usage data with bucketed results
+			usage := &dto.GetUsageBySubscriptionResponse{
+				StartTime: s.testData.subscription.CurrentPeriodStart,
+				EndTime:   s.testData.subscription.CurrentPeriodEnd,
+				Currency:  s.testData.subscription.Currency,
+				Charges: []*dto.SubscriptionUsageByMetersResponse{
+					{
+						Price:     testPrice,
+						Quantity:  tt.expectedQuantity.InexactFloat64(), // Sum of bucket values
+						Amount:    tt.expectedAmount.InexactFloat64(),   // Will be recalculated
+						IsOverage: false,
+						MeterID:   bucketedMaxMeter.ID,
+					},
+				},
+			}
+
+			// Calculate charges
+			lineItems, totalAmount, err := s.service.CalculateUsageCharges(
+				ctx,
+				s.testData.subscription,
+				usage,
+				s.testData.subscription.CurrentPeriodStart,
+				s.testData.subscription.CurrentPeriodEnd,
+			)
+
+			s.NoError(err, "Should not error for %s", tt.name)
+			s.Len(lineItems, 1, "Should have one line item for %s", tt.name)
+
+			s.True(tt.expectedAmount.Equal(totalAmount),
+				"Expected amount %s, got %s for %s", tt.expectedAmount, totalAmount, tt.name)
+
+			s.True(tt.expectedQuantity.Equal(lineItems[0].Quantity),
+				"Expected quantity %s, got %s for %s", tt.expectedQuantity, lineItems[0].Quantity, tt.name)
+
+			s.T().Logf("✅ %s: %s", tt.name, tt.description)
+			s.T().Logf("   Bucket values: %v", tt.bucketValues)
+			s.T().Logf("   Expected: Quantity=%s, Amount=%s", tt.expectedQuantity, tt.expectedAmount)
+			s.T().Logf("   Actual:   Quantity=%s, Amount=%s", lineItems[0].Quantity, totalAmount)
+		})
+	}
+}

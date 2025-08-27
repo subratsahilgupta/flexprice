@@ -1027,8 +1027,30 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			meterDisplayName = meter
 		}
 
-		quantity := usage.Value
-		cost := priceService.CalculateCost(ctx, priceObj, quantity)
+		// For bucketed max, we need to handle array of values
+		var cost decimal.Decimal
+		var quantity decimal.Decimal
+
+		// Get meter info
+		meterInfo := meterMap[meterID]
+		if priceObj.MeterID != "" && meterInfo != nil && meterInfo.ToMeter().IsBucketedMaxMeter() {
+			// For bucketed max, use the array of values
+			bucketedValues := make([]decimal.Decimal, len(usage.Results))
+			for i, result := range usage.Results {
+				bucketedValues[i] = result.Value
+			}
+			cost = priceService.CalculateBucketedCost(ctx, priceObj, bucketedValues)
+
+			// Calculate quantity as sum of all bucket maxes
+			quantity = decimal.Zero
+			for _, bucketValue := range bucketedValues {
+				quantity = quantity.Add(bucketValue)
+			}
+		} else {
+			// For all other cases, use the single value
+			quantity = usage.Value
+			cost = priceService.CalculateCost(ctx, priceObj, quantity)
+		}
 
 		s.Logger.Debugw("calculated usage for meter",
 			"meter_id", meterID,
