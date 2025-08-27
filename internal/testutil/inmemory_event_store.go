@@ -19,13 +19,11 @@ import (
 type InMemoryEventStore struct {
 	mu     sync.RWMutex
 	events map[string]*events.Event
-	// mockResults map[string]*events.AggregationResult // For testing bucketed max
 }
 
 func NewInMemoryEventStore() *InMemoryEventStore {
 	return &InMemoryEventStore{
 		events: make(map[string]*events.Event),
-		// mockResults: make(map[string]*events.AggregationResult),
 	}
 }
 
@@ -54,18 +52,6 @@ func (s *InMemoryEventStore) BulkInsertEvents(ctx context.Context, events []*eve
 func (s *InMemoryEventStore) GetUsage(ctx context.Context, params *events.UsageParams) (*events.AggregationResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	// // Check for mock results first (for testing bucketed max)
-	// // We need to check if this is called from GetUsageByMeter flow
-	// // In that case, we should check the event name to match the meter
-	// for meterID, mockResult := range s.mockResults {
-	// 	if meterID == params.EventName { // Use EventName as the key for mock results
-	// 		return mockResult, nil
-	// 	}
-	// }
-
-	// // Also check by a direct meter ID if available in context
-	// // This is a fallback for when we have the meter ID directly
 
 	var filteredEvents []*events.Event
 
@@ -624,15 +610,7 @@ func (s *InMemoryEventStore) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = make(map[string]*events.Event)
-	// s.mockResults = make(map[string]*events.AggregationResult)
 }
-
-// // SetMockUsageResults sets mock results for testing bucketed max aggregation
-// func (s *InMemoryEventStore) SetMockUsageResults(meterID string, result *events.AggregationResult) {
-// 	s.mu.Lock()
-// 	defer s.mu.Unlock()
-// 	s.mockResults[meterID] = result
-// }
 
 func (s *InMemoryEventStore) FindUnprocessedEvents(ctx context.Context, params *events.FindUnprocessedEventsParams) ([]*events.Event, error) {
 	return nil, ierr.NewError("not implemented").

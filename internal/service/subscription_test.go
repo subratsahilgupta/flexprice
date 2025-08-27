@@ -1731,16 +1731,6 @@ func (s *SubscriptionServiceSuite) TestGetUsageBySubscriptionWithBucketedMaxAggr
 				s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
 			}
 
-			// // Mock the event repository to return bucketed results
-			// eventRepo := s.GetStores().EventRepo.(*testutil.InMemoryEventStore)
-			// eventRepo.SetMockUsageResults(bucketedMaxMeter.EventName, &events.AggregationResult{
-			// 	Value: decimal.Zero, // Not used for bucketed max
-			// 	Results: []events.UsageResult{
-			// 		{WindowSize: s.testData.now.Add(-2 * time.Hour), Value: tc.bucketValues[0]}, // First bucket
-			// 		{WindowSize: s.testData.now.Add(-1 * time.Hour), Value: tc.bucketValues[1]}, // Second bucket
-			// 	},
-			// })
-
 			// Test the usage calculation
 			req := &dto.GetUsageBySubscriptionRequest{
 				SubscriptionID: testSub.ID,

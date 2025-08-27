@@ -1665,21 +1665,6 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithBucketedMaxAggregatio
 				},
 			}
 
-			// // Mock the event repository to return bucketed results
-			// s.eventRepo.SetMockUsageResults(bucketedMaxMeter.EventName, &events.AggregationResult{
-			// 	Value: tt.expectedQuantity, // Sum of all bucket maxes
-			// 	Results: func() []events.UsageResult {
-			// 		results := make([]events.UsageResult, len(tt.bucketValues))
-			// 		for i, val := range tt.bucketValues {
-			// 			results[i] = events.UsageResult{
-			// 				WindowSize: s.testData.now.Add(time.Duration(i) * time.Minute),
-			// 				Value:      val,
-			// 			}
-			// 		}
-			// 		return results
-			// 	}(),
-			// })
-
 			// Calculate charges
 			lineItems, totalAmount, err := s.service.CalculateUsageCharges(
 				ctx,
