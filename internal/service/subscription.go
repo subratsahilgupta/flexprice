@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -341,25 +342,67 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			PeriodEnd:      sub.CurrentPeriodEnd,
 			ReferencePoint: types.ReferencePointPeriodStart,
 		})
+		if err != nil {
+			return err
+		}
 
-		return err
+		// Process payment based on payment behavior if invoice was created
+		// Handle payment based on collection method and payment behavior
+		collectionMethod := types.CollectionMethod(sub.CollectionMethod)
+		paymentBehavior := types.PaymentBehavior(sub.PaymentBehavior)
+
+		if collectionMethod == types.CollectionMethodSendInvoice || paymentBehavior == types.PaymentBehaviorDefaultActive {
+			// Send invoice mode or default_active behavior - always activate subscription immediately
+			sub.SubscriptionStatus = types.SubscriptionStatusActive
+			err = s.SubRepo.Update(ctx, sub)
+			if err != nil {
+				return err
+			}
+		} else if invoice != nil && invoice.AmountDue.GreaterThan(decimal.Zero) {
+			// Charge automatically mode - process payment
+			paymentProcessor := NewSubscriptionPaymentProcessor(&s.ServiceParams)
+			paymentBehavior := types.PaymentBehavior(sub.PaymentBehavior)
+
+			// Refresh invoice to get latest state after any wallet payments
+			invoiceService := NewInvoiceService(s.ServiceParams)
+			refreshedInvoice, refreshErr := invoiceService.GetInvoice(ctx, invoice.ID)
+			if refreshErr != nil {
+				s.Logger.Errorw("failed to refresh invoice before payment processing",
+					"error", refreshErr,
+					"invoice_id", invoice.ID,
+					"subscription_id", sub.ID,
+				)
+				// Continue with original invoice if refresh fails
+				refreshedInvoice = invoice
+			}
+
+			err = paymentProcessor.HandlePaymentBehavior(ctx, sub, refreshedInvoice, paymentBehavior)
+			if err != nil {
+				// For error_if_incomplete, this will fail the transaction
+				return err
+			}
+		} else {
+			// No payment required, activate subscription
+			sub.SubscriptionStatus = types.SubscriptionStatusActive
+			err = s.SubRepo.Update(ctx, sub)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// if the subscription is created with incomplete status, but it doesn't create an invoice, we need to mark it as active
-	// This applies regardless of collection method - if there's no invoice to pay, the subscription should be active
-	if sub.SubscriptionStatus == types.SubscriptionStatusIncomplete && (invoice == nil || invoice.PaymentStatus == types.PaymentStatusSucceeded) {
-		sub.SubscriptionStatus = types.SubscriptionStatusActive
-		err = s.SubRepo.Update(ctx, sub)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Update response to ensure it has the latest subscription data
 	response.Subscription = sub
+
+	// Include latest invoice if created
+	if invoice != nil {
+		response.LatestInvoice = invoice
+	}
 
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionCreated, sub.ID)
 	return response, nil
