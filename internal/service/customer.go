@@ -85,6 +85,17 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 					cust.Metadata = make(map[string]string)
 				}
 				cust.Metadata[mapping.Provider+"_customer_id"] = mapping.ID
+
+				// Update provider customer metadata with FlexPrice info
+				integrationService := NewIntegrationService(s.ServiceParams)
+				if err := integrationService.UpdateProviderCustomerMetadata(txCtx, mapping.Provider, mapping.ID, cust); err != nil {
+					s.Logger.Errorw("failed to update provider customer metadata",
+						"provider", mapping.Provider,
+						"provider_customer_id", mapping.ID,
+						"customer_id", cust.ID,
+						"error", err)
+					// Don't fail the request, just log the error
+				}
 			}
 
 			// Update customer with the new metadata
@@ -345,6 +356,17 @@ func (s *customerService) UpdateCustomer(ctx context.Context, id string, req dto
 				cust.Metadata = make(map[string]string)
 			}
 			cust.Metadata[mapping.Provider+"_customer_id"] = mapping.ID
+
+			// Update provider customer metadata with FlexPrice info
+			integrationService := NewIntegrationService(s.ServiceParams)
+			if err := integrationService.UpdateProviderCustomerMetadata(ctx, mapping.Provider, mapping.ID, cust); err != nil {
+				s.Logger.Errorw("failed to update provider customer metadata",
+					"provider", mapping.Provider,
+					"provider_customer_id", mapping.ID,
+					"customer_id", cust.ID,
+					"error", err)
+				// Don't fail the request, just log the error
+			}
 		}
 	}
 

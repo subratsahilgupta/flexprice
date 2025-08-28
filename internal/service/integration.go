@@ -28,6 +28,9 @@ type IntegrationService interface {
 
 	// ValidateIntegrationEntityMappings validates that the provided integration entity mappings exist in their respective providers
 	ValidateIntegrationEntityMappings(ctx context.Context, mappings []*dto.IntegrationEntityMapping) error
+
+	// UpdateProviderCustomerMetadata updates the customer metadata in the external provider
+	UpdateProviderCustomerMetadata(ctx context.Context, provider, providerCustomerID string, cust *customer.Customer) error
 }
 
 type integrationService struct {
@@ -641,4 +644,20 @@ func (s *integrationService) validateStripeCustomer(ctx context.Context, conn *c
 		"stripe_customer_email", cust.Email)
 
 	return nil
+}
+
+// UpdateProviderCustomerMetadata updates the customer metadata in the external provider
+func (s *integrationService) UpdateProviderCustomerMetadata(ctx context.Context, provider, providerCustomerID string, cust *customer.Customer) error {
+	switch provider {
+	case "stripe":
+		stripeService := NewStripeService(s.ServiceParams)
+		return stripeService.UpdateStripeCustomerMetadata(ctx, providerCustomerID, cust)
+	case "razorpay":
+		// TODO: Implement Razorpay metadata update when needed
+		s.Logger.Infow("razorpay metadata update not implemented", "provider_customer_id", providerCustomerID)
+		return nil
+	default:
+		s.Logger.Infow("metadata update not supported for provider", "provider", provider)
+		return nil
+	}
 }
