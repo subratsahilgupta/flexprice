@@ -272,7 +272,7 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 		CustomerTimezone:      subscription.CustomerTimezone,
 		OriginalAmountPaid:    decimal.Zero,
 		PreviousCreditsIssued: decimal.Zero,
-		ProrationStrategy:     types.StrategyDayBased,
+		ProrationStrategy:     types.StrategySecondBased,
 		Currency:              price.Currency,
 		PlanDisplayName:       item.PlanDisplayName,
 	}, nil
