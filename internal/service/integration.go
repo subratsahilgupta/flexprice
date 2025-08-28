@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/stripe/stripe-go/v79"
+	stripecustomer "github.com/stripe/stripe-go/v79/customer"
 )
 
 // IntegrationService handles generic integration operations with multiple providers
@@ -24,6 +25,9 @@ type IntegrationService interface {
 
 	// GetAvailableProviders returns all available providers for the current tenant
 	GetAvailableProviders(ctx context.Context) ([]*connection.Connection, error)
+
+	// ValidateIntegrationEntityMappings validates that the provided integration entity mappings exist in their respective providers
+	ValidateIntegrationEntityMappings(ctx context.Context, mappings []*dto.IntegrationEntityMapping) error
 }
 
 type integrationService struct {
@@ -536,4 +540,105 @@ func (s *integrationService) findCustomerByEmail(ctx context.Context, email stri
 	}
 
 	return nil, nil // No customer found
+}
+
+// ValidateIntegrationEntityMappings validates that the provided integration entity mappings exist in their respective providers
+func (s *integrationService) ValidateIntegrationEntityMappings(ctx context.Context, mappings []*dto.IntegrationEntityMapping) error {
+	if len(mappings) == 0 {
+		return nil
+	}
+
+	// Get all available connections for this tenant
+	connections, err := s.getAvailableConnections(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Create a map of provider types to connections for quick lookup
+	providerConnections := make(map[string]*connection.Connection)
+	for _, conn := range connections {
+		providerConnections[string(conn.ProviderType)] = conn
+	}
+
+	// Validate each mapping
+	for _, mapping := range mappings {
+		conn, exists := providerConnections[mapping.Provider]
+		if !exists {
+			return ierr.NewError("provider not configured").
+				WithHint(fmt.Sprintf("Provider %s is not configured for this environment", mapping.Provider)).
+				WithReportableDetails(map[string]interface{}{
+					"provider": mapping.Provider,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		// Validate based on provider type
+		switch mapping.Provider {
+		case "stripe":
+			if err := s.validateStripeCustomer(ctx, conn, mapping.ID); err != nil {
+				return err
+			}
+		case "razorpay":
+			// TODO: Implement Razorpay validation when needed
+			return ierr.NewError("razorpay validation not implemented").
+				WithHint("Razorpay customer validation is not yet implemented").
+				Mark(ierr.ErrNotFound)
+		default:
+			return ierr.NewError("unsupported provider").
+				WithHint(fmt.Sprintf("Provider %s is not supported", mapping.Provider)).
+				WithReportableDetails(map[string]interface{}{
+					"provider": mapping.Provider,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
+// validateStripeCustomer validates that a customer exists in Stripe
+func (s *integrationService) validateStripeCustomer(ctx context.Context, conn *connection.Connection, customerID string) error {
+	stripeService := NewStripeService(s.ServiceParams)
+
+	// Get Stripe configuration
+	stripeConfig, err := stripeService.GetDecryptedStripeConfig(conn)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to get Stripe configuration").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Initialize Stripe client with the secret key
+	// We use the basic customer.Get function as requested
+	stripe.Key = stripeConfig.SecretKey
+
+	// Validate that the customer exists in Stripe
+	cust, err := stripecustomer.Get(customerID, nil)
+	if err != nil {
+		s.Logger.Errorw("failed to validate Stripe customer",
+			"customer_id", customerID,
+			"error", err)
+
+		return ierr.WithError(err).
+			WithHint(fmt.Sprintf("Customer with ID %s does not exist in Stripe or is not accessible", customerID)).
+			WithReportableDetails(map[string]interface{}{
+				"stripe_customer_id": customerID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	if cust == nil {
+		return ierr.NewError("stripe customer not found").
+			WithHint(fmt.Sprintf("Customer with ID %s was not found in Stripe", customerID)).
+			WithReportableDetails(map[string]interface{}{
+				"stripe_customer_id": customerID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	s.Logger.Infow("stripe customer validation successful",
+		"customer_id", customerID,
+		"stripe_customer_email", cust.Email)
+
+	return nil
 }

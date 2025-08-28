@@ -46,10 +46,51 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 			Mark(ierr.ErrValidation)
 	}
 
+	// Validate integration entity mappings if provided
+	if len(req.IntegrationEntityMapping) > 0 {
+		integrationService := NewIntegrationService(s.ServiceParams)
+		if err := integrationService.ValidateIntegrationEntityMappings(ctx, req.IntegrationEntityMapping); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		if err := s.CustomerRepo.Create(txCtx, cust); err != nil {
 			// No need to wrap the error as the repository already returns properly formatted errors
 			return err
+		}
+
+		// Create integration entity mappings if provided
+		if len(req.IntegrationEntityMapping) > 0 {
+			entityMappingService := NewEntityIntegrationMappingService(s.ServiceParams)
+			for _, mapping := range req.IntegrationEntityMapping {
+				mappingReq := dto.CreateEntityIntegrationMappingRequest{
+					EntityID:         cust.ID,
+					EntityType:       types.IntegrationEntityTypeCustomer,
+					ProviderType:     mapping.Provider,
+					ProviderEntityID: mapping.ID,
+					Metadata: map[string]interface{}{
+						"created_via": "api",
+						"skip_sync":   true, // Skip automatic sync since we're using existing provider entity
+					},
+				}
+
+				_, err := entityMappingService.CreateEntityIntegrationMapping(txCtx, mappingReq)
+				if err != nil {
+					return err
+				}
+
+				// Update customer metadata to include provider mapping info
+				if cust.Metadata == nil {
+					cust.Metadata = make(map[string]string)
+				}
+				cust.Metadata[mapping.Provider+"_customer_id"] = mapping.ID
+			}
+
+			// Update customer with the new metadata
+			if err := s.CustomerRepo.Update(txCtx, cust); err != nil {
+				return err
+			}
 		}
 
 		taxService := NewTaxService(s.ServiceParams)
@@ -96,7 +137,8 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 	s.publishWebhookEvent(ctx, types.WebhookEventCustomerCreated, cust.ID)
 
 	// Sync customer to all available providers if ConnectionRepo is available
-	if s.ConnectionRepo != nil {
+	// Skip automatic sync if integration entity mappings were provided
+	if s.ConnectionRepo != nil && len(req.IntegrationEntityMapping) == 0 {
 		integrationService := NewIntegrationService(s.ServiceParams)
 		// Use go routine to avoid blocking the response
 		go func() {
@@ -114,6 +156,10 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 					"customer_id", cust.ID)
 			}
 		}()
+	} else if len(req.IntegrationEntityMapping) > 0 {
+		s.Logger.Infow("skipping automatic provider sync due to provided integration entity mappings",
+			"customer_id", cust.ID,
+			"mappings_count", len(req.IntegrationEntityMapping))
 	}
 
 	return &dto.CustomerResponse{Customer: cust}, nil
@@ -182,6 +228,14 @@ func (s *customerService) UpdateCustomer(ctx context.Context, id string, req dto
 		return nil, err
 	}
 
+	// Validate integration entity mappings if provided
+	if len(req.IntegrationEntityMapping) > 0 {
+		integrationService := NewIntegrationService(s.ServiceParams)
+		if err := integrationService.ValidateIntegrationEntityMappings(ctx, req.IntegrationEntityMapping); err != nil {
+			return nil, err
+		}
+	}
+
 	cust, err := s.CustomerRepo.Get(ctx, id)
 	if err != nil {
 		// No need to wrap the error as the repository already returns properly formatted errors
@@ -234,6 +288,66 @@ func (s *customerService) UpdateCustomer(ctx context.Context, id string, req dto
 		cust.Metadata = req.Metadata
 	}
 
+	// Handle integration entity mappings if provided
+	if len(req.IntegrationEntityMapping) > 0 {
+		entityMappingService := NewEntityIntegrationMappingService(s.ServiceParams)
+		for _, mapping := range req.IntegrationEntityMapping {
+			// Check if mapping already exists
+			filter := &types.EntityIntegrationMappingFilter{
+				EntityID:      cust.ID,
+				EntityType:    types.IntegrationEntityTypeCustomer,
+				ProviderTypes: []string{mapping.Provider},
+			}
+
+			existingMappings, err := entityMappingService.GetEntityIntegrationMappings(ctx, filter)
+			if err != nil {
+				return nil, err
+			}
+
+			if existingMappings != nil && len(existingMappings.Items) > 0 {
+				// Update existing mapping
+				existingMapping := existingMappings.Items[0]
+				updateReq := dto.UpdateEntityIntegrationMappingRequest{
+					ProviderEntityID: &mapping.ID,
+					Metadata: map[string]interface{}{
+						"updated_via": "api",
+						"skip_sync":   true,
+						"updated_at":  time.Now().UTC().Format(time.RFC3339),
+					},
+				}
+
+				_, err := entityMappingService.UpdateEntityIntegrationMapping(ctx, existingMapping.ID, updateReq)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				// Create new mapping
+				mappingReq := dto.CreateEntityIntegrationMappingRequest{
+					EntityID:         cust.ID,
+					EntityType:       types.IntegrationEntityTypeCustomer,
+					ProviderType:     mapping.Provider,
+					ProviderEntityID: mapping.ID,
+					Metadata: map[string]interface{}{
+						"created_via": "api",
+						"skip_sync":   true,
+						"created_at":  time.Now().UTC().Format(time.RFC3339),
+					},
+				}
+
+				_, err := entityMappingService.CreateEntityIntegrationMapping(ctx, mappingReq)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			// Update customer metadata to include provider mapping info
+			if cust.Metadata == nil {
+				cust.Metadata = make(map[string]string)
+			}
+			cust.Metadata[mapping.Provider+"_customer_id"] = mapping.ID
+		}
+	}
+
 	// Validate address fields after update
 	if err := customer.ValidateAddress(cust); err != nil {
 		return nil, ierr.WithError(err).
@@ -250,6 +364,7 @@ func (s *customerService) UpdateCustomer(ctx context.Context, id string, req dto
 	}
 
 	s.publishWebhookEvent(ctx, types.WebhookEventCustomerUpdated, cust.ID)
+
 	return &dto.CustomerResponse{Customer: cust}, nil
 }
 
