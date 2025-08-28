@@ -801,22 +801,19 @@ func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Pri
 	case types.BILLING_TIER_SLAB:
 		remainingQuantity := quantity
 		tierStartQuantity := decimal.Zero
-		for i, tier := range price.Tiers {
+		for _, tier := range price.Tiers {
 			var tierQuantity = remainingQuantity
 			if tier.UpTo != nil {
 				upTo := decimal.NewFromUint64(*tier.UpTo)
-				// Use GreaterThan to make up_to INCLUSIVE
-				// If remainingQuantity > upTo, then tierQuantity = upTo (inclusive)
-				// If remainingQuantity <= upTo, then tierQuantity = remainingQuantity
-				// Note: Quantity is already decimal, up_to is converted to decimal for comparison
-				// Edge cases: Handles decimal quantities like 1000.5, 1024.75, etc.
-				// If remainingQuantity > up_to (even by small decimals), excess goes to next tier
-				if remainingQuantity.GreaterThan(upTo) {
-					if i > 0 {
-						tierStartQuantity = decimal.NewFromUint64(*price.Tiers[i-1].UpTo)
-					}
-					tierQuantity = upTo.Sub(tierStartQuantity)
+				tierCapacity := upTo.Sub(tierStartQuantity)
+				
+				// Use the minimum of remaining quantity and tier capacity
+				if remainingQuantity.GreaterThan(tierCapacity) {
+					tierQuantity = tierCapacity
 				}
+				
+				// Update tier start for next iteration
+				tierStartQuantity = upTo
 			}
 
 			// Calculate tier cost with full precision and handling of flat amount
@@ -969,19 +966,20 @@ func (s *priceService) calculateTieredCostWithBreakup(ctx context.Context, price
 
 	case types.BILLING_TIER_SLAB:
 		remainingQuantity := quantity
+		tierStartQuantity := decimal.Zero
 		for i, tier := range price.Tiers {
 			var tierQuantity = remainingQuantity
 			if tier.UpTo != nil {
 				upTo := decimal.NewFromUint64(*tier.UpTo)
-				// Use GreaterThan to make up_to INCLUSIVE
-				// If remainingQuantity > upTo, then tierQuantity = upTo (inclusive)
-				// If remainingQuantity <= upTo, then tierQuantity = remainingQuantity
-				// Note: Quantity is already decimal, up_to is converted to decimal for comparison
-				// Edge cases: Handles decimal quantities like 1000.5, 1024.75, etc.
-				// If remainingQuantity > up_to (even by small decimals), excess goes to next tier
-				if remainingQuantity.GreaterThan(upTo) {
-					tierQuantity = upTo
+				tierCapacity := upTo.Sub(tierStartQuantity)
+				
+				// Use the minimum of remaining quantity and tier capacity
+				if remainingQuantity.GreaterThan(tierCapacity) {
+					tierQuantity = tierCapacity
 				}
+				
+				// Update tier start for next iteration
+				tierStartQuantity = upTo
 			}
 
 			// Calculate tier cost with full precision and handling of flat amount
