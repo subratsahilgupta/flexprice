@@ -12,7 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/stripe/stripe-go/v79"
-	stripecustomer "github.com/stripe/stripe-go/v79/customer"
+	"github.com/stripe/stripe-go/v79/client"
 )
 
 // IntegrationService handles generic integration operations with multiple providers
@@ -612,11 +612,12 @@ func (s *integrationService) validateStripeCustomer(ctx context.Context, conn *c
 	}
 
 	// Initialize Stripe client with the secret key
-	// We use the basic customer.Get function as requested
-	stripe.Key = stripeConfig.SecretKey
+	// Use dedicated client instance to avoid race conditions
+	sc := &client.API{}
+	sc.Init(stripeConfig.SecretKey, nil)
 
 	// Validate that the customer exists in Stripe
-	cust, err := stripecustomer.Get(customerID, nil)
+	cust, err := sc.Customers.Get(customerID, nil)
 	if err != nil {
 		s.Logger.Errorw("failed to validate Stripe customer",
 			"customer_id", customerID,
