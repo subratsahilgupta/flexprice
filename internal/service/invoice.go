@@ -694,11 +694,29 @@ func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, pay
 	}
 
 	// try to process payment for the invoice based on behavior and log any errors
-	// this is not a blocker for the invoice to be processed
 	if err := s.performpaymentattemptbasedonbheaviour(ctx, inv, paymentParams); err != nil {
 		s.Logger.Errorw("failed to process payment for invoice",
 			"error", err.Error(),
 			"invoice_id", inv.ID)
+
+		// For error_if_incomplete behavior, payment failure should block invoice processing
+		shouldReturnError := false
+		if paymentParams != nil && paymentParams.PaymentBehavior != nil &&
+			*paymentParams.PaymentBehavior == types.PaymentBehaviorErrorIfIncomplete {
+			shouldReturnError = true
+		} else if inv.SubscriptionID != nil {
+			// Check subscription's payment behavior if no explicit paymentParams
+			sub, subErr := s.SubRepo.Get(ctx, *inv.SubscriptionID)
+			if subErr == nil && sub.PaymentBehavior == string(types.PaymentBehaviorErrorIfIncomplete) {
+				shouldReturnError = true
+			}
+		}
+
+		if shouldReturnError {
+			return err
+		}
+
+		// For other behaviors, payment failure is not a blocker
 	}
 
 	return nil
