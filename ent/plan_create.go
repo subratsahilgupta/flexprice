@@ -151,6 +151,20 @@ func (pc *PlanCreate) SetNillableDescription(s *string) *PlanCreate {
 	return pc
 }
 
+// SetDisplayOrder sets the "display_order" field.
+func (pc *PlanCreate) SetDisplayOrder(i int) *PlanCreate {
+	pc.mutation.SetDisplayOrder(i)
+	return pc
+}
+
+// SetNillableDisplayOrder sets the "display_order" field if the given value is not nil.
+func (pc *PlanCreate) SetNillableDisplayOrder(i *int) *PlanCreate {
+	if i != nil {
+		pc.SetDisplayOrder(*i)
+	}
+	return pc
+}
+
 // SetID sets the "id" field.
 func (pc *PlanCreate) SetID(s string) *PlanCreate {
 	pc.mutation.SetID(s)
@@ -330,6 +344,10 @@ func (pc *PlanCreate) createSpec() (*Plan, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.Description(); ok {
 		_spec.SetField(plan.FieldDescription, field.TypeString, value)
 		_node.Description = value
+	}
+	if value, ok := pc.mutation.DisplayOrder(); ok {
+		_spec.SetField(plan.FieldDisplayOrder, field.TypeInt, value)
+		_node.DisplayOrder = &value
 	}
 	if nodes := pc.mutation.CreditGrantsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

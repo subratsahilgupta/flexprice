@@ -129,11 +129,26 @@ func BuildOrders(sort []*types.SortCondition, resolve FieldResolver) ([]OrderFun
 			return nil, err
 		}
 		var of OrderFunc
-		switch s.Direction {
-		case types.SortDirectionAsc:
-			of = func(sel *sql.Selector) { sel.OrderBy(sql.Asc(fi)) }
-		case types.SortDirectionDesc:
-			of = func(sel *sql.Selector) { sel.OrderBy(sql.Desc(fi)) }
+
+		// Special handling for display_order
+		if s.Field == "display_order" {
+			if s.Direction == types.SortDirectionDesc {
+				of = func(sel *sql.Selector) {
+					sel.OrderBy("(CASE WHEN " + fi + " IS NULL THEN 2 ELSE 1 END), " + fi + " DESC NULLS LAST, created_at DESC")
+				}
+			} else {
+				of = func(sel *sql.Selector) {
+					sel.OrderBy("(CASE WHEN " + fi + " IS NULL THEN 2 ELSE 1 END), " + fi + " ASC NULLS LAST, created_at DESC")
+				}
+			}
+		} else {
+			// Normal sorting for other fields
+			switch s.Direction {
+			case types.SortDirectionAsc:
+				of = func(sel *sql.Selector) { sel.OrderBy(sql.Asc(fi)) }
+			case types.SortDirectionDesc:
+				of = func(sel *sql.Selector) { sel.OrderBy(sql.Desc(fi)) }
+			}
 		}
 		if of != nil {
 			out = append(out, of)

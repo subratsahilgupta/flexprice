@@ -45,6 +45,8 @@ const (
 	FieldIsSoftLimit = "is_soft_limit"
 	// FieldStaticValue holds the string denoting the static_value field in the database.
 	FieldStaticValue = "static_value"
+	// FieldDisplayOrder holds the string denoting the display_order field in the database.
+	FieldDisplayOrder = "display_order"
 	// Table holds the table name of the entitlement in the database.
 	Table = "entitlements"
 )
@@ -68,6 +70,7 @@ var Columns = []string{
 	FieldUsageResetPeriod,
 	FieldIsSoftLimit,
 	FieldStaticValue,
+	FieldDisplayOrder,
 }
 
 // ForeignKeys holds the SQL foreign-keys that are owned by the "entitlements"
@@ -204,4 +207,9 @@ func ByIsSoftLimit(opts ...sql.OrderTermOption) OrderOption {
 // ByStaticValue orders the results by the static_value field.
 func ByStaticValue(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStaticValue, opts...).ToFunc()
+}
+
+// ByDisplayOrder orders the results by the display_order field.
+func ByDisplayOrder(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDisplayOrder, opts...).ToFunc()
 }

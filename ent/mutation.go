@@ -18211,6 +18211,8 @@ type EntitlementMutation struct {
 	usage_reset_period *string
 	is_soft_limit      *bool
 	static_value       *string
+	display_order      *int
+	adddisplay_order   *int
 	clearedFields      map[string]struct{}
 	done               bool
 	oldValue           func(context.Context) (*Entitlement, error)
@@ -19022,6 +19024,76 @@ func (m *EntitlementMutation) ResetStaticValue() {
 	delete(m.clearedFields, entitlement.FieldStaticValue)
 }
 
+// SetDisplayOrder sets the "display_order" field.
+func (m *EntitlementMutation) SetDisplayOrder(i int) {
+	m.display_order = &i
+	m.adddisplay_order = nil
+}
+
+// DisplayOrder returns the value of the "display_order" field in the mutation.
+func (m *EntitlementMutation) DisplayOrder() (r int, exists bool) {
+	v := m.display_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayOrder returns the old "display_order" field's value of the Entitlement entity.
+// If the Entitlement object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *EntitlementMutation) OldDisplayOrder(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayOrder: %w", err)
+	}
+	return oldValue.DisplayOrder, nil
+}
+
+// AddDisplayOrder adds i to the "display_order" field.
+func (m *EntitlementMutation) AddDisplayOrder(i int) {
+	if m.adddisplay_order != nil {
+		*m.adddisplay_order += i
+	} else {
+		m.adddisplay_order = &i
+	}
+}
+
+// AddedDisplayOrder returns the value that was added to the "display_order" field in this mutation.
+func (m *EntitlementMutation) AddedDisplayOrder() (r int, exists bool) {
+	v := m.adddisplay_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (m *EntitlementMutation) ClearDisplayOrder() {
+	m.display_order = nil
+	m.adddisplay_order = nil
+	m.clearedFields[entitlement.FieldDisplayOrder] = struct{}{}
+}
+
+// DisplayOrderCleared returns if the "display_order" field was cleared in this mutation.
+func (m *EntitlementMutation) DisplayOrderCleared() bool {
+	_, ok := m.clearedFields[entitlement.FieldDisplayOrder]
+	return ok
+}
+
+// ResetDisplayOrder resets all changes to the "display_order" field.
+func (m *EntitlementMutation) ResetDisplayOrder() {
+	m.display_order = nil
+	m.adddisplay_order = nil
+	delete(m.clearedFields, entitlement.FieldDisplayOrder)
+}
+
 // Where appends a list predicates to the EntitlementMutation builder.
 func (m *EntitlementMutation) Where(ps ...predicate.Entitlement) {
 	m.predicates = append(m.predicates, ps...)
@@ -19056,7 +19128,7 @@ func (m *EntitlementMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *EntitlementMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 17)
 	if m.tenant_id != nil {
 		fields = append(fields, entitlement.FieldTenantID)
 	}
@@ -19105,6 +19177,9 @@ func (m *EntitlementMutation) Fields() []string {
 	if m.static_value != nil {
 		fields = append(fields, entitlement.FieldStaticValue)
 	}
+	if m.display_order != nil {
+		fields = append(fields, entitlement.FieldDisplayOrder)
+	}
 	return fields
 }
 
@@ -19145,6 +19220,8 @@ func (m *EntitlementMutation) Field(name string) (ent.Value, bool) {
 		return m.IsSoftLimit()
 	case entitlement.FieldStaticValue:
 		return m.StaticValue()
+	case entitlement.FieldDisplayOrder:
+		return m.DisplayOrder()
 	}
 	return nil, false
 }
@@ -19186,6 +19263,8 @@ func (m *EntitlementMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldIsSoftLimit(ctx)
 	case entitlement.FieldStaticValue:
 		return m.OldStaticValue(ctx)
+	case entitlement.FieldDisplayOrder:
+		return m.OldDisplayOrder(ctx)
 	}
 	return nil, fmt.Errorf("unknown Entitlement field %s", name)
 }
@@ -19307,6 +19386,13 @@ func (m *EntitlementMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetStaticValue(v)
 		return nil
+	case entitlement.FieldDisplayOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayOrder(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Entitlement field %s", name)
 }
@@ -19318,6 +19404,9 @@ func (m *EntitlementMutation) AddedFields() []string {
 	if m.addusage_limit != nil {
 		fields = append(fields, entitlement.FieldUsageLimit)
 	}
+	if m.adddisplay_order != nil {
+		fields = append(fields, entitlement.FieldDisplayOrder)
+	}
 	return fields
 }
 
@@ -19328,6 +19417,8 @@ func (m *EntitlementMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case entitlement.FieldUsageLimit:
 		return m.AddedUsageLimit()
+	case entitlement.FieldDisplayOrder:
+		return m.AddedDisplayOrder()
 	}
 	return nil, false
 }
@@ -19343,6 +19434,13 @@ func (m *EntitlementMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddUsageLimit(v)
+		return nil
+	case entitlement.FieldDisplayOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDisplayOrder(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Entitlement numeric field %s", name)
@@ -19375,6 +19473,9 @@ func (m *EntitlementMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(entitlement.FieldStaticValue) {
 		fields = append(fields, entitlement.FieldStaticValue)
+	}
+	if m.FieldCleared(entitlement.FieldDisplayOrder) {
+		fields = append(fields, entitlement.FieldDisplayOrder)
 	}
 	return fields
 }
@@ -19413,6 +19514,9 @@ func (m *EntitlementMutation) ClearField(name string) error {
 		return nil
 	case entitlement.FieldStaticValue:
 		m.ClearStaticValue()
+		return nil
+	case entitlement.FieldDisplayOrder:
+		m.ClearDisplayOrder()
 		return nil
 	}
 	return fmt.Errorf("unknown Entitlement nullable field %s", name)
@@ -19469,6 +19573,9 @@ func (m *EntitlementMutation) ResetField(name string) error {
 		return nil
 	case entitlement.FieldStaticValue:
 		m.ResetStaticValue()
+		return nil
+	case entitlement.FieldDisplayOrder:
+		m.ResetDisplayOrder()
 		return nil
 	}
 	return fmt.Errorf("unknown Entitlement field %s", name)
@@ -32719,6 +32826,8 @@ type PlanMutation struct {
 	lookup_key           *string
 	name                 *string
 	description          *string
+	display_order        *int
+	adddisplay_order     *int
 	clearedFields        map[string]struct{}
 	credit_grants        map[string]struct{}
 	removedcredit_grants map[string]struct{}
@@ -33306,6 +33415,76 @@ func (m *PlanMutation) ResetDescription() {
 	delete(m.clearedFields, plan.FieldDescription)
 }
 
+// SetDisplayOrder sets the "display_order" field.
+func (m *PlanMutation) SetDisplayOrder(i int) {
+	m.display_order = &i
+	m.adddisplay_order = nil
+}
+
+// DisplayOrder returns the value of the "display_order" field in the mutation.
+func (m *PlanMutation) DisplayOrder() (r int, exists bool) {
+	v := m.display_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayOrder returns the old "display_order" field's value of the Plan entity.
+// If the Plan object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PlanMutation) OldDisplayOrder(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayOrder: %w", err)
+	}
+	return oldValue.DisplayOrder, nil
+}
+
+// AddDisplayOrder adds i to the "display_order" field.
+func (m *PlanMutation) AddDisplayOrder(i int) {
+	if m.adddisplay_order != nil {
+		*m.adddisplay_order += i
+	} else {
+		m.adddisplay_order = &i
+	}
+}
+
+// AddedDisplayOrder returns the value that was added to the "display_order" field in this mutation.
+func (m *PlanMutation) AddedDisplayOrder() (r int, exists bool) {
+	v := m.adddisplay_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDisplayOrder clears the value of the "display_order" field.
+func (m *PlanMutation) ClearDisplayOrder() {
+	m.display_order = nil
+	m.adddisplay_order = nil
+	m.clearedFields[plan.FieldDisplayOrder] = struct{}{}
+}
+
+// DisplayOrderCleared returns if the "display_order" field was cleared in this mutation.
+func (m *PlanMutation) DisplayOrderCleared() bool {
+	_, ok := m.clearedFields[plan.FieldDisplayOrder]
+	return ok
+}
+
+// ResetDisplayOrder resets all changes to the "display_order" field.
+func (m *PlanMutation) ResetDisplayOrder() {
+	m.display_order = nil
+	m.adddisplay_order = nil
+	delete(m.clearedFields, plan.FieldDisplayOrder)
+}
+
 // AddCreditGrantIDs adds the "credit_grants" edge to the CreditGrant entity by ids.
 func (m *PlanMutation) AddCreditGrantIDs(ids ...string) {
 	if m.credit_grants == nil {
@@ -33394,7 +33573,7 @@ func (m *PlanMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PlanMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.tenant_id != nil {
 		fields = append(fields, plan.FieldTenantID)
 	}
@@ -33428,6 +33607,9 @@ func (m *PlanMutation) Fields() []string {
 	if m.description != nil {
 		fields = append(fields, plan.FieldDescription)
 	}
+	if m.display_order != nil {
+		fields = append(fields, plan.FieldDisplayOrder)
+	}
 	return fields
 }
 
@@ -33458,6 +33640,8 @@ func (m *PlanMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case plan.FieldDescription:
 		return m.Description()
+	case plan.FieldDisplayOrder:
+		return m.DisplayOrder()
 	}
 	return nil, false
 }
@@ -33489,6 +33673,8 @@ func (m *PlanMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldName(ctx)
 	case plan.FieldDescription:
 		return m.OldDescription(ctx)
+	case plan.FieldDisplayOrder:
+		return m.OldDisplayOrder(ctx)
 	}
 	return nil, fmt.Errorf("unknown Plan field %s", name)
 }
@@ -33575,6 +33761,13 @@ func (m *PlanMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDescription(v)
 		return nil
+	case plan.FieldDisplayOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayOrder(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Plan field %s", name)
 }
@@ -33582,13 +33775,21 @@ func (m *PlanMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *PlanMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.adddisplay_order != nil {
+		fields = append(fields, plan.FieldDisplayOrder)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *PlanMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case plan.FieldDisplayOrder:
+		return m.AddedDisplayOrder()
+	}
 	return nil, false
 }
 
@@ -33597,6 +33798,13 @@ func (m *PlanMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *PlanMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case plan.FieldDisplayOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDisplayOrder(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Plan numeric field %s", name)
 }
@@ -33622,6 +33830,9 @@ func (m *PlanMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(plan.FieldDescription) {
 		fields = append(fields, plan.FieldDescription)
+	}
+	if m.FieldCleared(plan.FieldDisplayOrder) {
+		fields = append(fields, plan.FieldDisplayOrder)
 	}
 	return fields
 }
@@ -33654,6 +33865,9 @@ func (m *PlanMutation) ClearField(name string) error {
 		return nil
 	case plan.FieldDescription:
 		m.ClearDescription()
+		return nil
+	case plan.FieldDisplayOrder:
+		m.ClearDisplayOrder()
 		return nil
 	}
 	return fmt.Errorf("unknown Plan nullable field %s", name)
@@ -33695,6 +33909,9 @@ func (m *PlanMutation) ResetField(name string) error {
 		return nil
 	case plan.FieldDescription:
 		m.ResetDescription()
+		return nil
+	case plan.FieldDisplayOrder:
+		m.ResetDisplayOrder()
 		return nil
 	}
 	return fmt.Errorf("unknown Plan field %s", name)

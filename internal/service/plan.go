@@ -308,6 +308,21 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 			entFilter = entFilter.WithExpand(string(types.ExpandFeatures))
 		}
 
+		// Apply the same sort order as plans for display_order
+		if filter.Sort != nil {
+			for _, sort := range filter.Sort {
+				if sort.Field == "display_order" {
+					entFilter.Sort = []*types.SortCondition{
+						{
+							Field:     "display_order",
+							Direction: sort.Direction,
+						},
+					}
+					break
+				}
+			}
+		}
+
 		entitlements, err := entitlementService.ListEntitlements(ctx, entFilter)
 		if err != nil {
 			return nil, err

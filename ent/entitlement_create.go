@@ -220,6 +220,20 @@ func (ec *EntitlementCreate) SetNillableStaticValue(s *string) *EntitlementCreat
 	return ec
 }
 
+// SetDisplayOrder sets the "display_order" field.
+func (ec *EntitlementCreate) SetDisplayOrder(i int) *EntitlementCreate {
+	ec.mutation.SetDisplayOrder(i)
+	return ec
+}
+
+// SetNillableDisplayOrder sets the "display_order" field if the given value is not nil.
+func (ec *EntitlementCreate) SetNillableDisplayOrder(i *int) *EntitlementCreate {
+	if i != nil {
+		ec.SetDisplayOrder(*i)
+	}
+	return ec
+}
+
 // SetID sets the "id" field.
 func (ec *EntitlementCreate) SetID(s string) *EntitlementCreate {
 	ec.mutation.SetID(s)
@@ -435,6 +449,10 @@ func (ec *EntitlementCreate) createSpec() (*Entitlement, *sqlgraph.CreateSpec) {
 	if value, ok := ec.mutation.StaticValue(); ok {
 		_spec.SetField(entitlement.FieldStaticValue, field.TypeString, value)
 		_node.StaticValue = value
+	}
+	if value, ok := ec.mutation.DisplayOrder(); ok {
+		_spec.SetField(entitlement.FieldDisplayOrder, field.TypeInt, value)
+		_node.DisplayOrder = &value
 	}
 	return _node, _spec
 }
