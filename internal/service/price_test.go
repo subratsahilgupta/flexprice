@@ -208,9 +208,11 @@ func (s *PriceServiceSuite) TestDeletePrice() {
 	err := s.priceService.DeletePrice(s.ctx, "price-1", req)
 	s.NoError(err)
 
-	// Ensure the price no longer exists
-	_, err = s.priceRepo.Get(s.ctx, "price-1")
-	s.Error(err)
+	// Ensure the price still exists but has an end date set
+	updatedPrice, err := s.priceRepo.Get(s.ctx, "price-1")
+	s.NoError(err)
+	s.NotNil(updatedPrice.EndDate)
+	s.Equal(req.EndDate.Unix(), updatedPrice.EndDate.Unix())
 }
 
 func (s *PriceServiceSuite) TestCalculateCostWithBreakup_FlatFee() {
