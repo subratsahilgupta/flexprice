@@ -217,7 +217,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		item.SubscriptionID = sub.ID
 		item.PriceType = price.Type
 		item.EntityID = plan.ID
-		item.EntityType = types.SubscriptionLineItemEntitiyTypePlan
+		item.EntityType = types.SubscriptionLineItemEntityTypePlan
 		item.PlanDisplayName = plan.Name
 		item.CustomerID = sub.CustomerID
 		item.Currency = sub.Currency
@@ -3314,7 +3314,7 @@ func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, price
 		SubscriptionID: sub.ID,
 		CustomerID:     sub.CustomerID,
 		EntityID:       addonID,
-		EntityType:     types.SubscriptionLineItemEntitiyTypeAddon,
+		EntityType:     types.SubscriptionLineItemEntityTypeAddon,
 		PriceID:        price.ID,
 		PriceType:      price.Type,
 		Currency:       sub.Currency,

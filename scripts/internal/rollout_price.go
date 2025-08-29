@@ -191,7 +191,7 @@ func SyncPlanPrices() error {
 				SubscriptionID:  sub.ID,
 				CustomerID:      sub.CustomerID,
 				EntityID:        planID,
-				EntityType:      types.SubscriptionLineItemEntitiyTypePlan,
+				EntityType:      types.SubscriptionLineItemEntityTypePlan,
 				PlanDisplayName: p.Name,
 				PriceID:         pr.ID,
 				PriceType:       pr.Type,

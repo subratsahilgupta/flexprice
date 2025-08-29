@@ -31,7 +31,7 @@ type LineItemParams struct {
 	Price        *PriceResponse
 	Plan         *PlanResponse  // Optional, for plan-based line items
 	Addon        *AddonResponse // Optional, for addon-based line items
-	EntityType   types.SubscriptionLineItemEntitiyType
+	EntityType   types.SubscriptionLineItemEntityType
 }
 
 // Validate validates the create subscription line item request
@@ -78,7 +78,7 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 
 	// Set entity-specific fields
 	switch params.EntityType {
-	case types.SubscriptionLineItemEntitiyTypePlan:
+	case types.SubscriptionLineItemEntityTypePlan:
 		if params.Plan != nil {
 			lineItem.EntityID = params.Plan.ID
 			lineItem.PlanDisplayName = params.Plan.Name
@@ -86,7 +86,7 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 				lineItem.DisplayName = params.Plan.Name
 			}
 		}
-	case types.SubscriptionLineItemEntitiyTypeAddon:
+	case types.SubscriptionLineItemEntityTypeAddon:
 		if params.Addon != nil {
 			lineItem.EntityID = params.Addon.ID
 			if lineItem.DisplayName == "" {

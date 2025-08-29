@@ -8,15 +8,15 @@ type SubscriptionLineItemFilter struct {
 	*TimeRangeFilter
 
 	// Specific filters
-	SubscriptionIDs    []string                         `json:"subscription_ids,omitempty" form:"subscription_ids"`
-	PriceIDs           []string                         `json:"price_ids,omitempty" form:"price_ids"`
-	MeterIDs           []string                         `json:"meter_ids,omitempty" form:"meter_ids"`
-	Currencies         []string                         `json:"currencies,omitempty" form:"currencies"`
-	BillingPeriods     []string                         `json:"billing_periods,omitempty" form:"billing_periods"`
-	EntityIDs          []string                         `json:"entity_ids,omitempty" form:"entity_ids"`
-	EntityType         *SubscriptionLineItemEntitiyType `json:"entity_type,omitempty" form:"entity_type"`
-	ActiveFilter       bool                             `json:"active_filter,omitempty" form:"active_filter" default:"true"`
-	CurrentPeriodStart *time.Time                       `json:"current_period_start,omitempty" form:"current_period_start"`
+	SubscriptionIDs    []string                        `json:"subscription_ids,omitempty" form:"subscription_ids"`
+	PriceIDs           []string                        `json:"price_ids,omitempty" form:"price_ids"`
+	MeterIDs           []string                        `json:"meter_ids,omitempty" form:"meter_ids"`
+	Currencies         []string                        `json:"currencies,omitempty" form:"currencies"`
+	BillingPeriods     []string                        `json:"billing_periods,omitempty" form:"billing_periods"`
+	EntityIDs          []string                        `json:"entity_ids,omitempty" form:"entity_ids"`
+	EntityType         *SubscriptionLineItemEntityType `json:"entity_type,omitempty" form:"entity_type"`
+	ActiveFilter       bool                            `json:"active_filter,omitempty" form:"active_filter" default:"true"`
+	CurrentPeriodStart *time.Time                      `json:"current_period_start,omitempty" form:"current_period_start"`
 }
 
 // NewSubscriptionLineItemFilter creates a new subscription line item filter with default options

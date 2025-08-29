@@ -310,7 +310,7 @@ func (s *addonService) DeleteAddon(ctx context.Context, id string) error {
 	// Also check if any active line items exist for this addon
 	lineItemFilter := types.NewSubscriptionLineItemFilter()
 	lineItemFilter.EntityIDs = []string{id}
-	lineItemFilter.EntityType = lo.ToPtr(types.SubscriptionLineItemEntitiyTypeAddon)
+	lineItemFilter.EntityType = lo.ToPtr(types.SubscriptionLineItemEntityTypeAddon)
 	lineItemFilter.Status = lo.ToPtr(types.StatusPublished)
 	lineItemFilter.Limit = lo.ToPtr(1)
 
@@ -403,7 +403,7 @@ func (s *addonService) createLineItemFromPrice(ctx context.Context, priceRespons
 		SubscriptionID: sub.ID,
 		CustomerID:     sub.CustomerID,
 		EntityID:       addonID,
-		EntityType:     types.SubscriptionLineItemEntitiyTypeAddon,
+		EntityType:     types.SubscriptionLineItemEntityTypeAddon,
 		PriceID:        price.ID,
 		PriceType:      price.Type,
 		Currency:       sub.Currency,

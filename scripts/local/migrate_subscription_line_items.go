@@ -138,7 +138,7 @@ func MigrateSubscriptionLineItems() error {
 					SubscriptionID:  sub.ID,
 					CustomerID:      sub.CustomerID,
 					EntityID:        plan.ID,
-					EntityType:      types.SubscriptionLineItemEntitiyTypePlan,
+					EntityType:      types.SubscriptionLineItemEntityTypePlan,
 					PriceID:         price.ID,
 					PriceType:       price.Type,
 					MeterID:         price.MeterID,

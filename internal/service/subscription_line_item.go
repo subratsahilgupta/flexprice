@@ -56,7 +56,7 @@ func (s *subscriptionService) AddSubscriptionLineItem(ctx context.Context, subsc
 				return nil, err
 			}
 			params.Plan = planResponse
-			params.EntityType = types.SubscriptionLineItemEntitiyTypePlan
+			params.EntityType = types.SubscriptionLineItemEntityTypePlan
 		} else {
 			addonService := NewAddonService(s.ServiceParams)
 			addonResponse, err := addonService.GetAddon(ctx, price.EntityID)
@@ -64,7 +64,7 @@ func (s *subscriptionService) AddSubscriptionLineItem(ctx context.Context, subsc
 				return nil, err
 			}
 			params.Addon = addonResponse
-			params.EntityType = types.SubscriptionLineItemEntitiyTypeAddon
+			params.EntityType = types.SubscriptionLineItemEntityTypeAddon
 
 		}
 	}
