@@ -355,9 +355,12 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 	var paymentID string
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Create invoice for credit purchase
+		amount := s.GetCurrencyAmountFromCredits(req.CreditsToAdd, w.ConversionRate)
 		invoice, err := invoiceService.CreateInvoice(ctx, dto.CreateInvoiceRequest{
 			CustomerID:     w.CustomerID,
-			AmountDue:      s.GetCurrencyAmountFromCredits(req.CreditsToAdd, w.ConversionRate),
+			AmountDue:      amount,
+			Subtotal:       amount,
+			Total:          amount,
 			Currency:       w.Currency,
 			InvoiceType:    types.InvoiceTypeCredit,
 			DueDate:        lo.ToPtr(time.Now().UTC()),
@@ -365,7 +368,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 			InvoiceStatus:  lo.ToPtr(types.InvoiceStatusFinalized),
 			LineItems: []dto.CreateInvoiceLineItemRequest{
 				{
-					Amount:      s.GetCurrencyAmountFromCredits(req.CreditsToAdd, w.ConversionRate),
+					Amount:      amount,
 					Quantity:    decimal.NewFromInt(1),
 					DisplayName: lo.ToPtr("Purchased Credits"),
 				},
