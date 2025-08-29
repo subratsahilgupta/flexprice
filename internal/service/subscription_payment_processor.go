@@ -220,7 +220,8 @@ func (s *subscriptionPaymentProcessor) attemptPaymentErrorIfIncomplete(
 		Mark(ierr.ErrInvalidOperation)
 }
 
-// processPayment processes payment sequentially (credits first, then payment method)
+// processPayment processes payment with card-first logic
+// This prioritizes card payments over wallet payments as per new requirements
 func (s *subscriptionPaymentProcessor) processPayment(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -235,7 +236,7 @@ func (s *subscriptionPaymentProcessor) processPayment(
 		PaymentMethods:  []PaymentMethodUsed{},
 	}
 
-	s.Logger.Infow("processing payment sequentially",
+	s.Logger.Infow("processing payment with card-first logic",
 		"subscription_id", sub.ID,
 		"amount_due", inv.AmountDue,
 		"amount_remaining", remainingAmount,
@@ -246,16 +247,89 @@ func (s *subscriptionPaymentProcessor) processPayment(
 		return result
 	}
 
-	// Step 1: Check if credits are available
+	// Step 1: Check available credits
 	availableCredits := s.checkAvailableCredits(ctx, sub, inv)
-	if availableCredits.GreaterThan(decimal.Zero) {
-		s.Logger.Infow("credits available, processing credits payment",
+	s.Logger.Infow("available credits check",
+		"subscription_id", sub.ID,
+		"available_credits", availableCredits,
+		"invoice_amount", remainingAmount,
+	)
+
+	// Step 2: Determine payment split
+	var cardAmount, walletAmount decimal.Decimal
+
+	if availableCredits.GreaterThanOrEqual(remainingAmount) {
+		// Case: Customer has enough credits to cover full invoice
+		// Pay entirely with credits, no card payment needed
+		cardAmount = decimal.Zero
+		walletAmount = remainingAmount
+		s.Logger.Infow("customer has sufficient credits, paying entirely with wallet",
 			"subscription_id", sub.ID,
-			"available_credits", availableCredits,
-			"amount_due", inv.AmountDue,
+			"wallet_amount", walletAmount,
+		)
+	} else if availableCredits.GreaterThan(decimal.Zero) {
+		// Case: Customer has partial credits
+		// Split: Card first (remaining - credits), then wallet (credits)
+		cardAmount = remainingAmount.Sub(availableCredits)
+		walletAmount = availableCredits
+		s.Logger.Infow("splitting payment between card and wallet",
+			"subscription_id", sub.ID,
+			"card_amount", cardAmount,
+			"wallet_amount", walletAmount,
+		)
+	} else {
+		// Case: No credits available
+		// Pay entirely with card
+		cardAmount = remainingAmount
+		walletAmount = decimal.Zero
+		s.Logger.Infow("no credits available, paying entirely with card",
+			"subscription_id", sub.ID,
+			"card_amount", cardAmount,
+		)
+	}
+
+	// Step 3: Process card payment first (if needed)
+	if cardAmount.GreaterThan(decimal.Zero) {
+		s.Logger.Infow("attempting card payment",
+			"subscription_id", sub.ID,
+			"card_amount", cardAmount,
 		)
 
-		// Pay using credits
+		cardAmountPaid := s.processPaymentMethodCharge(ctx, sub, inv, cardAmount)
+		if cardAmountPaid.GreaterThan(decimal.Zero) {
+			result.AmountPaid = result.AmountPaid.Add(cardAmountPaid)
+			result.RemainingAmount = result.RemainingAmount.Sub(cardAmountPaid)
+			result.PaymentMethods = append(result.PaymentMethods, PaymentMethodUsed{
+				Type:   "card",
+				Amount: cardAmountPaid,
+			})
+
+			s.Logger.Infow("card payment successful",
+				"subscription_id", sub.ID,
+				"card_amount_paid", cardAmountPaid,
+				"remaining_amount", result.RemainingAmount,
+			)
+		} else {
+			// Card payment failed - do not attempt wallet payment
+			// The invoice cannot be fully paid, so we stop here
+			s.Logger.Warnw("card payment failed, not attempting wallet payment",
+				"subscription_id", sub.ID,
+				"attempted_card_amount", cardAmount,
+				"wallet_amount_available", walletAmount,
+			)
+
+			result.Success = false
+			return result
+		}
+	}
+
+	// Step 4: Process wallet payment (only if card payment succeeded or not needed)
+	if walletAmount.GreaterThan(decimal.Zero) {
+		s.Logger.Infow("attempting wallet payment",
+			"subscription_id", sub.ID,
+			"wallet_amount", walletAmount,
+		)
+
 		creditsUsed := s.processCreditsPayment(ctx, sub, inv)
 		if creditsUsed.GreaterThan(decimal.Zero) {
 			result.AmountPaid = result.AmountPaid.Add(creditsUsed)
@@ -265,61 +339,28 @@ func (s *subscriptionPaymentProcessor) processPayment(
 				Amount: creditsUsed,
 			})
 
-			s.Logger.Infow("credits payment completed",
+			s.Logger.Infow("wallet payment successful",
 				"subscription_id", sub.ID,
 				"credits_used", creditsUsed,
 				"remaining_amount", result.RemainingAmount,
 			)
+		} else {
+			s.Logger.Warnw("wallet payment failed",
+				"subscription_id", sub.ID,
+				"attempted_wallet_amount", walletAmount,
+			)
 		}
 	}
 
-	// Step 2: If all amount is paid using credits, return success
-	if result.RemainingAmount.IsZero() {
-		result.Success = true
-		s.Logger.Infow("payment completed entirely with credits",
-			"subscription_id", sub.ID,
-			"total_paid", result.AmountPaid,
-		)
-		return result
-	}
-
-	// Step 3: If amount is remaining, use charge card
-	s.Logger.Infow("remaining amount after credits, attempting card charge",
-		"subscription_id", sub.ID,
-		"remaining_amount", result.RemainingAmount,
-	)
-
-	cardAmountPaid := s.processPaymentMethodCharge(ctx, sub, inv, result.RemainingAmount)
-	if cardAmountPaid.GreaterThan(decimal.Zero) {
-		result.AmountPaid = result.AmountPaid.Add(cardAmountPaid)
-		result.RemainingAmount = result.RemainingAmount.Sub(cardAmountPaid)
-		result.PaymentMethods = append(result.PaymentMethods, PaymentMethodUsed{
-			Type:   "card",
-			Amount: cardAmountPaid,
-		})
-
-		s.Logger.Infow("card payment completed",
-			"subscription_id", sub.ID,
-			"card_amount_paid", cardAmountPaid,
-			"remaining_amount", result.RemainingAmount,
-		)
-	} else {
-		// Card payment failed - keep credits applied, invoice remains incomplete
-		s.Logger.Infow("card payment failed, keeping credits applied",
-			"subscription_id", sub.ID,
-			"credits_applied", result.AmountPaid,
-			"remaining_amount", result.RemainingAmount,
-		)
-	}
-
-	// Step 4: Mark success if fully paid
+	// Step 5: Determine final success
 	result.Success = result.RemainingAmount.IsZero()
 
-	s.Logger.Infow("payment processing completed",
+	s.Logger.Infow("card-first payment processing completed",
 		"subscription_id", sub.ID,
 		"success", result.Success,
-		"amount_paid", result.AmountPaid,
+		"total_paid", result.AmountPaid,
 		"remaining_amount", result.RemainingAmount,
+		"payment_methods", len(result.PaymentMethods),
 	)
 
 	return result
