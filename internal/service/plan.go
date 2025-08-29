@@ -716,30 +716,35 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 			continue
 		}
 
-		// Create override price to parent price map
-		overridePriceMap := make(map[string]string) // overridePriceID -> parentPriceID
+		// Build override price relationship maps
+		// overrideToParentMap: maps override price ID to its parent price ID
+		// parentToOverrideMap: maps parent price ID to its override price ID
+		overrideToParentMap := make(map[string]string) // overridePriceID -> parentPriceID
+		parentToOverrideMap := make(map[string]string) // parentPriceID -> overridePriceID
 
-		// this is similar to the overridePriceMap, but it's the reverse so that we can check if a price id belongs to an override without iterating the loop
-		priceOverridesMap := make(map[string]string) // parentPriceID -> OverridePriceID
 		for _, priceResp := range subPricesResponse.Items {
 			if priceResp.ParentPriceID != "" {
-				overridePriceMap[priceResp.ID] = priceResp.ParentPriceID
-				priceOverridesMap[priceResp.ParentPriceID] = priceResp.ID
+				overrideToParentMap[priceResp.ID] = priceResp.ParentPriceID
+				parentToOverrideMap[priceResp.ParentPriceID] = priceResp.ID
 			}
 		}
 
-		// Create line item map with price ID as key
+		// Build line item lookup map
+		// Maps both actual price IDs and parent price IDs (for overrides) to line items
 		lineItemMap := make(map[string]*subscription.SubscriptionLineItem)
 		for _, item := range lineItems {
 			// Skip if line item is not active or is not a plan line item
 			if !item.IsActive(time.Now()) || item.EntityType != types.SubscriptionLineItemEntitiyTypePlan {
 				continue
 			}
+
+			// Map the actual price ID of the line item
 			lineItemMap[item.PriceID] = item
 
-			if parentPriceID, isOverride := overridePriceMap[item.PriceID]; isOverride {
+			// If this is an override price, also map it to the parent price
+			// This allows us to check if a parent price already has a line item via override
+			if parentPriceID, isOverride := overrideToParentMap[item.PriceID]; isOverride {
 				lineItemMap[parentPriceID] = item
-				// get the parent price details
 			}
 		}
 
@@ -757,18 +762,23 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 		//    - Ineligible prices are skipped to maintain billing consistency
 		//
 		// 2. Line Item States:
-		//    - Existing line items with expired prices (EndDate != nil) as well is it not an override price -> Mark for end
+		//    - Existing line items with expired prices (EndDate != nil) and not override prices -> Mark for end
 		//    - Existing line items with active prices (EndDate == nil) -> Keep as is
-		//    - Missing line items for active prices -> Create new
+		//    - Missing line items for active prices -> Create new (regardless of start date)
 		//    - Missing line items for expired prices -> Skip
 		//
 		// 3. Price Lifecycle:
-		//    - Active Price: EndDate is nil, can be attached to subscriptions
-		//    - Expired Price: Has EndDate, existing line items will be ended
-		//    - Future Price: Has StartDate in future, will be created with that start date
+		//    - Active Price: EndDate is nil, can be attached to subscriptions (start date doesn't matter)
+		//    - Expired Price: Has EndDate, existing line items will be ended (unless override)
+		//
+		// 4. Override Price Handling:
+		//    - Override prices are never ended by plan sync (subscription-specific)
+		//    - Parent prices with existing override line items are not processed
+		//    - This maintains subscription-specific pricing while syncing plan prices
 		//
 		// The sync ensures subscriptions accurately reflect the current state of plan prices
-		// while maintaining proper billing continuity.
+		// while maintaining proper billing continuity and respecting price overrides.
+		// Start dates are preserved as-is for proper billing timing.
 
 		subscriptionService := NewSubscriptionService(s.ServiceParams)
 		for priceID, planPrice := range priceMap {
@@ -786,9 +796,13 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 			// Handle existing line items
 			if existingLineItem {
 				if planPrice.EndDate != nil {
-
-					if _, isOverride := priceOverridesMap[priceID]; isOverride {
-						// this price is an override, so we wont end this line item
+					// Check if this price has an override - override prices should not be ended by plan sync
+					if _, isOverride := parentToOverrideMap[priceID]; isOverride {
+						s.Logger.Infow("Skipping override price line item",
+							"subscription_id", sub.ID,
+							"price_id", priceID,
+							"reason", "override price - subscription specific")
+						skippedCount++
 						continue
 					}
 
@@ -816,10 +830,10 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 				continue
 			}
 
-			// Handle missing line items
+			// Handle missing line items - create for any active price (no end date)
 			if planPrice.EndDate == nil {
-				// Create new line item for active price
-				s.Logger.Infow("Creating line item for active price",
+				// Create line item for active price (regardless of start date)
+				s.Logger.Infow("Creating line item for price",
 					"subscription_id", sub.ID,
 					"price_id", priceID,
 					"start_date", planPrice.StartDate)
@@ -842,8 +856,14 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 					continue
 				}
 				addedCount++
+			} else {
+				// Price has expired (EndDate != nil) - skip creating line items
+				s.Logger.Infow("Skipping expired price",
+					"subscription_id", sub.ID,
+					"price_id", priceID,
+					"end_date", planPrice.EndDate,
+					"reason", "price expired")
 			}
-			// Skip creating line items for expired prices
 		}
 
 		s.Logger.Infow("Subscription processed",
