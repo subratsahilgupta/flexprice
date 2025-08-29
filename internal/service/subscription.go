@@ -336,59 +336,18 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		// Create invoice for the subscription (in case it has advance charges)
-		invoice, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+		paymentParams := dto.NewPaymentParametersFromSubscription(sub.CollectionMethod, sub.PaymentBehavior, sub.PaymentMethodID)
+		_, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 			SubscriptionID: sub.ID,
 			PeriodStart:    sub.CurrentPeriodStart,
 			PeriodEnd:      sub.CurrentPeriodEnd,
 			ReferencePoint: types.ReferencePointPeriodStart,
-		})
+		}, paymentParams)
 		if err != nil {
 			return err
 		}
 
-		// Process payment based on payment behavior if invoice was created
-		// Handle payment based on collection method and payment behavior
-		collectionMethod := types.CollectionMethod(sub.CollectionMethod)
-		paymentBehavior := types.PaymentBehavior(sub.PaymentBehavior)
-
-		if collectionMethod == types.CollectionMethodSendInvoice || paymentBehavior == types.PaymentBehaviorDefaultActive {
-			// Send invoice mode or default_active behavior - always activate subscription immediately
-			sub.SubscriptionStatus = types.SubscriptionStatusActive
-			err = s.SubRepo.Update(ctx, sub)
-			if err != nil {
-				return err
-			}
-		} else if invoice != nil && invoice.AmountDue.GreaterThan(decimal.Zero) {
-			// Charge automatically mode - process payment
-			paymentProcessor := NewSubscriptionPaymentProcessor(&s.ServiceParams)
-			paymentBehavior := types.PaymentBehavior(sub.PaymentBehavior)
-
-			// Refresh invoice to get latest state after any wallet payments
-			invoiceService := NewInvoiceService(s.ServiceParams)
-			refreshedInvoice, refreshErr := invoiceService.GetInvoice(ctx, invoice.ID)
-			if refreshErr != nil {
-				s.Logger.Errorw("failed to refresh invoice before payment processing",
-					"error", refreshErr,
-					"invoice_id", invoice.ID,
-					"subscription_id", sub.ID,
-				)
-				// Continue with original invoice if refresh fails
-				refreshedInvoice = invoice
-			}
-
-			err = paymentProcessor.HandlePaymentBehavior(ctx, sub, refreshedInvoice, paymentBehavior)
-			if err != nil {
-				// For error_if_incomplete, this will fail the transaction
-				return err
-			}
-		} else {
-			// No payment required, activate subscription
-			sub.SubscriptionStatus = types.SubscriptionStatusActive
-			err = s.SubRepo.Update(ctx, sub)
-			if err != nil {
-				return err
-			}
-		}
+		// Payment processing and subscription activation is now handled in ProcessDraftInvoice
 
 		return nil
 	})
@@ -396,8 +355,18 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		return nil, err
 	}
 
+	// Refresh subscription to get the latest status after payment processing
+	refreshedSub, err := s.SubRepo.Get(ctx, sub.ID)
+	if err != nil {
+		s.Logger.Errorw("failed to refresh subscription after creation",
+			"error", err,
+			"subscription_id", sub.ID)
+		// Continue with original subscription if refresh fails
+		refreshedSub = sub
+	}
+
 	// Update response to ensure it has the latest subscription data
-	response.Subscription = sub
+	response.Subscription = refreshedSub
 
 	// Include latest invoice if created
 	if invoice != nil {
@@ -1454,12 +1423,13 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			period := periods[i]
 
 			// Create a single invoice for both arrear and advance charges at period end
+			paymentParams := dto.NewPaymentParametersFromSubscription(sub.CollectionMethod, sub.PaymentBehavior, sub.PaymentMethodID)
 			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 				SubscriptionID: sub.ID,
 				PeriodStart:    period.start,
 				PeriodEnd:      period.end,
 				ReferencePoint: types.ReferencePointPeriodEnd,
-			})
+			}, paymentParams)
 			if err != nil {
 				return err
 			}
