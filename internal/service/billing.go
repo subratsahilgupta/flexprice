@@ -983,11 +983,15 @@ func (s *billingService) applyProrationToLineItem(
 		return originalAmount, nil
 	}
 
+	action := types.ProrationActionAddItem
+	if sub.SubscriptionStatus == types.SubscriptionStatusCancelled {
+		action = types.ProrationActionCancellation
+	}
 	prorationParams, err := prorationService.CreateProrationParamsForLineItem(
 		sub,
 		item,
 		priceData,
-		types.ProrationActionAddItem,
+		action,
 		types.ProrationBehaviorCreateProrations,
 	)
 	if err != nil {

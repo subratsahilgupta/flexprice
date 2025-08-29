@@ -170,6 +170,12 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		return err
 	}
 
+	if r.ProrationMode == types.ProrationModeActive {
+		if err := r.validateShouldAllowProrationOnStartDate(*r.StartDate, time.Now().UTC()); err != nil {
+			return err
+		}
+	}
+
 	if r.BillingPeriodCount < 1 {
 		return ierr.NewError("billing_period_count must be greater than 0").
 			WithHint("Billing period count must be at least 1").
@@ -370,6 +376,32 @@ func (r *CreateSubscriptionRequest) Validate() error {
 			}
 			priceIDsSeen[override.PriceID] = true
 		}
+	}
+
+	return nil
+}
+
+func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(startDate, now time.Time) error {
+	// Calculate one month back from current date
+	oneMonthAgo := now.AddDate(0, -1, 0)
+
+	// For edge case handling (e.g., Jan 31 -> Feb 28)
+	if oneMonthAgo.Day() != now.Day() {
+		// Adjust to the last day of the previous month if needed
+		oneMonthAgo = time.Date(oneMonthAgo.Year(), oneMonthAgo.Month()+1, 0,
+			now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), now.Location())
+	}
+
+	if startDate.Before(oneMonthAgo) {
+		return ierr.NewError("start date cannot be more than 1 calendar month in the past when proration is active").
+			WithHint("When proration is active, subscriptions can only be backdated up to 1 calendar month").
+			WithReportableDetails(map[string]interface{}{
+				"start_date":            startDate,
+				"current_date":          now,
+				"earliest_allowed_date": oneMonthAgo,
+				"proration_mode":        r.ProrationMode,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil

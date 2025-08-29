@@ -26,7 +26,6 @@ type Handlers struct {
 	Plan                     *v1.PlanHandler
 	Subscription             *v1.SubscriptionHandler
 	SubscriptionPause        *v1.SubscriptionPauseHandler
-	SubscriptionChange       *v1.SubscriptionChangeHandler
 	Wallet                   *v1.WalletHandler
 	Tenant                   *v1.TenantHandler
 	Invoice                  *v1.InvoiceHandler
@@ -226,12 +225,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			subscription.POST("/addon", handlers.Subscription.AddAddonToSubscription)
 			subscription.DELETE("/addon", handlers.Subscription.RemoveAddonToSubscription)
 
-			// Plan change endpoints
-			subscription.POST("/:id/upgrade", handlers.SubscriptionChange.UpgradeSubscription)
-			subscription.POST("/:id/downgrade", handlers.SubscriptionChange.DowngradeSubscription)
-			subscription.POST("/:id/preview-change", handlers.SubscriptionChange.PreviewPlanChange)
-			subscription.DELETE("/:id/pending-changes", handlers.SubscriptionChange.CancelPendingPlanChange)
-			subscription.GET("/:id/change-history", handlers.SubscriptionChange.GetPlanChangeHistory)
 		}
 
 		wallet := v1Private.Group("/wallets")
