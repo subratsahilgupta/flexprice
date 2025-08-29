@@ -890,6 +890,29 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		"end_time", usageEndTime,
 		"metered_line_items", len(priceIDs))
 
+	// Performance optimization: Get distinct event names for this customer
+	// to filter out meters that have no events, reducing processing from potentially
+	// 400-500 meters down to only 5-7 that have actual usage
+	distinctEventNames, err := s.EventRepo.GetDistinctEventNames(ctx, customer.ExternalID, usageStartTime, usageEndTime)
+	if err != nil {
+		s.Logger.Warnw("failed to get distinct event names, proceeding without optimization",
+			"error", err,
+			"external_customer_id", customer.ExternalID)
+		distinctEventNames = nil // Fallback: process all meters if optimization fails
+	}
+
+	// Create a map for fast event name lookup
+	eventNameExists := make(map[string]bool, len(distinctEventNames))
+	for _, eventName := range distinctEventNames {
+		eventNameExists[eventName] = true
+	}
+
+	s.Logger.Debugw("distinct event names optimization",
+		"external_customer_id", customer.ExternalID,
+		"total_distinct_events", len(distinctEventNames),
+		"total_line_items", len(lineItems),
+		"distinct_event_names", distinctEventNames)
+
 	meterUsageRequests := make([]*dto.GetUsageByMeterRequest, 0, len(lineItems))
 	for _, lineItem := range lineItems {
 		if lineItem.PriceType != types.PRICE_TYPE_USAGE {
@@ -902,6 +925,33 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 		meter := meterMap[lineItem.MeterID]
 		if meter == nil {
+			continue
+		}
+
+		if len(distinctEventNames) == 0 {
+			// skip all usage items if distinct event names is nil
+			// which means there is no event data in the database
+			// this is a fallback to ensure that we don't process all meters
+			// if the event data is not available
+
+			s.Logger.Debugw("skipping meter as there are no events",
+				"meter_id", lineItem.MeterID,
+				"event_name", meter.EventName,
+				"customer_id", customer.ID,
+				"external_customer_id", customer.ExternalID,
+				"subscription_id", req.SubscriptionID)
+			continue
+		}
+
+		// Performance optimization: Skip meters that don't have any events for this customer
+		// Only skip if we successfully got distinct event names (not nil) and the event doesn't exist
+		if distinctEventNames != nil && !eventNameExists[meter.EventName] {
+			s.Logger.Debugw("skipping meter with no events",
+				"meter_id", lineItem.MeterID,
+				"event_name", meter.EventName,
+				"customer_id", customer.ID,
+				"external_customer_id", customer.ExternalID,
+				"subscription_id", req.SubscriptionID)
 			continue
 		}
 
@@ -921,6 +971,15 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		}
 		meterUsageRequests = append(meterUsageRequests, usageRequest)
 	}
+
+	s.Logger.Infow("performance optimization results",
+		"subscription_id", req.SubscriptionID,
+		"external_customer_id", customer.ExternalID,
+		"total_line_items", len(lineItems),
+		"total_usage_line_items", len(priceIDs),
+		"meters_with_events", len(meterUsageRequests),
+		"optimization_enabled", distinctEventNames != nil,
+		"meters_skipped", len(priceIDs)-len(meterUsageRequests))
 
 	usageMap, err := eventService.BulkGetUsageByMeter(ctx, meterUsageRequests)
 	if err != nil {
@@ -968,8 +1027,30 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			meterDisplayName = meter
 		}
 
-		quantity := usage.Value
-		cost := priceService.CalculateCost(ctx, priceObj, quantity)
+		// For bucketed max, we need to handle array of values
+		var cost decimal.Decimal
+		var quantity decimal.Decimal
+
+		// Get meter info
+		meterInfo := meterMap[meterID]
+		if priceObj.MeterID != "" && meterInfo != nil && meterInfo.ToMeter().IsBucketedMaxMeter() {
+			// For bucketed max, use the array of values
+			bucketedValues := make([]decimal.Decimal, len(usage.Results))
+			for i, result := range usage.Results {
+				bucketedValues[i] = result.Value
+			}
+			cost = priceService.CalculateBucketedCost(ctx, priceObj, bucketedValues)
+
+			// Calculate quantity as sum of all bucket maxes
+			quantity = decimal.Zero
+			for _, bucketValue := range bucketedValues {
+				quantity = quantity.Add(bucketValue)
+			}
+		} else {
+			// For all other cases, use the single value
+			quantity = usage.Value
+			cost = priceService.CalculateCost(ctx, priceObj, quantity)
+		}
 
 		s.Logger.Debugw("calculated usage for meter",
 			"meter_id", meterID,
@@ -1421,13 +1502,6 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 				return err
 			}
 
-			s.Logger.Infow("created invoice for period",
-				"subscription_id", sub.ID,
-				"invoice_id", inv.ID,
-				"period_start", period.start,
-				"period_end", period.end,
-				"period_index", i)
-
 			// Check for cancellation at this period end
 			if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(period.end) {
 				sub.SubscriptionStatus = types.SubscriptionStatusCancelled
@@ -1445,6 +1519,22 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 					"end_date", *sub.EndDate)
 				break
 			}
+
+			if inv == nil {
+				s.Logger.Errorw("skipping period as no invoice was created",
+					"subscription_id", sub.ID,
+					"period_start", period.start,
+					"period_end", period.end,
+					"period_index", i)
+				continue
+			}
+
+			s.Logger.Infow("created invoice for period",
+				"subscription_id", sub.ID,
+				"invoice_id", inv.ID,
+				"period_start", period.start,
+				"period_end", period.end,
+				"period_index", i)
 		}
 
 		// Update to the new current period (last period)

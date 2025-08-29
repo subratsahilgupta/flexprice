@@ -12,11 +12,13 @@ type InternalSubscriptionEvent struct {
 
 // SubscriptionWebhookPayload represents the detailed payload for subscription payment webhooks
 type SubscriptionWebhookPayload struct {
+	EventType    string                    `json:"event_type"`
 	Subscription *dto.SubscriptionResponse `json:"subscription"`
 }
 
-func NewSubscriptionWebhookPayload(subscription *dto.SubscriptionResponse) *SubscriptionWebhookPayload {
+func NewSubscriptionWebhookPayload(subscription *dto.SubscriptionResponse, eventType string) *SubscriptionWebhookPayload {
 	return &SubscriptionWebhookPayload{
+		EventType:    eventType,
 		Subscription: subscription,
 	}
 }

@@ -356,18 +356,18 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlab() {
 	quantity = decimal.NewFromInt(25)
 	result = s.priceService.CalculateCostWithBreakup(s.ctx, price, quantity, false)
 
-	// From the debug logs, the calculation is:
-	// (10 * 50) = 500 (first tier)
-	// (15 * 40) = 600 (second tier, not 10 as expected)
-	// No third tier is used
-	// Total: 500 + 600 = 1100
-	expectedFinalCost = decimal.NewFromInt(1100)
+	// Corrected calculation:
+	// (10 * 50) = 500 (first tier: 0-10)
+	// (10 * 40) = 400 (second tier: 10-20) 
+	// (5 * 30) = 150 (third tier: 20+)
+	// Total: 500 + 400 + 150 = 1050
+	expectedFinalCost = decimal.NewFromInt(1050)
 	s.Equal(expectedFinalCost.Equal(result.FinalCost), true)
 
-	expectedUnitCost = decimal.NewFromInt(1100).Div(decimal.NewFromInt(25)) // 1100/25
+	expectedUnitCost = decimal.NewFromInt(1050).Div(decimal.NewFromInt(25)) // 1050/25
 	s.Equal(expectedUnitCost.Equal(result.EffectiveUnitCost), true)
-	s.Equal(decimal.NewFromInt(40).Equal(result.TierUnitAmount), true) // Second tier is the last one used
-	s.Equal(1, result.SelectedTierIndex)                               // Index 1 (second tier)
+	s.Equal(decimal.NewFromInt(30).Equal(result.TierUnitAmount), true) // Third tier is the last one used
+	s.Equal(2, result.SelectedTierIndex)                               // Index 2 (third tier)
 }
 
 func (s *PriceServiceSuite) TestCalculateCostWithBreakup_ZeroQuantity() {
@@ -620,6 +620,432 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_PackageRoundingModes() 
 				result.FinalCost.String(),
 				tc.quantity.String(),
 				tc.roundingMode)
+		})
+	}
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_FlatFee() {
+	price := &price.Price{
+		ID:           "price-bucketed-flat",
+		Amount:       decimal.NewFromFloat(0.10), // $0.10 per unit
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_FLAT_FEE,
+	}
+
+	// Test with multiple bucket values representing max values per time bucket
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(9),  // Bucket 1: max(2,5,6,9) = 9
+		decimal.NewFromInt(10), // Bucket 2: max(10) = 10
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: (9 * 0.10) + (10 * 0.10) = 0.90 + 1.00 = 1.90
+	expected := decimal.NewFromFloat(1.9)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_Package() {
+	price := &price.Price{
+		ID:           "price-bucketed-package",
+		Amount:       decimal.NewFromInt(1), // $1 per package
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_PACKAGE,
+		TransformQuantity: price.JSONBTransformQuantity{
+			DivideBy: 10,             // 10 units per package
+			Round:    types.ROUND_UP, // Round up
+		},
+	}
+
+	// Test with bucket values that require different package allocations
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(9),  // Bucket 1: max(2,5,6,9) = 9 → ceil(9/10) = 1 package
+		decimal.NewFromInt(10), // Bucket 2: max(10) = 10 → ceil(10/10) = 1 package
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: 1 package + 1 package = $2
+	expected := decimal.NewFromInt(2)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_TieredSlab() {
+	upTo10 := uint64(10)
+	upTo20 := uint64(20)
+	price := &price.Price{
+		ID:           "price-bucketed-tiered-slab",
+		Amount:       decimal.Zero,
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_SLAB,
+		Tiers: []price.PriceTier{
+			{UpTo: &upTo10, UnitAmount: decimal.NewFromFloat(0.10)}, // 0-10: $0.10/unit
+			{UpTo: &upTo20, UnitAmount: decimal.NewFromFloat(0.05)}, // 11-20: $0.05/unit
+			{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.02)},     // 21+: $0.02/unit
+		},
+	}
+
+	// Test with bucket values that span different tiers
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(9),  // Bucket 1: max(2,5,6,9) = 9 → 9*$0.10 = $0.90
+		decimal.NewFromInt(15), // Bucket 2: max(10,15) = 15 → 10*$0.10 + 5*$0.05 = $1.25
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: $0.90 + $1.25 = $2.15
+	expected := decimal.NewFromFloat(2.15)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_TieredVolume() {
+	upTo10 := uint64(10)
+	upTo20 := uint64(20)
+	price := &price.Price{
+		ID:           "price-bucketed-tiered-volume",
+		Amount:       decimal.Zero,
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_VOLUME,
+		Tiers: []price.PriceTier{
+			{UpTo: &upTo10, UnitAmount: decimal.NewFromFloat(0.10)}, // 0-10: $0.10/unit
+			{UpTo: &upTo20, UnitAmount: decimal.NewFromFloat(0.05)}, // 11-20: $0.05/unit
+			{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.02)},     // 21+: $0.02/unit
+		},
+	}
+
+	// Test with bucket values that fall into different volume tiers
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(9),  // Bucket 1: max(2,5,6,9) = 9 → tier 1 → 9*$0.10 = $0.90
+		decimal.NewFromInt(15), // Bucket 2: max(10,15) = 15 → tier 2 → 15*$0.05 = $0.75
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: $0.90 + $0.75 = $1.65
+	expected := decimal.NewFromFloat(1.65)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_EmptyBuckets() {
+	price := &price.Price{
+		ID:           "price-bucketed-empty",
+		Amount:       decimal.NewFromFloat(0.10),
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_FLAT_FEE,
+	}
+
+	// Test with empty bucket array
+	bucketedValues := []decimal.Decimal{}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: $0.00 (no buckets to process)
+	expected := decimal.Zero
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for empty bucketed values",
+		expected.String(), result.String())
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_ZeroValues() {
+	price := &price.Price{
+		ID:           "price-bucketed-zero",
+		Amount:       decimal.NewFromFloat(0.10),
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_FLAT_FEE,
+	}
+
+	// Test with zero values in buckets
+	bucketedValues := []decimal.Decimal{
+		decimal.Zero,          // Bucket 1: no usage
+		decimal.NewFromInt(5), // Bucket 2: max = 5
+		decimal.Zero,          // Bucket 3: no usage
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: (0 * 0.10) + (5 * 0.10) + (0 * 0.10) = $0.50
+	expected := decimal.NewFromFloat(0.50)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for bucketed values with zeros %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateBucketedCost_ComplexScenario() {
+	// Test a complex scenario with package billing and multiple buckets
+	price := &price.Price{
+		ID:           "price-bucketed-complex",
+		Amount:       decimal.NewFromInt(5), // $5 per package
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_PACKAGE,
+		TransformQuantity: price.JSONBTransformQuantity{
+			DivideBy: 100,            // 100 units per package
+			Round:    types.ROUND_UP, // Round up
+		},
+	}
+
+	// Test with various bucket values
+	bucketedValues := []decimal.Decimal{
+		decimal.NewFromInt(50),  // Bucket 1: max = 50 → ceil(50/100) = 1 package → $5
+		decimal.NewFromInt(150), // Bucket 2: max = 150 → ceil(150/100) = 2 packages → $10
+		decimal.NewFromInt(200), // Bucket 3: max = 200 → ceil(200/100) = 2 packages → $10
+		decimal.NewFromInt(99),  // Bucket 4: max = 99 → ceil(99/100) = 1 package → $5
+	}
+
+	result := s.priceService.CalculateBucketedCost(s.ctx, price, bucketedValues)
+
+	// Expected: $5 + $10 + $10 + $5 = $30
+	expected := decimal.NewFromInt(30)
+	s.True(expected.Equal(result),
+		"Expected cost %s but got %s for complex bucketed scenario %v",
+		expected.String(), result.String(), bucketedValues)
+}
+
+func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlabCorrected() {
+	// Test the corrected slab tier calculation logic
+	// Pricing: 0-5 = $0/unit, 5-10 = $2/unit, 10+ = $3/unit
+	upTo5 := uint64(5)
+	upTo10 := uint64(10)
+	price := &price.Price{
+		ID:           "price-slab-corrected",
+		Amount:       decimal.Zero,
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_SLAB,
+		Tiers: []price.PriceTier{
+			{
+				UpTo:       &upTo5,
+				UnitAmount: decimal.Zero, // $0/unit for 0-5
+			},
+			{
+				UpTo:       &upTo10,
+				UnitAmount: decimal.NewFromInt(2), // $2/unit for 5-10
+			},
+			{
+				UnitAmount: decimal.NewFromInt(3), // $3/unit for 10+
+			},
+		},
+	}
+
+	testCases := []struct {
+		name         string
+		quantity     decimal.Decimal
+		expectedCost decimal.Decimal
+		description  string
+	}{
+		{
+			name:         "Quantity 3 - only first tier",
+			quantity:     decimal.NewFromInt(3),
+			expectedCost: decimal.Zero, // 3 * $0 = $0
+			description:  "3 units at $0/unit = $0",
+		},
+		{
+			name:         "Quantity 5 - boundary of first tier",
+			quantity:     decimal.NewFromInt(5),
+			expectedCost: decimal.Zero, // 5 * $0 = $0
+			description:  "5 units at $0/unit = $0",
+		},
+		{
+			name:         "Quantity 7 - spans first and second tiers",
+			quantity:     decimal.NewFromInt(7),
+			expectedCost: decimal.NewFromInt(4), // 5 * $0 + 2 * $2 = $4
+			description:  "5 units at $0/unit + 2 units at $2/unit = $4",
+		},
+		{
+			name:         "Quantity 10 - spans first two tiers exactly",
+			quantity:     decimal.NewFromInt(10),
+			expectedCost: decimal.NewFromInt(10), // 5 * $0 + 5 * $2 = $10
+			description:  "5 units at $0/unit + 5 units at $2/unit = $10",
+		},
+		{
+			name:         "Quantity 11 - the example from the problem",
+			quantity:     decimal.NewFromInt(11),
+			expectedCost: decimal.NewFromInt(13), // 5 * $0 + 5 * $2 + 1 * $3 = $13
+			description:  "5 units at $0/unit + 5 units at $2/unit + 1 unit at $3/unit = $13",
+		},
+		{
+			name:         "Quantity 15 - more units in third tier",
+			quantity:     decimal.NewFromInt(15),
+			expectedCost: decimal.NewFromInt(25), // 5 * $0 + 5 * $2 + 5 * $3 = $25
+			description:  "5 units at $0/unit + 5 units at $2/unit + 5 units at $3/unit = $25",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			result := s.priceService.CalculateCostWithBreakup(s.ctx, price, tc.quantity, false)
+			s.True(tc.expectedCost.Equal(result.FinalCost),
+				"Expected cost %s but got %s for quantity %s. %s",
+				tc.expectedCost.String(),
+				result.FinalCost.String(),
+				tc.quantity.String(),
+				tc.description)
+
+			// Also test the regular CalculateCost method
+			regularResult := s.priceService.CalculateCost(s.ctx, price, tc.quantity)
+			s.True(tc.expectedCost.Equal(regularResult),
+				"Regular CalculateCost: Expected cost %s but got %s for quantity %s. %s",
+				tc.expectedCost.String(),
+				regularResult.String(),
+				tc.quantity.String(),
+				tc.description)
+		})
+	}
+}
+
+func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlabWithFlatAmount() {
+	// Test slab tiers with flat amounts
+	// Pricing: 0-5 = $1 flat + $0/unit, 5-10 = $2 flat + $1/unit, 10+ = $0 flat + $2/unit
+	upTo5 := uint64(5)
+	upTo10 := uint64(10)
+	flatAmount1 := decimal.NewFromInt(1)
+	flatAmount2 := decimal.NewFromInt(2)
+	flatAmount3 := decimal.Zero
+
+	price := &price.Price{
+		ID:           "price-slab-flat",
+		Amount:       decimal.Zero,
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_SLAB,
+		Tiers: []price.PriceTier{
+			{
+				UpTo:       &upTo5,
+				UnitAmount: decimal.Zero,
+				FlatAmount: &flatAmount1, // $1 flat + $0/unit for 0-5
+			},
+			{
+				UpTo:       &upTo10,
+				UnitAmount: decimal.NewFromInt(1),
+				FlatAmount: &flatAmount2, // $2 flat + $1/unit for 5-10
+			},
+			{
+				UnitAmount: decimal.NewFromInt(2),
+				FlatAmount: &flatAmount3, // $0 flat + $2/unit for 10+
+			},
+		},
+	}
+
+	testCases := []struct {
+		name         string
+		quantity     decimal.Decimal
+		expectedCost decimal.Decimal
+		description  string
+	}{
+		{
+			name:         "Quantity 3 - only first tier",
+			quantity:     decimal.NewFromInt(3),
+			expectedCost: decimal.NewFromInt(1), // $1 flat + 3 * $0 = $1
+			description:  "$1 flat + 3 units at $0/unit = $1",
+		},
+		{
+			name:         "Quantity 7 - spans first and second tiers",
+			quantity:     decimal.NewFromInt(7),
+			expectedCost: decimal.NewFromInt(5), // $1 flat + 5*$0 + $2 flat + 2*$1 = $5
+			description:  "First tier: $1 flat + 5*$0, Second tier: $2 flat + 2*$1 = $5",
+		},
+		{
+			name:         "Quantity 12 - spans all three tiers",
+			quantity:     decimal.NewFromInt(12),
+			expectedCost: decimal.NewFromInt(12), // $1 + 5*$0 + $2 + 5*$1 + $0 + 2*$2 = $12
+			description:  "All tiers: ($1 + 0) + ($2 + $5) + ($0 + $4) = $12",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			result := s.priceService.CalculateCostWithBreakup(s.ctx, price, tc.quantity, false)
+			s.True(tc.expectedCost.Equal(result.FinalCost),
+				"Expected cost %s but got %s for quantity %s. %s",
+				tc.expectedCost.String(),
+				result.FinalCost.String(),
+				tc.quantity.String(),
+				tc.description)
+		})
+	}
+}
+
+func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlabEdgeCases() {
+	// Test edge cases for slab tier calculation
+	upTo1 := uint64(1)
+	upTo2 := uint64(2)
+	price := &price.Price{
+		ID:           "price-slab-edge",
+		Amount:       decimal.Zero,
+		Currency:     "usd",
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_SLAB,
+		Tiers: []price.PriceTier{
+			{
+				UpTo:       &upTo1,
+				UnitAmount: decimal.NewFromInt(10), // $10/unit for 0-1
+			},
+			{
+				UpTo:       &upTo2,
+				UnitAmount: decimal.NewFromInt(20), // $20/unit for 1-2
+			},
+			{
+				UnitAmount: decimal.NewFromInt(30), // $30/unit for 2+
+			},
+		},
+	}
+
+	testCases := []struct {
+		name         string
+		quantity     decimal.Decimal
+		expectedCost decimal.Decimal
+		description  string
+	}{
+		{
+			name:         "Quantity 0 - zero usage",
+			quantity:     decimal.Zero,
+			expectedCost: decimal.Zero,
+			description:  "Zero quantity should result in zero cost",
+		},
+		{
+			name:         "Quantity 1 - exactly at first tier boundary",
+			quantity:     decimal.NewFromInt(1),
+			expectedCost: decimal.NewFromInt(10), // 1 * $10 = $10
+			description:  "1 unit at $10/unit = $10",
+		},
+		{
+			name:         "Quantity 2 - exactly at second tier boundary",
+			quantity:     decimal.NewFromInt(2),
+			expectedCost: decimal.NewFromInt(30), // 1 * $10 + 1 * $20 = $30
+			description:  "1 unit at $10/unit + 1 unit at $20/unit = $30",
+		},
+		{
+			name:         "Quantity 3 - into third tier",
+			quantity:     decimal.NewFromInt(3),
+			expectedCost: decimal.NewFromInt(60), // 1 * $10 + 1 * $20 + 1 * $30 = $60
+			description:  "1 unit at $10/unit + 1 unit at $20/unit + 1 unit at $30/unit = $60",
+		},
+		{
+			name:         "Decimal quantity 2.5",
+			quantity:     decimal.NewFromFloat(2.5),
+			expectedCost: decimal.NewFromInt(45), // 1 * $10 + 1 * $20 + 0.5 * $30 = $45
+			description:  "1 unit at $10 + 1 unit at $20 + 0.5 unit at $30 = $45",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			result := s.priceService.CalculateCostWithBreakup(s.ctx, price, tc.quantity, false)
+			s.True(tc.expectedCost.Equal(result.FinalCost),
+				"Expected cost %s but got %s for quantity %s. %s",
+				tc.expectedCost.String(),
+				result.FinalCost.String(),
+				tc.quantity.String(),
+				tc.description)
 		})
 	}
 }

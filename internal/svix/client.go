@@ -120,6 +120,7 @@ func (c *Client) SendMessage(ctx context.Context, applicationID string, eventTyp
 		}
 	}
 
+	payloadMap["event_type"] = eventType
 	_, err := c.client.Message.Create(ctx, applicationID, models.MessageIn{
 		EventType: eventType,
 		Payload:   payloadMap,

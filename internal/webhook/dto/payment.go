@@ -8,9 +8,10 @@ type InternalPaymentEvent struct {
 }
 
 type PaymentWebhookPayload struct {
-	Payment *dto.PaymentResponse `json:"payment"`
+	EventType string               `json:"event_type"`
+	Payment   *dto.PaymentResponse `json:"payment"`
 }
 
-func NewPaymentWebhookPayload(payment *dto.PaymentResponse) *PaymentWebhookPayload {
-	return &PaymentWebhookPayload{Payment: payment}
+func NewPaymentWebhookPayload(payment *dto.PaymentResponse, eventType string) *PaymentWebhookPayload {
+	return &PaymentWebhookPayload{EventType: eventType, Payment: payment}
 }
