@@ -3448,14 +3448,13 @@ func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context,
 
 	now := time.Now().UTC()
 
-	// Query for unpaid invoices - remove TimeRangeFilter since it filters by period_end, not due_date
+	// Query for unpaid invoices
 	filter := &types.InvoiceFilter{
 		SubscriptionID: sub.ID,
 		PaymentStatus: []types.PaymentStatus{
 			types.PaymentStatusPending,
 			types.PaymentStatusFailed,
 		},
-		// Remove TimeRangeFilter as it filters by period_end, not due_date
 	}
 
 	s.Logger.Debugw("fetching unpaid invoices for auto-cancellation eligibility",
@@ -3470,7 +3469,7 @@ func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context,
 		return false
 	}
 
-	s.Logger.Debugw("found invoices for subscription", 
+	s.Logger.Debugw("found invoices for subscription",
 		"subscription_id", sub.ID,
 		"invoice_count", len(invoices))
 
@@ -3596,7 +3595,7 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 
 			canceledCount++
 
-			// Log audit trail (PRD requirement)
+			// Log audit trail
 			s.Logger.Infow("successfully auto-canceled subscription",
 				"subscription_id", sub.ID,
 				"reason", "grace_period_expired",
