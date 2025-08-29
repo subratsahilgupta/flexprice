@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/plan"
+	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -53,26 +54,33 @@ func (s *subscriptionChangeService) UpgradeSubscription(
 
 	var result *subscription.SubscriptionPlanChangeResult
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		s.Logger.Infow("starting upgrade transaction", "subscription_id", subscriptionID)
+
 		// 1. Validate subscription state and plan compatibility
 		sub, targetPlan, err := s.validatePlanChange(txCtx, subscriptionID, req.TargetPlanID, "upgrade")
 		if err != nil {
+			s.Logger.Errorw("validation failed, transaction will rollback", "error", err)
 			return err
 		}
 
 		// 2. Calculate proration for the upgrade
+
 		prorationResult, err := s.calculateUpgradeProration(txCtx, sub, targetPlan, req.ProrationBehavior)
 		if err != nil {
+			s.Logger.Errorw("proration calculation failed", "error", err)
 			return err
 		}
 
 		// 3. Execute the upgrade
+		s.Logger.Infow("executing upgrade", "subscription_id", subscriptionID)
 		result, err = s.executeUpgrade(txCtx, sub, targetPlan, prorationResult, req)
 		if err != nil {
+			s.Logger.Errorw("upgrade execution failed", "error", err)
 			return err
 		}
 
 		// 4. Create audit log
-		if err := s.createAuditLog(txCtx, sub, targetPlan, "upgrade", prorationResult.NetAmount, req.Metadata); err != nil {
+		if err := s.createAuditLog(txCtx, sub, targetPlan, "upgrade", prorationResult.TotalProrationAmount, req.Metadata); err != nil {
 			s.Logger.Warnw("failed to create audit log", "error", err)
 			// Don't fail the operation for audit log issues
 		}
@@ -80,14 +88,22 @@ func (s *subscriptionChangeService) UpgradeSubscription(
 		s.Logger.Infow("subscription upgrade completed successfully",
 			"subscription_id", subscriptionID,
 			"target_plan_id", req.TargetPlanID,
-			"proration_amount", prorationResult.NetAmount)
+			"proration_amount", prorationResult.TotalProrationAmount)
 
+		s.Logger.Infow("transaction completed successfully, committing changes", "subscription_id", subscriptionID)
 		return nil
 	})
 
 	if err != nil {
+		s.Logger.Errorw("upgrade transaction failed", "error", err, "subscription_id", subscriptionID)
 		return nil, err
 	}
+
+	s.Logger.Infow("upgrade transaction committed successfully",
+		"subscription_id", subscriptionID,
+		"result_subscription_id", result.Subscription.ID,
+		"result_plan_id", result.Subscription.PlanID)
+
 	return result, nil
 }
 
@@ -154,7 +170,7 @@ func (s *subscriptionChangeService) PreviewPlanChange(
 	preview := &subscription.PlanChangePreviewResult{
 		CurrentAmount:   s.calculateCurrentSubscriptionAmount(ctx, sub),
 		NewAmount:       s.calculateNewSubscriptionAmount(ctx, targetPlan),
-		ProrationAmount: prorationResult.NetAmount,
+		ProrationAmount: prorationResult.TotalProrationAmount,
 		EffectiveDate:   *req.EffectiveDate,
 		LineItems:       s.buildProrationLineItemPreviews(prorationResult),
 	}
@@ -223,32 +239,51 @@ func (s *subscriptionChangeService) validatePlanChange(
 	ctx context.Context,
 	subscriptionID, targetPlanID, changeType string,
 ) (*subscription.Subscription, *plan.Plan, error) {
+	s.Logger.Infow("validating plan change",
+		"subscription_id", subscriptionID,
+		"target_plan_id", targetPlanID,
+		"change_type", changeType)
+
 	// Get subscription
-	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
+		s.Logger.Errorw("failed to get subscription", "error", err, "subscription_id", subscriptionID)
 		return nil, nil, ierr.NewErrorf("failed to get subscription: %v", err).
 			WithHint("Check if the subscription ID is valid").
 			Mark(ierr.ErrNotFound)
 	}
 
+	sub.LineItems = lineItems
+	s.Logger.Infow("subscription retrieved",
+		"subscription_id", subscriptionID,
+		"current_plan_id", sub.PlanID,
+		"line_items_count", len(lineItems),
+		"current_version", sub.Version)
+
 	// Validate subscription state
 	if err := s.validateSubscriptionState(sub); err != nil {
+		s.Logger.Errorw("subscription state validation failed", "error", err)
 		return nil, nil, err
 	}
 
 	// Get target plan
 	targetPlan, err := s.PlanRepo.Get(ctx, targetPlanID)
 	if err != nil {
+		s.Logger.Errorw("failed to get target plan", "error", err, "target_plan_id", targetPlanID)
 		return nil, nil, ierr.NewErrorf("failed to get target plan: %v", err).
 			WithHint("Check if the target plan ID is valid").
 			Mark(ierr.ErrNotFound)
 	}
 
+	s.Logger.Infow("target plan retrieved", "target_plan_id", targetPlanID, "target_plan_name", targetPlan.Name)
+
 	// Validate plan compatibility
 	if err := s.validatePlanCompatibility(ctx, sub, targetPlan, changeType); err != nil {
+		s.Logger.Errorw("plan compatibility validation failed", "error", err)
 		return nil, nil, err
 	}
 
+	s.Logger.Infow("plan change validation completed successfully")
 	return sub, targetPlan, nil
 }
 
@@ -288,6 +323,11 @@ func (s *subscriptionChangeService) validatePlanCompatibility(
 ) error {
 	// Check if trying to change to the same plan
 	if sub.PlanID == targetPlan.ID {
+		s.Logger.Warnw("attempted plan change to same plan",
+			"subscription_id", sub.ID,
+			"current_plan_id", sub.PlanID,
+			"target_plan_id", targetPlan.ID,
+			"change_type", changeType)
 		return ierr.NewError("target plan is the same as current plan").
 			WithHint("Cannot change to the same plan").
 			Mark(ierr.ErrValidation)
@@ -313,29 +353,52 @@ func (s *subscriptionChangeService) calculateUpgradeProration(
 	sub *subscription.Subscription,
 	targetPlan *plan.Plan,
 	prorationBehavior types.ProrationBehavior,
-) (*proration.ProrationResult, error) {
+) (*proration.SubscriptionProrationResult, error) {
 	if prorationBehavior == types.ProrationBehaviorNone {
-		return &proration.ProrationResult{
-			NetAmount: decimal.Zero,
+		return &proration.SubscriptionProrationResult{
+			TotalProrationAmount: decimal.Zero,
+			LineItemResults:      make(map[string]*proration.ProrationResult),
+			Currency:             sub.Currency,
 		}, nil
 	}
 
-	// For Phase 1, we'll use simplified proration calculation
-	// TODO: Add proper current plan comparison in future phases
-
-	// Calculate time-based proration
-	prorationParams := proration.ProrationParams{
-		SubscriptionID:     sub.ID,
-		Action:             types.ProrationActionUpgrade,
-		CurrentPeriodStart: sub.CurrentPeriodStart,
-		CurrentPeriodEnd:   sub.CurrentPeriodEnd,
-		ProrationDate:      time.Now(),
-		ProrationBehavior:  prorationBehavior,
-		CustomerTimezone:   sub.CustomerTimezone,
-		Currency:           sub.Currency,
+	// Use the line items already loaded with the subscription
+	// Get prices for the subscription line items
+	prices := make(map[string]*price.Price)
+	for _, lineItem := range sub.LineItems {
+		// Get price from repository
+		priceObj, err := s.PriceRepo.Get(ctx, lineItem.PriceID)
+		if err != nil {
+			return nil, ierr.NewErrorf("failed to get price %s: %v", lineItem.PriceID, err).
+				WithHint("Ensure price exists and is accessible").
+				Mark(ierr.ErrNotFound)
+		}
+		prices[lineItem.PriceID] = priceObj
 	}
 
-	return s.prorationService.CalculateProration(ctx, prorationParams)
+	// Calculate subscription-level proration
+	prorationParams := proration.SubscriptionProrationParams{
+		Subscription:  sub,
+		Prices:        prices,
+		ProrationMode: types.ProrationModeActive,  // Use active proration mode
+		BillingCycle:  types.BillingCycleCalendar, // Use calendar billing cycle for proration
+	}
+
+	s.Logger.Infow("calculating subscription proration",
+		"subscription_id", sub.ID,
+		"line_items_count", len(sub.LineItems),
+		"prices_count", len(prices),
+		"proration_mode", prorationParams.ProrationMode,
+		"billing_cycle", prorationParams.BillingCycle,
+		"current_period_start", sub.CurrentPeriodStart,
+		"current_period_end", sub.CurrentPeriodEnd)
+
+	result, err := s.prorationService.CalculateSubscriptionProration(ctx, prorationParams)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // calculateProrationPreview calculates proration for preview purposes
@@ -344,7 +407,7 @@ func (s *subscriptionChangeService) calculateProrationPreview(
 	sub *subscription.Subscription,
 	targetPlan *plan.Plan,
 	prorationBehavior types.ProrationBehavior,
-) (*proration.ProrationResult, error) {
+) (*proration.SubscriptionProrationResult, error) {
 	// For preview, use the same calculation as upgrade
 	return s.calculateUpgradeProration(ctx, sub, targetPlan, prorationBehavior)
 }
@@ -354,7 +417,7 @@ func (s *subscriptionChangeService) executeUpgrade(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	targetPlan *plan.Plan,
-	prorationResult *proration.ProrationResult,
+	prorationResult *proration.SubscriptionProrationResult,
 	req *subscription.UpgradeSubscriptionRequest,
 ) (*subscription.SubscriptionPlanChangeResult, error) {
 	// 1. Update subscription plan and related fields
@@ -364,7 +427,7 @@ func (s *subscriptionChangeService) executeUpgrade(
 	// Update core subscription fields
 	sub.PlanID = targetPlan.ID
 	sub.UpdatedAt = now
-	sub.Version++
+	// Note: Version will be incremented automatically by the repository
 
 	// Store comprehensive plan change info in metadata
 	if sub.Metadata == nil {
@@ -378,7 +441,7 @@ func (s *subscriptionChangeService) executeUpgrade(
 	sub.Metadata["plan_change_count"] = s.incrementPlanChangeCount(sub.Metadata)
 
 	// Store proration information
-	sub.Metadata["last_proration_amount"] = prorationResult.NetAmount.String()
+	sub.Metadata["last_proration_amount"] = prorationResult.TotalProrationAmount.String()
 	sub.Metadata["last_proration_behavior"] = string(req.ProrationBehavior)
 
 	// Store request metadata if provided
@@ -394,17 +457,17 @@ func (s *subscriptionChangeService) executeUpgrade(
 
 	// Reset usage counters for usage-based items (Stripe behavior)
 	// This ensures usage tracking starts fresh with the new plan
-	if err := s.resetUsageCountersForPlanChange(ctx, sub, now); err != nil {
-		s.Logger.Warnw("failed to reset usage counters", "error", err, "subscription_id", sub.ID)
-		// Don't fail the operation for usage counter reset issues
-	}
+	// if err := s.resetUsageCountersForPlanChange(ctx, sub, now); err != nil {
+	// 	s.Logger.Warnw("failed to reset usage counters", "error", err, "subscription_id", sub.ID)
+	// 	// Don't fail the operation for usage counter reset issues
+	// }
 
 	s.Logger.Infow("updating subscription with new plan",
 		"subscription_id", sub.ID,
 		"old_plan_id", previousPlanID,
 		"new_plan_id", targetPlan.ID,
 		"billing_anchor", sub.BillingAnchor,
-		"proration_amount", prorationResult.NetAmount,
+		"proration_amount", prorationResult.TotalProrationAmount,
 		"plan_change_count", sub.Metadata["plan_change_count"])
 
 	if err := s.SubRepo.Update(ctx, sub); err != nil {
@@ -425,12 +488,28 @@ func (s *subscriptionChangeService) executeUpgrade(
 
 	// 3. Create proration invoice if needed
 	var invoice *dto.InvoiceResponse
-	if !prorationResult.NetAmount.IsZero() && req.ProrationBehavior == types.ProrationBehaviorCreateProrations {
+	s.Logger.Infow("checking if proration invoice is needed",
+		"subscription_id", sub.ID,
+		"proration_amount", prorationResult.TotalProrationAmount,
+		"is_zero", prorationResult.TotalProrationAmount.IsZero(),
+		"proration_behavior", req.ProrationBehavior,
+		"should_create_prorations", req.ProrationBehavior == types.ProrationBehaviorCreateProrations)
+
+	if !prorationResult.TotalProrationAmount.IsZero() && req.ProrationBehavior == types.ProrationBehaviorCreateProrations {
+		s.Logger.Infow("creating proration invoice", "subscription_id", sub.ID)
 		invoiceResp, err := s.createProrationInvoice(ctx, sub, prorationResult, "upgrade")
 		if err != nil {
+			s.Logger.Errorw("failed to create proration invoice", "error", err)
 			return nil, err
 		}
 		invoice = invoiceResp
+		s.Logger.Infow("proration invoice created successfully",
+			"subscription_id", sub.ID,
+			"invoice_id", invoice.ID)
+	} else {
+		s.Logger.Infow("skipping proration invoice creation",
+			"subscription_id", sub.ID,
+			"reason", "zero amount or proration behavior not set to create prorations")
 	}
 
 	// 4. Handle coupons (simplified approach - deactivate line item coupons)
@@ -442,7 +521,7 @@ func (s *subscriptionChangeService) executeUpgrade(
 	return &subscription.SubscriptionPlanChangeResult{
 		Subscription:    sub,
 		Invoice:         invoice,
-		ProrationAmount: prorationResult.NetAmount,
+		ProrationAmount: prorationResult.TotalProrationAmount,
 		ChangeType:      "upgrade",
 		EffectiveDate:   time.Now(),
 		Metadata:        req.Metadata,
@@ -531,9 +610,9 @@ func (s *subscriptionChangeService) calculateNewSubscriptionAmount(
 }
 
 func (s *subscriptionChangeService) buildProrationLineItemPreviews(
-	prorationResult *proration.ProrationResult,
+	prorationResult *proration.SubscriptionProrationResult,
 ) []interface{} {
-	// TODO: Implement proper line item preview building
+	// TODO: Implement proper line item preview building based on LineItemResults
 	return []interface{}{}
 }
 
@@ -751,12 +830,12 @@ func (s *subscriptionChangeService) isPriceCompatibleWithSubscription(
 func (s *subscriptionChangeService) createProrationInvoice(
 	ctx context.Context,
 	sub *subscription.Subscription,
-	prorationResult *proration.ProrationResult,
+	prorationResult *proration.SubscriptionProrationResult,
 	changeType string,
 ) (*dto.InvoiceResponse, error) {
 	s.Logger.Infow("creating proration invoice",
 		"subscription_id", sub.ID,
-		"amount", prorationResult.NetAmount,
+		"amount", prorationResult.TotalProrationAmount,
 		"change_type", changeType)
 
 	now := time.Now()
@@ -767,75 +846,83 @@ func (s *subscriptionChangeService) createProrationInvoice(
 	totalChargeAmount := decimal.Zero
 
 	// Add credit line items for unused time on old plan
-	for _, item := range prorationResult.CreditItems {
-		totalCreditAmount = totalCreditAmount.Add(item.Amount)
+	// Iterate through all line item proration results
+	for lineItemID, lineItemResult := range prorationResult.LineItemResults {
+		s.Logger.Infow("processing line item proration result",
+			"line_item_id", lineItemID,
+			"credit_items", len(lineItemResult.CreditItems),
+			"charge_items", len(lineItemResult.ChargeItems))
 
-		// Enhanced description for credit items
-		description := fmt.Sprintf("Credit for unused time: %s (Period: %s to %s)",
-			item.Description,
-			item.StartDate.Format("2006-01-02"),
-			item.EndDate.Format("2006-01-02"))
+		for _, item := range lineItemResult.CreditItems {
+			totalCreditAmount = totalCreditAmount.Add(item.Amount)
 
-		lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
-			PriceID:     &item.PriceID,
-			DisplayName: &description,
-			Amount:      item.Amount, // Already negative
-			Quantity:    item.Quantity,
-			PeriodStart: &item.StartDate,
-			PeriodEnd:   &item.EndDate,
-			Metadata: map[string]string{
-				"proration_type":    "credit",
-				"change_type":       changeType,
-				"original_price_id": item.PriceID,
-				"period_start":      item.StartDate.Format(time.RFC3339),
-				"period_end":        item.EndDate.Format(time.RFC3339),
-				"item_amount":       item.Amount.String(),
-				"item_quantity":     item.Quantity.String(),
-				"subscription_id":   sub.ID,
-			},
-		})
+			// Enhanced description for credit items
+			description := fmt.Sprintf("Credit for unused time: %s (Period: %s to %s)",
+				item.Description,
+				item.StartDate.Format("2006-01-02"),
+				item.EndDate.Format("2006-01-02"))
 
-		s.Logger.Infow("added credit line item to invoice",
-			"price_id", item.PriceID,
-			"amount", item.Amount,
-			"quantity", item.Quantity,
-			"period", fmt.Sprintf("%s to %s", item.StartDate.Format("2006-01-02"), item.EndDate.Format("2006-01-02")))
-	}
+			lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
+				PriceID:     &item.PriceID,
+				DisplayName: &description,
+				Amount:      item.Amount, // Already negative
+				Quantity:    item.Quantity,
+				PeriodStart: &item.StartDate,
+				PeriodEnd:   &item.EndDate,
+				Metadata: map[string]string{
+					"proration_type":    "credit",
+					"change_type":       changeType,
+					"original_price_id": item.PriceID,
+					"period_start":      item.StartDate.Format(time.RFC3339),
+					"period_end":        item.EndDate.Format(time.RFC3339),
+					"item_amount":       item.Amount.String(),
+					"item_quantity":     item.Quantity.String(),
+					"subscription_id":   sub.ID,
+				},
+			})
 
-	// Add charge line items for new plan prorated time
-	for _, item := range prorationResult.ChargeItems {
-		totalChargeAmount = totalChargeAmount.Add(item.Amount)
+			s.Logger.Infow("added credit line item to invoice",
+				"price_id", item.PriceID,
+				"amount", item.Amount,
+				"quantity", item.Quantity,
+				"period", fmt.Sprintf("%s to %s", item.StartDate.Format("2006-01-02"), item.EndDate.Format("2006-01-02")))
+		}
 
-		// Enhanced description for charge items
-		description := fmt.Sprintf("Charge for new plan: %s (Period: %s to %s)",
-			item.Description,
-			item.StartDate.Format("2006-01-02"),
-			item.EndDate.Format("2006-01-02"))
+		// Add charge line items for new plan prorated time
+		for _, item := range lineItemResult.ChargeItems {
+			totalChargeAmount = totalChargeAmount.Add(item.Amount)
 
-		lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
-			PriceID:     &item.PriceID,
-			DisplayName: &description,
-			Amount:      item.Amount,
-			Quantity:    item.Quantity,
-			PeriodStart: &item.StartDate,
-			PeriodEnd:   &item.EndDate,
-			Metadata: map[string]string{
-				"proration_type":    "charge",
-				"change_type":       changeType,
-				"original_price_id": item.PriceID,
-				"period_start":      item.StartDate.Format(time.RFC3339),
-				"period_end":        item.EndDate.Format(time.RFC3339),
-				"item_amount":       item.Amount.String(),
-				"item_quantity":     item.Quantity.String(),
-				"subscription_id":   sub.ID,
-			},
-		})
+			// Enhanced description for charge items
+			description := fmt.Sprintf("Charge for new plan: %s (Period: %s to %s)",
+				item.Description,
+				item.StartDate.Format("2006-01-02"),
+				item.EndDate.Format("2006-01-02"))
 
-		s.Logger.Infow("added charge line item to invoice",
-			"price_id", item.PriceID,
-			"amount", item.Amount,
-			"quantity", item.Quantity,
-			"period", fmt.Sprintf("%s to %s", item.StartDate.Format("2006-01-02"), item.EndDate.Format("2006-01-02")))
+			lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
+				PriceID:     &item.PriceID,
+				DisplayName: &description,
+				Amount:      item.Amount,
+				Quantity:    item.Quantity,
+				PeriodStart: &item.StartDate,
+				PeriodEnd:   &item.EndDate,
+				Metadata: map[string]string{
+					"proration_type":    "charge",
+					"change_type":       changeType,
+					"original_price_id": item.PriceID,
+					"period_start":      item.StartDate.Format(time.RFC3339),
+					"period_end":        item.EndDate.Format(time.RFC3339),
+					"item_amount":       item.Amount.String(),
+					"item_quantity":     item.Quantity.String(),
+					"subscription_id":   sub.ID,
+				},
+			})
+
+			s.Logger.Infow("added charge line item to invoice",
+				"price_id", item.PriceID,
+				"amount", item.Amount,
+				"quantity", item.Quantity,
+				"period", fmt.Sprintf("%s to %s", item.StartDate.Format("2006-01-02"), item.EndDate.Format("2006-01-02")))
+		}
 	}
 
 	// Add usage-based charges if any exist
@@ -855,10 +942,10 @@ func (s *subscriptionChangeService) createProrationInvoice(
 		"total_line_items", len(lineItems),
 		"total_credit_amount", totalCreditAmount,
 		"total_charge_amount", totalChargeAmount,
-		"net_amount", prorationResult.NetAmount)
+		"net_amount", prorationResult.TotalProrationAmount)
 
 	// If no line items (zero proration), don't create invoice
-	if len(lineItems) == 0 || prorationResult.NetAmount.IsZero() {
+	if len(lineItems) == 0 || prorationResult.TotalProrationAmount.IsZero() {
 		s.Logger.Infow("no proration invoice needed - zero amount",
 			"subscription_id", sub.ID)
 		return nil, nil
@@ -872,9 +959,9 @@ func (s *subscriptionChangeService) createProrationInvoice(
 		InvoiceStatus:  &[]types.InvoiceStatus{types.InvoiceStatusFinalized}[0], // Immediately finalized
 		PaymentStatus:  &[]types.PaymentStatus{types.PaymentStatusPending}[0],
 		Currency:       sub.Currency,
-		AmountDue:      prorationResult.NetAmount,
-		Total:          prorationResult.NetAmount,
-		Subtotal:       prorationResult.NetAmount,
+		AmountDue:      prorationResult.TotalProrationAmount,
+		Total:          prorationResult.TotalProrationAmount,
+		Subtotal:       prorationResult.TotalProrationAmount,
 		Description:    fmt.Sprintf("Plan %s proration for subscription %s", changeType, sub.ID),
 		DueDate:        &now, // Due immediately
 		BillingReason:  types.InvoiceBillingReasonSubscriptionUpdate,
@@ -885,15 +972,15 @@ func (s *subscriptionChangeService) createProrationInvoice(
 			"change_type":     changeType,
 			"subscription_id": sub.ID,
 			"created_at":      now.Format(time.RFC3339),
-			"net_amount":      prorationResult.NetAmount.String(),
+			"net_amount":      prorationResult.TotalProrationAmount.String(),
 		},
 	}
 
 	// Set payment status based on amount
-	if prorationResult.NetAmount.IsNegative() {
+	if prorationResult.TotalProrationAmount.IsNegative() {
 		// Credit invoice - mark as succeeded since it's a credit
 		invoiceReq.PaymentStatus = &[]types.PaymentStatus{types.PaymentStatusSucceeded}[0]
-		amountPaidAbs := prorationResult.NetAmount.Abs()
+		amountPaidAbs := prorationResult.TotalProrationAmount.Abs()
 		invoiceReq.AmountPaid = &amountPaidAbs // Paid amount is positive
 	} else {
 		// Charge invoice - pending payment
@@ -914,7 +1001,7 @@ func (s *subscriptionChangeService) createProrationInvoice(
 	s.Logger.Infow("proration invoice created successfully",
 		"subscription_id", sub.ID,
 		"invoice_id", invoice.ID,
-		"amount", prorationResult.NetAmount,
+		"amount", prorationResult.TotalProrationAmount,
 		"line_items_count", len(lineItems),
 		"change_type", changeType)
 

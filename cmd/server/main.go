@@ -41,6 +41,7 @@ import (
 	_ "github.com/flexprice/flexprice/docs/swagger"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/proration"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/security"
 	"github.com/gin-gonic/gin"
 )
@@ -190,6 +191,7 @@ func main() {
 			service.NewCustomerService,
 			service.NewPlanService,
 			service.NewSubscriptionService,
+			service.NewSubscriptionChangeService,
 			service.NewWalletService,
 			service.NewInvoiceService,
 			service.NewFeatureService,
@@ -246,6 +248,7 @@ func provideHandlers(
 	customerService service.CustomerService,
 	planService service.PlanService,
 	subscriptionService service.SubscriptionService,
+	subscriptionChangeService subscription.SubscriptionChangeService,
 	walletService service.WalletService,
 	tenantService service.TenantService,
 	invoiceService service.InvoiceService,
@@ -284,6 +287,7 @@ func provideHandlers(
 		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, logger),
 		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
 		SubscriptionPause:        v1.NewSubscriptionPauseHandler(subscriptionService, logger),
+		SubscriptionChange:       v1.NewSubscriptionChangeHandler(subscriptionChangeService, logger),
 		Wallet:                   v1.NewWalletHandler(walletService, logger),
 		Tenant:                   v1.NewTenantHandler(tenantService, logger),
 		Invoice:                  v1.NewInvoiceHandler(invoiceService, temporalService, logger),

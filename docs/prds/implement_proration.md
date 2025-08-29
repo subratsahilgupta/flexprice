@@ -15,7 +15,6 @@
 
 
 ##### Should we keep this Limitation ? 
-1. User are not allowed to change the billing period (Monthly / Annually).
 2. Users are not allowd to change the currency of subscription.
 3. Users are not allowed to change the billing cycle.
 

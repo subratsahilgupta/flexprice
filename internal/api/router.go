@@ -230,6 +230,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			subscription.POST("/:id/upgrade", handlers.SubscriptionChange.UpgradeSubscription)
 			subscription.POST("/:id/downgrade", handlers.SubscriptionChange.DowngradeSubscription)
 			subscription.POST("/:id/preview-change", handlers.SubscriptionChange.PreviewPlanChange)
+			subscription.DELETE("/:id/pending-changes", handlers.SubscriptionChange.CancelPendingPlanChange)
+			subscription.GET("/:id/change-history", handlers.SubscriptionChange.GetPlanChangeHistory)
 		}
 
 		wallet := v1Private.Group("/wallets")
