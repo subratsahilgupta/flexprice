@@ -816,3 +816,89 @@ func (r *EventRepository) FindUnprocessedEvents(ctx context.Context, params *eve
 	SetSpanSuccess(span)
 	return eventsList, nil
 }
+
+// GetDistinctEventNames retrieves distinct event names for a given external customer
+// within the specified time range. This is used for performance optimization
+// to filter meter requests to only those that have actual events.
+func (r *EventRepository) GetDistinctEventNames(ctx context.Context, externalCustomerID string, startTime, endTime time.Time) ([]string, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "event", "get_distinct_event_names", map[string]interface{}{
+		"external_customer_id": externalCustomerID,
+		"start_time":           startTime,
+		"end_time":             endTime,
+	})
+	defer FinishSpan(span)
+
+	query := `
+		SELECT DISTINCT event_name 
+		FROM events 
+		WHERE tenant_id = ?
+		AND environment_id = ?
+		AND external_customer_id = ?
+	`
+
+	args := []interface{}{
+		types.GetTenantID(ctx),
+		types.GetEnvironmentID(ctx),
+		externalCustomerID,
+	}
+
+	// Add time filters if provided
+	if !startTime.IsZero() {
+		query += " AND timestamp >= ?"
+		args = append(args, startTime)
+	}
+
+	if !endTime.IsZero() {
+		query += " AND timestamp <= ?"
+		args = append(args, endTime)
+	}
+
+	// Order by event_name for consistent results
+	query += " ORDER BY event_name"
+
+	r.logger.Debugw("executing get distinct event names query",
+		"query", query,
+		"external_customer_id", externalCustomerID,
+		"start_time", startTime,
+		"end_time", endTime)
+
+	rows, err := r.store.GetConn().Query(ctx, query, args...)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to query distinct event names").
+			WithReportableDetails(map[string]interface{}{
+				"external_customer_id": externalCustomerID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	var eventNames []string
+	for rows.Next() {
+		var eventName string
+		if err := rows.Scan(&eventName); err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Failed to scan event name").
+				Mark(ierr.ErrDatabase)
+		}
+		eventNames = append(eventNames, eventName)
+	}
+
+	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Error iterating event name rows").
+			Mark(ierr.ErrDatabase)
+	}
+
+	r.logger.Debugw("retrieved distinct event names",
+		"external_customer_id", externalCustomerID,
+		"event_count", len(eventNames),
+		"event_names", eventNames)
+
+	SetSpanSuccess(span)
+	return eventNames, nil
+}

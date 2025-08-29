@@ -43,8 +43,7 @@ func (b *CustomerPayloadBuilder) BuildPayload(ctx context.Context, eventType str
 		return nil, err
 	}
 
-	payload := webhookDto.NewCustomerWebhookPayload(customer)
+	payload := webhookDto.NewCustomerWebhookPayload(customer, eventType)
 
 	return json.Marshal(payload)
 }
- 

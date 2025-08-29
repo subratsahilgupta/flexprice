@@ -116,6 +116,26 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 			Mark(ierr.ErrValidation)
 	}
 
+	// For metered features, check if it's a bucketed max meter
+	if feature.Type == types.FeatureTypeMetered {
+		meter, err := s.MeterRepo.GetMeter(ctx, feature.MeterID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Entitlements are restricted for bucketed max meters
+		if meter.IsBucketedMaxMeter() {
+			return nil, ierr.NewError("entitlements not supported for bucketed max meters").
+				WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
+				WithReportableDetails(map[string]interface{}{
+					"meter_id":     meter.ID,
+					"bucket_size":  meter.Aggregation.BucketSize,
+					"feature_type": req.FeatureType,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	// Create entitlement
 	e := req.ToEntitlement(ctx)
 	// Ensure entity type and ID are set correctly
@@ -215,6 +235,27 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 						"index":      i,
 					}).
 					Mark(ierr.ErrValidation)
+			}
+
+			// For metered features, check if it's a bucketed max meter
+			if feature.Type == types.FeatureTypeMetered {
+				meter, err := s.MeterRepo.GetMeter(txCtx, feature.MeterID)
+				if err != nil {
+					return err
+				}
+
+				// Bucketed max meters cannot have entitlements
+				if meter.IsBucketedMaxMeter() {
+					return ierr.NewError("entitlements not supported for bucketed max meters").
+						WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
+						WithReportableDetails(map[string]interface{}{
+							"meter_id":     meter.ID,
+							"bucket_size":  meter.Aggregation.BucketSize,
+							"feature_type": entReq.FeatureType,
+							"index":        i,
+						}).
+						Mark(ierr.ErrValidation)
+				}
 			}
 
 			ent := entReq.ToEntitlement(txCtx)

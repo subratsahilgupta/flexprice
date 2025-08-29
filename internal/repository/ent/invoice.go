@@ -555,12 +555,15 @@ func (r *invoiceRepository) List(ctx context.Context, filter *types.InvoiceFilte
 
 	client := r.client.Querier(ctx)
 	query := client.Invoice.Query().
-		WithLineItems(func(q *ent.InvoiceLineItemQuery) {
-			q.Where(invoicelineitem.Status(string(types.StatusPublished)))
-		}).
 		WithCouponApplications(func(q *ent.CouponApplicationQuery) {
 			q.Where(couponapplication.Status(string(types.StatusPublished)))
 		})
+
+	if !filter.SkipLineItems {
+		query = query.WithLineItems(func(q *ent.InvoiceLineItemQuery) {
+			q.Where(invoicelineitem.Status(string(types.StatusPublished)))
+		})
+	}
 
 	// Apply common query options
 	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
