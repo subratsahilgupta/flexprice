@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -3410,9 +3409,11 @@ func (s *subscriptionService) GetSubscriptionConfig(ctx context.Context) (*Subsc
 	setting, err := s.SettingsRepo.GetByKey(ctx, "subscription_config")
 	if err != nil {
 		// If setting not found, return default
-		if strings.Contains(err.Error(), "not found") {
+		if ierr.IsNotFound(err) {
+			s.Logger.Infow("subscription config not found, returning default",
+				"tenant_id", types.GetTenantID(ctx), "environment_id", types.GetEnvironmentID(ctx))
 			return &SubscriptionConfig{
-				GracePeriodDays:         3,
+				GracePeriodDays:         1,
 				AutoCancellationEnabled: false,
 			}, nil
 		}
@@ -3445,30 +3446,28 @@ func (s *subscriptionService) GetSubscriptionConfig(ctx context.Context) (*Subsc
 	return config, nil
 }
 
-// isEligibleForAutoCancellation checks if a subscription is eligible for auto-cancellation
+// isEligibleForAutoCancellation checks if an active subscription is eligible for auto-cancellation
 func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context, sub *subscription.Subscription, config *SubscriptionConfig) bool {
-	// Check if auto-cancellation is enabled at tenant level
-	if !config.AutoCancellationEnabled {
-		return false
-	}
-
 	// Check if subscription is active
 	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
 		return false
 	}
 
-	// Check if subscription has unpaid invoices past grace period
 	now := time.Now().UTC()
 
-	// Query for unpaid invoices using existing filter structure
-	// We need to get ALL invoices first, then filter by payment status and amount remaining
+	// Query for unpaid invoices - remove TimeRangeFilter since it filters by period_end, not due_date
 	filter := &types.InvoiceFilter{
 		SubscriptionID: sub.ID,
-		// Don't filter by payment status here - we'll check it manually
+		PaymentStatus: []types.PaymentStatus{
+			types.PaymentStatusPending,
+			types.PaymentStatusFailed,
+		},
+		// Remove TimeRangeFilter as it filters by period_end, not due_date
 	}
 
-	s.Logger.Debugw("fetching invoices for auto-cancellation",
-		"subscription_id", sub.ID)
+	s.Logger.Debugw("fetching unpaid invoices for auto-cancellation eligibility",
+		"subscription_id", sub.ID,
+		"payment_statuses", filter.PaymentStatus)
 
 	invoices, err := s.InvoiceRepo.List(ctx, filter)
 	if err != nil {
@@ -3478,46 +3477,25 @@ func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context,
 		return false
 	}
 
-	// Check if there are any unpaid invoices past grace period
-	s.Logger.Debugw("checking invoices for auto-cancellation",
+	s.Logger.Debugw("found invoices for subscription", 
 		"subscription_id", sub.ID,
-		"total_invoices", len(invoices),
-		"grace_period_days", config.GracePeriodDays)
+		"invoice_count", len(invoices))
 
+	// Check each invoice for eligibility criteria
 	for _, inv := range invoices {
-		s.Logger.Debugw("checking invoice for auto-cancellation",
-			"subscription_id", sub.ID,
-			"invoice_id", inv.ID,
-			"payment_status", inv.PaymentStatus,
-			"amount_remaining", inv.AmountRemaining,
-			"due_date", inv.DueDate)
-
-		// Check if due date is valid
+		// Skip invalid due dates
 		if inv.DueDate == nil {
-			s.Logger.Warnw("invoice has nil due date, skipping",
+			s.Logger.Warnw("invoice has invalid due date, skipping",
 				"subscription_id", sub.ID,
 				"invoice_id", inv.ID)
 			continue
 		}
 
-		// Check if due date is zero time
-		if inv.DueDate.IsZero() {
-			s.Logger.Warnw("invoice has zero due date, skipping",
-				"subscription_id", sub.ID,
-				"invoice_id", inv.ID)
-			continue
-		}
-
-		// Check payment status: should be PENDING or FAILED, or amount remaining > 0
-		isUnpaid := inv.PaymentStatus == types.PaymentStatusPending ||
-			inv.PaymentStatus == types.PaymentStatusFailed ||
-			inv.AmountRemaining.GreaterThan(decimal.Zero)
-
-		if !isUnpaid {
-			s.Logger.Debugw("invoice is not unpaid, skipping",
+		// Check amount_remaining (must have outstanding amount)
+		if !inv.AmountRemaining.GreaterThan(decimal.Zero) {
+			s.Logger.Debugw("invoice has no remaining amount, skipping",
 				"subscription_id", sub.ID,
 				"invoice_id", inv.ID,
-				"payment_status", inv.PaymentStatus,
 				"amount_remaining", inv.AmountRemaining)
 			continue
 		}
@@ -3525,17 +3503,19 @@ func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context,
 		// Calculate grace period end time: due_date + grace_period_days
 		gracePeriodEndTime := inv.DueDate.AddDate(0, 0, config.GracePeriodDays)
 
-		s.Logger.Debugw("calculated grace period",
+		s.Logger.Debugw("evaluating invoice for auto-cancellation",
 			"subscription_id", sub.ID,
 			"invoice_id", inv.ID,
 			"due_date", inv.DueDate,
+			"amount_remaining", inv.AmountRemaining,
 			"grace_period_days", config.GracePeriodDays,
 			"grace_period_end_time", gracePeriodEndTime,
+			"current_time", now,
 			"is_past_grace_period", now.After(gracePeriodEndTime))
 
 		// Check if current time is past grace period end
 		if now.After(gracePeriodEndTime) {
-			s.Logger.Infow("found eligible invoice for auto-cancellation",
+			s.Logger.Infow("subscription eligible for auto-cancellation",
 				"subscription_id", sub.ID,
 				"invoice_id", inv.ID,
 				"amount_remaining", inv.AmountRemaining,
@@ -3548,9 +3528,15 @@ func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context,
 			s.Logger.Debugw("invoice not past grace period yet",
 				"subscription_id", sub.ID,
 				"invoice_id", inv.ID,
-				"grace_period_end_time", gracePeriodEndTime)
+				"due_date", inv.DueDate,
+				"grace_period_end_time", gracePeriodEndTime,
+				"days_until_grace_expires", gracePeriodEndTime.Sub(now).Hours()/24)
 		}
 	}
+
+	s.Logger.Debugw("subscription not eligible for auto-cancellation",
+		"subscription_id", sub.ID,
+		"reason", "no invoices past grace period")
 
 	return false
 }
@@ -3564,6 +3550,14 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 	if err != nil {
 		s.Logger.Errorw("failed to get subscription config", "error", err)
 		return err
+	}
+
+	// Early return if auto-cancellation is disabled at tenant level
+	if !config.AutoCancellationEnabled {
+		s.Logger.Infow("auto-cancellation is disabled for tenant, skipping",
+			"tenant_id", types.GetTenantID(ctx),
+			"environment_id", types.GetEnvironmentID(ctx))
+		return nil
 	}
 
 	// Get ONLY ACTIVE subscriptions (skip cancelled, paused, trialing, etc.)

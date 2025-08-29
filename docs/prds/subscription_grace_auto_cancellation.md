@@ -107,7 +107,7 @@ ADD CONSTRAINT check_subscription_config
 CHECK (
     (key != 'subscription_config') OR 
     (jsonb_typeof(value->'grace_period_days') = 'number' AND 
-     (value->>'grace_period_days')::int min 1 day)
+     (value->>'grace_period_days')::int >= 1)
 );
 
 -- Modify Subscriptions table
