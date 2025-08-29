@@ -46,6 +46,9 @@ func (s *subscriptionService) AddSubscriptionLineItem(ctx context.Context, subsc
 			return nil, err
 		}
 
+		// Set the price in params
+		params.Price = &dto.PriceResponse{Price: price}
+
 		if price.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
 			planService := NewPlanService(s.ServiceParams)
 			planResponse, err := planService.GetPlan(ctx, price.EntityID)
@@ -69,7 +72,7 @@ func (s *subscriptionService) AddSubscriptionLineItem(ctx context.Context, subsc
 	// Create the line item
 	lineItem := req.ToSubscriptionLineItem(ctx, params)
 
-	if err := s.LineItemRepo.Create(ctx, lineItem); err != nil {
+	if err := s.SubscriptionLineItemRepo.Create(ctx, lineItem); err != nil {
 		return nil, err
 	}
 
@@ -83,7 +86,7 @@ func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, li
 	}
 
 	// Get the line item
-	lineItem, err := s.LineItemRepo.Get(ctx, lineItemID)
+	lineItem, err := s.SubscriptionLineItemRepo.Get(ctx, lineItemID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +97,7 @@ func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, li
 		lineItem.EndDate = time.Now().UTC()
 	}
 
-	if err := s.LineItemRepo.Update(ctx, lineItem); err != nil {
+	if err := s.SubscriptionLineItemRepo.Update(ctx, lineItem); err != nil {
 		return nil, err
 	}
 

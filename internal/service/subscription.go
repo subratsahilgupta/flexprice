@@ -59,7 +59,6 @@ type SubscriptionService interface {
 
 type subscriptionService struct {
 	ServiceParams
-	LineItemRepo subscription.LineItemRepository
 }
 
 func NewSubscriptionService(params ServiceParams) SubscriptionService {
