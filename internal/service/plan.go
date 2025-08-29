@@ -757,7 +757,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 		//    - Ineligible prices are skipped to maintain billing consistency
 		//
 		// 2. Line Item States:
-		//    - Existing line items with expired prices (EndDate != nil) -> Mark for end
+		//    - Existing line items with expired prices (EndDate != nil) as well is it not an override price -> Mark for end
 		//    - Existing line items with active prices (EndDate == nil) -> Keep as is
 		//    - Missing line items for active prices -> Create new
 		//    - Missing line items for expired prices -> Skip
