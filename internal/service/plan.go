@@ -718,9 +718,13 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 
 		// Create override price to parent price map
 		overridePriceMap := make(map[string]string) // overridePriceID -> parentPriceID
+
+		// this is similar to the overridePriceMap, but it's the reverse so that we can check if a price id belongs to an override without iterating the loop
+		priceOverridesMap := make(map[string]string) // parentPriceID -> OverridePriceID
 		for _, priceResp := range subPricesResponse.Items {
 			if priceResp.ParentPriceID != "" {
 				overridePriceMap[priceResp.ID] = priceResp.ParentPriceID
+				priceOverridesMap[priceResp.ParentPriceID] = priceResp.ID
 			}
 		}
 
@@ -735,6 +739,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 
 			if parentPriceID, isOverride := overridePriceMap[item.PriceID]; isOverride {
 				lineItemMap[parentPriceID] = item
+				// get the parent price details
 			}
 		}
 
@@ -781,6 +786,12 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 			// Handle existing line items
 			if existingLineItem {
 				if planPrice.EndDate != nil {
+
+					if _, isOverride := priceOverridesMap[priceID]; isOverride {
+						// this price is an override, so we wont end this line item
+						continue
+					}
+
 					// Price has expired - end the line item
 					s.Logger.Infow("Ending line item for expired price",
 						"subscription_id", sub.ID,
