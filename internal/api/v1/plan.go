@@ -281,36 +281,13 @@ func (h *PlanHandler) SyncPlanPrices(c *gin.Context) {
 	}
 
 	// Use temporal workflow instead of direct service call
-	result, err := h.temporalService.StartPlanPriceSync(c.Request.Context(), id)
-	if err != nil {
-		c.Error(ierr.WithError(err).
-			WithHint("Failed to sync plan prices").
-			Mark(ierr.ErrInternal))
-		return
-	}
-
-	c.JSON(http.StatusOK, result)
-}
-
-// @Summary Test plan price sync directly (without Temporal)
-// @Description Test the plan price sync functionality directly through the service
-// @Tags Plans
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param id path string true "Plan ID"
-// @Success 200 {object} dto.SyncPlanPricesResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /plans/{id}/sync/test [post]
-func (h *PlanHandler) TestSyncPlanPrices(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.Error(ierr.NewError("plan ID is required").
-			WithHint("Plan ID is required").
-			Mark(ierr.ErrValidation))
-		return
-	}
+	// result, err := h.temporalService.StartPlanPriceSync(c.Request.Context(), id)
+	// if err != nil {
+	// 	c.Error(ierr.WithError(err).
+	// 		WithHint("Failed to sync plan prices").
+	// 		Mark(ierr.ErrInternal))
+	// 	return
+	// }
 
 	// Call the service directly without Temporal
 	result, err := h.service.SyncPlanPrices(c.Request.Context(), id)
