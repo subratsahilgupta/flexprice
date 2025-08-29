@@ -281,14 +281,16 @@ type PriceFilter struct {
 // NewPriceFilter creates a new PriceFilter with default values
 func NewPriceFilter() *PriceFilter {
 	return &PriceFilter{
-		QueryFilter: NewDefaultQueryFilter(),
+		QueryFilter:        NewDefaultQueryFilter(),
+		AllowExpiredPrices: false,
 	}
 }
 
 // NewNoLimitPriceFilter creates a new PriceFilter with no pagination limits
 func NewNoLimitPriceFilter() *PriceFilter {
 	return &PriceFilter{
-		QueryFilter: NewNoLimitQueryFilter(),
+		QueryFilter:        NewNoLimitQueryFilter(),
+		AllowExpiredPrices: false,
 	}
 }
 

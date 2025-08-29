@@ -231,7 +231,6 @@ func (r *priceRepository) Count(ctx context.Context, filter *types.PriceFilter) 
 	count, err := query.Count(ctx)
 	if err != nil {
 		SetSpanError(span, err)
-
 		return 0, ierr.WithError(err).
 			WithHint("Failed to count prices").
 			Mark(ierr.ErrDatabase)
