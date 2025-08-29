@@ -575,6 +575,35 @@ func (s *integrationService) ValidateIntegrationEntityMappings(ctx context.Conte
 				Mark(ierr.ErrValidation)
 		}
 
+		// Check if the provider entity ID already exists in our system
+		filter := &types.EntityIntegrationMappingFilter{
+			ProviderTypes:     []string{mapping.Provider},
+			ProviderEntityIDs: []string{mapping.ID},
+		}
+		existingMappings, err := s.EntityIntegrationMappingRepo.List(ctx, filter)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to check for existing provider entity mapping").
+				Mark(ierr.ErrInternal)
+		}
+
+		// If any mapping exists, return error with details
+		if len(existingMappings) > 0 {
+			existingMapping := existingMappings[0]
+			return ierr.NewError("provider entity mapping already exists").
+				WithHint(fmt.Sprintf("The provider entity ID '%s' for provider '%s' is already mapped to another entity", mapping.ID, mapping.Provider)).
+				WithReportableDetails(map[string]interface{}{
+					"provider":             mapping.Provider,
+					"provider_entity_id":   mapping.ID,
+					"existing_entity_id":   existingMapping.EntityID,
+					"existing_entity_type": existingMapping.EntityType,
+					"existing_mapping_id":  existingMapping.ID,
+					"existing_environment": existingMapping.EnvironmentID,
+					"existing_tenant":      existingMapping.TenantID,
+				}).
+				Mark(ierr.ErrAlreadyExists)
+		}
+
 		// Validate based on provider type
 		switch mapping.Provider {
 		case "stripe":
