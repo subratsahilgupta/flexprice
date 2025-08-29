@@ -91,3 +91,54 @@ func (p ProrationMode) Validate() error {
 func (p ProrationMode) String() string {
 	return string(p)
 }
+
+// BillingCycleAnchor defines how billing cycle is handled during subscription changes
+type BillingCycleAnchor string
+
+const (
+	BillingCycleAnchorUnchanged BillingCycleAnchor = "unchanged" // Keep current billing anchor
+	BillingCycleAnchorReset     BillingCycleAnchor = "reset"     // Reset to current date
+	BillingCycleAnchorImmediate BillingCycleAnchor = "immediate" // Bill immediately
+)
+
+var BillingCycleAnchorValues = []BillingCycleAnchor{
+	BillingCycleAnchorUnchanged,
+	BillingCycleAnchorReset,
+	BillingCycleAnchorImmediate,
+}
+
+func (b BillingCycleAnchor) Validate() error {
+	if !lo.Contains(BillingCycleAnchorValues, b) {
+		return ierr.NewError("invalid billing cycle anchor").
+			WithHint("Billing cycle anchor must be unchanged, reset, or immediate").
+			WithReportableDetails(map[string]any{
+				"allowed_values": BillingCycleAnchorValues,
+				"provided_value": b,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+func (b BillingCycleAnchor) String() string {
+	return string(b)
+}
+
+var ProrationBehaviorValues = []ProrationBehavior{
+	ProrationBehaviorCreateProrations,
+	ProrationBehaviorAlwaysInvoice,
+	ProrationBehaviorNone,
+}
+
+func (p ProrationBehavior) Validate() error {
+	if !lo.Contains(ProrationBehaviorValues, p) {
+		return ierr.NewError("invalid proration behavior").
+			WithHint("Proration behavior must be create_prorations, always_invoice, or none").
+			WithReportableDetails(map[string]any{
+				"allowed_values": ProrationBehaviorValues,
+				"provided_value": p,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
