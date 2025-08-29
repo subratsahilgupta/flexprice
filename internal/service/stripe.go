@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/connection"
+	flexCustomer "github.com/flexprice/flexprice/internal/domain/customer"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/security"
 	"github.com/flexprice/flexprice/internal/types"
@@ -1470,4 +1471,63 @@ func (s *StripeService) GetPaymentStatusByPaymentIntent(ctx context.Context, pay
 		ExpiresAt: 0, // Payment intents don't have expires_at
 		Metadata:  paymentIntent.Metadata,
 	}, nil
+}
+
+// UpdateStripeCustomerMetadata updates the Stripe customer metadata with FlexPrice information
+func (s *StripeService) UpdateStripeCustomerMetadata(ctx context.Context, stripeCustomerID string, cust interface{}) error {
+	// Type assertion to get customer data
+	var customerID, environmentID, externalID string
+	switch customer := cust.(type) {
+	case *flexCustomer.Customer:
+		customerID = customer.ID
+		environmentID = customer.EnvironmentID
+		externalID = customer.ExternalID
+	default:
+		return ierr.NewError("invalid customer type").
+			WithHint("Expected customer.Customer type").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get Stripe connection
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to get Stripe connection").
+			Mark(ierr.ErrInternal)
+	}
+
+	stripeConfig, err := s.GetDecryptedStripeConfig(conn)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to get Stripe configuration").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Initialize Stripe client
+	sc := &client.API{}
+	sc.Init(stripeConfig.SecretKey, nil)
+
+	// Create update parameters
+	params := &stripe.CustomerParams{}
+	params.AddMetadata("flexprice_customer_id", customerID)
+	params.AddMetadata("flexprice_environment", environmentID)
+	params.AddMetadata("external_id", externalID)
+
+	// Update the Stripe customer
+	_, err = sc.Customers.Update(stripeCustomerID, params)
+	if err != nil {
+		s.Logger.Errorw("failed to update Stripe customer metadata",
+			"stripe_customer_id", stripeCustomerID,
+			"flexprice_customer_id", customerID,
+			"error", err)
+		return ierr.WithError(err).
+			WithHint("Failed to update Stripe customer metadata").
+			Mark(ierr.ErrInternal)
+	}
+
+	s.Logger.Infow("successfully updated Stripe customer metadata",
+		"stripe_customer_id", stripeCustomerID,
+		"flexprice_customer_id", customerID)
+
+	return nil
 }
