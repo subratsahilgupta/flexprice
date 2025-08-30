@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -63,6 +64,8 @@ func (s *SubscriptionServiceSuite) SetupTest() {
 // TearDownTest is called after each test
 func (s *SubscriptionServiceSuite) TearDownTest() {
 	s.BaseServiceTestSuite.TearDownTest()
+	// Clear stores to prevent data persistence between tests
+	s.BaseServiceTestSuite.ClearStores()
 }
 
 func (s *SubscriptionServiceSuite) setupService() {
@@ -100,9 +103,12 @@ func (s *SubscriptionServiceSuite) setupService() {
 
 // setupTestData initializes the test data directly in the SubscriptionServiceSuite
 func (s *SubscriptionServiceSuite) setupTestData() {
+	// Clear any existing data
+	s.BaseServiceTestSuite.ClearStores()
+
 	// Create test customer
 	s.testData.customer = &customer.Customer{
-		ID:         "cust_123",
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
 		ExternalID: "ext_cust_123",
 		Name:       "Test Customer",
 		Email:      "test@example.com",
@@ -112,7 +118,7 @@ func (s *SubscriptionServiceSuite) setupTestData() {
 
 	// Create test plan
 	s.testData.plan = &plan.Plan{
-		ID:          "plan_123",
+		ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
 		Name:        "Test Plan",
 		Description: "Test Plan Description",
 		BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
@@ -121,7 +127,7 @@ func (s *SubscriptionServiceSuite) setupTestData() {
 
 	// Create test meters
 	s.testData.meters.apiCalls = &meter.Meter{
-		ID:        "meter_api_calls",
+		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_METER),
 		Name:      "API Calls",
 		EventName: "api_call",
 		Aggregation: meter.Aggregation{
@@ -132,7 +138,7 @@ func (s *SubscriptionServiceSuite) setupTestData() {
 	s.NoError(s.GetStores().MeterRepo.CreateMeter(s.GetContext(), s.testData.meters.apiCalls))
 
 	s.testData.meters.storage = &meter.Meter{
-		ID:        "meter_storage",
+		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_METER),
 		Name:      "Storage",
 		EventName: "storage_usage",
 		Aggregation: meter.Aggregation{
@@ -2467,7 +2473,7 @@ func (s *SubscriptionServiceSuite) TestPriceOverrideIntegration() {
 		var overriddenLineItem *subscription.SubscriptionLineItem
 		for _, lineItem := range sub.LineItems {
 			if lineItem.EntityID == s.testData.plan.ID && lineItem.PriceType == s.testData.prices.storage.Type {
-				overriddenLineItem = lineItem
+				overriddenLineItem = lineItem.SubscriptionLineItem
 				break
 			}
 		}
@@ -2532,5 +2538,590 @@ func (s *SubscriptionServiceSuite) TestPriceOverrideIntegration() {
 		s.T().Logf("Created subscriptions with IDs: %v", subscriptionIDs)
 
 		s.T().Logf("✅ Multiple subscriptions test passed: Created %d subscriptions with unique overrides", len(overrideScenarios))
+	})
+}
+
+func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
+	s.Run("TC-SYNC-014_Existing_Line_Items_For_Active_Prices", func() {
+		// Create a plan with active prices
+		testPlan := &plan.Plan{
+			ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
+			Name:        "Plan Active Line Items",
+			Description: "A plan with active prices and existing line items",
+			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		// Create active price
+		activePrice := &price.Price{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           testPlan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().PriceRepo.Create(s.GetContext(), activePrice)
+		s.NoError(err)
+
+		// Create subscription using plan
+		testSub := &subscription.Subscription{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
+			PlanID:             testPlan.ID,
+			CustomerID:         s.testData.customer.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
+		s.NoError(err)
+
+		// Create existing line item for the price
+		existingLineItem := &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  testSub.ID,
+			CustomerID:      testSub.CustomerID,
+			EntityID:        testPlan.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: testPlan.Name,
+			PriceID:         activePrice.ID,
+			PriceType:       activePrice.Type,
+			DisplayName:     "Test Line Item",
+			Quantity:        decimal.Zero,
+			Currency:        testSub.Currency,
+			BillingPeriod:   testSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{existingLineItem})
+		s.NoError(err)
+
+		// Sync should preserve existing line items for active prices
+		// Note: This test would require the SyncPlanPrices method to be implemented
+		s.T().Skip("SyncPlanPrices method not yet implemented")
+	})
+
+	s.Run("TC-SYNC-015_Existing_Line_Items_For_Expired_Prices", func() {
+		// Create a plan with expired prices
+		testPlan := &plan.Plan{
+			ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
+			Name:        "Plan Expired Line Items",
+			Description: "A plan with expired prices and existing line items",
+			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		// Create expired price
+		expiredPrice := &price.Price{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           testPlan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			EndDate:            lo.ToPtr(s.testData.now.AddDate(0, 0, -1)), // Past date
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().PriceRepo.Create(s.GetContext(), expiredPrice)
+		s.NoError(err)
+
+		// Create subscription using plan
+		testSub := &subscription.Subscription{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
+			PlanID:             testPlan.ID,
+			CustomerID:         s.testData.customer.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
+		s.NoError(err)
+
+		// Create existing line item for the expired price
+		existingLineItem := &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  testSub.ID,
+			CustomerID:      testSub.CustomerID,
+			EntityID:        testPlan.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: testPlan.Name,
+			PriceID:         expiredPrice.ID,
+			PriceType:       expiredPrice.Type,
+			DisplayName:     "Test Expired Line Item",
+			Quantity:        decimal.Zero,
+			Currency:        testSub.Currency,
+			BillingPeriod:   testSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{existingLineItem})
+		s.NoError(err)
+
+		// Sync should end line items for expired prices
+		// Note: This test would require the SyncPlanPrices method to be implemented
+		s.T().Skip("SyncPlanPrices method not yet implemented")
+	})
+
+	s.Run("TC-SYNC-016_Missing_Line_Items_For_Active_Prices", func() {
+		// Create a plan with active prices
+		testPlan := &plan.Plan{
+			ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
+			Name:        "Plan Missing Line Items",
+			Description: "A plan with active prices but missing line items",
+			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		// Create active price
+		activePrice := &price.Price{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           testPlan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().PriceRepo.Create(s.GetContext(), activePrice)
+		s.NoError(err)
+
+		// Create subscription using plan (without line items)
+		testSub := &subscription.Subscription{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
+			PlanID:             testPlan.ID,
+			CustomerID:         s.testData.customer.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
+		s.NoError(err)
+
+		// Sync should create missing line items for active prices
+		// Note: This test would require the SyncPlanPrices method to be implemented
+		s.T().Skip("SyncPlanPrices method not yet implemented")
+	})
+
+	s.Run("TC-SYNC-017_Missing_Line_Items_For_Expired_Prices", func() {
+		// Create a plan with expired prices
+		testPlan := &plan.Plan{
+			ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
+			Name:        "Plan Missing Expired Line Items",
+			Description: "A plan with expired prices but missing line items",
+			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		// Create expired price
+		expiredPrice := &price.Price{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           testPlan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			EndDate:            lo.ToPtr(s.testData.now.AddDate(0, 0, -1)), // Past date
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().PriceRepo.Create(s.GetContext(), expiredPrice)
+		s.NoError(err)
+
+		// Create subscription using plan (without line items)
+		testSub := &subscription.Subscription{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
+			PlanID:             testPlan.ID,
+			CustomerID:         s.testData.customer.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
+		s.NoError(err)
+
+		// Sync should not create line items for expired prices
+		// Note: This test would require the SyncPlanPrices method to be implemented
+		s.T().Skip("SyncPlanPrices method not yet implemented")
+	})
+}
+
+func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
+	s.Run("TC-SYNC-018_Subscription_With_Addon_Line_Items", func() {
+		// Clear stores to prevent data persistence between tests
+		s.BaseServiceTestSuite.ClearStores()
+
+		// TEST 018: Create a plan with prices
+		testPlan := &plan.Plan{
+			ID:          "plan_hardcoded_018",
+			Name:        "Plan With Addons",
+			Description: "A plan with prices and addon line items",
+			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		// TEST 018: Create a unique customer
+		testCustomer := &customer.Customer{
+			ID:         "cust_hardcoded_018",
+			ExternalID: "ext_cust_018",
+			Name:       "Test Customer 018",
+			Email:      "test018@example.com",
+			BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().CustomerRepo.Create(s.GetContext(), testCustomer)
+		s.NoError(err)
+
+		// TEST 018: Create plan price
+		planPrice := &price.Price{
+			ID:                 "price_hardcoded_018",
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           testPlan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().PriceRepo.Create(s.GetContext(), planPrice)
+		s.NoError(err)
+
+		// TEST 018: Create subscription using plan
+		testSub := &subscription.Subscription{
+			ID:                 "sub_hardcoded_018",
+			PlanID:             testPlan.ID,
+			CustomerID:         testCustomer.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
+		s.NoError(err)
+
+		// TEST 018: Create addon line item
+		addonLineItem := &subscription.SubscriptionLineItem{
+			ID:              "lineitem_hardcoded_018",
+			SubscriptionID:  testSub.ID,
+			CustomerID:      testSub.CustomerID,
+			EntityID:        "addon-123",
+			EntityType:      types.SubscriptionLineItemEntityTypeAddon,
+			PlanDisplayName: "Addon Service",
+			PriceID:         "addon-price-123",
+			PriceType:       types.PRICE_TYPE_FIXED,
+			DisplayName:     "Premium Support",
+			Quantity:        decimal.NewFromInt(1),
+			Currency:        testSub.Currency,
+			BillingPeriod:   testSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{addonLineItem})
+		s.NoError(err)
+
+		// Sync should preserve addon line items
+		// Note: This test would require the SyncPlanPrices method to be implemented
+		s.T().Skip("SyncPlanPrices method not yet implemented")
+	})
+
+	s.Run("TC-SYNC-019_Addon_Line_Items_With_Entity_Type_Addon", func() {
+		// Clear stores to prevent data persistence between tests
+		s.BaseServiceTestSuite.ClearStores()
+
+		// Generate random test ID
+		randomID := fmt.Sprintf("019_%d_%d", time.Now().UnixNano(), rand.Intn(10000))
+
+		// Create a plan with prices
+		testPlan := &plan.Plan{
+			ID:          "plan_random_" + randomID,
+			Name:        "Plan Addon Entity Type",
+			Description: "A plan with addon line items having entity type addon",
+			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		// Create plan price
+		planPrice := &price.Price{
+			ID:                 "price_random_" + randomID,
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           testPlan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().PriceRepo.Create(s.GetContext(), planPrice)
+		s.NoError(err)
+
+		// Create subscription using plan
+		testSub := &subscription.Subscription{
+			ID:                 "sub_random_" + randomID,
+			PlanID:             testPlan.ID,
+			CustomerID:         s.testData.customer.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
+		s.NoError(err)
+
+		// Create addon line item with entity type addon
+		addonLineItem := &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  testSub.ID,
+			CustomerID:      testSub.CustomerID,
+			EntityID:        "addon-456",
+			EntityType:      types.SubscriptionLineItemEntityTypeAddon,
+			PlanDisplayName: "Addon Service",
+			PriceID:         "addon-price-456",
+			PriceType:       types.PRICE_TYPE_FIXED,
+			DisplayName:     "Advanced Analytics",
+			Quantity:        decimal.NewFromInt(1),
+			Currency:        testSub.Currency,
+			BillingPeriod:   testSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{addonLineItem})
+		s.NoError(err)
+
+		// Sync should preserve addon line items with entity type addon
+		// Note: This test would require the SyncPlanPrices method to be implemented
+		s.T().Skip("SyncPlanPrices method not yet implemented")
+	})
+
+	s.Run("TC-SYNC-020_Mixed_Plan_And_Addon_Line_Items", func() {
+		// Clear stores to prevent data persistence between tests
+		s.BaseServiceTestSuite.ClearStores()
+
+		// Generate random test ID
+		randomID := fmt.Sprintf("020_%d_%d", time.Now().UnixNano(), rand.Intn(10000))
+
+		// Create a plan with prices
+		testPlan := &plan.Plan{
+			ID:          "plan_random_" + randomID,
+			Name:        "Plan Mixed Line Items",
+			Description: "A plan with both plan and addon line items",
+			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		// Create plan price
+		planPrice := &price.Price{
+			ID:                 "price_random_" + randomID,
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           testPlan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().PriceRepo.Create(s.GetContext(), planPrice)
+		s.NoError(err)
+
+		// Create subscription using plan
+		testSub := &subscription.Subscription{
+			ID:                 "sub_random_" + randomID,
+			PlanID:             testPlan.ID,
+			CustomerID:         s.testData.customer.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
+		s.NoError(err)
+
+		// Create plan line item
+		planLineItem := &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  testSub.ID,
+			CustomerID:      testSub.CustomerID,
+			EntityID:        testPlan.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: testPlan.Name,
+			PriceID:         planPrice.ID,
+			PriceType:       planPrice.Type,
+			DisplayName:     "Base Plan",
+			Quantity:        decimal.NewFromInt(1),
+			Currency:        testSub.Currency,
+			BillingPeriod:   testSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{planLineItem})
+		s.NoError(err)
+
+		// Create addon line item
+		addonLineItem := &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  testSub.ID,
+			CustomerID:      testSub.CustomerID,
+			EntityID:        "addon-789",
+			EntityType:      types.SubscriptionLineItemEntityTypeAddon,
+			PlanDisplayName: "Addon Service",
+			PriceID:         "addon-price-789",
+			PriceType:       types.PRICE_TYPE_FIXED,
+			DisplayName:     "Premium Support",
+			Quantity:        decimal.NewFromInt(1),
+			Currency:        testSub.Currency,
+			BillingPeriod:   testSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{addonLineItem})
+		s.NoError(err)
+
+		// Sync should handle mixed line items correctly
+		// Note: This test would require the SyncPlanPrices method to be implemented
+		s.T().Skip("SyncPlanPrices method not yet implemented")
+	})
+}
+
+func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Timing_And_Edge_Cases() {
+	s.Run("TC-SYNC-029_Line_Item_End_Date_In_Past", func() {
+		// Create a plan with expired price
+		testPlan := &plan.Plan{
+			ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
+			Name:        "Plan Past End Date",
+			Description: "A plan with expired price and past line item end date",
+			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		// Create expired price
+		expiredPrice := &price.Price{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           testPlan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			EndDate:            lo.ToPtr(s.testData.now.AddDate(0, 0, -1)), // Past date
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().PriceRepo.Create(s.GetContext(), expiredPrice)
+		s.NoError(err)
+
+		// Create subscription using plan
+		testSub := &subscription.Subscription{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
+			PlanID:             testPlan.ID,
+			CustomerID:         s.testData.customer.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
+		s.NoError(err)
+
+		// Create line item with past end date
+		pastLineItem := &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  testSub.ID,
+			CustomerID:      testSub.CustomerID,
+			EntityID:        testPlan.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: testPlan.Name,
+			PriceID:         expiredPrice.ID,
+			PriceType:       expiredPrice.Type,
+			DisplayName:     "Past End Date Item",
+			Quantity:        decimal.NewFromInt(1),
+			Currency:        testSub.Currency,
+			BillingPeriod:   testSub.BillingPeriod,
+			EndDate:         s.testData.now.AddDate(0, 0, -2), // Past end date (not pointer)
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{pastLineItem})
+		s.NoError(err)
+
+		// Sync should not return past line items
+		// Note: This test would require the SyncPlanPrices method to be implemented
+		s.T().Skip("SyncPlanPrices method not yet implemented")
+	})
+
+	s.Run("TC-SYNC-030_Current_Period_Start_vs_Line_Item_End_Date", func() {
+		// Create a plan with price
+		testPlan := &plan.Plan{
+			ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
+			Name:        "Plan Current Period",
+			Description: "A plan with specific billing period timing",
+			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		s.NoError(err)
+
+		// Create price
+		testPrice := &price.Price{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           testPlan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().PriceRepo.Create(s.GetContext(), testPrice)
+		s.NoError(err)
+
+		// Create subscription with specific billing period
+		testSub := &subscription.Subscription{
+			ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
+			PlanID:             testPlan.ID,
+			CustomerID:         s.testData.customer.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			CurrentPeriodStart: s.testData.now.AddDate(0, 0, -1), // 1 day ago
+			CurrentPeriodEnd:   s.testData.now.AddDate(0, 0, 29), // 29 days from now
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
+		s.NoError(err)
+
+		// Sync should handle timing correctly
+		// Note: This test would require the SyncPlanPrices method to be implemented
+		s.T().Skip("SyncPlanPrices method not yet implemented")
 	})
 }
