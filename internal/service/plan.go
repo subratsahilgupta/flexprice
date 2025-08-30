@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
@@ -734,7 +733,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 		lineItemMap := make(map[string]*subscription.SubscriptionLineItem)
 		for _, item := range lineItems {
 			// Skip if line item is not active or is not a plan line item
-			if !item.IsActive(time.Now()) || item.EntityType != types.SubscriptionLineItemEntityTypePlan {
+			if item.EntityType != types.SubscriptionLineItemEntityTypePlan {
 				continue
 			}
 

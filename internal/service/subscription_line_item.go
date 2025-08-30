@@ -38,35 +38,37 @@ func (s *subscriptionService) AddSubscriptionLineItem(ctx context.Context, subsc
 	}
 
 	// Get entity details and price with expanded data
-	switch {
-	case req.PriceID != "":
-		// Get base price to determine entity type
-		price, err := s.PriceRepo.Get(ctx, req.PriceID)
+	price, err := s.PriceRepo.Get(ctx, req.PriceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set the price in params
+	params.Price = &dto.PriceResponse{Price: price}
+
+	if price.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
+		planService := NewPlanService(s.ServiceParams)
+		planResponse, err := planService.GetPlan(ctx, price.EntityID)
 		if err != nil {
 			return nil, err
 		}
-
-		// Set the price in params
-		params.Price = &dto.PriceResponse{Price: price}
-
-		if price.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
-			planService := NewPlanService(s.ServiceParams)
-			planResponse, err := planService.GetPlan(ctx, price.EntityID)
-			if err != nil {
-				return nil, err
-			}
-			params.Plan = planResponse
-			params.EntityType = types.SubscriptionLineItemEntityTypePlan
-		} else {
-			addonService := NewAddonService(s.ServiceParams)
-			addonResponse, err := addonService.GetAddon(ctx, price.EntityID)
-			if err != nil {
-				return nil, err
-			}
-			params.Addon = addonResponse
-			params.EntityType = types.SubscriptionLineItemEntityTypeAddon
-
+		params.Plan = planResponse
+		params.EntityType = types.SubscriptionLineItemEntityTypePlan
+	} else if price.EntityType == types.PRICE_ENTITY_TYPE_ADDON {
+		addonService := NewAddonService(s.ServiceParams)
+		addonResponse, err := addonService.GetAddon(ctx, price.EntityID)
+		if err != nil {
+			return nil, err
 		}
+		params.Addon = addonResponse
+		params.EntityType = types.SubscriptionLineItemEntityTypeAddon
+	} else {
+		return nil, ierr.NewError("unsupported entity type").
+			WithHint("Unsupported entity type").
+			WithReportableDetails(map[string]interface{}{
+				"entity_type": price.EntityType,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Create the line item

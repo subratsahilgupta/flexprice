@@ -37,19 +37,25 @@ type LineItemParams struct {
 // Validate validates the create subscription line item request
 func (r *CreateSubscriptionLineItemRequest) Validate() error {
 	if r.PriceID == "" {
-		return ierr.NewError("price_id is required").Mark(ierr.ErrValidation)
+		return ierr.NewError("price_id is required").
+			WithHint("Price ID is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate start date is not after end date if both are provided
 	if r.StartDate != nil && r.EndDate != nil {
 		if r.StartDate.After(*r.EndDate) {
-			return ierr.NewError("start_date cannot be after end_date").Mark(ierr.ErrValidation)
+			return ierr.NewError("start_date cannot be after end_date").
+				WithHint("Start date cannot be after end date").
+				Mark(ierr.ErrValidation)
 		}
 	}
 
 	// Validate quantity is positive if provided
 	if !r.Quantity.IsZero() && r.Quantity.IsNegative() {
-		return ierr.NewError("quantity must be positive").Mark(ierr.ErrValidation)
+		return ierr.NewError("quantity must be positive").
+			WithHint("Quantity must be positive").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -106,10 +112,8 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 	// Set quantity if provided, otherwise default to 1 for non-usage prices
 	if !r.Quantity.IsZero() {
 		lineItem.Quantity = r.Quantity
-	} else if params.Price.Type == types.PRICE_TYPE_USAGE {
-		lineItem.Quantity = decimal.Zero
 	} else {
-		lineItem.Quantity = decimal.NewFromInt(1)
+		lineItem.Quantity = params.Price.GetDefaultQuantity()
 	}
 
 	// Set dates if provided

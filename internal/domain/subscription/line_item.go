@@ -162,14 +162,3 @@ func (li *SubscriptionLineItem) GetPeriodEnd(defaultPeriodEnd time.Time) time.Ti
 	}
 	return defaultPeriodEnd
 }
-
-// IsWithinPeriod checks if the line item is active within the given period
-func (li *SubscriptionLineItem) IsWithinPeriod(periodStart, periodEnd time.Time) bool {
-	// If line item has no end date, it's always active
-	if li.EndDate.IsZero() {
-		return true
-	}
-
-	// If line item has an end date, it's active if the end date is after period start
-	return li.EndDate.After(periodStart)
-}

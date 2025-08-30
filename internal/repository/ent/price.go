@@ -579,7 +579,6 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 			price.Or(
 				price.EndDateIsNil(),
 				price.EndDateGT(now),
-				price.EndDateEQ(now),
 			),
 		)
 	}
