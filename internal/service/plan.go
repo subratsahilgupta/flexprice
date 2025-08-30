@@ -729,6 +729,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 
 		// Build line item lookup map
 		// Maps both actual price IDs and parent price IDs (for overrides) to line items
+		// Only plan line items are processed for plan sync - addon line items are preserved
 		lineItemMap := make(map[string]*subscription.SubscriptionLineItem)
 		for _, item := range lineItems {
 			// Skip if line item is not active or is not a plan line item
@@ -861,6 +862,7 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 					"price_id", priceID,
 					"end_date", planPrice.EndDate,
 					"reason", "price expired")
+				skippedCount++
 			}
 		}
 

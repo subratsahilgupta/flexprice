@@ -3210,7 +3210,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
 		s.Equal(0, result.SynchronizationSummary.PricesAdded) // No plan prices to add
 		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
-		s.Equal(0, result.SynchronizationSummary.PricesSkipped) // Addon line items preserved
+		s.Equal(1, result.SynchronizationSummary.PricesSkipped) // Plan price skipped as line item exists
 	})
 
 	s.Run("TC-SYNC-020_Mixed_Plan_And_Addon_Line_Items", func() {
@@ -3292,6 +3292,12 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 
 		// Create subscription with all line items at once
 		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{planLineItem, addonLineItem})
+		s.NoError(err)
+
+		// Also create the line items in the line item repository
+		err = s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), planLineItem)
+		s.NoError(err)
+		err = s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), addonLineItem)
 		s.NoError(err)
 
 		// Sync should handle mixed line items correctly

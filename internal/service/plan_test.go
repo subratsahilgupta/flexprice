@@ -8,6 +8,7 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -33,27 +34,28 @@ func TestPlanService(t *testing.T) {
 func (s *PlanServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
 	s.params = ServiceParams{
-		Logger:           s.GetLogger(),
-		Config:           s.GetConfig(),
-		DB:               s.GetDB(),
-		SubRepo:          s.GetStores().SubscriptionRepo,
-		PlanRepo:         s.GetStores().PlanRepo,
-		PriceRepo:        s.GetStores().PriceRepo,
-		EventRepo:        s.GetStores().EventRepo,
-		MeterRepo:        s.GetStores().MeterRepo,
-		CustomerRepo:     s.GetStores().CustomerRepo,
-		InvoiceRepo:      s.GetStores().InvoiceRepo,
-		EntitlementRepo:  s.GetStores().EntitlementRepo,
-		EnvironmentRepo:  s.GetStores().EnvironmentRepo,
-		FeatureRepo:      s.GetStores().FeatureRepo,
-		TenantRepo:       s.GetStores().TenantRepo,
-		UserRepo:         s.GetStores().UserRepo,
-		AuthRepo:         s.GetStores().AuthRepo,
-		WalletRepo:       s.GetStores().WalletRepo,
-		PaymentRepo:      s.GetStores().PaymentRepo,
-		CreditGrantRepo:  s.GetStores().CreditGrantRepo,
-		EventPublisher:   s.GetPublisher(),
-		WebhookPublisher: s.GetWebhookPublisher(),
+		Logger:                   s.GetLogger(),
+		Config:                   s.GetConfig(),
+		DB:                       s.GetDB(),
+		SubRepo:                  s.GetStores().SubscriptionRepo,
+		SubscriptionLineItemRepo: s.GetStores().SubscriptionLineItemRepo,
+		PlanRepo:                 s.GetStores().PlanRepo,
+		PriceRepo:                s.GetStores().PriceRepo,
+		EventRepo:                s.GetStores().EventRepo,
+		MeterRepo:                s.GetStores().MeterRepo,
+		CustomerRepo:             s.GetStores().CustomerRepo,
+		InvoiceRepo:              s.GetStores().InvoiceRepo,
+		EntitlementRepo:          s.GetStores().EntitlementRepo,
+		EnvironmentRepo:          s.GetStores().EnvironmentRepo,
+		FeatureRepo:              s.GetStores().FeatureRepo,
+		TenantRepo:               s.GetStores().TenantRepo,
+		UserRepo:                 s.GetStores().UserRepo,
+		AuthRepo:                 s.GetStores().AuthRepo,
+		WalletRepo:               s.GetStores().WalletRepo,
+		PaymentRepo:              s.GetStores().PaymentRepo,
+		CreditGrantRepo:          s.GetStores().CreditGrantRepo,
+		EventPublisher:           s.GetPublisher(),
+		WebhookPublisher:         s.GetWebhookPublisher(),
 	}
 	s.service = NewPlanService(s.params)
 }
@@ -1169,6 +1171,17 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 	})
 
 	s.Run("TC-SYNC-007_Mixed_Subscription_Statuses", func() {
+		// Create a test customer
+		testCustomer := &customer.Customer{
+			ID:         "test-customer-id",
+			ExternalID: "ext_test_customer_007",
+			Name:       "Test Customer 007",
+			Email:      "test007@example.com",
+			BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().CustomerRepo.Create(s.GetContext(), testCustomer)
+		s.NoError(err)
+
 		// Create a plan with prices
 		testPlan := &plan.Plan{
 			ID:          "plan-mixed-statuses",
@@ -1176,7 +1189,7 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 			Description: "A plan with subscriptions in different states",
 			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
 		}
-		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		err = s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
 		s.NoError(err)
 
 		// Create subscriptions with different statuses
@@ -1191,14 +1204,20 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 		}
 
 		for _, sub := range subscriptions {
+			startDate := time.Now().UTC().AddDate(0, 0, -30)
 			subscription := &subscription.Subscription{
 				ID:                 sub.id,
 				PlanID:             testPlan.ID,
 				CustomerID:         "test-customer-id", // Use hardcoded ID since testData not available
 				SubscriptionStatus: sub.status,
-				StartDate:          time.Now().UTC().AddDate(0, 0, -30),
+				StartDate:          startDate,
+				Currency:           "usd", // Required for price eligibility check
 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 				BillingPeriodCount: 1,
+				BillingCadence:     types.BILLING_CADENCE_RECURRING, // Required field
+				BillingCycle:       types.BillingCycleAnniversary,   // Required field
+				CurrentPeriodStart: startDate,                       // Required for line item queries
+				CurrentPeriodEnd:   startDate.AddDate(0, 1, 0),      // Required for line item queries
 				BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 			}
 			err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), subscription)
@@ -1218,6 +1237,17 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 	})
 
 	s.Run("TC-SYNC-008_Subscriptions_In_Different_States", func() {
+		// Create a test customer
+		testCustomer := &customer.Customer{
+			ID:         "test-customer-id-008",
+			ExternalID: "ext_test_customer_008",
+			Name:       "Test Customer 008",
+			Email:      "test008@example.com",
+			BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+		}
+		err := s.GetStores().CustomerRepo.Create(s.GetContext(), testCustomer)
+		s.NoError(err)
+
 		// Create a plan with prices
 		testPlan := &plan.Plan{
 			ID:          "plan-different-states",
@@ -1225,7 +1255,7 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 			Description: "A plan with subscriptions in various states and configurations",
 			BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
 		}
-		err := s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
+		err = s.GetStores().PlanRepo.Create(s.GetContext(), testPlan)
 		s.NoError(err)
 
 		// Create subscriptions with different configurations
@@ -1241,14 +1271,20 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 		}
 
 		for _, sub := range subscriptions {
+			startDate := time.Now().UTC().AddDate(0, 0, -30)
 			subscription := &subscription.Subscription{
 				ID:                 sub.id,
 				PlanID:             testPlan.ID,
-				CustomerID:         "test-customer-id", // Use hardcoded ID since testData not available
+				CustomerID:         "test-customer-id-008", // Use unique customer ID for this test
 				SubscriptionStatus: sub.status,
-				StartDate:          time.Now().UTC().AddDate(0, 0, -30),
+				StartDate:          startDate,
+				Currency:           "usd", // Required for price eligibility check
 				BillingPeriod:      sub.billingPeriod,
 				BillingPeriodCount: sub.billingPeriodCount,
+				BillingCadence:     types.BILLING_CADENCE_RECURRING, // Required field
+				BillingCycle:       types.BillingCycleAnniversary,   // Required field
+				CurrentPeriodStart: startDate,                       // Required for line item queries
+				CurrentPeriodEnd:   startDate.AddDate(0, 1, 0),      // Required for line item queries
 				BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 			}
 			err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), subscription)
