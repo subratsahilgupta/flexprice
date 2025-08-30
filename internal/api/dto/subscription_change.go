@@ -141,6 +141,9 @@ type SubscriptionChangeExecuteResponse struct {
 	// proration_applied contains details of the proration that was applied
 	ProrationApplied *ProrationDetails `json:"proration_applied,omitempty"`
 
+	// credit_grants contains any credit grants created for proration credits
+	CreditGrants []*CreditGrantResponse `json:"credit_grants,omitempty"`
+
 	// effective_date is when the change took effect
 	EffectiveDate time.Time `json:"effective_date"`
 

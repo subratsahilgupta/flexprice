@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
@@ -351,7 +352,7 @@ func (s *subscriptionChangeService) calculatePlanValue(prices []*price.Price) de
 	return total
 }
 
-// calculateProrationPreview calculates proration amounts for preview
+// calculateProrationPreview calculates proration amounts for preview using cancellation proration method
 func (s *subscriptionChangeService) calculateProrationPreview(
 	ctx context.Context,
 	currentSub *subscription.Subscription,
@@ -359,78 +360,24 @@ func (s *subscriptionChangeService) calculateProrationPreview(
 	targetPlan *plan.Plan,
 	effectiveDate time.Time,
 ) (*dto.ProrationDetails, error) {
-	// Get prices for the current subscription line items
-	priceIDs := make([]string, len(lineItems))
-	for i, item := range lineItems {
-		priceIDs[i] = item.PriceID
-	}
-
-	// Fetch prices using price service
-	priceService := NewPriceService(s.serviceParams)
-	priceFilter := types.NewNoLimitPriceFilter()
-	priceFilter.PriceIDs = priceIDs
-	pricesResponse, err := priceService.GetPrices(ctx, priceFilter)
+	// Use the same cancellation proration method for consistency
+	prorationResult, err := s.prorationService.CalculateSubscriptionCancellationProration(
+		ctx,
+		currentSub,
+		lineItems,
+		types.CancellationTypeImmediate, // Treat subscription change as immediate cancellation
+		effectiveDate,
+		"subscription_change_preview",
+		types.ProrationBehaviorCreateProrations,
+	)
 	if err != nil {
 		return nil, ierr.WithError(err).
-			WithHint("Failed to get prices for proration calculation").
-			Mark(ierr.ErrDatabase)
+			WithHint("Failed to calculate cancellation proration for preview").
+			Mark(ierr.ErrSystem)
 	}
 
-	// Build prices map required by proration service
-	pricesMap := make(map[string]*price.Price)
-	for _, priceResp := range pricesResponse.Items {
-		pricesMap[priceResp.Price.ID] = priceResp.Price
-	}
-
-	// Use existing proration service to calculate
-	params := proration.SubscriptionProrationParams{
-		Subscription:  currentSub,
-		Prices:        pricesMap,
-		BillingCycle:  currentSub.BillingCycle,
-		ProrationMode: types.ProrationModeActive,
-	}
-
-	result, err := s.prorationService.CalculateSubscriptionProration(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
-	if result == nil {
-		return nil, nil
-	}
-
-	// Calculate totals
-	creditAmount := decimal.Zero
-	chargeAmount := decimal.Zero
-
-	for _, lineResult := range result.LineItemResults {
-		for _, credit := range lineResult.CreditItems {
-			creditAmount = creditAmount.Add(credit.Amount)
-		}
-		for _, charge := range lineResult.ChargeItems {
-			chargeAmount = chargeAmount.Add(charge.Amount)
-		}
-	}
-
-	netAmount := chargeAmount.Sub(creditAmount)
-
-	// Calculate days
-	daysUsed := int(effectiveDate.Sub(currentSub.CurrentPeriodStart).Hours() / 24)
-	daysRemaining := int(currentSub.CurrentPeriodEnd.Sub(effectiveDate).Hours() / 24)
-
-	return &dto.ProrationDetails{
-		CreditAmount:       creditAmount,
-		CreditDescription:  "Credit for unused time on current plan",
-		ChargeAmount:       chargeAmount,
-		ChargeDescription:  fmt.Sprintf("Charge for new plan from %s", effectiveDate.Format("2006-01-02")),
-		NetAmount:          netAmount,
-		ProrationDate:      effectiveDate,
-		CurrentPeriodStart: currentSub.CurrentPeriodStart,
-		CurrentPeriodEnd:   currentSub.CurrentPeriodEnd,
-		DaysUsed:           daysUsed,
-		DaysRemaining:      daysRemaining,
-		Currency:           currentSub.Currency,
-	}, nil
+	// Convert to DTO format
+	return s.convertCancellationProrationToDetails(prorationResult, effectiveDate, currentSub), nil
 }
 
 // calculateImmediateInvoicePreview calculates what would be invoiced immediately
@@ -649,14 +596,29 @@ func (s *subscriptionChangeService) executeChange(
 		zap.String("change_type", string(changeType)),
 	)
 
-	// Step 1: Calculate proration if needed
+	// Step 1: Calculate cancellation proration for old subscription
+	var cancellationProrationResult *proration.SubscriptionProrationResult
 	var prorationDetails *dto.ProrationDetails
 	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations {
+		// Use the cancellation proration method to calculate credits for the old subscription
 		var err error
-		prorationDetails, err = s.calculateProrationPreview(ctx, currentSub, lineItems, targetPlan, effectiveDate)
+		cancellationProrationResult, err = s.prorationService.CalculateSubscriptionCancellationProration(
+			ctx,
+			currentSub,
+			lineItems,
+			types.CancellationTypeImmediate, // Treat subscription change as immediate cancellation
+			effectiveDate,
+			"subscription_change",
+			req.ProrationBehavior,
+		)
 		if err != nil {
-			return nil, err
+			return nil, ierr.WithError(err).
+				WithHint("Failed to calculate cancellation proration for old subscription").
+				Mark(ierr.ErrSystem)
 		}
+
+		// Convert cancellation proration result to DTO format for response
+		prorationDetails = s.convertCancellationProrationToDetails(cancellationProrationResult, effectiveDate, currentSub)
 	}
 
 	// Step 2: Archive the old subscription
@@ -665,20 +627,47 @@ func (s *subscriptionChangeService) executeChange(
 		return nil, err
 	}
 
-	// Step 3: Create new subscription
-	newSub, err := s.createNewSubscription(ctx, currentSub, targetPlan, req, effectiveDate)
+	// Step 3: Prepare credit grants for proration credits (before creating new subscription)
+	var creditGrantRequests []dto.CreateCreditGrantRequest
+	if cancellationProrationResult != nil {
+		creditGrantRequests = s.prepareProrationCreditGrantRequests(cancellationProrationResult, effectiveDate)
+	}
+
+	// Step 4: Create new subscription with credit grants
+	newSub, err := s.createNewSubscription(ctx, currentSub, lineItems, targetPlan, req, effectiveDate, creditGrantRequests)
 	if err != nil {
 		return nil, err
 	}
 
-	// Step 4: Generate invoice if needed
+	// Step 6: Generate invoice for charges only (no negative amounts)
 	var invoice *dto.InvoiceResponse
-	if req.InvoiceNow != nil && *req.InvoiceNow && prorationDetails != nil && prorationDetails.NetAmount.GreaterThan(decimal.Zero) {
-		invoice, err = s.generateChangeInvoice(ctx, newSub, prorationDetails, effectiveDate)
+	if req.InvoiceNow != nil && *req.InvoiceNow && cancellationProrationResult != nil {
+		invoice, err = s.generateChangeInvoiceChargesOnly(ctx, newSub, cancellationProrationResult, effectiveDate)
 		if err != nil {
 			logger.Error("failed to generate change invoice", zap.Error(err))
 			// Don't fail the entire operation for invoice generation issues
 			// but log the error
+		}
+	}
+
+	// Get created credit grants if any were requested
+	var creditGrants []*dto.CreditGrantResponse
+	if len(creditGrantRequests) > 0 {
+		// The credit grants were created during subscription creation
+		// Fetch them for the response
+		creditGrantService := NewCreditGrantService(s.serviceParams)
+		creditGrantsResponse, err := creditGrantService.GetCreditGrantsBySubscription(ctx, newSub.ID)
+		if err != nil {
+			logger.Error("failed to fetch created credit grants", zap.Error(err))
+		} else {
+			// Filter to only include the credit grants we just created (by matching metadata)
+			for _, cg := range creditGrantsResponse.Items {
+				if cg.CreditGrant.Metadata != nil {
+					if subscriptionChange, exists := cg.CreditGrant.Metadata["subscription_change"]; exists && subscriptionChange == "true" {
+						creditGrants = append(creditGrants, cg)
+					}
+				}
+			}
 		}
 	}
 
@@ -705,6 +694,7 @@ func (s *subscriptionChangeService) executeChange(
 		ChangeType:       changeType,
 		Invoice:          invoice,
 		ProrationApplied: prorationDetails,
+		CreditGrants:     creditGrants,
 		EffectiveDate:    effectiveDate,
 		Metadata:         req.Metadata,
 	}
@@ -723,6 +713,7 @@ func (s *subscriptionChangeService) archiveSubscription(
 	currentSub.CancelledAt = &effectiveDate
 	currentSub.UpdatedAt = time.Now()
 	currentSub.UpdatedBy = types.GetUserID(ctx)
+	currentSub.Status = types.StatusArchived
 
 	err := s.serviceParams.SubRepo.Update(ctx, currentSub)
 	if err != nil {
@@ -738,9 +729,11 @@ func (s *subscriptionChangeService) archiveSubscription(
 func (s *subscriptionChangeService) createNewSubscription(
 	ctx context.Context,
 	currentSub *subscription.Subscription,
+	oldLineItems []*subscription.SubscriptionLineItem,
 	targetPlan *plan.Plan,
 	req dto.SubscriptionChangeRequest,
 	effectiveDate time.Time,
+	creditGrantRequests []dto.CreateCreditGrantRequest,
 ) (*subscription.Subscription, error) {
 	// Determine start date based on billing cycle anchor behavior
 	startDate := effectiveDate
@@ -758,6 +751,31 @@ func (s *subscriptionChangeService) createNewSubscription(
 	// }
 	// For unchanged, we keep the current billing cycle and use effective date as start
 
+	// Transfer coupons from old subscription
+	var coupons []string
+	coupons, err := s.transferCoupons(ctx, currentSub.ID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to transfer coupon associations").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Transfer addons from old subscription
+	addons, err := s.transferAddonAssociations(ctx, currentSub.ID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to transfer addon associations").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Transfer tax rate overrides from old subscription
+	taxRateOverrides, err := s.transferTaxAssociations(ctx, currentSub.ID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to transfer tax associations").
+			Mark(ierr.ErrDatabase)
+	}
+
 	// Build create subscription request based on current subscription but with new plan
 	createSubReq := dto.CreateSubscriptionRequest{
 		CustomerID:         currentSub.CustomerID,
@@ -772,6 +790,12 @@ func (s *subscriptionChangeService) createNewSubscription(
 		Metadata:           req.Metadata,
 		ProrationMode:      types.ProrationModeActive, // Enable proration for new subscription
 		CustomerTimezone:   currentSub.CustomerTimezone,
+		CreditGrants:       creditGrantRequests,
+		Coupons:            coupons,                     // Transfer subscription-level coupons
+		Addons:             addons,                      // Transfer addons
+		TaxRateOverrides:   taxRateOverrides,            // Transfer tax overrides (when available)
+		CommitmentAmount:   currentSub.CommitmentAmount, // Transfer commitment amount
+		OverageFactor:      currentSub.OverageFactor,    // Transfer overage factor
 	}
 
 	// Set trial end if provided
@@ -788,10 +812,18 @@ func (s *subscriptionChangeService) createNewSubscription(
 	}
 
 	// Get the created subscription with line items
-	newSub, _, err := s.serviceParams.SubRepo.GetWithLineItems(ctx, response.Subscription.ID)
+	newSub, newLineItems, err := s.serviceParams.SubRepo.GetWithLineItems(ctx, response.Subscription.ID)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to retrieve newly created subscription").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Transfer line item coupons from old subscription to new subscription
+	err = s.transferLineItemCoupons(ctx, currentSub.ID, newSub.ID, oldLineItems, newLineItems)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to transfer line item coupons").
 			Mark(ierr.ErrDatabase)
 	}
 
@@ -803,6 +835,7 @@ func (s *subscriptionChangeService) generateChangeInvoice(
 	ctx context.Context,
 	newSub *subscription.Subscription,
 	prorationDetails *dto.ProrationDetails,
+	cancellationProrationResult *proration.SubscriptionProrationResult,
 	effectiveDate time.Time,
 ) (*dto.InvoiceResponse, error) {
 	// Create invoice request for the proration
@@ -823,33 +856,453 @@ func (s *subscriptionChangeService) generateChangeInvoice(
 		},
 	}
 
-	// Add line items for proration
+	// Add detailed line items from cancellation proration result
 	lineItems := []dto.CreateInvoiceLineItemRequest{}
 
-	if prorationDetails.CreditAmount.GreaterThan(decimal.Zero) {
-		displayName := prorationDetails.CreditDescription
-		lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
-			DisplayName: &displayName,
-			Amount:      prorationDetails.CreditAmount.Neg(),
-			Quantity:    decimal.NewFromInt(1),
-			PeriodStart: &prorationDetails.CurrentPeriodStart,
-			PeriodEnd:   &effectiveDate,
-		})
-	}
+	if cancellationProrationResult != nil {
+		// Add detailed line items from the cancellation proration calculation
+		for lineItemID, prorationResult := range cancellationProrationResult.LineItemResults {
+			// Add credit items (refunds for unused time)
+			for _, creditItem := range prorationResult.CreditItems {
+				displayName := creditItem.Description
+				lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
+					EntityID:    &lineItemID,
+					EntityType:  lo.ToPtr("subscription_line_item"),
+					DisplayName: &displayName,
+					Amount:      creditItem.Amount, // Already negative for credits
+					Quantity:    creditItem.Quantity,
+					PeriodStart: &creditItem.StartDate,
+					PeriodEnd:   &creditItem.EndDate,
+					Metadata: types.Metadata{
+						"proration_type":        "credit",
+						"subscription_change":   "true",
+						"original_line_item_id": lineItemID,
+					},
+				})
+			}
 
-	if prorationDetails.ChargeAmount.GreaterThan(decimal.Zero) {
-		displayName := prorationDetails.ChargeDescription
-		lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
-			DisplayName: &displayName,
-			Amount:      prorationDetails.ChargeAmount,
-			Quantity:    decimal.NewFromInt(1),
-			PeriodStart: &effectiveDate,
-			PeriodEnd:   &prorationDetails.CurrentPeriodEnd,
-		})
+			// Add charge items (charges for new plan)
+			for _, chargeItem := range prorationResult.ChargeItems {
+				displayName := chargeItem.Description
+				lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
+					EntityID:    &lineItemID,
+					EntityType:  lo.ToPtr("subscription_line_item"),
+					DisplayName: &displayName,
+					Amount:      chargeItem.Amount, // Positive for charges
+					Quantity:    chargeItem.Quantity,
+					PeriodStart: &chargeItem.StartDate,
+					PeriodEnd:   &chargeItem.EndDate,
+					Metadata: types.Metadata{
+						"proration_type":        "charge",
+						"subscription_change":   "true",
+						"original_line_item_id": lineItemID,
+					},
+				})
+			}
+		}
+	} else if prorationDetails != nil {
+		// Fallback to summary line items if detailed proration result is not available
+		if prorationDetails.CreditAmount.GreaterThan(decimal.Zero) {
+			displayName := prorationDetails.CreditDescription
+			lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
+				DisplayName: &displayName,
+				Amount:      prorationDetails.CreditAmount.Neg(),
+				Quantity:    decimal.NewFromInt(1),
+				PeriodStart: &prorationDetails.CurrentPeriodStart,
+				PeriodEnd:   &effectiveDate,
+			})
+		}
+
+		if prorationDetails.ChargeAmount.GreaterThan(decimal.Zero) {
+			displayName := prorationDetails.ChargeDescription
+			lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
+				DisplayName: &displayName,
+				Amount:      prorationDetails.ChargeAmount,
+				Quantity:    decimal.NewFromInt(1),
+				PeriodStart: &effectiveDate,
+				PeriodEnd:   &prorationDetails.CurrentPeriodEnd,
+			})
+		}
 	}
 
 	invoiceReq.LineItems = lineItems
 
 	// Create the invoice
 	return s.invoiceService.CreateInvoice(ctx, invoiceReq)
+}
+
+// convertCancellationProrationToDetails converts cancellation proration result to DTO format
+func (s *subscriptionChangeService) convertCancellationProrationToDetails(
+	prorationResult *proration.SubscriptionProrationResult,
+	effectiveDate time.Time,
+	currentSub *subscription.Subscription,
+) *dto.ProrationDetails {
+	if prorationResult == nil {
+		return nil
+	}
+
+	// Calculate totals from line item results
+	creditAmount := decimal.Zero
+	chargeAmount := decimal.Zero
+
+	for _, lineResult := range prorationResult.LineItemResults {
+		for _, creditItem := range lineResult.CreditItems {
+			creditAmount = creditAmount.Add(creditItem.Amount.Abs()) // Ensure positive for credit amount
+		}
+		for _, chargeItem := range lineResult.ChargeItems {
+			chargeAmount = chargeAmount.Add(chargeItem.Amount)
+		}
+	}
+
+	// Net amount is the total proration amount (negative for credits, positive for charges)
+	netAmount := prorationResult.TotalProrationAmount
+
+	// Calculate days
+	daysUsed := int(effectiveDate.Sub(currentSub.CurrentPeriodStart).Hours() / 24)
+	daysRemaining := int(currentSub.CurrentPeriodEnd.Sub(effectiveDate).Hours() / 24)
+	if daysRemaining < 0 {
+		daysRemaining = 0
+	}
+
+	return &dto.ProrationDetails{
+		CreditAmount:       creditAmount,
+		CreditDescription:  fmt.Sprintf("Credit for unused time on %s plan", currentSub.PlanID),
+		ChargeAmount:       chargeAmount,
+		ChargeDescription:  fmt.Sprintf("Charge for plan change from %s", effectiveDate.Format("2006-01-02")),
+		NetAmount:          netAmount,
+		ProrationDate:      effectiveDate,
+		CurrentPeriodStart: currentSub.CurrentPeriodStart,
+		CurrentPeriodEnd:   currentSub.CurrentPeriodEnd,
+		DaysUsed:           daysUsed,
+		DaysRemaining:      daysRemaining,
+		Currency:           currentSub.Currency,
+	}
+}
+
+// prepareProrationCreditGrantRequests prepares credit grant requests for proration credits
+func (s *subscriptionChangeService) prepareProrationCreditGrantRequests(
+	cancellationProrationResult *proration.SubscriptionProrationResult,
+	effectiveDate time.Time,
+) []dto.CreateCreditGrantRequest {
+	if cancellationProrationResult == nil {
+		return nil
+	}
+
+	var creditGrantRequests []dto.CreateCreditGrantRequest
+
+	// Process each line item result to create credit grant requests for credit items
+	for lineItemID, prorationResult := range cancellationProrationResult.LineItemResults {
+		for _, creditItem := range prorationResult.CreditItems {
+			// Only create credit grants for positive credit amounts
+			creditAmount := creditItem.Amount.Abs()
+			if creditAmount.IsZero() {
+				continue
+			}
+
+			// Create credit grant request (subscription ID will be set by the subscription service)
+			// Based on the sample API request format
+			creditGrantReq := dto.CreateCreditGrantRequest{
+				Name:                   fmt.Sprintf("Subscription Change Credit - %s", effectiveDate.Format("2006-01-02")),
+				Scope:                  types.CreditGrantScopeSubscription,
+				SubscriptionID:         lo.ToPtr(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION)),
+				Credits:                creditAmount,
+				Cadence:                types.CreditGrantCadenceOneTime,
+				ExpirationType:         types.CreditGrantExpiryTypeNever,
+				ExpirationDuration:     nil,                                               // Explicitly set to nil for NEVER expiration
+				ExpirationDurationUnit: lo.ToPtr(types.CreditGrantExpiryDurationUnitDays), // Explicitly set to nil for NEVER expiration
+				Priority:               lo.ToPtr(1),
+				Metadata: types.Metadata{
+					"subscription_change":    "true",
+					"original_line_item_id":  lineItemID,
+					"proration_date":         effectiveDate.Format(time.RFC3339),
+					"credit_description":     creditItem.Description,
+					"proration_period_start": creditItem.StartDate.Format(time.RFC3339),
+					"proration_period_end":   creditItem.EndDate.Format(time.RFC3339),
+				},
+			}
+
+			creditGrantRequests = append(creditGrantRequests, creditGrantReq)
+
+			s.serviceParams.Logger.Infow("prepared proration credit grant request",
+				"amount", creditAmount.String(),
+				"line_item_id", lineItemID,
+				"description", creditItem.Description)
+		}
+	}
+
+	return creditGrantRequests
+}
+
+// generateChangeInvoiceChargesOnly generates an invoice with only positive charges (no credits)
+func (s *subscriptionChangeService) generateChangeInvoiceChargesOnly(
+	ctx context.Context,
+	newSub *subscription.Subscription,
+	cancellationProrationResult *proration.SubscriptionProrationResult,
+	effectiveDate time.Time,
+) (*dto.InvoiceResponse, error) {
+	if cancellationProrationResult == nil {
+		return nil, nil
+	}
+
+	// Calculate total charge amount
+	totalChargeAmount := decimal.Zero
+	lineItems := []dto.CreateInvoiceLineItemRequest{}
+
+	// Only add charge items (positive amounts) to the invoice
+	for lineItemID, prorationResult := range cancellationProrationResult.LineItemResults {
+		for _, chargeItem := range prorationResult.ChargeItems {
+			if chargeItem.Amount.GreaterThan(decimal.Zero) {
+				displayName := chargeItem.Description
+				lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
+					EntityID:    &lineItemID,
+					EntityType:  lo.ToPtr("subscription_line_item"),
+					DisplayName: &displayName,
+					Amount:      chargeItem.Amount, // Positive charges only
+					Quantity:    chargeItem.Quantity,
+					PeriodStart: &chargeItem.StartDate,
+					PeriodEnd:   &chargeItem.EndDate,
+					Metadata: types.Metadata{
+						"proration_type":        "charge",
+						"subscription_change":   "true",
+						"original_line_item_id": lineItemID,
+					},
+				})
+				totalChargeAmount = totalChargeAmount.Add(chargeItem.Amount)
+			}
+		}
+	}
+
+	// If no charges, don't create an invoice
+	if totalChargeAmount.IsZero() || len(lineItems) == 0 {
+		return nil, nil
+	}
+
+	// Create invoice request for charges only
+	invoiceReq := dto.CreateInvoiceRequest{
+		CustomerID:     newSub.CustomerID,
+		SubscriptionID: &newSub.ID,
+		InvoiceType:    types.InvoiceTypeSubscription,
+		BillingReason:  types.InvoiceBillingReasonSubscriptionUpdate,
+		Description:    fmt.Sprintf("Subscription change charges - %s", effectiveDate.Format("2006-01-02")),
+		Currency:       newSub.Currency,
+		PeriodStart:    &effectiveDate,
+		PeriodEnd:      &effectiveDate,
+		Subtotal:       totalChargeAmount,
+		AmountDue:      totalChargeAmount,
+		LineItems:      lineItems,
+		Metadata: types.Metadata{
+			"subscription_change": "true",
+			"effective_date":      effectiveDate.Format(time.RFC3339),
+			"charges_only":        "true", // Indicate this invoice contains only charges
+		},
+	}
+
+	// Create the invoice
+	return s.invoiceService.CreateInvoice(ctx, invoiceReq)
+}
+
+func (s *subscriptionChangeService) transferCoupons(ctx context.Context, oldSubscriptionID string) ([]string, error) {
+	// Create filter to get coupon associations for the subscription
+
+	// Get coupon associations
+	couponAssociations, err := s.serviceParams.CouponAssociationRepo.GetBySubscription(ctx, oldSubscriptionID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to fetch coupon associations").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Convert to string format
+	var couponIDs []string
+	for _, association := range couponAssociations {
+		couponIDs = append(couponIDs, association.CouponID)
+	}
+
+	return couponIDs, nil
+}
+
+// transferAddonAssociations fetches and transfers addon associations from old subscription
+func (s *subscriptionChangeService) transferAddonAssociations(ctx context.Context, oldSubscriptionID string) ([]dto.AddAddonToSubscriptionRequest, error) {
+	// Create filter to get addon associations for the subscription
+	filter := types.NewAddonAssociationFilter()
+	filter.EntityIDs = []string{oldSubscriptionID}
+	filter.EntityType = lo.ToPtr(types.AddonAssociationEntityTypeSubscription)
+	filter.AddonStatus = lo.ToPtr(string(types.AddonStatusActive))
+
+	// Get addon associations
+	addonAssociations, err := s.serviceParams.AddonAssociationRepo.List(ctx, filter)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to fetch addon associations").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Convert to AddAddonToSubscriptionRequest format
+	var addons []dto.AddAddonToSubscriptionRequest
+	for _, association := range addonAssociations {
+		// Only transfer active addons
+		if association.AddonStatus == types.AddonStatusActive {
+			addon := dto.AddAddonToSubscriptionRequest{
+				AddonID:   association.AddonID,
+				StartDate: association.StartDate,
+				EndDate:   association.EndDate,
+				Metadata:  association.Metadata,
+			}
+			addons = append(addons, addon)
+		}
+	}
+
+	s.serviceParams.Logger.Infow("transferred addon associations",
+		"old_subscription_id", oldSubscriptionID,
+		"addon_count", len(addons))
+
+	return addons, nil
+}
+
+// transferTaxAssociations fetches and transfers tax associations from old subscription
+func (s *subscriptionChangeService) transferTaxAssociations(ctx context.Context, oldSubscriptionID string) ([]*dto.TaxRateOverride, error) {
+	// Create filter to get tax associations for the subscription
+	filter := types.NewNoLimitTaxAssociationFilter()
+	filter.EntityType = types.TaxRateEntityTypeSubscription
+	filter.EntityID = oldSubscriptionID
+
+	// Get tax associations using tax service
+	taxService := NewTaxService(s.serviceParams)
+	taxAssociationsResponse, err := taxService.ListTaxAssociations(ctx, filter)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to fetch tax associations").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Convert to TaxRateOverride format
+	var taxRateOverrides []*dto.TaxRateOverride
+	for _, association := range taxAssociationsResponse.Items {
+		// Get the tax rate details
+		taxRate, err := taxService.GetTaxRate(ctx, association.TaxRateID)
+		if err != nil {
+			s.serviceParams.Logger.Warnw("failed to get tax rate details, skipping",
+				"tax_rate_id", association.TaxRateID,
+				"error", err)
+			continue
+		}
+
+		override := &dto.TaxRateOverride{
+			TaxRateCode: taxRate.TaxRate.Code,
+			Priority:    association.Priority,
+			AutoApply:   association.AutoApply,
+			Currency:    association.Currency,
+			Metadata:    association.Metadata,
+		}
+		taxRateOverrides = append(taxRateOverrides, override)
+	}
+
+	s.serviceParams.Logger.Infow("transferred tax associations",
+		"old_subscription_id", oldSubscriptionID,
+		"tax_override_count", len(taxRateOverrides))
+
+	return taxRateOverrides, nil
+}
+
+// transferLineItemCoupons transfers line item specific coupons from old subscription to new subscription
+func (s *subscriptionChangeService) transferLineItemCoupons(
+	ctx context.Context,
+	oldSubscriptionID, newSubscriptionID string,
+	oldLineItems, newLineItems []*subscription.SubscriptionLineItem,
+) error {
+	// Get line item coupon associations from old subscription
+	couponAssociationRepo := s.serviceParams.CouponAssociationRepo
+	lineItemCoupons, err := couponAssociationRepo.GetBySubscriptionForLineItems(ctx, oldSubscriptionID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to fetch line item coupon associations").
+			Mark(ierr.ErrDatabase)
+	}
+
+	if len(lineItemCoupons) == 0 {
+		s.serviceParams.Logger.Infow("no line item coupons to transfer",
+			"old_subscription_id", oldSubscriptionID)
+		return nil
+	}
+
+	// Create mapping from price_id to line item for both old and new subscriptions
+	oldPriceToLineItem := make(map[string]*subscription.SubscriptionLineItem)
+	for _, lineItem := range oldLineItems {
+		oldPriceToLineItem[lineItem.PriceID] = lineItem
+	}
+
+	newPriceToLineItem := make(map[string]*subscription.SubscriptionLineItem)
+	for _, lineItem := range newLineItems {
+		newPriceToLineItem[lineItem.PriceID] = lineItem
+	}
+
+	// Group coupons by old line item ID
+	couponsByOldLineItem := make(map[string][]string)
+	for _, couponAssoc := range lineItemCoupons {
+		if couponAssoc.SubscriptionLineItemID != nil {
+			oldLineItemID := *couponAssoc.SubscriptionLineItemID
+			couponsByOldLineItem[oldLineItemID] = append(couponsByOldLineItem[oldLineItemID], couponAssoc.CouponID)
+		}
+	}
+
+	// Transfer coupons to matching line items in new subscription
+	couponAssociationService := NewCouponAssociationService(s.serviceParams)
+	transferredCount := 0
+
+	for oldLineItemID, couponIDs := range couponsByOldLineItem {
+		// Find the old line item to get its price_id
+		var oldLineItem *subscription.SubscriptionLineItem
+		for _, li := range oldLineItems {
+			if li.ID == oldLineItemID {
+				oldLineItem = li
+				break
+			}
+		}
+
+		if oldLineItem == nil {
+			s.serviceParams.Logger.Warnw("old line item not found, skipping coupon transfer",
+				"old_line_item_id", oldLineItemID)
+			continue
+		}
+
+		// Find matching line item in new subscription by price_id
+		newLineItem, exists := newPriceToLineItem[oldLineItem.PriceID]
+		if !exists {
+			s.serviceParams.Logger.Warnw("no matching line item in new subscription, skipping coupon transfer",
+				"price_id", oldLineItem.PriceID,
+				"old_line_item_id", oldLineItemID)
+			continue
+		}
+
+		// Apply coupons to the new line item
+		err := couponAssociationService.ApplyCouponToSubscriptionLineItem(ctx, couponIDs, newSubscriptionID, newLineItem.ID)
+		if err != nil {
+			s.serviceParams.Logger.Errorw("failed to transfer line item coupons",
+				"old_line_item_id", oldLineItemID,
+				"new_line_item_id", newLineItem.ID,
+				"coupon_ids", couponIDs,
+				"error", err)
+			return ierr.WithError(err).
+				WithHint("Failed to apply coupons to new line item").
+				WithReportableDetails(map[string]interface{}{
+					"old_line_item_id": oldLineItemID,
+					"new_line_item_id": newLineItem.ID,
+					"coupon_ids":       couponIDs,
+				}).
+				Mark(ierr.ErrDatabase)
+		}
+
+		transferredCount += len(couponIDs)
+		s.serviceParams.Logger.Infow("transferred line item coupons",
+			"old_line_item_id", oldLineItemID,
+			"new_line_item_id", newLineItem.ID,
+			"coupon_count", len(couponIDs))
+	}
+
+	s.serviceParams.Logger.Infow("completed line item coupon transfer",
+		"old_subscription_id", oldSubscriptionID,
+		"new_subscription_id", newSubscriptionID,
+		"total_coupons_transferred", transferredCount)
+
+	return nil
 }
