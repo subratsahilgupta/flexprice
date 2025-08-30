@@ -1339,8 +1339,13 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Price_Synchronization() {
 			CustomerID:         "test-customer-id", // Use hardcoded ID since testData not available
 			SubscriptionStatus: types.SubscriptionStatusActive,
 			StartDate:          time.Now().UTC().AddDate(0, 0, -30),
+			Currency:           "usd", // Required for price eligibility check
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,                      // Required field
+			BillingCycle:       types.BillingCycleAnniversary,                        // Required field
+			CurrentPeriodStart: time.Now().UTC().AddDate(0, 0, -30),                  // Required for line item queries
+			CurrentPeriodEnd:   time.Now().UTC().AddDate(0, 0, -30).AddDate(0, 1, 0), // Required for line item queries
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 		}
 		err = s.GetStores().SubscriptionRepo.Create(s.GetContext(), testSub)
