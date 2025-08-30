@@ -64,7 +64,7 @@ func (s *subscriptionPaymentProcessor) HandlePaymentBehavior(
 	// Handle different collection methods
 	switch types.CollectionMethod(sub.CollectionMethod) {
 	case types.CollectionMethodSendInvoice:
-		return s.handleSendInvoiceMethod(ctx, sub, inv)
+		return s.handleSendInvoiceMethod(ctx, sub, inv, behavior)
 	case types.CollectionMethodChargeAutomatically:
 		return s.handleChargeAutomaticallyMethod(ctx, sub, inv, behavior)
 	default:
@@ -82,17 +82,42 @@ func (s *subscriptionPaymentProcessor) handleSendInvoiceMethod(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	inv *dto.InvoiceResponse,
+	behavior types.PaymentBehavior,
 ) error {
-	// For send_invoice: always activate subscription and send webhook
-	// Payment behavior is ignored
-	sub.SubscriptionStatus = types.SubscriptionStatusActive
+	switch behavior {
+	case types.PaymentBehaviorDefaultActive:
+		// Default active behavior - always create active subscription without payment attempt
+		s.Logger.Infow("send_invoice with default_active - activating subscription immediately",
+			"subscription_id", sub.ID,
+			"invoice_id", inv.ID,
+			"amount_due", inv.AmountDue,
+		)
+		sub.SubscriptionStatus = types.SubscriptionStatusActive
+		return s.SubRepo.Update(ctx, sub)
 
-	s.Logger.Infow("send_invoice method - activating subscription immediately",
-		"subscription_id", sub.ID,
-		"invoice_id", inv.ID,
-	)
+	case types.PaymentBehaviorDefaultIncomplete:
+		// Default incomplete behavior - set subscription to incomplete without payment attempt
+		s.Logger.Infow("send_invoice with default_incomplete - setting subscription to incomplete",
+			"subscription_id", sub.ID,
+			"invoice_id", inv.ID,
+			"amount_due", inv.AmountDue,
+		)
+		sub.SubscriptionStatus = types.SubscriptionStatusIncomplete
+		return s.SubRepo.Update(ctx, sub)
 
-	return s.SubRepo.Update(ctx, sub)
+	default:
+		return ierr.NewError("unsupported payment behavior for send_invoice").
+			WithHint("Only default_active and default_incomplete are supported for send_invoice collection method").
+			WithReportableDetails(map[string]interface{}{
+				"payment_behavior":  behavior,
+				"collection_method": "send_invoice",
+				"allowed_behaviors": []types.PaymentBehavior{
+					types.PaymentBehaviorDefaultActive,
+					types.PaymentBehaviorDefaultIncomplete,
+				},
+			}).
+			Mark(ierr.ErrInvalidOperation)
+	}
 }
 
 // handleChargeAutomaticallyMethod handles charge_automatically collection method
@@ -103,40 +128,22 @@ func (s *subscriptionPaymentProcessor) handleChargeAutomaticallyMethod(
 	behavior types.PaymentBehavior,
 ) error {
 	switch behavior {
-	case types.PaymentBehaviorDefaultIncomplete:
-		// Special case: Don't attempt payment if amount > 0
-		if inv.AmountDue.GreaterThan(decimal.Zero) {
-			sub.SubscriptionStatus = types.SubscriptionStatusIncomplete
-			s.Logger.Infow("default_incomplete behavior - setting to incomplete",
-				"subscription_id", sub.ID,
-				"amount_due", inv.AmountDue,
-			)
-			return s.SubRepo.Update(ctx, sub)
-		}
-		// If amount = 0, mark as active
-		sub.SubscriptionStatus = types.SubscriptionStatusActive
-		return s.SubRepo.Update(ctx, sub)
-
 	case types.PaymentBehaviorAllowIncomplete:
 		return s.attemptPaymentAllowIncomplete(ctx, sub, inv)
 
 	case types.PaymentBehaviorErrorIfIncomplete:
 		return s.attemptPaymentErrorIfIncomplete(ctx, sub, inv)
 
-	case types.PaymentBehaviorDefaultActive:
-		// Default active behavior - always create active subscription without payment attempt
-		s.Logger.Infow("default_active behavior - setting to active without payment attempt",
-			"subscription_id", sub.ID,
-			"amount_due", inv.AmountDue,
-		)
-		sub.SubscriptionStatus = types.SubscriptionStatusActive
-		return s.SubRepo.Update(ctx, sub)
-
 	default:
-		return ierr.NewError("unsupported payment behavior").
-			WithHint("Payment behavior not supported for subscription creation").
+		return ierr.NewError("unsupported payment behavior for charge_automatically").
+			WithHint("Only allow_incomplete and error_if_incomplete are supported for charge_automatically collection method").
 			WithReportableDetails(map[string]interface{}{
-				"payment_behavior": behavior,
+				"payment_behavior":  behavior,
+				"collection_method": "charge_automatically",
+				"allowed_behaviors": []types.PaymentBehavior{
+					types.PaymentBehaviorAllowIncomplete,
+					types.PaymentBehaviorErrorIfIncomplete,
+				},
 			}).
 			Mark(ierr.ErrInvalidOperation)
 	}

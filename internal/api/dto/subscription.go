@@ -132,11 +132,30 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		return err
 	}
 
-	// Validate collection method if provided
+	// Handle legacy collection method conversion and validation
 	if r.CollectionMethod != nil {
+		// Handle legacy default_incomplete collection method
+		if string(*r.CollectionMethod) == "default_incomplete" {
+			// Convert to send_invoice + default_incomplete for backward compatibility
+			sendInvoiceMethod := types.CollectionMethodSendInvoice
+			r.CollectionMethod = &sendInvoiceMethod
+			if r.PaymentBehavior == nil {
+				defaultIncomplete := types.PaymentBehaviorDefaultIncomplete
+				r.PaymentBehavior = &defaultIncomplete
+			}
+		}
+
 		if err := r.CollectionMethod.Validate(); err != nil {
 			return err
 		}
+	}
+
+	// Validate payment behavior and collection method combination
+	if err := r.validatePaymentBehaviorForCollectionMethod(
+		lo.FromPtrOr(r.CollectionMethod, types.CollectionMethodSendInvoice),
+		lo.FromPtrOr(r.PaymentBehavior, types.PaymentBehaviorDefaultActive),
+	); err != nil {
+		return err
 	}
 
 	// Set default start date if not provided
@@ -360,16 +379,77 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	return nil
 }
 
-func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscription.Subscription {
-	// Set defaults for payment behavior and collection method
-	paymentBehavior := types.PaymentBehaviorDefaultActive
-	if r.PaymentBehavior != nil {
-		paymentBehavior = *r.PaymentBehavior
+// validatePaymentBehaviorForCollectionMethod validates that payment behavior is compatible with collection method
+func (r *CreateSubscriptionRequest) validatePaymentBehaviorForCollectionMethod(collectionMethod types.CollectionMethod, paymentBehavior types.PaymentBehavior) error {
+	switch collectionMethod {
+	case types.CollectionMethodChargeAutomatically:
+		// For charge_automatically, only allow_incomplete and error_if_incomplete are allowed
+		if paymentBehavior != types.PaymentBehaviorAllowIncomplete && paymentBehavior != types.PaymentBehaviorErrorIfIncomplete {
+			return ierr.NewError("invalid payment behavior for charge_automatically collection method").
+				WithHint("Only allow_incomplete and error_if_incomplete are supported for charge_automatically collection method").
+				WithReportableDetails(map[string]interface{}{
+					"collection_method": collectionMethod,
+					"payment_behavior":  paymentBehavior,
+					"allowed_behaviors": []types.PaymentBehavior{
+						types.PaymentBehaviorAllowIncomplete,
+						types.PaymentBehaviorErrorIfIncomplete,
+					},
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+	case types.CollectionMethodSendInvoice:
+		// For send_invoice, only default_active and default_incomplete are allowed
+		if paymentBehavior != types.PaymentBehaviorDefaultActive && paymentBehavior != types.PaymentBehaviorDefaultIncomplete {
+			return ierr.NewError("invalid payment behavior for send_invoice collection method").
+				WithHint("Only default_active and default_incomplete are supported for send_invoice collection method").
+				WithReportableDetails(map[string]interface{}{
+					"collection_method": collectionMethod,
+					"payment_behavior":  paymentBehavior,
+					"allowed_behaviors": []types.PaymentBehavior{
+						types.PaymentBehaviorDefaultActive,
+						types.PaymentBehaviorDefaultIncomplete,
+					},
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+	default:
+		return ierr.NewError("unsupported collection method").
+			WithHint("Only charge_automatically and send_invoice collection methods are supported").
+			WithReportableDetails(map[string]interface{}{
+				"collection_method": collectionMethod,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
+	return nil
+}
+
+func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscription.Subscription {
+	// Handle legacy collection method and set defaults
+	paymentBehavior := types.PaymentBehaviorDefaultActive
 	collectionMethod := types.CollectionMethodSendInvoice
-	if r.CollectionMethod != nil {
-		collectionMethod = *r.CollectionMethod
+
+	// Handle legacy default_incomplete collection method conversion
+	if r.CollectionMethod != nil && string(*r.CollectionMethod) == "default_incomplete" {
+		// Convert legacy default_incomplete collection method to send_invoice + default_incomplete
+		collectionMethod = types.CollectionMethodSendInvoice
+		paymentBehavior = types.PaymentBehaviorDefaultIncomplete
+	} else {
+		// Normal flow - use provided values or defaults
+		if r.CollectionMethod != nil {
+			collectionMethod = *r.CollectionMethod
+		}
+		if r.PaymentBehavior != nil {
+			paymentBehavior = *r.PaymentBehavior
+		}
+	}
+
+	// Validate collection method and payment behavior combination
+	if err := r.validatePaymentBehaviorForCollectionMethod(collectionMethod, paymentBehavior); err != nil {
+		// This validation will be caught in the main Validate() method
+		// We don't fail here to allow the conversion to happen first
 	}
 
 	// Initial status will be determined by payment processor based on payment behavior

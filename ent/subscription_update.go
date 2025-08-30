@@ -406,26 +406,6 @@ func (su *SubscriptionUpdate) ClearPaymentMethodID() *SubscriptionUpdate {
 	return su
 }
 
-// SetPendingUpdatesExpiresAt sets the "pending_updates_expires_at" field.
-func (su *SubscriptionUpdate) SetPendingUpdatesExpiresAt(t time.Time) *SubscriptionUpdate {
-	su.mutation.SetPendingUpdatesExpiresAt(t)
-	return su
-}
-
-// SetNillablePendingUpdatesExpiresAt sets the "pending_updates_expires_at" field if the given value is not nil.
-func (su *SubscriptionUpdate) SetNillablePendingUpdatesExpiresAt(t *time.Time) *SubscriptionUpdate {
-	if t != nil {
-		su.SetPendingUpdatesExpiresAt(*t)
-	}
-	return su
-}
-
-// ClearPendingUpdatesExpiresAt clears the value of the "pending_updates_expires_at" field.
-func (su *SubscriptionUpdate) ClearPendingUpdatesExpiresAt() *SubscriptionUpdate {
-	su.mutation.ClearPendingUpdatesExpiresAt()
-	return su
-}
-
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by IDs.
 func (su *SubscriptionUpdate) AddLineItemIDs(ids ...string) *SubscriptionUpdate {
 	su.mutation.AddLineItemIDs(ids...)
@@ -809,12 +789,6 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if su.mutation.PaymentMethodIDCleared() {
 		_spec.ClearField(subscription.FieldPaymentMethodID, field.TypeString)
-	}
-	if value, ok := su.mutation.PendingUpdatesExpiresAt(); ok {
-		_spec.SetField(subscription.FieldPendingUpdatesExpiresAt, field.TypeTime, value)
-	}
-	if su.mutation.PendingUpdatesExpiresAtCleared() {
-		_spec.ClearField(subscription.FieldPendingUpdatesExpiresAt, field.TypeTime)
 	}
 	if su.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1461,26 +1435,6 @@ func (suo *SubscriptionUpdateOne) ClearPaymentMethodID() *SubscriptionUpdateOne 
 	return suo
 }
 
-// SetPendingUpdatesExpiresAt sets the "pending_updates_expires_at" field.
-func (suo *SubscriptionUpdateOne) SetPendingUpdatesExpiresAt(t time.Time) *SubscriptionUpdateOne {
-	suo.mutation.SetPendingUpdatesExpiresAt(t)
-	return suo
-}
-
-// SetNillablePendingUpdatesExpiresAt sets the "pending_updates_expires_at" field if the given value is not nil.
-func (suo *SubscriptionUpdateOne) SetNillablePendingUpdatesExpiresAt(t *time.Time) *SubscriptionUpdateOne {
-	if t != nil {
-		suo.SetPendingUpdatesExpiresAt(*t)
-	}
-	return suo
-}
-
-// ClearPendingUpdatesExpiresAt clears the value of the "pending_updates_expires_at" field.
-func (suo *SubscriptionUpdateOne) ClearPendingUpdatesExpiresAt() *SubscriptionUpdateOne {
-	suo.mutation.ClearPendingUpdatesExpiresAt()
-	return suo
-}
-
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by IDs.
 func (suo *SubscriptionUpdateOne) AddLineItemIDs(ids ...string) *SubscriptionUpdateOne {
 	suo.mutation.AddLineItemIDs(ids...)
@@ -1894,12 +1848,6 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 	}
 	if suo.mutation.PaymentMethodIDCleared() {
 		_spec.ClearField(subscription.FieldPaymentMethodID, field.TypeString)
-	}
-	if value, ok := suo.mutation.PendingUpdatesExpiresAt(); ok {
-		_spec.SetField(subscription.FieldPendingUpdatesExpiresAt, field.TypeTime, value)
-	}
-	if suo.mutation.PendingUpdatesExpiresAtCleared() {
-		_spec.ClearField(subscription.FieldPendingUpdatesExpiresAt, field.TypeTime)
 	}
 	if suo.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{

@@ -461,20 +461,6 @@ func (sc *SubscriptionCreate) SetNillablePaymentMethodID(s *string) *Subscriptio
 	return sc
 }
 
-// SetPendingUpdatesExpiresAt sets the "pending_updates_expires_at" field.
-func (sc *SubscriptionCreate) SetPendingUpdatesExpiresAt(t time.Time) *SubscriptionCreate {
-	sc.mutation.SetPendingUpdatesExpiresAt(t)
-	return sc
-}
-
-// SetNillablePendingUpdatesExpiresAt sets the "pending_updates_expires_at" field if the given value is not nil.
-func (sc *SubscriptionCreate) SetNillablePendingUpdatesExpiresAt(t *time.Time) *SubscriptionCreate {
-	if t != nil {
-		sc.SetPendingUpdatesExpiresAt(*t)
-	}
-	return sc
-}
-
 // SetID sets the "id" field.
 func (sc *SubscriptionCreate) SetID(s string) *SubscriptionCreate {
 	sc.mutation.SetID(s)
@@ -964,10 +950,6 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 	if value, ok := sc.mutation.PaymentMethodID(); ok {
 		_spec.SetField(subscription.FieldPaymentMethodID, field.TypeString, value)
 		_node.PaymentMethodID = value
-	}
-	if value, ok := sc.mutation.PendingUpdatesExpiresAt(); ok {
-		_spec.SetField(subscription.FieldPendingUpdatesExpiresAt, field.TypeTime, value)
-		_node.PendingUpdatesExpiresAt = &value
 	}
 	if nodes := sc.mutation.LineItemsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

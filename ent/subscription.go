@@ -90,8 +90,6 @@ type Subscription struct {
 	CollectionMethod subscription.CollectionMethod `json:"collection_method,omitempty"`
 	// Payment method ID for this subscription
 	PaymentMethodID string `json:"payment_method_id,omitempty"`
-	// When pending updates expire (23 hours from creation)
-	PendingUpdatesExpiresAt *time.Time `json:"pending_updates_expires_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the SubscriptionQuery when eager-loading is set.
 	Edges        SubscriptionEdges `json:"edges"`
@@ -188,7 +186,7 @@ func (*Subscription) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case subscription.FieldID, subscription.FieldTenantID, subscription.FieldStatus, subscription.FieldCreatedBy, subscription.FieldUpdatedBy, subscription.FieldEnvironmentID, subscription.FieldLookupKey, subscription.FieldCustomerID, subscription.FieldPlanID, subscription.FieldSubscriptionStatus, subscription.FieldCurrency, subscription.FieldBillingCadence, subscription.FieldBillingPeriod, subscription.FieldPauseStatus, subscription.FieldActivePauseID, subscription.FieldBillingCycle, subscription.FieldPaymentBehavior, subscription.FieldCollectionMethod, subscription.FieldPaymentMethodID:
 			values[i] = new(sql.NullString)
-		case subscription.FieldCreatedAt, subscription.FieldUpdatedAt, subscription.FieldBillingAnchor, subscription.FieldStartDate, subscription.FieldEndDate, subscription.FieldCurrentPeriodStart, subscription.FieldCurrentPeriodEnd, subscription.FieldCancelledAt, subscription.FieldCancelAt, subscription.FieldTrialStart, subscription.FieldTrialEnd, subscription.FieldPendingUpdatesExpiresAt:
+		case subscription.FieldCreatedAt, subscription.FieldUpdatedAt, subscription.FieldBillingAnchor, subscription.FieldStartDate, subscription.FieldEndDate, subscription.FieldCurrentPeriodStart, subscription.FieldCurrentPeriodEnd, subscription.FieldCancelledAt, subscription.FieldCancelAt, subscription.FieldTrialStart, subscription.FieldTrialEnd:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -431,13 +429,6 @@ func (s *Subscription) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				s.PaymentMethodID = value.String
 			}
-		case subscription.FieldPendingUpdatesExpiresAt:
-			if value, ok := values[i].(*sql.NullTime); !ok {
-				return fmt.Errorf("unexpected type %T for field pending_updates_expires_at", values[i])
-			} else if value.Valid {
-				s.PendingUpdatesExpiresAt = new(time.Time)
-				*s.PendingUpdatesExpiresAt = value.Time
-			}
 		default:
 			s.selectValues.Set(columns[i], values[i])
 		}
@@ -624,11 +615,6 @@ func (s *Subscription) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("payment_method_id=")
 	builder.WriteString(s.PaymentMethodID)
-	builder.WriteString(", ")
-	if v := s.PendingUpdatesExpiresAt; v != nil {
-		builder.WriteString("pending_updates_expires_at=")
-		builder.WriteString(v.Format(time.ANSIC))
-	}
 	builder.WriteByte(')')
 	return builder.String()
 }

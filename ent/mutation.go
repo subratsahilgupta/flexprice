@@ -40098,7 +40098,6 @@ type SubscriptionMutation struct {
 	payment_behavior           *subscription.PaymentBehavior
 	collection_method          *subscription.CollectionMethod
 	payment_method_id          *string
-	pending_updates_expires_at *time.Time
 	clearedFields              map[string]struct{}
 	line_items                 map[string]struct{}
 	removedline_items          map[string]struct{}
@@ -41708,55 +41707,6 @@ func (m *SubscriptionMutation) ResetPaymentMethodID() {
 	delete(m.clearedFields, subscription.FieldPaymentMethodID)
 }
 
-// SetPendingUpdatesExpiresAt sets the "pending_updates_expires_at" field.
-func (m *SubscriptionMutation) SetPendingUpdatesExpiresAt(t time.Time) {
-	m.pending_updates_expires_at = &t
-}
-
-// PendingUpdatesExpiresAt returns the value of the "pending_updates_expires_at" field in the mutation.
-func (m *SubscriptionMutation) PendingUpdatesExpiresAt() (r time.Time, exists bool) {
-	v := m.pending_updates_expires_at
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldPendingUpdatesExpiresAt returns the old "pending_updates_expires_at" field's value of the Subscription entity.
-// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldPendingUpdatesExpiresAt(ctx context.Context) (v *time.Time, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPendingUpdatesExpiresAt is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPendingUpdatesExpiresAt requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPendingUpdatesExpiresAt: %w", err)
-	}
-	return oldValue.PendingUpdatesExpiresAt, nil
-}
-
-// ClearPendingUpdatesExpiresAt clears the value of the "pending_updates_expires_at" field.
-func (m *SubscriptionMutation) ClearPendingUpdatesExpiresAt() {
-	m.pending_updates_expires_at = nil
-	m.clearedFields[subscription.FieldPendingUpdatesExpiresAt] = struct{}{}
-}
-
-// PendingUpdatesExpiresAtCleared returns if the "pending_updates_expires_at" field was cleared in this mutation.
-func (m *SubscriptionMutation) PendingUpdatesExpiresAtCleared() bool {
-	_, ok := m.clearedFields[subscription.FieldPendingUpdatesExpiresAt]
-	return ok
-}
-
-// ResetPendingUpdatesExpiresAt resets all changes to the "pending_updates_expires_at" field.
-func (m *SubscriptionMutation) ResetPendingUpdatesExpiresAt() {
-	m.pending_updates_expires_at = nil
-	delete(m.clearedFields, subscription.FieldPendingUpdatesExpiresAt)
-}
-
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by ids.
 func (m *SubscriptionMutation) AddLineItemIDs(ids ...string) {
 	if m.line_items == nil {
@@ -42100,7 +42050,7 @@ func (m *SubscriptionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionMutation) Fields() []string {
-	fields := make([]string, 0, 36)
+	fields := make([]string, 0, 35)
 	if m.tenant_id != nil {
 		fields = append(fields, subscription.FieldTenantID)
 	}
@@ -42206,9 +42156,6 @@ func (m *SubscriptionMutation) Fields() []string {
 	if m.payment_method_id != nil {
 		fields = append(fields, subscription.FieldPaymentMethodID)
 	}
-	if m.pending_updates_expires_at != nil {
-		fields = append(fields, subscription.FieldPendingUpdatesExpiresAt)
-	}
 	return fields
 }
 
@@ -42287,8 +42234,6 @@ func (m *SubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.CollectionMethod()
 	case subscription.FieldPaymentMethodID:
 		return m.PaymentMethodID()
-	case subscription.FieldPendingUpdatesExpiresAt:
-		return m.PendingUpdatesExpiresAt()
 	}
 	return nil, false
 }
@@ -42368,8 +42313,6 @@ func (m *SubscriptionMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldCollectionMethod(ctx)
 	case subscription.FieldPaymentMethodID:
 		return m.OldPaymentMethodID(ctx)
-	case subscription.FieldPendingUpdatesExpiresAt:
-		return m.OldPendingUpdatesExpiresAt(ctx)
 	}
 	return nil, fmt.Errorf("unknown Subscription field %s", name)
 }
@@ -42624,13 +42567,6 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetPaymentMethodID(v)
 		return nil
-	case subscription.FieldPendingUpdatesExpiresAt:
-		v, ok := value.(time.Time)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetPendingUpdatesExpiresAt(v)
-		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)
 }
@@ -42730,9 +42666,6 @@ func (m *SubscriptionMutation) ClearedFields() []string {
 	if m.FieldCleared(subscription.FieldPaymentMethodID) {
 		fields = append(fields, subscription.FieldPaymentMethodID)
 	}
-	if m.FieldCleared(subscription.FieldPendingUpdatesExpiresAt) {
-		fields = append(fields, subscription.FieldPendingUpdatesExpiresAt)
-	}
 	return fields
 }
 
@@ -42788,9 +42721,6 @@ func (m *SubscriptionMutation) ClearField(name string) error {
 		return nil
 	case subscription.FieldPaymentMethodID:
 		m.ClearPaymentMethodID()
-		return nil
-	case subscription.FieldPendingUpdatesExpiresAt:
-		m.ClearPendingUpdatesExpiresAt()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription nullable field %s", name)
@@ -42904,9 +42834,6 @@ func (m *SubscriptionMutation) ResetField(name string) error {
 		return nil
 	case subscription.FieldPaymentMethodID:
 		m.ResetPaymentMethodID()
-		return nil
-	case subscription.FieldPendingUpdatesExpiresAt:
-		m.ResetPendingUpdatesExpiresAt()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)

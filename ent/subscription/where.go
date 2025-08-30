@@ -226,11 +226,6 @@ func PaymentMethodID(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldPaymentMethodID, v))
 }
 
-// PendingUpdatesExpiresAt applies equality check predicate on the "pending_updates_expires_at" field. It's identical to PendingUpdatesExpiresAtEQ.
-func PendingUpdatesExpiresAt(v time.Time) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldPendingUpdatesExpiresAt, v))
-}
-
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldTenantID, v))
@@ -2059,56 +2054,6 @@ func PaymentMethodIDEqualFold(v string) predicate.Subscription {
 // PaymentMethodIDContainsFold applies the ContainsFold predicate on the "payment_method_id" field.
 func PaymentMethodIDContainsFold(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldContainsFold(FieldPaymentMethodID, v))
-}
-
-// PendingUpdatesExpiresAtEQ applies the EQ predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtEQ(v time.Time) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldPendingUpdatesExpiresAt, v))
-}
-
-// PendingUpdatesExpiresAtNEQ applies the NEQ predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtNEQ(v time.Time) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNEQ(FieldPendingUpdatesExpiresAt, v))
-}
-
-// PendingUpdatesExpiresAtIn applies the In predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtIn(vs ...time.Time) predicate.Subscription {
-	return predicate.Subscription(sql.FieldIn(FieldPendingUpdatesExpiresAt, vs...))
-}
-
-// PendingUpdatesExpiresAtNotIn applies the NotIn predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtNotIn(vs ...time.Time) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNotIn(FieldPendingUpdatesExpiresAt, vs...))
-}
-
-// PendingUpdatesExpiresAtGT applies the GT predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtGT(v time.Time) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGT(FieldPendingUpdatesExpiresAt, v))
-}
-
-// PendingUpdatesExpiresAtGTE applies the GTE predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtGTE(v time.Time) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGTE(FieldPendingUpdatesExpiresAt, v))
-}
-
-// PendingUpdatesExpiresAtLT applies the LT predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtLT(v time.Time) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLT(FieldPendingUpdatesExpiresAt, v))
-}
-
-// PendingUpdatesExpiresAtLTE applies the LTE predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtLTE(v time.Time) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLTE(FieldPendingUpdatesExpiresAt, v))
-}
-
-// PendingUpdatesExpiresAtIsNil applies the IsNil predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtIsNil() predicate.Subscription {
-	return predicate.Subscription(sql.FieldIsNull(FieldPendingUpdatesExpiresAt))
-}
-
-// PendingUpdatesExpiresAtNotNil applies the NotNil predicate on the "pending_updates_expires_at" field.
-func PendingUpdatesExpiresAtNotNil() predicate.Subscription {
-	return predicate.Subscription(sql.FieldNotNull(FieldPendingUpdatesExpiresAt))
 }
 
 // HasLineItems applies the HasEdge predicate on the "line_items" edge.

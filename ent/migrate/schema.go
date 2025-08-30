@@ -1428,7 +1428,6 @@ var (
 		{Name: "payment_behavior", Type: field.TypeEnum, Enums: []string{"allow_incomplete", "default_incomplete", "error_if_incomplete", "default_active"}, Default: "default_active"},
 		{Name: "collection_method", Type: field.TypeEnum, Enums: []string{"charge_automatically", "send_invoice"}, Default: "send_invoice"},
 		{Name: "payment_method_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
-		{Name: "pending_updates_expires_at", Type: field.TypeTime, Nullable: true},
 	}
 	// SubscriptionsTable holds the schema information for the "subscriptions" table.
 	SubscriptionsTable = &schema.Table{
@@ -1478,14 +1477,6 @@ var (
 				Name:    "subscription_tenant_id_environment_id_collection_method_status",
 				Unique:  false,
 				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[34], SubscriptionsColumns[2]},
-			},
-			{
-				Name:    "subscription_tenant_id_environment_id_pending_updates_expires_at_status",
-				Unique:  false,
-				Columns: []*schema.Column{SubscriptionsColumns[1], SubscriptionsColumns[7], SubscriptionsColumns[36], SubscriptionsColumns[2]},
-				Annotation: &entsql.IndexAnnotation{
-					Where: "pending_updates_expires_at IS NOT NULL",
-				},
 			},
 			{
 				Name:    "subscription_tenant_id_environment_id_subscription_status_collection_method_status",

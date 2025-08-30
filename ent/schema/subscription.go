@@ -146,10 +146,6 @@ func (Subscription) Fields() []ent.Field {
 			}).
 			Optional().
 			Comment("Payment method ID for this subscription"),
-		field.Time("pending_updates_expires_at").
-			Optional().
-			Nillable().
-			Comment("When pending updates expire (23 hours from creation)"),
 	}
 }
 
@@ -184,9 +180,7 @@ func (Subscription) Indexes() []ent.Index {
 		// For payment behavior queries
 		index.Fields("tenant_id", "environment_id", "payment_behavior", "status"),
 		index.Fields("tenant_id", "environment_id", "collection_method", "status"),
-		// For pending updates queries
-		index.Fields("tenant_id", "environment_id", "pending_updates_expires_at", "status").
-			Annotations(entsql.IndexWhere("pending_updates_expires_at IS NOT NULL")),
+
 		// For incomplete subscription queries
 		index.Fields("tenant_id", "environment_id", "subscription_status", "collection_method", "status").
 			Annotations(entsql.IndexWhere("subscription_status IN ('incomplete', 'past_due')")),

@@ -107,9 +107,6 @@ type Subscription struct {
 	// PaymentMethodID is the payment method ID for this subscription
 	PaymentMethodID *string `db:"payment_method_id" json:"payment_method_id,omitempty"`
 
-	// PendingUpdatesExpiresAt is when pending updates expire
-	PendingUpdatesExpiresAt *time.Time `db:"pending_updates_expires_at" json:"pending_updates_expires_at,omitempty"`
-
 	LineItems []*SubscriptionLineItem `json:"line_items,omitempty"`
 
 	Pauses []*SubscriptionPause `json:"pauses,omitempty"`
@@ -174,16 +171,11 @@ func GetSubscriptionFromEnt(sub *ent.Subscription) *Subscription {
 		OverageFactor:      sub.OverageFactor,
 		PaymentBehavior:    string(sub.PaymentBehavior),
 		CollectionMethod:   string(sub.CollectionMethod),
-		PaymentMethodID: func() *string {
-			if sub.PaymentMethodID == "" {
-				return nil
-			}
-			return &sub.PaymentMethodID
-		}(),
-		PendingUpdatesExpiresAt: sub.PendingUpdatesExpiresAt,
-		LineItems:               lineItems,
-		CouponAssociations:      couponAssociations,
-		Pauses:                  pauses,
+		PaymentMethodID:    lo.ToPtr(sub.PaymentMethodID),
+
+		LineItems:          lineItems,
+		CouponAssociations: couponAssociations,
+		Pauses:             pauses,
 		BaseModel: types.BaseModel{
 			TenantID:  sub.TenantID,
 			Status:    types.Status(sub.Status),

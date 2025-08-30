@@ -86,8 +86,6 @@ const (
 	FieldCollectionMethod = "collection_method"
 	// FieldPaymentMethodID holds the string denoting the payment_method_id field in the database.
 	FieldPaymentMethodID = "payment_method_id"
-	// FieldPendingUpdatesExpiresAt holds the string denoting the pending_updates_expires_at field in the database.
-	FieldPendingUpdatesExpiresAt = "pending_updates_expires_at"
 	// EdgeLineItems holds the string denoting the line_items edge name in mutations.
 	EdgeLineItems = "line_items"
 	// EdgePauses holds the string denoting the pauses edge name in mutations.
@@ -184,7 +182,6 @@ var Columns = []string{
 	FieldPaymentBehavior,
 	FieldCollectionMethod,
 	FieldPaymentMethodID,
-	FieldPendingUpdatesExpiresAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -476,11 +473,6 @@ func ByCollectionMethod(opts ...sql.OrderTermOption) OrderOption {
 // ByPaymentMethodID orders the results by the payment_method_id field.
 func ByPaymentMethodID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPaymentMethodID, opts...).ToFunc()
-}
-
-// ByPendingUpdatesExpiresAt orders the results by the pending_updates_expires_at field.
-func ByPendingUpdatesExpiresAt(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPendingUpdatesExpiresAt, opts...).ToFunc()
 }
 
 // ByLineItemsCount orders the results by line_items count.

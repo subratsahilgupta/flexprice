@@ -9,6 +9,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -1130,4 +1131,20 @@ func NewPaymentParametersFromSubscription(collectionMethod string, paymentBehavi
 		PaymentBehavior:  &pb,
 		PaymentMethodID:  paymentMethodID,
 	}
+}
+
+// NormalizePaymentParameters handles backward compatibility for old collection behaviors
+// If collection_method is "default_incomplete", it converts to charge_automatically + default_incomplete
+func (p *PaymentParameters) NormalizePaymentParameters() *PaymentParameters {
+	if p.CollectionMethod != nil && string(*p.CollectionMethod) == "default_incomplete" {
+		// Convert old default_incomplete collection behavior to new format
+		// collection_method: charge_automatically, payment_behavior: default_incomplete
+		normalized := &PaymentParameters{
+			CollectionMethod: lo.ToPtr(types.CollectionMethodSendInvoice),
+			PaymentBehavior:  lo.ToPtr(types.PaymentBehaviorDefaultIncomplete),
+			PaymentMethodID:  p.PaymentMethodID,
+		}
+		return normalized
+	}
+	return p
 }
