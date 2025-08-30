@@ -14,29 +14,33 @@ import (
 )
 
 type CreatePriceRequest struct {
-	Amount               string                   `json:"amount,omitempty"`
-	Currency             string                   `json:"currency" validate:"required,len=3"`
-	PlanID               string                   `json:"plan_id,omitempty"`     // TODO: This is deprecated and will be removed in the future
-	EntityType           types.PriceEntityType    `json:"entity_type,omitempty"` // TODO: this will be required in the future as we will not allow prices to be created without an entity type
-	EntityID             string                   `json:"entity_id,omitempty"`   // TODO: this will be required in the future as we will not allow prices to be created without an entity id
-	Type                 types.PriceType          `json:"type" validate:"required"`
-	PriceUnitType        types.PriceUnitType      `json:"price_unit_type" validate:"required"`
-	BillingPeriod        types.BillingPeriod      `json:"billing_period" validate:"required"`
-	BillingPeriodCount   int                      `json:"billing_period_count" validate:"required,min=1"`
-	BillingModel         types.BillingModel       `json:"billing_model" validate:"required"`
-	BillingCadence       types.BillingCadence     `json:"billing_cadence" validate:"required"`
-	MeterID              string                   `json:"meter_id,omitempty"`
-	FilterValues         map[string][]string      `json:"filter_values,omitempty"`
-	LookupKey            string                   `json:"lookup_key,omitempty"`
-	InvoiceCadence       types.InvoiceCadence     `json:"invoice_cadence" validate:"required"`
-	TrialPeriod          int                      `json:"trial_period"`
-	Description          string                   `json:"description,omitempty"`
-	Metadata             map[string]string        `json:"metadata,omitempty"`
-	TierMode             types.BillingTier        `json:"tier_mode,omitempty"`
-	Tiers                []CreatePriceTier        `json:"tiers,omitempty"`
-	TransformQuantity    *price.TransformQuantity `json:"transform_quantity,omitempty"`
-	PriceUnitConfig      *PriceUnitConfig         `json:"price_unit_config,omitempty"`
-	SkipEntityValidation bool                     `json:"-"`
+	Amount             string                   `json:"amount,omitempty"`
+	Currency           string                   `json:"currency" validate:"required,len=3"`
+	PlanID             string                   `json:"plan_id,omitempty"`     // TODO: This is deprecated and will be removed in the future
+	EntityType         types.PriceEntityType    `json:"entity_type,omitempty"` // TODO: this will be required in the future as we will not allow prices to be created without an entity type
+	EntityID           string                   `json:"entity_id,omitempty"`   // TODO: this will be required in the future as we will not allow prices to be created without an entity id
+	Type               types.PriceType          `json:"type" validate:"required"`
+	PriceUnitType      types.PriceUnitType      `json:"price_unit_type" validate:"required"`
+	BillingPeriod      types.BillingPeriod      `json:"billing_period" validate:"required"`
+	BillingPeriodCount int                      `json:"billing_period_count" validate:"required,min=1"`
+	BillingModel       types.BillingModel       `json:"billing_model" validate:"required"`
+	BillingCadence     types.BillingCadence     `json:"billing_cadence" validate:"required"`
+	MeterID            string                   `json:"meter_id,omitempty"`
+	FilterValues       map[string][]string      `json:"filter_values,omitempty"`
+	LookupKey          string                   `json:"lookup_key,omitempty"`
+	InvoiceCadence     types.InvoiceCadence     `json:"invoice_cadence" validate:"required"`
+	TrialPeriod        int                      `json:"trial_period"`
+	Description        string                   `json:"description,omitempty"`
+	Metadata           map[string]string        `json:"metadata,omitempty"`
+	TierMode           types.BillingTier        `json:"tier_mode,omitempty"`
+	Tiers              []CreatePriceTier        `json:"tiers,omitempty"`
+	TransformQuantity  *price.TransformQuantity `json:"transform_quantity,omitempty"`
+	PriceUnitConfig    *PriceUnitConfig         `json:"price_unit_config,omitempty"`
+
+	// SkipEntityValidation is used to skip entity validation when creating a price from a subscription i.e. override price workflow
+	// This is used when creating a subscription-scoped price
+	// NOTE: This is not a public field and is used internally should be used with caution
+	SkipEntityValidation bool `json:"-"`
 }
 
 type PriceUnitConfig struct {
