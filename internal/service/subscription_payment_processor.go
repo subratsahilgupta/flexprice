@@ -204,8 +204,10 @@ func (s *subscriptionPaymentProcessor) attemptPaymentErrorIfIncomplete(
 	result := s.processPayment(ctx, sub, inv)
 
 	if result.Success {
+		// Don't update subscription status here - let the payment processor handle it
+		// This prevents version conflicts when both this method and payment processor try to update
 		sub.SubscriptionStatus = types.SubscriptionStatusActive
-		return s.SubRepo.Update(ctx, sub)
+		return nil
 	}
 
 	// Payment failed - return error to prevent subscription creation
