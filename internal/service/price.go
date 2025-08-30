@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -21,7 +23,7 @@ type PriceService interface {
 	GetPricesByAddonID(ctx context.Context, addonID string) (*dto.ListPricesResponse, error)
 	GetPrices(ctx context.Context, filter *types.PriceFilter) (*dto.ListPricesResponse, error)
 	UpdatePrice(ctx context.Context, id string, req dto.UpdatePriceRequest) (*dto.PriceResponse, error)
-	DeletePrice(ctx context.Context, id string) error
+	DeletePrice(ctx context.Context, id string, req dto.DeletePriceRequest) error
 	CalculateCost(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal
 
 	// CalculateBucketedCost calculates cost for bucketed max values where each value represents max in its time bucket
@@ -671,10 +673,26 @@ func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.Updat
 	return response, nil
 }
 
-func (s *priceService) DeletePrice(ctx context.Context, id string) error {
-	if err := s.PriceRepo.Delete(ctx, id); err != nil {
+func (s *priceService) DeletePrice(ctx context.Context, id string, req dto.DeletePriceRequest) error {
+	if err := req.Validate(); err != nil {
 		return err
 	}
+
+	price, err := s.PriceRepo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if req.EndDate != nil {
+		price.EndDate = req.EndDate
+	} else {
+		price.EndDate = lo.ToPtr(time.Now().UTC())
+	}
+
+	if err := s.PriceRepo.Update(ctx, price); err != nil {
+		return err
+	}
+
 	return nil
 }
 

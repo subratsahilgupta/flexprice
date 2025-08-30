@@ -8,13 +8,13 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// SubscriptionLineItemEntitiyType is the type of the source of a subscription line item
+// SubscriptionLineItemEntityType is the type of the source of a subscription line item
 // It is optional and can be used to differentiate between plan and addon line items
-type SubscriptionLineItemEntitiyType string
+type SubscriptionLineItemEntityType string
 
 const (
-	SubscriptionLineItemEntitiyTypePlan  SubscriptionLineItemEntitiyType = "plan"
-	SubscriptionLineItemEntitiyTypeAddon SubscriptionLineItemEntitiyType = "addon"
+	SubscriptionLineItemEntityTypePlan  SubscriptionLineItemEntityType = "plan"
+	SubscriptionLineItemEntityTypeAddon SubscriptionLineItemEntityType = "addon"
 )
 
 // SubscriptionStatus is the status of a subscription

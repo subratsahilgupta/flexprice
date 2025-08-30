@@ -51,6 +51,10 @@ type SubscriptionService interface {
 	// Addon management for subscriptions
 	AddAddonToSubscription(ctx context.Context, subscriptionID string, req *dto.AddAddonToSubscriptionRequest) (*addonassociation.AddonAssociation, error)
 	RemoveAddonFromSubscription(ctx context.Context, subscriptionID string, addonID string, reason string) error
+
+	// Line item management
+	AddSubscriptionLineItem(ctx context.Context, subscriptionID string, req dto.CreateSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error)
+	DeleteSubscriptionLineItem(ctx context.Context, lineItemID string, req dto.DeleteSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error)
 }
 
 type subscriptionService struct {
@@ -213,7 +217,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		item.SubscriptionID = sub.ID
 		item.PriceType = price.Type
 		item.EntityID = plan.ID
-		item.EntityType = types.SubscriptionLineItemEntitiyTypePlan
+		item.EntityType = types.SubscriptionLineItemEntityTypePlan
 		item.PlanDisplayName = plan.Name
 		item.CustomerID = sub.CustomerID
 		item.Currency = sub.Currency
@@ -3310,7 +3314,7 @@ func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, price
 		SubscriptionID: sub.ID,
 		CustomerID:     sub.CustomerID,
 		EntityID:       addonID,
-		EntityType:     types.SubscriptionLineItemEntitiyTypeAddon,
+		EntityType:     types.SubscriptionLineItemEntityTypeAddon,
 		PriceID:        price.ID,
 		PriceType:      price.Type,
 		Currency:       sub.Currency,

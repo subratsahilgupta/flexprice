@@ -7,6 +7,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/temporal"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -16,6 +17,7 @@ type PlanHandler struct {
 	service            service.PlanService
 	entitlementService service.EntitlementService
 	creditGrantService service.CreditGrantService
+	temporalService    *temporal.Service
 	log                *logger.Logger
 }
 
@@ -23,12 +25,14 @@ func NewPlanHandler(
 	service service.PlanService,
 	entitlementService service.EntitlementService,
 	creditGrantService service.CreditGrantService,
+	temporalService *temporal.Service,
 	log *logger.Logger,
 ) *PlanHandler {
 	return &PlanHandler{
 		service:            service,
 		entitlementService: entitlementService,
 		creditGrantService: creditGrantService,
+		temporalService:    temporalService,
 		log:                log,
 	}
 }
@@ -276,16 +280,25 @@ func (h *PlanHandler) SyncPlanPrices(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
-	resp, err := h.service.SyncPlanPrices(ctx, id)
+	// Use temporal workflow instead of direct service call
+	// result, err := h.temporalService.StartPlanPriceSync(c.Request.Context(), id)
+	// if err != nil {
+	// 	c.Error(ierr.WithError(err).
+	// 		WithHint("Failed to sync plan prices").
+	// 		Mark(ierr.ErrInternal))
+	// 	return
+	// }
+
+	// Call the service directly without Temporal
+	result, err := h.service.SyncPlanPrices(c.Request.Context(), id)
 	if err != nil {
-		c.Error(ierr.NewError("failed to sync plan prices").
-			WithHint("failed to sync plan prices").
+		c.Error(ierr.WithError(err).
+			WithHint("Failed to sync plan prices").
 			Mark(ierr.ErrInternal))
 		return
 	}
 
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, result)
 }
 
 // @Summary List plans by filter
