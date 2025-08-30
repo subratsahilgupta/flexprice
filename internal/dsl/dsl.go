@@ -120,42 +120,8 @@ func BuildPredicates(filters []*types.FilterCondition, resolve FieldResolver) ([
 func BuildOrders(sort []*types.SortCondition, resolve FieldResolver) ([]OrderFunc, error) {
 	out := make([]OrderFunc, 0, len(sort))
 
-	// First, handle display_order specially if it's in the sort conditions
-	var displayOrderSort *types.SortCondition
-	var otherSorts []*types.SortCondition
-
-	// Separate display_order from other sorts
+	// Apply sorts in the exact order provided by the user
 	for _, s := range sort {
-		if s == nil {
-			continue
-		}
-		if s.Field == "display_order" {
-			displayOrderSort = s
-		} else {
-			otherSorts = append(otherSorts, s)
-		}
-	}
-
-	// If display_order is present, add it first
-	if displayOrderSort != nil {
-		fi, err := resolve(displayOrderSort.Field)
-		if err != nil {
-			return nil, err
-		}
-
-		// Special handling for display_order
-		of := func(sel *sql.Selector) {
-			if displayOrderSort.Direction == types.SortDirectionDesc {
-				sel.OrderExpr(sql.Raw("CASE WHEN " + fi + " > 0 THEN 0 ELSE 1 END, CASE WHEN " + fi + " > 0 THEN " + fi + " END DESC"))
-			} else {
-				sel.OrderExpr(sql.Raw("CASE WHEN " + fi + " > 0 THEN 0 ELSE 1 END, CASE WHEN " + fi + " > 0 THEN " + fi + " END ASC"))
-			}
-		}
-		out = append(out, of)
-	}
-
-	// Then add other sorts (these will apply to all records, but effectively only affect display_order = 0 records)
-	for _, s := range otherSorts {
 		fi, err := resolve(s.Field)
 		if err != nil {
 			return nil, err
