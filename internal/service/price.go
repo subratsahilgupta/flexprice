@@ -62,8 +62,10 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 		}
 
 		// Validate that the entity exists based on entity type
-		if err := s.validateEntityExists(ctx, req.EntityType, req.EntityID); err != nil {
-			return nil, err
+		if !req.SkipEntityValidation {
+			if err := s.validateEntityExists(ctx, req.EntityType, req.EntityID); err != nil {
+				return nil, err
+			}
 		}
 	} else {
 		// Legacy support for plan_id
@@ -806,12 +808,12 @@ func (s *priceService) calculateTieredCost(ctx context.Context, price *price.Pri
 			if tier.UpTo != nil {
 				upTo := decimal.NewFromUint64(*tier.UpTo)
 				tierCapacity := upTo.Sub(tierStartQuantity)
-				
+
 				// Use the minimum of remaining quantity and tier capacity
 				if remainingQuantity.GreaterThan(tierCapacity) {
 					tierQuantity = tierCapacity
 				}
-				
+
 				// Update tier start for next iteration
 				tierStartQuantity = upTo
 			}
@@ -972,12 +974,12 @@ func (s *priceService) calculateTieredCostWithBreakup(ctx context.Context, price
 			if tier.UpTo != nil {
 				upTo := decimal.NewFromUint64(*tier.UpTo)
 				tierCapacity := upTo.Sub(tierStartQuantity)
-				
+
 				// Use the minimum of remaining quantity and tier capacity
 				if remainingQuantity.GreaterThan(tierCapacity) {
 					tierQuantity = tierCapacity
 				}
-				
+
 				// Update tier start for next iteration
 				tierStartQuantity = upTo
 			}
