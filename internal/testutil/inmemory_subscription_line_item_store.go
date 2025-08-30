@@ -212,17 +212,9 @@ func (s *InMemorySubscriptionLineItemStore) CreateBulk(ctx context.Context, item
 }
 
 // ListBySubscription retrieves all line items for a subscription
-func (s *InMemorySubscriptionLineItemStore) ListBySubscription(ctx context.Context, subscriptionID string) ([]*subscription.SubscriptionLineItem, error) {
+func (s *InMemorySubscriptionLineItemStore) ListBySubscription(ctx context.Context, sub *subscription.Subscription) ([]*subscription.SubscriptionLineItem, error) {
 	filter := &types.SubscriptionLineItemFilter{
-		SubscriptionIDs: []string{subscriptionID},
-	}
-	return s.List(ctx, filter)
-}
-
-// ListByCustomer retrieves all line items for a customer
-func (s *InMemorySubscriptionLineItemStore) ListByCustomer(ctx context.Context, customerID string) ([]*subscription.SubscriptionLineItem, error) {
-	filter := &types.SubscriptionLineItemFilter{
-		EntityIDs: []string{customerID},
+		SubscriptionIDs: []string{sub.ID},
 	}
 	return s.List(ctx, filter)
 }
@@ -247,6 +239,19 @@ func (s *InMemorySubscriptionLineItemStore) Count(ctx context.Context, filter *t
 			Mark(ierr.ErrDatabase)
 	}
 	return count, nil
+}
+
+// Clear clears all subscription line items from the store
+func (s *InMemorySubscriptionLineItemStore) Clear() {
+	s.InMemoryStore.Clear()
+}
+
+// ListByCustomer retrieves all line items for a customer
+func (s *InMemorySubscriptionLineItemStore) ListByCustomer(ctx context.Context, customerID string) ([]*subscription.SubscriptionLineItem, error) {
+	filter := &types.SubscriptionLineItemFilter{
+		EntityIDs: []string{customerID},
+	}
+	return s.List(ctx, filter)
 }
 
 // GetByPriceID retrieves all line items for a price

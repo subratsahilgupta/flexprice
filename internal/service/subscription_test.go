@@ -2578,6 +2578,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
 			CustomerID:         s.testData.customer.ID,
 			SubscriptionStatus: types.SubscriptionStatusActive,
 			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			Currency:           "usd",
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -2604,9 +2605,55 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
 		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{existingLineItem})
 		s.NoError(err)
 
+		// Also create the line item in the line item repository
+		err = s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), existingLineItem)
+		s.NoError(err)
+
+		// Debug: Check if subscription was created correctly
+		createdSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), testSub.ID)
+		s.NoError(err)
+		s.NotNil(createdSub)
+		s.Equal("usd", createdSub.Currency, "Subscription currency should be 'usd'")
+
 		// Sync should preserve existing line items for active prices
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		planService := NewPlanService(ServiceParams{
+			Logger:                     s.GetLogger(),
+			Config:                     s.GetConfig(),
+			DB:                         s.GetDB(),
+			SubRepo:                    s.GetStores().SubscriptionRepo,
+			SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
+			PlanRepo:                   s.GetStores().PlanRepo,
+			PriceRepo:                  s.GetStores().PriceRepo,
+			EventRepo:                  s.GetStores().EventRepo,
+			MeterRepo:                  s.GetStores().MeterRepo,
+			CustomerRepo:               s.GetStores().CustomerRepo,
+			InvoiceRepo:                s.GetStores().InvoiceRepo,
+			EntitlementRepo:            s.GetStores().EntitlementRepo,
+			EnvironmentRepo:            s.GetStores().EnvironmentRepo,
+			FeatureRepo:                s.GetStores().FeatureRepo,
+			TenantRepo:                 s.GetStores().TenantRepo,
+			UserRepo:                   s.GetStores().UserRepo,
+			AuthRepo:                   s.GetStores().AuthRepo,
+			WalletRepo:                 s.GetStores().WalletRepo,
+			PaymentRepo:                s.GetStores().PaymentRepo,
+			CreditGrantRepo:            s.GetStores().CreditGrantRepo,
+			CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+			CouponRepo:                 s.GetStores().CouponRepo,
+			CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
+			CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+			SettingsRepo:               s.GetStores().SettingsRepo,
+			EventPublisher:             s.GetPublisher(),
+			WebhookPublisher:           s.GetWebhookPublisher(),
+		})
+		result, err := planService.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded) // Line item already exists
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(1, result.SynchronizationSummary.PricesSkipped) // Price skipped as line item exists
 	})
 
 	s.Run("TC-SYNC-015_Existing_Line_Items_For_Expired_Prices", func() {
@@ -2644,6 +2691,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
 			CustomerID:         s.testData.customer.ID,
 			SubscriptionStatus: types.SubscriptionStatusActive,
 			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			Currency:           "usd",
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -2671,8 +2719,44 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
 		s.NoError(err)
 
 		// Sync should end line items for expired prices
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		planService := NewPlanService(ServiceParams{
+			Logger:                     s.GetLogger(),
+			Config:                     s.GetConfig(),
+			DB:                         s.GetDB(),
+			SubRepo:                    s.GetStores().SubscriptionRepo,
+			SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
+			PlanRepo:                   s.GetStores().PlanRepo,
+			PriceRepo:                  s.GetStores().PriceRepo,
+			EventRepo:                  s.GetStores().EventRepo,
+			MeterRepo:                  s.GetStores().MeterRepo,
+			CustomerRepo:               s.GetStores().CustomerRepo,
+			InvoiceRepo:                s.GetStores().InvoiceRepo,
+			EntitlementRepo:            s.GetStores().EntitlementRepo,
+			EnvironmentRepo:            s.GetStores().EnvironmentRepo,
+			FeatureRepo:                s.GetStores().FeatureRepo,
+			TenantRepo:                 s.GetStores().TenantRepo,
+			UserRepo:                   s.GetStores().UserRepo,
+			AuthRepo:                   s.GetStores().AuthRepo,
+			WalletRepo:                 s.GetStores().WalletRepo,
+			PaymentRepo:                s.GetStores().PaymentRepo,
+			CreditGrantRepo:            s.GetStores().CreditGrantRepo,
+			CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+			CouponRepo:                 s.GetStores().CouponRepo,
+			CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
+			CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+			SettingsRepo:               s.GetStores().SettingsRepo,
+			EventPublisher:             s.GetPublisher(),
+			WebhookPublisher:           s.GetWebhookPublisher(),
+		})
+		result, err := planService.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded)   // No active prices to add
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved) // Line item should be ended
+		s.Equal(1, result.SynchronizationSummary.PricesSkipped) // Expired price skipped
 	})
 
 	s.Run("TC-SYNC-016_Missing_Line_Items_For_Active_Prices", func() {
@@ -2709,6 +2793,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
 			CustomerID:         s.testData.customer.ID,
 			SubscriptionStatus: types.SubscriptionStatusActive,
 			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			Currency:           "usd",
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -2717,8 +2802,44 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
 		s.NoError(err)
 
 		// Sync should create missing line items for active prices
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		planService := NewPlanService(ServiceParams{
+			Logger:                     s.GetLogger(),
+			Config:                     s.GetConfig(),
+			DB:                         s.GetDB(),
+			SubRepo:                    s.GetStores().SubscriptionRepo,
+			SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
+			PlanRepo:                   s.GetStores().PlanRepo,
+			PriceRepo:                  s.GetStores().PriceRepo,
+			EventRepo:                  s.GetStores().EventRepo,
+			MeterRepo:                  s.GetStores().MeterRepo,
+			CustomerRepo:               s.GetStores().CustomerRepo,
+			InvoiceRepo:                s.GetStores().InvoiceRepo,
+			EntitlementRepo:            s.GetStores().EntitlementRepo,
+			EnvironmentRepo:            s.GetStores().EnvironmentRepo,
+			FeatureRepo:                s.GetStores().FeatureRepo,
+			TenantRepo:                 s.GetStores().TenantRepo,
+			UserRepo:                   s.GetStores().UserRepo,
+			AuthRepo:                   s.GetStores().AuthRepo,
+			WalletRepo:                 s.GetStores().WalletRepo,
+			PaymentRepo:                s.GetStores().PaymentRepo,
+			CreditGrantRepo:            s.GetStores().CreditGrantRepo,
+			CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+			CouponRepo:                 s.GetStores().CouponRepo,
+			CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
+			CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+			SettingsRepo:               s.GetStores().SettingsRepo,
+			EventPublisher:             s.GetPublisher(),
+			WebhookPublisher:           s.GetWebhookPublisher(),
+		})
+		result, err := planService.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(1, result.SynchronizationSummary.PricesAdded) // Line item created for active price
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped)
 	})
 
 	s.Run("TC-SYNC-017_Missing_Line_Items_For_Expired_Prices", func() {
@@ -2756,6 +2877,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
 			CustomerID:         s.testData.customer.ID,
 			SubscriptionStatus: types.SubscriptionStatusActive,
 			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			Currency:           "usd",
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -2764,8 +2886,44 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
 		s.NoError(err)
 
 		// Sync should not create line items for expired prices
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		planService := NewPlanService(ServiceParams{
+			Logger:                     s.GetLogger(),
+			Config:                     s.GetConfig(),
+			DB:                         s.GetDB(),
+			SubRepo:                    s.GetStores().SubscriptionRepo,
+			SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
+			PlanRepo:                   s.GetStores().PlanRepo,
+			PriceRepo:                  s.GetStores().PriceRepo,
+			EventRepo:                  s.GetStores().EventRepo,
+			MeterRepo:                  s.GetStores().MeterRepo,
+			CustomerRepo:               s.GetStores().CustomerRepo,
+			InvoiceRepo:                s.GetStores().InvoiceRepo,
+			EntitlementRepo:            s.GetStores().EntitlementRepo,
+			EnvironmentRepo:            s.GetStores().EnvironmentRepo,
+			FeatureRepo:                s.GetStores().FeatureRepo,
+			TenantRepo:                 s.GetStores().TenantRepo,
+			UserRepo:                   s.GetStores().UserRepo,
+			AuthRepo:                   s.GetStores().AuthRepo,
+			WalletRepo:                 s.GetStores().WalletRepo,
+			PaymentRepo:                s.GetStores().PaymentRepo,
+			CreditGrantRepo:            s.GetStores().CreditGrantRepo,
+			CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+			CouponRepo:                 s.GetStores().CouponRepo,
+			CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
+			CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+			SettingsRepo:               s.GetStores().SettingsRepo,
+			EventPublisher:             s.GetPublisher(),
+			WebhookPublisher:           s.GetWebhookPublisher(),
+		})
+		result, err := planService.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded) // No line items created for expired price
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(1, result.SynchronizationSummary.PricesSkipped) // Expired price skipped
 	})
 }
 
@@ -2816,6 +2974,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 			CustomerID:         testCustomer.ID,
 			SubscriptionStatus: types.SubscriptionStatusActive,
 			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			Currency:           "usd",
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -2843,8 +3002,44 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 		s.NoError(err)
 
 		// Sync should preserve addon line items
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		planService := NewPlanService(ServiceParams{
+			Logger:                     s.GetLogger(),
+			Config:                     s.GetConfig(),
+			DB:                         s.GetDB(),
+			SubRepo:                    s.GetStores().SubscriptionRepo,
+			SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
+			PlanRepo:                   s.GetStores().PlanRepo,
+			PriceRepo:                  s.GetStores().PriceRepo,
+			EventRepo:                  s.GetStores().EventRepo,
+			MeterRepo:                  s.GetStores().MeterRepo,
+			CustomerRepo:               s.GetStores().CustomerRepo,
+			InvoiceRepo:                s.GetStores().InvoiceRepo,
+			EntitlementRepo:            s.GetStores().EntitlementRepo,
+			EnvironmentRepo:            s.GetStores().EnvironmentRepo,
+			FeatureRepo:                s.GetStores().FeatureRepo,
+			TenantRepo:                 s.GetStores().TenantRepo,
+			UserRepo:                   s.GetStores().UserRepo,
+			AuthRepo:                   s.GetStores().AuthRepo,
+			WalletRepo:                 s.GetStores().WalletRepo,
+			PaymentRepo:                s.GetStores().PaymentRepo,
+			CreditGrantRepo:            s.GetStores().CreditGrantRepo,
+			CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+			CouponRepo:                 s.GetStores().CouponRepo,
+			CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
+			CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+			SettingsRepo:               s.GetStores().SettingsRepo,
+			EventPublisher:             s.GetPublisher(),
+			WebhookPublisher:           s.GetWebhookPublisher(),
+		})
+		result, err := planService.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded) // No plan prices to add
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped) // Addon line items preserved
 	})
 
 	s.Run("TC-SYNC-019_Addon_Line_Items_With_Entity_Type_Addon", func() {
@@ -2884,6 +3079,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 			CustomerID:         s.testData.customer.ID,
 			SubscriptionStatus: types.SubscriptionStatusActive,
 			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			Currency:           "usd",
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -2909,8 +3105,44 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 		s.NoError(err)
 
 		// Sync should preserve addon line items with entity type addon
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		planService := NewPlanService(ServiceParams{
+			Logger:                     s.GetLogger(),
+			Config:                     s.GetConfig(),
+			DB:                         s.GetDB(),
+			SubRepo:                    s.GetStores().SubscriptionRepo,
+			SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
+			PlanRepo:                   s.GetStores().PlanRepo,
+			PriceRepo:                  s.GetStores().PriceRepo,
+			EventRepo:                  s.GetStores().EventRepo,
+			MeterRepo:                  s.GetStores().MeterRepo,
+			CustomerRepo:               s.GetStores().CustomerRepo,
+			InvoiceRepo:                s.GetStores().InvoiceRepo,
+			EntitlementRepo:            s.GetStores().EntitlementRepo,
+			EnvironmentRepo:            s.GetStores().EnvironmentRepo,
+			FeatureRepo:                s.GetStores().FeatureRepo,
+			TenantRepo:                 s.GetStores().TenantRepo,
+			UserRepo:                   s.GetStores().UserRepo,
+			AuthRepo:                   s.GetStores().AuthRepo,
+			WalletRepo:                 s.GetStores().WalletRepo,
+			PaymentRepo:                s.GetStores().PaymentRepo,
+			CreditGrantRepo:            s.GetStores().CreditGrantRepo,
+			CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+			CouponRepo:                 s.GetStores().CouponRepo,
+			CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
+			CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+			SettingsRepo:               s.GetStores().SettingsRepo,
+			EventPublisher:             s.GetPublisher(),
+			WebhookPublisher:           s.GetWebhookPublisher(),
+		})
+		result, err := planService.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded) // No plan prices to add
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped) // Addon line items preserved
 	})
 
 	s.Run("TC-SYNC-020_Mixed_Plan_And_Addon_Line_Items", func() {
@@ -2950,6 +3182,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 			CustomerID:         s.testData.customer.ID,
 			SubscriptionStatus: types.SubscriptionStatusActive,
 			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			Currency:           "usd",
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -2994,8 +3227,44 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 		s.NoError(err)
 
 		// Sync should handle mixed line items correctly
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		planService := NewPlanService(ServiceParams{
+			Logger:                     s.GetLogger(),
+			Config:                     s.GetConfig(),
+			DB:                         s.GetDB(),
+			SubRepo:                    s.GetStores().SubscriptionRepo,
+			SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
+			PlanRepo:                   s.GetStores().PlanRepo,
+			PriceRepo:                  s.GetStores().PriceRepo,
+			EventRepo:                  s.GetStores().EventRepo,
+			MeterRepo:                  s.GetStores().MeterRepo,
+			CustomerRepo:               s.GetStores().CustomerRepo,
+			InvoiceRepo:                s.GetStores().InvoiceRepo,
+			EntitlementRepo:            s.GetStores().EntitlementRepo,
+			EnvironmentRepo:            s.GetStores().EnvironmentRepo,
+			FeatureRepo:                s.GetStores().FeatureRepo,
+			TenantRepo:                 s.GetStores().TenantRepo,
+			UserRepo:                   s.GetStores().UserRepo,
+			AuthRepo:                   s.GetStores().AuthRepo,
+			WalletRepo:                 s.GetStores().WalletRepo,
+			PaymentRepo:                s.GetStores().PaymentRepo,
+			CreditGrantRepo:            s.GetStores().CreditGrantRepo,
+			CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+			CouponRepo:                 s.GetStores().CouponRepo,
+			CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
+			CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+			SettingsRepo:               s.GetStores().SettingsRepo,
+			EventPublisher:             s.GetPublisher(),
+			WebhookPublisher:           s.GetWebhookPublisher(),
+		})
+		result, err := planService.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded) // Plan price already has line item
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(1, result.SynchronizationSummary.PricesSkipped) // Plan price skipped as line item exists
 	})
 }
 
@@ -3038,6 +3307,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Timing_And_Edge_Cases() {
 			CustomerID:         s.testData.customer.ID,
 			SubscriptionStatus: types.SubscriptionStatusActive,
 			StartDate:          s.testData.now.AddDate(0, 0, -30),
+			Currency:           "usd",
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -3066,8 +3336,44 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Timing_And_Edge_Cases() {
 		s.NoError(err)
 
 		// Sync should not return past line items
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		planService := NewPlanService(ServiceParams{
+			Logger:                     s.GetLogger(),
+			Config:                     s.GetConfig(),
+			DB:                         s.GetDB(),
+			SubRepo:                    s.GetStores().SubscriptionRepo,
+			SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
+			PlanRepo:                   s.GetStores().PlanRepo,
+			PriceRepo:                  s.GetStores().PriceRepo,
+			EventRepo:                  s.GetStores().EventRepo,
+			MeterRepo:                  s.GetStores().MeterRepo,
+			CustomerRepo:               s.GetStores().CustomerRepo,
+			InvoiceRepo:                s.GetStores().InvoiceRepo,
+			EntitlementRepo:            s.GetStores().EntitlementRepo,
+			EnvironmentRepo:            s.GetStores().EnvironmentRepo,
+			FeatureRepo:                s.GetStores().FeatureRepo,
+			TenantRepo:                 s.GetStores().TenantRepo,
+			UserRepo:                   s.GetStores().UserRepo,
+			AuthRepo:                   s.GetStores().AuthRepo,
+			WalletRepo:                 s.GetStores().WalletRepo,
+			PaymentRepo:                s.GetStores().PaymentRepo,
+			CreditGrantRepo:            s.GetStores().CreditGrantRepo,
+			CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+			CouponRepo:                 s.GetStores().CouponRepo,
+			CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
+			CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+			SettingsRepo:               s.GetStores().SettingsRepo,
+			EventPublisher:             s.GetPublisher(),
+			WebhookPublisher:           s.GetWebhookPublisher(),
+		})
+		result, err := planService.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded)   // No active prices to add
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved) // Past line item should be ended
+		s.Equal(1, result.SynchronizationSummary.PricesSkipped) // Expired price skipped
 	})
 
 	s.Run("TC-SYNC-030_Current_Period_Start_vs_Line_Item_End_Date", func() {
@@ -3109,6 +3415,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Timing_And_Edge_Cases() {
 			StartDate:          s.testData.now.AddDate(0, 0, -30),
 			CurrentPeriodStart: s.testData.now.AddDate(0, 0, -1), // 1 day ago
 			CurrentPeriodEnd:   s.testData.now.AddDate(0, 0, 29), // 29 days from now
+			Currency:           "usd",
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
@@ -3117,7 +3424,43 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Timing_And_Edge_Cases() {
 		s.NoError(err)
 
 		// Sync should handle timing correctly
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		planService := NewPlanService(ServiceParams{
+			Logger:                     s.GetLogger(),
+			Config:                     s.GetConfig(),
+			DB:                         s.GetDB(),
+			SubRepo:                    s.GetStores().SubscriptionRepo,
+			SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
+			PlanRepo:                   s.GetStores().PlanRepo,
+			PriceRepo:                  s.GetStores().PriceRepo,
+			EventRepo:                  s.GetStores().EventRepo,
+			MeterRepo:                  s.GetStores().MeterRepo,
+			CustomerRepo:               s.GetStores().CustomerRepo,
+			InvoiceRepo:                s.GetStores().InvoiceRepo,
+			EntitlementRepo:            s.GetStores().EntitlementRepo,
+			EnvironmentRepo:            s.GetStores().EnvironmentRepo,
+			FeatureRepo:                s.GetStores().FeatureRepo,
+			TenantRepo:                 s.GetStores().TenantRepo,
+			UserRepo:                   s.GetStores().UserRepo,
+			AuthRepo:                   s.GetStores().AuthRepo,
+			WalletRepo:                 s.GetStores().WalletRepo,
+			PaymentRepo:                s.GetStores().PaymentRepo,
+			CreditGrantRepo:            s.GetStores().CreditGrantRepo,
+			CreditGrantApplicationRepo: s.GetStores().CreditGrantApplicationRepo,
+			CouponRepo:                 s.GetStores().CouponRepo,
+			CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
+			CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+			SettingsRepo:               s.GetStores().SettingsRepo,
+			EventPublisher:             s.GetPublisher(),
+			WebhookPublisher:           s.GetWebhookPublisher(),
+		})
+		result, err := planService.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(1, result.SynchronizationSummary.PricesAdded) // Line item created for active price
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped)
 	})
 }
