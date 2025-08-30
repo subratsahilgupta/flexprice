@@ -448,7 +448,7 @@ type OverrideLineItemRequest struct {
 func (r *OverrideLineItemRequest) Validate(
 	priceMap map[string]*PriceResponse,
 	lineItemsByPriceID map[string]*subscription.SubscriptionLineItem,
-	planID string,
+	EntityId string,
 ) error {
 	if r.PriceID == "" {
 		return ierr.NewError("price_id is required for override line items").
@@ -633,7 +633,7 @@ func (r *OverrideLineItemRequest) Validate(
 	}
 
 	// If context is provided, do additional validation
-	if priceMap != nil && lineItemsByPriceID != nil && planID != "" {
+	if priceMap != nil && lineItemsByPriceID != nil && EntityId != "" {
 		// Validate that the price exists in the plan
 		_, exists := priceMap[r.PriceID]
 		if !exists {
@@ -641,7 +641,7 @@ func (r *OverrideLineItemRequest) Validate(
 				WithHint("Override price must be a valid price from the selected plan").
 				WithReportableDetails(map[string]interface{}{
 					"price_id": r.PriceID,
-					"plan_id":  planID,
+					"plan_id":  EntityId,
 				}).
 				Mark(ierr.ErrValidation)
 		}
