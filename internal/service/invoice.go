@@ -694,7 +694,7 @@ func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, pay
 	}
 
 	// try to process payment for the invoice based on behavior and log any errors
-	if err := s.performpaymentattemptbasedonbheaviour(ctx, inv, paymentParams); err != nil {
+	if err := s.attemptPaymentForSubscriptionInvoice(ctx, inv, paymentParams); err != nil {
 		s.Logger.Errorw("failed to process payment for invoice",
 			"error", err.Error(),
 			"invoice_id", inv.ID)
@@ -1180,7 +1180,7 @@ func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
 	}
 
 	// Use the new payment function with nil parameters to use subscription defaults
-	return s.performpaymentattemptbasedonbheaviour(ctx, inv, nil)
+	return s.attemptPaymentForSubscriptionInvoice(ctx, inv, nil)
 }
 
 func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *invoice.Invoice) error {
@@ -1243,7 +1243,7 @@ func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *
 	return nil
 }
 
-func (s *invoiceService) performpaymentattemptbasedonbheaviour(ctx context.Context, inv *invoice.Invoice, paymentParams *dto.PaymentParameters) error {
+func (s *invoiceService) attemptPaymentForSubscriptionInvoice(ctx context.Context, inv *invoice.Invoice, paymentParams *dto.PaymentParameters) error {
 	// Get subscription to access payment settings
 	var sub *subscription.Subscription
 	if inv.SubscriptionID != nil {
