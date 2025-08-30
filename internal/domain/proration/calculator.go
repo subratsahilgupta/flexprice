@@ -120,12 +120,7 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 		billingMode = types.BillingModeInAdvance
 	}
 
-	shouldIssueCredit := (params.Action == types.ProrationActionUpgrade ||
-		params.Action == types.ProrationActionDowngrade ||
-		params.Action == types.ProrationActionQuantityChange ||
-		params.Action == types.ProrationActionRemoveItem ||
-		params.Action == types.ProrationActionCancellation) &&
-		billingMode == types.BillingModeInAdvance
+	shouldIssueCredit := c.shouldIssueCreditForAction(params, billingMode)
 
 	precision := types.GetCurrencyPrecision(params.Currency)
 
@@ -235,10 +230,61 @@ func (c *calculatorImpl) capCreditAmount(
 	return potentialCredit
 }
 
+// shouldIssueCreditForAction determines if a credit should be issued based on action and billing mode
+func (c *calculatorImpl) shouldIssueCreditForAction(params ProrationParams, billingMode types.BillingMode) bool {
+	// For cancellations, we need more sophisticated logic
+	if params.Action == types.ProrationActionCancellation {
+		return c.shouldIssueCreditForCancellation(params, billingMode)
+	}
+
+	// For other actions, use existing logic
+	return (params.Action == types.ProrationActionUpgrade ||
+		params.Action == types.ProrationActionDowngrade ||
+		params.Action == types.ProrationActionQuantityChange ||
+		params.Action == types.ProrationActionRemoveItem) &&
+		billingMode == types.BillingModeInAdvance
+}
+
+// shouldIssueCreditForCancellation determines if credit should be issued for cancellation scenarios
+func (c *calculatorImpl) shouldIssueCreditForCancellation(params ProrationParams, billingMode types.BillingMode) bool {
+	// Only issue credits if customer is eligible and paid in advance
+	if !params.RefundEligible || billingMode != types.BillingModeInAdvance {
+		return false
+	}
+
+	switch params.CancellationType {
+	case types.CancellationTypeImmediate:
+		// Immediate cancellation with advance billing gets credit for unused time
+		return true
+	case types.CancellationTypeSpecificDate:
+		// Future date cancellation gets credit for time after cancellation date
+		return params.ProrationDate.Before(params.CurrentPeriodEnd)
+	case types.CancellationTypeEndOfPeriod:
+		// End of period cancellation typically doesn't get credit since they use full period
+		// However, there might be edge cases where partial credit is warranted
+		return false
+	default:
+		return false
+	}
+}
+
 func (c *calculatorImpl) generateCreditDescription(params ProrationParams) string {
 	switch params.Action {
 	case types.ProrationActionCancellation:
-		return "Credit for unused time on cancelled subscription"
+		// Enhanced description for cancellation based on type
+		switch params.CancellationType {
+		case types.CancellationTypeImmediate:
+			if params.CancellationReason != "" {
+				return fmt.Sprintf("Credit for unused time - immediate cancellation (%s)", params.CancellationReason)
+			}
+			return "Credit for unused time - immediate cancellation"
+		case types.CancellationTypeEndOfPeriod:
+			return "Credit adjustment for end-of-period cancellation"
+		case types.CancellationTypeSpecificDate:
+			return "Credit for unused time - scheduled cancellation"
+		default:
+			return "Credit for unused time on cancelled subscription"
+		}
 	case types.ProrationActionDowngrade:
 		return "Credit for unused time on previous plan before downgrade"
 	case types.ProrationActionUpgrade:

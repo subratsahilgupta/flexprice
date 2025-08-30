@@ -96,6 +96,96 @@ type UpdateSubscriptionRequest struct {
 	CancelAtPeriodEnd bool                     `json:"cancel_at_period_end,omitempty"`
 }
 
+// CancelSubscriptionRequest represents the enhanced cancellation request
+type CancelSubscriptionRequest struct {
+	// CancellationType determines when the cancellation takes effect
+	CancellationType types.CancellationType `json:"cancellation_type" validate:"required"`
+
+	// EffectiveDate is required when cancellation_type is "specific_date"
+	EffectiveDate *time.Time `json:"effective_date,omitempty"`
+
+	// Reason for cancellation (for audit and business intelligence)
+	Reason string `json:"reason,omitempty"`
+
+	// ProrationBehavior controls how proration is handled
+	ProrationBehavior types.ProrationBehavior `json:"proration_behavior,omitempty"`
+
+	// RefundMethod specifies how credits should be handled (future feature)
+	RefundMethod string `json:"refund_method,omitempty"` // "credit", "refund", "none"
+}
+
+// CancelSubscriptionResponse represents the enhanced cancellation response
+type CancelSubscriptionResponse struct {
+	// Basic cancellation info
+	SubscriptionID   string                   `json:"subscription_id"`
+	CancellationType types.CancellationType   `json:"cancellation_type"`
+	EffectiveDate    time.Time                `json:"effective_date"`
+	Status           types.SubscriptionStatus `json:"status"`
+	Reason           string                   `json:"reason,omitempty"`
+
+	// Proration details
+	ProrationInvoice  *InvoiceResponse  `json:"proration_invoice,omitempty"`
+	ProrationDetails  []ProrationDetail `json:"proration_details"`
+	TotalCreditAmount decimal.Decimal   `json:"total_credit_amount"`
+
+	// Response metadata
+	Message     string    `json:"message"`
+	ProcessedAt time.Time `json:"processed_at"`
+}
+
+// ProrationDetail provides line-item level proration information
+type ProrationDetail struct {
+	LineItemID     string          `json:"line_item_id"`
+	PriceID        string          `json:"price_id"`
+	PlanName       string          `json:"plan_name,omitempty"`
+	OriginalAmount decimal.Decimal `json:"original_amount"`
+	CreditAmount   decimal.Decimal `json:"credit_amount"`
+	ChargeAmount   decimal.Decimal `json:"charge_amount"`
+	ProrationDays  int             `json:"proration_days"`
+	Description    string          `json:"description,omitempty"`
+}
+
+// Validate validates the cancellation request
+func (r *CancelSubscriptionRequest) Validate() error {
+	// Validate cancellation type
+	if err := r.CancellationType.Validate(); err != nil {
+		return err
+	}
+
+	// Effective date is required for specific_date cancellation
+	if r.CancellationType == types.CancellationTypeSpecificDate && r.EffectiveDate == nil {
+		return ierr.NewError("effective_date is required for specific_date cancellation").
+			WithHint("Please provide an effective_date when cancellation_type is 'specific_date'").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Effective date should not be provided for other types
+	if r.CancellationType != types.CancellationTypeSpecificDate && r.EffectiveDate != nil {
+		return ierr.NewError("effective_date should not be provided for this cancellation type").
+			WithHintf("effective_date is only valid for cancellation_type 'specific_date', got '%s'", r.CancellationType).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate effective date is not in the past (for specific_date)
+	if r.EffectiveDate != nil && r.EffectiveDate.Before(time.Now().UTC()) {
+		return ierr.NewError("effective_date cannot be in the past").
+			WithHint("Please provide a future date for specific_date cancellation").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Set default proration behavior if not provided
+	if r.ProrationBehavior == "" {
+		r.ProrationBehavior = types.ProrationBehaviorCreateProrations
+	}
+
+	// Validate proration behavior
+	if err := r.ProrationBehavior.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type SubscriptionResponse struct {
 	*subscription.Subscription
 	Plan     *PlanResponse     `json:"plan"`

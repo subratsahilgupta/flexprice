@@ -118,6 +118,84 @@ type CreateInvoiceRequest struct {
 	InvoicePDFURL *string `json:"invoice_pdf_url,omitempty"`
 }
 
+// CreateProrationInvoiceRequest represents the request for creating a proration invoice
+type CreateProrationInvoiceRequest struct {
+	// subscription_id is the unique identifier of the subscription this proration relates to
+	SubscriptionID string `json:"subscription_id" validate:"required"`
+
+	// customer_id is the unique identifier of the customer
+	CustomerID string `json:"customer_id" validate:"required"`
+
+	// proration_result contains the calculated proration details
+	ProrationResult *ProrationResult `json:"proration_result" validate:"required"`
+
+	// description is the human-readable description for the invoice
+	Description string `json:"description,omitempty"`
+
+	// effective_date is when the proration takes effect
+	EffectiveDate time.Time `json:"effective_date" validate:"required"`
+
+	// cancellation_type indicates the type of cancellation (for metadata)
+	CancellationType string `json:"cancellation_type,omitempty"`
+
+	// cancellation_reason is the business reason for the cancellation
+	CancellationReason string `json:"cancellation_reason,omitempty"`
+}
+
+// ProrationResult represents the result of proration calculations
+type ProrationResult struct {
+	// total_proration_amount is the net amount (credits - charges)
+	TotalProrationAmount decimal.Decimal `json:"total_proration_amount"`
+
+	// line_item_results contains per-line-item proration details
+	LineItemResults map[string]*ProrationLineItemResult `json:"line_item_results"`
+
+	// currency is the currency code
+	Currency string `json:"currency"`
+}
+
+// ProrationLineItemResult represents proration results for a single line item
+type ProrationLineItemResult struct {
+	// credit_items are the credit line items
+	CreditItems []ProrationLineItem `json:"credit_items"`
+
+	// charge_items are the charge line items
+	ChargeItems []ProrationLineItem `json:"charge_items"`
+
+	// net_amount is the net amount for this line item
+	NetAmount decimal.Decimal `json:"net_amount"`
+
+	// proration_date is when the proration takes effect
+	ProrationDate time.Time `json:"proration_date"`
+
+	// line_item_id is the subscription line item ID
+	LineItemID string `json:"line_item_id"`
+}
+
+// ProrationLineItem represents a single proration credit or charge
+type ProrationLineItem struct {
+	// description is the human-readable description
+	Description string `json:"description"`
+
+	// amount is the monetary amount (positive for charge, negative for credit)
+	Amount decimal.Decimal `json:"amount"`
+
+	// start_date is the period start this item covers
+	StartDate time.Time `json:"start_date"`
+
+	// end_date is the period end this item covers
+	EndDate time.Time `json:"end_date"`
+
+	// quantity is the quantity
+	Quantity decimal.Decimal `json:"quantity"`
+
+	// price_id is the associated price ID
+	PriceID string `json:"price_id"`
+
+	// is_credit indicates if this is a credit (true) or charge (false)
+	IsCredit bool `json:"is_credit"`
+}
+
 func (r *CreateInvoiceRequest) Validate() error {
 	if err := validator.ValidateRequest(r); err != nil {
 		return err
@@ -127,11 +205,13 @@ func (r *CreateInvoiceRequest) Validate() error {
 		return err
 	}
 
-	if r.AmountDue.IsNegative() {
-		return ierr.NewError("amount_due must be non-negative").
-			WithHint("amount due is negative").
+	// Allow negative amount_due for credit invoices, but not for other types
+	if r.AmountDue.IsNegative() && r.InvoiceType != types.InvoiceTypeCredit {
+		return ierr.NewError("amount_due must be non-negative for non-credit invoices").
+			WithHint("amount due is negative for non-credit invoice").
 			WithReportableDetails(map[string]any{
-				"amount_due": r.AmountDue.String(),
+				"amount_due":   r.AmountDue.String(),
+				"invoice_type": r.InvoiceType,
 			}).Mark(ierr.ErrValidation)
 	}
 
@@ -520,9 +600,14 @@ func (r *CreateInvoiceLineItemRequest) Validate(invoiceType types.InvoiceType) e
 		return err
 	}
 
-	if r.Amount.IsNegative() {
-		return ierr.NewError("amount must be non-negative").
-			WithHint("Amount cannot be negative").
+	// Allow negative amounts for credit invoices (credits to customers)
+	if r.Amount.IsNegative() && invoiceType != types.InvoiceTypeCredit {
+		return ierr.NewError("amount must be non-negative for non-credit invoices").
+			WithHint("Amount cannot be negative for non-credit invoices").
+			WithReportableDetails(map[string]any{
+				"amount":       r.Amount.String(),
+				"invoice_type": invoiceType,
+			}).
 			Mark(ierr.ErrValidation)
 	}
 

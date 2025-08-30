@@ -70,9 +70,24 @@ const (
 	ProrationModeActive ProrationMode = "active"
 )
 
+// CancellationType determines when a cancellation takes effect.
+type CancellationType string
+
+const (
+	CancellationTypeImmediate    CancellationType = "immediate"     // Cancel immediately, credit for unused time
+	CancellationTypeEndOfPeriod  CancellationType = "end_of_period" // Cancel at end of current billing period
+	CancellationTypeSpecificDate CancellationType = "specific_date" // Cancel on a specific future date
+)
+
 var ProrationModeValues = []ProrationMode{
 	ProrationModeActive,
 	ProrationModeNone,
+}
+
+var CancellationTypeValues = []CancellationType{
+	CancellationTypeImmediate,
+	CancellationTypeEndOfPeriod,
+	CancellationTypeSpecificDate,
 }
 
 func (p ProrationMode) Validate() error {
@@ -90,6 +105,23 @@ func (p ProrationMode) Validate() error {
 
 func (p ProrationMode) String() string {
 	return string(p)
+}
+
+func (c CancellationType) Validate() error {
+	if !lo.Contains(CancellationTypeValues, c) {
+		return ierr.NewError("invalid cancellation type").
+			WithHint("Cancellation type must be immediate, end_of_period, or specific_date").
+			WithReportableDetails(map[string]any{
+				"allowed_values": CancellationTypeValues,
+				"provided_value": c,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+func (c CancellationType) String() string {
+	return string(c)
 }
 
 // BillingCycleAnchor defines how billing cycle is handled during subscription changes

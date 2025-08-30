@@ -3,6 +3,7 @@ package proration
 
 import (
 	"context"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -24,11 +25,35 @@ type Service interface {
 		behavior types.ProrationBehavior,
 	) (ProrationParams, error)
 
+	// CreateProrationParamsForLineItemCancellation creates proration parameters for cancellation scenarios
+	CreateProrationParamsForLineItemCancellation(
+		ctx context.Context,
+		subscription *subscription.Subscription,
+		item *subscription.SubscriptionLineItem,
+		price *price.Price,
+		cancellationDate time.Time,
+		cancellationType types.CancellationType,
+		cancellationReason string,
+		behavior types.ProrationBehavior,
+	) (ProrationParams, error)
+
 	// CalculateSubscriptionProration handles proration for an entire subscription.
 	// This is used when creating or modifying a subscription that needs proration
 	// (e.g., calendar billing with proration enabled).
 	// It will calculate and apply proration for all applicable line items in a single transaction.
 	CalculateSubscriptionProration(ctx context.Context, params SubscriptionProrationParams) (*SubscriptionProrationResult, error)
+
+	// CalculateSubscriptionCancellationProration handles proration calculation for subscription cancellation.
+	// This provides a single, unified function for calculating all proration changes during cancellation.
+	CalculateSubscriptionCancellationProration(
+		ctx context.Context,
+		subscription *subscription.Subscription,
+		lineItems []*subscription.SubscriptionLineItem,
+		cancellationType types.CancellationType,
+		effectiveDate time.Time,
+		reason string,
+		behavior types.ProrationBehavior,
+	) (*SubscriptionProrationResult, error)
 }
 
 // Calculator performs proration calculations.

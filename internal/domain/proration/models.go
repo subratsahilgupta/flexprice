@@ -42,6 +42,11 @@ type ProrationParams struct {
 	PreviousCreditsIssued decimal.Decimal         // Sum of credits already issued against OriginalAmountPaid in this period
 	ProrationStrategy     types.ProrationStrategy // Strategy to use for proration
 	Currency              string                  // Currency of the proration
+
+	// Cancellation-specific fields
+	CancellationType   types.CancellationType // immediate vs end_of_period
+	CancellationReason string                 // Business reason for cancellation
+	RefundEligible     bool                   // Whether customer is eligible for refund/credit
 }
 
 // ProrationLineItem represents a single credit or charge line item.
