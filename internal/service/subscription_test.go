@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -54,6 +55,7 @@ func TestSubscriptionService(t *testing.T) {
 
 func (s *SubscriptionServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
+	s.ClearStores() // Clear all stores before each test for isolation
 	s.setupService()
 	s.setupTestData()
 }
@@ -1868,4 +1870,667 @@ func (s *SubscriptionServiceSuite) TestFilterLineItemsWithEndDate() {
 				tt.name, tt.periodStart, tt.periodEnd, sub.EndDate, len(filtered), tt.expectEmpty)
 		})
 	}
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithPriceOverrides() {
+	// Test cases for price overrides functionality
+	testCases := []struct {
+		name                   string
+		overrideLineItems      []dto.OverrideLineItemRequest
+		expectedPriceOverrides int
+		expectedSubscriptionID string
+		description            string
+		shouldSucceed          bool
+		expectedError          string
+	}{
+		{
+			name: "override_amount_only",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID: s.testData.prices.storage.ID,
+					Amount:  lo.ToPtr(decimal.NewFromFloat(75.50)),
+				},
+			},
+			expectedPriceOverrides: 1,
+			description:            "Should override only the price amount from $0.10 to $75.50",
+			shouldSucceed:          true,
+		},
+		{
+			name: "override_tiers_only",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID: s.testData.prices.apiCalls.ID,
+					Tiers: []dto.CreatePriceTier{
+						{UpTo: lo.ToPtr(uint64(5000)), UnitAmount: "0.015"},
+						{UpTo: lo.ToPtr(uint64(50000)), UnitAmount: "0.012"},
+						{UpTo: nil, UnitAmount: "0.008"},
+					},
+				},
+			},
+			expectedPriceOverrides: 1,
+			description:            "Should override only the tiers with new pricing structure",
+			shouldSucceed:          true,
+		},
+		{
+			name: "override_transform_quantity_only",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID: s.testData.prices.storage.ID,
+					TransformQuantity: &price.TransformQuantity{
+						DivideBy: 10,
+						Round:    types.ROUND_UP,
+					},
+				},
+			},
+			expectedPriceOverrides: 1,
+			description:            "Should override only the transform quantity (divide_by: 10, round: up)",
+			shouldSucceed:          true,
+		},
+		{
+			name: "override_billing_model_and_tier_mode",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:      s.testData.prices.storage.ID,
+					BillingModel: types.BILLING_MODEL_TIERED,
+					TierMode:     types.BILLING_TIER_SLAB,
+					Tiers: []dto.CreatePriceTier{
+						{UpTo: lo.ToPtr(uint64(100)), UnitAmount: "0.80"},
+						{UpTo: lo.ToPtr(uint64(500)), UnitAmount: "0.60"},
+						{UpTo: nil, UnitAmount: "0.40"},
+					},
+				},
+			},
+			expectedPriceOverrides: 1,
+			description:            "Should override billing model to TIERED and tier mode to SLAB with custom tiers",
+			shouldSucceed:          true,
+		},
+		{
+			name: "override_quantity_and_amount",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:  s.testData.prices.storage.ID,
+					Amount:   lo.ToPtr(decimal.NewFromFloat(50.00)),
+					Quantity: lo.ToPtr(decimal.NewFromInt(3)),
+				},
+			},
+			expectedPriceOverrides: 1,
+			description:            "Should override both quantity (to 3) and amount (to $50.00)",
+			shouldSucceed:          true,
+		},
+		{
+			name: "complex_combination_override",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:      s.testData.prices.storage.ID,
+					Amount:       lo.ToPtr(decimal.NewFromFloat(45.00)),
+					BillingModel: types.BILLING_MODEL_TIERED,
+					TierMode:     types.BILLING_TIER_VOLUME,
+					Tiers: []dto.CreatePriceTier{
+						{UpTo: lo.ToPtr(uint64(50)), UnitAmount: "0.90"},
+						{UpTo: lo.ToPtr(uint64(200)), UnitAmount: "0.75"},
+						{UpTo: nil, UnitAmount: "0.60"},
+					},
+					TransformQuantity: &price.TransformQuantity{
+						DivideBy: 5,
+						Round:    types.ROUND_DOWN,
+					},
+					Quantity: lo.ToPtr(decimal.NewFromInt(2)),
+				},
+			},
+			expectedPriceOverrides: 1,
+			description:            "Should override amount, billing model, tier mode, tiers, transform quantity, and quantity",
+			shouldSucceed:          true,
+		},
+		{
+			name: "override_usage_based_tiered_price",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:  s.testData.prices.apiCalls.ID,
+					TierMode: types.BILLING_TIER_SLAB,
+					Tiers: []dto.CreatePriceTier{
+						{UpTo: lo.ToPtr(uint64(2000)), UnitAmount: "0.012"},
+						{UpTo: nil, UnitAmount: "0.008"},
+					},
+				},
+			},
+			expectedPriceOverrides: 1,
+			description:            "Should override tiered usage pricing with new tier structure and SLAB mode",
+			shouldSucceed:          true,
+		},
+		{
+			name: "override_multiple_line_items",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID: s.testData.prices.storage.ID,
+					Amount:  lo.ToPtr(decimal.NewFromFloat(60.00)),
+				},
+				{
+					PriceID:  s.testData.prices.apiCalls.ID,
+					TierMode: types.BILLING_TIER_SLAB,
+					Tiers: []dto.CreatePriceTier{
+						{UpTo: lo.ToPtr(uint64(2000)), UnitAmount: "0.012"},
+						{UpTo: nil, UnitAmount: "0.008"},
+					},
+				},
+			},
+			expectedPriceOverrides: 2,
+			description:            "Should override multiple prices in a single subscription creation",
+			shouldSucceed:          true,
+		},
+		{
+			name:                   "empty_override_array",
+			overrideLineItems:      []dto.OverrideLineItemRequest{},
+			expectedPriceOverrides: 0,
+			description:            "Should handle case with no overrides (should work normally)",
+			shouldSucceed:          true,
+		},
+		{
+			name: "invalid_negative_amount",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID: s.testData.prices.storage.ID,
+					Amount:  lo.ToPtr(decimal.NewFromFloat(-10.00)),
+				},
+			},
+			expectedPriceOverrides: 0,
+			description:            "Should reject negative amounts with proper validation error",
+			shouldSucceed:          false,
+			expectedError:          "invalid override line item",
+		},
+		{
+			name: "invalid_price_id_not_in_plan",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID: "invalid_price_id",
+					Amount:  lo.ToPtr(decimal.NewFromFloat(50.00)),
+				},
+			},
+			expectedPriceOverrides: 0,
+			description:            "Should reject override with price ID not found in plan",
+			shouldSucceed:          false,
+			expectedError:          "price not found in plan",
+		},
+		{
+			name: "invalid_tiered_billing_model_without_tiers",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:      s.testData.prices.storage.ID,
+					BillingModel: types.BILLING_MODEL_TIERED,
+					// Missing tiers - should fail validation
+				},
+			},
+			expectedPriceOverrides: 0,
+			description:            "Should reject TIERED billing model without providing tiers",
+			shouldSucceed:          false,
+			expectedError:          "invalid override line item",
+		},
+		{
+			name: "invalid_duplicate_price_id",
+			overrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID: s.testData.prices.storage.ID,
+					Amount:  lo.ToPtr(decimal.NewFromFloat(50.00)),
+				},
+				{
+					PriceID: s.testData.prices.storage.ID, // Duplicate price ID
+					Amount:  lo.ToPtr(decimal.NewFromFloat(60.00)),
+				},
+			},
+			expectedPriceOverrides: 0,
+			description:            "Should reject duplicate price IDs in override line items",
+			shouldSucceed:          false,
+			expectedError:          "duplicate price_id in override line items",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Create subscription request with overrides
+			req := dto.CreateSubscriptionRequest{
+				CustomerID:         s.testData.customer.ID,
+				PlanID:             s.testData.plan.ID,
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+				OverrideLineItems:  tc.overrideLineItems,
+			}
+
+			// Create subscription
+			resp, err := s.service.CreateSubscription(s.GetContext(), req)
+
+			if !tc.shouldSucceed {
+				s.Error(err, "Expected error for test case: %s", tc.description)
+				if tc.expectedError != "" {
+					s.Contains(err.Error(), tc.expectedError, "Error message should contain expected text")
+				}
+				return
+			}
+
+			s.NoError(err, "Failed to create subscription for test case: %s", tc.description)
+			s.NotNil(resp, "Subscription response should not be nil")
+			s.NotEmpty(resp.ID, "Subscription ID should not be empty")
+
+			// Store the subscription ID for verification
+			tc.expectedSubscriptionID = resp.ID
+
+			// Verify subscription was created successfully
+			s.Equal(s.testData.customer.ID, resp.CustomerID)
+			s.Equal(s.testData.plan.ID, resp.PlanID)
+			s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus)
+
+			// Verify that subscription-scoped prices were created for overrides
+			if tc.expectedPriceOverrides > 0 {
+				s.verifyPriceOverridesCreated(s.GetContext(), resp.ID, tc.overrideLineItems, tc.description)
+			}
+
+			s.T().Logf("✅ %s: Subscription created successfully with ID: %s", tc.name, resp.ID)
+		})
+	}
+}
+
+// verifyPriceOverridesCreated verifies that subscription-scoped prices were created correctly
+func (s *SubscriptionServiceSuite) verifyPriceOverridesCreated(ctx context.Context, subscriptionID string, overrides []dto.OverrideLineItemRequest, description string) {
+	// Get the subscription to verify line items
+	subscription, err := s.service.GetSubscription(ctx, subscriptionID)
+	s.NoError(err, "Failed to get subscription for verification: %s", description)
+	s.NotNil(subscription)
+
+	// Verify that line items were created with subscription-scoped prices
+	// (price IDs should be different from original price IDs when overrides are applied)
+	overridePriceIDs := make(map[string]bool)
+	for _, override := range overrides {
+		overridePriceIDs[override.PriceID] = true
+	}
+
+	overriddenLineItems := 0
+	for _, lineItem := range subscription.LineItems {
+		// Check if this line item's original price was overridden
+		if overridePriceIDs[lineItem.PriceID] {
+			// This should not happen - line item should reference subscription-scoped price, not original price
+			s.Failf("Line item references original price instead of subscription-scoped price",
+				"Line item %s references original price %s for: %s", lineItem.ID, lineItem.PriceID, description)
+		} else {
+			// Check if this line item uses a subscription-scoped price (starts with "price_" and is not in test data)
+			if lineItem.PriceID != s.testData.prices.storage.ID &&
+				lineItem.PriceID != s.testData.prices.apiCalls.ID &&
+				lineItem.PriceID != s.testData.prices.storageArchive.ID {
+				overriddenLineItems++
+			}
+		}
+	}
+
+	// Verify that we have the expected number of overridden line items
+	s.Equal(len(overrides), overriddenLineItems,
+		"Expected %d overridden line items, got %d for: %s",
+		len(overrides), overriddenLineItems, description)
+
+	s.T().Logf("✅ Price overrides verified: %d line items use subscription-scoped prices for: %s",
+		overriddenLineItems, description)
+}
+
+func (s *SubscriptionServiceSuite) TestPriceOverrideValidation() {
+	// Test validation of override line items
+	testCases := []struct {
+		name          string
+		override      dto.OverrideLineItemRequest
+		priceMap      map[string]*dto.PriceResponse
+		lineItemsMap  map[string]*subscription.SubscriptionLineItem
+		planID        string
+		shouldSucceed bool
+		expectedError string
+		description   string
+	}{
+		{
+			name: "valid_override_with_amount",
+			override: dto.OverrideLineItemRequest{
+				PriceID: s.testData.prices.storage.ID,
+				Amount:  lo.ToPtr(decimal.NewFromFloat(50.00)),
+			},
+			priceMap: map[string]*dto.PriceResponse{
+				s.testData.prices.storage.ID: {Price: s.testData.prices.storage},
+			},
+			lineItemsMap: map[string]*subscription.SubscriptionLineItem{
+				s.testData.prices.storage.ID: {PriceID: s.testData.prices.storage.ID},
+			},
+			planID:        s.testData.plan.ID,
+			shouldSucceed: true,
+			description:   "Valid override with amount should pass validation",
+		},
+		{
+			name: "invalid_override_no_fields",
+			override: dto.OverrideLineItemRequest{
+				PriceID: s.testData.prices.storage.ID,
+				// No override fields provided
+			},
+			priceMap:      nil,
+			lineItemsMap:  nil,
+			planID:        s.testData.plan.ID,
+			shouldSucceed: false,
+			expectedError: "at least one override field must be provided",
+			description:   "Override with no fields should fail validation",
+		},
+		{
+			name: "invalid_override_negative_amount",
+			override: dto.OverrideLineItemRequest{
+				PriceID: s.testData.prices.storage.ID,
+				Amount:  lo.ToPtr(decimal.NewFromFloat(-10.00)),
+			},
+			priceMap:      nil,
+			lineItemsMap:  nil,
+			planID:        s.testData.plan.ID,
+			shouldSucceed: false,
+			expectedError: "amount must be non-negative",
+			description:   "Override with negative amount should fail validation",
+		},
+		{
+			name: "invalid_override_negative_quantity",
+			override: dto.OverrideLineItemRequest{
+				PriceID:  s.testData.prices.storage.ID,
+				Quantity: lo.ToPtr(decimal.NewFromFloat(-5.00)),
+			},
+			priceMap:      nil,
+			lineItemsMap:  nil,
+			planID:        s.testData.plan.ID,
+			shouldSucceed: false,
+			expectedError: "quantity must be non-negative",
+			description:   "Override with negative quantity should fail validation",
+		},
+		{
+			name: "invalid_override_tiered_without_tiers",
+			override: dto.OverrideLineItemRequest{
+				PriceID:      s.testData.prices.storage.ID,
+				BillingModel: types.BILLING_MODEL_TIERED,
+				// Missing tiers
+			},
+			priceMap:      nil,
+			lineItemsMap:  nil,
+			planID:        s.testData.plan.ID,
+			shouldSucceed: false,
+			expectedError: "tier_mode or tiers are required when billing model is TIERED",
+			description:   "TIERED billing model without tiers should fail validation",
+		},
+		{
+			name: "invalid_override_price_not_in_plan",
+			override: dto.OverrideLineItemRequest{
+				PriceID: "invalid_price_id",
+				Amount:  lo.ToPtr(decimal.NewFromFloat(50.00)),
+			},
+			priceMap: map[string]*dto.PriceResponse{
+				s.testData.prices.storage.ID: {Price: s.testData.prices.storage},
+			},
+			lineItemsMap: map[string]*subscription.SubscriptionLineItem{
+				s.testData.prices.storage.ID: {PriceID: s.testData.prices.storage.ID},
+			},
+			planID:        s.testData.plan.ID,
+			shouldSucceed: false,
+			expectedError: "price not found in plan",
+			description:   "Override with price not in plan should fail validation",
+		},
+		{
+			name: "invalid_override_line_item_not_found",
+			override: dto.OverrideLineItemRequest{
+				PriceID: s.testData.prices.storage.ID,
+				Amount:  lo.ToPtr(decimal.NewFromFloat(50.00)),
+			},
+			priceMap: map[string]*dto.PriceResponse{
+				s.testData.prices.storage.ID: {Price: s.testData.prices.storage},
+			},
+			lineItemsMap: map[string]*subscription.SubscriptionLineItem{
+				// Missing line item for this price
+			},
+			planID:        s.testData.plan.ID,
+			shouldSucceed: false,
+			expectedError: "line item not found for price",
+			description:   "Override with missing line item should fail validation",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Test validation
+			err := tc.override.Validate(tc.priceMap, tc.lineItemsMap, tc.planID)
+
+			if !tc.shouldSucceed {
+				s.Error(err, "Expected validation error for: %s", tc.description)
+				if tc.expectedError != "" {
+					s.Contains(err.Error(), tc.expectedError, "Error message should contain expected text")
+				}
+				return
+			}
+
+			s.NoError(err, "Expected no validation error for: %s", tc.description)
+		})
+	}
+}
+
+func (s *SubscriptionServiceSuite) TestPriceOverrideEdgeCases() {
+	// Test edge cases and boundary conditions for price overrides
+	testCases := []struct {
+		name          string
+		override      dto.OverrideLineItemRequest
+		description   string
+		shouldSucceed bool
+		expectedError string
+	}{
+		{
+			name: "override_with_zero_amount",
+			override: dto.OverrideLineItemRequest{
+				PriceID: s.testData.prices.storage.ID,
+				Amount:  lo.ToPtr(decimal.Zero),
+			},
+			description:   "Should allow zero amount override",
+			shouldSucceed: true,
+		},
+		{
+			name: "override_with_zero_quantity",
+			override: dto.OverrideLineItemRequest{
+				PriceID:  s.testData.prices.storage.ID,
+				Quantity: lo.ToPtr(decimal.Zero),
+			},
+			description:   "Should allow zero quantity override",
+			shouldSucceed: true,
+		},
+		{
+			name: "override_with_very_large_amount",
+			override: dto.OverrideLineItemRequest{
+				PriceID: s.testData.prices.storage.ID,
+				Amount:  lo.ToPtr(decimal.NewFromFloat(999999.99)),
+			},
+			description:   "Should allow large amount override",
+			shouldSucceed: true,
+		},
+		{
+			name: "override_with_very_large_quantity",
+			override: dto.OverrideLineItemRequest{
+				PriceID:  s.testData.prices.storage.ID,
+				Quantity: lo.ToPtr(decimal.NewFromFloat(999999.99)),
+			},
+			description:   "Should allow large quantity override",
+			shouldSucceed: true,
+		},
+		{
+			name: "override_with_decimal_precision",
+			override: dto.OverrideLineItemRequest{
+				PriceID: s.testData.prices.storage.ID,
+				Amount:  lo.ToPtr(decimal.NewFromFloat(0.001)),
+			},
+			description:   "Should allow decimal precision in amount",
+			shouldSucceed: true,
+		},
+		{
+			name: "override_with_decimal_quantity",
+			override: dto.OverrideLineItemRequest{
+				PriceID:  s.testData.prices.storage.ID,
+				Quantity: lo.ToPtr(decimal.NewFromFloat(0.5)),
+			},
+			description:   "Should allow decimal quantity",
+			shouldSucceed: true,
+		},
+		{
+			name: "override_with_empty_string_price_id",
+			override: dto.OverrideLineItemRequest{
+				PriceID: "",
+				Amount:  lo.ToPtr(decimal.NewFromFloat(50.00)),
+			},
+			description:   "Should reject empty price ID",
+			shouldSucceed: false,
+			expectedError: "price_id is required for override line items",
+		},
+		{
+			name: "override_with_invalid_billing_model",
+			override: dto.OverrideLineItemRequest{
+				PriceID:      s.testData.prices.storage.ID,
+				BillingModel: "INVALID_MODEL",
+			},
+			description:   "Should reject invalid billing model",
+			shouldSucceed: false,
+			expectedError: "invalid billing model",
+		},
+		{
+			name: "override_with_invalid_tier_mode",
+			override: dto.OverrideLineItemRequest{
+				PriceID:  s.testData.prices.storage.ID,
+				TierMode: "INVALID_TIER",
+			},
+			description:   "Should reject invalid tier mode",
+			shouldSucceed: false,
+			expectedError: "invalid billing tier",
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			// Test validation
+			err := tc.override.Validate(nil, nil, "")
+
+			if !tc.shouldSucceed {
+				s.Error(err, "Expected validation error for: %s", tc.description)
+				if tc.expectedError != "" {
+					s.Contains(err.Error(), tc.expectedError, "Error message should contain expected text")
+				}
+				return
+			}
+
+			s.NoError(err, "Expected no validation error for: %s", tc.description)
+		})
+	}
+}
+
+func (s *SubscriptionServiceSuite) TestPriceOverrideIntegration() {
+	// Test integration scenarios with price overrides
+	s.Run("create_subscription_with_overrides_and_verify_line_items", func() {
+		// Create subscription with complex overrides
+		req := dto.CreateSubscriptionRequest{
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			Currency:           "usd",
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingCycle:       types.BillingCycleAnniversary,
+			OverrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:      s.testData.prices.storage.ID,
+					Amount:       lo.ToPtr(decimal.NewFromFloat(75.00)),
+					BillingModel: types.BILLING_MODEL_TIERED,
+					TierMode:     types.BILLING_TIER_VOLUME,
+					Tiers: []dto.CreatePriceTier{
+						{UpTo: lo.ToPtr(uint64(100)), UnitAmount: "0.50"},
+						{UpTo: nil, UnitAmount: "0.25"},
+					},
+					Quantity: lo.ToPtr(decimal.NewFromInt(2)),
+				},
+			},
+		}
+
+		// Create subscription
+		resp, err := s.service.CreateSubscription(s.GetContext(), req)
+		s.NoError(err, "Failed to create subscription with overrides")
+		s.NotNil(resp)
+
+		// Verify subscription was created
+		s.Equal(s.testData.customer.ID, resp.CustomerID)
+		s.Equal(s.testData.plan.ID, resp.PlanID)
+		s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus)
+
+		// Get the created sub to verify line items
+		sub, err := s.service.GetSubscription(s.GetContext(), resp.ID)
+		s.NoError(err, "Failed to get subscription for verification")
+		s.NotNil(sub)
+
+		// Verify that line items were created correctly
+		s.NotEmpty(sub.LineItems, "Subscription should have line items")
+
+		// Find the line item that uses the overridden price
+		var overriddenLineItem *subscription.SubscriptionLineItem
+		for _, lineItem := range sub.LineItems {
+			if lineItem.EntityID == s.testData.plan.ID && lineItem.PriceType == s.testData.prices.storage.Type {
+				overriddenLineItem = lineItem
+				break
+			}
+		}
+
+		s.NotNil(overriddenLineItem, "Should find line item for overridden price")
+
+		// Log the actual values for debugging
+		s.T().Logf("Line item quantity: %s, Price ID: %s, Original price ID: %s",
+			overriddenLineItem.Quantity.String(), overriddenLineItem.PriceID, s.testData.prices.storage.ID)
+
+		// Verify that the line item references a subscription-scoped price
+		s.NotEqual(s.testData.prices.storage.ID, overriddenLineItem.PriceID,
+			"Line item should reference subscription-scoped price, not original price")
+
+		s.T().Logf("✅ Integration test passed: Subscription created with overrides and line items verified")
+	})
+
+	s.Run("create_multiple_subscriptions_with_different_overrides", func() {
+		// Test creating multiple subscriptions with different overrides on the same plan
+		overrideScenarios := []dto.OverrideLineItemRequest{
+			{
+				PriceID: s.testData.prices.storage.ID,
+				Amount:  lo.ToPtr(decimal.NewFromFloat(50.00)),
+			},
+			{
+				PriceID: s.testData.prices.storage.ID,
+				Amount:  lo.ToPtr(decimal.NewFromFloat(75.00)),
+			},
+			{
+				PriceID: s.testData.prices.storage.ID,
+				Amount:  lo.ToPtr(decimal.NewFromFloat(100.00)),
+			},
+		}
+
+		subscriptionIDs := make([]string, len(overrideScenarios))
+
+		for i, override := range overrideScenarios {
+			req := dto.CreateSubscriptionRequest{
+				CustomerID:         s.testData.customer.ID,
+				PlanID:             s.testData.plan.ID,
+				Currency:           "usd",
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCycle:       types.BillingCycleAnniversary,
+				OverrideLineItems:  []dto.OverrideLineItemRequest{override},
+			}
+
+			resp, err := s.service.CreateSubscription(s.GetContext(), req)
+			s.NoError(err, "Failed to create subscription %d with overrides", i+1)
+			s.NotNil(resp)
+
+			subscriptionIDs[i] = resp.ID
+		}
+
+		// Verify that each subscription was created successfully with overrides
+		for i, subscriptionID := range subscriptionIDs {
+			s.NotEmpty(subscriptionID, "Subscription %d should have been created", i+1)
+		}
+
+		// Log the subscription IDs for verification
+		s.T().Logf("Created subscriptions with IDs: %v", subscriptionIDs)
+
+		s.T().Logf("✅ Multiple subscriptions test passed: Created %d subscriptions with unique overrides", len(overrideScenarios))
+	})
 }

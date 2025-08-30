@@ -36,6 +36,11 @@ type CreatePriceRequest struct {
 	Tiers              []CreatePriceTier        `json:"tiers,omitempty"`
 	TransformQuantity  *price.TransformQuantity `json:"transform_quantity,omitempty"`
 	PriceUnitConfig    *PriceUnitConfig         `json:"price_unit_config,omitempty"`
+
+	// SkipEntityValidation is used to skip entity validation when creating a price from a subscription i.e. override price workflow
+	// This is used when creating a subscription-scoped price
+	// NOTE: This is not a public field and is used internally should be used with caution
+	SkipEntityValidation bool `json:"-"`
 }
 
 type PriceUnitConfig struct {
