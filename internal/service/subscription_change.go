@@ -92,6 +92,17 @@ func (s *subscriptionChangeService) PreviewSubscriptionChange(
 			Mark(ierr.ErrValidation)
 	}
 
+	// Validate that target plan is different from current plan
+	if currentPlan.ID == targetPlan.ID {
+		return nil, ierr.NewError("cannot change subscription to the same plan").
+			WithHint("Target plan must be different from current plan").
+			WithReportableDetails(map[string]interface{}{
+				"current_plan_id": currentPlan.ID,
+				"target_plan_id":  targetPlan.ID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Check if subscription is in a valid state for changes
 	if err := s.validateSubscriptionForChange(currentSub); err != nil {
 		return nil, err
@@ -105,9 +116,6 @@ func (s *subscriptionChangeService) PreviewSubscriptionChange(
 
 	// Calculate effective date
 	effectiveDate := time.Now()
-	if req.EffectiveDate != nil {
-		effectiveDate = *req.EffectiveDate
-	}
 	if req.PreviewDate != nil {
 		effectiveDate = *req.PreviewDate
 	}
@@ -137,7 +145,7 @@ func (s *subscriptionChangeService) PreviewSubscriptionChange(
 	}
 
 	// Calculate new billing cycle
-	newBillingCycle, err := s.calculateNewBillingCycle(currentSub, targetPlan, req.BillingCycleAnchor, effectiveDate)
+	newBillingCycle, err := s.calculateNewBillingCycle(currentSub, targetPlan, types.BillingCycleAnchorUnchanged, effectiveDate)
 	if err != nil {
 		logger.Error("failed to calculate new billing cycle", zap.Error(err))
 		return nil, err
@@ -219,6 +227,17 @@ func (s *subscriptionChangeService) ExecuteSubscriptionChange(
 				Mark(ierr.ErrDatabase)
 		}
 
+		// Validate that target plan is different from current plan
+		if currentPlan.ID == targetPlan.ID {
+			return ierr.NewError("cannot change subscription to the same plan").
+				WithHint("Target plan must be different from current plan").
+				WithReportableDetails(map[string]interface{}{
+					"current_plan_id": currentPlan.ID,
+					"target_plan_id":  targetPlan.ID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
 		// Validate the change
 		if err := s.validateSubscriptionForChange(currentSub); err != nil {
 			return err
@@ -232,9 +251,6 @@ func (s *subscriptionChangeService) ExecuteSubscriptionChange(
 
 		// Calculate effective date
 		effectiveDate := time.Now()
-		if req.EffectiveDate != nil {
-			effectiveDate = *req.EffectiveDate
-		}
 
 		// Execute the change based on type
 		result, err := s.executeChange(txCtx, currentSub, lineItems, targetPlan, changeType, req, effectiveDate)
@@ -639,17 +655,6 @@ func (s *subscriptionChangeService) executeChange(
 		return nil, err
 	}
 
-	// Step 6: Generate invoice for charges only (no negative amounts)
-	var invoice *dto.InvoiceResponse
-	if req.InvoiceNow != nil && *req.InvoiceNow && cancellationProrationResult != nil {
-		invoice, err = s.generateChangeInvoiceChargesOnly(ctx, newSub, cancellationProrationResult, effectiveDate)
-		if err != nil {
-			logger.Error("failed to generate change invoice", zap.Error(err))
-			// Don't fail the entire operation for invoice generation issues
-			// but log the error
-		}
-	}
-
 	// Get created credit grants if any were requested
 	var creditGrants []*dto.CreditGrantResponse
 	if len(creditGrantRequests) > 0 {
@@ -692,7 +697,6 @@ func (s *subscriptionChangeService) executeChange(
 			CreatedAt:          newSub.CreatedAt,
 		},
 		ChangeType:       changeType,
-		Invoice:          invoice,
 		ProrationApplied: prorationDetails,
 		CreditGrants:     creditGrants,
 		EffectiveDate:    effectiveDate,
@@ -796,11 +800,6 @@ func (s *subscriptionChangeService) createNewSubscription(
 		TaxRateOverrides:   taxRateOverrides,            // Transfer tax overrides (when available)
 		CommitmentAmount:   currentSub.CommitmentAmount, // Transfer commitment amount
 		OverageFactor:      currentSub.OverageFactor,    // Transfer overage factor
-	}
-
-	// Set trial end if provided
-	if req.TrialEnd != nil {
-		createSubReq.TrialEnd = req.TrialEnd
 	}
 
 	// Use the existing subscription service to create the new subscription

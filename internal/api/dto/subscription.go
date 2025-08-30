@@ -472,28 +472,27 @@ func (r *CreateSubscriptionRequest) Validate() error {
 }
 
 func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(startDate, now time.Time) error {
-	// Calculate one month back from current date
-	oneMonthAgo := now.AddDate(0, -1, 0)
+	// If the start date is before the current date and proration mode is active, return an error
+	// This prevents creating subscriptions with backdated start dates that would trigger proration
 
-	// For edge case handling (e.g., Jan 31 -> Feb 28)
-	if oneMonthAgo.Day() != now.Day() {
-		// Adjust to the last day of the previous month if needed
-		oneMonthAgo = time.Date(oneMonthAgo.Year(), oneMonthAgo.Month()+1, 0,
-			now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), now.Location())
-	}
+	// Compare only the date portions (ignore time)
+	startDateOnly := startDate.Truncate(24 * time.Hour)
+	nowDateOnly := now.Truncate(24 * time.Hour)
 
-	if startDate.Before(oneMonthAgo) {
-		return ierr.NewError("start date cannot be more than 1 calendar month in the past when proration is active").
-			WithHint("When proration is active, subscriptions can only be backdated up to 1 calendar month").
+	if r.ProrationMode == types.ProrationModeActive && startDateOnly.Before(nowDateOnly) {
+		return ierr.NewError("cannot create subscription with past start date when proration is active").
+			WithHint("Either set start date to current time or later, or disable proration mode").
 			WithReportableDetails(map[string]interface{}{
-				"start_date":            startDate,
-				"current_date":          now,
-				"earliest_allowed_date": oneMonthAgo,
-				"proration_mode":        r.ProrationMode,
+				"start_date":     startDate.Format(time.RFC3339),
+				"current_time":   now.Format(time.RFC3339),
+				"proration_mode": string(r.ProrationMode),
 			}).
 			Mark(ierr.ErrValidation)
 	}
 
+	// Allow future start dates with proration
+	// Allow past start dates without proration
+	// Allow current/future dates with any proration mode
 	return nil
 }
 

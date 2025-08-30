@@ -26,15 +26,6 @@ type SubscriptionChange struct {
 	// BillingCycleAnchor controls how billing cycle is handled
 	BillingCycleAnchor types.BillingCycleAnchor `json:"billing_cycle_anchor"`
 
-	// TrialEnd allows setting a new trial end date
-	TrialEnd *time.Time `json:"trial_end,omitempty"`
-
-	// CancelAtPeriodEnd schedules cancellation at period end
-	CancelAtPeriodEnd *bool `json:"cancel_at_period_end,omitempty"`
-
-	// InvoiceNow controls immediate invoice generation
-	InvoiceNow bool `json:"invoice_now"`
-
 	// Metadata contains additional key-value pairs
 	Metadata types.Metadata `json:"metadata,omitempty"`
 

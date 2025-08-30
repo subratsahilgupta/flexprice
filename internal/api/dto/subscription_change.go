@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/subscription"
-	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/shopspring/decimal"
@@ -21,24 +20,8 @@ type SubscriptionChangeRequest struct {
 	// Options: create_prorations, none
 	ProrationBehavior types.ProrationBehavior `json:"proration_behavior" validate:"required" binding:"required"`
 
-	// effective_date is when the change should take effect (optional, defaults to now)
-	EffectiveDate *time.Time `json:"effective_date,omitempty"`
-
-	// billing_cycle_anchor controls how the billing cycle is handled after the change
-	// Options: unchanged, reset, immediate
-	BillingCycleAnchor types.BillingCycleAnchor `json:"billing_cycle_anchor,omitempty"`
-
 	// metadata contains additional key-value pairs for storing extra information
 	Metadata map[string]string `json:"metadata,omitempty"`
-
-	// trial_end allows setting a new trial end date (optional)
-	TrialEnd *time.Time `json:"trial_end,omitempty"`
-
-	// cancel_at_period_end if true, schedules cancellation at the end of current period
-	CancelAtPeriodEnd *bool `json:"cancel_at_period_end,omitempty"`
-
-	// invoice_now controls whether to generate an invoice immediately for the change
-	InvoiceNow *bool `json:"invoice_now,omitempty"`
 }
 
 // Validate validates the subscription change request
@@ -51,27 +34,6 @@ func (r *SubscriptionChangeRequest) Validate() error {
 	// Validate proration behavior
 	if err := r.ProrationBehavior.Validate(); err != nil {
 		return err
-	}
-
-	// Validate billing cycle anchor if provided
-	if r.BillingCycleAnchor != "" {
-		if err := r.BillingCycleAnchor.Validate(); err != nil {
-			return err
-		}
-	}
-
-	// Validate effective date is not in the past (allow up to 1 minute grace period)
-	if r.EffectiveDate != nil && r.EffectiveDate.Before(time.Now().Add(-time.Minute)) {
-		return ierr.NewError("effective_date cannot be in the past").
-			WithHint("Effective date must be current time or future").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Validate trial end is in the future if provided
-	if r.TrialEnd != nil && r.TrialEnd.Before(time.Now()) {
-		return ierr.NewError("trial_end must be in the future").
-			WithHint("Trial end date must be in the future").
-			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -298,19 +260,8 @@ type BillingCycleInfo struct {
 // ToSubscriptionChange converts the request to a domain subscription change
 func (r *SubscriptionChangeRequest) ToSubscriptionChange(ctx context.Context, subscriptionID string) *subscription.SubscriptionChange {
 	effectiveDate := time.Now()
-	if r.EffectiveDate != nil {
-		effectiveDate = *r.EffectiveDate
-	}
 
 	billingCycleAnchor := types.BillingCycleAnchorUnchanged
-	if r.BillingCycleAnchor != "" {
-		billingCycleAnchor = r.BillingCycleAnchor
-	}
-
-	invoiceNow := true
-	if r.InvoiceNow != nil {
-		invoiceNow = *r.InvoiceNow
-	}
 
 	return &subscription.SubscriptionChange{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_CHANGE),
@@ -319,9 +270,6 @@ func (r *SubscriptionChangeRequest) ToSubscriptionChange(ctx context.Context, su
 		ProrationBehavior:  r.ProrationBehavior,
 		EffectiveDate:      effectiveDate,
 		BillingCycleAnchor: billingCycleAnchor,
-		TrialEnd:           r.TrialEnd,
-		CancelAtPeriodEnd:  r.CancelAtPeriodEnd,
-		InvoiceNow:         invoiceNow,
 		Metadata:           types.Metadata(r.Metadata),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 	}
