@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
@@ -1056,8 +1057,14 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 
 	s.Run("TC-SYNC-003_Non_Existent_Plan_ID", func() {
 		// Test with non-existent plan ID
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		result, err := s.service.SyncPlanPrices(s.GetContext(), "non-existent-plan-id")
+		s.Error(err)
+		s.Nil(result)
+
+		// Check for the hint in the error
+		hints := errors.GetAllHints(err)
+		s.NotEmpty(hints, "Error should have hints")
+		s.Contains(hints, "Item with ID non-existent-plan-id was not found")
 	})
 
 	s.Run("TC-SYNC-004_Inactive_Deleted_Plan", func() {
@@ -1071,9 +1078,16 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 		err := s.GetStores().PlanRepo.Create(s.GetContext(), archivedPlan)
 		s.NoError(err)
 
-		// Try to sync archived plan
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		// Try to sync archived plan - should work since status field is not available
+		result, err := s.service.SyncPlanPrices(s.GetContext(), archivedPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(archivedPlan.ID, result.PlanID)
+		s.Equal(archivedPlan.Name, result.PlanName)
+		s.Equal(0, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded)
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped)
 	})
 
 	s.Run("TC-SYNC-005_No_Active_Subscriptions", func() {
@@ -1103,8 +1117,15 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 		s.NoError(err)
 
 		// Sync should succeed but process 0 subscriptions
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		result, err := s.service.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(0, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded)
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped)
 	})
 
 	s.Run("TC-SYNC-006_Only_Cancelled_Subscriptions", func() {
@@ -1136,8 +1157,15 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 		}
 
 		// Sync should succeed but process 0 subscriptions
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		result, err := s.service.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(0, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(0, result.SynchronizationSummary.PricesAdded)
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped)
 	})
 
 	s.Run("TC-SYNC-007_Mixed_Subscription_Statuses", func() {
@@ -1178,8 +1206,15 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 		}
 
 		// Sync should succeed and process only Active and Trialing subscriptions
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		result, err := s.service.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(2, result.SynchronizationSummary.SubscriptionsProcessed) // Only Active and Trialing
+		s.Equal(0, result.SynchronizationSummary.PricesAdded)            // No prices to add
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)          // No prices to remove
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped)          // No prices to skip
 	})
 
 	s.Run("TC-SYNC-008_Subscriptions_In_Different_States", func() {
@@ -1221,8 +1256,15 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Comprehensive() {
 		}
 
 		// Sync should succeed and handle different subscription configurations
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		result, err := s.service.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(3, result.SynchronizationSummary.SubscriptionsProcessed) // All 3 subscriptions processed
+		s.Equal(0, result.SynchronizationSummary.PricesAdded)            // No prices to add
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)          // No prices to remove
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped)          // No prices to skip
 	})
 }
 
@@ -1285,8 +1327,15 @@ func (s *PlanServiceSuite) TestSyncPlanPrices_Price_Synchronization() {
 		s.NoError(err)
 
 		// Sync should add new line item for new price
-		// Note: This test would require the SyncPlanPrices method to be implemented
-		s.T().Skip("SyncPlanPrices method not yet implemented")
+		result, err := s.service.SyncPlanPrices(s.GetContext(), testPlan.ID)
+		s.NoError(err)
+		s.NotNil(result)
+		s.Equal(testPlan.ID, result.PlanID)
+		s.Equal(testPlan.Name, result.PlanName)
+		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
+		s.Equal(2, result.SynchronizationSummary.PricesAdded) // Both existing and new prices
+		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
+		s.Equal(0, result.SynchronizationSummary.PricesSkipped)
 	})
 
 	s.Run("TC-SYNC-010_Deleting_Terminating_Price_In_Plan", func() {

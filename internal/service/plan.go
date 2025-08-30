@@ -644,9 +644,8 @@ func (s *planService) SyncPlanPrices(ctx context.Context, id string) (*dto.SyncP
 	// Get the plan to be synced
 	plan, err := s.PlanRepo.Get(ctx, id)
 	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to get plan").
-			Mark(ierr.ErrDatabase)
+
+		return nil, err
 	}
 
 	s.Logger.Infow("Found plan", "plan_id", id, "plan_name", plan.Name)

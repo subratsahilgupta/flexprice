@@ -2928,7 +2928,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Line_Item_Management() {
 }
 
 func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
-	s.Run("TC-SYNC-018_Subscription_With_Addon_Line_Items", func() {
+	s.Run("TC-SYNC-018_Subscription_With_Addon_Line_Items_Unique", func() {
 
 		// TEST 018: Create a plan with prices
 		testPlan := &plan.Plan{
@@ -2980,6 +2980,23 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 		}
 
+		// TEST 018: Create plan line item
+		planLineItem := &subscription.SubscriptionLineItem{
+			ID:              "lineitem_018_plan_unique_data",
+			SubscriptionID:  testSub.ID,
+			CustomerID:      testSub.CustomerID,
+			EntityID:        testPlan.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: testPlan.Name,
+			PriceID:         planPrice.ID,
+			PriceType:       planPrice.Type,
+			DisplayName:     "Base Plan",
+			Quantity:        decimal.NewFromInt(1),
+			Currency:        testSub.Currency,
+			BillingPeriod:   testSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+
 		// TEST 018: Create addon line item
 		addonLineItem := &subscription.SubscriptionLineItem{
 			ID:              "lineitem_018_unique_data",
@@ -2997,9 +3014,26 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
 		}
 		fmt.Printf("DEBUG: About to create subscription with line items, ID: %s\n", testSub.ID)
-		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{addonLineItem})
+		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{planLineItem, addonLineItem})
 		fmt.Printf("DEBUG: CreateWithLineItems result: %v\n", err)
 		s.NoError(err)
+
+		// Also create the line items in the line item repository
+		err = s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), planLineItem)
+		s.NoError(err)
+		fmt.Printf("DEBUG: Plan line item created in repo, ID: %s, PriceID: %s\n", planLineItem.ID, planLineItem.PriceID)
+
+		err = s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), addonLineItem)
+		s.NoError(err)
+		fmt.Printf("DEBUG: Addon line item created in repo, ID: %s, PriceID: %s\n", addonLineItem.ID, addonLineItem.PriceID)
+
+		// Debug: Verify line items were stored
+		storedLineItems, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), testSub)
+		s.NoError(err)
+		fmt.Printf("DEBUG: Found %d line items in repo for subscription %s\n", len(storedLineItems), testSub.ID)
+		for _, item := range storedLineItems {
+			fmt.Printf("DEBUG: Line item: ID=%s, PriceID=%s, EntityType=%s\n", item.ID, item.PriceID, item.EntityType)
+		}
 
 		// Sync should preserve addon line items
 		planService := NewPlanService(ServiceParams{
@@ -3039,7 +3073,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 		s.Equal(1, result.SynchronizationSummary.SubscriptionsProcessed)
 		s.Equal(0, result.SynchronizationSummary.PricesAdded) // No plan prices to add
 		s.Equal(0, result.SynchronizationSummary.PricesRemoved)
-		s.Equal(0, result.SynchronizationSummary.PricesSkipped) // Addon line items preserved
+		s.Equal(1, result.SynchronizationSummary.PricesSkipped) // Plan price skipped as line item exists
 	})
 
 	s.Run("TC-SYNC-019_Addon_Line_Items_With_Entity_Type_Addon", func() {
@@ -3085,6 +3119,23 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
 		}
 
+		// Create plan line item
+		planLineItem := &subscription.SubscriptionLineItem{
+			ID:              "lineitem_019_plan_unique_data",
+			SubscriptionID:  testSub.ID,
+			CustomerID:      testSub.CustomerID,
+			EntityID:        testPlan.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: testPlan.Name,
+			PriceID:         planPrice.ID,
+			PriceType:       planPrice.Type,
+			DisplayName:     "Base Plan",
+			Quantity:        decimal.NewFromInt(1),
+			Currency:        testSub.Currency,
+			BillingPeriod:   testSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+
 		// Create addon line item with entity type addon
 		addonLineItem := &subscription.SubscriptionLineItem{
 			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
@@ -3093,7 +3144,7 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 			EntityID:        "addon-456",
 			EntityType:      types.SubscriptionLineItemEntityTypeAddon,
 			PlanDisplayName: "Addon Service",
-			PriceID:         "addon-price-456",
+			PriceID:         "addon-price-123",
 			PriceType:       types.PRICE_TYPE_FIXED,
 			DisplayName:     "Advanced Analytics",
 			Quantity:        decimal.NewFromInt(1),
@@ -3101,8 +3152,25 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Addon_Handling() {
 			BillingPeriod:   testSub.BillingPeriod,
 			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
 		}
-		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{addonLineItem})
+		err = s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), testSub, []*subscription.SubscriptionLineItem{planLineItem, addonLineItem})
 		s.NoError(err)
+
+		// Also create the line items in the line item repository
+		err = s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), planLineItem)
+		s.NoError(err)
+		fmt.Printf("DEBUG: Plan line item created in repo, ID: %s, PriceID: %s\n", planLineItem.ID, planLineItem.PriceID)
+
+		err = s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), addonLineItem)
+		s.NoError(err)
+		fmt.Printf("DEBUG: Addon line item created in repo, ID: %s, PriceID: %s\n", addonLineItem.ID, addonLineItem.PriceID)
+
+		// Debug: Verify line items were stored
+		storedLineItems, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(s.GetContext(), testSub)
+		s.NoError(err)
+		fmt.Printf("DEBUG: Found %d line items in repo for subscription %s\n", len(storedLineItems), testSub.ID)
+		for _, item := range storedLineItems {
+			fmt.Printf("DEBUG: Line item: ID=%s, PriceID=%s, EntityType=%s\n", item.ID, item.PriceID, item.EntityType)
+		}
 
 		// Sync should preserve addon line items with entity type addon
 		planService := NewPlanService(ServiceParams{
