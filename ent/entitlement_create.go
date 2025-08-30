@@ -303,6 +303,10 @@ func (ec *EntitlementCreate) defaults() {
 		v := entitlement.DefaultIsSoftLimit
 		ec.mutation.SetIsSoftLimit(v)
 	}
+	if _, ok := ec.mutation.DisplayOrder(); !ok {
+		v := entitlement.DefaultDisplayOrder
+		ec.mutation.SetDisplayOrder(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -345,6 +349,9 @@ func (ec *EntitlementCreate) check() error {
 	}
 	if _, ok := ec.mutation.IsSoftLimit(); !ok {
 		return &ValidationError{Name: "is_soft_limit", err: errors.New(`ent: missing required field "Entitlement.is_soft_limit"`)}
+	}
+	if _, ok := ec.mutation.DisplayOrder(); !ok {
+		return &ValidationError{Name: "display_order", err: errors.New(`ent: missing required field "Entitlement.display_order"`)}
 	}
 	if v, ok := ec.mutation.ID(); ok {
 		if err := entitlement.IDValidator(v); err != nil {
@@ -452,7 +459,7 @@ func (ec *EntitlementCreate) createSpec() (*Entitlement, *sqlgraph.CreateSpec) {
 	}
 	if value, ok := ec.mutation.DisplayOrder(); ok {
 		_spec.SetField(entitlement.FieldDisplayOrder, field.TypeInt, value)
-		_node.DisplayOrder = &value
+		_node.DisplayOrder = value
 	}
 	return _node, _spec
 }

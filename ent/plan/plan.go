@@ -93,6 +93,8 @@ var (
 	DefaultEnvironmentID string
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// DefaultDisplayOrder holds the default value on creation for the "display_order" field.
+	DefaultDisplayOrder int
 )
 
 // OrderOption defines the ordering options for the Plan queries.

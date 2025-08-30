@@ -252,12 +252,6 @@ func (eu *EntitlementUpdate) AddDisplayOrder(i int) *EntitlementUpdate {
 	return eu
 }
 
-// ClearDisplayOrder clears the value of the "display_order" field.
-func (eu *EntitlementUpdate) ClearDisplayOrder() *EntitlementUpdate {
-	eu.mutation.ClearDisplayOrder()
-	return eu
-}
-
 // Mutation returns the EntitlementMutation object of the builder.
 func (eu *EntitlementUpdate) Mutation() *EntitlementMutation {
 	return eu.mutation
@@ -394,9 +388,6 @@ func (eu *EntitlementUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := eu.mutation.AddedDisplayOrder(); ok {
 		_spec.AddField(entitlement.FieldDisplayOrder, field.TypeInt, value)
-	}
-	if eu.mutation.DisplayOrderCleared() {
-		_spec.ClearField(entitlement.FieldDisplayOrder, field.TypeInt)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, eu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -642,12 +633,6 @@ func (euo *EntitlementUpdateOne) AddDisplayOrder(i int) *EntitlementUpdateOne {
 	return euo
 }
 
-// ClearDisplayOrder clears the value of the "display_order" field.
-func (euo *EntitlementUpdateOne) ClearDisplayOrder() *EntitlementUpdateOne {
-	euo.mutation.ClearDisplayOrder()
-	return euo
-}
-
 // Mutation returns the EntitlementMutation object of the builder.
 func (euo *EntitlementUpdateOne) Mutation() *EntitlementMutation {
 	return euo.mutation
@@ -814,9 +799,6 @@ func (euo *EntitlementUpdateOne) sqlSave(ctx context.Context) (_node *Entitlemen
 	}
 	if value, ok := euo.mutation.AddedDisplayOrder(); ok {
 		_spec.AddField(entitlement.FieldDisplayOrder, field.TypeInt, value)
-	}
-	if euo.mutation.DisplayOrderCleared() {
-		_spec.ClearField(entitlement.FieldDisplayOrder, field.TypeInt)
 	}
 	_node = &Entitlement{config: euo.config}
 	_spec.Assign = _node.assignValues

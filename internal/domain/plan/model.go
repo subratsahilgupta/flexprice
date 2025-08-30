@@ -28,7 +28,7 @@ func FromEnt(e *ent.Plan) *Plan {
 		Description:   e.Description,
 		EnvironmentID: e.EnvironmentID,
 		Metadata:      types.Metadata(e.Metadata),
-		DisplayOrder:  e.DisplayOrder,
+		DisplayOrder:  &e.DisplayOrder,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

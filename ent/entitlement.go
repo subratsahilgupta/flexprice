@@ -50,7 +50,7 @@ type Entitlement struct {
 	// StaticValue holds the value of the "static_value" field.
 	StaticValue string `json:"static_value,omitempty"`
 	// DisplayOrder holds the value of the "display_order" field.
-	DisplayOrder       *int `json:"display_order,omitempty"`
+	DisplayOrder       int `json:"display_order,omitempty"`
 	addon_entitlements *string
 	selectValues       sql.SelectValues
 }
@@ -192,8 +192,7 @@ func (e *Entitlement) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field display_order", values[i])
 			} else if value.Valid {
-				e.DisplayOrder = new(int)
-				*e.DisplayOrder = int(value.Int64)
+				e.DisplayOrder = int(value.Int64)
 			}
 		case entitlement.ForeignKeys[0]:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -288,10 +287,8 @@ func (e *Entitlement) String() string {
 	builder.WriteString("static_value=")
 	builder.WriteString(e.StaticValue)
 	builder.WriteString(", ")
-	if v := e.DisplayOrder; v != nil {
-		builder.WriteString("display_order=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
+	builder.WriteString("display_order=")
+	builder.WriteString(fmt.Sprintf("%v", e.DisplayOrder))
 	builder.WriteByte(')')
 	return builder.String()
 }

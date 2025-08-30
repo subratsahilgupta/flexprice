@@ -237,6 +237,10 @@ func (pc *PlanCreate) defaults() {
 		v := plan.DefaultEnvironmentID
 		pc.mutation.SetEnvironmentID(v)
 	}
+	if _, ok := pc.mutation.DisplayOrder(); !ok {
+		v := plan.DefaultDisplayOrder
+		pc.mutation.SetDisplayOrder(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -265,6 +269,9 @@ func (pc *PlanCreate) check() error {
 		if err := plan.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Plan.name": %w`, err)}
 		}
+	}
+	if _, ok := pc.mutation.DisplayOrder(); !ok {
+		return &ValidationError{Name: "display_order", err: errors.New(`ent: missing required field "Plan.display_order"`)}
 	}
 	return nil
 }
@@ -347,7 +354,7 @@ func (pc *PlanCreate) createSpec() (*Plan, *sqlgraph.CreateSpec) {
 	}
 	if value, ok := pc.mutation.DisplayOrder(); ok {
 		_spec.SetField(plan.FieldDisplayOrder, field.TypeInt, value)
-		_node.DisplayOrder = &value
+		_node.DisplayOrder = value
 	}
 	if nodes := pc.mutation.CreditGrantsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

@@ -820,16 +820,6 @@ func DisplayOrderLTE(v int) predicate.Plan {
 	return predicate.Plan(sql.FieldLTE(FieldDisplayOrder, v))
 }
 
-// DisplayOrderIsNil applies the IsNil predicate on the "display_order" field.
-func DisplayOrderIsNil() predicate.Plan {
-	return predicate.Plan(sql.FieldIsNull(FieldDisplayOrder))
-}
-
-// DisplayOrderNotNil applies the NotNil predicate on the "display_order" field.
-func DisplayOrderNotNil() predicate.Plan {
-	return predicate.Plan(sql.FieldNotNull(FieldDisplayOrder))
-}
-
 // HasCreditGrants applies the HasEdge predicate on the "credit_grants" edge.
 func HasCreditGrants() predicate.Plan {
 	return predicate.Plan(func(s *sql.Selector) {

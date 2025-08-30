@@ -117,6 +117,8 @@ var (
 	DefaultIsEnabled bool
 	// DefaultIsSoftLimit holds the default value on creation for the "is_soft_limit" field.
 	DefaultIsSoftLimit bool
+	// DefaultDisplayOrder holds the default value on creation for the "display_order" field.
+	DefaultDisplayOrder int
 	// IDValidator is a validator for the "id" field. It is called by the builders before save.
 	IDValidator func(string) error
 )

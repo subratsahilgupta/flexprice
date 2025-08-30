@@ -41,7 +41,7 @@ type Plan struct {
 	// Description holds the value of the "description" field.
 	Description string `json:"description,omitempty"`
 	// DisplayOrder holds the value of the "display_order" field.
-	DisplayOrder *int `json:"display_order,omitempty"`
+	DisplayOrder int `json:"display_order,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the PlanQuery when eager-loading is set.
 	Edges        PlanEdges `json:"edges"`
@@ -172,8 +172,7 @@ func (pl *Plan) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field display_order", values[i])
 			} else if value.Valid {
-				pl.DisplayOrder = new(int)
-				*pl.DisplayOrder = int(value.Int64)
+				pl.DisplayOrder = int(value.Int64)
 			}
 		default:
 			pl.selectValues.Set(columns[i], values[i])
@@ -249,10 +248,8 @@ func (pl *Plan) String() string {
 	builder.WriteString("description=")
 	builder.WriteString(pl.Description)
 	builder.WriteString(", ")
-	if v := pl.DisplayOrder; v != nil {
-		builder.WriteString("display_order=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
+	builder.WriteString("display_order=")
+	builder.WriteString(fmt.Sprintf("%v", pl.DisplayOrder))
 	builder.WriteByte(')')
 	return builder.String()
 }

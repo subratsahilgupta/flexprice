@@ -19042,7 +19042,7 @@ func (m *EntitlementMutation) DisplayOrder() (r int, exists bool) {
 // OldDisplayOrder returns the old "display_order" field's value of the Entitlement entity.
 // If the Entitlement object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *EntitlementMutation) OldDisplayOrder(ctx context.Context) (v *int, err error) {
+func (m *EntitlementMutation) OldDisplayOrder(ctx context.Context) (v int, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldDisplayOrder is only allowed on UpdateOne operations")
 	}
@@ -19074,24 +19074,10 @@ func (m *EntitlementMutation) AddedDisplayOrder() (r int, exists bool) {
 	return *v, true
 }
 
-// ClearDisplayOrder clears the value of the "display_order" field.
-func (m *EntitlementMutation) ClearDisplayOrder() {
-	m.display_order = nil
-	m.adddisplay_order = nil
-	m.clearedFields[entitlement.FieldDisplayOrder] = struct{}{}
-}
-
-// DisplayOrderCleared returns if the "display_order" field was cleared in this mutation.
-func (m *EntitlementMutation) DisplayOrderCleared() bool {
-	_, ok := m.clearedFields[entitlement.FieldDisplayOrder]
-	return ok
-}
-
 // ResetDisplayOrder resets all changes to the "display_order" field.
 func (m *EntitlementMutation) ResetDisplayOrder() {
 	m.display_order = nil
 	m.adddisplay_order = nil
-	delete(m.clearedFields, entitlement.FieldDisplayOrder)
 }
 
 // Where appends a list predicates to the EntitlementMutation builder.
@@ -19474,9 +19460,6 @@ func (m *EntitlementMutation) ClearedFields() []string {
 	if m.FieldCleared(entitlement.FieldStaticValue) {
 		fields = append(fields, entitlement.FieldStaticValue)
 	}
-	if m.FieldCleared(entitlement.FieldDisplayOrder) {
-		fields = append(fields, entitlement.FieldDisplayOrder)
-	}
 	return fields
 }
 
@@ -19514,9 +19497,6 @@ func (m *EntitlementMutation) ClearField(name string) error {
 		return nil
 	case entitlement.FieldStaticValue:
 		m.ClearStaticValue()
-		return nil
-	case entitlement.FieldDisplayOrder:
-		m.ClearDisplayOrder()
 		return nil
 	}
 	return fmt.Errorf("unknown Entitlement nullable field %s", name)
@@ -33433,7 +33413,7 @@ func (m *PlanMutation) DisplayOrder() (r int, exists bool) {
 // OldDisplayOrder returns the old "display_order" field's value of the Plan entity.
 // If the Plan object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PlanMutation) OldDisplayOrder(ctx context.Context) (v *int, err error) {
+func (m *PlanMutation) OldDisplayOrder(ctx context.Context) (v int, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldDisplayOrder is only allowed on UpdateOne operations")
 	}
@@ -33465,24 +33445,10 @@ func (m *PlanMutation) AddedDisplayOrder() (r int, exists bool) {
 	return *v, true
 }
 
-// ClearDisplayOrder clears the value of the "display_order" field.
-func (m *PlanMutation) ClearDisplayOrder() {
-	m.display_order = nil
-	m.adddisplay_order = nil
-	m.clearedFields[plan.FieldDisplayOrder] = struct{}{}
-}
-
-// DisplayOrderCleared returns if the "display_order" field was cleared in this mutation.
-func (m *PlanMutation) DisplayOrderCleared() bool {
-	_, ok := m.clearedFields[plan.FieldDisplayOrder]
-	return ok
-}
-
 // ResetDisplayOrder resets all changes to the "display_order" field.
 func (m *PlanMutation) ResetDisplayOrder() {
 	m.display_order = nil
 	m.adddisplay_order = nil
-	delete(m.clearedFields, plan.FieldDisplayOrder)
 }
 
 // AddCreditGrantIDs adds the "credit_grants" edge to the CreditGrant entity by ids.
@@ -33831,9 +33797,6 @@ func (m *PlanMutation) ClearedFields() []string {
 	if m.FieldCleared(plan.FieldDescription) {
 		fields = append(fields, plan.FieldDescription)
 	}
-	if m.FieldCleared(plan.FieldDisplayOrder) {
-		fields = append(fields, plan.FieldDisplayOrder)
-	}
 	return fields
 }
 
@@ -33865,9 +33828,6 @@ func (m *PlanMutation) ClearField(name string) error {
 		return nil
 	case plan.FieldDescription:
 		m.ClearDescription()
-		return nil
-	case plan.FieldDisplayOrder:
-		m.ClearDisplayOrder()
 		return nil
 	}
 	return fmt.Errorf("unknown Plan nullable field %s", name)

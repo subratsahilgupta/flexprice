@@ -1124,16 +1124,6 @@ func DisplayOrderLTE(v int) predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldLTE(FieldDisplayOrder, v))
 }
 
-// DisplayOrderIsNil applies the IsNil predicate on the "display_order" field.
-func DisplayOrderIsNil() predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldIsNull(FieldDisplayOrder))
-}
-
-// DisplayOrderNotNil applies the NotNil predicate on the "display_order" field.
-func DisplayOrderNotNil() predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldNotNull(FieldDisplayOrder))
-}
-
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Entitlement) predicate.Entitlement {
 	return predicate.Entitlement(sql.AndPredicates(predicates...))
