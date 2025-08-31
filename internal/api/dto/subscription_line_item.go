@@ -144,13 +144,6 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 
 // Validate validates the delete subscription line item request
 func (r *DeleteSubscriptionLineItemRequest) Validate() error {
-	if r.EndDate != nil {
-		if r.EndDate.Before(time.Now().UTC()) {
-			return ierr.NewError("end_date cannot be in the past").
-				WithHint("End date cannot be in the past").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
+	
 	return nil
 }
