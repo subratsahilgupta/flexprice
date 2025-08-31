@@ -265,7 +265,7 @@ func (h *PlanHandler) GetPlanCreditGrants(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param id path string true "Plan ID"
-// @Success 200 {object} service.SyncPlanPricesResponse
+// @Success 200 {object} dto.SyncPlanPricesResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 422 {object} ierr.ErrorResponse
