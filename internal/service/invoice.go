@@ -2057,16 +2057,12 @@ func (s *invoiceService) getFlexibleUsageBreakdownForInvoice(ctx context.Context
 		return nil, err
 	}
 
-	// Step 2: Group line items by their billing periods and collect feature IDs
-	type PeriodKey struct {
-		Start time.Time
-		End   time.Time
-	}
+	// Step 2: Batch feature retrieval for all line items
+	meterIDs := make([]string, 0, len(usageBasedLineItems))
+	meterToLineItemMap := make(map[string][]*dto.InvoiceLineItemResponse) // meterID -> list of line items using this meter
+	lineItemMetadata := make(map[string]*dto.InvoiceLineItemResponse)     // lineItemID -> lineItem
 
-	periodGroups := make(map[PeriodKey][]*dto.InvoiceLineItemResponse)
-	lineItemToFeatureMap := make(map[string]string)                   // lineItemID -> featureID
-	lineItemMetadata := make(map[string]*dto.InvoiceLineItemResponse) // lineItemID -> lineItem
-
+	// First pass: collect all unique meter IDs and build mappings
 	for _, lineItem := range usageBasedLineItems {
 		// Skip if essential fields are missing
 		if lineItem.PriceID == nil || lineItem.MeterID == nil {
@@ -2077,20 +2073,68 @@ func (s *invoiceService) getFlexibleUsageBreakdownForInvoice(ctx context.Context
 			continue
 		}
 
-		// Get feature ID from meter
-		featureFilter := types.NewNoLimitFeatureFilter()
-		featureFilter.MeterIDs = []string{*lineItem.MeterID}
-		features, err := s.FeatureRepo.List(ctx, featureFilter)
-		if err != nil || len(features) == 0 {
+		meterID := *lineItem.MeterID
+		lineItemMetadata[lineItem.ID] = lineItem
+
+		// Add to meter mapping
+		if meterToLineItemMap[meterID] == nil {
+			meterToLineItemMap[meterID] = make([]*dto.InvoiceLineItemResponse, 0)
+			meterIDs = append(meterIDs, meterID) // Only add unique meter IDs
+		}
+		meterToLineItemMap[meterID] = append(meterToLineItemMap[meterID], lineItem)
+	}
+
+	if len(meterIDs) == 0 {
+		s.Logger.Warnw("no valid meter IDs found")
+		return make(map[string][]dto.UsageBreakdownItem), nil
+	}
+
+	// Batch feature retrieval for all meters at once
+	featureFilter := types.NewNoLimitFeatureFilter()
+	featureFilter.MeterIDs = meterIDs
+	features, err := s.FeatureRepo.List(ctx, featureFilter)
+	if err != nil {
+		s.Logger.Errorw("failed to get features for meters",
+			"meter_ids_count", len(meterIDs),
+			"error", err)
+		return nil, err
+	}
+
+	// Build meterID -> featureID mapping
+	meterToFeatureMap := make(map[string]string) // meterID -> featureID
+	for _, feature := range features {
+		meterToFeatureMap[feature.MeterID] = feature.ID
+	}
+
+	s.Logger.Infow("batched feature retrieval",
+		"invoice_id", inv.ID,
+		"total_meters", len(meterIDs),
+		"features_found", len(features))
+
+	// Step 3: Group line items by their billing periods using feature mapping
+	type PeriodKey struct {
+		Start time.Time
+		End   time.Time
+	}
+
+	periodGroups := make(map[PeriodKey][]*dto.InvoiceLineItemResponse)
+	lineItemToFeatureMap := make(map[string]string) // lineItemID -> featureID
+
+	for _, lineItem := range usageBasedLineItems {
+		// Skip if no meter ID or feature mapping not found
+		if lineItem.MeterID == nil {
+			continue
+		}
+
+		featureID, exists := meterToFeatureMap[*lineItem.MeterID]
+		if !exists {
 			s.Logger.Warnw("no feature found for meter",
 				"meter_id", *lineItem.MeterID,
 				"line_item_id", lineItem.ID)
 			continue
 		}
 
-		featureID := features[0].ID
 		lineItemToFeatureMap[lineItem.ID] = featureID
-		lineItemMetadata[lineItem.ID] = lineItem
 
 		// Determine the billing period for this line item
 		var periodStart, periodEnd time.Time
