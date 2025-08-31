@@ -43,6 +43,7 @@ type InvoiceService interface {
 	RecalculateInvoiceAmounts(ctx context.Context, invoiceID string) error
 	UpdateInvoice(ctx context.Context, id string, req dto.UpdateInvoiceRequest) (*dto.InvoiceResponse, error)
 	CalculatePriceBreakdown(ctx context.Context, inv *dto.InvoiceResponse) (map[string][]dto.SourceUsageItem, error)
+	CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error)
 	TriggerCommunication(ctx context.Context, id string) error
 	HandleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error
 }
@@ -2007,4 +2008,296 @@ func (s *invoiceService) HandleIncompleteSubscriptionPayment(ctx context.Context
 		"subscription_id", *invoice.SubscriptionID)
 
 	return nil
+}
+
+// CalculateUsageBreakdown provides flexible usage breakdown with custom grouping
+func (s *invoiceService) CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error) {
+	s.Logger.Infow("calculating usage breakdown for invoice",
+		"invoice_id", inv.ID,
+		"period_start", inv.PeriodStart,
+		"period_end", inv.PeriodEnd,
+		"line_items_count", len(inv.LineItems),
+		"group_by", groupBy)
+
+	// Validate groupBy parameter
+	if len(groupBy) == 0 {
+		return make(map[string][]dto.UsageBreakdownItem), nil
+	}
+
+	// Step 1: Get the line items which are metered (usage-based)
+	usageBasedLineItems := make([]*dto.InvoiceLineItemResponse, 0)
+	for _, lineItem := range inv.LineItems {
+		if lineItem.PriceType != nil && *lineItem.PriceType == string(types.PRICE_TYPE_USAGE) {
+			usageBasedLineItems = append(usageBasedLineItems, lineItem)
+		}
+	}
+
+	s.Logger.Infow("found usage-based line items",
+		"total_line_items", len(inv.LineItems),
+		"usage_based_line_items", len(usageBasedLineItems))
+
+	if len(usageBasedLineItems) == 0 {
+		// No usage-based line items, return empty analytics
+		return make(map[string][]dto.UsageBreakdownItem), nil
+	}
+
+	// Use flexible grouping analytics call
+	return s.getFlexibleUsageBreakdownForInvoice(ctx, usageBasedLineItems, inv, groupBy)
+}
+
+// getFlexibleUsageBreakdownForInvoice gets usage breakdown with flexible grouping for invoice line items
+// Groups line items by their billing periods for efficient analytics queries
+func (s *invoiceService) getFlexibleUsageBreakdownForInvoice(ctx context.Context, usageBasedLineItems []*dto.InvoiceLineItemResponse, inv *dto.InvoiceResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error) {
+	// Step 1: Get customer external ID first
+	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		s.Logger.Errorw("failed to get customer for flexible usage breakdown",
+			"customer_id", inv.CustomerID,
+			"error", err)
+		return nil, err
+	}
+
+	// Step 2: Group line items by their billing periods and collect feature IDs
+	type PeriodKey struct {
+		Start time.Time
+		End   time.Time
+	}
+
+	periodGroups := make(map[PeriodKey][]*dto.InvoiceLineItemResponse)
+	lineItemToFeatureMap := make(map[string]string)                   // lineItemID -> featureID
+	lineItemMetadata := make(map[string]*dto.InvoiceLineItemResponse) // lineItemID -> lineItem
+
+	for _, lineItem := range usageBasedLineItems {
+		// Skip if essential fields are missing
+		if lineItem.PriceID == nil || lineItem.MeterID == nil {
+			s.Logger.Warnw("skipping line item with missing price_id or meter_id",
+				"line_item_id", lineItem.ID,
+				"price_id", lineItem.PriceID,
+				"meter_id", lineItem.MeterID)
+			continue
+		}
+
+		// Get feature ID from meter
+		featureFilter := types.NewNoLimitFeatureFilter()
+		featureFilter.MeterIDs = []string{*lineItem.MeterID}
+		features, err := s.FeatureRepo.List(ctx, featureFilter)
+		if err != nil || len(features) == 0 {
+			s.Logger.Warnw("no feature found for meter",
+				"meter_id", *lineItem.MeterID,
+				"line_item_id", lineItem.ID)
+			continue
+		}
+
+		featureID := features[0].ID
+		lineItemToFeatureMap[lineItem.ID] = featureID
+		lineItemMetadata[lineItem.ID] = lineItem
+
+		// Determine the billing period for this line item
+		var periodStart, periodEnd time.Time
+
+		if lineItem.PeriodStart != nil && lineItem.PeriodEnd != nil {
+			// Use line item specific period
+			periodStart = *lineItem.PeriodStart
+			periodEnd = *lineItem.PeriodEnd
+		} else if inv.PeriodStart != nil && inv.PeriodEnd != nil {
+			// Fall back to invoice period
+			periodStart = *inv.PeriodStart
+			periodEnd = *inv.PeriodEnd
+		} else {
+			s.Logger.Warnw("missing period information for line item",
+				"line_item_id", lineItem.ID,
+				"invoice_id", inv.ID)
+			continue
+		}
+
+		periodKey := PeriodKey{Start: periodStart, End: periodEnd}
+		if periodGroups[periodKey] == nil {
+			periodGroups[periodKey] = make([]*dto.InvoiceLineItemResponse, 0)
+		}
+		periodGroups[periodKey] = append(periodGroups[periodKey], lineItem)
+	}
+
+	if len(periodGroups) == 0 {
+		s.Logger.Warnw("no valid line items found with periods")
+		return make(map[string][]dto.UsageBreakdownItem), nil
+	}
+
+	s.Logger.Infow("grouped line items by periods",
+		"invoice_id", inv.ID,
+		"period_groups_count", len(periodGroups),
+		"total_line_items", len(usageBasedLineItems))
+
+	// Step 3: Make analytics requests for each period group
+	allAnalyticsItems := make([]dto.UsageAnalyticItem, 0)
+	eventPostProcessingService := NewEventPostProcessingService(s.ServiceParams, s.EventRepo, s.ProcessedEventRepo)
+
+	for periodKey, lineItemsInPeriod := range periodGroups {
+		// Collect feature IDs for this period
+		featureIDsForPeriod := make([]string, 0, len(lineItemsInPeriod))
+		for _, lineItem := range lineItemsInPeriod {
+			if featureID, exists := lineItemToFeatureMap[lineItem.ID]; exists {
+				featureIDsForPeriod = append(featureIDsForPeriod, featureID)
+			}
+		}
+
+		if len(featureIDsForPeriod) == 0 {
+			continue
+		}
+
+		// Make analytics request for this period
+		analyticsReq := &dto.GetUsageAnalyticsRequest{
+			ExternalCustomerID: customer.ExternalID,
+			FeatureIDs:         featureIDsForPeriod,
+			StartTime:          periodKey.Start,
+			EndTime:            periodKey.End,
+			GroupBy:            groupBy,
+		}
+
+		s.Logger.Infow("making period-specific analytics request",
+			"invoice_id", inv.ID,
+			"period_start", periodKey.Start.Format(time.RFC3339),
+			"period_end", periodKey.End.Format(time.RFC3339),
+			"feature_ids_count", len(featureIDsForPeriod),
+			"line_items_count", len(lineItemsInPeriod),
+			"group_by", groupBy)
+
+		analyticsResponse, err := eventPostProcessingService.GetDetailedUsageAnalytics(ctx, analyticsReq)
+		if err != nil {
+			s.Logger.Errorw("failed to get period-specific usage analytics",
+				"invoice_id", inv.ID,
+				"period_start", periodKey.Start.Format(time.RFC3339),
+				"period_end", periodKey.End.Format(time.RFC3339),
+				"error", err)
+			return nil, err
+		}
+
+		// Collect all analytics items
+		allAnalyticsItems = append(allAnalyticsItems, analyticsResponse.Items...)
+
+		s.Logger.Debugw("retrieved period-specific analytics",
+			"invoice_id", inv.ID,
+			"period_start", periodKey.Start.Format(time.RFC3339),
+			"period_end", periodKey.End.Format(time.RFC3339),
+			"analytics_items_count", len(analyticsResponse.Items))
+	}
+
+	// Step 4: Create combined response and map to line items
+	combinedResponse := &dto.GetUsageAnalyticsResponse{
+		Items: allAnalyticsItems,
+	}
+
+	s.Logger.Infow("combined all period analytics",
+		"invoice_id", inv.ID,
+		"total_analytics_items", len(allAnalyticsItems))
+
+	// Step 5: Map results back to line items with flexible grouping
+	return s.mapFlexibleAnalyticsToLineItems(ctx, combinedResponse, lineItemToFeatureMap, lineItemMetadata, groupBy)
+}
+
+// mapFlexibleAnalyticsToLineItems maps analytics response to line items with flexible grouping
+func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, analyticsResponse *dto.GetUsageAnalyticsResponse, lineItemToFeatureMap map[string]string, lineItemMetadata map[string]*dto.InvoiceLineItemResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error) {
+	usageBreakdownResponse := make(map[string][]dto.UsageBreakdownItem)
+
+	// Step 1: Group analytics by feature_id for line item mapping
+	featureAnalyticsMap := make(map[string][]dto.UsageAnalyticItem) // featureID -> list of analytics items
+
+	for _, analyticsItem := range analyticsResponse.Items {
+		if featureAnalyticsMap[analyticsItem.FeatureID] == nil {
+			featureAnalyticsMap[analyticsItem.FeatureID] = make([]dto.UsageAnalyticItem, 0)
+		}
+		featureAnalyticsMap[analyticsItem.FeatureID] = append(featureAnalyticsMap[analyticsItem.FeatureID], analyticsItem)
+	}
+
+	// Step 2: Process each line item
+	for lineItemID, featureID := range lineItemToFeatureMap {
+		lineItem := lineItemMetadata[lineItemID]
+		analyticsItems, exists := featureAnalyticsMap[featureID]
+
+		if !exists || len(analyticsItems) == 0 {
+			// No usage data for this line item
+			s.Logger.Debugw("no usage analytics found for line item",
+				"line_item_id", lineItemID,
+				"feature_id", featureID)
+			usageBreakdownResponse[lineItemID] = []dto.UsageBreakdownItem{}
+			continue
+		}
+
+		// Step 3: Calculate total usage for this line item across all groups
+		totalUsageForLineItem := decimal.Zero
+		for _, analyticsItem := range analyticsItems {
+			totalUsageForLineItem = totalUsageForLineItem.Add(analyticsItem.TotalUsage)
+		}
+
+		// Step 4: Calculate proportional costs for each group
+		lineItemUsageBreakdown := make([]dto.UsageBreakdownItem, 0, len(analyticsItems))
+		totalLineItemCost := lineItem.Amount
+
+		for _, analyticsItem := range analyticsItems {
+			// Calculate proportional cost based on usage
+			var cost string
+			if !totalLineItemCost.IsZero() && !totalUsageForLineItem.IsZero() {
+				proportionalCost := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(totalLineItemCost)
+				cost = proportionalCost.StringFixed(2)
+			} else {
+				cost = "0"
+			}
+
+			// Calculate percentage
+			var percentage string
+			if !totalUsageForLineItem.IsZero() {
+				pct := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(decimal.NewFromInt(100))
+				percentage = pct.StringFixed(2)
+			} else {
+				percentage = "0"
+			}
+
+			// Build grouped_by map from the analytics item
+			groupedBy := make(map[string]string)
+			if analyticsItem.FeatureID != "" {
+				groupedBy["feature_id"] = analyticsItem.FeatureID
+			}
+			if analyticsItem.Source != "" {
+				groupedBy["source"] = analyticsItem.Source
+			}
+			// Add properties from the analytics item
+			if analyticsItem.Properties != nil {
+				for key, value := range analyticsItem.Properties {
+					groupedBy[key] = value
+				}
+			}
+
+			// Create usage breakdown item
+			breakdownItem := dto.UsageBreakdownItem{
+				Cost:      cost,
+				GroupedBy: groupedBy,
+			}
+
+			// Add optional fields
+			if !analyticsItem.TotalUsage.IsZero() {
+				usageStr := analyticsItem.TotalUsage.StringFixed(2)
+				breakdownItem.Usage = &usageStr
+			}
+
+			if percentage != "0" {
+				breakdownItem.Percentage = &percentage
+			}
+
+			if analyticsItem.EventCount > 0 {
+				eventCount := int(analyticsItem.EventCount)
+				breakdownItem.EventCount = &eventCount
+			}
+
+			lineItemUsageBreakdown = append(lineItemUsageBreakdown, breakdownItem)
+		}
+
+		usageBreakdownResponse[lineItemID] = lineItemUsageBreakdown
+
+		s.Logger.Debugw("mapped flexible usage breakdown for line item",
+			"line_item_id", lineItemID,
+			"feature_id", featureID,
+			"groups_count", len(lineItemUsageBreakdown),
+			"total_usage", totalUsageForLineItem.StringFixed(2))
+	}
+
+	return usageBreakdownResponse, nil
 }
