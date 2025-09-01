@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -1504,4 +1505,72 @@ func (s *InvoiceServiceSuite) TestListInvoicesWithExternalCustomerID() {
 			}
 		})
 	}
+}
+
+func (s *InvoiceServiceSuite) TestUpdateDueDate() {
+	ctx := s.GetContext()
+
+	// Create a test invoice first - explicitly set as draft and pending payment
+	createReq := dto.CreateInvoiceRequest{
+		CustomerID:    s.testData.customer.ID,
+		InvoiceType:   types.InvoiceTypeOneOff,
+		Currency:      "usd",
+		AmountDue:     decimal.NewFromFloat(100.00),
+		Total:         decimal.NewFromFloat(100.00),
+		Subtotal:      decimal.NewFromFloat(100.00),
+		BillingReason: types.InvoiceBillingReasonManual,
+		DueDate:       lo.ToPtr(time.Now().UTC().Add(24 * time.Hour)), // Due in 1 day
+		InvoiceStatus: lo.ToPtr(types.InvoiceStatusDraft),
+		PaymentStatus: lo.ToPtr(types.PaymentStatusPending),
+	}
+
+	invoice, err := s.service.CreateOneOffInvoice(ctx, createReq)
+	s.Require().NoError(err)
+	s.Require().NotNil(invoice)
+	s.Require().Equal(types.InvoiceStatusDraft, invoice.InvoiceStatus)
+	s.Require().Equal(types.PaymentStatusPending, invoice.PaymentStatus)
+
+	// Test updating due date to 7 days from now
+	newDueDate := time.Now().UTC().Add(7 * 24 * time.Hour)
+	err = s.service.UpdateDueDate(ctx, invoice.ID, newDueDate)
+	s.Require().NoError(err)
+
+	// Verify the due date was updated
+	updatedInvoice, err := s.service.GetInvoice(ctx, invoice.ID)
+	s.Require().NoError(err)
+	s.Require().NotNil(updatedInvoice.DueDate)
+
+	// Allow for small time differences (within 1 second)
+	timeDiff := updatedInvoice.DueDate.Sub(newDueDate)
+	s.Require().True(timeDiff >= -time.Second && timeDiff <= time.Second,
+		"Expected due date %v, got %v (diff: %v)", newDueDate, updatedInvoice.DueDate, timeDiff)
+}
+
+func (s *InvoiceServiceSuite) TestUpdateDueDateValidation() {
+	ctx := s.GetContext()
+
+	// Test with non-existent invoice ID
+	err := s.service.UpdateDueDate(ctx, "non-existent-id", time.Now().UTC().Add(24*time.Hour))
+	s.Require().Error(err)
+	s.Require().True(ierr.IsNotFound(err))
+
+	// Create a test invoice and mark it as paid
+	createReq := dto.CreateInvoiceRequest{
+		CustomerID:    s.testData.customer.ID,
+		InvoiceType:   types.InvoiceTypeOneOff,
+		Currency:      "usd",
+		AmountDue:     decimal.NewFromFloat(100.00),
+		Total:         decimal.NewFromFloat(100.00),
+		Subtotal:      decimal.NewFromFloat(100.00),
+		BillingReason: types.InvoiceBillingReasonManual,
+		PaymentStatus: lo.ToPtr(types.PaymentStatusSucceeded), // Mark as paid
+	}
+
+	paidInvoice, err := s.service.CreateOneOffInvoice(ctx, createReq)
+	s.Require().NoError(err)
+
+	// Test updating due date on paid invoice (should fail)
+	err = s.service.UpdateDueDate(ctx, paidInvoice.ID, time.Now().UTC().Add(24*time.Hour))
+	s.Require().Error(err)
+	s.Require().True(ierr.IsValidation(err))
 }

@@ -74,8 +74,8 @@ const (
 	WebhookEventInvoiceUpdateFinalized = "invoice.update.finalized"
 	WebhookEventInvoiceUpdatePayment   = "invoice.update.payment"
 	WebhookEventInvoiceUpdateVoided    = "invoice.update.voided"
-
-	WebhookEventInvoicePaymentOverdue = "invoice.payment.overdue"
+	WebhookEventInvoiceUpdateDueDate   = "invoice.update.due_date"
+	WebhookEventInvoicePaymentOverdue  = "invoice.payment.overdue"
 )
 
 // alert event names

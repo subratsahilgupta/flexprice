@@ -550,3 +550,51 @@ func (h *InvoiceHandler) TriggerCommunication(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "communication triggered successfully"})
 }
+
+// UpdateDueDate godoc
+// @Summary Update the due date of an invoice
+// @Description Update the due date of an invoice.
+// Only works for draft or finalized invoices that haven't been paid.
+// The due date is in UTC.
+// The due date is not allowed to be in the past.
+// @Tags Invoices
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Invoice ID"
+// @Param request body dto.UpdateDueDateRequest true "Due Date Update Request"
+// @Success 200 {object} gin.H
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /invoices/{id}/duedate [post]
+func (h *InvoiceHandler) UpdateDueDate(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
+		return
+	}
+
+	var req dto.UpdateDueDateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Errorw("failed to bind request", "error", err)
+		c.Error(ierr.WithError(err).WithHint("invalid request").Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Validate the request
+	if err := req.Validate(); err != nil {
+		h.logger.Errorw("request validation failed", "error", err)
+		c.Error(err)
+		return
+	}
+
+	err := h.invoiceService.UpdateDueDate(c.Request.Context(), id, req.DueDate)
+	if err != nil {
+		h.logger.Errorw("failed to update due date", "error", err, "invoice_id", id)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "due date updated successfully"})
+}

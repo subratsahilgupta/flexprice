@@ -1131,3 +1131,25 @@ func (r *CreateSubscriptionInvoiceRequest) Validate() error {
 	}
 	return nil
 }
+
+// UpdateDueDateRequest represents the request payload for updating an invoice's due date
+type UpdateDueDateRequest struct {
+	// due_date is the new due date for the invoice
+	DueDate time.Time `json:"due_date" binding:"required"`
+}
+
+func (r *UpdateDueDateRequest) Validate() error {
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	// Validate that the due date is not in the past (optional business rule)
+	// You can remove this if you want to allow past due dates
+	if r.DueDate.Before(time.Now().UTC()) {
+		return ierr.NewError("due_date cannot be in the past").
+			WithHint("Due date must be in the future").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}

@@ -46,6 +46,7 @@ type InvoiceService interface {
 	CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error)
 	TriggerCommunication(ctx context.Context, id string) error
 	HandleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error
+	UpdateDueDate(ctx context.Context, id string, dueDate time.Time) error
 }
 
 type invoiceService struct {
@@ -1611,9 +1612,29 @@ func (s *invoiceService) publishInternalWebhookEvent(ctx context.Context, eventN
 		Timestamp:     time.Now().UTC(),
 		Payload:       json.RawMessage(webhookPayload),
 	}
+	s.Logger.Infow("attempting to publish webhook event",
+		"webhook_id", webhookEvent.ID,
+		"event_name", eventName,
+		"invoice_id", invoiceID,
+		"tenant_id", webhookEvent.TenantID,
+		"environment_id", webhookEvent.EnvironmentID,
+	)
+
 	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
-		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
+		s.Logger.Errorw("failed to publish webhook event",
+			"error", err,
+			"webhook_id", webhookEvent.ID,
+			"event_name", eventName,
+			"invoice_id", invoiceID,
+		)
+		return
 	}
+
+	s.Logger.Infow("webhook event published successfully",
+		"webhook_id", webhookEvent.ID,
+		"event_name", eventName,
+		"invoice_id", invoiceID,
+	)
 }
 
 func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, finalize bool) (*dto.InvoiceResponse, error) {
@@ -2344,4 +2365,81 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 	}
 
 	return usageBreakdownResponse, nil
+}
+
+// UpdateDueDate updates the due date of an invoice
+func (s *invoiceService) UpdateDueDate(ctx context.Context, id string, dueDate time.Time) error {
+	// Get the invoice first to validate it exists and check its status
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		if ierr.IsNotFound(err) {
+			return ierr.NewError("invoice not found").
+				WithHint("Invoice with the provided ID does not exist").
+				Mark(ierr.ErrNotFound)
+		}
+		return ierr.WithError(err).
+			WithHint("Failed to retrieve invoice").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Business rule: Only allow due date updates for draft or finalized invoices
+	// You can modify this logic based on your business requirements
+	if inv.InvoiceStatus != types.InvoiceStatusDraft && inv.InvoiceStatus != types.InvoiceStatusFinalized {
+		return ierr.NewError("cannot update due date for invoice in current status").
+			WithHint("Due date can only be updated for draft or finalized invoices").
+			WithReportableDetails(map[string]any{
+				"invoice_id":     id,
+				"current_status": inv.InvoiceStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Business rule: Don't allow due date updates for paid invoices
+	if inv.PaymentStatus == types.PaymentStatusSucceeded {
+		return ierr.NewError("cannot update due date for paid invoice").
+			WithHint("Due date cannot be updated for invoices that have been paid").
+			WithReportableDetails(map[string]any{
+				"invoice_id":     id,
+				"payment_status": inv.PaymentStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Update the due date
+	inv.DueDate = &dueDate
+	inv.UpdatedAt = time.Now().UTC()
+
+	// Save the updated invoice
+	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to update invoice due date").
+			WithReportableDetails(map[string]any{
+				"invoice_id": id,
+				"due_date":   dueDate,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	s.Logger.Infow("invoice due date updated successfully",
+		"invoice_id", id,
+		"old_due_date", inv.DueDate,
+		"new_due_date", dueDate,
+	)
+
+	// Publish webhook event for due date update
+	s.Logger.Infow("publishing due date update webhook event",
+		"invoice_id", id,
+		"old_due_date", inv.DueDate,
+		"new_due_date", dueDate,
+		"event_type", types.WebhookEventInvoiceUpdateDueDate,
+	)
+
+	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceUpdateDueDate, id)
+
+	s.Logger.Infow("webhook event published successfully",
+		"invoice_id", id,
+		"event_type", types.WebhookEventInvoiceUpdateDueDate,
+	)
+
+	return nil
 }
