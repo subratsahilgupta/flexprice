@@ -1558,7 +1558,7 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 					FeatureType:      types.FeatureTypeMetered,
 					IsEnabled:        true,
 					UsageLimit:       lo.ToPtr(int64(2000)),
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      false,
 					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 				}
@@ -1583,7 +1583,7 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 					FeatureType:      types.FeatureTypeMetered,
 					IsEnabled:        true,
 					UsageLimit:       lo.ToPtr(int64(1000)),
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      false,
 					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 				}
@@ -1606,7 +1606,7 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 					FeatureType:      types.FeatureTypeMetered,
 					IsEnabled:        true,
 					UsageLimit:       nil,
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      false,
 					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 				}
@@ -1629,7 +1629,7 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 					FeatureType:      types.FeatureTypeMetered,
 					IsEnabled:        false,
 					UsageLimit:       lo.ToPtr(int64(2000)),
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      false,
 					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 				}

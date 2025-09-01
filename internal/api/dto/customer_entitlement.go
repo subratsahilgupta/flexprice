@@ -48,11 +48,11 @@ type AggregatedFeature struct {
 
 // AggregatedEntitlement contains the final calculated entitlement values
 type AggregatedEntitlement struct {
-	IsEnabled        bool                `json:"is_enabled"`
-	UsageLimit       *int64              `json:"usage_limit,omitempty"`
-	IsSoftLimit      bool                `json:"is_soft_limit"`
-	UsageResetPeriod types.BillingPeriod `json:"usage_reset_period,omitempty"`
-	StaticValues     []string            `json:"static_values,omitempty"` // For static/SLA features
+	IsEnabled        bool                              `json:"is_enabled"`
+	UsageLimit       *int64                            `json:"usage_limit,omitempty"`
+	IsSoftLimit      bool                              `json:"is_soft_limit"`
+	UsageResetPeriod types.EntitlementUsageResetPeriod `json:"usage_reset_period,omitempty"`
+	StaticValues     []string                          `json:"static_values,omitempty"` // For static/SLA features
 }
 
 // EntitlementSourceType defines the type of entitlement source
