@@ -869,6 +869,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 	priceFilter := types.NewNoLimitPriceFilter()
 	priceFilter.PriceIDs = priceIDs
 	priceFilter.Expand = lo.ToPtr(string(types.ExpandMeters))
+	priceFilter.AllowExpiredPrices = true
 	pricesList, err := priceService.GetPrices(ctx, priceFilter)
 	if err != nil {
 		return nil, err
