@@ -255,6 +255,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 	invoiceService := NewInvoiceService(s.ServiceParams)
 	var invoice *dto.InvoiceResponse
+	var updatedSub *subscription.Subscription
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Create subscription with line items
 		err = s.SubRepo.CreateWithLineItems(ctx, sub, sub.LineItems)
@@ -339,7 +340,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		paymentParams := dto.NewPaymentParametersFromSubscription(sub.CollectionMethod, sub.PaymentBehavior, sub.PaymentMethodID)
 		// Apply backward compatibility normalization
 		paymentParams = paymentParams.NormalizePaymentParameters()
-		invoice, updatedSub, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+		invoice, updatedSub, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 			SubscriptionID: sub.ID,
 			PeriodStart:    sub.CurrentPeriodStart,
 			PeriodEnd:      sub.CurrentPeriodEnd,
