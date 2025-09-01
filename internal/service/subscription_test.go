@@ -968,60 +968,1743 @@ func (s *SubscriptionServiceSuite) TestGetSubscription() {
 }
 
 func (s *SubscriptionServiceSuite) TestCancelSubscription() {
-	// Create an active subscription for cancel tests
-	activeSub := &subscription.Subscription{
-		ID:                 "sub_to_cancel",
-		CustomerID:         s.testData.customer.ID,
-		PlanID:             s.testData.plan.ID,
-		SubscriptionStatus: types.SubscriptionStatusActive,
-		StartDate:          s.testData.now,
-		EndDate:            lo.ToPtr(s.testData.now.Add(30 * 24 * time.Hour)),
-		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-		BillingPeriodCount: 1,
-		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
-		LineItems:          []*subscription.SubscriptionLineItem{},
-	}
-	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), activeSub, activeSub.LineItems))
+	s.Run("TestBasicCancellationScenarios", func() {
+		// Create an active subscription for basic cancel tests
+		activeSub := &subscription.Subscription{
+			ID:                 "sub_to_cancel_basic",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-24 * time.Hour),
+			CurrentPeriodEnd:   s.testData.now.Add(6 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+			LineItems:          []*subscription.SubscriptionLineItem{},
+		}
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), activeSub, activeSub.LineItems))
 
-	testCases := []struct {
-		name    string
-		id      string
-		wantErr bool
-	}{
-		{
-			name:    "cancel_active_subscription",
-			id:      activeSub.ID,
-			wantErr: false,
-		},
-		{
-			name:    "cancel_non_existent_subscription",
-			id:      "non_existent",
-			wantErr: true,
-		},
-		{
-			name:    "cancel_already_canceled_subscription",
-			id:      activeSub.ID, // Will be canceled by first test case
-			wantErr: true,
-		},
-	}
+		testCases := []struct {
+			name              string
+			id                string
+			cancelAtPeriodEnd bool
+			wantErr           bool
+			expectedStatus    types.SubscriptionStatus
+		}{
+			{
+				name:              "cancel_active_subscription_immediately",
+				id:                activeSub.ID,
+				cancelAtPeriodEnd: false,
+				wantErr:           false,
+				expectedStatus:    types.SubscriptionStatusCancelled,
+			},
+			{
+				name:              "cancel_non_existent_subscription",
+				id:                "non_existent",
+				cancelAtPeriodEnd: false,
+				wantErr:           true,
+			},
+		}
 
-	for _, tc := range testCases {
-		s.Run(tc.name, func() {
-			err := s.service.CancelSubscription(s.GetContext(), tc.id, false)
-			if tc.wantErr {
-				s.Error(err)
-				return
-			}
+		for _, tc := range testCases {
+			s.Run(tc.name, func() {
+				err := s.service.CancelSubscription(s.GetContext(), tc.id, tc.cancelAtPeriodEnd)
+				if tc.wantErr {
+					s.Error(err)
+					return
+				}
 
-			s.NoError(err)
+				s.NoError(err)
 
-			// Verify the subscription status
-			sub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), tc.id)
-			s.NoError(err)
-			s.NotNil(sub)
-			s.Equal(types.SubscriptionStatusCancelled, sub.SubscriptionStatus)
+				// Verify the subscription status
+				sub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), tc.id)
+				s.NoError(err)
+				s.NotNil(sub)
+				s.Equal(tc.expectedStatus, sub.SubscriptionStatus)
+				s.NotNil(sub.CancelledAt)
+			})
+		}
+
+		// Test cancelling already cancelled subscription using a separate instance
+		s.Run("cancel_already_canceled_subscription", func() {
+			err := s.service.CancelSubscription(s.GetContext(), activeSub.ID, false)
+			s.Error(err)
+			s.Contains(err.Error(), "already cancelled")
 		})
-	}
+	})
+
+	s.Run("TestCancelAtPeriodEnd", func() {
+		// Create an active subscription for period end cancel test
+		periodEndSub := &subscription.Subscription{
+			ID:                 "sub_cancel_period_end",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-24 * time.Hour),
+			CurrentPeriodEnd:   s.testData.now.Add(6 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+			LineItems:          []*subscription.SubscriptionLineItem{},
+		}
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), periodEndSub, periodEndSub.LineItems))
+
+		// Cancel at period end
+		err := s.service.CancelSubscription(s.GetContext(), periodEndSub.ID, true)
+		s.NoError(err)
+
+		// Verify subscription state
+		sub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), periodEndSub.ID)
+		s.NoError(err)
+		s.NotNil(sub)
+		s.Equal(types.SubscriptionStatusActive, sub.SubscriptionStatus, "Should remain active until period end")
+		s.True(sub.CancelAtPeriodEnd, "Should be marked to cancel at period end")
+		s.NotNil(sub.CancelAt, "Should have cancel_at timestamp")
+		s.Equal(sub.CurrentPeriodEnd, *sub.CancelAt, "Cancel_at should match period end")
+		s.NotNil(sub.CancelledAt, "Should have cancelled_at timestamp")
+	})
+
+	s.Run("TestImmediateCancellationWithArrearUsageCharges", func() {
+		// Create subscription with arrear usage charges
+		usageSub := &subscription.Subscription{
+			ID:                 "sub_usage_arrear_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-5 * 24 * time.Hour), // 5 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(25 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create arrear usage price for API calls
+		arrearUsagePrice := &price.Price{
+			ID:                 "price_arrear_usage_cancel",
+			Amount:             decimal.NewFromFloat(0.01), // $0.01 per API call
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.apiCalls.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), arrearUsagePrice))
+
+		// Create line item
+		usageLineItem := &subscription.SubscriptionLineItem{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:   usageSub.ID,
+			CustomerID:       usageSub.CustomerID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName:  s.testData.plan.Name,
+			PriceID:          arrearUsagePrice.ID,
+			PriceType:        arrearUsagePrice.Type,
+			MeterID:          s.testData.meters.apiCalls.ID,
+			MeterDisplayName: s.testData.meters.apiCalls.Name,
+			DisplayName:      s.testData.meters.apiCalls.Name,
+			Quantity:         decimal.Zero,
+			Currency:         usageSub.Currency,
+			BillingPeriod:    usageSub.BillingPeriod,
+			BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), usageSub, []*subscription.SubscriptionLineItem{usageLineItem}))
+
+		// Create usage events during the current period (500 API calls)
+		for i := 0; i < 500; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           usageSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-2 * 24 * time.Hour), // 2 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice for usage charges
+		err := s.service.CancelSubscription(s.GetContext(), usageSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), usageSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with arrear usage charges completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithFixedArrearCharges", func() {
+		// Create subscription with fixed arrear charges
+		fixedSub := &subscription.Subscription{
+			ID:                 "sub_fixed_arrear_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-5 * 24 * time.Hour),
+			CurrentPeriodEnd:   s.testData.now.Add(25 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create fixed arrear price (like a monthly service fee charged in arrears)
+		fixedArrearPrice := &price.Price{
+			ID:                 "price_fixed_arrear_cancel",
+			Amount:             decimal.NewFromFloat(50.00), // $50 fixed fee
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), fixedArrearPrice))
+
+		// Create line item
+		fixedLineItem := &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  fixedSub.ID,
+			CustomerID:      fixedSub.CustomerID,
+			EntityID:        s.testData.plan.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: s.testData.plan.Name,
+			PriceID:         fixedArrearPrice.ID,
+			PriceType:       fixedArrearPrice.Type,
+			DisplayName:     "Monthly Service Fee (Arrear)",
+			Quantity:        decimal.NewFromInt(1),
+			Currency:        fixedSub.Currency,
+			BillingPeriod:   fixedSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), fixedSub, []*subscription.SubscriptionLineItem{fixedLineItem}))
+
+		// Cancel immediately - should create invoice for prorated fixed arrear charges
+		err := s.service.CancelSubscription(s.GetContext(), fixedSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), fixedSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with fixed arrear charges completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithAdvanceCharges", func() {
+		// Create subscription with advance charges (should NOT be included in cancellation invoice)
+		advanceSub := &subscription.Subscription{
+			ID:                 "sub_advance_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-5 * 24 * time.Hour),
+			CurrentPeriodEnd:   s.testData.now.Add(25 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create fixed advance price (like prepaid monthly fee)
+		fixedAdvancePrice := &price.Price{
+			ID:                 "price_fixed_advance_cancel",
+			Amount:             decimal.NewFromFloat(100.00), // $100 prepaid fee
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceAdvance, // Advance billing
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), fixedAdvancePrice))
+
+		// Create line item
+		advanceLineItem := &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  advanceSub.ID,
+			CustomerID:      advanceSub.CustomerID,
+			EntityID:        s.testData.plan.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: s.testData.plan.Name,
+			PriceID:         fixedAdvancePrice.ID,
+			PriceType:       fixedAdvancePrice.Type,
+			DisplayName:     "Monthly Prepaid Fee",
+			Quantity:        decimal.NewFromInt(1),
+			Currency:        advanceSub.Currency,
+			BillingPeriod:   advanceSub.BillingPeriod,
+			BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), advanceSub, []*subscription.SubscriptionLineItem{advanceLineItem}))
+
+		// Cancel immediately - should not charge for advance fees since customer already paid
+		err := s.service.CancelSubscription(s.GetContext(), advanceSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), advanceSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with advance charges (excluded from invoice) completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithMixedCharges", func() {
+		// Create subscription with both arrear and advance charges
+		mixedSub := &subscription.Subscription{
+			ID:                 "sub_mixed_charges_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-10 * 24 * time.Hour), // 10 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(20 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create mixed prices - usage arrear + fixed advance
+		usageArrearPrice := &price.Price{
+			ID:                 "price_usage_arrear_mixed",
+			Amount:             decimal.NewFromFloat(0.02), // $0.02 per API call
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.apiCalls.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), usageArrearPrice))
+
+		fixedAdvancePrice := &price.Price{
+			ID:                 "price_fixed_advance_mixed",
+			Amount:             decimal.NewFromFloat(75.00), // $75 prepaid fee
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceAdvance, // Advance billing
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), fixedAdvancePrice))
+
+		// Create line items
+		lineItems := []*subscription.SubscriptionLineItem{
+			{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:   mixedSub.ID,
+				CustomerID:       mixedSub.CustomerID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName:  s.testData.plan.Name,
+				PriceID:          usageArrearPrice.ID,
+				PriceType:        usageArrearPrice.Type,
+				MeterID:          s.testData.meters.apiCalls.ID,
+				MeterDisplayName: s.testData.meters.apiCalls.Name,
+				DisplayName:      "API Calls (Arrear)",
+				Quantity:         decimal.Zero,
+				Currency:         mixedSub.Currency,
+				BillingPeriod:    mixedSub.BillingPeriod,
+				BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:  mixedSub.ID,
+				CustomerID:      mixedSub.CustomerID,
+				EntityID:        s.testData.plan.ID,
+				EntityType:      types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName: s.testData.plan.Name,
+				PriceID:         fixedAdvancePrice.ID,
+				PriceType:       fixedAdvancePrice.Type,
+				DisplayName:     "Monthly Prepaid Fee",
+				Quantity:        decimal.NewFromInt(1),
+				Currency:        mixedSub.Currency,
+				BillingPeriod:   mixedSub.BillingPeriod,
+				BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+			},
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), mixedSub, lineItems))
+
+		// Create usage events (300 API calls)
+		for i := 0; i < 300; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           mixedSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-3 * 24 * time.Hour), // 3 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice only for arrear usage charges, not advance fixed charges
+		err := s.service.CancelSubscription(s.GetContext(), mixedSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), mixedSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with mixed charges (only arrear included) completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithTieredUsage", func() {
+		// Create subscription with tiered usage pricing
+		tieredSub := &subscription.Subscription{
+			ID:                 "sub_tiered_usage_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-7 * 24 * time.Hour), // 7 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(23 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create tiered arrear usage price
+		upTo1000 := uint64(1000)
+		tieredUsagePrice := &price.Price{
+			ID:                 "price_tiered_usage_cancel",
+			Amount:             decimal.Zero,
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_TIERED,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			TierMode:           types.BILLING_TIER_SLAB,
+			MeterID:            s.testData.meters.apiCalls.ID,
+			Tiers: []price.PriceTier{
+				{UpTo: &upTo1000, UnitAmount: decimal.NewFromFloat(0.03)}, // First 1000: $0.03 each
+				{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.01)},       // Above 1000: $0.01 each
+			},
+			BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), tieredUsagePrice))
+
+		// Create line item
+		tieredLineItem := &subscription.SubscriptionLineItem{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:   tieredSub.ID,
+			CustomerID:       tieredSub.CustomerID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName:  s.testData.plan.Name,
+			PriceID:          tieredUsagePrice.ID,
+			PriceType:        tieredUsagePrice.Type,
+			MeterID:          s.testData.meters.apiCalls.ID,
+			MeterDisplayName: s.testData.meters.apiCalls.Name,
+			DisplayName:      "API Calls (Tiered Arrear)",
+			Quantity:         decimal.Zero,
+			Currency:         tieredSub.Currency,
+			BillingPeriod:    tieredSub.BillingPeriod,
+			BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), tieredSub, []*subscription.SubscriptionLineItem{tieredLineItem}))
+
+		// Create usage events (1200 API calls to trigger both tiers)
+		for i := 0; i < 1200; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           tieredSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-4 * 24 * time.Hour), // 4 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice for tiered usage charges
+		// Expected: (1000 * $0.03) + (200 * $0.01) = $30 + $2 = $32
+		err := s.service.CancelSubscription(s.GetContext(), tieredSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), tieredSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with tiered usage charges completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithStorageUsage", func() {
+		// Create subscription with storage (SUM aggregation) usage
+		storageSub := &subscription.Subscription{
+			ID:                 "sub_storage_usage_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-6 * 24 * time.Hour), // 6 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(24 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create storage usage arrear price
+		storageArrearPrice := &price.Price{
+			ID:                 "price_storage_arrear_cancel",
+			Amount:             decimal.NewFromFloat(0.15), // $0.15 per GB
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.storage.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), storageArrearPrice))
+
+		// Create line item
+		storageLineItem := &subscription.SubscriptionLineItem{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:   storageSub.ID,
+			CustomerID:       storageSub.CustomerID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName:  s.testData.plan.Name,
+			PriceID:          storageArrearPrice.ID,
+			PriceType:        storageArrearPrice.Type,
+			MeterID:          s.testData.meters.storage.ID,
+			MeterDisplayName: s.testData.meters.storage.Name,
+			DisplayName:      "Storage Usage (Arrear)",
+			Quantity:         decimal.Zero,
+			Currency:         storageSub.Currency,
+			BillingPeriod:    storageSub.BillingPeriod,
+			BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), storageSub, []*subscription.SubscriptionLineItem{storageLineItem}))
+
+		// Create storage events (SUM aggregation - different amounts at different times)
+		storageEvents := []struct {
+			bytes     float64
+			timestamp time.Time
+		}{
+			{bytes: 150, timestamp: s.testData.now.Add(-5 * 24 * time.Hour)},
+			{bytes: 200, timestamp: s.testData.now.Add(-4 * 24 * time.Hour)},
+			{bytes: 100, timestamp: s.testData.now.Add(-3 * 24 * time.Hour)},
+		}
+
+		for _, se := range storageEvents {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           storageSub.TenantID,
+				EventName:          s.testData.meters.storage.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          se.timestamp,
+				Properties: map[string]interface{}{
+					"bytes_used": se.bytes,
+					"region":     "us-east-1",
+					"tier":       "standard",
+				},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice for storage usage charges
+		// Expected: (150 + 200 + 100) * $0.15 = 450 * $0.15 = $67.50
+		err := s.service.CancelSubscription(s.GetContext(), storageSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), storageSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with storage usage (SUM aggregation) completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithPackageBilling", func() {
+		// Create subscription with package billing
+		packageSub := &subscription.Subscription{
+			ID:                 "sub_package_billing_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-8 * 24 * time.Hour), // 8 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(22 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create package billing price (charge per package of 100 API calls)
+		packagePrice := &price.Price{
+			ID:                 "price_package_billing_cancel",
+			Amount:             decimal.NewFromFloat(5.00), // $5 per package of 100 calls
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_PACKAGE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.apiCalls.ID,
+			TransformQuantity: price.JSONBTransformQuantity{
+				DivideBy: 100, // Package size of 100 units
+				Round:    types.ROUND_UP,
+			},
+			BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), packagePrice))
+
+		// Create line item
+		packageLineItem := &subscription.SubscriptionLineItem{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:   packageSub.ID,
+			CustomerID:       packageSub.CustomerID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName:  s.testData.plan.Name,
+			PriceID:          packagePrice.ID,
+			PriceType:        packagePrice.Type,
+			MeterID:          s.testData.meters.apiCalls.ID,
+			MeterDisplayName: s.testData.meters.apiCalls.Name,
+			DisplayName:      "API Calls (Package Billing)",
+			Quantity:         decimal.Zero,
+			Currency:         packageSub.Currency,
+			BillingPeriod:    packageSub.BillingPeriod,
+			BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), packageSub, []*subscription.SubscriptionLineItem{packageLineItem}))
+
+		// Create usage events (250 API calls)
+		// This should result in ceil(250/100) = 3 packages = 3 * $5 = $15
+		for i := 0; i < 250; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           packageSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-5 * 24 * time.Hour), // 5 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice for package usage charges
+		err := s.service.CancelSubscription(s.GetContext(), packageSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), packageSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with package billing completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithCommitmentAndOverage", func() {
+		// Create subscription with commitment amount and overage factor
+		commitmentSub := &subscription.Subscription{
+			ID:                 "sub_commitment_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-15 * 24 * time.Hour), // 15 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(15 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			CommitmentAmount:   lo.ToPtr(decimal.NewFromFloat(20.00)), // $20 commitment
+			OverageFactor:      lo.ToPtr(decimal.NewFromFloat(1.5)),   // 1.5x overage multiplier
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create usage price for commitment scenario
+		commitmentUsagePrice := &price.Price{
+			ID:                 "price_commitment_usage_cancel",
+			Amount:             decimal.NewFromFloat(0.05), // $0.05 per API call
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.apiCalls.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), commitmentUsagePrice))
+
+		// Create line item
+		commitmentLineItem := &subscription.SubscriptionLineItem{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:   commitmentSub.ID,
+			CustomerID:       commitmentSub.CustomerID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName:  s.testData.plan.Name,
+			PriceID:          commitmentUsagePrice.ID,
+			PriceType:        commitmentUsagePrice.Type,
+			MeterID:          s.testData.meters.apiCalls.ID,
+			MeterDisplayName: s.testData.meters.apiCalls.Name,
+			DisplayName:      "API Calls (With Commitment)",
+			Quantity:         decimal.Zero,
+			Currency:         commitmentSub.Currency,
+			BillingPeriod:    commitmentSub.BillingPeriod,
+			BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), commitmentSub, []*subscription.SubscriptionLineItem{commitmentLineItem}))
+
+		// Create usage events (600 API calls)
+		// Expected: 600 * $0.05 = $30 (exceeds $20 commitment, so $10 overage at 1.5x = $15)
+		// Total: $20 (commitment) + $15 (overage) = $35
+		for i := 0; i < 600; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           commitmentSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-7 * 24 * time.Hour), // 7 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice with commitment and overage calculations
+		err := s.service.CancelSubscription(s.GetContext(), commitmentSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), commitmentSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with commitment and overage completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithNoUsageEvents", func() {
+		// Create subscription with usage meters but no events
+		noUsageSub := &subscription.Subscription{
+			ID:                 "sub_no_usage_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-10 * 24 * time.Hour), // 10 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(20 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create usage price with arrear billing
+		noUsagePrice := &price.Price{
+			ID:                 "price_no_usage_cancel",
+			Amount:             decimal.NewFromFloat(0.10), // $0.10 per unit
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.apiCalls.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), noUsagePrice))
+
+		// Create fixed arrear price (to ensure invoice is created even with no usage)
+		fixedArrearNoUsagePrice := &price.Price{
+			ID:                 "price_fixed_arrear_no_usage",
+			Amount:             decimal.NewFromFloat(25.00), // $25 fixed fee
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), fixedArrearNoUsagePrice))
+
+		// Create line items
+		lineItems := []*subscription.SubscriptionLineItem{
+			{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:   noUsageSub.ID,
+				CustomerID:       noUsageSub.CustomerID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName:  s.testData.plan.Name,
+				PriceID:          noUsagePrice.ID,
+				PriceType:        noUsagePrice.Type,
+				MeterID:          s.testData.meters.apiCalls.ID,
+				MeterDisplayName: s.testData.meters.apiCalls.Name,
+				DisplayName:      "API Calls (No Usage)",
+				Quantity:         decimal.Zero,
+				Currency:         noUsageSub.Currency,
+				BillingPeriod:    noUsageSub.BillingPeriod,
+				BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:  noUsageSub.ID,
+				CustomerID:      noUsageSub.CustomerID,
+				EntityID:        s.testData.plan.ID,
+				EntityType:      types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName: s.testData.plan.Name,
+				PriceID:         fixedArrearNoUsagePrice.ID,
+				PriceType:       fixedArrearNoUsagePrice.Type,
+				DisplayName:     "Monthly Service Fee (Arrear)",
+				Quantity:        decimal.NewFromInt(1),
+				Currency:        noUsageSub.Currency,
+				BillingPeriod:   noUsageSub.BillingPeriod,
+				BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+			},
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), noUsageSub, lineItems))
+
+		// Cancel immediately - should create invoice with only fixed arrear charges (no usage charges due to 0 events)
+		// Expected: prorated $25 for the period used (10 days out of 30-day month)
+		err := s.service.CancelSubscription(s.GetContext(), noUsageSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), noUsageSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with no usage events (fixed arrear charges only) completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithMultipleMeters", func() {
+		// Create subscription with multiple meters and mixed billing
+		multiMeterSub := &subscription.Subscription{
+			ID:                 "sub_multi_meter_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-12 * 24 * time.Hour), // 12 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(18 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create multiple arrear prices for different meters
+		apiCallsArrearPrice := &price.Price{
+			ID:                 "price_api_calls_multi_cancel",
+			Amount:             decimal.NewFromFloat(0.008), // $0.008 per API call
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.apiCalls.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), apiCallsArrearPrice))
+
+		storageArrearMultiPrice := &price.Price{
+			ID:                 "price_storage_multi_cancel",
+			Amount:             decimal.NewFromFloat(0.12), // $0.12 per GB
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.storage.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), storageArrearMultiPrice))
+
+		// Create line items for multiple meters
+		lineItems := []*subscription.SubscriptionLineItem{
+			{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:   multiMeterSub.ID,
+				CustomerID:       multiMeterSub.CustomerID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName:  s.testData.plan.Name,
+				PriceID:          apiCallsArrearPrice.ID,
+				PriceType:        apiCallsArrearPrice.Type,
+				MeterID:          s.testData.meters.apiCalls.ID,
+				MeterDisplayName: s.testData.meters.apiCalls.Name,
+				DisplayName:      "API Calls (Multi-Meter)",
+				Quantity:         decimal.Zero,
+				Currency:         multiMeterSub.Currency,
+				BillingPeriod:    multiMeterSub.BillingPeriod,
+				BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:   multiMeterSub.ID,
+				CustomerID:       multiMeterSub.CustomerID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName:  s.testData.plan.Name,
+				PriceID:          storageArrearMultiPrice.ID,
+				PriceType:        storageArrearMultiPrice.Type,
+				MeterID:          s.testData.meters.storage.ID,
+				MeterDisplayName: s.testData.meters.storage.Name,
+				DisplayName:      "Storage Usage (Multi-Meter)",
+				Quantity:         decimal.Zero,
+				Currency:         multiMeterSub.Currency,
+				BillingPeriod:    multiMeterSub.BillingPeriod,
+				BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+			},
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), multiMeterSub, lineItems))
+
+		// Create API call events (400 calls)
+		for i := 0; i < 400; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           multiMeterSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-8 * 24 * time.Hour), // 8 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Create storage events
+		storageMultiEvents := []struct {
+			bytes     float64
+			timestamp time.Time
+		}{
+			{bytes: 500, timestamp: s.testData.now.Add(-10 * 24 * time.Hour)},
+			{bytes: 300, timestamp: s.testData.now.Add(-6 * 24 * time.Hour)},
+		}
+
+		for _, se := range storageMultiEvents {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           multiMeterSub.TenantID,
+				EventName:          s.testData.meters.storage.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          se.timestamp,
+				Properties: map[string]interface{}{
+					"bytes_used": se.bytes,
+					"region":     "us-east-1",
+					"tier":       "standard",
+				},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice for multiple meter usage charges with commitment
+		// Expected: API calls: 400 * $0.008 = $3.20, Storage: 800 * $0.12 = $96
+		// Total: $99.20, exceeds $20 commitment, overage: ($99.20 - $20) * 1.5 = $118.80
+		err := s.service.CancelSubscription(s.GetContext(), multiMeterSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), multiMeterSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with multiple meters and commitment completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithVolumeBasedTiering", func() {
+		// Create subscription with volume-based tiered pricing
+		volumeSub := &subscription.Subscription{
+			ID:                 "sub_volume_tiered_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-14 * 24 * time.Hour), // 14 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(16 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create volume-based tiered price
+		upTo500 := uint64(500)
+		upTo2000 := uint64(2000)
+		volumeTieredPrice := &price.Price{
+			ID:                 "price_volume_tiered_cancel",
+			Amount:             decimal.Zero,
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_TIERED,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			TierMode:           types.BILLING_TIER_VOLUME,  // Volume-based (all units at the applicable tier rate)
+			MeterID:            s.testData.meters.apiCalls.ID,
+			Tiers: []price.PriceTier{
+				{UpTo: &upTo500, UnitAmount: decimal.NewFromFloat(0.05)},  // 0-500: $0.05 each
+				{UpTo: &upTo2000, UnitAmount: decimal.NewFromFloat(0.03)}, // 501-2000: $0.03 each
+				{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.015)},      // 2000+: $0.015 each
+			},
+			BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), volumeTieredPrice))
+
+		// Create line item
+		volumeLineItem := &subscription.SubscriptionLineItem{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:   volumeSub.ID,
+			CustomerID:       volumeSub.CustomerID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName:  s.testData.plan.Name,
+			PriceID:          volumeTieredPrice.ID,
+			PriceType:        volumeTieredPrice.Type,
+			MeterID:          s.testData.meters.apiCalls.ID,
+			MeterDisplayName: s.testData.meters.apiCalls.Name,
+			DisplayName:      "API Calls (Volume Tiered)",
+			Quantity:         decimal.Zero,
+			Currency:         volumeSub.Currency,
+			BillingPeriod:    volumeSub.BillingPeriod,
+			BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), volumeSub, []*subscription.SubscriptionLineItem{volumeLineItem}))
+
+		// Create usage events (1500 API calls - falls in second tier)
+		// Expected: 1500 * $0.03 = $45 (volume pricing - all units at applicable rate)
+		for i := 0; i < 1500; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           volumeSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-9 * 24 * time.Hour), // 9 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice for volume-based tiered usage charges
+		err := s.service.CancelSubscription(s.GetContext(), volumeSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), volumeSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with volume-based tiered pricing completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationComprehensiveScenario", func() {
+		// Create the most comprehensive scenario with all types of charges
+		comprehensiveSub := &subscription.Subscription{
+			ID:                 "sub_comprehensive_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-20 * 24 * time.Hour), // 20 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(10 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			CommitmentAmount:   lo.ToPtr(decimal.NewFromFloat(30.00)), // $30 commitment
+			OverageFactor:      lo.ToPtr(decimal.NewFromFloat(2.0)),   // 2x overage multiplier
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create comprehensive set of prices
+		prices := []*price.Price{
+			{
+				// Fixed fee arrear (should be included)
+				ID:                 "price_fixed_arrear_comprehensive",
+				Amount:             decimal.NewFromFloat(40.00),
+				Currency:           "usd",
+				EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+				EntityID:           s.testData.plan.ID,
+				Type:               types.PRICE_TYPE_FIXED,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				InvoiceCadence:     types.InvoiceCadenceArrear,
+				BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				// Fixed fee advance (should NOT be included)
+				ID:                 "price_fixed_advance_comprehensive",
+				Amount:             decimal.NewFromFloat(60.00),
+				Currency:           "usd",
+				EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+				EntityID:           s.testData.plan.ID,
+				Type:               types.PRICE_TYPE_FIXED,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				InvoiceCadence:     types.InvoiceCadenceAdvance,
+				BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				// Usage arrear (should be included)
+				ID:                 "price_usage_arrear_comprehensive",
+				Amount:             decimal.NewFromFloat(0.04),
+				Currency:           "usd",
+				EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+				EntityID:           s.testData.plan.ID,
+				Type:               types.PRICE_TYPE_USAGE,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				InvoiceCadence:     types.InvoiceCadenceArrear,
+				MeterID:            s.testData.meters.apiCalls.ID,
+				BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				// Storage usage arrear (should be included)
+				ID:                 "price_storage_arrear_comprehensive",
+				Amount:             decimal.NewFromFloat(0.08),
+				Currency:           "usd",
+				EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+				EntityID:           s.testData.plan.ID,
+				Type:               types.PRICE_TYPE_USAGE,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				InvoiceCadence:     types.InvoiceCadenceArrear,
+				MeterID:            s.testData.meters.storage.ID,
+				BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+			},
+		}
+
+		for _, price := range prices {
+			s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), price))
+		}
+
+		// Create comprehensive line items
+		comprehensiveLineItems := []*subscription.SubscriptionLineItem{
+			{
+				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:  comprehensiveSub.ID,
+				CustomerID:      comprehensiveSub.CustomerID,
+				EntityID:        s.testData.plan.ID,
+				EntityType:      types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName: s.testData.plan.Name,
+				PriceID:         prices[0].ID, // Fixed arrear
+				PriceType:       prices[0].Type,
+				DisplayName:     "Service Fee (Arrear)",
+				Quantity:        decimal.NewFromInt(1),
+				Currency:        comprehensiveSub.Currency,
+				BillingPeriod:   comprehensiveSub.BillingPeriod,
+				BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:  comprehensiveSub.ID,
+				CustomerID:      comprehensiveSub.CustomerID,
+				EntityID:        s.testData.plan.ID,
+				EntityType:      types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName: s.testData.plan.Name,
+				PriceID:         prices[1].ID, // Fixed advance
+				PriceType:       prices[1].Type,
+				DisplayName:     "Prepaid License",
+				Quantity:        decimal.NewFromInt(1),
+				Currency:        comprehensiveSub.Currency,
+				BillingPeriod:   comprehensiveSub.BillingPeriod,
+				BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:   comprehensiveSub.ID,
+				CustomerID:       comprehensiveSub.CustomerID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName:  s.testData.plan.Name,
+				PriceID:          prices[2].ID, // Usage arrear
+				PriceType:        prices[2].Type,
+				MeterID:          s.testData.meters.apiCalls.ID,
+				MeterDisplayName: s.testData.meters.apiCalls.Name,
+				DisplayName:      "API Calls (Comprehensive)",
+				Quantity:         decimal.Zero,
+				Currency:         comprehensiveSub.Currency,
+				BillingPeriod:    comprehensiveSub.BillingPeriod,
+				BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:   comprehensiveSub.ID,
+				CustomerID:       comprehensiveSub.CustomerID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName:  s.testData.plan.Name,
+				PriceID:          prices[3].ID, // Storage usage arrear
+				PriceType:        prices[3].Type,
+				MeterID:          s.testData.meters.storage.ID,
+				MeterDisplayName: s.testData.meters.storage.Name,
+				DisplayName:      "Storage (Comprehensive)",
+				Quantity:         decimal.Zero,
+				Currency:         comprehensiveSub.Currency,
+				BillingPeriod:    comprehensiveSub.BillingPeriod,
+				BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+			},
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), comprehensiveSub, comprehensiveLineItems))
+
+		// Create comprehensive usage events
+		// API calls: 800 events
+		for i := 0; i < 800; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           comprehensiveSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-15 * 24 * time.Hour), // 15 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Storage events: total 400 GB
+		comprehensiveStorageEvents := []struct {
+			bytes     float64
+			timestamp time.Time
+		}{
+			{bytes: 150, timestamp: s.testData.now.Add(-18 * 24 * time.Hour)},
+			{bytes: 250, timestamp: s.testData.now.Add(-12 * 24 * time.Hour)},
+		}
+
+		for _, se := range comprehensiveStorageEvents {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           comprehensiveSub.TenantID,
+				EventName:          s.testData.meters.storage.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          se.timestamp,
+				Properties: map[string]interface{}{
+					"bytes_used": se.bytes,
+					"region":     "us-east-1",
+					"tier":       "standard",
+				},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice for comprehensive charges
+		// Expected arrear charges:
+		// - Fixed arrear: $40 (prorated for 20 days)
+		// - API calls: 800 * $0.04 = $32
+		// - Storage: 400 * $0.08 = $32
+		// - Total: varies based on proration + commitment/overage logic
+		// - Advance fixed fee ($60) should NOT be included
+		err := s.service.CancelSubscription(s.GetContext(), comprehensiveSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), comprehensiveSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Comprehensive immediate cancellation scenario completed successfully")
+	})
+
+	s.Run("TestImmediateCancellationWithMaxAggregation", func() {
+		// Create subscription with MAX aggregation meter
+		maxSub := &subscription.Subscription{
+			ID:                 "sub_max_aggregation_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-16 * 24 * time.Hour), // 16 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(14 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create MAX aggregation meter
+		maxMeter := &meter.Meter{
+			ID:        "meter_max_cancel",
+			Name:      "Peak Concurrent Users",
+			EventName: "concurrent_users",
+			Aggregation: meter.Aggregation{
+				Type:  types.AggregationMax,
+				Field: "user_count",
+			},
+			BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().MeterRepo.CreateMeter(s.GetContext(), maxMeter))
+
+		// Create price for MAX aggregation
+		maxUsagePrice := &price.Price{
+			ID:                 "price_max_usage_cancel",
+			Amount:             decimal.NewFromFloat(2.00), // $2 per peak user
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            maxMeter.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), maxUsagePrice))
+
+		// Create line item
+		maxLineItem := &subscription.SubscriptionLineItem{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:   maxSub.ID,
+			CustomerID:       maxSub.CustomerID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName:  s.testData.plan.Name,
+			PriceID:          maxUsagePrice.ID,
+			PriceType:        maxUsagePrice.Type,
+			MeterID:          maxMeter.ID,
+			MeterDisplayName: maxMeter.Name,
+			DisplayName:      "Peak Concurrent Users",
+			Quantity:         decimal.Zero,
+			Currency:         maxSub.Currency,
+			BillingPeriod:    maxSub.BillingPeriod,
+			BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), maxSub, []*subscription.SubscriptionLineItem{maxLineItem}))
+
+		// Create concurrent user events with varying counts (MAX should pick the highest)
+		userCounts := []int{5, 12, 8, 15, 10, 20, 7} // Maximum: 20
+		for i, count := range userCounts {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           maxSub.TenantID,
+				EventName:          maxMeter.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-time.Duration(14-i) * 24 * time.Hour), // Spread over period
+				Properties: map[string]interface{}{
+					"user_count": float64(count),
+				},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice for MAX aggregation usage charges
+		// Expected: 20 (max users) * $2 = $40
+		err := s.service.CancelSubscription(s.GetContext(), maxSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), maxSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with MAX aggregation completed successfully")
+	})
+
+	s.Run("TestCancellationInvoiceValidation", func() {
+		// Create subscription specifically to validate invoice creation and amounts
+		invoiceValidationSub := &subscription.Subscription{
+			ID:                 "sub_invoice_validation_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-10 * 24 * time.Hour), // 10 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(20 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create predictable pricing for validation
+		validationUsagePrice := &price.Price{
+			ID:                 "price_validation_usage",
+			Amount:             decimal.NewFromFloat(0.10), // $0.10 per API call
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.apiCalls.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), validationUsagePrice))
+
+		validationFixedPrice := &price.Price{
+			ID:                 "price_validation_fixed",
+			Amount:             decimal.NewFromFloat(30.00), // $30 fixed fee
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           s.testData.plan.ID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), validationFixedPrice))
+
+		// Create line items
+		validationLineItems := []*subscription.SubscriptionLineItem{
+			{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:   invoiceValidationSub.ID,
+				CustomerID:       invoiceValidationSub.CustomerID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName:  s.testData.plan.Name,
+				PriceID:          validationUsagePrice.ID,
+				PriceType:        validationUsagePrice.Type,
+				MeterID:          s.testData.meters.apiCalls.ID,
+				MeterDisplayName: s.testData.meters.apiCalls.Name,
+				DisplayName:      "API Calls (Validation)",
+				Quantity:         decimal.Zero,
+				Currency:         invoiceValidationSub.Currency,
+				BillingPeriod:    invoiceValidationSub.BillingPeriod,
+				BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:   invoiceValidationSub.ID,
+				CustomerID:       invoiceValidationSub.CustomerID,
+				EntityID:         s.testData.plan.ID,
+				EntityType:       types.SubscriptionLineItemEntityTypePlan,
+				PlanDisplayName:  s.testData.plan.Name,
+				PriceID:          validationFixedPrice.ID,
+				PriceType:        validationFixedPrice.Type,
+				DisplayName:      "Monthly Service Fee (Validation)",
+				Quantity:         decimal.NewFromInt(1),
+				Currency:         invoiceValidationSub.Currency,
+				BillingPeriod:    invoiceValidationSub.BillingPeriod,
+				BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+			},
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), invoiceValidationSub, validationLineItems))
+
+		// Create exactly 100 API call events for predictable calculation
+		for i := 0; i < 100; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           invoiceValidationSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-5 * 24 * time.Hour), // 5 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Record the cancellation time for period calculation
+		cancellationTime := time.Now().UTC()
+
+		// Cancel immediately - should create invoice for both usage and fixed arrear charges
+		// Expected: 
+		// - Usage: 100 * $0.10 = $10.00
+		// - Fixed: $30.00 prorated for 10 days = $10.00 (10/30 * $30)
+		// - Total: $20.00
+		err := s.service.CancelSubscription(s.GetContext(), invoiceValidationSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), invoiceValidationSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		// Verify cancellation time is close to our recorded time (within 5 seconds)
+		timeDiff := cancelledSub.CancelledAt.Sub(cancellationTime)
+		s.True(timeDiff < 5*time.Second && timeDiff > -5*time.Second, 
+			"Cancellation time should be close to when we called cancel")
+
+		// Test that we can get usage for the cancellation period
+		usageReq := &dto.GetUsageBySubscriptionRequest{
+			SubscriptionID: invoiceValidationSub.ID,
+			StartTime:      invoiceValidationSub.CurrentPeriodStart,
+			EndTime:        *cancelledSub.CancelledAt,
+		}
+
+		usageResp, err := s.service.GetUsageBySubscription(s.GetContext(), usageReq)
+		s.NoError(err, "Should be able to calculate usage for cancellation period")
+		s.NotNil(usageResp)
+
+		// Log the usage calculation results for manual verification
+		s.T().Logf("Cancellation period usage: Amount=%.2f, Currency=%s, Charges=%d", 
+			usageResp.Amount, usageResp.Currency, len(usageResp.Charges))
+		
+		for i, charge := range usageResp.Charges {
+			s.T().Logf("  Charge %d: %s - Quantity=%.2f, Amount=%.2f", 
+				i+1, charge.MeterDisplayName, charge.Quantity, charge.Amount)
+		}
+
+		s.T().Logf("✅ Cancellation invoice validation completed successfully")
+	})
+
+	s.Run("TestCancellationWithPriceOverrides", func() {
+		// Test cancellation with subscription that has price overrides
+		overrideSub := &subscription.Subscription{
+			ID:                 "sub_override_cancel",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusActive,
+			StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+			CurrentPeriodStart: s.testData.now.Add(-7 * 24 * time.Hour), // 7 days into period
+			CurrentPeriodEnd:   s.testData.now.Add(23 * 24 * time.Hour),
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		// Create subscription-scoped override price (higher rate)
+		overridePrice := &price.Price{
+			ID:                 "price_override_cancel",
+			Amount:             decimal.NewFromFloat(0.25), // $0.25 per API call (higher than normal)
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_SUBSCRIPTION, // Subscription-scoped
+			EntityID:           overrideSub.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear, // Arrear billing
+			MeterID:            s.testData.meters.apiCalls.ID,
+			BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), overridePrice))
+
+		// Create line item using the override price
+		overrideLineItem := &subscription.SubscriptionLineItem{
+			ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:   overrideSub.ID,
+			CustomerID:       overrideSub.CustomerID,
+			EntityID:         s.testData.plan.ID,
+			EntityType:       types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName:  s.testData.plan.Name,
+			PriceID:          overridePrice.ID, // Using override price instead of plan price
+			PriceType:        overridePrice.Type,
+			MeterID:          s.testData.meters.apiCalls.ID,
+			MeterDisplayName: s.testData.meters.apiCalls.Name,
+			DisplayName:      "API Calls (Override Price)",
+			Quantity:         decimal.Zero,
+			Currency:         overrideSub.Currency,
+			BillingPeriod:    overrideSub.BillingPeriod,
+			BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+		}
+
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), overrideSub, []*subscription.SubscriptionLineItem{overrideLineItem}))
+
+		// Create usage events (200 API calls)
+		// Expected: 200 * $0.25 = $50.00 (using override price)
+		for i := 0; i < 200; i++ {
+			event := &events.Event{
+				ID:                 s.GetUUID(),
+				TenantID:           overrideSub.TenantID,
+				EventName:          s.testData.meters.apiCalls.EventName,
+				ExternalCustomerID: s.testData.customer.ExternalID,
+				Timestamp:          s.testData.now.Add(-4 * 24 * time.Hour), // 4 days ago (within current period)
+				Properties:         map[string]interface{}{},
+			}
+			s.NoError(s.GetStores().EventRepo.InsertEvent(s.GetContext(), event))
+		}
+
+		// Cancel immediately - should create invoice using override pricing
+		err := s.service.CancelSubscription(s.GetContext(), overrideSub.ID, false)
+		s.NoError(err)
+
+		// Verify subscription was cancelled
+		cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), overrideSub.ID)
+		s.NoError(err)
+		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+		s.NotNil(cancelledSub.CancelledAt)
+
+		s.T().Logf("✅ Immediate cancellation with price overrides completed successfully")
+	})
+
+	s.Run("TestCancellationEdgeCases", func() {
+		// Test edge cases
+		testCases := []struct {
+			name          string
+			setupSub      func() *subscription.Subscription
+			expectError   bool
+			errorContains string
+		}{
+			{
+				name: "cancel_subscription_with_zero_commitment_amount",
+				setupSub: func() *subscription.Subscription {
+					sub := &subscription.Subscription{
+						ID:                 "sub_zero_commitment",
+						CustomerID:         s.testData.customer.ID,
+						PlanID:             s.testData.plan.ID,
+						SubscriptionStatus: types.SubscriptionStatusActive,
+						StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+						CurrentPeriodStart: s.testData.now.Add(-5 * 24 * time.Hour),
+						CurrentPeriodEnd:   s.testData.now.Add(25 * 24 * time.Hour),
+						BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+						BillingPeriodCount: 1,
+						Currency:           "usd",
+						CommitmentAmount:   lo.ToPtr(decimal.Zero), // Zero commitment
+						BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+					}
+					s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), sub, []*subscription.SubscriptionLineItem{}))
+					return sub
+				},
+				expectError: false,
+			},
+			{
+				name: "cancel_subscription_at_period_start",
+				setupSub: func() *subscription.Subscription {
+					sub := &subscription.Subscription{
+						ID:                 "sub_period_start_cancel",
+						CustomerID:         s.testData.customer.ID,
+						PlanID:             s.testData.plan.ID,
+						SubscriptionStatus: types.SubscriptionStatusActive,
+						StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
+						CurrentPeriodStart: s.testData.now, // At period start
+						CurrentPeriodEnd:   s.testData.now.Add(30 * 24 * time.Hour),
+						BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+						BillingPeriodCount: 1,
+						Currency:           "usd",
+						BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+					}
+					s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), sub, []*subscription.SubscriptionLineItem{}))
+					return sub
+				},
+				expectError: false,
+			},
+		}
+
+		for _, tc := range testCases {
+			s.Run(tc.name, func() {
+				sub := tc.setupSub()
+				
+				err := s.service.CancelSubscription(s.GetContext(), sub.ID, false)
+				
+				if tc.expectError {
+					s.Error(err)
+					if tc.errorContains != "" {
+						s.Contains(err.Error(), tc.errorContains)
+					}
+					return
+				}
+
+				s.NoError(err, "Expected no error for edge case: %s", tc.name)
+
+				// Verify subscription was cancelled
+				cancelledSub, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), sub.ID)
+				s.NoError(err)
+				s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
+				s.NotNil(cancelledSub.CancelledAt)
+
+				s.T().Logf("✅ Edge case '%s' completed successfully", tc.name)
+			})
+		}
+	})
 }
 
 func (s *SubscriptionServiceSuite) TestListSubscriptions() {
