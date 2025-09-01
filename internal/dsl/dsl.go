@@ -122,6 +122,9 @@ func BuildOrders(sort []*types.SortCondition, resolve FieldResolver) ([]OrderFun
 
 	// Apply sorts in the exact order provided by the user
 	for _, s := range sort {
+		if s == nil {
+			continue
+		}
 		fi, err := resolve(s.Field)
 		if err != nil {
 			return nil, err
@@ -129,6 +132,8 @@ func BuildOrders(sort []*types.SortCondition, resolve FieldResolver) ([]OrderFun
 		var of OrderFunc
 
 		switch s.Direction {
+		case types.SortDirectionAsc:
+			of = func(sel *sql.Selector) { sel.OrderBy(sql.Asc(fi)) }
 		case types.SortDirectionDesc:
 			of = func(sel *sql.Selector) { sel.OrderBy(sql.Desc(fi)) }
 		default:
