@@ -751,7 +751,7 @@ func (s *subscriptionService) CancelSubscriptionWithProration(
 	}
 
 	// Step 4: Determine effective cancellation date
-	effectiveDate, err := s.determineEffectiveDate(subscription, req.CancellationType, req.EffectiveDate)
+	effectiveDate, err := s.determineEffectiveDate(subscription, req.CancellationType)
 	if err != nil {
 		return nil, err
 	}
@@ -778,9 +778,6 @@ func (s *subscriptionService) CancelSubscriptionWithProration(
 
 			// Convert proration result to response format
 			prorationDetails, totalCreditAmount = s.convertProrationResultToDetails(prorationResult)
-
-			// Note: Proration invoice creation has been removed from cancellation flow
-			// Proration calculations are still performed for tracking purposes
 		}
 
 		// Step 8: Update subscription status
@@ -3496,9 +3493,9 @@ func (s *subscriptionService) ActivateIncompleteSubscription(ctx context.Context
 func (s *subscriptionService) determineEffectiveDate(
 	subscription *subscription.Subscription,
 	cancellationType types.CancellationType,
-	requestedDate *time.Time,
 ) (time.Time, error) {
 	now := time.Now().UTC()
+	// now := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
 
 	switch cancellationType {
 	case types.CancellationTypeImmediate:
@@ -3506,14 +3503,6 @@ func (s *subscriptionService) determineEffectiveDate(
 
 	case types.CancellationTypeEndOfPeriod:
 		return subscription.CurrentPeriodEnd, nil
-
-	case types.CancellationTypeSpecificDate:
-		if requestedDate == nil {
-			return time.Time{}, ierr.NewError("effective_date is required for specific_date cancellation").
-				Mark(ierr.ErrValidation)
-		}
-		return *requestedDate, nil
-
 	default:
 		return time.Time{}, ierr.NewError("invalid cancellation type").
 			WithHintf("Unsupported cancellation type: %s", cancellationType).
@@ -3535,22 +3524,6 @@ func (s *subscriptionService) validateCancellationTiming(
 				WithHintf("Current period ends at %s, cancellation date is %s",
 					subscription.CurrentPeriodEnd.Format("2006-01-02"),
 					effectiveDate.Format("2006-01-02")).
-				Mark(ierr.ErrValidation)
-		}
-
-	case types.CancellationTypeSpecificDate:
-		// Specific date should be in the future but reasonable
-		now := time.Now().UTC()
-		if effectiveDate.Before(now) {
-			return ierr.NewError("cancellation date cannot be in the past").
-				Mark(ierr.ErrValidation)
-		}
-
-		// Don't allow cancellation too far in the future (e.g., more than 1 year)
-		oneYearFromNow := now.AddDate(1, 0, 0)
-		if effectiveDate.After(oneYearFromNow) {
-			return ierr.NewError("cancellation date is too far in the future").
-				WithHint("Maximum allowed cancellation date is 1 year from now").
 				Mark(ierr.ErrValidation)
 		}
 	}
@@ -3691,14 +3664,10 @@ func (s *subscriptionService) updateSubscriptionForCancellation(
 		// Don't change status immediately - will be cancelled at period end
 		subscription.CancelAtPeriodEnd = true
 		subscription.CancelAt = &effectiveDate
-
-	case types.CancellationTypeSpecificDate:
-		if effectiveDate.Before(time.Now().UTC()) || effectiveDate.Equal(now) {
-			// If specific date is now or in the past, cancel immediately
-			subscription.SubscriptionStatus = types.SubscriptionStatusCancelled
-		}
-		subscription.CancelAt = &effectiveDate
-		subscription.CancelAtPeriodEnd = false
+	default:
+		return ierr.NewError("invalid cancellation type").
+			WithHintf("Unsupported cancellation type: %s", cancellationType).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Update subscription in database
@@ -3741,14 +3710,6 @@ func (s *subscriptionService) generateCancellationMessage(
 
 	case types.CancellationTypeEndOfPeriod:
 		return fmt.Sprintf("Subscription will be cancelled at the end of the current period (%s)",
-			effectiveDate.Format("2006-01-02"))
-
-	case types.CancellationTypeSpecificDate:
-		if totalCreditAmount.IsNegative() {
-			return fmt.Sprintf("Subscription will be cancelled on %s with %s credit for unused time",
-				effectiveDate.Format("2006-01-02"), totalCreditAmount.Abs().String())
-		}
-		return fmt.Sprintf("Subscription will be cancelled on %s",
 			effectiveDate.Format("2006-01-02"))
 
 	default:
@@ -3807,13 +3768,6 @@ func (s *subscriptionService) generateProrationDescription(
 
 	case types.CancellationTypeEndOfPeriod:
 		return fmt.Sprintf("End of period cancellation (%s)", effectiveDate.Format("2006-01-02"))
-
-	case types.CancellationTypeSpecificDate:
-		if creditAmount.IsNegative() {
-			return fmt.Sprintf("Credit for unused time (cancelled %s)", effectiveDate.Format("2006-01-02"))
-		}
-		return fmt.Sprintf("Scheduled cancellation (%s)", effectiveDate.Format("2006-01-02"))
-
 	default:
 		return "Cancellation proration"
 	}

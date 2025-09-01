@@ -256,9 +256,6 @@ func (c *calculatorImpl) shouldIssueCreditForCancellation(params ProrationParams
 	case types.CancellationTypeImmediate:
 		// Immediate cancellation with advance billing gets credit for unused time
 		return true
-	case types.CancellationTypeSpecificDate:
-		// Future date cancellation gets credit for time after cancellation date
-		return params.ProrationDate.Before(params.CurrentPeriodEnd)
 	case types.CancellationTypeEndOfPeriod:
 		// End of period cancellation typically doesn't get credit since they use full period
 		// However, there might be edge cases where partial credit is warranted
@@ -280,8 +277,6 @@ func (c *calculatorImpl) generateCreditDescription(params ProrationParams) strin
 			return "Credit for unused time - immediate cancellation"
 		case types.CancellationTypeEndOfPeriod:
 			return "Credit adjustment for end-of-period cancellation"
-		case types.CancellationTypeSpecificDate:
-			return "Credit for unused time - scheduled cancellation"
 		default:
 			return "Credit for unused time on cancelled subscription"
 		}

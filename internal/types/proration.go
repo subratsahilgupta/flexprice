@@ -74,9 +74,8 @@ const (
 type CancellationType string
 
 const (
-	CancellationTypeImmediate    CancellationType = "immediate"     // Cancel immediately, credit for unused time
-	CancellationTypeEndOfPeriod  CancellationType = "end_of_period" // Cancel at end of current billing period
-	CancellationTypeSpecificDate CancellationType = "specific_date" // Cancel on a specific future date
+	CancellationTypeImmediate   CancellationType = "immediate"
+	CancellationTypeEndOfPeriod CancellationType = "end_of_period"
 )
 
 var ProrationModeValues = []ProrationMode{
@@ -87,7 +86,6 @@ var ProrationModeValues = []ProrationMode{
 var CancellationTypeValues = []CancellationType{
 	CancellationTypeImmediate,
 	CancellationTypeEndOfPeriod,
-	CancellationTypeSpecificDate,
 }
 
 func (p ProrationMode) Validate() error {

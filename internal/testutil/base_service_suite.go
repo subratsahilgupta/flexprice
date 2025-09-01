@@ -6,6 +6,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/config"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/auth"
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/coupon"
@@ -75,6 +76,7 @@ type Stores struct {
 	CouponRepo                   coupon.Repository
 	CouponAssociationRepo        coupon_association.Repository
 	CouponApplicationRepo        coupon_application.Repository
+	AddonAssociationRepo         addonassociation.Repository
 	ConnectionRepo               connection.Repository
 	EntityIntegrationMappingRepo entityintegrationmapping.Repository
 	SettingsRepo                 settings.Repository
@@ -182,6 +184,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 		CouponRepo:                   NewInMemoryCouponStore(),
 		CouponAssociationRepo:        NewInMemoryCouponAssociationStore(),
 		CouponApplicationRepo:        NewInMemoryCouponApplicationStore(),
+		AddonAssociationRepo:         NewInMemoryAddonAssociationStore(),
 		ConnectionRepo:               NewInMemoryConnectionStore(),
 		EntityIntegrationMappingRepo: NewInMemoryEntityIntegrationMappingStore(),
 		SettingsRepo:                 NewInMemorySettingsStore(),
@@ -229,6 +232,7 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.CouponRepo.(*InMemoryCouponStore).Clear()
 	s.stores.CouponAssociationRepo.(*InMemoryCouponAssociationStore).Clear()
 	s.stores.CouponApplicationRepo.(*InMemoryCouponApplicationStore).Clear()
+	s.stores.AddonAssociationRepo.(*InMemoryAddonAssociationStore).Clear()
 	s.stores.SettingsRepo.(*InMemorySettingsStore).Clear()
 }
 

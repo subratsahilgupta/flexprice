@@ -398,19 +398,7 @@ func (s *prorationService) CreateProrationParamsForLineItemCancellation(
 	logger.Info("creating proration parameters for cancellation")
 
 	// Get billing period boundaries
-	periodStart, err := types.PreviousBillingDate(
-		subscription.BillingAnchor,
-		subscription.BillingPeriodCount,
-		subscription.BillingPeriod,
-	)
-	if err != nil {
-		logger.Warnw("failed to calculate period start for cancellation proration, using fallback",
-			"error", err,
-			"billing_anchor", subscription.BillingAnchor,
-			"billing_period", subscription.BillingPeriod,
-			"billing_period_count", subscription.BillingPeriodCount)
-		periodStart = subscription.CurrentPeriodStart
-	}
+	periodStart := subscription.CurrentPeriodStart
 
 	periodEnd := subscription.CurrentPeriodEnd
 
@@ -427,15 +415,6 @@ func (s *prorationService) CreateProrationParamsForLineItemCancellation(
 			logger.Warnw("cancellation date before period start, using period start",
 				"requested_date", cancellationDate,
 				"period_start", periodStart)
-		}
-	case types.CancellationTypeSpecificDate:
-		// Validate specific date is within reasonable bounds
-		if cancellationDate.Before(periodStart) {
-			return proration.ProrationParams{}, ierr.NewError("cancellation date cannot be before current period start").
-				WithHintf("Period start: %s, Cancellation date: %s",
-					periodStart.Format("2006-01-02"),
-					cancellationDate.Format("2006-01-02")).
-				Mark(ierr.ErrValidation)
 		}
 	}
 
@@ -663,20 +642,6 @@ func (s *prorationService) isRefundEligible(
 
 		// For arrears billing, no refund needed (they pay for what they used)
 		logger.Debug("arrears billing cancellation - no refund needed")
-		return false
-
-	case types.CancellationTypeSpecificDate:
-		// Future date cancellations follow similar logic to immediate
-		if price.InvoiceCadence == types.InvoiceCadenceAdvance {
-			remainingTime := subscription.CurrentPeriodEnd.Sub(effectiveDate)
-			eligible := remainingTime > 0
-			logger.Debugw("specific date cancellation eligibility check",
-				"effective_date", effectiveDate,
-				"period_end", subscription.CurrentPeriodEnd,
-				"remaining_time", remainingTime.String(),
-				"eligible", eligible)
-			return eligible
-		}
 		return false
 
 	default:

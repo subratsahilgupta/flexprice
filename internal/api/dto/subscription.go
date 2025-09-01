@@ -98,20 +98,18 @@ type UpdateSubscriptionRequest struct {
 
 // CancelSubscriptionRequest represents the enhanced cancellation request
 type CancelSubscriptionRequest struct {
+
+	// ProrationMode determines whether proration is applied.
+	ProrationMode types.ProrationMode `json:"proration_mode,omitempty"`
+
 	// CancellationType determines when the cancellation takes effect
 	CancellationType types.CancellationType `json:"cancellation_type" validate:"required"`
-
-	// EffectiveDate is required when cancellation_type is "specific_date"
-	EffectiveDate *time.Time `json:"effective_date,omitempty"`
 
 	// Reason for cancellation (for audit and business intelligence)
 	Reason string `json:"reason,omitempty"`
 
 	// ProrationBehavior controls how proration is handled
 	ProrationBehavior types.ProrationBehavior `json:"proration_behavior,omitempty"`
-
-	// RefundMethod specifies how credits should be handled (future feature)
-	RefundMethod string `json:"refund_method,omitempty"` // "credit", "refund", "none"
 }
 
 // CancelSubscriptionResponse represents the enhanced cancellation response
@@ -151,28 +149,6 @@ func (r *CancelSubscriptionRequest) Validate() error {
 	if err := r.CancellationType.Validate(); err != nil {
 		return err
 	}
-
-	// Effective date is required for specific_date cancellation
-	if r.CancellationType == types.CancellationTypeSpecificDate && r.EffectiveDate == nil {
-		return ierr.NewError("effective_date is required for specific_date cancellation").
-			WithHint("Please provide an effective_date when cancellation_type is 'specific_date'").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Effective date should not be provided for other types
-	if r.CancellationType != types.CancellationTypeSpecificDate && r.EffectiveDate != nil {
-		return ierr.NewError("effective_date should not be provided for this cancellation type").
-			WithHintf("effective_date is only valid for cancellation_type 'specific_date', got '%s'", r.CancellationType).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Validate effective date is not in the past (for specific_date)
-	if r.EffectiveDate != nil && r.EffectiveDate.Before(time.Now().UTC()) {
-		return ierr.NewError("effective_date cannot be in the past").
-			WithHint("Please provide a future date for specific_date cancellation").
-			Mark(ierr.ErrValidation)
-	}
-
 	// Set default proration behavior if not provided
 	if r.ProrationBehavior == "" {
 		r.ProrationBehavior = types.ProrationBehaviorCreateProrations

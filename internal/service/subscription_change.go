@@ -115,7 +115,8 @@ func (s *subscriptionChangeService) PreviewSubscriptionChange(
 	}
 
 	// Calculate effective date
-	effectiveDate := time.Now()
+	// effectiveDate := time.Now()
+	effectiveDate := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
 	if req.PreviewDate != nil {
 		effectiveDate = *req.PreviewDate
 	}
@@ -584,7 +585,7 @@ func (s *subscriptionChangeService) generateWarnings(
 	}
 
 	// Warning for trial subscriptions
-	if currentSub.TrialEnd != nil && currentSub.TrialEnd.After(time.Now()) {
+	if currentSub.TrialEnd != nil && currentSub.TrialEnd.After(time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)) {
 		warnings = append(warnings, "Changing plans during trial period may end your trial immediately.")
 	}
 
@@ -780,15 +781,44 @@ func (s *subscriptionChangeService) createNewSubscription(
 			Mark(ierr.ErrDatabase)
 	}
 
-	// Build create subscription request based on current subscription but with new plan
+	// Get target plan prices to determine billing information
+	planService := NewPlanService(s.serviceParams)
+	planFilter := types.NewNoLimitPlanFilter()
+	planFilter.Expand = lo.ToPtr(string(types.ExpandPrices))
+	planFilter.PlanIDs = []string{targetPlan.ID}
+	plansResponse, err := planService.GetPlans(ctx, planFilter)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get target plan prices").
+			Mark(ierr.ErrDatabase)
+	}
+
+	if len(plansResponse.Items) == 0 {
+		return nil, ierr.NewError("Target plan not found").
+			WithHint("Plan ID: " + targetPlan.ID).
+			Mark(ierr.ErrValidation)
+	}
+
+	targetPlanWithPrices := plansResponse.Items[0]
+	if len(targetPlanWithPrices.Prices) == 0 {
+		return nil, ierr.NewError("Target plan has no prices").
+			WithHint("Plan ID: " + targetPlan.ID).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Use the first available price to determine billing information
+	// TODO: In the future, we might want to match the current subscription's currency or other criteria
+	targetPrice := targetPlanWithPrices.Prices[0]
+
+	// Build create subscription request based on current subscription but with target plan's billing info
 	createSubReq := dto.CreateSubscriptionRequest{
 		CustomerID:         currentSub.CustomerID,
 		PlanID:             targetPlan.ID,
 		Currency:           currentSub.Currency,
 		LookupKey:          currentSub.LookupKey, // Keep same lookup key for continuity
-		BillingCadence:     currentSub.BillingCadence,
-		BillingPeriod:      currentSub.BillingPeriod,
-		BillingPeriodCount: currentSub.BillingPeriodCount,
+		BillingCadence:     targetPrice.BillingCadence,
+		BillingPeriod:      targetPrice.BillingPeriod,
+		BillingPeriodCount: targetPrice.BillingPeriodCount,
 		BillingCycle:       billingCycle,
 		StartDate:          &startDate,
 		Metadata:           req.Metadata,
