@@ -251,7 +251,8 @@ func (s *subscriptionChangeService) ExecuteSubscriptionChange(
 		}
 
 		// Calculate effective date
-		effectiveDate := time.Now()
+		// effectiveDate := time.Now()
+		effectiveDate := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
 
 		// Execute the change based on type
 		result, err := s.executeChange(txCtx, currentSub, lineItems, targetPlan, changeType, req, effectiveDate)
@@ -781,26 +782,8 @@ func (s *subscriptionChangeService) createNewSubscription(
 			Mark(ierr.ErrDatabase)
 	}
 
-	// Get target plan prices to determine billing information
-	planService := NewPlanService(s.serviceParams)
-	planFilter := types.NewNoLimitPlanFilter()
-	planFilter.Expand = lo.ToPtr(string(types.ExpandPrices))
-	planFilter.PlanIDs = []string{targetPlan.ID}
-	plansResponse, err := planService.GetPlans(ctx, planFilter)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to get target plan prices").
-			Mark(ierr.ErrDatabase)
-	}
-
-	if len(plansResponse.Items) == 0 {
-		return nil, ierr.NewError("Target plan not found").
-			WithHint("Plan ID: " + targetPlan.ID).
-			Mark(ierr.ErrValidation)
-	}
-
-	targetPlanWithPrices := plansResponse.Items[0]
-	if len(targetPlanWithPrices.Prices) == 0 {
+	prices, err := s.serviceParams.PriceRepo.GetByPlanID(ctx, targetPlan.ID)
+	if len(prices) == 0 {
 		return nil, ierr.NewError("Target plan has no prices").
 			WithHint("Plan ID: " + targetPlan.ID).
 			Mark(ierr.ErrValidation)
@@ -808,7 +791,7 @@ func (s *subscriptionChangeService) createNewSubscription(
 
 	// Use the first available price to determine billing information
 	// TODO: In the future, we might want to match the current subscription's currency or other criteria
-	targetPrice := targetPlanWithPrices.Prices[0]
+	targetPrice := prices[0]
 
 	// Build create subscription request based on current subscription but with target plan's billing info
 	createSubReq := dto.CreateSubscriptionRequest{

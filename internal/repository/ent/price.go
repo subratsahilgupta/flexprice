@@ -563,6 +563,23 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 	return query
 }
 
+func (r *priceRepository) GetByPlanID(ctx context.Context, planID string) ([]*domainPrice.Price, error) {
+	client := r.client.Querier(ctx)
+
+	prices, err := client.Price.Query().
+		Where(price.EntityID(planID), price.Status(string(types.StatusPublished))).
+		All(ctx)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get prices by plan ID").
+			WithReportableDetails(map[string]interface{}{
+				"plan_id": planID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+	return domainPrice.FromEntList(prices), nil
+}
+
 func (r *priceRepository) SetCache(ctx context.Context, price *domainPrice.Price) {
 	span := cache.StartCacheSpan(ctx, "price", "set", map[string]interface{}{
 		"price_id": price.ID,
