@@ -26,6 +26,19 @@ type DefaultSettingValue struct {
 	Required     bool                   `json:"required"`
 }
 
+// SubscriptionConfig represents the configuration for subscription auto-cancellation
+type SubscriptionConfig struct {
+	GracePeriodDays         int  `json:"grace_period_days"`
+	AutoCancellationEnabled bool `json:"auto_cancellation_enabled"`
+}
+
+// TenantSubscriptionConfig represents subscription configuration for a specific tenant and environment
+type TenantEnvSubscriptionConfig struct {
+	TenantID      string `json:"tenant_id"`
+	EnvironmentID string `json:"environment_id"`
+	*SubscriptionConfig
+}
+
 // GetDefaultSettings returns the default settings configuration for all setting keys
 func GetDefaultSettings() map[SettingKey]DefaultSettingValue {
 	return map[SettingKey]DefaultSettingValue{

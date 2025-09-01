@@ -3398,56 +3398,10 @@ func (s *subscriptionService) ActivateIncompleteSubscription(ctx context.Context
 	return nil
 }
 
-// SubscriptionConfig represents the configuration for subscription auto-cancellation
-type SubscriptionConfig struct {
-	GracePeriodDays         int  `json:"grace_period_days"`
-	AutoCancellationEnabled bool `json:"auto_cancellation_enabled"`
-}
-
 // GetSubscriptionConfig retrieves the subscription configuration from settings
-func (s *subscriptionService) GetSubscriptionConfig(ctx context.Context) (*SubscriptionConfig, error) {
-	setting, err := s.SettingsRepo.GetByKey(ctx, "subscription_config")
-	if err != nil {
-		// If setting not found, return default
-		if ierr.IsNotFound(err) {
-			s.Logger.Infow("subscription config not found, returning default",
-				"tenant_id", types.GetTenantID(ctx), "environment_id", types.GetEnvironmentID(ctx))
-			return &SubscriptionConfig{
-				GracePeriodDays:         1,
-				AutoCancellationEnabled: false,
-			}, nil
-		}
-		return nil, err
-	}
-
-	// Extract configuration from the setting value
-	config := &SubscriptionConfig{
-		GracePeriodDays:         3,
-		AutoCancellationEnabled: false,
-	}
-
-	// Extract grace_period_days
-	if gracePeriodDaysRaw, exists := setting.Value["grace_period_days"]; exists {
-		switch v := gracePeriodDaysRaw.(type) {
-		case float64:
-			config.GracePeriodDays = int(v)
-		case int:
-			config.GracePeriodDays = v
-		}
-	}
-
-	// Extract auto_cancellation_enabled
-	if autoCancellationEnabledRaw, exists := setting.Value["auto_cancellation_enabled"]; exists {
-		if autoCancellationEnabled, ok := autoCancellationEnabledRaw.(bool); ok {
-			config.AutoCancellationEnabled = autoCancellationEnabled
-		}
-	}
-
-	return config, nil
-}
 
 // isEligibleForAutoCancellation checks if an active subscription is eligible for auto-cancellation
-func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context, sub *subscription.Subscription, config *SubscriptionConfig) bool {
+func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context, sub *subscription.Subscription, config *types.SubscriptionConfig) bool {
 	// Check if subscription is active
 	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
 		return false
@@ -3544,79 +3498,105 @@ func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context,
 func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.Context) error {
 	s.Logger.Infow("starting auto-cancellation processing")
 
-	// Get subscription configuration
-	config, err := s.GetSubscriptionConfig(ctx)
+	// Get all tenant x environment combinations that have auto-cancellation enabled
+	enabledConfigs, err := s.SettingsRepo.ListSubscriptionConfigs(ctx)
 	if err != nil {
-		s.Logger.Errorw("failed to get subscription config", "error", err)
+		s.Logger.Errorw("failed to list subscription configs", "error", err)
 		return err
 	}
 
-	// Early return if auto-cancellation is disabled at tenant level
-	if !config.AutoCancellationEnabled {
-		s.Logger.Infow("auto-cancellation is disabled for tenant, skipping",
-			"tenant_id", types.GetTenantID(ctx),
-			"environment_id", types.GetEnvironmentID(ctx))
+	if len(enabledConfigs) == 0 {
+		s.Logger.Infow("no tenants have auto-cancellation enabled, skipping processing")
 		return nil
 	}
 
-	// Get ONLY ACTIVE subscriptions (skip cancelled, paused, trialing, etc.)
-	filter := &types.SubscriptionFilter{
-		SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive},
-	}
+	s.Logger.Infow("found tenants with auto-cancellation enabled",
+		"tenant_count", len(enabledConfigs))
 
-	s.Logger.Infow("fetching ONLY ACTIVE subscriptions for auto-cancellation",
-		"subscription_status_filter", "ACTIVE")
+	totalCanceledCount := 0
+	totalFailedCount := 0
 
-	subscriptions, err := s.SubRepo.List(ctx, filter)
-	if err != nil {
-		s.Logger.Errorw("failed to get subscriptions for auto-cancellation", "error", err)
-		return err
-	}
+	// Process each tenant x environment combination
+	for _, tenantConfig := range enabledConfigs {
+		// Create a new context with tenant and environment IDs
+		tenantCtx := context.WithValue(ctx, types.CtxTenantID, tenantConfig.TenantID)
+		tenantCtx = context.WithValue(tenantCtx, types.CtxEnvironmentID, tenantConfig.EnvironmentID)
 
-	s.Logger.Infow("found subscriptions for auto-cancellation check",
-		"total_subscriptions", len(subscriptions))
+		s.Logger.Infow("processing tenant",
+			"tenant_id", tenantConfig.TenantID,
+			"environment_id", tenantConfig.EnvironmentID,
+			"grace_period_days", tenantConfig.GracePeriodDays)
 
-	// Log subscription count for monitoring
-	s.Logger.Infow("found subscriptions for auto-cancellation processing",
-		"total_subscriptions", len(subscriptions))
-
-	canceledCount := 0
-	failedCount := 0
-
-	// Process each subscription
-	for _, sub := range subscriptions {
-
-		if s.isEligibleForAutoCancellation(ctx, sub, config) {
-			s.Logger.Infow("auto-cancelling subscription",
-				"subscription_id", sub.ID,
-				"grace_period_days", config.GracePeriodDays)
-
-			// Cancel the subscription
-			if err := s.CancelSubscription(ctx, sub.ID, false); err != nil {
-				s.Logger.Errorw("failed to auto-cancel subscription",
-					"subscription_id", sub.ID,
-					"error", err)
-				failedCount++
-				continue
-			}
-
-			canceledCount++
-
-			// Log audit trail
-			s.Logger.Infow("successfully auto-canceled subscription",
-				"subscription_id", sub.ID,
-				"reason", "grace_period_expired",
-				"grace_period_days", config.GracePeriodDays,
-				"canceled_by", "auto_cancellation_system",
-				"tenant_id", sub.TenantID,
-				"environment_id", sub.EnvironmentID)
+		// Get ONLY ACTIVE subscriptions for this tenant x environment
+		filter := &types.SubscriptionFilter{
+			SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive},
 		}
+
+		subscriptions, err := s.SubRepo.List(tenantCtx, filter)
+		if err != nil {
+			s.Logger.Errorw("failed to get subscriptions for tenant",
+				"tenant_id", tenantConfig.TenantID,
+				"environment_id", tenantConfig.EnvironmentID,
+				"error", err)
+			continue // Skip this tenant but continue with others
+		}
+
+		s.Logger.Infow("found subscriptions for tenant",
+			"tenant_id", tenantConfig.TenantID,
+			"environment_id", tenantConfig.EnvironmentID,
+			"subscription_count", len(subscriptions))
+
+		canceledCount := 0
+		failedCount := 0
+
+		// Process each subscription for this tenant
+		for _, sub := range subscriptions {
+			if s.isEligibleForAutoCancellation(tenantCtx, sub, tenantConfig.SubscriptionConfig) {
+				s.Logger.Infow("auto-cancelling subscription",
+					"subscription_id", sub.ID,
+					"tenant_id", tenantConfig.TenantID,
+					"environment_id", tenantConfig.EnvironmentID,
+					"grace_period_days", tenantConfig.GracePeriodDays)
+
+				// Cancel the subscription
+				if err := s.CancelSubscription(tenantCtx, sub.ID, false); err != nil {
+					s.Logger.Errorw("failed to auto-cancel subscription",
+						"subscription_id", sub.ID,
+						"tenant_id", tenantConfig.TenantID,
+						"environment_id", tenantConfig.EnvironmentID,
+						"error", err)
+					failedCount++
+					continue
+				}
+
+				canceledCount++
+
+				// Log audit trail
+				s.Logger.Infow("successfully auto-canceled subscription",
+					"subscription_id", sub.ID,
+					"reason", "grace_period_expired",
+					"grace_period_days", tenantConfig.GracePeriodDays,
+					"canceled_by", "auto_cancellation_system",
+					"tenant_id", tenantConfig.TenantID,
+					"environment_id", tenantConfig.EnvironmentID)
+			}
+		}
+
+		s.Logger.Infow("completed processing for tenant",
+			"tenant_id", tenantConfig.TenantID,
+			"environment_id", tenantConfig.EnvironmentID,
+			"total_subscriptions", len(subscriptions),
+			"canceled_count", canceledCount,
+			"failed_count", failedCount)
+
+		totalCanceledCount += canceledCount
+		totalFailedCount += failedCount
 	}
 
-	s.Logger.Infow("completed auto-cancellation processing",
-		"total_subscriptions", len(subscriptions),
-		"canceled_count", canceledCount,
-		"failed_count", failedCount)
+	s.Logger.Infow("completed auto-cancellation processing for all tenants",
+		"total_tenants_processed", len(enabledConfigs),
+		"total_canceled", totalCanceledCount,
+		"total_failed", totalFailedCount)
 
 	return nil
 }

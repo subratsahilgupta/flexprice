@@ -328,3 +328,65 @@ func (r *settingsRepository) DeleteCache(ctx context.Context, setting *domainSet
 	r.cache.Delete(ctx, keyKey)
 	r.log.Debugw("cache deleted", "id_key", idKey, "key_key", keyKey)
 }
+
+// ListSubscriptionConfigs returns all subscription configs across all tenants and environments
+func (r *settingsRepository) ListSubscriptionConfigs(ctx context.Context) ([]*types.TenantEnvSubscriptionConfig, error) {
+	client := r.client.Querier(ctx)
+
+	// Query all subscription config settings
+	settings, err := client.Settings.Query().
+		Where(
+			settings.Key(types.SettingKeySubscriptionConfig.String()),
+			settings.Status(string(types.StatusPublished)),
+		).All(ctx)
+
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list subscription configs").
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Convert to domain model
+	configs := make([]*types.TenantEnvSubscriptionConfig, 0, len(settings))
+	for _, setting := range settings {
+		config := &types.TenantEnvSubscriptionConfig{
+			TenantID:           setting.TenantID,
+			EnvironmentID:      setting.EnvironmentID,
+			SubscriptionConfig: extractSubscriptionConfig(setting.Value),
+		}
+
+		// Only include if auto-cancellation is enabled
+		if config.AutoCancellationEnabled {
+			configs = append(configs, config)
+		}
+	}
+
+	return configs, nil
+}
+
+// Helper function to extract subscription config from setting value
+func extractSubscriptionConfig(value map[string]interface{}) *types.SubscriptionConfig {
+	config := &types.SubscriptionConfig{
+		GracePeriodDays:         3, // Default value
+		AutoCancellationEnabled: false,
+	}
+
+	// Extract grace_period_days
+	if gracePeriodDaysRaw, exists := value["grace_period_days"]; exists {
+		switch v := gracePeriodDaysRaw.(type) {
+		case float64:
+			config.GracePeriodDays = int(v)
+		case int:
+			config.GracePeriodDays = v
+		}
+	}
+
+	// Extract auto_cancellation_enabled
+	if autoCancellationEnabledRaw, exists := value["auto_cancellation_enabled"]; exists {
+		if autoCancellationEnabled, ok := autoCancellationEnabledRaw.(bool); ok {
+			config.AutoCancellationEnabled = autoCancellationEnabled
+		}
+	}
+
+	return config
+}
