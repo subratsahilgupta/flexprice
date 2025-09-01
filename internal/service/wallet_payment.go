@@ -93,7 +93,14 @@ func (s *walletPaymentService) ProcessInvoicePaymentWithWallets(
 		return decimal.Zero, nil
 	}
 
-	// Process payments using wallets
+	// Calculate price type breakdown for the invoice using existing line items
+	priceTypeAmounts := s.calculatePriceTypeAmounts(inv.LineItems)
+
+	s.Logger.Infow("calculated price type breakdown for invoice",
+		"invoice_id", inv.ID,
+		"price_type_amounts", priceTypeAmounts)
+
+	// Process payments using wallets with price type restrictions
 	remainingAmount := inv.AmountRemaining
 	initialAmount := inv.AmountRemaining
 	paymentService := NewPaymentService(s.ServiceParams)
@@ -109,7 +116,17 @@ func (s *walletPaymentService) ProcessInvoicePaymentWithWallets(
 			break
 		}
 
-		paymentAmount := decimal.Min(remainingAmount, w.Balance)
+		// Calculate how much this wallet can pay based on its price type restrictions
+		allowedAmount := s.calculateAllowedPaymentAmount(w, priceTypeAmounts, remainingAmount)
+		if allowedAmount.IsZero() {
+			s.Logger.Infow("wallet cannot pay any amount due to price type restrictions",
+				"wallet_id", w.ID,
+				"wallet_config", w.Config,
+				"price_type_amounts", priceTypeAmounts)
+			continue
+		}
+
+		paymentAmount := decimal.Min(allowedAmount, w.Balance)
 		if paymentAmount.IsZero() {
 			continue
 		}
@@ -147,6 +164,9 @@ func (s *walletPaymentService) ProcessInvoicePaymentWithWallets(
 		}
 
 		remainingAmount = remainingAmount.Sub(paymentAmount)
+
+		// Update the price type amounts to reflect what was paid
+		s.updatePriceTypeAmountsAfterPayment(priceTypeAmounts, paymentAmount, &w.Config)
 	}
 
 	amountPaid := initialAmount.Sub(remainingAmount)
@@ -237,4 +257,130 @@ func (s *walletPaymentService) sortWalletsByStrategy(
 	}
 
 	return result
+}
+
+// calculatePriceTypeAmounts calculates the total amount for each price type in the invoice
+func (s *walletPaymentService) calculatePriceTypeAmounts(lineItems []*invoice.InvoiceLineItem) map[string]decimal.Decimal {
+	priceTypeAmounts := map[string]decimal.Decimal{
+		string(types.PRICE_TYPE_USAGE): decimal.Zero,
+		string(types.PRICE_TYPE_FIXED): decimal.Zero,
+	}
+
+	for _, item := range lineItems {
+		if item.PriceType != nil {
+			priceType := *item.PriceType
+			if amount, exists := priceTypeAmounts[priceType]; exists {
+				priceTypeAmounts[priceType] = amount.Add(item.Amount)
+			} else {
+				// If it's not USAGE or FIXED, treat it as FIXED by default
+				priceTypeAmounts[string(types.PRICE_TYPE_FIXED)] = priceTypeAmounts[string(types.PRICE_TYPE_FIXED)].Add(item.Amount)
+			}
+		} else {
+			// If price type is nil, treat it as FIXED by default
+			priceTypeAmounts[string(types.PRICE_TYPE_FIXED)] = priceTypeAmounts[string(types.PRICE_TYPE_FIXED)].Add(item.Amount)
+		}
+	}
+
+	return priceTypeAmounts
+}
+
+// calculateAllowedPaymentAmount calculates how much a wallet can pay based on its price type restrictions
+func (s *walletPaymentService) calculateAllowedPaymentAmount(
+	w *wallet.Wallet,
+	priceTypeAmounts map[string]decimal.Decimal,
+	remainingAmount decimal.Decimal,
+) decimal.Decimal {
+	// If wallet has no allowed price types, use default (ALL)
+	if w.Config.AllowedPriceTypes == nil || len(w.Config.AllowedPriceTypes) == 0 {
+		return remainingAmount
+	}
+
+	allowedAmount := decimal.Zero
+
+	for _, allowedPriceType := range w.Config.AllowedPriceTypes {
+		switch allowedPriceType {
+		case types.WalletConfigPriceTypeAll:
+			// If ALL is allowed, wallet can pay the full remaining amount
+			return remainingAmount
+		case types.WalletConfigPriceTypeUsage:
+			// Add the remaining USAGE amount
+			usageAmount := priceTypeAmounts[string(types.PRICE_TYPE_USAGE)]
+			allowedAmount = allowedAmount.Add(usageAmount)
+		case types.WalletConfigPriceTypeFixed:
+			// Add the remaining FIXED amount
+			fixedAmount := priceTypeAmounts[string(types.PRICE_TYPE_FIXED)]
+			allowedAmount = allowedAmount.Add(fixedAmount)
+		}
+	}
+
+	// Return the minimum of allowed amount and remaining amount
+	return decimal.Min(allowedAmount, remainingAmount)
+}
+
+// updatePriceTypeAmountsAfterPayment updates the price type amounts after a payment is made
+func (s *walletPaymentService) updatePriceTypeAmountsAfterPayment(
+	priceTypeAmounts map[string]decimal.Decimal,
+	paymentAmount decimal.Decimal,
+	walletConfig *types.WalletConfig,
+) {
+	// If wallet has no allowed price types, deduct proportionally
+	if walletConfig.AllowedPriceTypes == nil || len(walletConfig.AllowedPriceTypes) == 0 {
+		s.deductProportionally(priceTypeAmounts, paymentAmount)
+		return
+	}
+
+	// Check if ALL is allowed
+	for _, allowedPriceType := range walletConfig.AllowedPriceTypes {
+		if allowedPriceType == types.WalletConfigPriceTypeAll {
+			s.deductProportionally(priceTypeAmounts, paymentAmount)
+			return
+		}
+	}
+
+	// Deduct from specific price types based on wallet config
+	remainingPayment := paymentAmount
+
+	// First, try to deduct from USAGE if allowed
+	for _, allowedPriceType := range walletConfig.AllowedPriceTypes {
+		if allowedPriceType == types.WalletConfigPriceTypeUsage && remainingPayment.GreaterThan(decimal.Zero) {
+			usageAmount := priceTypeAmounts[string(types.PRICE_TYPE_USAGE)]
+			deductAmount := decimal.Min(usageAmount, remainingPayment)
+			priceTypeAmounts[string(types.PRICE_TYPE_USAGE)] = usageAmount.Sub(deductAmount)
+			remainingPayment = remainingPayment.Sub(deductAmount)
+		}
+	}
+
+	// Then, try to deduct from FIXED if allowed
+	for _, allowedPriceType := range walletConfig.AllowedPriceTypes {
+		if allowedPriceType == types.WalletConfigPriceTypeFixed && remainingPayment.GreaterThan(decimal.Zero) {
+			fixedAmount := priceTypeAmounts[string(types.PRICE_TYPE_FIXED)]
+			deductAmount := decimal.Min(fixedAmount, remainingPayment)
+			priceTypeAmounts[string(types.PRICE_TYPE_FIXED)] = fixedAmount.Sub(deductAmount)
+			remainingPayment = remainingPayment.Sub(deductAmount)
+		}
+	}
+}
+
+// deductProportionally deducts payment amount proportionally from all price types
+func (s *walletPaymentService) deductProportionally(
+	priceTypeAmounts map[string]decimal.Decimal,
+	paymentAmount decimal.Decimal,
+) {
+	totalAmount := decimal.Zero
+	for _, amount := range priceTypeAmounts {
+		totalAmount = totalAmount.Add(amount)
+	}
+
+	if totalAmount.IsZero() {
+		return
+	}
+
+	// Deduct proportionally from each price type
+	for priceType, amount := range priceTypeAmounts {
+		if amount.GreaterThan(decimal.Zero) {
+			proportion := amount.Div(totalAmount)
+			deductAmount := paymentAmount.Mul(proportion)
+			priceTypeAmounts[priceType] = amount.Sub(deductAmount)
+		}
+	}
 }

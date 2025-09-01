@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 
@@ -256,45 +257,52 @@ func (s *subscriptionPaymentProcessor) processPayment(
 		return result
 	}
 
-	// Step 1: Check available credits
+	// Step 1: Get the full invoice with line items to analyze price types
+	fullInvoice, err := s.InvoiceRepo.Get(ctx, inv.ID)
+	if err != nil {
+		s.Logger.Errorw("failed to get invoice with line items for payment analysis",
+			"error", err,
+			"invoice_id", inv.ID)
+		result.Success = false
+		return result
+	}
+
+	// Step 2: Calculate price type breakdown
+	priceTypeAmounts := s.calculatePriceTypeAmounts(fullInvoice.LineItems)
+	s.Logger.Infow("calculated price type breakdown for payment split",
+		"subscription_id", sub.ID,
+		"invoice_id", inv.ID,
+		"price_type_amounts", priceTypeAmounts)
+
+	// Step 3: Check available credits and determine what they can pay for
 	availableCredits := s.checkAvailableCredits(ctx, sub, inv)
-	s.Logger.Infow("available credits check",
+	walletPayableAmount := s.calculateWalletPayableAmount(ctx, sub.CustomerID, priceTypeAmounts, availableCredits)
+
+	s.Logger.Infow("wallet payment analysis",
 		"subscription_id", sub.ID,
 		"available_credits", availableCredits,
-		"invoice_amount", remainingAmount,
-	)
+		"wallet_payable_amount", walletPayableAmount,
+		"invoice_amount", remainingAmount)
 
-	// Step 2: Determine payment split
+	// Step 4: Determine payment split based on price type restrictions
 	var cardAmount, walletAmount decimal.Decimal
 
-	if availableCredits.GreaterThanOrEqual(remainingAmount) {
-		// Case: Customer has enough credits to cover full invoice
-		// Pay entirely with credits, no card payment needed
-		cardAmount = decimal.Zero
-		walletAmount = remainingAmount
-		s.Logger.Infow("customer has sufficient credits, paying entirely with wallet",
+	cardAmount = remainingAmount.Sub(walletPayableAmount)
+	walletAmount = walletPayableAmount
+
+	if walletAmount.IsZero() {
+		s.Logger.Infow("wallet cannot pay any amount due to price type restrictions, paying entirely with card",
 			"subscription_id", sub.ID,
-			"wallet_amount", walletAmount,
-		)
-	} else if availableCredits.GreaterThan(decimal.Zero) {
-		// Case: Customer has partial credits
-		// Split: Card first (remaining - credits), then wallet (credits)
-		cardAmount = remainingAmount.Sub(availableCredits)
-		walletAmount = availableCredits
-		s.Logger.Infow("splitting payment between card and wallet",
+			"card_amount", cardAmount)
+	} else if cardAmount.IsZero() {
+		s.Logger.Infow("wallet can pay entire amount, paying entirely with wallet",
 			"subscription_id", sub.ID,
-			"card_amount", cardAmount,
-			"wallet_amount", walletAmount,
-		)
+			"wallet_amount", walletAmount)
 	} else {
-		// Case: No credits available
-		// Pay entirely with card
-		cardAmount = remainingAmount
-		walletAmount = decimal.Zero
-		s.Logger.Infow("no credits available, paying entirely with card",
+		s.Logger.Infow("splitting payment between card and wallet based on price types",
 			"subscription_id", sub.ID,
 			"card_amount", cardAmount,
-		)
+			"wallet_amount", walletAmount)
 	}
 
 	// Step 3: Process card payment first (if needed)
@@ -387,14 +395,17 @@ func (s *subscriptionPaymentProcessor) processCreditsPayment(
 		"amount_due", inv.AmountDue,
 	)
 
-	// Convert DTO invoice to domain invoice for wallet payment service
-	domainInvoice := &invoice.Invoice{
-		ID:              inv.ID,
-		CustomerID:      inv.CustomerID,
-		Currency:        inv.Currency,
-		AmountDue:       inv.AmountDue,
-		AmountRemaining: inv.AmountDue, // Assume full amount is remaining
+	// Get the full invoice with line items from the repository
+	fullInvoice, err := s.InvoiceRepo.Get(ctx, inv.ID)
+	if err != nil {
+		s.Logger.Errorw("failed to get invoice with line items for wallet payment",
+			"error", err,
+			"invoice_id", inv.ID)
+		return decimal.Zero
 	}
+
+	// Use the full domain invoice with line items for wallet payment service
+	domainInvoice := fullInvoice
 
 	// Use wallet payment service to process payment
 	walletPaymentService := NewWalletPaymentService(*s.ServiceParams)
@@ -423,6 +434,124 @@ func (s *subscriptionPaymentProcessor) processCreditsPayment(
 	)
 
 	return amountPaid
+}
+
+// calculatePriceTypeAmounts calculates the total amount for each price type in the invoice
+func (s *subscriptionPaymentProcessor) calculatePriceTypeAmounts(lineItems []*invoice.InvoiceLineItem) map[string]decimal.Decimal {
+	priceTypeAmounts := map[string]decimal.Decimal{
+		string(types.PRICE_TYPE_USAGE): decimal.Zero,
+		string(types.PRICE_TYPE_FIXED): decimal.Zero,
+	}
+
+	for _, item := range lineItems {
+		if item.PriceType != nil {
+			priceType := *item.PriceType
+			if amount, exists := priceTypeAmounts[priceType]; exists {
+				priceTypeAmounts[priceType] = amount.Add(item.Amount)
+			} else {
+				// If it's not USAGE or FIXED, treat it as FIXED by default
+				priceTypeAmounts[string(types.PRICE_TYPE_FIXED)] = priceTypeAmounts[string(types.PRICE_TYPE_FIXED)].Add(item.Amount)
+			}
+		} else {
+			// If price type is nil, treat it as FIXED by default
+			priceTypeAmounts[string(types.PRICE_TYPE_FIXED)] = priceTypeAmounts[string(types.PRICE_TYPE_FIXED)].Add(item.Amount)
+		}
+	}
+
+	return priceTypeAmounts
+}
+
+// calculateWalletPayableAmount determines how much wallets can pay based on price type restrictions
+func (s *subscriptionPaymentProcessor) calculateWalletPayableAmount(
+	ctx context.Context,
+	customerID string,
+	priceTypeAmounts map[string]decimal.Decimal,
+	availableCredits decimal.Decimal,
+) decimal.Decimal {
+	if availableCredits.IsZero() {
+		return decimal.Zero
+	}
+
+	// Get customer's wallets to check their configurations
+	wallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, customerID)
+	if err != nil {
+		s.Logger.Errorw("failed to get wallets for payment analysis",
+			"error", err,
+			"customer_id", customerID)
+		return decimal.Zero
+	}
+
+	// Filter active wallets with balance
+	activeWallets := make([]*wallet.Wallet, 0)
+	for _, w := range wallets {
+		if w.WalletStatus == types.WalletStatusActive && w.Balance.GreaterThan(decimal.Zero) {
+			activeWallets = append(activeWallets, w)
+		}
+	}
+	wallets = activeWallets
+
+	if len(wallets) == 0 {
+		return decimal.Zero
+	}
+
+	// Calculate total payable amount across all wallets
+	totalPayableAmount := decimal.Zero
+	remainingCredits := availableCredits
+
+	for _, wallet := range wallets {
+		if remainingCredits.IsZero() {
+			break
+		}
+
+		walletPayableAmount := s.calculateWalletAllowedAmount(wallet, priceTypeAmounts)
+		actualPayableAmount := decimal.Min(walletPayableAmount, wallet.Balance)
+		actualPayableAmount = decimal.Min(actualPayableAmount, remainingCredits)
+
+		totalPayableAmount = totalPayableAmount.Add(actualPayableAmount)
+		remainingCredits = remainingCredits.Sub(actualPayableAmount)
+
+		s.Logger.Debugw("wallet payment analysis",
+			"wallet_id", wallet.ID,
+			"wallet_config", wallet.Config,
+			"wallet_balance", wallet.Balance,
+			"wallet_payable_amount", walletPayableAmount,
+			"actual_payable_amount", actualPayableAmount)
+	}
+
+	return totalPayableAmount
+}
+
+// calculateWalletAllowedAmount calculates how much a single wallet can pay based on its price type restrictions
+func (s *subscriptionPaymentProcessor) calculateWalletAllowedAmount(
+	wallet *wallet.Wallet,
+	priceTypeAmounts map[string]decimal.Decimal,
+) decimal.Decimal {
+	// If wallet has no allowed price types, use default (ALL)
+	if wallet.Config.AllowedPriceTypes == nil || len(wallet.Config.AllowedPriceTypes) == 0 {
+		// Can pay for everything
+		totalAmount := decimal.Zero
+		for _, amount := range priceTypeAmounts {
+			totalAmount = totalAmount.Add(amount)
+		}
+		return totalAmount
+	}
+
+	allowedAmount := decimal.Zero
+
+	for _, allowedType := range wallet.Config.AllowedPriceTypes {
+		allowedTypeStr := string(allowedType)
+		if allowedTypeStr == "ALL" {
+			// Can pay for everything
+			for _, amount := range priceTypeAmounts {
+				allowedAmount = allowedAmount.Add(amount)
+			}
+			break
+		} else if amount, exists := priceTypeAmounts[allowedTypeStr]; exists {
+			allowedAmount = allowedAmount.Add(amount)
+		}
+	}
+
+	return allowedAmount
 }
 
 // processPaymentMethodCharge processes payment using payment method (card, etc.)
