@@ -105,3 +105,36 @@ func (s *InMemorySettingsStore) Clear() {
 	defer s.mu.Unlock()
 	s.items = make(map[string]*domainSettings.Setting)
 }
+
+// ListSubscriptionConfigs returns all subscription configurations for all tenants and environments
+func (s *InMemorySettingsStore) ListSubscriptionConfigs(ctx context.Context) ([]*types.TenantEnvSubscriptionConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var configs []*types.TenantEnvSubscriptionConfig
+
+	for _, setting := range s.items {
+		if setting.Key == string(types.SettingKeySubscriptionConfig) && setting.Status == types.StatusPublished {
+			var config types.SubscriptionConfig
+			if err := types.ValidateSubscriptionConfig(setting.Value); err != nil {
+				continue // Skip invalid configs
+			}
+
+			gracePeriodDays, _ := setting.Value["grace_period_days"].(float64)
+			autoCancellationEnabled, _ := setting.Value["auto_cancellation_enabled"].(bool)
+
+			config = types.SubscriptionConfig{
+				GracePeriodDays:         int(gracePeriodDays),
+				AutoCancellationEnabled: autoCancellationEnabled,
+			}
+
+			configs = append(configs, &types.TenantEnvSubscriptionConfig{
+				TenantID:           setting.TenantID,
+				EnvironmentID:      setting.EnvironmentID,
+				SubscriptionConfig: &config,
+			})
+		}
+	}
+
+	return configs, nil
+}
