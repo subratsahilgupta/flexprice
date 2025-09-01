@@ -283,7 +283,7 @@ func provideHandlers(
 		Health:                   v1.NewHealthHandler(logger),
 		Price:                    v1.NewPriceHandler(priceService, logger),
 		Customer:                 v1.NewCustomerHandler(customerService, billingService, logger),
-		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, logger),
+		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, temporalService, logger),
 		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
 		SubscriptionPause:        v1.NewSubscriptionPauseHandler(subscriptionService, logger),
 		SubscriptionChange:       v1.NewSubscriptionChangeHandler(subscriptionChangeService, logger),
@@ -326,8 +326,8 @@ func provideTemporalClient(cfg *config.TemporalConfig, log *logger.Logger) (*tem
 	return temporal.NewTemporalClient(cfg, log)
 }
 
-func provideTemporalService(temporalClient *temporal.TemporalClient, cfg *config.TemporalConfig, log *logger.Logger) (*temporal.Service, error) {
-	return temporal.NewService(temporalClient, cfg, log)
+func provideTemporalService(temporalClient *temporal.TemporalClient, cfg *config.TemporalConfig, log *logger.Logger, params service.ServiceParams) (*temporal.Service, error) {
+	return temporal.NewService(temporalClient, cfg, log, params)
 }
 
 func startServer(
