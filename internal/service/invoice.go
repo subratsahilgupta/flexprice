@@ -2009,8 +2009,6 @@ func (s *invoiceService) HandleIncompleteSubscriptionPayment(ctx context.Context
 	return nil
 }
 
-// Helper functions for proration invoice creation
-
 // convertProrationToLineItems converts proration results to invoice line items
 func (s *invoiceService) convertProrationToLineItems(prorationResult *dto.ProrationResult) ([]dto.CreateInvoiceLineItemRequest, error) {
 	var lineItems []dto.CreateInvoiceLineItemRequest
