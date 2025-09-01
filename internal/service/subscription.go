@@ -666,6 +666,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 }
 
 func (s *subscriptionService) CancelSubscription(ctx context.Context, id string, cancelAtPeriodEnd bool) error {
+	invoiceService := NewInvoiceService(s.ServiceParams)
 	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, id)
 	if err != nil {
 		return err
@@ -691,6 +692,26 @@ func (s *subscriptionService) CancelSubscription(ctx context.Context, id string,
 	}
 
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+
+		// create an invoice for the charges in the subscription
+		if !cancelAtPeriodEnd {
+			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+				SubscriptionID: subscription.ID,
+				PeriodStart:    subscription.CurrentPeriodStart,
+				PeriodEnd:      *subscription.CancelledAt,
+				ReferencePoint: types.ReferencePointCancel,
+			})
+			if err != nil {
+				return err
+			}
+
+			if inv != nil {
+				s.Logger.Infow("created invoice for subscription",
+					"subscription_id", subscription.ID,
+					"invoice_id", inv.ID)
+			}
+
+		}
 
 		// cancel future credit grant applications
 		creditGrantService := NewCreditGrantService(s.ServiceParams)
