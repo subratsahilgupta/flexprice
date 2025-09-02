@@ -584,7 +584,7 @@ func (s *subscriptionChangeService) executeChange(
 	}
 
 	// Step 4: Create new subscription with credit grants
-	newSub, err := s.createNewSubscription(ctx, currentSub, lineItems, targetPlan, req, effectiveDate, creditGrantRequests)
+	newSub, err := s.createNewSubscription(ctx, currentSub, lineItems, targetPlan, req, creditGrantRequests)
 	if err != nil {
 		return nil, err
 	}
@@ -670,12 +670,8 @@ func (s *subscriptionChangeService) createNewSubscription(
 	oldLineItems []*subscription.SubscriptionLineItem,
 	targetPlan *plan.Plan,
 	req dto.SubscriptionChangeRequest,
-	effectiveDate time.Time,
 	creditGrantRequests []dto.CreateCreditGrantRequest,
 ) (*subscription.Subscription, error) {
-	// Determine start date based on billing cycle anchor behavior
-	startDate := effectiveDate
-	billingCycle := currentSub.BillingCycle
 
 	// Adjust billing behavior if requested
 	// if req.BillingCycleAnchor == types.BillingCycleAnchorReset {
@@ -714,8 +710,9 @@ func (s *subscriptionChangeService) createNewSubscription(
 		BillingCadence:     targetPrice.BillingCadence,
 		BillingPeriod:      targetPrice.BillingPeriod,
 		BillingPeriodCount: targetPrice.BillingPeriodCount,
-		BillingCycle:       billingCycle,
-		StartDate:          &startDate,
+		BillingCycle:       currentSub.BillingCycle,
+		StartDate:          lo.ToPtr(currentSub.CurrentPeriodStart),
+		EndDate:            lo.ToPtr(currentSub.CurrentPeriodEnd),
 		Metadata:           req.Metadata,
 		ProrationMode:      types.ProrationModeActive,
 		CustomerTimezone:   currentSub.CustomerTimezone,

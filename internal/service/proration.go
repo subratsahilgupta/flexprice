@@ -526,6 +526,12 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 		periodStart = subscription.CurrentPeriodStart
 	}
 
+	prorationDate := time.Now()
+
+	if prorationDate.Before(subscription.CurrentPeriodStart) {
+		prorationDate = subscription.CurrentPeriodStart
+	}
+
 	return proration.ProrationParams{
 		SubscriptionID:        subscription.ID,
 		LineItemID:            item.ID,
@@ -536,7 +542,7 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 		NewPriceID:            item.PriceID,
 		NewQuantity:           item.Quantity,
 		NewPricePerUnit:       price.Amount,
-		ProrationDate:         subscription.CurrentPeriodStart,
+		ProrationDate:         prorationDate,
 		ProrationBehavior:     behavior,
 		CustomerTimezone:      subscription.CustomerTimezone,
 		OriginalAmountPaid:    decimal.Zero,
