@@ -510,21 +510,21 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 	action types.ProrationAction,
 	behavior types.ProrationBehavior,
 ) (proration.ProrationParams, error) {
-	periodStart, err := types.PreviousBillingDate(
-		subscription.BillingAnchor,
-		subscription.BillingPeriodCount,
-		subscription.BillingPeriod,
-	)
-	if err != nil {
-		// Fallback to current period start if calculation fails
-		s.serviceParams.Logger.Warnw("failed to calculate period start for proration, using fallback",
-			"error", err,
-			"subscription_id", subscription.ID,
-			"billing_anchor", subscription.BillingAnchor,
-			"billing_period", subscription.BillingPeriod,
-			"billing_period_count", subscription.BillingPeriodCount)
-		periodStart = subscription.CurrentPeriodStart
-	}
+	// periodStart, err := types.PreviousBillingDate(
+	// 	subscription.BillingAnchor,
+	// 	subscription.BillingPeriodCount,
+	// 	subscription.BillingPeriod,
+	// )
+	// if err != nil {
+	// 	// Fallback to current period start if calculation fails
+	// 	s.serviceParams.Logger.Warnw("failed to calculate period start for proration, using fallback",
+	// 		"error", err,
+	// 		"subscription_id", subscription.ID,
+	// 		"billing_anchor", subscription.BillingAnchor,
+	// 		"billing_period", subscription.BillingPeriod,
+	// 		"billing_period_count", subscription.BillingPeriodCount)
+	// 	periodStart = subscription.CurrentPeriodStart
+	// }
 
 	prorationDate := time.Now()
 
@@ -536,7 +536,7 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 		SubscriptionID:        subscription.ID,
 		LineItemID:            item.ID,
 		PlanPayInAdvance:      price.InvoiceCadence == types.InvoiceCadenceAdvance,
-		CurrentPeriodStart:    periodStart,
+		CurrentPeriodStart:    subscription.CurrentPeriodStart,
 		CurrentPeriodEnd:      subscription.CurrentPeriodEnd.Add(time.Second * -1),
 		Action:                action,
 		NewPriceID:            item.PriceID,

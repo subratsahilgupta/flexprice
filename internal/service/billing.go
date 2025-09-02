@@ -1072,7 +1072,7 @@ func (s *billingService) applyProrationToLineItem(
 
 	prorationService := NewProrationService(s.ServiceParams)
 	// Check if proration should be applied
-	if sub.BillingCycle != types.BillingCycleCalendar || sub.ProrationMode != types.ProrationModeActive {
+	if sub.ProrationMode != types.ProrationModeActive {
 		// No proration needed
 		return originalAmount, nil
 	}

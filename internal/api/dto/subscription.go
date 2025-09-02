@@ -236,11 +236,11 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		return err
 	}
 
-	if r.ProrationMode == types.ProrationModeActive {
-		if err := r.validateShouldAllowProrationOnStartDate(*r.StartDate, time.Now().UTC()); err != nil {
-			return err
-		}
-	}
+	// if r.ProrationMode == types.ProrationModeActive {
+	// 	if err := r.validateShouldAllowProrationOnStartDate(*r.StartDate, time.Now().UTC()); err != nil {
+	// 		return err
+	// 	}
+	// }
 
 	if r.BillingPeriodCount < 1 {
 		return ierr.NewError("billing_period_count must be greater than 0").
