@@ -22,10 +22,10 @@ import (
 // CopyPlanChargesToAddons copies all charges from plans to addons
 func CopyPlanChargesToAddons() error {
 	// Get environment variables
-	tenantID := "tenant_id_1"
-	environmentID := "env_1"
-	planToAddonMapStr := "plan_1:addon_1"
-	dryRunMode := "true"
+	tenantID := os.Getenv("TENANT_ID")
+	environmentID := os.Getenv("ENVIRONMENT_ID")
+	planToAddonMapStr := os.Getenv("PLAN_TO_ADDON_MAP")
+	dryRunMode := os.Getenv("DRY_RUN_MODE")
 
 	if tenantID == "" || environmentID == "" || planToAddonMapStr == "" {
 		return fmt.Errorf("TENANT_ID, ENVIRONMENT_ID, and PLAN_TO_ADDON_MAP are required")
