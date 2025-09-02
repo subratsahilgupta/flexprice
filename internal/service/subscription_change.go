@@ -115,8 +115,8 @@ func (s *subscriptionChangeService) PreviewSubscriptionChange(
 	}
 
 	// Calculate effective date
-	// effectiveDate := time.Now()
-	effectiveDate := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
+	effectiveDate := time.Now()
+	// effectiveDate := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
 	if req.PreviewDate != nil {
 		effectiveDate = *req.PreviewDate
 	}
@@ -251,8 +251,8 @@ func (s *subscriptionChangeService) ExecuteSubscriptionChange(
 		}
 
 		// Calculate effective date
-		// effectiveDate := time.Now()
-		effectiveDate := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
+		effectiveDate := time.Now()
+		// effectiveDate := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
 
 		// Execute the change based on type
 		result, err := s.executeChange(txCtx, currentSub, lineItems, targetPlan, changeType, req, effectiveDate)

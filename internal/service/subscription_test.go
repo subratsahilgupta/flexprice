@@ -5496,7 +5496,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithProration() {
 			name:             "anniversary_billing_no_proration",
 			billingCycle:     types.BillingCycleAnniversary,
 			prorationMode:    types.ProrationModeActive,
-			startDate:        time.Now().UTC().AddDate(0, 0, -15), // 15 days ago (within 1 month limit)
+			startDate:        time.Now().UTC(), // Current time
 			expectProration:  false,
 			description:      "Anniversary billing should not apply proration even with active proration mode",
 			customerTimezone: "UTC",
@@ -5505,7 +5505,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithProration() {
 			name:             "calendar_billing_proration_disabled",
 			billingCycle:     types.BillingCycleCalendar,
 			prorationMode:    types.ProrationModeNone,
-			startDate:        time.Now().UTC().AddDate(0, 0, -15), // 15 days ago (within 1 month limit)
+			startDate:        time.Now().UTC(), // Current time
 			expectProration:  false,
 			description:      "Calendar billing with disabled proration should not apply proration",
 			customerTimezone: "UTC",
@@ -5514,17 +5514,17 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithProration() {
 			name:             "calendar_billing_with_proration_mid_month",
 			billingCycle:     types.BillingCycleCalendar,
 			prorationMode:    types.ProrationModeActive,
-			startDate:        time.Now().UTC().AddDate(0, 0, -15), // 15 days ago (within 1 month limit)
+			startDate:        time.Now().UTC(), // Current time
 			expectProration:  true,
-			description:      "Calendar billing with active proration mid-month should apply proration",
+			description:      "Calendar billing with active proration should apply proration",
 			customerTimezone: "UTC",
 		},
 		{
-			name:            "calendar_billing_with_proration_start_of_month",
+			name:            "calendar_billing_with_proration_start_of_next_month",
 			billingCycle:    types.BillingCycleCalendar,
 			prorationMode:   types.ProrationModeActive,
-			startDate:       time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC), // Start of current month
-			expectProration: false,                                                                     // No proration needed at start of period
+			startDate:       time.Date(time.Now().Year(), time.Now().Month()+1, 1, 0, 0, 0, 0, time.UTC), // Start of next month
+			expectProration: false,                                                                       // No proration needed at start of period
 			description:     "Calendar billing at start of month should not need proration",
 			// expectedAnchor will be calculated dynamically in the test
 			customerTimezone: "UTC",
@@ -5533,7 +5533,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithProration() {
 			name:            "calendar_billing_with_timezone_proration",
 			billingCycle:    types.BillingCycleCalendar,
 			prorationMode:   types.ProrationModeActive,
-			startDate:       time.Now().UTC().AddDate(0, 0, -10), // 10 days ago (within 1 month limit)
+			startDate:       time.Now().UTC(), // Current time
 			expectProration: true,
 			description:     "Calendar billing with timezone should apply proration correctly",
 			// expectedAnchor will be calculated dynamically in the test
@@ -5543,9 +5543,9 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithProration() {
 			name:            "calendar_billing_end_of_month",
 			billingCycle:    types.BillingCycleCalendar,
 			prorationMode:   types.ProrationModeActive,
-			startDate:       time.Now().UTC().AddDate(0, 0, -5), // 5 days ago (within 1 month limit)
+			startDate:       time.Now().UTC(), // Current time
 			expectProration: true,
-			description:     "Calendar billing at end of month should apply proration",
+			description:     "Calendar billing should apply proration",
 			// expectedAnchor will be calculated dynamically in the test
 			customerTimezone: "UTC",
 		},
@@ -5633,33 +5633,33 @@ func (s *SubscriptionServiceSuite) TestProrationCalculationDuringSubscriptionCre
 		customerTimezone     string
 	}{
 		{
-			name:                 "mid_month_start_15_days_ago",
-			startDate:            time.Now().UTC().AddDate(0, 0, -15), // 15 days ago (within 1 month limit)
-			expectedPeriodStart:  time.Now().UTC().AddDate(0, 0, -15),
+			name:                 "current_time_start",
+			startDate:            time.Now().UTC(), // Current time
+			expectedPeriodStart:  time.Now().UTC(),
 			expectedProrationPct: 0.5, // Approximate - will vary based on current date
-			description:          "Mid-month start should be prorated for remaining days",
+			description:          "Current time start should be prorated for remaining days",
 			customerTimezone:     "UTC",
 		},
 		{
-			name:                 "recent_start_5_days_ago",
-			startDate:            time.Now().UTC().AddDate(0, 0, -5), // 5 days ago (within 1 month limit)
-			expectedPeriodStart:  time.Now().UTC().AddDate(0, 0, -5),
+			name:                 "future_start_5_days",
+			startDate:            time.Now().UTC().AddDate(0, 0, 5), // 5 days in the future
+			expectedPeriodStart:  time.Now().UTC().AddDate(0, 0, 5),
 			expectedProrationPct: 0.8, // Approximate - most of month remaining
-			description:          "Recent start should be prorated for most of remaining days",
+			description:          "Future start should be prorated for most of remaining days",
 			customerTimezone:     "UTC",
 		},
 		{
-			name:                 "month_start_current_month",
-			startDate:            time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC), // Start of current month
-			expectedPeriodStart:  time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC),
+			name:                 "month_start_next_month",
+			startDate:            time.Now().UTC().AddDate(0, 1, 0).Truncate(24 * time.Hour), // Start of next month
+			expectedPeriodStart:  time.Now().UTC().AddDate(0, 1, 0).Truncate(24 * time.Hour),
 			expectedProrationPct: 1.0, // Full month
 			description:          "Month start should not need proration",
 			customerTimezone:     "UTC",
 		},
 		{
 			name:                 "timezone_aware_proration",
-			startDate:            time.Now().UTC().AddDate(0, 0, -10), // 10 days ago (within 1 month limit)
-			expectedPeriodStart:  time.Now().UTC().AddDate(0, 0, -10),
+			startDate:            time.Now().UTC(), // Current time
+			expectedPeriodStart:  time.Now().UTC(),
 			expectedProrationPct: 0.7, // Approximate - varies based on current date
 			description:          "Timezone should be considered in proration calculation",
 			customerTimezone:     "America/New_York",
@@ -5762,7 +5762,7 @@ func (s *SubscriptionServiceSuite) TestProrationWithDifferentPriceTypes() {
 		},
 	}
 
-	startDate := time.Now().UTC().AddDate(0, 0, -15) // 15 days ago (within 1 month limit)
+	startDate := time.Now().UTC() // Current time
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
@@ -5845,27 +5845,27 @@ func (s *SubscriptionServiceSuite) TestProrationWithDifferentBillingPeriods() {
 		description   string
 	}{
 		{
-			name:          "monthly_billing_mid_month",
+			name:          "monthly_billing_current_time",
 			billingPeriod: types.BILLING_PERIOD_MONTHLY,
-			startDate:     time.Now().UTC().AddDate(0, 0, -15), // 15 days ago (within 1 month limit)
+			startDate:     time.Now().UTC(), // Current time
 			description:   "Monthly billing should prorate for partial month",
 		},
 		{
-			name:          "annual_billing_mid_year",
+			name:          "annual_billing_current_time",
 			billingPeriod: types.BILLING_PERIOD_ANNUAL,
-			startDate:     time.Now().UTC().AddDate(0, 0, -20), // 20 days ago (within 1 month limit)
+			startDate:     time.Now().UTC(), // Current time
 			description:   "Annual billing should prorate for partial year",
 		},
 		{
-			name:          "monthly_billing_start_of_month",
+			name:          "monthly_billing_start_of_next_month",
 			billingPeriod: types.BILLING_PERIOD_MONTHLY,
-			startDate:     time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.UTC), // Start of current month
+			startDate:     time.Date(time.Now().Year(), time.Now().Month()+1, 1, 0, 0, 0, 0, time.UTC), // Start of next month
 			description:   "Monthly billing at month start should not need proration",
 		},
 		{
-			name:          "annual_billing_start_of_year",
+			name:          "annual_billing_future_start",
 			billingPeriod: types.BILLING_PERIOD_ANNUAL,
-			startDate:     time.Now().UTC().AddDate(0, 0, -25), // 25 days ago (within 1 month limit)
+			startDate:     time.Now().UTC().AddDate(0, 0, 10), // 10 days in the future
 			description:   "Annual billing should prorate for partial year",
 		},
 	}
