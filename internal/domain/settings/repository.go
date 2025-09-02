@@ -19,5 +19,6 @@ type Repository interface {
 	DeleteByKey(ctx context.Context, key string) error
 
 	// Config operations
-	ListSubscriptionConfigs(ctx context.Context) ([]*types.TenantEnvSubscriptionConfig, error)
+	ListAllTenantEnvSettingsByKey(ctx context.Context, key string) ([]*types.TenantEnvConfig, error)
+	GetAllTenantEnvSubscriptionSettings(ctx context.Context) ([]*types.TenantEnvSubscriptionConfig, error)
 }

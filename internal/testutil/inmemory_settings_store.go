@@ -106,35 +106,46 @@ func (s *InMemorySettingsStore) Clear() {
 	s.items = make(map[string]*domainSettings.Setting)
 }
 
-// ListSubscriptionConfigs returns all subscription configurations for all tenants and environments
-func (s *InMemorySettingsStore) ListSubscriptionConfigs(ctx context.Context) ([]*types.TenantEnvSubscriptionConfig, error) {
+// ListAllTenantEnvSettingsByKey returns all settings for a given key across all tenants and environments
+func (s *InMemorySettingsStore) ListAllTenantEnvSettingsByKey(ctx context.Context, key string) ([]*types.TenantEnvConfig, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var configs []*types.TenantEnvSubscriptionConfig
+	var configs []*types.TenantEnvConfig
 
 	for _, setting := range s.items {
-		if setting.Key == string(types.SettingKeySubscriptionConfig) && setting.Status == types.StatusPublished {
-			var config types.SubscriptionConfig
-			if err := types.ValidateSubscriptionConfig(setting.Value); err != nil {
-				continue // Skip invalid configs
+		if setting.Key == key && setting.Status == types.StatusPublished {
+			config := &types.TenantEnvConfig{
+				TenantID:      setting.TenantID,
+				EnvironmentID: setting.EnvironmentID,
+				Config:        setting.Value,
 			}
-
-			gracePeriodDays, _ := setting.Value["grace_period_days"].(float64)
-			autoCancellationEnabled, _ := setting.Value["auto_cancellation_enabled"].(bool)
-
-			config = types.SubscriptionConfig{
-				GracePeriodDays:         int(gracePeriodDays),
-				AutoCancellationEnabled: autoCancellationEnabled,
-			}
-
-			configs = append(configs, &types.TenantEnvSubscriptionConfig{
-				TenantID:           setting.TenantID,
-				EnvironmentID:      setting.EnvironmentID,
-				SubscriptionConfig: &config,
-			})
+			configs = append(configs, config)
 		}
 	}
 
 	return configs, nil
+}
+
+// GetAllTenantEnvSubscriptionSettings returns all subscription configs across all tenants and environments
+func (s *InMemorySettingsStore) GetAllTenantEnvSubscriptionSettings(ctx context.Context) ([]*types.TenantEnvSubscriptionConfig, error) {
+	configs, err := s.ListAllTenantEnvSettingsByKey(ctx, types.SettingKeySubscriptionConfig.String())
+	if err != nil {
+		return nil, err
+	}
+
+	var subscriptionConfigs []*types.TenantEnvSubscriptionConfig
+	for _, config := range configs {
+		subscriptionConfig := &types.TenantEnvSubscriptionConfig{
+			TenantID:      config.TenantID,
+			EnvironmentID: config.EnvironmentID,
+			SubscriptionConfig: &types.SubscriptionConfig{
+				GracePeriodDays:         config.Config["grace_period_days"].(int),
+				AutoCancellationEnabled: config.Config["auto_cancellation_enabled"].(bool),
+			},
+		}
+		subscriptionConfigs = append(subscriptionConfigs, subscriptionConfig)
+	}
+
+	return subscriptionConfigs, nil
 }

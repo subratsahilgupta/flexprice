@@ -2,9 +2,10 @@ package types
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"time"
+
+	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
 type SettingKey string
@@ -32,11 +33,70 @@ type SubscriptionConfig struct {
 	AutoCancellationEnabled bool `json:"auto_cancellation_enabled"`
 }
 
+// TenantEnvConfig represents a generic configuration for a specific tenant and environment
+type TenantEnvConfig struct {
+	TenantID      string                 `json:"tenant_id"`
+	EnvironmentID string                 `json:"environment_id"`
+	Config        map[string]interface{} `json:"config"`
+}
+
 // TenantSubscriptionConfig represents subscription configuration for a specific tenant and environment
 type TenantEnvSubscriptionConfig struct {
 	TenantID      string `json:"tenant_id"`
 	EnvironmentID string `json:"environment_id"`
 	*SubscriptionConfig
+}
+
+// ToTenantEnvConfig converts a TenantEnvSubscriptionConfig to a generic TenantEnvConfig
+func (t *TenantEnvSubscriptionConfig) ToTenantEnvConfig() *TenantEnvConfig {
+	return &TenantEnvConfig{
+		TenantID:      t.TenantID,
+		EnvironmentID: t.EnvironmentID,
+		Config: map[string]interface{}{
+			"grace_period_days":         t.GracePeriodDays,
+			"auto_cancellation_enabled": t.AutoCancellationEnabled,
+		},
+	}
+}
+
+// FromTenantEnvConfig creates a TenantEnvSubscriptionConfig from a generic TenantEnvConfig
+func TenantEnvSubscriptionConfigFromConfig(config *TenantEnvConfig) *TenantEnvSubscriptionConfig {
+	return &TenantEnvSubscriptionConfig{
+		TenantID:           config.TenantID,
+		EnvironmentID:      config.EnvironmentID,
+		SubscriptionConfig: extractSubscriptionConfigFromValue(config.Config),
+	}
+}
+
+// Helper function to extract subscription config from setting value
+func extractSubscriptionConfigFromValue(value map[string]interface{}) *SubscriptionConfig {
+	// Get default values from central defaults
+	defaultSettings := GetDefaultSettings()
+	defaultConfig := defaultSettings[SettingKeySubscriptionConfig].DefaultValue
+
+	config := &SubscriptionConfig{
+		GracePeriodDays:         defaultConfig["grace_period_days"].(int),
+		AutoCancellationEnabled: defaultConfig["auto_cancellation_enabled"].(bool),
+	}
+
+	// Extract grace_period_days
+	if gracePeriodDaysRaw, exists := value["grace_period_days"]; exists {
+		switch v := gracePeriodDaysRaw.(type) {
+		case float64:
+			config.GracePeriodDays = int(v)
+		case int:
+			config.GracePeriodDays = v
+		}
+	}
+
+	// Extract auto_cancellation_enabled
+	if autoCancellationEnabledRaw, exists := value["auto_cancellation_enabled"]; exists {
+		if autoCancellationEnabled, ok := autoCancellationEnabledRaw.(bool); ok {
+			config.AutoCancellationEnabled = autoCancellationEnabled
+		}
+	}
+
+	return config
 }
 
 // GetDefaultSettings returns the default settings configuration for all setting keys
@@ -85,7 +145,9 @@ func ValidateSettingValue(key string, value map[string]interface{}) error {
 	case SettingKeySubscriptionConfig:
 		return ValidateSubscriptionConfig(value)
 	default:
-		return fmt.Errorf("unknown setting key: %s", key)
+		return ierr.NewErrorf("unknown setting key: %s", key).
+			WithHintf("Unknown setting key: %s", key).
+			Mark(ierr.ErrValidation)
 	}
 }
 
@@ -98,24 +160,34 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 	// Validate prefix
 	prefixRaw, exists := value["prefix"]
 	if !exists {
-		return errors.New("invoice_config: 'prefix' is required")
+		return ierr.NewErrorf("invoice_config: 'prefix' is required").
+			WithHintf("Invoice config prefix is required").
+			Mark(ierr.ErrValidation)
 	}
 	prefix, ok := prefixRaw.(string)
 	if !ok {
-		return fmt.Errorf("invoice_config: 'prefix' must be a string, got %T", prefixRaw)
+		return ierr.NewErrorf("invoice_config: 'prefix' must be a string, got %T", prefixRaw).
+			WithHintf("Invoice config prefix must be a string, got %T", prefixRaw).
+			Mark(ierr.ErrValidation)
 	}
 	if strings.TrimSpace(prefix) == "" {
-		return errors.New("invoice_config: 'prefix' cannot be empty")
+		return ierr.NewErrorf("invoice_config: 'prefix' cannot be empty").
+			WithHintf("Invoice config prefix cannot be empty").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate format
 	formatRaw, exists := value["format"]
 	if !exists {
-		return errors.New("invoice_config: 'format' is required")
+		return ierr.NewErrorf("invoice_config: 'format' is required").
+			WithHintf("Invoice config format is required").
+			Mark(ierr.ErrValidation)
 	}
 	formatStr, ok := formatRaw.(string)
 	if !ok {
-		return fmt.Errorf("invoice_config: 'format' must be a string, got %T", formatRaw)
+		return ierr.NewErrorf("invoice_config: 'format' must be a string, got %T", formatRaw).
+			WithHintf("Invoice config format must be a string, got %T", formatRaw).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate against enum values
@@ -135,7 +207,9 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("invoice_config: 'format' must be one of %v, got %s", validFormats, formatStr)
+		return ierr.NewErrorf("invoice_config: 'format' must be one of %v, got %s", validFormats, formatStr).
+			WithHintf("Invoice config format must be one of %v, got %s", validFormats, formatStr).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate start_sequence
@@ -150,33 +224,47 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 		startSeq = v
 	case float64:
 		if v != float64(int(v)) {
-			return errors.New("invoice_config: 'start_sequence' must be a whole number")
+			return ierr.NewErrorf("invoice_config: 'start_sequence' must be a whole number").
+				WithHintf("Invoice config start sequence must be a whole number").
+				Mark(ierr.ErrValidation)
 		}
 		startSeq = int(v)
 	default:
-		return fmt.Errorf("invoice_config: 'start_sequence' must be an integer, got %T", startSeqRaw)
+		return ierr.NewErrorf("invoice_config: 'start_sequence' must be an integer, got %T", startSeqRaw).
+			WithHintf("Invoice config start sequence must be an integer, got %T", startSeqRaw).
+			Mark(ierr.ErrValidation)
 	}
 
 	if startSeq < 0 {
-		return errors.New("invoice_config: 'start_sequence' must be greater than or equal to 0")
+		return ierr.NewErrorf("invoice_config: 'start_sequence' must be greater than or equal to 0").
+			WithHintf("Invoice config start sequence must be greater than or equal to 0").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate timezone
 	timezoneRaw, exists := value["timezone"]
 	if !exists {
-		return errors.New("invoice_config: 'timezone' is required")
+		return ierr.NewErrorf("invoice_config: 'timezone' is required").
+			WithHintf("Invoice config timezone is required").
+			Mark(ierr.ErrValidation)
 	}
 	timezone, ok := timezoneRaw.(string)
 	if !ok {
-		return fmt.Errorf("invoice_config: 'timezone' must be a string, got %T", timezoneRaw)
+		return ierr.NewErrorf("invoice_config: 'timezone' must be a string, got %T", timezoneRaw).
+			WithHintf("Invoice config timezone must be a string, got %T", timezoneRaw).
+			Mark(ierr.ErrValidation)
 	}
 	if strings.TrimSpace(timezone) == "" {
-		return errors.New("invoice_config: 'timezone' cannot be empty")
+		return ierr.NewErrorf("invoice_config: 'timezone' cannot be empty").
+			WithHintf("Invoice config timezone cannot be empty").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate timezone by trying to load it (support both IANA names and common abbreviations)
 	if err := validateTimezone(timezone); err != nil {
-		return fmt.Errorf("invoice_config: invalid timezone '%s': %v", timezone, err)
+		return ierr.NewErrorf("invoice_config: invalid timezone '%s': %v", timezone, err).
+			WithHintf("Invoice config invalid timezone '%s': %v", timezone, err).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate separator
@@ -186,14 +274,18 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 	}
 	_, separatorOk := separatorRaw.(string)
 	if !separatorOk {
-		return fmt.Errorf("invoice_config: 'separator' must be a string, got %T", separatorRaw)
+		return ierr.NewErrorf("invoice_config: 'separator' must be a string, got %T", separatorRaw).
+			WithHintf("Invoice config separator must be a string, got %T", separatorRaw).
+			Mark(ierr.ErrValidation)
 	}
 	// Note: Empty separator ("") is allowed to generate invoice numbers without separators
 
 	// Validate suffix_length
 	suffixLengthRaw, exists := value["suffix_length"]
 	if !exists {
-		return errors.New("invoice_config: 'suffix_length' is required")
+		return ierr.NewErrorf("invoice_config: 'suffix_length' is required").
+			WithHintf("Invoice config suffix length is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	var suffixLength int
@@ -202,15 +294,21 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 		suffixLength = v
 	case float64:
 		if v != float64(int(v)) {
-			return errors.New("invoice_config: 'suffix_length' must be a whole number")
+			return ierr.NewErrorf("invoice_config: 'suffix_length' must be a whole number").
+				WithHintf("Invoice config suffix length must be a whole number").
+				Mark(ierr.ErrValidation)
 		}
 		suffixLength = int(v)
 	default:
-		return fmt.Errorf("invoice_config: 'suffix_length' must be an integer, got %T", suffixLengthRaw)
+		return ierr.NewErrorf("invoice_config: 'suffix_length' must be an integer, got %T", suffixLengthRaw).
+			WithHintf("Invoice config suffix length must be an integer, got %T", suffixLengthRaw).
+			Mark(ierr.ErrValidation)
 	}
 
 	if suffixLength < 1 || suffixLength > 10 {
-		return errors.New("invoice_config: 'suffix_length' must be between 1 and 10")
+		return ierr.NewErrorf("invoice_config: 'suffix_length' must be between 1 and 10").
+			WithHintf("Invoice config suffix length must be between 1 and 10").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -221,42 +319,42 @@ func ValidateSubscriptionConfig(value map[string]interface{}) error {
 		return errors.New("subscription_config value cannot be nil")
 	}
 
-	// Validate grace_period_days
-	gracePeriodDaysRaw, exists := value["grace_period_days"]
-	if !exists {
-		return errors.New("subscription_config: 'grace_period_days' is required")
-	}
-
-	var gracePeriodDays int
-	switch v := gracePeriodDaysRaw.(type) {
-	case int:
-		gracePeriodDays = v
-	case float64:
-		if v != float64(int(v)) {
-			return errors.New("subscription_config: 'grace_period_days' must be a whole number")
+	// Validate grace_period_days if provided
+	if gracePeriodDaysRaw, exists := value["grace_period_days"]; exists {
+		var gracePeriodDays int
+		switch v := gracePeriodDaysRaw.(type) {
+		case int:
+			gracePeriodDays = v
+		case float64:
+			if v != float64(int(v)) {
+				return ierr.NewErrorf("subscription_config: 'grace_period_days' must be a whole number").
+					WithHintf("Subscription config grace period days must be a whole number").
+					Mark(ierr.ErrValidation)
+			}
+			gracePeriodDays = int(v)
+		default:
+			return ierr.NewErrorf("subscription_config: 'grace_period_days' must be an integer, got %T", gracePeriodDaysRaw).
+				WithHintf("Subscription config grace period days must be an integer, got %T", gracePeriodDaysRaw).
+				Mark(ierr.ErrValidation)
 		}
-		gracePeriodDays = int(v)
-	default:
-		return fmt.Errorf("subscription_config: 'grace_period_days' must be an integer, got %T", gracePeriodDaysRaw)
+
+		if gracePeriodDays < 1 {
+			return ierr.NewErrorf("subscription_config: 'grace_period_days' must be greater than or equal to 1").
+				WithHintf("Subscription config grace period days must be greater than or equal to 1").
+				Mark(ierr.ErrValidation)
+		}
 	}
 
-	if gracePeriodDays < 1 {
-		return errors.New("subscription_config: 'grace_period_days' must be greater than or equal to 1")
-	}
-
-	// Validate auto_cancellation_enabled (optional)
+	// Validate auto_cancellation_enabled if provided
 	if autoCancellationEnabledRaw, exists := value["auto_cancellation_enabled"]; exists {
 		autoCancellationEnabled, ok := autoCancellationEnabledRaw.(bool)
 		if !ok {
-			return fmt.Errorf("subscription_config: 'auto_cancellation_enabled' must be a boolean, got %T", autoCancellationEnabledRaw)
+			return ierr.NewErrorf("subscription_config: 'auto_cancellation_enabled' must be a boolean, got %T", autoCancellationEnabledRaw).
+				WithHintf("Subscription config auto cancellation enabled must be a boolean, got %T", autoCancellationEnabledRaw).
+				Mark(ierr.ErrValidation)
 		}
 		// Store the validated value back for consistency
 		value["auto_cancellation_enabled"] = autoCancellationEnabled
-	} else {
-		// If auto_cancellation_enabled doesn't exist in existing value, set it to false
-		if _, exists := value["auto_cancellation_enabled"]; !exists {
-			value["auto_cancellation_enabled"] = false
-		}
 	}
 
 	return nil

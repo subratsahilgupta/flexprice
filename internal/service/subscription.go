@@ -3402,6 +3402,13 @@ func (s *subscriptionService) ActivateIncompleteSubscription(ctx context.Context
 
 // isEligibleForAutoCancellation checks if an active subscription is eligible for auto-cancellation
 func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context, sub *subscription.Subscription, config *types.SubscriptionConfig) bool {
+	// First check if auto-cancellation is enabled
+	if !config.AutoCancellationEnabled {
+		s.Logger.Debugw("auto-cancellation not enabled for subscription",
+			"subscription_id", sub.ID)
+		return false
+	}
+
 	// Check if subscription is active
 	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
 		return false
@@ -3499,7 +3506,7 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 	s.Logger.Infow("starting auto-cancellation processing")
 
 	// Get all tenant x environment combinations that have auto-cancellation enabled
-	enabledConfigs, err := s.SettingsRepo.ListSubscriptionConfigs(ctx)
+	enabledConfigs, err := s.SettingsRepo.GetAllTenantEnvSubscriptionSettings(ctx)
 	if err != nil {
 		s.Logger.Errorw("failed to list subscription configs", "error", err)
 		return err
