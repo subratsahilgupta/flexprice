@@ -260,7 +260,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			invoices.GET("/:id/pdf", handlers.Invoice.GetInvoicePDF)
 			invoices.POST("/:id/recalculate", handlers.Invoice.RecalculateInvoice)
 			invoices.POST("/:id/comms/trigger", handlers.Invoice.TriggerCommunication)
-			invoices.PUT("/:id/duedate", handlers.Invoice.UpdateDueDate)
 		}
 
 		feature := v1Private.Group("/features")

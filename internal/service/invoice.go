@@ -46,7 +46,6 @@ type InvoiceService interface {
 	CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error)
 	TriggerCommunication(ctx context.Context, id string) error
 	HandleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error
-	UpdateDueDate(ctx context.Context, id string, dueDate time.Time) error
 }
 
 type invoiceService struct {
@@ -1964,16 +1963,46 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
-	// Update only the fields that are provided in the request
-	// For now, we only support updating the PDF URL
+	// Only allow updates for draft or finalized invoices
+	if inv.InvoiceStatus != types.InvoiceStatusDraft && inv.InvoiceStatus != types.InvoiceStatusFinalized {
+		return nil, ierr.NewError("cannot update invoice in current status").
+			WithHint("Invoice can only be updated when in draft or finalized status").
+			WithReportableDetails(map[string]any{
+				"invoice_id":     id,
+				"current_status": inv.InvoiceStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Don't allow updates for paid invoices
+	if inv.PaymentStatus == types.PaymentStatusSucceeded {
+		return nil, ierr.NewError("cannot update paid invoice").
+			WithHint("Invoice cannot be updated after it has been paid").
+			WithReportableDetails(map[string]any{
+				"invoice_id":     id,
+				"payment_status": inv.PaymentStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Update invoice PDF URL if provided
 	if req.InvoicePDFURL != nil {
 		inv.InvoicePDFURL = req.InvoicePDFURL
+	}
+
+	// Update due date if provided
+	if req.DueDate != nil {
+		inv.DueDate = req.DueDate
+		inv.UpdatedAt = time.Now().UTC()
 	}
 
 	// Update the invoice in the repository
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
 		return nil, err
 	}
+
+	// Publish webhook event for invoice update
+	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceUpdate, id)
 
 	// Return the updated invoice
 	return s.GetInvoice(ctx, id)
@@ -2365,81 +2394,4 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 	}
 
 	return usageBreakdownResponse, nil
-}
-
-// UpdateDueDate updates the due date of an invoice
-func (s *invoiceService) UpdateDueDate(ctx context.Context, id string, dueDate time.Time) error {
-	// Get the invoice first to validate it exists and check its status
-	inv, err := s.InvoiceRepo.Get(ctx, id)
-	if err != nil {
-		if ierr.IsNotFound(err) {
-			return ierr.NewError("invoice not found").
-				WithHint("Invoice with the provided ID does not exist").
-				Mark(ierr.ErrNotFound)
-		}
-		return ierr.WithError(err).
-			WithHint("Failed to retrieve invoice").
-			Mark(ierr.ErrDatabase)
-	}
-
-	// Business rule: Only allow due date updates for draft or finalized invoices
-	// You can modify this logic based on your business requirements
-	if inv.InvoiceStatus != types.InvoiceStatusDraft && inv.InvoiceStatus != types.InvoiceStatusFinalized {
-		return ierr.NewError("cannot update due date for invoice in current status").
-			WithHint("Due date can only be updated for draft or finalized invoices").
-			WithReportableDetails(map[string]any{
-				"invoice_id":     id,
-				"current_status": inv.InvoiceStatus,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Business rule: Don't allow due date updates for paid invoices
-	if inv.PaymentStatus == types.PaymentStatusSucceeded {
-		return ierr.NewError("cannot update due date for paid invoice").
-			WithHint("Due date cannot be updated for invoices that have been paid").
-			WithReportableDetails(map[string]any{
-				"invoice_id":     id,
-				"payment_status": inv.PaymentStatus,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Update the due date
-	inv.DueDate = &dueDate
-	inv.UpdatedAt = time.Now().UTC()
-
-	// Save the updated invoice
-	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to update invoice due date").
-			WithReportableDetails(map[string]any{
-				"invoice_id": id,
-				"due_date":   dueDate,
-			}).
-			Mark(ierr.ErrDatabase)
-	}
-
-	s.Logger.Infow("invoice due date updated successfully",
-		"invoice_id", id,
-		"old_due_date", inv.DueDate,
-		"new_due_date", dueDate,
-	)
-
-	// Publish webhook event for due date update
-	s.Logger.Infow("publishing due date update webhook event",
-		"invoice_id", id,
-		"old_due_date", inv.DueDate,
-		"new_due_date", dueDate,
-		"event_type", types.WebhookEventInvoiceUpdateDueDate,
-	)
-
-	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceUpdateDueDate, id)
-
-	s.Logger.Infow("webhook event published successfully",
-		"invoice_id", id,
-		"event_type", types.WebhookEventInvoiceUpdateDueDate,
-	)
-
-	return nil
 }

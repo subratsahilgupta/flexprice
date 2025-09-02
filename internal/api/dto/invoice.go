@@ -746,7 +746,8 @@ func (r *UpdatePaymentStatusRequest) Validate() error {
 // UpdateInvoiceRequest represents the request payload for updating an invoice
 type UpdateInvoiceRequest struct {
 	// invoice_pdf_url is the URL where customers can download the PDF version of this invoice
-	InvoicePDFURL *string `json:"invoice_pdf_url,omitempty"`
+	InvoicePDFURL *string    `json:"invoice_pdf_url,omitempty"`
+	DueDate       *time.Time `json:"due_date,omitempty"`
 }
 
 func (r *UpdateInvoiceRequest) Validate() error {
@@ -757,6 +758,13 @@ func (r *UpdateInvoiceRequest) Validate() error {
 				WithHint("invalid invoice_pdf_url").
 				Mark(ierr.ErrValidation)
 		}
+	}
+
+	// Validate that the due date is not in the past (optional business rule)
+	if r.DueDate != nil && r.DueDate.Before(time.Now().UTC()) {
+		return ierr.NewError("due_date cannot be in the past").
+			WithHint("Due date must be in the future").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -1129,27 +1137,5 @@ func (r *CreateSubscriptionInvoiceRequest) Validate() error {
 			WithHint("Invoice period start must be before period end").
 			Mark(ierr.ErrValidation)
 	}
-	return nil
-}
-
-// UpdateDueDateRequest represents the request payload for updating an invoice's due date
-type UpdateDueDateRequest struct {
-	// due_date is the new due date for the invoice
-	DueDate time.Time `json:"due_date" binding:"required"`
-}
-
-func (r *UpdateDueDateRequest) Validate() error {
-	if err := validator.ValidateRequest(r); err != nil {
-		return err
-	}
-
-	// Validate that the due date is not in the past (optional business rule)
-	// You can remove this if you want to allow past due dates
-	if r.DueDate.Before(time.Now().UTC()) {
-		return ierr.NewError("due_date cannot be in the past").
-			WithHint("Due date must be in the future").
-			Mark(ierr.ErrValidation)
-	}
-
 	return nil
 }

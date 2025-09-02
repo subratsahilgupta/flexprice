@@ -12,7 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
-	ierr "github.com/flexprice/flexprice/internal/errors"
+
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -1507,7 +1507,7 @@ func (s *InvoiceServiceSuite) TestListInvoicesWithExternalCustomerID() {
 	}
 }
 
-func (s *InvoiceServiceSuite) TestUpdateDueDate() {
+func (s *InvoiceServiceSuite) TestUpdateInvoice() {
 	ctx := s.GetContext()
 
 	// Create a test invoice first - explicitly set as draft and pending payment
@@ -1530,32 +1530,76 @@ func (s *InvoiceServiceSuite) TestUpdateDueDate() {
 	s.Require().Equal(types.InvoiceStatusDraft, invoice.InvoiceStatus)
 	s.Require().Equal(types.PaymentStatusPending, invoice.PaymentStatus)
 
-	// Test updating due date to 7 days from now
-	newDueDate := time.Now().UTC().Add(7 * 24 * time.Hour)
-	err = s.service.UpdateDueDate(ctx, invoice.ID, newDueDate)
-	s.Require().NoError(err)
+	tests := []struct {
+		name          string
+		invoiceID     string
+		updateReq     dto.UpdateInvoiceRequest
+		expectedError string
+	}{
+		{
+			name:      "Update both due date and PDF URL successfully",
+			invoiceID: invoice.ID,
+			updateReq: dto.UpdateInvoiceRequest{
+				DueDate:       lo.ToPtr(time.Now().UTC().Add(7 * 24 * time.Hour)),
+				InvoicePDFURL: lo.ToPtr("https://example.com/invoice.pdf"),
+			},
+		},
+		{
+			name:      "Invalid invoice ID",
+			invoiceID: "non-existent-id",
+			updateReq: dto.UpdateInvoiceRequest{
+				DueDate: lo.ToPtr(time.Now().UTC().Add(7 * 24 * time.Hour)),
+			},
+			expectedError: "not found",
+		},
+		{
+			name:      "Invalid PDF URL",
+			invoiceID: invoice.ID,
+			updateReq: dto.UpdateInvoiceRequest{
+				InvoicePDFURL: lo.ToPtr("not-a-url"),
+			},
+			expectedError: "url must be a valid URL",
+		},
+		{
+			name:      "Due date in past",
+			invoiceID: invoice.ID,
+			updateReq: dto.UpdateInvoiceRequest{
+				DueDate: lo.ToPtr(time.Now().UTC().Add(-24 * time.Hour)),
+			},
+			expectedError: "due_date cannot be in the past",
+		},
+	}
 
-	// Verify the due date was updated
-	updatedInvoice, err := s.service.GetInvoice(ctx, invoice.ID)
-	s.Require().NoError(err)
-	s.Require().NotNil(updatedInvoice.DueDate)
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			updatedInvoice, err := s.service.UpdateInvoice(ctx, tt.invoiceID, tt.updateReq)
 
-	// Allow for small time differences (within 1 second)
-	timeDiff := updatedInvoice.DueDate.Sub(newDueDate)
-	s.Require().True(timeDiff >= -time.Second && timeDiff <= time.Second,
-		"Expected due date %v, got %v (diff: %v)", newDueDate, updatedInvoice.DueDate, timeDiff)
-}
+			if tt.expectedError != "" {
+				s.Require().Error(err)
+				s.Contains(err.Error(), tt.expectedError)
+				return
+			}
 
-func (s *InvoiceServiceSuite) TestUpdateDueDateValidation() {
-	ctx := s.GetContext()
+			s.Require().NoError(err)
+			s.Require().NotNil(updatedInvoice)
 
-	// Test with non-existent invoice ID
-	err := s.service.UpdateDueDate(ctx, "non-existent-id", time.Now().UTC().Add(24*time.Hour))
-	s.Require().Error(err)
-	s.Require().True(ierr.IsNotFound(err))
+			// Verify due date update if provided
+			if tt.updateReq.DueDate != nil {
+				s.Require().NotNil(updatedInvoice.DueDate)
+				timeDiff := updatedInvoice.DueDate.Sub(*tt.updateReq.DueDate)
+				s.Require().True(timeDiff >= -time.Second && timeDiff <= time.Second,
+					"Expected due date %v, got %v (diff: %v)", tt.updateReq.DueDate, updatedInvoice.DueDate, timeDiff)
+			}
 
-	// Create a test invoice and mark it as paid
-	createReq := dto.CreateInvoiceRequest{
+			// Verify PDF URL update if provided
+			if tt.updateReq.InvoicePDFURL != nil {
+				s.Require().Equal(*tt.updateReq.InvoicePDFURL, *updatedInvoice.InvoicePDFURL)
+			}
+		})
+	}
+
+	// Test updating a paid invoice (should fail)
+	paidInvoice, err := s.service.CreateOneOffInvoice(ctx, dto.CreateInvoiceRequest{
 		CustomerID:    s.testData.customer.ID,
 		InvoiceType:   types.InvoiceTypeOneOff,
 		Currency:      "usd",
@@ -1564,13 +1608,12 @@ func (s *InvoiceServiceSuite) TestUpdateDueDateValidation() {
 		Subtotal:      decimal.NewFromFloat(100.00),
 		BillingReason: types.InvoiceBillingReasonManual,
 		PaymentStatus: lo.ToPtr(types.PaymentStatusSucceeded), // Mark as paid
-	}
-
-	paidInvoice, err := s.service.CreateOneOffInvoice(ctx, createReq)
+	})
 	s.Require().NoError(err)
 
-	// Test updating due date on paid invoice (should fail)
-	err = s.service.UpdateDueDate(ctx, paidInvoice.ID, time.Now().UTC().Add(24*time.Hour))
+	_, err = s.service.UpdateInvoice(ctx, paidInvoice.ID, dto.UpdateInvoiceRequest{
+		DueDate: lo.ToPtr(time.Now().UTC().Add(24 * time.Hour)),
+	})
 	s.Require().Error(err)
-	s.Require().True(ierr.IsValidation(err))
+	s.Contains(err.Error(), "cannot update paid invoice")
 }
