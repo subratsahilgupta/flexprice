@@ -51,7 +51,7 @@ func (h *SubscriptionChangeHandler) PreviewSubscriptionChange(c *gin.Context) {
 		return
 	}
 
-	var req dto.SubscriptionChangePreviewRequest
+	var req dto.SubscriptionChangeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.log.Error("failed to bind JSON", zap.Error(err))
 		c.Error(ierr.WithError(err).

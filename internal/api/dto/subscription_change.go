@@ -39,15 +39,6 @@ func (r *SubscriptionChangeRequest) Validate() error {
 	return nil
 }
 
-// SubscriptionChangePreviewRequest represents a request to preview subscription changes
-// @Description Request object for previewing the effects of a subscription plan change
-type SubscriptionChangePreviewRequest struct {
-	SubscriptionChangeRequest
-
-	// preview_date is the date to calculate the preview for (optional, defaults to effective_date or now)
-	PreviewDate *time.Time `json:"preview_date,omitempty"`
-}
-
 // SubscriptionChangePreviewResponse represents the preview of subscription changes
 // @Description Response showing the financial impact of a subscription plan change
 type SubscriptionChangePreviewResponse struct {
@@ -65,9 +56,6 @@ type SubscriptionChangePreviewResponse struct {
 
 	// proration_details contains the calculated proration amounts
 	ProrationDetails *ProrationDetails `json:"proration_details,omitempty"`
-
-	// immediate_invoice_preview shows what would be invoiced immediately
-	ImmediateInvoicePreview *InvoicePreview `json:"immediate_invoice_preview,omitempty"`
 
 	// next_invoice_preview shows how the next regular invoice would be affected
 	NextInvoicePreview *InvoicePreview `json:"next_invoice_preview,omitempty"`

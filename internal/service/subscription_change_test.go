@@ -283,7 +283,7 @@ func (s *SubscriptionChangeServiceTestSuite) createUsageBasedPlan(name string, f
 // 	testSub := s.createTestSubscription(basicPlan.ID, customer.ID)
 
 // 	// Create preview request
-// 	req := dto.SubscriptionChangePreviewRequest{
+// 	req := dto.SubscriptionChangeRequest{
 // 		SubscriptionChangeRequest: dto.SubscriptionChangeRequest{
 // 			TargetPlanID:      premiumPlan.ID,
 // 			ProrationBehavior: types.ProrationBehaviorCreateProrations,
@@ -315,7 +315,7 @@ func (s *SubscriptionChangeServiceTestSuite) createUsageBasedPlan(name string, f
 // 	testSub := s.createTestSubscription(premiumPlan.ID, customer.ID)
 
 // 	// Create preview request
-// 	req := dto.SubscriptionChangePreviewRequest{
+// 	req := dto.SubscriptionChangeRequest{
 // 		SubscriptionChangeRequest: dto.SubscriptionChangeRequest{
 // 			TargetPlanID:      basicPlan.ID,
 // 			ProrationBehavior: types.ProrationBehaviorCreateProrations,
@@ -345,7 +345,7 @@ func (s *SubscriptionChangeServiceTestSuite) createUsageBasedPlan(name string, f
 // 	testSub := s.createTestSubscription(plan1.ID, customer.ID)
 
 // 	// Create preview request
-// 	req := dto.SubscriptionChangePreviewRequest{
+// 	req := dto.SubscriptionChangeRequest{
 // 		SubscriptionChangeRequest: dto.SubscriptionChangeRequest{
 // 			TargetPlanID:      plan2.ID,
 // 			ProrationBehavior: types.ProrationBehaviorCreateProrations,
@@ -435,7 +435,7 @@ func (s *SubscriptionChangeServiceTestSuite) createUsageBasedPlan(name string, f
 // 	ctx := s.GetContext()
 
 // 	// Test with invalid subscription ID
-// 	req := dto.SubscriptionChangePreviewRequest{
+// 	req := dto.SubscriptionChangeRequest{
 // 		SubscriptionChangeRequest: dto.SubscriptionChangeRequest{
 // 			TargetPlanID:      "invalid-plan-id",
 // 			ProrationBehavior: types.ProrationBehaviorCreateProrations,
@@ -586,9 +586,7 @@ func (s *SubscriptionChangeServiceTestSuite) TestUpgradeBasicToPro() {
 	}
 
 	// Test preview first
-	previewReq := dto.SubscriptionChangePreviewRequest{
-		SubscriptionChangeRequest: req,
-	}
+	previewReq := req
 	previewResponse, err := s.subscriptionChangeService.PreviewSubscriptionChange(ctx, testSub.ID, previewReq)
 
 	// Assertions for preview
@@ -633,9 +631,7 @@ func (s *SubscriptionChangeServiceTestSuite) TestDowngradeProToBasic() {
 	}
 
 	// Test preview
-	previewReq := dto.SubscriptionChangePreviewRequest{
-		SubscriptionChangeRequest: req,
-	}
+	previewReq := req
 	previewResponse, err := s.subscriptionChangeService.PreviewSubscriptionChange(ctx, testSub.ID, previewReq)
 
 	// Assertions for preview
@@ -675,9 +671,7 @@ func (s *SubscriptionChangeServiceTestSuite) TestMonthlyToYearlyChange() {
 	}
 
 	// Test preview
-	previewReq := dto.SubscriptionChangePreviewRequest{
-		SubscriptionChangeRequest: req,
-	}
+	previewReq := req
 	previewResponse, err := s.subscriptionChangeService.PreviewSubscriptionChange(ctx, testSub.ID, previewReq)
 
 	// Assertions
@@ -745,9 +739,7 @@ func (s *SubscriptionChangeServiceTestSuite) TestAnniversaryBillingProration() {
 	}
 
 	// Test preview to verify proration calculation
-	previewReq := dto.SubscriptionChangePreviewRequest{
-		SubscriptionChangeRequest: req,
-	}
+	previewReq := req
 	previewResponse, err := s.subscriptionChangeService.PreviewSubscriptionChange(ctx, testSub.ID, previewReq)
 
 	// Assertions
@@ -774,9 +766,7 @@ func (s *SubscriptionChangeServiceTestSuite) TestCalendarBillingProration() {
 	}
 
 	// Test preview to verify proration calculation
-	previewReq := dto.SubscriptionChangePreviewRequest{
-		SubscriptionChangeRequest: req,
-	}
+	previewReq := req
 	previewResponse, err := s.subscriptionChangeService.PreviewSubscriptionChange(ctx, testSub.ID, previewReq)
 
 	// Assertions
@@ -917,9 +907,7 @@ func (s *SubscriptionChangeServiceTestSuite) TestLateralPlanChange() {
 	}
 
 	// Test preview
-	previewReq := dto.SubscriptionChangePreviewRequest{
-		SubscriptionChangeRequest: req,
-	}
+	previewReq := req
 	previewResponse, err := s.subscriptionChangeService.PreviewSubscriptionChange(ctx, testSub.ID, previewReq)
 
 	// Assertions

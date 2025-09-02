@@ -20,7 +20,7 @@ import (
 // SubscriptionChangeService handles subscription plan changes (upgrades/downgrades)
 type SubscriptionChangeService interface {
 	// PreviewSubscriptionChange shows the impact of changing subscription plan
-	PreviewSubscriptionChange(ctx context.Context, subscriptionID string, req dto.SubscriptionChangePreviewRequest) (*dto.SubscriptionChangePreviewResponse, error)
+	PreviewSubscriptionChange(ctx context.Context, subscriptionID string, req dto.SubscriptionChangeRequest) (*dto.SubscriptionChangePreviewResponse, error)
 
 	// ExecuteSubscriptionChange performs the actual subscription plan change
 	ExecuteSubscriptionChange(ctx context.Context, subscriptionID string, req dto.SubscriptionChangeRequest) (*dto.SubscriptionChangeExecuteResponse, error)
@@ -47,7 +47,7 @@ func NewSubscriptionChangeService(serviceParams ServiceParams) SubscriptionChang
 func (s *subscriptionChangeService) PreviewSubscriptionChange(
 	ctx context.Context,
 	subscriptionID string,
-	req dto.SubscriptionChangePreviewRequest,
+	req dto.SubscriptionChangeRequest,
 ) (*dto.SubscriptionChangePreviewResponse, error) {
 	logger := s.serviceParams.Logger.With(
 		zap.String("subscription_id", subscriptionID),
@@ -116,10 +116,6 @@ func (s *subscriptionChangeService) PreviewSubscriptionChange(
 
 	// Calculate effective date
 	effectiveDate := time.Now()
-	// effectiveDate := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
-	if req.PreviewDate != nil {
-		effectiveDate = *req.PreviewDate
-	}
 
 	// Calculate proration if needed
 	var prorationDetails *dto.ProrationDetails
@@ -129,13 +125,6 @@ func (s *subscriptionChangeService) PreviewSubscriptionChange(
 			logger.Error("failed to calculate proration preview", zap.Error(err))
 			return nil, err
 		}
-	}
-
-	// Calculate immediate invoice preview
-	immediateInvoice, err := s.calculateImmediateInvoicePreview(ctx, currentSub, targetPlan, prorationDetails, effectiveDate)
-	if err != nil {
-		logger.Error("failed to calculate immediate invoice preview", zap.Error(err))
-		return nil, err
 	}
 
 	// Calculate next invoice preview
@@ -169,14 +158,13 @@ func (s *subscriptionChangeService) PreviewSubscriptionChange(
 			LookupKey:   targetPlan.LookupKey,
 			Description: targetPlan.Description,
 		},
-		ChangeType:              changeType,
-		ProrationDetails:        prorationDetails,
-		ImmediateInvoicePreview: immediateInvoice,
-		NextInvoicePreview:      nextInvoice,
-		EffectiveDate:           effectiveDate,
-		NewBillingCycle:         *newBillingCycle,
-		Warnings:                warnings,
-		Metadata:                req.Metadata,
+		ChangeType:         changeType,
+		ProrationDetails:   prorationDetails,
+		NextInvoicePreview: nextInvoice,
+		EffectiveDate:      effectiveDate,
+		NewBillingCycle:    *newBillingCycle,
+		Warnings:           warnings,
+		Metadata:           req.Metadata,
 	}
 
 	logger.Info("subscription change preview completed successfully")
@@ -396,62 +384,6 @@ func (s *subscriptionChangeService) calculateProrationPreview(
 
 	// Convert to DTO format
 	return s.convertCancellationProrationToDetails(prorationResult, effectiveDate, currentSub), nil
-}
-
-// calculateImmediateInvoicePreview calculates what would be invoiced immediately
-func (s *subscriptionChangeService) calculateImmediateInvoicePreview(
-	ctx context.Context,
-	currentSub *subscription.Subscription,
-	targetPlan *plan.Plan,
-	prorationDetails *dto.ProrationDetails,
-	effectiveDate time.Time,
-) (*dto.InvoicePreview, error) {
-	if prorationDetails == nil {
-		return nil, nil
-	}
-
-	// Create line items for the preview
-	lineItems := []dto.InvoiceLineItemPreview{}
-
-	// Add credit line item if there's a credit
-	if prorationDetails.CreditAmount.GreaterThan(decimal.Zero) {
-		lineItems = append(lineItems, dto.InvoiceLineItemPreview{
-			Description: prorationDetails.CreditDescription,
-			Amount:      prorationDetails.CreditAmount.Neg(),
-			Quantity:    decimal.NewFromInt(1),
-			UnitPrice:   prorationDetails.CreditAmount.Neg(),
-			IsProration: true,
-			PeriodStart: &prorationDetails.CurrentPeriodStart,
-			PeriodEnd:   &effectiveDate,
-		})
-	}
-
-	// Add charge line item if there's a charge
-	if prorationDetails.ChargeAmount.GreaterThan(decimal.Zero) {
-		lineItems = append(lineItems, dto.InvoiceLineItemPreview{
-			Description: prorationDetails.ChargeDescription,
-			Amount:      prorationDetails.ChargeAmount,
-			Quantity:    decimal.NewFromInt(1),
-			UnitPrice:   prorationDetails.ChargeAmount,
-			IsProration: true,
-			PeriodStart: &effectiveDate,
-			PeriodEnd:   &prorationDetails.CurrentPeriodEnd,
-		})
-	}
-
-	subtotal := prorationDetails.NetAmount
-	// For simplicity, assume no taxes in preview
-	taxAmount := decimal.Zero
-	total := subtotal.Add(taxAmount)
-
-	return &dto.InvoicePreview{
-		Subtotal:  subtotal,
-		TaxAmount: taxAmount,
-		Total:     total,
-		Currency:  currentSub.Currency,
-		LineItems: lineItems,
-		DueDate:   &effectiveDate,
-	}, nil
 }
 
 // calculateNextInvoicePreview calculates how the next regular invoice would be affected
@@ -757,32 +689,12 @@ func (s *subscriptionChangeService) createNewSubscription(
 	// }
 	// For unchanged, we keep the current billing cycle and use effective date as start
 
-	// Transfer coupons from old subscription
-	var coupons []string
-	coupons, err := s.transferCoupons(ctx, currentSub.ID)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to transfer coupon associations").
-			Mark(ierr.ErrDatabase)
-	}
-
-	// Transfer addons from old subscription
-	addons, err := s.transferAddonAssociations(ctx, currentSub.ID)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to transfer addon associations").
-			Mark(ierr.ErrDatabase)
-	}
-
-	// Transfer tax rate overrides from old subscription
-	taxRateOverrides, err := s.transferTaxAssociations(ctx, currentSub.ID)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to transfer tax associations").
-			Mark(ierr.ErrDatabase)
-	}
-
 	prices, err := s.serviceParams.PriceRepo.GetByPlanID(ctx, targetPlan.ID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get prices for target plan").
+			Mark(ierr.ErrDatabase)
+	}
 	if len(prices) == 0 {
 		return nil, ierr.NewError("Target plan has no prices").
 			WithHint("Plan ID: " + targetPlan.ID).
@@ -805,14 +717,11 @@ func (s *subscriptionChangeService) createNewSubscription(
 		BillingCycle:       billingCycle,
 		StartDate:          &startDate,
 		Metadata:           req.Metadata,
-		ProrationMode:      types.ProrationModeActive, // Enable proration for new subscription
+		ProrationMode:      types.ProrationModeActive,
 		CustomerTimezone:   currentSub.CustomerTimezone,
 		CreditGrants:       creditGrantRequests,
-		Coupons:            coupons,                     // Transfer subscription-level coupons
-		Addons:             addons,                      // Transfer addons
-		TaxRateOverrides:   taxRateOverrides,            // Transfer tax overrides (when available)
-		CommitmentAmount:   currentSub.CommitmentAmount, // Transfer commitment amount
-		OverageFactor:      currentSub.OverageFactor,    // Transfer overage factor
+		CommitmentAmount:   currentSub.CommitmentAmount,
+		OverageFactor:      currentSub.OverageFactor,
 	}
 
 	// Use the existing subscription service to create the new subscription
