@@ -209,7 +209,7 @@ func (s *billingService) CalculateUsageCharges(
 		meterMap[m.ID] = m
 	}
 
-	// Process usage charges from line items
+	// filter out line items that are not active
 	for _, item := range sub.LineItems {
 		if item.PriceType != types.PRICE_TYPE_USAGE {
 			continue
@@ -272,8 +272,8 @@ func (s *billingService) CalculateUsageCharges(
 							MeterID:            item.MeterID,
 							PriceID:            item.PriceID,
 							ExternalCustomerID: customer.ExternalID,
-							StartTime:          periodStart,
-							EndTime:            periodEnd,
+							StartTime:          item.GetPeriodStart(periodStart),
+							EndTime:            item.GetPeriodEnd(periodEnd),
 							WindowSize:         types.WindowSizeDay, // Use daily window size
 						}
 
@@ -343,8 +343,8 @@ func (s *billingService) CalculateUsageCharges(
 								MeterID:            item.MeterID,
 								PriceID:            item.PriceID,
 								ExternalCustomerID: customer.ExternalID,
-								StartTime:          periodStart,
-								EndTime:            periodEnd,
+								StartTime:          item.GetPeriodStart(periodStart),
+								EndTime:            item.GetPeriodEnd(periodEnd),
 							}
 
 							// Get usage data with buckets
@@ -444,8 +444,8 @@ func (s *billingService) CalculateUsageCharges(
 				DisplayName:      displayName,
 				Amount:           lineItemAmount,
 				Quantity:         quantityForCalculation,
-				PeriodStart:      lo.ToPtr(periodStart),
-				PeriodEnd:        lo.ToPtr(periodEnd),
+				PeriodStart:      lo.ToPtr(item.GetPeriodStart(periodStart)),
+				PeriodEnd:        lo.ToPtr(item.GetPeriodEnd(periodEnd)),
 				Metadata:         metadata,
 			})
 		}
@@ -652,6 +652,34 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 
 		description = fmt.Sprintf("Preview invoice for subscription %s", sub.ID)
 		metadata["is_preview"] = "true"
+	case types.ReferencePointCancel:
+		// for cancel, include arrer line items only
+		arrearLineItems, err := s.FilterLineItemsToBeInvoiced(ctx, sub, periodStart, periodEnd, classification.CurrentPeriodArrear)
+		if err != nil {
+			return nil, err
+		}
+
+		// For current period arrear charges
+		arrearResult, err := s.CalculateCharges(
+			ctx,
+			sub,
+			arrearLineItems,
+			periodStart,
+			periodEnd,
+			true, // Include usage for arrear
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		calculationResult = &BillingCalculationResult{
+			FixedCharges: arrearResult.FixedCharges,
+			UsageCharges: arrearResult.UsageCharges, // Only arrear has usage
+			TotalAmount:  arrearResult.TotalAmount,
+			Currency:     sub.Currency,
+		}
+
+		description = fmt.Sprintf("Invoice for subscription %s", sub.ID)
 
 	default:
 		return nil, ierr.NewError("invalid reference point").
@@ -1425,7 +1453,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 						ExternalCustomerID: customer.ExternalID,
 						StartTime:          sub.CurrentPeriodStart,
 						EndTime:            sub.CurrentPeriodEnd,
-						WindowSize:         types.WindowSizeDay, // Use daily window size
+						WindowSize:         types.WindowSizeDay,
 					}
 
 					// Get usage data with daily windows

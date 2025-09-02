@@ -664,8 +664,11 @@ type InvoiceLineItemResponse struct {
 	// updated_by is the identifier of the user who last updated this line item
 	UpdatedBy string `json:"updated_by,omitempty"`
 
-	// usage_analytics contains usage analytics for this line item
+	// usage_analytics contains usage analytics for this line item (legacy - grouped by source)
 	UsageAnalytics []SourceUsageItem `json:"usage_analytics,omitempty"`
+
+	// usage_breakdown contains flexible usage breakdown for this line item (supports any grouping)
+	UsageBreakdown []UsageBreakdownItem `json:"usage_breakdown,omitempty"`
 }
 
 func NewInvoiceLineItemResponse(item *invoice.InvoiceLineItem) *InvoiceLineItemResponse {
@@ -902,6 +905,24 @@ type SourceUsageItem struct {
 	EventCount *int `json:"event_count,omitempty"`
 }
 
+// UsageBreakdownItem represents flexible usage breakdown for any grouping within a line item
+type UsageBreakdownItem struct {
+	// cost is the cost attributed to this group for the line item
+	Cost string `json:"cost"`
+
+	// usage is the total usage amount from this group (optional, for additional context)
+	Usage *string `json:"usage,omitempty"`
+
+	// percentage is the percentage of total line item cost from this group (optional)
+	Percentage *string `json:"percentage,omitempty"`
+
+	// event_count is the number of events from this group (optional)
+	EventCount *int `json:"event_count,omitempty"`
+
+	// grouped_by contains the grouping field values (e.g., {"source": "api", "org_id": "org123"})
+	GroupedBy map[string]string `json:"grouped_by"`
+}
+
 // NewInvoiceResponse creates a new invoice response from domain invoice
 func NewInvoiceResponse(inv *invoice.Invoice) *InvoiceResponse {
 	if inv == nil {
@@ -1000,6 +1021,17 @@ func (r *InvoiceResponse) WithUsageAnalytics(usageAnalytics map[string][]SourceU
 		usageAnalyticsItem := usageAnalytics[lineItem.ID]
 		if usageAnalyticsItem != nil {
 			lineItem.UsageAnalytics = usageAnalyticsItem
+		}
+	}
+	return r
+}
+
+// WithUsageBreakdown adds flexible usage breakdown to the invoice response
+func (r *InvoiceResponse) WithUsageBreakdown(usageBreakdown map[string][]UsageBreakdownItem) *InvoiceResponse {
+	for _, lineItem := range r.LineItems {
+		usageBreakdownItem := usageBreakdown[lineItem.ID]
+		if usageBreakdownItem != nil {
+			lineItem.UsageBreakdown = usageBreakdownItem
 		}
 	}
 	return r

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -200,12 +201,18 @@ func (s *PriceServiceSuite) TestDeletePrice() {
 	price := &price.Price{ID: "price-1", Amount: decimal.NewFromInt(100), Currency: "usd"}
 	_ = s.priceRepo.Create(s.ctx, price)
 
-	err := s.priceService.DeletePrice(s.ctx, "price-1")
+	req := dto.DeletePriceRequest{
+		EndDate: lo.ToPtr(time.Now().UTC().AddDate(0, 0, 1)),
+	}
+
+	err := s.priceService.DeletePrice(s.ctx, "price-1", req)
 	s.NoError(err)
 
-	// Ensure the price no longer exists
-	_, err = s.priceRepo.Get(s.ctx, "price-1")
-	s.Error(err)
+	// Ensure the price still exists but has an end date set
+	updatedPrice, err := s.priceRepo.Get(s.ctx, "price-1")
+	s.NoError(err)
+	s.NotNil(updatedPrice.EndDate)
+	s.Equal(req.EndDate.Unix(), updatedPrice.EndDate.Unix())
 }
 
 func (s *PriceServiceSuite) TestCalculateCostWithBreakup_FlatFee() {
@@ -358,7 +365,7 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlab() {
 
 	// Corrected calculation:
 	// (10 * 50) = 500 (first tier: 0-10)
-	// (10 * 40) = 400 (second tier: 10-20) 
+	// (10 * 40) = 400 (second tier: 10-20)
 	// (5 * 30) = 150 (third tier: 20+)
 	// Total: 500 + 400 + 150 = 1050
 	expectedFinalCost = decimal.NewFromInt(1050)
@@ -1048,4 +1055,333 @@ func (s *PriceServiceSuite) TestCalculateCostWithBreakup_TieredSlabEdgeCases() {
 				tc.description)
 		})
 	}
+}
+
+func (s *PriceServiceSuite) TestDeletePrice_Comprehensive() {
+	// Test data setup for comprehensive delete price tests
+	s.Run("TC-DEL-001_Missing_Price_ID", func() {
+		// This test would be handled at the HTTP layer, not service layer
+		// Service layer expects valid price ID
+		s.T().Skip("Test handled at HTTP layer")
+	})
+
+	s.Run("TC-DEL-002_Invalid_Price_ID_Format", func() {
+		// This test would be handled at the HTTP layer, not service layer
+		// Service layer expects valid price ID
+		s.T().Skip("Test handled at HTTP layer")
+	})
+
+	s.Run("TC-DEL-003_Non_Existent_Price_ID", func() {
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(time.Now().UTC().AddDate(0, 0, 1)),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, "non-existent-id", req)
+		s.Error(err)
+		s.Contains(err.Error(), "not found")
+	})
+
+	s.Run("TC-DEL-004_No_End_Date_Provided", func() {
+		// Create a price first
+		price := &price.Price{
+			ID:         "price-no-end-date",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Delete without end date
+		req := dto.DeletePriceRequest{}
+		err := s.priceService.DeletePrice(s.ctx, price.ID, req)
+		s.NoError(err)
+
+		// Verify price still exists but has end date set
+		updatedPrice, err := s.priceRepo.Get(s.ctx, price.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+
+		// End date should be set to current time (within 1 second tolerance)
+		timeDiff := time.Since(*updatedPrice.EndDate)
+		s.True(timeDiff < time.Second, "End date should be set to current time")
+	})
+
+	s.Run("TC-DEL-005_Past_End_Date_Provided", func() {
+		// Create a price first
+		price := &price.Price{
+			ID:         "price-past-end-date",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Try to delete with past end date
+		pastDate := time.Now().UTC().AddDate(0, 0, -1) // 1 day ago
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(pastDate),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, price.ID, req)
+		s.Error(err)
+		s.Contains(err.Error(), "end date must be in the future")
+	})
+
+	s.Run("TC-DEL-006_Future_End_Date_Provided", func() {
+		// Create a price first
+		price := &price.Price{
+			ID:         "price-future-end-date",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Delete with future end date
+		futureDate := time.Now().UTC().AddDate(0, 0, 7) // 7 days from now
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(futureDate),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, price.ID, req)
+		s.NoError(err)
+
+		// Verify price end date is set to specified future date
+		updatedPrice, err := s.priceRepo.Get(s.ctx, price.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+		s.Equal(futureDate.Unix(), updatedPrice.EndDate.Unix())
+	})
+
+	s.Run("TC-DEL-007_Current_Time_As_End_Date", func() {
+		// Create a price first
+		price := &price.Price{
+			ID:         "price-current-end-date",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Delete with current time as end date (must be in future)
+		currentTime := time.Now().UTC().Add(time.Second) // Add 1 second to ensure it's in the future
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(currentTime),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, price.ID, req)
+		s.NoError(err)
+
+		// Verify price end date is set to current time
+		updatedPrice, err := s.priceRepo.Get(s.ctx, price.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+		s.Equal(currentTime.Unix(), updatedPrice.EndDate.Unix())
+	})
+
+	s.Run("TC-DEL-008_Very_Far_Future_End_Date", func() {
+		// Create a price first
+		price := &price.Price{
+			ID:         "price-far-future-end-date",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Delete with very far future end date
+		farFutureDate := time.Now().UTC().AddDate(10, 0, 0) // 10 years from now
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(farFutureDate),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, price.ID, req)
+		s.NoError(err)
+
+		// Verify price end date is set to specified far future date
+		updatedPrice, err := s.priceRepo.Get(s.ctx, price.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+		s.Equal(farFutureDate.Unix(), updatedPrice.EndDate.Unix())
+	})
+
+	s.Run("TC-DEL-009_Already_Deleted_Terminated_Price", func() {
+		// Create a price with existing end date
+		existingEndDate := time.Now().UTC().AddDate(0, 0, 5) // 5 days from now
+		price := &price.Price{
+			ID:         "price-already-ended",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			EndDate:    lo.ToPtr(existingEndDate),
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Update with new end date
+		newEndDate := time.Now().UTC().AddDate(0, 0, 10) // 10 days from now
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(newEndDate),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, price.ID, req)
+		s.NoError(err)
+
+		// Verify price end date is updated to new date
+		updatedPrice, err := s.priceRepo.Get(s.ctx, price.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+		s.Equal(newEndDate.Unix(), updatedPrice.EndDate.Unix())
+	})
+
+	s.Run("TC-DEL-010_Price_With_Different_Statuses", func() {
+		// Test with published price (normal case)
+		publishedPrice := &price.Price{
+			ID:         "price-published",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+		}
+		_ = s.priceRepo.Create(s.ctx, publishedPrice)
+
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(time.Now().UTC().AddDate(0, 0, 1)),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, publishedPrice.ID, req)
+		s.NoError(err)
+
+		// Verify published price can be terminated
+		updatedPrice, err := s.priceRepo.Get(s.ctx, publishedPrice.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+	})
+
+	s.Run("TC-DEL-011_Price_Used_In_Active_Subscriptions", func() {
+		// This test requires subscription context which is better tested in subscription_test.go
+		s.T().Skip("Test better suited for subscription_test.go")
+	})
+
+	s.Run("TC-DEL-012_Price_With_Active_Line_Items", func() {
+		// This test requires subscription context which is better tested in subscription_test.go
+		s.T().Skip("Test better suited for subscription_test.go")
+	})
+
+	s.Run("TC-DEL-013_Price_With_Override_Prices", func() {
+		// This test requires subscription context which is better tested in subscription_test.go
+		s.T().Skip("Test better suited for subscription_test.go")
+	})
+
+	s.Run("TC-DEL-014_Price_In_Different_Environments_Tenants", func() {
+		// This test requires multi-tenant context which is better tested in integration tests
+		s.T().Skip("Test better suited for integration tests")
+	})
+}
+
+func (s *PriceServiceSuite) TestDeletePrice_EdgeCases() {
+	s.Run("TC-DEL-015_Price_With_Complex_Tiers", func() {
+		// Create a price with complex tier structure
+		upTo10 := uint64(10)
+		upTo20 := uint64(20)
+		complexPrice := &price.Price{
+			ID:           "price-complex-tiers",
+			Amount:       decimal.Zero,
+			Currency:     "usd",
+			EntityType:   types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:     "plan-1",
+			BillingModel: types.BILLING_MODEL_TIERED,
+			TierMode:     types.BILLING_TIER_SLAB,
+			Tiers: []price.PriceTier{
+				{UpTo: &upTo10, UnitAmount: decimal.NewFromFloat(0.10)},
+				{UpTo: &upTo20, UnitAmount: decimal.NewFromFloat(0.05)},
+				{UpTo: nil, UnitAmount: decimal.NewFromFloat(0.02)},
+			},
+		}
+		_ = s.priceRepo.Create(s.ctx, complexPrice)
+
+		// Terminate the complex price
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(time.Now().UTC().AddDate(0, 0, 1)),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, complexPrice.ID, req)
+		s.NoError(err)
+
+		// Verify complex price is terminated
+		updatedPrice, err := s.priceRepo.Get(s.ctx, complexPrice.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+		s.Len(updatedPrice.Tiers, 3) // Tiers should be preserved
+	})
+
+	s.Run("TC-DEL-016_Price_With_Metadata", func() {
+		// Create a price with metadata
+		metadataPrice := &price.Price{
+			ID:         "price-with-metadata",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			Metadata: price.JSONBMetadata{
+				"description": "Test price with metadata",
+				"category":    "test",
+				"version":     "1.0",
+			},
+		}
+		_ = s.priceRepo.Create(s.ctx, metadataPrice)
+
+		// Terminate the price with metadata
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(time.Now().UTC().AddDate(0, 0, 1)),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, metadataPrice.ID, req)
+		s.NoError(err)
+
+		// Verify price is terminated and metadata is preserved
+		updatedPrice, err := s.priceRepo.Get(s.ctx, metadataPrice.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+		s.Equal("Test price with metadata", updatedPrice.Metadata["description"])
+		s.Equal("test", updatedPrice.Metadata["category"])
+		s.Equal("1.0", updatedPrice.Metadata["version"])
+	})
+
+	s.Run("TC-DEL-017_Price_With_Transform_Quantity", func() {
+		// Create a price with transform quantity
+		transformPrice := &price.Price{
+			ID:           "price-transform",
+			Amount:       decimal.NewFromInt(1),
+			Currency:     "usd",
+			EntityType:   types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:     "plan-1",
+			BillingModel: types.BILLING_MODEL_PACKAGE,
+			TransformQuantity: price.JSONBTransformQuantity{
+				DivideBy: 100,
+				Round:    types.ROUND_UP,
+			},
+		}
+		_ = s.priceRepo.Create(s.ctx, transformPrice)
+
+		// Terminate the transform price
+		req := dto.DeletePriceRequest{
+			EndDate: lo.ToPtr(time.Now().UTC().AddDate(0, 0, 1)),
+		}
+
+		err := s.priceService.DeletePrice(s.ctx, transformPrice.ID, req)
+		s.NoError(err)
+
+		// Verify price is terminated and transform quantity is preserved
+		updatedPrice, err := s.priceRepo.Get(s.ctx, transformPrice.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+		s.Equal(100, updatedPrice.TransformQuantity.DivideBy)
+		s.Equal(types.ROUND_UP, updatedPrice.TransformQuantity.Round)
+	})
 }
