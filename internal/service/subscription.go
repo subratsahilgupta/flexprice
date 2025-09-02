@@ -768,11 +768,13 @@ func (s *subscriptionService) CancelSubscription(
 			return err
 		}
 
-		// Step 10: Top up wallet for proration credit
-		walletService := NewWalletService(s.ServiceParams)
-		err = walletService.TopUpWalletForProratedCharge(ctx, subscription.CustomerID, totalCreditAmount.Abs(), subscription.Currency)
-		if err != nil {
-			return err
+		// Step 10: Top up wallet for proration credit (only if there's a credit amount)
+		if totalCreditAmount.GreaterThan(decimal.Zero) {
+			walletService := NewWalletService(s.ServiceParams)
+			err = walletService.TopUpWalletForProratedCharge(ctx, subscription.CustomerID, totalCreditAmount.Abs(), subscription.Currency)
+			if err != nil {
+				return err
+			}
 		}
 
 		return nil

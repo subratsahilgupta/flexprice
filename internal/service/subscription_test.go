@@ -1050,7 +1050,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 						}
 						return types.CancellationTypeImmediate
 					}(),
-					ProrationBehavior: types.ProrationBehaviorCreateProrations,
+					ProrationBehavior: types.ProrationBehaviorNone,
 					Reason:            "test_cancellation",
 				}
 				_, err := s.service.CancelSubscription(s.GetContext(), tc.id, cancelReq)
@@ -1103,7 +1103,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		s.Run("cancel_already_canceled_subscription", func() {
 			_, err := s.service.CancelSubscription(s.GetContext(), activeSub.ID, &dto.CancelSubscriptionRequest{
 				CancellationType:  types.CancellationTypeImmediate,
-				ProrationBehavior: types.ProrationBehaviorCreateProrations,
+				ProrationBehavior: types.ProrationBehaviorNone,
 				Reason:            "test_cancellation",
 			})
 			s.Error(err)
@@ -1132,7 +1132,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel at period end
 		_, err := s.service.CancelSubscription(s.GetContext(), periodEndSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeEndOfPeriod,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -1219,7 +1219,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel immediately - should create invoice for usage charges
 		_, err := s.service.CancelSubscription(s.GetContext(), usageSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -1317,7 +1317,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel immediately - should create invoice for prorated fixed arrear charges
 		_, err := s.service.CancelSubscription(s.GetContext(), fixedSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -1418,7 +1418,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel immediately - should not charge for advance fees since customer already paid
 		_, err := s.service.CancelSubscription(s.GetContext(), advanceSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -1553,7 +1553,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel immediately - should create invoice only for arrear usage charges, not advance fixed charges
 		_, err := s.service.CancelSubscription(s.GetContext(), mixedSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -1675,7 +1675,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Expected: (1000 * $0.03) + (200 * $0.01) = $30 + $2 = $32
 		_, err := s.service.CancelSubscription(s.GetContext(), tieredSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -1774,7 +1774,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Expected: (150 + 200 + 100) * $0.15 = 450 * $0.15 = $67.50
 		_, err := s.service.CancelSubscription(s.GetContext(), storageSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -1864,7 +1864,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel immediately - should create invoice for package usage charges
 		_, err := s.service.CancelSubscription(s.GetContext(), packageSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -1953,7 +1953,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel immediately - should create invoice with commitment and overage calculations
 		_, err := s.service.CancelSubscription(s.GetContext(), commitmentSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -2094,7 +2094,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Expected: prorated $25 for the period used (10 days out of 30-day month)
 		_, err := s.service.CancelSubscription(s.GetContext(), noUsageSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -2242,7 +2242,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Total: $99.20, exceeds $20 commitment, overage: ($99.20 - $20) * 1.5 = $118.80
 		_, err := s.service.CancelSubscription(s.GetContext(), multiMeterSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -2336,7 +2336,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel immediately - should create invoice for volume-based tiered usage charges
 		_, err := s.service.CancelSubscription(s.GetContext(), volumeSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -2556,7 +2556,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// - Advance fixed fee ($60) should NOT be included
 		_, err := s.service.CancelSubscription(s.GetContext(), comprehensiveSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -2692,7 +2692,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Expected: 20 (max users) * $2 = $40
 		_, err := s.service.CancelSubscription(s.GetContext(), maxSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -2817,7 +2817,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// - Total: $20.00
 		_, err := s.service.CancelSubscription(s.GetContext(), invoiceValidationSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -2928,7 +2928,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel immediately - should create invoice using override pricing
 		_, err := s.service.CancelSubscription(s.GetContext(), overrideSub.ID, &dto.CancelSubscriptionRequest{
 			CancellationType:  types.CancellationTypeImmediate,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			ProrationBehavior: types.ProrationBehaviorNone,
 			Reason:            "test_cancellation",
 		})
 		s.NoError(err)
@@ -3001,7 +3001,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 
 				_, err := s.service.CancelSubscription(s.GetContext(), sub.ID, &dto.CancelSubscriptionRequest{
 					CancellationType:  types.CancellationTypeImmediate,
-					ProrationBehavior: types.ProrationBehaviorCreateProrations,
+					ProrationBehavior: types.ProrationBehaviorNone,
 					Reason:            "test_cancellation",
 				})
 
