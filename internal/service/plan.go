@@ -292,6 +292,11 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 			entFilter = entFilter.WithExpand(string(types.ExpandFeatures))
 		}
 
+		// Apply the exact same sort order as plans
+		if filter.Sort != nil {
+			entFilter.Sort = append(entFilter.Sort, filter.Sort...)
+		}
+
 		entitlements, err := entitlementService.ListEntitlements(ctx, entFilter)
 		if err != nil {
 			return nil, err

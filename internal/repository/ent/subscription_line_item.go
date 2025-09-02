@@ -39,6 +39,7 @@ func (o *SubscriptionLineItemQueryOptions) applyActiveLineItemFilter(query *ent.
 	}
 
 	return query.Where(
+		subscriptionlineitem.Status(string(types.StatusPublished)),
 		subscriptionlineitem.Or(
 			subscriptionlineitem.EndDateGT(*currentPeriodStart),
 			subscriptionlineitem.EndDateIsNil(),
