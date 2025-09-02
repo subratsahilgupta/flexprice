@@ -677,6 +677,34 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 
 		description = fmt.Sprintf("Preview invoice for subscription %s", sub.ID)
 		metadata["is_preview"] = "true"
+	case types.ReferencePointCancel:
+		// for cancel, include arrer line items only
+		arrearLineItems, err := s.FilterLineItemsToBeInvoiced(ctx, sub, periodStart, periodEnd, classification.CurrentPeriodArrear)
+		if err != nil {
+			return nil, err
+		}
+
+		// For current period arrear charges
+		arrearResult, err := s.CalculateCharges(
+			ctx,
+			sub,
+			arrearLineItems,
+			periodStart,
+			periodEnd,
+			true, // Include usage for arrear
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		calculationResult = &BillingCalculationResult{
+			FixedCharges: arrearResult.FixedCharges,
+			UsageCharges: arrearResult.UsageCharges, // Only arrear has usage
+			TotalAmount:  arrearResult.TotalAmount,
+			Currency:     sub.Currency,
+		}
+
+		description = fmt.Sprintf("Invoice for subscription %s", sub.ID)
 
 	default:
 		return nil, ierr.NewError("invalid reference point").
