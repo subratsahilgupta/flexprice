@@ -140,31 +140,15 @@ func (h *SubscriptionHandler) CancelSubscription(c *gin.Context) {
 		return
 	}
 
-	if req.ProrationMode == types.ProrationModeActive {
-		response, err := h.service.CancelSubscriptionWithProration(c.Request.Context(), id, &req)
-		if err != nil {
-			h.log.Error("Failed to cancel subscription with proration", "error", err)
-			c.Error(err)
-			return
-		}
-
-		c.JSON(http.StatusOK, response)
-	} else {
-
-		cancelAtPeriodEnd := req.CancellationType == types.CancellationTypeEndOfPeriod
-
-		if err := h.service.CancelSubscription(c.Request.Context(), id, cancelAtPeriodEnd); err != nil {
-			h.log.Error("Failed to cancel subscription", "error", err)
-			c.Error(err)
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"message":              "subscription cancelled successfully",
-			"subscription_id":      id,
-			"cancel_at_period_end": cancelAtPeriodEnd,
-		})
+	// Always use the enhanced cancellation method with proration support
+	response, err := h.service.CancelSubscription(c.Request.Context(), id, &req)
+	if err != nil {
+		h.log.Error("Failed to cancel subscription", "error", err)
+		c.Error(err)
+		return
 	}
+
+	c.JSON(http.StatusOK, response)
 
 }
 

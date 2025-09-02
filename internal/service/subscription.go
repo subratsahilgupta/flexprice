@@ -24,8 +24,7 @@ import (
 type SubscriptionService interface {
 	CreateSubscription(ctx context.Context, req dto.CreateSubscriptionRequest) (*dto.SubscriptionResponse, error)
 	GetSubscription(ctx context.Context, id string) (*dto.SubscriptionResponse, error)
-	CancelSubscription(ctx context.Context, id string, cancelAtPeriodEnd bool) error
-	CancelSubscriptionWithProration(ctx context.Context, subscriptionID string, req *dto.CancelSubscriptionRequest) (*dto.CancelSubscriptionResponse, error)
+	CancelSubscription(ctx context.Context, subscriptionID string, req *dto.CancelSubscriptionRequest) (*dto.CancelSubscriptionResponse, error)
 	ActivateIncompleteSubscription(ctx context.Context, subscriptionID string) error
 	ListSubscriptions(ctx context.Context, filter *types.SubscriptionFilter) (*dto.ListSubscriptionsResponse, error)
 	GetUsageBySubscription(ctx context.Context, req *dto.GetUsageBySubscriptionRequest) (*dto.GetUsageBySubscriptionResponse, error)
@@ -670,78 +669,8 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 	return response, nil
 }
 
-func (s *subscriptionService) CancelSubscription(ctx context.Context, id string, cancelAtPeriodEnd bool) error {
-	invoiceService := NewInvoiceService(s.ServiceParams)
-	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	if subscription.SubscriptionStatus == types.SubscriptionStatusCancelled {
-		return ierr.NewError("subscription is already cancelled").
-			WithHint("The subscription is already cancelled").
-			WithReportableDetails(map[string]interface{}{
-				"subscription_id": id,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	now := time.Now().UTC()
-	subscription.CancelledAt = &now
-	if cancelAtPeriodEnd {
-		subscription.CancelAtPeriodEnd = cancelAtPeriodEnd
-		subscription.CancelAt = lo.ToPtr(subscription.CurrentPeriodEnd)
-	} else {
-		subscription.SubscriptionStatus = types.SubscriptionStatusCancelled
-		subscription.CancelAt = nil
-	}
-
-	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
-
-		// create an invoice for the charges in the subscription
-		if !cancelAtPeriodEnd {
-			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
-				SubscriptionID: subscription.ID,
-				PeriodStart:    subscription.CurrentPeriodStart,
-				PeriodEnd:      *subscription.CancelledAt,
-				ReferencePoint: types.ReferencePointCancel,
-			})
-			if err != nil {
-				return err
-			}
-
-			if inv != nil {
-				s.Logger.Infow("created invoice for subscription",
-					"subscription_id", subscription.ID,
-					"invoice_id", inv.ID)
-			}
-
-		}
-
-		// cancel future credit grant applications
-		creditGrantService := NewCreditGrantService(s.ServiceParams)
-		err = creditGrantService.CancelFutureCreditGrantsOfSubscription(ctx, subscription.ID)
-		if err != nil {
-			return err
-		}
-
-		err = s.SubRepo.Update(ctx, subscription)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	// Publish webhook event
-	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionUpdated, subscription.ID)
-	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionCancelled, subscription.ID)
-
-	return nil
-}
-
-// CancelSubscriptionWithProration provides enhanced cancellation with proration support
-func (s *subscriptionService) CancelSubscriptionWithProration(
+// CancelSubscription provides enhanced cancellation with proration support
+func (s *subscriptionService) CancelSubscription(
 	ctx context.Context,
 	subscriptionID string,
 	req *dto.CancelSubscriptionRequest,

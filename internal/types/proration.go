@@ -30,9 +30,7 @@ type ProrationBehavior string
 
 const (
 	ProrationBehaviorCreateProrations ProrationBehavior = "create_prorations" // Default: Create credits/charges on invoice
-	ProrationBehaviorAlwaysInvoice    ProrationBehavior = "always_invoice"    // Always create invoice items
 	ProrationBehaviorNone             ProrationBehavior = "none"              // Calculate but don't apply (e.g., for previews)
-
 )
 
 // BillingMode represents when a subscription is billed.
@@ -156,7 +154,6 @@ func (b BillingCycleAnchor) String() string {
 
 var ProrationBehaviorValues = []ProrationBehavior{
 	ProrationBehaviorCreateProrations,
-	ProrationBehaviorAlwaysInvoice,
 	ProrationBehaviorNone,
 }
 
