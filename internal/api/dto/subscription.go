@@ -65,6 +65,16 @@ type CreateSubscriptionRequest struct {
 	// "default_incomplete" - subscription waits for payment confirmation before activation
 	// "send_invoice" - subscription activates immediately, invoice is sent for payment
 	CollectionMethod *types.CollectionMethod `json:"collection_method,omitempty"`
+
+	// ProrationMode is the mode for proration.
+	// If not set, the default value is none. Possible values are active and none.
+	// Active proration means the proration will be calculated based on the usage.
+	// None proration means the proration will not be calculated.
+	// This is IGNORED when the billing cycle is anniversary.
+	ProrationMode types.ProrationMode `json:"proration_mode"`
+	// Timezone of the customer.
+	// If not set, the default value is UTC.
+	CustomerTimezone string `json:"customer_timezone" validate:"omitempty,timezone"`
 }
 
 // AddAddonRequest is used by body-based endpoint /subscriptions/addon
@@ -84,6 +94,72 @@ type UpdateSubscriptionRequest struct {
 	Status            types.SubscriptionStatus `json:"status"`
 	CancelAt          *time.Time               `json:"cancel_at,omitempty"`
 	CancelAtPeriodEnd bool                     `json:"cancel_at_period_end,omitempty"`
+}
+
+// CancelSubscriptionRequest represents the enhanced cancellation request
+type CancelSubscriptionRequest struct {
+
+	// ProrationMode determines whether proration is applied.
+	ProrationMode types.ProrationMode `json:"proration_mode,omitempty"`
+
+	// CancellationType determines when the cancellation takes effect
+	CancellationType types.CancellationType `json:"cancellation_type" validate:"required"`
+
+	// Reason for cancellation (for audit and business intelligence)
+	Reason string `json:"reason,omitempty"`
+
+	// ProrationBehavior controls how proration is handled
+	ProrationBehavior types.ProrationBehavior `json:"proration_behavior,omitempty"`
+}
+
+// CancelSubscriptionResponse represents the enhanced cancellation response
+type CancelSubscriptionResponse struct {
+	// Basic cancellation info
+	SubscriptionID   string                   `json:"subscription_id"`
+	CancellationType types.CancellationType   `json:"cancellation_type"`
+	EffectiveDate    time.Time                `json:"effective_date"`
+	Status           types.SubscriptionStatus `json:"status"`
+	Reason           string                   `json:"reason,omitempty"`
+
+	// Proration details
+	ProrationInvoice  *InvoiceResponse  `json:"proration_invoice,omitempty"`
+	ProrationDetails  []ProrationDetail `json:"proration_details"`
+	TotalCreditAmount decimal.Decimal   `json:"total_credit_amount"`
+
+	// Response metadata
+	Message     string    `json:"message"`
+	ProcessedAt time.Time `json:"processed_at"`
+}
+
+// ProrationDetail provides line-item level proration information
+type ProrationDetail struct {
+	LineItemID     string          `json:"line_item_id"`
+	PriceID        string          `json:"price_id"`
+	PlanName       string          `json:"plan_name,omitempty"`
+	OriginalAmount decimal.Decimal `json:"original_amount"`
+	CreditAmount   decimal.Decimal `json:"credit_amount"`
+	ChargeAmount   decimal.Decimal `json:"charge_amount"`
+	ProrationDays  int             `json:"proration_days"`
+	Description    string          `json:"description,omitempty"`
+}
+
+// Validate validates the cancellation request
+func (r *CancelSubscriptionRequest) Validate() error {
+	// Validate cancellation type
+	if err := r.CancellationType.Validate(); err != nil {
+		return err
+	}
+	// Set default proration behavior if not provided
+	if r.ProrationBehavior == "" {
+		r.ProrationBehavior = types.ProrationBehaviorCreateProrations
+	}
+
+	// Validate proration behavior
+	if err := r.ProrationBehavior.Validate(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 type SubscriptionResponse struct {
@@ -151,6 +227,20 @@ func (r *CreateSubscriptionRequest) Validate() error {
 			}).
 			Mark(ierr.ErrValidation)
 	}
+	// If proration mode is not set, set it to none
+	if r.ProrationMode == "" {
+		r.ProrationMode = types.ProrationModeNone
+	}
+
+	if err := r.ProrationMode.Validate(); err != nil {
+		return err
+	}
+
+	// if r.ProrationMode == types.ProrationModeActive {
+	// 	if err := r.validateShouldAllowProrationOnStartDate(*r.StartDate, time.Now().UTC()); err != nil {
+	// 		return err
+	// 	}
+	// }
 
 	if r.BillingPeriodCount < 1 {
 		return ierr.NewError("billing_period_count must be greater than 0").
@@ -167,14 +257,14 @@ func (r *CreateSubscriptionRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.StartDate != nil && r.StartDate.After(time.Now().UTC()) {
-		return ierr.NewError("start_date cannot be in the future").
-			WithHint("Start date must be in the past or present").
-			WithReportableDetails(map[string]interface{}{
-				"start_date": *r.StartDate,
-			}).
-			Mark(ierr.ErrValidation)
-	}
+	// if r.StartDate != nil && r.StartDate.After(time.Now().UTC()) {
+	// 	return ierr.NewError("start_date cannot be in the future").
+	// 		WithHint("Start date must be in the past or present").
+	// 		WithReportableDetails(map[string]interface{}{
+	// 			"start_date": *r.StartDate,
+	// 		}).
+	// 		Mark(ierr.ErrValidation)
+	// }
 
 	if r.TrialStart != nil && r.TrialStart.After(*r.StartDate) {
 		return ierr.NewError("trial_start cannot be after start_date").
@@ -357,6 +447,31 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	return nil
 }
 
+func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(startDate, now time.Time) error {
+	// If the start date is before the current date and proration mode is active, return an error
+	// This prevents creating subscriptions with backdated start dates that would trigger proration
+
+	// Compare only the date portions (ignore time)
+	startDateOnly := startDate.Truncate(24 * time.Hour)
+	nowDateOnly := now.Truncate(24 * time.Hour)
+
+	if r.ProrationMode == types.ProrationModeActive && startDateOnly.Before(nowDateOnly) {
+		return ierr.NewError("cannot create subscription with past start date when proration is active").
+			WithHint("Either set start date to current time or later, or disable proration mode").
+			WithReportableDetails(map[string]interface{}{
+				"start_date":     startDate.Format(time.RFC3339),
+				"current_time":   now.Format(time.RFC3339),
+				"proration_mode": string(r.ProrationMode),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Allow future start dates with proration
+	// Allow past start dates without proration
+	// Allow current/future dates with any proration mode
+	return nil
+}
+
 func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscription.Subscription {
 	// Determine initial subscription status based on collection method and payment behavior
 	initialStatus := types.SubscriptionStatusActive
@@ -370,6 +485,10 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 			// send_invoice: activate immediately, invoice is sent for payment
 			initialStatus = types.SubscriptionStatusActive
 		}
+	}
+
+	if r.CustomerTimezone == "" {
+		r.CustomerTimezone = "UTC"
 	}
 
 	sub := &subscription.Subscription{
@@ -391,6 +510,8 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		EnvironmentID:      types.GetEnvironmentID(ctx),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 		BillingCycle:       r.BillingCycle,
+		CustomerTimezone:   r.CustomerTimezone,
+		ProrationMode:      r.ProrationMode,
 	}
 
 	// Set commitment amount and overage factor if provided

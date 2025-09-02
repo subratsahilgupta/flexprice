@@ -97,6 +97,7 @@ func (s *SubscriptionServiceSuite) setupService() {
 		SettingsRepo:               s.GetStores().SettingsRepo,
 		EventPublisher:             s.GetPublisher(),
 		WebhookPublisher:           s.GetWebhookPublisher(),
+		ProrationCalculator:        s.GetCalculator(),
 	})
 }
 
@@ -1042,7 +1043,17 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 
 		for _, tc := range testCases {
 			s.Run(tc.name, func() {
-				err := s.service.CancelSubscription(s.GetContext(), tc.id, tc.cancelAtPeriodEnd)
+				cancelReq := &dto.CancelSubscriptionRequest{
+					CancellationType: func() types.CancellationType {
+						if tc.cancelAtPeriodEnd {
+							return types.CancellationTypeEndOfPeriod
+						}
+						return types.CancellationTypeImmediate
+					}(),
+					ProrationBehavior: types.ProrationBehaviorNone,
+					Reason:            "test_cancellation",
+				}
+				_, err := s.service.CancelSubscription(s.GetContext(), tc.id, cancelReq)
 				if tc.wantErr {
 					s.Error(err)
 					return
@@ -1057,16 +1068,16 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 				s.Equal(tc.expectedStatus, sub.SubscriptionStatus)
 				s.NotNil(sub.CancelledAt)
 
-								// For immediate cancellation, check if invoice was generated
+				// For immediate cancellation, check if invoice was generated
 				if !tc.cancelAtPeriodEnd && tc.expectedStatus == types.SubscriptionStatusCancelled {
 					invoiceService := s.createInvoiceService()
 					invoiceFilter := types.NewInvoiceFilter()
 					invoiceFilter.SubscriptionID = tc.id
 					invoiceFilter.InvoiceType = types.InvoiceTypeSubscription
-					
+
 					invoicesResp, err := invoiceService.ListInvoices(s.GetContext(), invoiceFilter)
 					s.NoError(err, "Should be able to list invoices for cancelled subscription")
-					
+
 					// Check if invoice was generated (may not be if no billable charges)
 					if len(invoicesResp.Items) > 0 {
 						// Find the cancellation invoice
@@ -1090,7 +1101,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 
 		// Test cancelling already cancelled subscription using a separate instance
 		s.Run("cancel_already_canceled_subscription", func() {
-			err := s.service.CancelSubscription(s.GetContext(), activeSub.ID, false)
+			_, err := s.service.CancelSubscription(s.GetContext(), activeSub.ID, &dto.CancelSubscriptionRequest{
+				CancellationType:  types.CancellationTypeImmediate,
+				ProrationBehavior: types.ProrationBehaviorNone,
+				Reason:            "test_cancellation",
+			})
 			s.Error(err)
 			s.Contains(err.Error(), "already cancelled")
 		})
@@ -1115,7 +1130,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), periodEndSub, periodEndSub.LineItems))
 
 		// Cancel at period end
-		err := s.service.CancelSubscription(s.GetContext(), periodEndSub.ID, true)
+		_, err := s.service.CancelSubscription(s.GetContext(), periodEndSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeEndOfPeriod,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription state
@@ -1198,7 +1217,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		}
 
 		// Cancel immediately - should create invoice for usage charges
-		err := s.service.CancelSubscription(s.GetContext(), usageSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), usageSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -1207,26 +1230,26 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
 		s.NotNil(cancelledSub.CancelledAt)
 
-				// Verify cancellation invoice was generated with correct usage charges
+		// Verify cancellation invoice was generated with correct usage charges
 		invoiceService := s.createInvoiceService()
 		invoiceFilter := types.NewInvoiceFilter()
 		invoiceFilter.SubscriptionID = usageSub.ID
 		invoiceFilter.InvoiceType = types.InvoiceTypeSubscription
-		
+
 		invoicesResp, err := invoiceService.ListInvoices(s.GetContext(), invoiceFilter)
 		s.NoError(err)
-		
+
 		// Check if invoice was generated (should be since there are usage events)
 		if len(invoicesResp.Items) > 0 {
 			s.Len(invoicesResp.Items, 1, "Should have exactly one cancellation invoice")
-			
+
 			cancellationInv := invoicesResp.Items[0]
 			s.Equal(usageSub.CurrentPeriodStart.Unix(), cancellationInv.PeriodStart.Unix(), "Period start should match subscription period")
 			s.Equal(cancelledSub.CancelledAt.Unix(), cancellationInv.PeriodEnd.Unix(), "Period end should match cancellation time")
-			
+
 			if len(cancellationInv.LineItems) > 0 {
 				s.Len(cancellationInv.LineItems, 1, "Should have one line item for usage charges")
-				
+
 				invoiceLineItem := cancellationInv.LineItems[0]
 				s.Equal(arrearUsagePrice.ID, *invoiceLineItem.PriceID, "Line item should reference the usage price")
 				s.True(decimal.NewFromFloat(500).Equal(invoiceLineItem.Quantity), "Should have 500 API calls for the period")
@@ -1292,7 +1315,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), fixedSub, []*subscription.SubscriptionLineItem{fixedLineItem}))
 
 		// Cancel immediately - should create invoice for prorated fixed arrear charges
-		err := s.service.CancelSubscription(s.GetContext(), fixedSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), fixedSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -1301,30 +1328,30 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
 		s.NotNil(cancelledSub.CancelledAt)
 
-				// Verify cancellation invoice for prorated fixed arrear charges
+		// Verify cancellation invoice for prorated fixed arrear charges
 		invoiceService := s.createInvoiceService()
 		invoiceFilter := types.NewInvoiceFilter()
 		invoiceFilter.SubscriptionID = fixedSub.ID
 		invoiceFilter.InvoiceType = types.InvoiceTypeSubscription
-		
+
 		invoicesResp, err := invoiceService.ListInvoices(s.GetContext(), invoiceFilter)
 		s.NoError(err)
-		
+
 		// Check if invoice was generated for fixed arrear charges
 		if len(invoicesResp.Items) > 0 {
 			s.Len(invoicesResp.Items, 1, "Should have exactly one cancellation invoice")
-			
+
 			cancellationInv := invoicesResp.Items[0]
 			s.Equal(fixedSub.CurrentPeriodStart.Unix(), cancellationInv.PeriodStart.Unix(), "Period start should match subscription period")
 			s.Equal(cancelledSub.CancelledAt.Unix(), cancellationInv.PeriodEnd.Unix(), "Period end should match cancellation time")
-			
+
 			if len(cancellationInv.LineItems) > 0 {
 				s.Len(cancellationInv.LineItems, 1, "Should have one line item for fixed arrear charges")
-				
+
 				invoiceFixedLineItem := cancellationInv.LineItems[0]
 				s.Equal(fixedArrearPrice.ID, *invoiceFixedLineItem.PriceID, "Line item should reference the fixed arrear price")
 				s.True(decimal.NewFromFloat(1).Equal(invoiceFixedLineItem.Quantity), "Should have quantity 1 for fixed charge")
-				
+
 				// Calculate expected prorated amount: $50 for 5 days out of 30-day period
 				expectedAmount := decimal.NewFromFloat(50).Mul(decimal.NewFromFloat(5)).Div(decimal.NewFromFloat(30))
 				s.True(expectedAmount.Equal(invoiceFixedLineItem.Amount), "Should have prorated fixed charge amount")
@@ -1389,7 +1416,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), advanceSub, []*subscription.SubscriptionLineItem{advanceLineItem}))
 
 		// Cancel immediately - should not charge for advance fees since customer already paid
-		err := s.service.CancelSubscription(s.GetContext(), advanceSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), advanceSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -1520,7 +1551,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		}
 
 		// Cancel immediately - should create invoice only for arrear usage charges, not advance fixed charges
-		err := s.service.CancelSubscription(s.GetContext(), mixedSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), mixedSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -1529,26 +1564,26 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
 		s.NotNil(cancelledSub.CancelledAt)
 
-				// Verify cancellation invoice includes only arrear charges, excludes advance charges
+		// Verify cancellation invoice includes only arrear charges, excludes advance charges
 		invoiceService := s.createInvoiceService()
 		invoiceFilter := types.NewInvoiceFilter()
 		invoiceFilter.SubscriptionID = mixedSub.ID
 		invoiceFilter.InvoiceType = types.InvoiceTypeSubscription
-		
+
 		invoicesResp, err := invoiceService.ListInvoices(s.GetContext(), invoiceFilter)
 		s.NoError(err)
-		
+
 		// Check if invoice was generated (should be since there are arrear usage charges)
 		if len(invoicesResp.Items) > 0 {
 			s.Len(invoicesResp.Items, 1, "Should have exactly one cancellation invoice")
-			
+
 			cancellationInv := invoicesResp.Items[0]
 			s.Equal(mixedSub.CurrentPeriodStart.Unix(), cancellationInv.PeriodStart.Unix(), "Period start should match subscription period")
 			s.Equal(cancelledSub.CancelledAt.Unix(), cancellationInv.PeriodEnd.Unix(), "Period end should match cancellation time")
-			
+
 			if len(cancellationInv.LineItems) > 0 {
 				s.Len(cancellationInv.LineItems, 1, "Should have only one line item (arrear usage, not advance fixed)")
-				
+
 				// Validate the line item is the arrear usage charge only
 				arrearLineItem := cancellationInv.LineItems[0]
 				s.Equal(usageArrearPrice.ID, *arrearLineItem.PriceID, "Line item should reference the arrear usage price")
@@ -1638,7 +1673,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 
 		// Cancel immediately - should create invoice for tiered usage charges
 		// Expected: (1000 * $0.03) + (200 * $0.01) = $30 + $2 = $32
-		err := s.service.CancelSubscription(s.GetContext(), tieredSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), tieredSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -1733,7 +1772,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 
 		// Cancel immediately - should create invoice for storage usage charges
 		// Expected: (150 + 200 + 100) * $0.15 = 450 * $0.15 = $67.50
-		err := s.service.CancelSubscription(s.GetContext(), storageSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), storageSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -1819,7 +1862,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		}
 
 		// Cancel immediately - should create invoice for package usage charges
-		err := s.service.CancelSubscription(s.GetContext(), packageSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), packageSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -1904,7 +1951,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		}
 
 		// Cancel immediately - should create invoice with commitment and overage calculations
-		err := s.service.CancelSubscription(s.GetContext(), commitmentSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), commitmentSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -1913,7 +1964,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		s.Equal(types.SubscriptionStatusCancelled, cancelledSub.SubscriptionStatus)
 		s.NotNil(cancelledSub.CancelledAt)
 
-				// Verify cancellation invoice includes commitment and overage calculations
+		// Verify cancellation invoice includes commitment and overage calculations
 		invoiceService := s.createInvoiceService()
 		invoiceFilter := types.NewInvoiceFilter()
 		invoiceFilter.SubscriptionID = commitmentSub.ID
@@ -1921,7 +1972,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 
 		invoicesResp, err := invoiceService.ListInvoices(s.GetContext(), invoiceFilter)
 		s.NoError(err)
-		
+
 		// Check if invoice was generated for commitment scenario
 		if len(invoicesResp.Items) > 0 {
 			s.Len(invoicesResp.Items, 1, "Should have exactly one cancellation invoice")
@@ -1929,7 +1980,7 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 			cancellationInv := invoicesResp.Items[0]
 			s.Equal(commitmentSub.CurrentPeriodStart.Unix(), cancellationInv.PeriodStart.Unix(), "Period start should match subscription period")
 			s.Equal(cancelledSub.CancelledAt.Unix(), cancellationInv.PeriodEnd.Unix(), "Period end should match cancellation time")
-			
+
 			if len(cancellationInv.LineItems) > 0 {
 				s.Len(cancellationInv.LineItems, 1, "Should have one line item for usage with commitment")
 
@@ -2041,7 +2092,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 
 		// Cancel immediately - should create invoice with only fixed arrear charges (no usage charges due to 0 events)
 		// Expected: prorated $25 for the period used (10 days out of 30-day month)
-		err := s.service.CancelSubscription(s.GetContext(), noUsageSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), noUsageSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -2185,7 +2240,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// Cancel immediately - should create invoice for multiple meter usage charges with commitment
 		// Expected: API calls: 400 * $0.008 = $3.20, Storage: 800 * $0.12 = $96
 		// Total: $99.20, exceeds $20 commitment, overage: ($99.20 - $20) * 1.5 = $118.80
-		err := s.service.CancelSubscription(s.GetContext(), multiMeterSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), multiMeterSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -2275,7 +2334,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		}
 
 		// Cancel immediately - should create invoice for volume-based tiered usage charges
-		err := s.service.CancelSubscription(s.GetContext(), volumeSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), volumeSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -2491,7 +2554,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// - Storage: 400 * $0.08 = $32
 		// - Total: varies based on proration + commitment/overage logic
 		// - Advance fixed fee ($60) should NOT be included
-		err := s.service.CancelSubscription(s.GetContext(), comprehensiveSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), comprehensiveSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -2505,25 +2572,25 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		invoiceFilter := types.NewInvoiceFilter()
 		invoiceFilter.SubscriptionID = comprehensiveSub.ID
 		invoiceFilter.InvoiceType = types.InvoiceTypeSubscription
-		
+
 		invoicesResp, err := invoiceService.ListInvoices(s.GetContext(), invoiceFilter)
 		s.NoError(err)
-		
-		// Check if invoice was generated for comprehensive scenario  
+
+		// Check if invoice was generated for comprehensive scenario
 		if len(invoicesResp.Items) > 0 {
 			s.Len(invoicesResp.Items, 1, "Should have exactly one cancellation invoice")
-			
+
 			cancellationInv := invoicesResp.Items[0]
 			s.Equal(comprehensiveSub.CurrentPeriodStart.Unix(), cancellationInv.PeriodStart.Unix(), "Period start should match subscription period")
 			s.Equal(cancelledSub.CancelledAt.Unix(), cancellationInv.PeriodEnd.Unix(), "Period end should match cancellation time")
-			
+
 			if len(cancellationInv.LineItems) > 0 {
 				s.Greater(len(cancellationInv.LineItems), 0, "Should have line items for arrear charges (excluding advance)")
-				
+
 				// Validate total invoice amount includes charges with proper calculations
 				s.Greater(cancellationInv.AmountDue.InexactFloat64(), 0.0, "Total invoice amount should be greater than zero")
-				
-				// Verify that all line items have valid amounts and quantities  
+
+				// Verify that all line items have valid amounts and quantities
 				for _, lineItem := range cancellationInv.LineItems {
 					s.Greater(lineItem.Amount.InexactFloat64(), 0.0, "Each line item should have positive amount")
 					s.Greater(lineItem.Quantity.InexactFloat64(), 0.0, "Each line item should have positive quantity")
@@ -2623,7 +2690,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 
 		// Cancel immediately - should create invoice for MAX aggregation usage charges
 		// Expected: 20 (max users) * $2 = $40
-		err := s.service.CancelSubscription(s.GetContext(), maxSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), maxSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -2744,7 +2815,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		// - Usage: 100 * $0.10 = $10.00
 		// - Fixed: $30.00 prorated for 10 days = $10.00 (10/30 * $30)
 		// - Total: $20.00
-		err := s.service.CancelSubscription(s.GetContext(), invoiceValidationSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), invoiceValidationSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -2851,7 +2926,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 		}
 
 		// Cancel immediately - should create invoice using override pricing
-		err := s.service.CancelSubscription(s.GetContext(), overrideSub.ID, false)
+		_, err := s.service.CancelSubscription(s.GetContext(), overrideSub.ID, &dto.CancelSubscriptionRequest{
+			CancellationType:  types.CancellationTypeImmediate,
+			ProrationBehavior: types.ProrationBehaviorNone,
+			Reason:            "test_cancellation",
+		})
 		s.NoError(err)
 
 		// Verify subscription was cancelled
@@ -2920,7 +2999,11 @@ func (s *SubscriptionServiceSuite) TestCancelSubscription() {
 			s.Run(tc.name, func() {
 				sub := tc.setupSub()
 
-				err := s.service.CancelSubscription(s.GetContext(), sub.ID, false)
+				_, err := s.service.CancelSubscription(s.GetContext(), sub.ID, &dto.CancelSubscriptionRequest{
+					CancellationType:  types.CancellationTypeImmediate,
+					ProrationBehavior: types.ProrationBehaviorNone,
+					Reason:            "test_cancellation",
+				})
 
 				if tc.expectError {
 					s.Error(err)
@@ -5461,3 +5544,453 @@ func (s *SubscriptionServiceSuite) TestSyncPlanPrices_Timing_And_Edge_Cases() {
 		s.Equal(0, result.SynchronizationSummary.PricesSkipped)
 	})
 }
+
+// // TestCreateSubscriptionWithProration tests proration during subscription creation
+// func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithProration() {
+// 	// Create a fixed-fee price for testing proration
+// 	fixedPrice := &price.Price{
+// 		ID:                 "price_fixed_monthly",
+// 		Amount:             decimal.NewFromFloat(100), // $100/month
+// 		Currency:           "usd",
+// 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+// 		EntityID:           s.testData.plan.ID,
+// 		Type:               types.PRICE_TYPE_FIXED,
+// 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+// 		BillingPeriodCount: 1,
+// 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+// 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 		InvoiceCadence:     types.InvoiceCadenceAdvance,
+// 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+// 	}
+// 	s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), fixedPrice))
+
+// 	tests := []struct {
+// 		name             string
+// 		billingCycle     types.BillingCycle
+// 		prorationMode    types.ProrationMode
+// 		startDate        time.Time
+// 		expectProration  bool
+// 		description      string
+// 		expectedAnchor   *time.Time
+// 		customerTimezone string
+// 	}{
+// 		{
+// 			name:             "anniversary_billing_no_proration",
+// 			billingCycle:     types.BillingCycleAnniversary,
+// 			prorationMode:    types.ProrationModeActive,
+// 			startDate:        time.Now().UTC(), // Current time
+// 			expectProration:  false,
+// 			description:      "Anniversary billing should not apply proration even with active proration mode",
+// 			customerTimezone: "UTC",
+// 		},
+// 		{
+// 			name:             "calendar_billing_proration_disabled",
+// 			billingCycle:     types.BillingCycleCalendar,
+// 			prorationMode:    types.ProrationModeNone,
+// 			startDate:        time.Now().UTC(), // Current time
+// 			expectProration:  false,
+// 			description:      "Calendar billing with disabled proration should not apply proration",
+// 			customerTimezone: "UTC",
+// 		},
+// 		{
+// 			name:             "calendar_billing_with_proration_mid_month",
+// 			billingCycle:     types.BillingCycleCalendar,
+// 			prorationMode:    types.ProrationModeActive,
+// 			startDate:        time.Now().UTC(), // Current time
+// 			expectProration:  true,
+// 			description:      "Calendar billing with active proration should apply proration",
+// 			customerTimezone: "UTC",
+// 		},
+// 		{
+// 			name:            "calendar_billing_with_proration_start_of_next_month",
+// 			billingCycle:    types.BillingCycleCalendar,
+// 			prorationMode:   types.ProrationModeActive,
+// 			startDate:       time.Date(time.Now().Year(), time.Now().Month()+1, 1, 0, 0, 0, 0, time.UTC), // Start of next month
+// 			expectProration: false,                                                                       // No proration needed at start of period
+// 			description:     "Calendar billing at start of month should not need proration",
+// 			// expectedAnchor will be calculated dynamically in the test
+// 			customerTimezone: "UTC",
+// 		},
+// 		{
+// 			name:            "calendar_billing_with_timezone_proration",
+// 			billingCycle:    types.BillingCycleCalendar,
+// 			prorationMode:   types.ProrationModeActive,
+// 			startDate:       time.Now().UTC(), // Current time
+// 			expectProration: true,
+// 			description:     "Calendar billing with timezone should apply proration correctly",
+// 			// expectedAnchor will be calculated dynamically in the test
+// 			customerTimezone: "America/New_York",
+// 		},
+// 		{
+// 			name:            "calendar_billing_end_of_month",
+// 			billingCycle:    types.BillingCycleCalendar,
+// 			prorationMode:   types.ProrationModeActive,
+// 			startDate:       time.Now().UTC(), // Current time
+// 			expectProration: true,
+// 			description:     "Calendar billing should apply proration",
+// 			// expectedAnchor will be calculated dynamically in the test
+// 			customerTimezone: "UTC",
+// 		},
+// 	}
+
+// 	for _, tt := range tests {
+// 		s.Run(tt.name, func() {
+// 			// Create subscription request
+// 			req := dto.CreateSubscriptionRequest{
+// 				CustomerID:         s.testData.customer.ID,
+// 				PlanID:             s.testData.plan.ID,
+// 				StartDate:          lo.ToPtr(tt.startDate),
+// 				Currency:           "usd",
+// 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+// 				BillingPeriodCount: 1,
+// 				BillingCycle:       tt.billingCycle,
+// 				ProrationMode:      tt.prorationMode,
+// 				CustomerTimezone:   tt.customerTimezone,
+// 			}
+
+// 			// Create subscription
+// 			resp, err := s.service.CreateSubscription(s.GetContext(), req)
+// 			s.NoError(err, "Failed to create subscription: %s", tt.description)
+// 			s.NotNil(resp, "Subscription response should not be nil")
+
+// 			// Verify basic subscription properties
+// 			s.Equal(tt.billingCycle, resp.BillingCycle, "Billing cycle should match")
+// 			s.Equal(tt.prorationMode, resp.ProrationMode, "Proration mode should match")
+// 			s.Equal(tt.startDate.UTC(), resp.StartDate.UTC(), "Start date should match")
+// 			s.Equal(tt.customerTimezone, resp.CustomerTimezone, "Customer timezone should match")
+
+// 			// Billing anchor verification is done in the billing behavior section below
+
+// 			// Verify billing behavior
+// 			if tt.billingCycle == types.BillingCycleCalendar {
+// 				// For calendar billing (regardless of proration mode), verify the billing anchor is calculated correctly
+// 				expectedAnchor := types.CalculateCalendarBillingAnchor(tt.startDate, types.BILLING_PERIOD_MONTHLY)
+// 				s.Equal(expectedAnchor.UTC(), resp.BillingAnchor.UTC(), "Calendar billing anchor should be calculated correctly")
+
+// 				// Verify current period is calculated correctly
+// 				s.Equal(tt.startDate.UTC(), resp.CurrentPeriodStart.UTC(), "Current period start should match start date")
+
+// 				// For calendar billing, the period end should be calculated from the anchor
+// 				nextBilling, err := types.NextBillingDate(resp.CurrentPeriodStart, resp.BillingAnchor, resp.BillingPeriodCount, resp.BillingPeriod, resp.EndDate)
+// 				s.NoError(err, "Should calculate next billing date correctly")
+// 				s.Equal(nextBilling.UTC(), resp.CurrentPeriodEnd.UTC(), "Current period end should match calculated next billing date")
+// 			} else {
+// 				// For anniversary billing, anchor should match start date
+// 				s.Equal(tt.startDate.UTC(), resp.BillingAnchor.UTC(), "Anniversary billing anchor should match start date")
+// 			}
+
+// 			s.T().Logf("Test %s: BillingCycle=%s, ProrationMode=%s, StartDate=%v, BillingAnchor=%v, Description=%s",
+// 				tt.name, tt.billingCycle, tt.prorationMode, tt.startDate, resp.BillingAnchor, tt.description)
+// 		})
+// 	}
+// }
+
+// // TestProrationCalculationDuringSubscriptionCreation tests the actual proration calculation
+// func (s *SubscriptionServiceSuite) TestProrationCalculationDuringSubscriptionCreation() {
+// 	// Create fixed-fee prices for testing proration
+// 	monthlyFixedPrice := &price.Price{
+// 		ID:                 "price_fixed_monthly_proration",
+// 		Amount:             decimal.NewFromFloat(120), // $120/month = $4/day
+// 		Currency:           "usd",
+// 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+// 		EntityID:           s.testData.plan.ID,
+// 		Type:               types.PRICE_TYPE_FIXED,
+// 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+// 		BillingPeriodCount: 1,
+// 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+// 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 		InvoiceCadence:     types.InvoiceCadenceAdvance, // Important: advance billing for proration
+// 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+// 	}
+// 	s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), monthlyFixedPrice))
+
+// 	tests := []struct {
+// 		name                 string
+// 		startDate            time.Time
+// 		expectedPeriodStart  time.Time
+// 		expectedPeriodEnd    time.Time
+// 		expectedProrationPct float64 // Expected percentage of full month
+// 		description          string
+// 		customerTimezone     string
+// 	}{
+// 		{
+// 			name:                 "current_time_start",
+// 			startDate:            time.Now().UTC(), // Current time
+// 			expectedPeriodStart:  time.Now().UTC(),
+// 			expectedProrationPct: 0.5, // Approximate - will vary based on current date
+// 			description:          "Current time start should be prorated for remaining days",
+// 			customerTimezone:     "UTC",
+// 		},
+// 		{
+// 			name:                 "future_start_5_days",
+// 			startDate:            time.Now().UTC().AddDate(0, 0, 5), // 5 days in the future
+// 			expectedPeriodStart:  time.Now().UTC().AddDate(0, 0, 5),
+// 			expectedProrationPct: 0.8, // Approximate - most of month remaining
+// 			description:          "Future start should be prorated for most of remaining days",
+// 			customerTimezone:     "UTC",
+// 		},
+// 		{
+// 			name:                 "month_start_next_month",
+// 			startDate:            time.Now().UTC().AddDate(0, 1, 0).Truncate(24 * time.Hour), // Start of next month
+// 			expectedPeriodStart:  time.Now().UTC().AddDate(0, 1, 0).Truncate(24 * time.Hour),
+// 			expectedProrationPct: 1.0, // Full month
+// 			description:          "Month start should not need proration",
+// 			customerTimezone:     "UTC",
+// 		},
+// 		{
+// 			name:                 "timezone_aware_proration",
+// 			startDate:            time.Now().UTC(), // Current time
+// 			expectedPeriodStart:  time.Now().UTC(),
+// 			expectedProrationPct: 0.7, // Approximate - varies based on current date
+// 			description:          "Timezone should be considered in proration calculation",
+// 			customerTimezone:     "America/New_York",
+// 		},
+// 	}
+
+// 	for _, tt := range tests {
+// 		s.Run(tt.name, func() {
+// 			// Create subscription with calendar billing and active proration
+// 			req := dto.CreateSubscriptionRequest{
+// 				CustomerID:         s.testData.customer.ID,
+// 				PlanID:             s.testData.plan.ID,
+// 				StartDate:          lo.ToPtr(tt.startDate),
+// 				Currency:           "usd",
+// 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+// 				BillingPeriodCount: 1,
+// 				BillingCycle:       types.BillingCycleCalendar,
+// 				ProrationMode:      types.ProrationModeActive,
+// 				CustomerTimezone:   tt.customerTimezone,
+// 			}
+
+// 			// Create subscription
+// 			resp, err := s.service.CreateSubscription(s.GetContext(), req)
+// 			s.NoError(err, "Failed to create subscription: %s", tt.description)
+// 			s.NotNil(resp, "Subscription response should not be nil")
+
+// 			// Verify billing periods are set correctly
+// 			s.Equal(tt.expectedPeriodStart.UTC(), resp.CurrentPeriodStart.UTC(), "Period start should match expected")
+
+// 			// Verify calendar billing anchor
+// 			expectedAnchor := types.CalculateCalendarBillingAnchor(tt.startDate, types.BILLING_PERIOD_MONTHLY)
+// 			s.Equal(expectedAnchor.UTC(), resp.BillingAnchor.UTC(), "Calendar billing anchor should be calculated correctly")
+
+// 			// Verify subscription was created with correct proration settings
+// 			s.Equal(types.BillingCycleCalendar, resp.BillingCycle, "Should use calendar billing")
+// 			s.Equal(types.ProrationModeActive, resp.ProrationMode, "Should have active proration")
+// 			s.Equal(tt.customerTimezone, resp.CustomerTimezone, "Should preserve customer timezone")
+
+// 			s.T().Logf("Test %s: StartDate=%v, PeriodStart=%v, PeriodEnd=%v, BillingAnchor=%v, ExpectedProration=%.2f%%, Description=%s",
+// 				tt.name, tt.startDate, resp.CurrentPeriodStart, resp.CurrentPeriodEnd, resp.BillingAnchor, tt.expectedProrationPct*100, tt.description)
+// 		})
+// 	}
+// }
+
+// // TestProrationWithDifferentPriceTypes tests proration behavior with different price types
+// func (s *SubscriptionServiceSuite) TestProrationWithDifferentPriceTypes() {
+// 	// Create different types of prices
+// 	fixedFeePrice := &price.Price{
+// 		ID:                 "price_fixed_fee_proration_test",
+// 		Amount:             decimal.NewFromFloat(60), // $60/month
+// 		Currency:           "usd",
+// 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+// 		EntityID:           s.testData.plan.ID,
+// 		Type:               types.PRICE_TYPE_FIXED,
+// 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+// 		BillingPeriodCount: 1,
+// 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+// 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 		InvoiceCadence:     types.InvoiceCadenceAdvance,
+// 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+// 	}
+// 	s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), fixedFeePrice))
+
+// 	// Usage-based price should NOT be prorated
+// 	usagePrice := &price.Price{
+// 		ID:                 "price_usage_no_proration_test",
+// 		Amount:             decimal.NewFromFloat(0.10), // $0.10 per unit
+// 		Currency:           "usd",
+// 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+// 		EntityID:           s.testData.plan.ID,
+// 		Type:               types.PRICE_TYPE_USAGE,
+// 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+// 		BillingPeriodCount: 1,
+// 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+// 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 		InvoiceCadence:     types.InvoiceCadenceAdvance,
+// 		MeterID:            s.testData.meters.apiCalls.ID,
+// 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+// 	}
+// 	s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), usagePrice))
+
+// 	tests := []struct {
+// 		name          string
+// 		priceType     types.PriceType
+// 		shouldProrate bool
+// 		description   string
+// 	}{
+// 		{
+// 			name:          "fixed_fee_should_be_prorated",
+// 			priceType:     types.PRICE_TYPE_FIXED,
+// 			shouldProrate: true,
+// 			description:   "Fixed fee prices should be prorated in calendar billing",
+// 		},
+// 		{
+// 			name:          "usage_price_should_not_be_prorated",
+// 			priceType:     types.PRICE_TYPE_USAGE,
+// 			shouldProrate: false,
+// 			description:   "Usage-based prices should not be prorated as they are calculated for actual usage",
+// 		},
+// 	}
+
+// 	startDate := time.Now().UTC() // Current time
+
+// 	for _, tt := range tests {
+// 		s.Run(tt.name, func() {
+// 			// Create subscription with calendar billing and active proration
+// 			req := dto.CreateSubscriptionRequest{
+// 				CustomerID:         s.testData.customer.ID,
+// 				PlanID:             s.testData.plan.ID,
+// 				StartDate:          lo.ToPtr(startDate),
+// 				Currency:           "usd",
+// 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+// 				BillingPeriodCount: 1,
+// 				BillingCycle:       types.BillingCycleCalendar,
+// 				ProrationMode:      types.ProrationModeActive,
+// 				CustomerTimezone:   "UTC",
+// 			}
+
+// 			// Create subscription
+// 			resp, err := s.service.CreateSubscription(s.GetContext(), req)
+// 			s.NoError(err, "Failed to create subscription: %s", tt.description)
+// 			s.NotNil(resp, "Subscription response should not be nil")
+
+// 			// Verify subscription settings
+// 			s.Equal(types.BillingCycleCalendar, resp.BillingCycle, "Should use calendar billing")
+// 			s.Equal(types.ProrationModeActive, resp.ProrationMode, "Should have active proration")
+
+// 			// Verify calendar billing anchor is calculated correctly
+// 			expectedAnchor := types.CalculateCalendarBillingAnchor(startDate, types.BILLING_PERIOD_MONTHLY)
+// 			s.Equal(expectedAnchor.UTC(), resp.BillingAnchor.UTC(), "Calendar billing anchor should be calculated correctly")
+
+// 			// For this test, we're primarily verifying that the subscription is created correctly
+// 			// The actual proration logic is tested in the billing service tests
+// 			// Here we verify that the subscription has the correct setup for proration to work
+
+// 			s.T().Logf("Test %s: PriceType=%s, ShouldProrate=%v, BillingAnchor=%v, Description=%s",
+// 				tt.name, tt.priceType, tt.shouldProrate, resp.BillingAnchor, tt.description)
+// 		})
+// 	}
+// }
+
+// // TestProrationWithDifferentBillingPeriods tests proration with different billing periods
+// func (s *SubscriptionServiceSuite) TestProrationWithDifferentBillingPeriods() {
+// 	// Create prices for different billing periods
+// 	monthlyPrice := &price.Price{
+// 		ID:                 "price_monthly_proration_test",
+// 		Amount:             decimal.NewFromFloat(30), // $30/month
+// 		Currency:           "usd",
+// 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+// 		EntityID:           s.testData.plan.ID,
+// 		Type:               types.PRICE_TYPE_FIXED,
+// 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+// 		BillingPeriodCount: 1,
+// 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+// 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 		InvoiceCadence:     types.InvoiceCadenceAdvance,
+// 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+// 	}
+// 	s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), monthlyPrice))
+
+// 	annualPrice := &price.Price{
+// 		ID:                 "price_annual_proration_test",
+// 		Amount:             decimal.NewFromFloat(300), // $300/year
+// 		Currency:           "usd",
+// 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+// 		EntityID:           s.testData.plan.ID,
+// 		Type:               types.PRICE_TYPE_FIXED,
+// 		BillingPeriod:      types.BILLING_PERIOD_ANNUAL,
+// 		BillingPeriodCount: 1,
+// 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+// 		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 		InvoiceCadence:     types.InvoiceCadenceAdvance,
+// 		BaseModel:          types.GetDefaultBaseModel(s.GetContext()),
+// 	}
+// 	s.NoError(s.GetStores().PriceRepo.Create(s.GetContext(), annualPrice))
+
+// 	tests := []struct {
+// 		name          string
+// 		billingPeriod types.BillingPeriod
+// 		startDate     time.Time
+// 		description   string
+// 	}{
+// 		{
+// 			name:          "monthly_billing_current_time",
+// 			billingPeriod: types.BILLING_PERIOD_MONTHLY,
+// 			startDate:     time.Now().UTC(), // Current time
+// 			description:   "Monthly billing should prorate for partial month",
+// 		},
+// 		{
+// 			name:          "annual_billing_current_time",
+// 			billingPeriod: types.BILLING_PERIOD_ANNUAL,
+// 			startDate:     time.Now().UTC(), // Current time
+// 			description:   "Annual billing should prorate for partial year",
+// 		},
+// 		{
+// 			name:          "monthly_billing_start_of_next_month",
+// 			billingPeriod: types.BILLING_PERIOD_MONTHLY,
+// 			startDate:     time.Date(time.Now().Year(), time.Now().Month()+1, 1, 0, 0, 0, 0, time.UTC), // Start of next month
+// 			description:   "Monthly billing at month start should not need proration",
+// 		},
+// 		{
+// 			name:          "annual_billing_future_start",
+// 			billingPeriod: types.BILLING_PERIOD_ANNUAL,
+// 			startDate:     time.Now().UTC().AddDate(0, 0, 10), // 10 days in the future
+// 			description:   "Annual billing should prorate for partial year",
+// 		},
+// 	}
+
+// 	for _, tt := range tests {
+// 		s.Run(tt.name, func() {
+// 			// Create subscription with calendar billing and active proration
+// 			req := dto.CreateSubscriptionRequest{
+// 				CustomerID:         s.testData.customer.ID,
+// 				PlanID:             s.testData.plan.ID,
+// 				StartDate:          lo.ToPtr(tt.startDate),
+// 				Currency:           "usd",
+// 				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+// 				BillingPeriod:      tt.billingPeriod,
+// 				BillingPeriodCount: 1,
+// 				BillingCycle:       types.BillingCycleCalendar,
+// 				ProrationMode:      types.ProrationModeActive,
+// 				CustomerTimezone:   "UTC",
+// 			}
+
+// 			// Create subscription
+// 			resp, err := s.service.CreateSubscription(s.GetContext(), req)
+// 			s.NoError(err, "Failed to create subscription: %s", tt.description)
+// 			s.NotNil(resp, "Subscription response should not be nil")
+
+// 			// Verify subscription properties
+// 			s.Equal(tt.billingPeriod, resp.BillingPeriod, "Billing period should match")
+// 			s.Equal(types.BillingCycleCalendar, resp.BillingCycle, "Should use calendar billing")
+// 			s.Equal(types.ProrationModeActive, resp.ProrationMode, "Should have active proration")
+
+// 			// Verify billing anchor calculation
+// 			expectedAnchor := types.CalculateCalendarBillingAnchor(tt.startDate, tt.billingPeriod)
+// 			s.Equal(expectedAnchor.UTC(), resp.BillingAnchor.UTC(), "Calendar billing anchor should be calculated correctly")
+
+// 			// Verify period calculations
+// 			s.Equal(tt.startDate.UTC(), resp.CurrentPeriodStart.UTC(), "Current period start should match start date")
+
+// 			nextBilling, err := types.NextBillingDate(resp.CurrentPeriodStart, resp.BillingAnchor, resp.BillingPeriodCount, resp.BillingPeriod, resp.EndDate)
+// 			s.NoError(err, "Should calculate next billing date correctly")
+// 			s.Equal(nextBilling.UTC(), resp.CurrentPeriodEnd.UTC(), "Current period end should match calculated next billing date")
+
+// 			s.T().Logf("Test %s: BillingPeriod=%s, StartDate=%v, BillingAnchor=%v, PeriodEnd=%v, Description=%s",
+// 				tt.name, tt.billingPeriod, tt.startDate, resp.BillingAnchor, resp.CurrentPeriodEnd, tt.description)
+// 		})
+// 	}
+// }
