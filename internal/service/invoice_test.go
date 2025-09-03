@@ -427,6 +427,7 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 				s.GetContext(),
 				req,
 				nil,
+				types.InvoiceFlowManual,
 			)
 
 			if tt.wantErr {

@@ -14,7 +14,7 @@ import (
 
 // SubscriptionPaymentProcessor handles payment processing for subscriptions
 type SubscriptionPaymentProcessor interface {
-	HandlePaymentBehavior(ctx context.Context, subscription *subscription.Subscription, invoice *dto.InvoiceResponse, behavior types.PaymentBehavior) error
+	HandlePaymentBehavior(ctx context.Context, subscription *subscription.Subscription, invoice *dto.InvoiceResponse, behavior types.PaymentBehavior, flowType types.InvoiceFlowType) error
 }
 
 type subscriptionPaymentProcessor struct {
@@ -52,6 +52,7 @@ func (s *subscriptionPaymentProcessor) HandlePaymentBehavior(
 	sub *subscription.Subscription,
 	inv *dto.InvoiceResponse,
 	behavior types.PaymentBehavior,
+	flowType types.InvoiceFlowType,
 ) error {
 	s.Logger.Infow("handling payment behavior",
 		"subscription_id", sub.ID,
@@ -66,7 +67,7 @@ func (s *subscriptionPaymentProcessor) HandlePaymentBehavior(
 	case types.CollectionMethodSendInvoice:
 		return s.handleSendInvoiceMethod(ctx, sub, inv, behavior)
 	case types.CollectionMethodChargeAutomatically:
-		return s.handleChargeAutomaticallyMethod(ctx, sub, inv, behavior)
+		return s.handleChargeAutomaticallyMethod(ctx, sub, inv, behavior, flowType)
 	default:
 		return ierr.NewError("unsupported collection method").
 			WithHint("Collection method not supported").
@@ -126,13 +127,14 @@ func (s *subscriptionPaymentProcessor) handleChargeAutomaticallyMethod(
 	sub *subscription.Subscription,
 	inv *dto.InvoiceResponse,
 	behavior types.PaymentBehavior,
+	flowType types.InvoiceFlowType,
 ) error {
 	switch behavior {
 	case types.PaymentBehaviorAllowIncomplete:
 		return s.attemptPaymentAllowIncomplete(ctx, sub, inv)
 
 	case types.PaymentBehaviorErrorIfIncomplete:
-		return s.attemptPaymentErrorIfIncomplete(ctx, sub, inv)
+		return s.attemptPaymentErrorIfIncomplete(ctx, sub, inv, flowType)
 
 	default:
 		return ierr.NewError("unsupported payment behavior for charge_automatically").
@@ -207,6 +209,7 @@ func (s *subscriptionPaymentProcessor) attemptPaymentErrorIfIncomplete(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	inv *dto.InvoiceResponse,
+	flowType types.InvoiceFlowType,
 ) error {
 	result := s.processPayment(ctx, sub, inv)
 
@@ -217,16 +220,29 @@ func (s *subscriptionPaymentProcessor) attemptPaymentErrorIfIncomplete(
 		return nil
 	}
 
-	// Payment failed - return error to prevent subscription creation
-	return ierr.NewError("payment failed").
-		WithHint("Subscription creation failed due to payment failure").
-		WithReportableDetails(map[string]interface{}{
-			"subscription_id": sub.ID,
-			"invoice_id":      inv.ID,
-			"amount_due":      inv.AmountDue,
-			"amount_paid":     result.AmountPaid,
-		}).
-		Mark(ierr.ErrInvalidOperation)
+	// Check the invoice flow type to determine error handling behavior
+	// For subscription creation flow, return error to prevent subscription creation
+	if flowType == types.InvoiceFlowSubscriptionCreation {
+		return ierr.NewError("payment failed").
+			WithHint("Subscription creation failed due to payment failure").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": sub.ID,
+				"invoice_id":      inv.ID,
+				"amount_due":      inv.AmountDue,
+				"amount_paid":     result.AmountPaid,
+			}).
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	// For renewal flows, don't return error - let invoice remain in pending state
+	s.Logger.Infow("payment failed for renewal flow, marking invoice as pending",
+		"subscription_id", sub.ID,
+		"invoice_id", inv.ID,
+		"amount_due", inv.AmountDue,
+		"amount_paid", result.AmountPaid,
+		"flow_type", flowType)
+
+	return nil
 }
 
 // processPayment processes payment with card-first logic
@@ -502,7 +518,7 @@ func (s *subscriptionPaymentProcessor) calculateWalletAllowedAmount(
 	priceTypeAmounts map[string]decimal.Decimal,
 ) decimal.Decimal {
 	// If wallet has no allowed price types, use default (ALL)
-	if wallet.Config.AllowedPriceTypes == nil || len(wallet.Config.AllowedPriceTypes) == 0 {
+	if len(wallet.Config.AllowedPriceTypes) == 0 {
 		// Can pay for everything
 		totalAmount := decimal.Zero
 		for _, amount := range priceTypeAmounts {

@@ -345,7 +345,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			PeriodStart:    sub.CurrentPeriodStart,
 			PeriodEnd:      sub.CurrentPeriodEnd,
 			ReferencePoint: types.ReferencePointPeriodStart,
-		}, paymentParams)
+		}, paymentParams, types.InvoiceFlowSubscriptionCreation)
 		if err != nil {
 			return err
 		}
@@ -1437,7 +1437,7 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 				PeriodStart:    period.start,
 				PeriodEnd:      period.end,
 				ReferencePoint: types.ReferencePointPeriodEnd,
-			}, paymentParams)
+			}, paymentParams, types.InvoiceFlowRenewal)
 			if err != nil {
 				return err
 			}

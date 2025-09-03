@@ -23,16 +23,17 @@ import (
 )
 
 type InvoiceService interface {
+	CreateNextBillingPeriodInvoice(ctx context.Context, req dto.CreateNextBillingPeriodInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreateOneOffInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreateInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetInvoice(ctx context.Context, id string) (*dto.InvoiceResponse, error)
 	ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error)
 	FinalizeInvoice(ctx context.Context, id string) error
 	VoidInvoice(ctx context.Context, id string) error
-	ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription) error
+	ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error
 	UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
 	ReconcilePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
-	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, paymentParams *dto.PaymentParameters) (*dto.InvoiceResponse, *subscription.Subscription, error)
+	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, paymentParams *dto.PaymentParameters, flowType types.InvoiceFlowType) (*dto.InvoiceResponse, *subscription.Subscription, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetCustomerInvoiceSummary(ctx context.Context, customerID string, currency string) (*dto.CustomerInvoiceSummary, error)
 	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
@@ -678,7 +679,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription) error {
+func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error {
 	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
 		return err
@@ -695,34 +696,43 @@ func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, pay
 
 	// try to process payment for the invoice based on behavior and log any errors
 	// Pass the subscription object to avoid extra DB call
-	if err := s.attemptPaymentForSubscriptionInvoice(ctx, inv, paymentParams, sub); err != nil {
+	if err := s.attemptPaymentForSubscriptionInvoice(ctx, inv, paymentParams, sub, flowType); err != nil {
 		s.Logger.Errorw("failed to process payment for invoice",
 			"error", err.Error(),
-			"invoice_id", inv.ID)
+			"invoice_id", inv.ID,
+			"flow_type", flowType)
 
-		// For error_if_incomplete behavior, payment failure should block invoice processing
-		shouldReturnError := false
-		if paymentParams != nil && paymentParams.PaymentBehavior != nil &&
-			*paymentParams.PaymentBehavior == types.PaymentBehaviorErrorIfIncomplete {
-			shouldReturnError = true
-		} else if sub != nil {
-			// Use the provided subscription object instead of fetching from DB
-			if sub.PaymentBehavior == string(types.PaymentBehaviorErrorIfIncomplete) {
+		// For subscription creation flow, apply full payment behavior logic
+		if flowType == types.InvoiceFlowSubscriptionCreation {
+			// For error_if_incomplete behavior, payment failure should block invoice processing
+			shouldReturnError := false
+			if paymentParams != nil && paymentParams.PaymentBehavior != nil &&
+				*paymentParams.PaymentBehavior == types.PaymentBehaviorErrorIfIncomplete {
 				shouldReturnError = true
+			} else if sub != nil {
+				// Use the provided subscription object instead of fetching from DB
+				if sub.PaymentBehavior == string(types.PaymentBehaviorErrorIfIncomplete) {
+					shouldReturnError = true
+				}
+			} else if inv.SubscriptionID != nil {
+				// Fallback: Check subscription's payment behavior if no subscription provided
+				fetchedSub, subErr := s.SubRepo.Get(ctx, *inv.SubscriptionID)
+				if subErr == nil && fetchedSub.PaymentBehavior == string(types.PaymentBehaviorErrorIfIncomplete) {
+					shouldReturnError = true
+				}
 			}
-		} else if inv.SubscriptionID != nil {
-			// Fallback: Check subscription's payment behavior if no subscription provided
-			fetchedSub, subErr := s.SubRepo.Get(ctx, *inv.SubscriptionID)
-			if subErr == nil && fetchedSub.PaymentBehavior == string(types.PaymentBehaviorErrorIfIncomplete) {
-				shouldReturnError = true
+
+			if shouldReturnError {
+				return err
 			}
 		}
 
-		if shouldReturnError {
-			return err
-		}
-
-		// For other behaviors, payment failure is not a blocker
+		// For renewal flows (InvoiceFlowRenewal) or manual flows, payment failure is not a blocker
+		// The invoice will remain in pending state and can be retried later
+		s.Logger.Infow("payment failed but continuing with invoice processing for flow type",
+			"invoice_id", inv.ID,
+			"flow_type", flowType,
+			"error", err.Error())
 	}
 
 	return nil
@@ -904,7 +914,7 @@ func (s *invoiceService) ReconcilePaymentStatus(ctx context.Context, id string, 
 	return nil
 }
 
-func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, paymentParams *dto.PaymentParameters) (*dto.InvoiceResponse, *subscription.Subscription, error) {
+func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, paymentParams *dto.PaymentParameters, flowType types.InvoiceFlowType) (*dto.InvoiceResponse, *subscription.Subscription, error) {
 	s.Logger.Infow("creating subscription invoice",
 		"subscription_id", req.SubscriptionID,
 		"period_start", req.PeriodStart,
@@ -939,6 +949,9 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 		return nil, subscription, nil
 	}
 
+	s.Logger.Infow("prepared invoice request for subscription",
+		"invoice_request", invoiceReq)
+
 	// Create the invoice
 	inv, err := s.CreateInvoice(ctx, *invoiceReq)
 	if err != nil {
@@ -946,7 +959,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	}
 
 	// Process the invoice with payment behavior, passing subscription to avoid extra DB call
-	if err := s.ProcessDraftInvoice(ctx, inv.ID, paymentParams, subscription); err != nil {
+	if err := s.ProcessDraftInvoice(ctx, inv.ID, paymentParams, subscription, flowType); err != nil {
 		return nil, nil, err
 	}
 
@@ -975,6 +988,9 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 	if err != nil {
 		return nil, err
 	}
+
+	s.Logger.Infow("prepared invoice request for preview",
+		"invoice_request", invReq)
 
 	// Create a draft invoice object for preview; ToInvoice applies preview discounts and taxes
 	inv, err := invReq.ToInvoice(ctx)
@@ -1186,7 +1202,7 @@ func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
 	}
 
 	// Use the new payment function with nil parameters to use subscription defaults
-	return s.attemptPaymentForSubscriptionInvoice(ctx, inv, nil, nil)
+	return s.attemptPaymentForSubscriptionInvoice(ctx, inv, nil, nil, types.InvoiceFlowManual)
 }
 
 func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *invoice.Invoice) error {
@@ -1249,7 +1265,7 @@ func (s *invoiceService) performPaymentAttemptActions(ctx context.Context, inv *
 	return nil
 }
 
-func (s *invoiceService) attemptPaymentForSubscriptionInvoice(ctx context.Context, inv *invoice.Invoice, paymentParams *dto.PaymentParameters, sub *subscription.Subscription) error {
+func (s *invoiceService) attemptPaymentForSubscriptionInvoice(ctx context.Context, inv *invoice.Invoice, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error {
 	// Get subscription to access payment settings if not provided
 	if sub == nil && inv.SubscriptionID != nil {
 		var err error
@@ -1289,7 +1305,7 @@ func (s *invoiceService) attemptPaymentForSubscriptionInvoice(ctx context.Contex
 		}
 
 		// Delegate all payment behavior handling to the payment processor
-		err := paymentProcessor.HandlePaymentBehavior(ctx, sub, invoiceResponse, finalPaymentBehavior)
+		err := paymentProcessor.HandlePaymentBehavior(ctx, sub, invoiceResponse, finalPaymentBehavior, flowType)
 		if err != nil {
 			return err
 		}
@@ -2001,4 +2017,98 @@ func (s *invoiceService) TriggerCommunication(ctx context.Context, id string) er
 	// Publish webhook event
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceCommunicationTriggered, inv.ID)
 	return nil
+}
+
+func (s *invoiceService) CreateNextBillingPeriodInvoice(ctx context.Context, req dto.CreateNextBillingPeriodInvoiceRequest) (*dto.InvoiceResponse, error) {
+	s.Logger.Infow("creating invoice for current billing period with latest usage",
+		"subscription_id", req.SubscriptionID,
+		"finalize", req.Finalize,
+		"reference_point", req.ReferencePoint)
+
+	// Get the subscription
+	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate subscription is active
+	if subscription.SubscriptionStatus != types.SubscriptionStatusActive {
+		return nil, ierr.NewError("subscription is not active").
+			WithHint("Only active subscriptions can generate invoices for next billing period").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id":     subscription.ID,
+				"subscription_status": subscription.SubscriptionStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Use current billing period dates to capture all ingested events for this period
+	currentPeriodStart := subscription.CurrentPeriodStart
+	currentPeriodEnd := subscription.CurrentPeriodEnd
+
+	// Set default reference point if not provided
+	// Use period_end reference point to include current period usage charges (arrear)
+	referencePoint := types.ReferencePointPeriodEnd
+	if req.ReferencePoint != nil {
+		referencePoint = *req.ReferencePoint
+	}
+
+	// Set default finalize flag if not provided
+	shouldFinalize := true
+	if req.Finalize != nil {
+		shouldFinalize = *req.Finalize
+	}
+
+	// Check if we've reached subscription end date
+	if subscription.EndDate != nil && currentPeriodStart.After(*subscription.EndDate) {
+		return nil, ierr.NewError("subscription has ended").
+			WithHint("Cannot generate invoice for current billing period - subscription has ended").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id":      subscription.ID,
+				"subscription_end":     subscription.EndDate,
+				"current_period_start": currentPeriodStart,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Create the subscription invoice request
+	subscriptionInvoiceReq := &dto.CreateSubscriptionInvoiceRequest{
+		SubscriptionID: req.SubscriptionID,
+		PeriodStart:    currentPeriodStart,
+		PeriodEnd:      currentPeriodEnd,
+		IsPreview:      false,
+		ReferencePoint: referencePoint,
+	}
+
+	s.Logger.Infow("creating invoice for current billing period with latest usage",
+		"subscription_id", req.SubscriptionID,
+		"current_period_start", currentPeriodStart,
+		"current_period_end", currentPeriodEnd,
+		"reference_point", referencePoint,
+		"finalize", shouldFinalize)
+
+	// Create the invoice using subscription's payment settings
+	inv, _, err := s.CreateSubscriptionInvoice(ctx, subscriptionInvoiceReq, &dto.PaymentParameters{
+		CollectionMethod: lo.ToPtr(types.CollectionMethod(subscription.CollectionMethod)),
+		PaymentBehavior:  lo.ToPtr(types.PaymentBehavior(subscription.PaymentBehavior)),
+	}, types.InvoiceFlowRenewal)
+	if err != nil {
+		return nil, err
+	}
+
+	// Finalize the invoice if requested (and if it's not already finalized)
+	if shouldFinalize && inv.InvoiceStatus == types.InvoiceStatusDraft {
+		if err := s.FinalizeInvoice(ctx, inv.ID); err != nil {
+			s.Logger.Errorw("failed to finalize current period invoice",
+				"error", err,
+				"invoice_id", inv.ID,
+				"subscription_id", req.SubscriptionID)
+			return nil, err
+		}
+
+		// Return the updated invoice after finalization
+		return s.GetInvoice(ctx, inv.ID)
+	}
+
+	return inv, nil
 }
