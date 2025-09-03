@@ -67,6 +67,7 @@ func (r *planRepository) Create(ctx context.Context, p *domainPlan.Plan) error {
 		SetUpdatedBy(p.UpdatedBy).
 		SetEnvironmentID(p.EnvironmentID).
 		SetMetadata(p.Metadata).
+		SetNillableDisplayOrder(p.DisplayOrder).
 		Save(ctx)
 
 	if err != nil {
@@ -298,6 +299,7 @@ func (r *planRepository) Update(ctx context.Context, p *domainPlan.Plan) error {
 		SetName(p.Name).
 		SetDescription(p.Description).
 		SetMetadata(p.Metadata).
+		SetNillableDisplayOrder(p.DisplayOrder).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		Save(ctx)
