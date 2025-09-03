@@ -75,6 +75,9 @@ type CreateSubscriptionRequest struct {
 	// Timezone of the customer.
 	// If not set, the default value is UTC.
 	CustomerTimezone string `json:"customer_timezone" validate:"omitempty,timezone"`
+
+	// LineItems startdate for usage based charges
+	LineItemsStartDate *time.Time `json:"-,omitempty"`
 }
 
 // AddAddonRequest is used by body-based endpoint /subscriptions/addon
