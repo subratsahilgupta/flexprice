@@ -292,7 +292,8 @@ func (s *walletPaymentService) calculateAllowedPaymentAmount(
 ) decimal.Decimal {
 	// If wallet has no allowed price types, use default (ALL)
 	if w.Config.AllowedPriceTypes == nil || len(w.Config.AllowedPriceTypes) == 0 {
-		return remainingAmount
+		// Return the minimum of remaining amount and wallet balance
+		return decimal.Min(remainingAmount, w.Balance)
 	}
 
 	allowedAmount := decimal.Zero
@@ -300,8 +301,8 @@ func (s *walletPaymentService) calculateAllowedPaymentAmount(
 	for _, allowedPriceType := range w.Config.AllowedPriceTypes {
 		switch allowedPriceType {
 		case types.WalletConfigPriceTypeAll:
-			// If ALL is allowed, wallet can pay the full remaining amount
-			return remainingAmount
+			// If ALL is allowed, wallet can pay the full remaining amount (up to its balance)
+			return decimal.Min(remainingAmount, w.Balance)
 		case types.WalletConfigPriceTypeUsage:
 			// Add the remaining USAGE amount
 			usageAmount := priceTypeAmounts[string(types.PRICE_TYPE_USAGE)]
@@ -313,8 +314,8 @@ func (s *walletPaymentService) calculateAllowedPaymentAmount(
 		}
 	}
 
-	// Return the minimum of allowed amount and remaining amount
-	return decimal.Min(allowedAmount, remainingAmount)
+	// Return the minimum of allowed amount, remaining amount, and wallet balance
+	return decimal.Min(decimal.Min(allowedAmount, remainingAmount), w.Balance)
 }
 
 // updatePriceTypeAmountsAfterPayment updates the price type amounts after a payment is made

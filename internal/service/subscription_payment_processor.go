@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -268,7 +267,8 @@ func (s *subscriptionPaymentProcessor) processPayment(
 	}
 
 	// Step 2: Calculate price type breakdown
-	priceTypeAmounts := s.calculatePriceTypeAmounts(fullInvoice.LineItems)
+	walletPaymentService := &walletPaymentService{ServiceParams: *s.ServiceParams}
+	priceTypeAmounts := walletPaymentService.calculatePriceTypeAmounts(fullInvoice.LineItems)
 	s.Logger.Infow("calculated price type breakdown for payment split",
 		"subscription_id", sub.ID,
 		"invoice_id", inv.ID,
@@ -434,31 +434,6 @@ func (s *subscriptionPaymentProcessor) processCreditsPayment(
 	)
 
 	return amountPaid
-}
-
-// calculatePriceTypeAmounts calculates the total amount for each price type in the invoice
-func (s *subscriptionPaymentProcessor) calculatePriceTypeAmounts(lineItems []*invoice.InvoiceLineItem) map[string]decimal.Decimal {
-	priceTypeAmounts := map[string]decimal.Decimal{
-		string(types.PRICE_TYPE_USAGE): decimal.Zero,
-		string(types.PRICE_TYPE_FIXED): decimal.Zero,
-	}
-
-	for _, item := range lineItems {
-		if item.PriceType != nil {
-			priceType := *item.PriceType
-			if amount, exists := priceTypeAmounts[priceType]; exists {
-				priceTypeAmounts[priceType] = amount.Add(item.Amount)
-			} else {
-				// If it's not USAGE or FIXED, treat it as FIXED by default
-				priceTypeAmounts[string(types.PRICE_TYPE_FIXED)] = priceTypeAmounts[string(types.PRICE_TYPE_FIXED)].Add(item.Amount)
-			}
-		} else {
-			// If price type is nil, treat it as FIXED by default
-			priceTypeAmounts[string(types.PRICE_TYPE_FIXED)] = priceTypeAmounts[string(types.PRICE_TYPE_FIXED)].Add(item.Amount)
-		}
-	}
-
-	return priceTypeAmounts
 }
 
 // calculateWalletPayableAmount determines how much wallets can pay based on price type restrictions
