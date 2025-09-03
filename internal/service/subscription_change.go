@@ -589,7 +589,7 @@ func (s *subscriptionChangeService) executeChange(
 	}
 
 	// Step 4: Create new subscription with credit grants
-	newSub, err := s.createNewSubscription(ctx, currentSub, lineItems, targetPlan, req, creditGrantRequests)
+	newSub, err := s.createNewSubscription(ctx, currentSub, lineItems, targetPlan, req, creditGrantRequests, effectiveDate)
 	if err != nil {
 		return nil, err
 	}
@@ -670,6 +670,7 @@ func (s *subscriptionChangeService) createNewSubscription(
 	targetPlan *plan.Plan,
 	req dto.SubscriptionChangeRequest,
 	creditGrantRequests []dto.CreateCreditGrantRequest,
+	effectiveDate time.Time,
 ) (*subscription.Subscription, error) {
 
 	prices, err := s.serviceParams.PriceRepo.GetByPlanID(ctx, targetPlan.ID)
@@ -706,7 +707,7 @@ func (s *subscriptionChangeService) createNewSubscription(
 		CreditGrants:       creditGrantRequests,
 		CommitmentAmount:   currentSub.CommitmentAmount,
 		OverageFactor:      currentSub.OverageFactor,
-		LineItemsStartDate: lo.ToPtr(time.Now()),
+		LineItemsStartDate: lo.ToPtr(effectiveDate),
 	}
 
 	// Use the existing subscription service to create the new subscription
