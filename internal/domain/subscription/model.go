@@ -104,8 +104,8 @@ type Subscription struct {
 	// CollectionMethod determines how invoices are collected
 	CollectionMethod string `db:"collection_method" json:"collection_method"`
 
-	// PaymentMethodID is the payment method ID for this subscription
-	PaymentMethodID *string `db:"payment_method_id" json:"payment_method_id,omitempty"`
+	// GatewayPaymentMethodID is the gateway payment method ID for this subscription
+	GatewayPaymentMethodID *string `db:"gateway_payment_method_id" json:"gateway_payment_method_id,omitempty"`
 
 	LineItems []*SubscriptionLineItem `json:"line_items,omitempty"`
 
@@ -142,36 +142,36 @@ func GetSubscriptionFromEnt(sub *ent.Subscription) *Subscription {
 	}
 
 	return &Subscription{
-		ID:                 sub.ID,
-		LookupKey:          sub.LookupKey,
-		CustomerID:         sub.CustomerID,
-		PlanID:             sub.PlanID,
-		SubscriptionStatus: types.SubscriptionStatus(sub.SubscriptionStatus),
-		Currency:           sub.Currency,
-		BillingAnchor:      sub.BillingAnchor,
-		StartDate:          sub.StartDate,
-		EndDate:            sub.EndDate,
-		CurrentPeriodStart: sub.CurrentPeriodStart,
-		CurrentPeriodEnd:   sub.CurrentPeriodEnd,
-		CancelledAt:        sub.CancelledAt,
-		CancelAt:           sub.CancelAt,
-		CancelAtPeriodEnd:  sub.CancelAtPeriodEnd,
-		TrialStart:         sub.TrialStart,
-		TrialEnd:           sub.TrialEnd,
-		BillingCadence:     types.BillingCadence(sub.BillingCadence),
-		BillingPeriod:      types.BillingPeriod(sub.BillingPeriod),
-		BillingPeriodCount: sub.BillingPeriodCount,
-		BillingCycle:       types.BillingCycle(sub.BillingCycle),
-		Version:            sub.Version,
-		Metadata:           sub.Metadata,
-		EnvironmentID:      sub.EnvironmentID,
-		PauseStatus:        types.PauseStatus(sub.PauseStatus),
-		ActivePauseID:      sub.ActivePauseID,
-		CommitmentAmount:   sub.CommitmentAmount,
-		OverageFactor:      sub.OverageFactor,
-		PaymentBehavior:    string(sub.PaymentBehavior),
-		CollectionMethod:   string(sub.CollectionMethod),
-		PaymentMethodID:    lo.ToPtr(sub.PaymentMethodID),
+		ID:                     sub.ID,
+		LookupKey:              sub.LookupKey,
+		CustomerID:             sub.CustomerID,
+		PlanID:                 sub.PlanID,
+		SubscriptionStatus:     types.SubscriptionStatus(sub.SubscriptionStatus),
+		Currency:               sub.Currency,
+		BillingAnchor:          sub.BillingAnchor,
+		StartDate:              sub.StartDate,
+		EndDate:                sub.EndDate,
+		CurrentPeriodStart:     sub.CurrentPeriodStart,
+		CurrentPeriodEnd:       sub.CurrentPeriodEnd,
+		CancelledAt:            sub.CancelledAt,
+		CancelAt:               sub.CancelAt,
+		CancelAtPeriodEnd:      sub.CancelAtPeriodEnd,
+		TrialStart:             sub.TrialStart,
+		TrialEnd:               sub.TrialEnd,
+		BillingCadence:         types.BillingCadence(sub.BillingCadence),
+		BillingPeriod:          types.BillingPeriod(sub.BillingPeriod),
+		BillingPeriodCount:     sub.BillingPeriodCount,
+		BillingCycle:           types.BillingCycle(sub.BillingCycle),
+		Version:                sub.Version,
+		Metadata:               sub.Metadata,
+		EnvironmentID:          sub.EnvironmentID,
+		PauseStatus:            types.PauseStatus(sub.PauseStatus),
+		ActivePauseID:          sub.ActivePauseID,
+		CommitmentAmount:       sub.CommitmentAmount,
+		OverageFactor:          sub.OverageFactor,
+		PaymentBehavior:        string(sub.PaymentBehavior),
+		CollectionMethod:       string(sub.CollectionMethod),
+		GatewayPaymentMethodID: lo.ToPtr(sub.GatewayPaymentMethodID),
 
 		LineItems:          lineItems,
 		CouponAssociations: couponAssociations,

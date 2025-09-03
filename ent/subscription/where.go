@@ -221,9 +221,9 @@ func OverageFactor(v decimal.Decimal) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldOverageFactor, v))
 }
 
-// PaymentMethodID applies equality check predicate on the "payment_method_id" field. It's identical to PaymentMethodIDEQ.
-func PaymentMethodID(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldPaymentMethodID, v))
+// GatewayPaymentMethodID applies equality check predicate on the "gateway_payment_method_id" field. It's identical to GatewayPaymentMethodIDEQ.
+func GatewayPaymentMethodID(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldGatewayPaymentMethodID, v))
 }
 
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
@@ -1981,79 +1981,79 @@ func CollectionMethodNotIn(vs ...CollectionMethod) predicate.Subscription {
 	return predicate.Subscription(sql.FieldNotIn(FieldCollectionMethod, vs...))
 }
 
-// PaymentMethodIDEQ applies the EQ predicate on the "payment_method_id" field.
-func PaymentMethodIDEQ(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDEQ applies the EQ predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDNEQ applies the NEQ predicate on the "payment_method_id" field.
-func PaymentMethodIDNEQ(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNEQ(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDNEQ applies the NEQ predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDNEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDIn applies the In predicate on the "payment_method_id" field.
-func PaymentMethodIDIn(vs ...string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldIn(FieldPaymentMethodID, vs...))
+// GatewayPaymentMethodIDIn applies the In predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldGatewayPaymentMethodID, vs...))
 }
 
-// PaymentMethodIDNotIn applies the NotIn predicate on the "payment_method_id" field.
-func PaymentMethodIDNotIn(vs ...string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNotIn(FieldPaymentMethodID, vs...))
+// GatewayPaymentMethodIDNotIn applies the NotIn predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDNotIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldGatewayPaymentMethodID, vs...))
 }
 
-// PaymentMethodIDGT applies the GT predicate on the "payment_method_id" field.
-func PaymentMethodIDGT(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGT(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDGT applies the GT predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDGT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGT(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDGTE applies the GTE predicate on the "payment_method_id" field.
-func PaymentMethodIDGTE(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGTE(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDGTE applies the GTE predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDGTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGTE(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDLT applies the LT predicate on the "payment_method_id" field.
-func PaymentMethodIDLT(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLT(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDLT applies the LT predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDLT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLT(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDLTE applies the LTE predicate on the "payment_method_id" field.
-func PaymentMethodIDLTE(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLTE(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDLTE applies the LTE predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDLTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLTE(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDContains applies the Contains predicate on the "payment_method_id" field.
-func PaymentMethodIDContains(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldContains(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDContains applies the Contains predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDContains(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContains(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDHasPrefix applies the HasPrefix predicate on the "payment_method_id" field.
-func PaymentMethodIDHasPrefix(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldHasPrefix(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDHasPrefix applies the HasPrefix predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDHasPrefix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasPrefix(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDHasSuffix applies the HasSuffix predicate on the "payment_method_id" field.
-func PaymentMethodIDHasSuffix(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldHasSuffix(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDHasSuffix applies the HasSuffix predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDHasSuffix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasSuffix(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDIsNil applies the IsNil predicate on the "payment_method_id" field.
-func PaymentMethodIDIsNil() predicate.Subscription {
-	return predicate.Subscription(sql.FieldIsNull(FieldPaymentMethodID))
+// GatewayPaymentMethodIDIsNil applies the IsNil predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDIsNil() predicate.Subscription {
+	return predicate.Subscription(sql.FieldIsNull(FieldGatewayPaymentMethodID))
 }
 
-// PaymentMethodIDNotNil applies the NotNil predicate on the "payment_method_id" field.
-func PaymentMethodIDNotNil() predicate.Subscription {
-	return predicate.Subscription(sql.FieldNotNull(FieldPaymentMethodID))
+// GatewayPaymentMethodIDNotNil applies the NotNil predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDNotNil() predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotNull(FieldGatewayPaymentMethodID))
 }
 
-// PaymentMethodIDEqualFold applies the EqualFold predicate on the "payment_method_id" field.
-func PaymentMethodIDEqualFold(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEqualFold(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDEqualFold applies the EqualFold predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDEqualFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEqualFold(FieldGatewayPaymentMethodID, v))
 }
 
-// PaymentMethodIDContainsFold applies the ContainsFold predicate on the "payment_method_id" field.
-func PaymentMethodIDContainsFold(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldContainsFold(FieldPaymentMethodID, v))
+// GatewayPaymentMethodIDContainsFold applies the ContainsFold predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDContainsFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContainsFold(FieldGatewayPaymentMethodID, v))
 }
 
 // HasLineItems applies the HasEdge predicate on the "line_items" edge.

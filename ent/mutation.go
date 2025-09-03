@@ -40097,7 +40097,7 @@ type SubscriptionMutation struct {
 	overage_factor             *decimal.Decimal
 	payment_behavior           *subscription.PaymentBehavior
 	collection_method          *subscription.CollectionMethod
-	payment_method_id          *string
+	gateway_payment_method_id  *string
 	clearedFields              map[string]struct{}
 	line_items                 map[string]struct{}
 	removedline_items          map[string]struct{}
@@ -41658,53 +41658,53 @@ func (m *SubscriptionMutation) ResetCollectionMethod() {
 	m.collection_method = nil
 }
 
-// SetPaymentMethodID sets the "payment_method_id" field.
-func (m *SubscriptionMutation) SetPaymentMethodID(s string) {
-	m.payment_method_id = &s
+// SetGatewayPaymentMethodID sets the "gateway_payment_method_id" field.
+func (m *SubscriptionMutation) SetGatewayPaymentMethodID(s string) {
+	m.gateway_payment_method_id = &s
 }
 
-// PaymentMethodID returns the value of the "payment_method_id" field in the mutation.
-func (m *SubscriptionMutation) PaymentMethodID() (r string, exists bool) {
-	v := m.payment_method_id
+// GatewayPaymentMethodID returns the value of the "gateway_payment_method_id" field in the mutation.
+func (m *SubscriptionMutation) GatewayPaymentMethodID() (r string, exists bool) {
+	v := m.gateway_payment_method_id
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldPaymentMethodID returns the old "payment_method_id" field's value of the Subscription entity.
+// OldGatewayPaymentMethodID returns the old "gateway_payment_method_id" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldPaymentMethodID(ctx context.Context) (v string, err error) {
+func (m *SubscriptionMutation) OldGatewayPaymentMethodID(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPaymentMethodID is only allowed on UpdateOne operations")
+		return v, errors.New("OldGatewayPaymentMethodID is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPaymentMethodID requires an ID field in the mutation")
+		return v, errors.New("OldGatewayPaymentMethodID requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPaymentMethodID: %w", err)
+		return v, fmt.Errorf("querying old value for OldGatewayPaymentMethodID: %w", err)
 	}
-	return oldValue.PaymentMethodID, nil
+	return oldValue.GatewayPaymentMethodID, nil
 }
 
-// ClearPaymentMethodID clears the value of the "payment_method_id" field.
-func (m *SubscriptionMutation) ClearPaymentMethodID() {
-	m.payment_method_id = nil
-	m.clearedFields[subscription.FieldPaymentMethodID] = struct{}{}
+// ClearGatewayPaymentMethodID clears the value of the "gateway_payment_method_id" field.
+func (m *SubscriptionMutation) ClearGatewayPaymentMethodID() {
+	m.gateway_payment_method_id = nil
+	m.clearedFields[subscription.FieldGatewayPaymentMethodID] = struct{}{}
 }
 
-// PaymentMethodIDCleared returns if the "payment_method_id" field was cleared in this mutation.
-func (m *SubscriptionMutation) PaymentMethodIDCleared() bool {
-	_, ok := m.clearedFields[subscription.FieldPaymentMethodID]
+// GatewayPaymentMethodIDCleared returns if the "gateway_payment_method_id" field was cleared in this mutation.
+func (m *SubscriptionMutation) GatewayPaymentMethodIDCleared() bool {
+	_, ok := m.clearedFields[subscription.FieldGatewayPaymentMethodID]
 	return ok
 }
 
-// ResetPaymentMethodID resets all changes to the "payment_method_id" field.
-func (m *SubscriptionMutation) ResetPaymentMethodID() {
-	m.payment_method_id = nil
-	delete(m.clearedFields, subscription.FieldPaymentMethodID)
+// ResetGatewayPaymentMethodID resets all changes to the "gateway_payment_method_id" field.
+func (m *SubscriptionMutation) ResetGatewayPaymentMethodID() {
+	m.gateway_payment_method_id = nil
+	delete(m.clearedFields, subscription.FieldGatewayPaymentMethodID)
 }
 
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by ids.
@@ -42153,8 +42153,8 @@ func (m *SubscriptionMutation) Fields() []string {
 	if m.collection_method != nil {
 		fields = append(fields, subscription.FieldCollectionMethod)
 	}
-	if m.payment_method_id != nil {
-		fields = append(fields, subscription.FieldPaymentMethodID)
+	if m.gateway_payment_method_id != nil {
+		fields = append(fields, subscription.FieldGatewayPaymentMethodID)
 	}
 	return fields
 }
@@ -42232,8 +42232,8 @@ func (m *SubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.PaymentBehavior()
 	case subscription.FieldCollectionMethod:
 		return m.CollectionMethod()
-	case subscription.FieldPaymentMethodID:
-		return m.PaymentMethodID()
+	case subscription.FieldGatewayPaymentMethodID:
+		return m.GatewayPaymentMethodID()
 	}
 	return nil, false
 }
@@ -42311,8 +42311,8 @@ func (m *SubscriptionMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldPaymentBehavior(ctx)
 	case subscription.FieldCollectionMethod:
 		return m.OldCollectionMethod(ctx)
-	case subscription.FieldPaymentMethodID:
-		return m.OldPaymentMethodID(ctx)
+	case subscription.FieldGatewayPaymentMethodID:
+		return m.OldGatewayPaymentMethodID(ctx)
 	}
 	return nil, fmt.Errorf("unknown Subscription field %s", name)
 }
@@ -42560,12 +42560,12 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCollectionMethod(v)
 		return nil
-	case subscription.FieldPaymentMethodID:
+	case subscription.FieldGatewayPaymentMethodID:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetPaymentMethodID(v)
+		m.SetGatewayPaymentMethodID(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)
@@ -42663,8 +42663,8 @@ func (m *SubscriptionMutation) ClearedFields() []string {
 	if m.FieldCleared(subscription.FieldOverageFactor) {
 		fields = append(fields, subscription.FieldOverageFactor)
 	}
-	if m.FieldCleared(subscription.FieldPaymentMethodID) {
-		fields = append(fields, subscription.FieldPaymentMethodID)
+	if m.FieldCleared(subscription.FieldGatewayPaymentMethodID) {
+		fields = append(fields, subscription.FieldGatewayPaymentMethodID)
 	}
 	return fields
 }
@@ -42719,8 +42719,8 @@ func (m *SubscriptionMutation) ClearField(name string) error {
 	case subscription.FieldOverageFactor:
 		m.ClearOverageFactor()
 		return nil
-	case subscription.FieldPaymentMethodID:
-		m.ClearPaymentMethodID()
+	case subscription.FieldGatewayPaymentMethodID:
+		m.ClearGatewayPaymentMethodID()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription nullable field %s", name)
@@ -42832,8 +42832,8 @@ func (m *SubscriptionMutation) ResetField(name string) error {
 	case subscription.FieldCollectionMethod:
 		m.ResetCollectionMethod()
 		return nil
-	case subscription.FieldPaymentMethodID:
-		m.ResetPaymentMethodID()
+	case subscription.FieldGatewayPaymentMethodID:
+		m.ResetGatewayPaymentMethodID()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)

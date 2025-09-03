@@ -84,7 +84,7 @@ func (r *subscriptionRepository) Create(ctx context.Context, sub *domainSub.Subs
 		SetVersion(1).
 		SetPaymentBehavior(subscription.PaymentBehavior(sub.PaymentBehavior)).
 		SetCollectionMethod(subscription.CollectionMethod(sub.CollectionMethod)).
-		SetNillablePaymentMethodID(sub.PaymentMethodID).
+		SetNillableGatewayPaymentMethodID(sub.GatewayPaymentMethodID).
 		Save(ctx)
 
 	if err != nil {
@@ -173,7 +173,7 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 		SetCancelAtPeriodEnd(sub.CancelAtPeriodEnd).
 		SetPaymentBehavior(subscription.PaymentBehavior(sub.PaymentBehavior)).
 		SetCollectionMethod(subscription.CollectionMethod(sub.CollectionMethod)).
-		SetNillablePaymentMethodID(sub.PaymentMethodID).
+		SetNillableGatewayPaymentMethodID(sub.GatewayPaymentMethodID).
 		SetUpdatedAt(now).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		AddVersion(1) // Increment version atomically

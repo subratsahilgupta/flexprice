@@ -640,12 +640,12 @@ func (s *subscriptionPaymentProcessor) processPaymentMethodCharge(
 // getPaymentMethodID gets the payment method ID for the subscription
 func (s *subscriptionPaymentProcessor) getPaymentMethodID(ctx context.Context, sub *subscription.Subscription) string {
 	// Use subscription's payment method if set
-	if sub.PaymentMethodID != nil && *sub.PaymentMethodID != "" {
-		s.Logger.Infow("using subscription payment method",
+	if sub.GatewayPaymentMethodID != nil && *sub.GatewayPaymentMethodID != "" {
+		s.Logger.Infow("using subscription gateway payment method",
 			"subscription_id", sub.ID,
-			"payment_method_id", *sub.PaymentMethodID,
+			"gateway_payment_method_id", *sub.GatewayPaymentMethodID,
 		)
-		return *sub.PaymentMethodID
+		return *sub.GatewayPaymentMethodID
 	}
 
 	// Get customer's default payment method from Stripe

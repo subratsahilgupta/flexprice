@@ -447,16 +447,16 @@ func (sc *SubscriptionCreate) SetNillableCollectionMethod(sm *subscription.Colle
 	return sc
 }
 
-// SetPaymentMethodID sets the "payment_method_id" field.
-func (sc *SubscriptionCreate) SetPaymentMethodID(s string) *SubscriptionCreate {
-	sc.mutation.SetPaymentMethodID(s)
+// SetGatewayPaymentMethodID sets the "gateway_payment_method_id" field.
+func (sc *SubscriptionCreate) SetGatewayPaymentMethodID(s string) *SubscriptionCreate {
+	sc.mutation.SetGatewayPaymentMethodID(s)
 	return sc
 }
 
-// SetNillablePaymentMethodID sets the "payment_method_id" field if the given value is not nil.
-func (sc *SubscriptionCreate) SetNillablePaymentMethodID(s *string) *SubscriptionCreate {
+// SetNillableGatewayPaymentMethodID sets the "gateway_payment_method_id" field if the given value is not nil.
+func (sc *SubscriptionCreate) SetNillableGatewayPaymentMethodID(s *string) *SubscriptionCreate {
 	if s != nil {
-		sc.SetPaymentMethodID(*s)
+		sc.SetGatewayPaymentMethodID(*s)
 	}
 	return sc
 }
@@ -947,9 +947,9 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 		_spec.SetField(subscription.FieldCollectionMethod, field.TypeEnum, value)
 		_node.CollectionMethod = value
 	}
-	if value, ok := sc.mutation.PaymentMethodID(); ok {
-		_spec.SetField(subscription.FieldPaymentMethodID, field.TypeString, value)
-		_node.PaymentMethodID = value
+	if value, ok := sc.mutation.GatewayPaymentMethodID(); ok {
+		_spec.SetField(subscription.FieldGatewayPaymentMethodID, field.TypeString, value)
+		_node.GatewayPaymentMethodID = value
 	}
 	if nodes := sc.mutation.LineItemsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

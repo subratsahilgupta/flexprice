@@ -386,23 +386,23 @@ func (su *SubscriptionUpdate) SetNillableCollectionMethod(sm *subscription.Colle
 	return su
 }
 
-// SetPaymentMethodID sets the "payment_method_id" field.
-func (su *SubscriptionUpdate) SetPaymentMethodID(s string) *SubscriptionUpdate {
-	su.mutation.SetPaymentMethodID(s)
+// SetGatewayPaymentMethodID sets the "gateway_payment_method_id" field.
+func (su *SubscriptionUpdate) SetGatewayPaymentMethodID(s string) *SubscriptionUpdate {
+	su.mutation.SetGatewayPaymentMethodID(s)
 	return su
 }
 
-// SetNillablePaymentMethodID sets the "payment_method_id" field if the given value is not nil.
-func (su *SubscriptionUpdate) SetNillablePaymentMethodID(s *string) *SubscriptionUpdate {
+// SetNillableGatewayPaymentMethodID sets the "gateway_payment_method_id" field if the given value is not nil.
+func (su *SubscriptionUpdate) SetNillableGatewayPaymentMethodID(s *string) *SubscriptionUpdate {
 	if s != nil {
-		su.SetPaymentMethodID(*s)
+		su.SetGatewayPaymentMethodID(*s)
 	}
 	return su
 }
 
-// ClearPaymentMethodID clears the value of the "payment_method_id" field.
-func (su *SubscriptionUpdate) ClearPaymentMethodID() *SubscriptionUpdate {
-	su.mutation.ClearPaymentMethodID()
+// ClearGatewayPaymentMethodID clears the value of the "gateway_payment_method_id" field.
+func (su *SubscriptionUpdate) ClearGatewayPaymentMethodID() *SubscriptionUpdate {
+	su.mutation.ClearGatewayPaymentMethodID()
 	return su
 }
 
@@ -784,11 +784,11 @@ func (su *SubscriptionUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := su.mutation.CollectionMethod(); ok {
 		_spec.SetField(subscription.FieldCollectionMethod, field.TypeEnum, value)
 	}
-	if value, ok := su.mutation.PaymentMethodID(); ok {
-		_spec.SetField(subscription.FieldPaymentMethodID, field.TypeString, value)
+	if value, ok := su.mutation.GatewayPaymentMethodID(); ok {
+		_spec.SetField(subscription.FieldGatewayPaymentMethodID, field.TypeString, value)
 	}
-	if su.mutation.PaymentMethodIDCleared() {
-		_spec.ClearField(subscription.FieldPaymentMethodID, field.TypeString)
+	if su.mutation.GatewayPaymentMethodIDCleared() {
+		_spec.ClearField(subscription.FieldGatewayPaymentMethodID, field.TypeString)
 	}
 	if su.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1415,23 +1415,23 @@ func (suo *SubscriptionUpdateOne) SetNillableCollectionMethod(sm *subscription.C
 	return suo
 }
 
-// SetPaymentMethodID sets the "payment_method_id" field.
-func (suo *SubscriptionUpdateOne) SetPaymentMethodID(s string) *SubscriptionUpdateOne {
-	suo.mutation.SetPaymentMethodID(s)
+// SetGatewayPaymentMethodID sets the "gateway_payment_method_id" field.
+func (suo *SubscriptionUpdateOne) SetGatewayPaymentMethodID(s string) *SubscriptionUpdateOne {
+	suo.mutation.SetGatewayPaymentMethodID(s)
 	return suo
 }
 
-// SetNillablePaymentMethodID sets the "payment_method_id" field if the given value is not nil.
-func (suo *SubscriptionUpdateOne) SetNillablePaymentMethodID(s *string) *SubscriptionUpdateOne {
+// SetNillableGatewayPaymentMethodID sets the "gateway_payment_method_id" field if the given value is not nil.
+func (suo *SubscriptionUpdateOne) SetNillableGatewayPaymentMethodID(s *string) *SubscriptionUpdateOne {
 	if s != nil {
-		suo.SetPaymentMethodID(*s)
+		suo.SetGatewayPaymentMethodID(*s)
 	}
 	return suo
 }
 
-// ClearPaymentMethodID clears the value of the "payment_method_id" field.
-func (suo *SubscriptionUpdateOne) ClearPaymentMethodID() *SubscriptionUpdateOne {
-	suo.mutation.ClearPaymentMethodID()
+// ClearGatewayPaymentMethodID clears the value of the "gateway_payment_method_id" field.
+func (suo *SubscriptionUpdateOne) ClearGatewayPaymentMethodID() *SubscriptionUpdateOne {
+	suo.mutation.ClearGatewayPaymentMethodID()
 	return suo
 }
 
@@ -1843,11 +1843,11 @@ func (suo *SubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *Subscript
 	if value, ok := suo.mutation.CollectionMethod(); ok {
 		_spec.SetField(subscription.FieldCollectionMethod, field.TypeEnum, value)
 	}
-	if value, ok := suo.mutation.PaymentMethodID(); ok {
-		_spec.SetField(subscription.FieldPaymentMethodID, field.TypeString, value)
+	if value, ok := suo.mutation.GatewayPaymentMethodID(); ok {
+		_spec.SetField(subscription.FieldGatewayPaymentMethodID, field.TypeString, value)
 	}
-	if suo.mutation.PaymentMethodIDCleared() {
-		_spec.ClearField(subscription.FieldPaymentMethodID, field.TypeString)
+	if suo.mutation.GatewayPaymentMethodIDCleared() {
+		_spec.ClearField(subscription.FieldGatewayPaymentMethodID, field.TypeString)
 	}
 	if suo.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{

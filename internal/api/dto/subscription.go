@@ -62,9 +62,9 @@ type CreateSubscriptionRequest struct {
 	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
 
 	// Payment behavior configuration
-	PaymentBehavior  *types.PaymentBehavior  `json:"payment_behavior,omitempty"`
-	CollectionMethod *types.CollectionMethod `json:"collection_method,omitempty"`
-	PaymentMethodID  *string                 `json:"payment_method_id,omitempty"`
+	PaymentBehavior        *types.PaymentBehavior  `json:"payment_behavior,omitempty"`
+	CollectionMethod       *types.CollectionMethod `json:"collection_method,omitempty"`
+	GatewayPaymentMethodID *string                 `json:"gateway_payment_method_id,omitempty"`
 }
 
 // AddAddonRequest is used by body-based endpoint /subscriptions/addon
@@ -453,8 +453,8 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 	}
 
 	// Initial status will be determined by payment processor based on payment behavior
-	// For now, set to incomplete - the payment processor will update it
-	initialStatus := types.SubscriptionStatusIncomplete
+	// For now, set to Active - the payment processor will update it
+	initialStatus := types.SubscriptionStatusActive
 
 	sub := &subscription.Subscription{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
@@ -477,9 +477,9 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		BillingCycle:       r.BillingCycle,
 
 		// New payment behavior fields
-		PaymentBehavior:  string(paymentBehavior),
-		CollectionMethod: string(collectionMethod),
-		PaymentMethodID:  r.PaymentMethodID,
+		PaymentBehavior:        string(paymentBehavior),
+		CollectionMethod:       string(collectionMethod),
+		GatewayPaymentMethodID: r.GatewayPaymentMethodID,
 	}
 
 	// Set commitment amount and overage factor if provided

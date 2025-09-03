@@ -140,12 +140,12 @@ func (Subscription) Fields() []ent.Field {
 			Values("charge_automatically", "send_invoice").
 			Default("send_invoice").
 			Comment("Determines how invoices are collected"),
-		field.String("payment_method_id").
+		field.String("gateway_payment_method_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(255)",
 			}).
 			Optional().
-			Comment("Payment method ID for this subscription"),
+			Comment("Gateway payment method ID for this subscription"),
 	}
 }
 

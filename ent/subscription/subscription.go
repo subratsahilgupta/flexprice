@@ -84,8 +84,8 @@ const (
 	FieldPaymentBehavior = "payment_behavior"
 	// FieldCollectionMethod holds the string denoting the collection_method field in the database.
 	FieldCollectionMethod = "collection_method"
-	// FieldPaymentMethodID holds the string denoting the payment_method_id field in the database.
-	FieldPaymentMethodID = "payment_method_id"
+	// FieldGatewayPaymentMethodID holds the string denoting the gateway_payment_method_id field in the database.
+	FieldGatewayPaymentMethodID = "gateway_payment_method_id"
 	// EdgeLineItems holds the string denoting the line_items edge name in mutations.
 	EdgeLineItems = "line_items"
 	// EdgePauses holds the string denoting the pauses edge name in mutations.
@@ -181,7 +181,7 @@ var Columns = []string{
 	FieldOverageFactor,
 	FieldPaymentBehavior,
 	FieldCollectionMethod,
-	FieldPaymentMethodID,
+	FieldGatewayPaymentMethodID,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -470,9 +470,9 @@ func ByCollectionMethod(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCollectionMethod, opts...).ToFunc()
 }
 
-// ByPaymentMethodID orders the results by the payment_method_id field.
-func ByPaymentMethodID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPaymentMethodID, opts...).ToFunc()
+// ByGatewayPaymentMethodID orders the results by the gateway_payment_method_id field.
+func ByGatewayPaymentMethodID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGatewayPaymentMethodID, opts...).ToFunc()
 }
 
 // ByLineItemsCount orders the results by line_items count.
