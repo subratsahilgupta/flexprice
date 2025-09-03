@@ -1069,8 +1069,8 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			PriceID:            lineItem.PriceID,
 			Meter:              meter.ToMeter(),
 			ExternalCustomerID: customer.ExternalID,
-			StartTime:          usageStartTime,
-			EndTime:            usageEndTime,
+			StartTime:          lineItem.GetPeriodStart(usageStartTime),
+			EndTime:            lineItem.GetPeriodEnd(usageEndTime),
 			Filters:            make(map[string][]string),
 		}
 
