@@ -572,7 +572,12 @@ func (s *subscriptionChangeService) executeChange(
 	}
 
 	// Step 2: Archive the old subscription
-	archivedSub, err := s.archiveSubscription(ctx, currentSub, effectiveDate)
+
+	subscriptionService := NewSubscriptionService(s.serviceParams)
+	archivedSub, err := subscriptionService.CancelSubscription(ctx, currentSub.ID, &dto.CancelSubscriptionRequest{
+		CancellationType: types.CancellationTypeImmediate,
+		Reason:           "subscription_change",
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -612,14 +617,8 @@ func (s *subscriptionChangeService) executeChange(
 
 	response := &dto.SubscriptionChangeExecuteResponse{
 		OldSubscription: dto.SubscriptionSummary{
-			ID:                 archivedSub.ID,
-			Status:             archivedSub.SubscriptionStatus,
-			PlanID:             archivedSub.PlanID,
-			CurrentPeriodStart: archivedSub.CurrentPeriodStart,
-			CurrentPeriodEnd:   archivedSub.CurrentPeriodEnd,
-			BillingAnchor:      archivedSub.BillingAnchor,
-			CreatedAt:          archivedSub.CreatedAt,
-			ArchivedAt:         archivedSub.CancelledAt,
+			ID:     archivedSub.SubscriptionID,
+			Status: archivedSub.Status,
 		},
 		NewSubscription: dto.SubscriptionSummary{
 			ID:                 newSub.ID,
@@ -673,18 +672,6 @@ func (s *subscriptionChangeService) createNewSubscription(
 	creditGrantRequests []dto.CreateCreditGrantRequest,
 ) (*subscription.Subscription, error) {
 
-	// Adjust billing behavior if requested
-	// if req.BillingCycleAnchor == types.BillingCycleAnchorReset {
-	// 	// Reset billing cycle means we want the billing anchor to be the effective date
-	// 	billingCycle = types.BillingCycleAnniversary
-	// 	startDate = effectiveDate
-	// } else if req.BillingCycleAnchor == types.BillingCycleAnchorImmediate {
-	// 	// Immediate billing means we want to bill right away
-	// 	billingCycle = types.BillingCycleAnniversary
-	// 	startDate = effectiveDate
-	// }
-	// For unchanged, we keep the current billing cycle and use effective date as start
-
 	prices, err := s.serviceParams.PriceRepo.GetByPlanID(ctx, targetPlan.ID)
 	if err != nil {
 		return nil, ierr.WithError(err).
@@ -706,7 +693,7 @@ func (s *subscriptionChangeService) createNewSubscription(
 		CustomerID:         currentSub.CustomerID,
 		PlanID:             targetPlan.ID,
 		Currency:           currentSub.Currency,
-		LookupKey:          currentSub.LookupKey, // Keep same lookup key for continuity
+		LookupKey:          currentSub.LookupKey,
 		BillingCadence:     targetPrice.BillingCadence,
 		BillingPeriod:      targetPrice.BillingPeriod,
 		BillingPeriodCount: targetPrice.BillingPeriodCount,
@@ -719,6 +706,7 @@ func (s *subscriptionChangeService) createNewSubscription(
 		CreditGrants:       creditGrantRequests,
 		CommitmentAmount:   currentSub.CommitmentAmount,
 		OverageFactor:      currentSub.OverageFactor,
+		LineItemsStartDate: lo.ToPtr(time.Now()),
 	}
 
 	// Use the existing subscription service to create the new subscription
@@ -746,107 +734,6 @@ func (s *subscriptionChangeService) createNewSubscription(
 	}
 
 	return newSub, nil
-}
-
-// generateChangeInvoice generates an invoice for the subscription change
-func (s *subscriptionChangeService) generateChangeInvoice(
-	ctx context.Context,
-	newSub *subscription.Subscription,
-	prorationDetails *dto.ProrationDetails,
-	cancellationProrationResult *proration.SubscriptionProrationResult,
-	effectiveDate time.Time,
-) (*dto.InvoiceResponse, error) {
-	// Create invoice request for the proration
-	invoiceReq := dto.CreateInvoiceRequest{
-		CustomerID:     newSub.CustomerID,
-		SubscriptionID: &newSub.ID,
-		InvoiceType:    types.InvoiceTypeSubscription,
-		BillingReason:  types.InvoiceBillingReasonSubscriptionUpdate,
-		Description:    fmt.Sprintf("Subscription change - %s", effectiveDate.Format("2006-01-02")),
-		Currency:       newSub.Currency,
-		PeriodStart:    &prorationDetails.CurrentPeriodStart,
-		PeriodEnd:      &prorationDetails.CurrentPeriodEnd,
-		Subtotal:       prorationDetails.NetAmount,
-		AmountDue:      prorationDetails.NetAmount,
-		Metadata: map[string]string{
-			"subscription_change": "true",
-			"effective_date":      effectiveDate.Format(time.RFC3339),
-		},
-	}
-
-	// Add detailed line items from cancellation proration result
-	lineItems := []dto.CreateInvoiceLineItemRequest{}
-
-	if cancellationProrationResult != nil {
-		// Add detailed line items from the cancellation proration calculation
-		for lineItemID, prorationResult := range cancellationProrationResult.LineItemResults {
-			// Add credit items (refunds for unused time)
-			for _, creditItem := range prorationResult.CreditItems {
-				displayName := creditItem.Description
-				lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
-					EntityID:    &lineItemID,
-					EntityType:  lo.ToPtr("subscription_line_item"),
-					DisplayName: &displayName,
-					Amount:      creditItem.Amount, // Already negative for credits
-					Quantity:    creditItem.Quantity,
-					PeriodStart: &creditItem.StartDate,
-					PeriodEnd:   &creditItem.EndDate,
-					Metadata: types.Metadata{
-						"proration_type":        "credit",
-						"subscription_change":   "true",
-						"original_line_item_id": lineItemID,
-					},
-				})
-			}
-
-			// Add charge items (charges for new plan)
-			for _, chargeItem := range prorationResult.ChargeItems {
-				displayName := chargeItem.Description
-				lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
-					EntityID:    &lineItemID,
-					EntityType:  lo.ToPtr("subscription_line_item"),
-					DisplayName: &displayName,
-					Amount:      chargeItem.Amount, // Positive for charges
-					Quantity:    chargeItem.Quantity,
-					PeriodStart: &chargeItem.StartDate,
-					PeriodEnd:   &chargeItem.EndDate,
-					Metadata: types.Metadata{
-						"proration_type":        "charge",
-						"subscription_change":   "true",
-						"original_line_item_id": lineItemID,
-					},
-				})
-			}
-		}
-	} else if prorationDetails != nil {
-		// Fallback to summary line items if detailed proration result is not available
-		if prorationDetails.CreditAmount.GreaterThan(decimal.Zero) {
-			displayName := prorationDetails.CreditDescription
-			lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
-				DisplayName: &displayName,
-				Amount:      prorationDetails.CreditAmount.Neg(),
-				Quantity:    decimal.NewFromInt(1),
-				PeriodStart: &prorationDetails.CurrentPeriodStart,
-				PeriodEnd:   &effectiveDate,
-			})
-		}
-
-		if prorationDetails.ChargeAmount.GreaterThan(decimal.Zero) {
-			displayName := prorationDetails.ChargeDescription
-			lineItems = append(lineItems, dto.CreateInvoiceLineItemRequest{
-				DisplayName: &displayName,
-				Amount:      prorationDetails.ChargeAmount,
-				Quantity:    decimal.NewFromInt(1),
-				PeriodStart: &effectiveDate,
-				PeriodEnd:   &prorationDetails.CurrentPeriodEnd,
-			})
-		}
-	}
-
-	invoiceReq.LineItems = lineItems
-
-	// Create the invoice
-	return s.invoiceService.CreateInvoice(ctx, invoiceReq)
 }
 
 // convertCancellationProrationToDetails converts cancellation proration result to DTO format
