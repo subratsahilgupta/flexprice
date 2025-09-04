@@ -113,6 +113,10 @@ type Subscription struct {
 
 	CouponAssociations []*coupon_association.CouponAssociation `json:"coupon_associations,omitempty"`
 
+	CustomerTimezone string `json:"customer_timezone"`
+
+	ProrationMode types.ProrationMode `json:"proration_mode"`
+
 	types.BaseModel
 }
 
@@ -176,6 +180,8 @@ func GetSubscriptionFromEnt(sub *ent.Subscription) *Subscription {
 		LineItems:          lineItems,
 		CouponAssociations: couponAssociations,
 		Pauses:             pauses,
+		CustomerTimezone:   sub.CustomerTimezone,
+		ProrationMode:      types.ProrationMode(sub.ProrationMode),
 		BaseModel: types.BaseModel{
 			TenantID:  sub.TenantID,
 			Status:    types.Status(sub.Status),

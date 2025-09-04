@@ -8,13 +8,13 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// SubscriptionLineItemEntitiyType is the type of the source of a subscription line item
+// SubscriptionLineItemEntityType is the type of the source of a subscription line item
 // It is optional and can be used to differentiate between plan and addon line items
-type SubscriptionLineItemEntitiyType string
+type SubscriptionLineItemEntityType string
 
 const (
-	SubscriptionLineItemEntitiyTypePlan  SubscriptionLineItemEntitiyType = "plan"
-	SubscriptionLineItemEntitiyTypeAddon SubscriptionLineItemEntitiyType = "addon"
+	SubscriptionLineItemEntityTypePlan  SubscriptionLineItemEntityType = "plan"
+	SubscriptionLineItemEntityTypeAddon SubscriptionLineItemEntityType = "addon"
 )
 
 // SubscriptionStatus is the status of a subscription
@@ -355,4 +355,36 @@ type SchedulePhaseCreditGrant struct {
 	ExpirationDurationUnit *CreditGrantExpiryDurationUnit `json:"expiration_duration_unit,omitempty"`
 	Priority               *int                           `json:"priority,omitempty"`
 	Metadata               Metadata                       `json:"metadata,omitempty"`
+}
+
+// SubscriptionChangeType defines the type of subscription change
+type SubscriptionChangeType string
+
+const (
+	SubscriptionChangeTypeUpgrade   SubscriptionChangeType = "upgrade"
+	SubscriptionChangeTypeDowngrade SubscriptionChangeType = "downgrade"
+	SubscriptionChangeTypeLateral   SubscriptionChangeType = "lateral"
+)
+
+var SubscriptionChangeTypeValues = []SubscriptionChangeType{
+	SubscriptionChangeTypeUpgrade,
+	SubscriptionChangeTypeDowngrade,
+	SubscriptionChangeTypeLateral,
+}
+
+func (s SubscriptionChangeType) String() string {
+	return string(s)
+}
+
+func (s SubscriptionChangeType) Validate() error {
+	if !lo.Contains(SubscriptionChangeTypeValues, s) {
+		return ierr.NewError("invalid subscription change type").
+			WithHint("Subscription change type must be upgrade, downgrade, or lateral").
+			WithReportableDetails(map[string]any{
+				"allowed_values": SubscriptionChangeTypeValues,
+				"provided_value": s,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
 }

@@ -15,10 +15,9 @@ type Repository interface {
 	Count(ctx context.Context, filter *types.SubscriptionFilter) (int, error)
 	ListAll(ctx context.Context, filter *types.SubscriptionFilter) ([]*Subscription, error)
 	ListAllTenant(ctx context.Context, filter *types.SubscriptionFilter) ([]*Subscription, error)
-	ListByCustomerID(ctx context.Context, customerID string) ([]*Subscription, error)
-	ListByIDs(ctx context.Context, subscriptionIDs []string) ([]*Subscription, error)
 	CreateWithLineItems(ctx context.Context, subscription *Subscription, items []*SubscriptionLineItem) error
 	GetWithLineItems(ctx context.Context, id string) (*Subscription, []*SubscriptionLineItem, error)
+	ListByCustomerID(ctx context.Context, customerID string) ([]*Subscription, error)
 
 	// Pause-related methods
 	CreatePause(ctx context.Context, pause *SubscriptionPause) error

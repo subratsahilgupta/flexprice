@@ -86,6 +86,10 @@ const (
 	FieldCollectionMethod = "collection_method"
 	// FieldGatewayPaymentMethodID holds the string denoting the gateway_payment_method_id field in the database.
 	FieldGatewayPaymentMethodID = "gateway_payment_method_id"
+	// FieldCustomerTimezone holds the string denoting the customer_timezone field in the database.
+	FieldCustomerTimezone = "customer_timezone"
+	// FieldProrationMode holds the string denoting the proration_mode field in the database.
+	FieldProrationMode = "proration_mode"
 	// EdgeLineItems holds the string denoting the line_items edge name in mutations.
 	EdgeLineItems = "line_items"
 	// EdgePauses holds the string denoting the pauses edge name in mutations.
@@ -182,6 +186,8 @@ var Columns = []string{
 	FieldPaymentBehavior,
 	FieldCollectionMethod,
 	FieldGatewayPaymentMethodID,
+	FieldCustomerTimezone,
+	FieldProrationMode,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -241,6 +247,12 @@ var (
 	BillingCycleValidator func(string) error
 	// DefaultOverageFactor holds the default value on creation for the "overage_factor" field.
 	DefaultOverageFactor decimal.Decimal
+	// DefaultCustomerTimezone holds the default value on creation for the "customer_timezone" field.
+	DefaultCustomerTimezone string
+	// DefaultProrationMode holds the default value on creation for the "proration_mode" field.
+	DefaultProrationMode string
+	// ProrationModeValidator is a validator for the "proration_mode" field. It is called by the builders before save.
+	ProrationModeValidator func(string) error
 )
 
 // PaymentBehavior defines the type for the "payment_behavior" enum field.
@@ -473,6 +485,16 @@ func ByCollectionMethod(opts ...sql.OrderTermOption) OrderOption {
 // ByGatewayPaymentMethodID orders the results by the gateway_payment_method_id field.
 func ByGatewayPaymentMethodID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGatewayPaymentMethodID, opts...).ToFunc()
+}
+
+// ByCustomerTimezone orders the results by the customer_timezone field.
+func ByCustomerTimezone(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCustomerTimezone, opts...).ToFunc()
+}
+
+// ByProrationMode orders the results by the proration_mode field.
+func ByProrationMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProrationMode, opts...).ToFunc()
 }
 
 // ByLineItemsCount orders the results by line_items count.

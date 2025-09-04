@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/internal/svix"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 	"github.com/stripe/stripe-go/v79"
 	"github.com/stripe/stripe-go/v79/client"
 )
@@ -868,20 +869,11 @@ func (h *WebhookHandler) handleCheckoutSessionExpired(c *gin.Context, event *str
 		return
 	}
 
-	// Log the webhook data correctly
 	h.logger.Infow("received checkout.session.expired webhook",
 		"session_id", session.ID,
 		"status", session.Status,
 		"environment_id", environmentID,
 		"event_id", event.ID,
-		"event_type", event.Type,
-		"has_payment_intent", session.PaymentIntent != nil,
-		"payment_intent_id", func() string {
-			if session.PaymentIntent != nil {
-				return session.PaymentIntent.ID
-			}
-			return ""
-		}(),
 	)
 
 	// Find payment record by session ID
@@ -902,119 +894,45 @@ func (h *WebhookHandler) handleCheckoutSessionExpired(c *gin.Context, event *str
 		return
 	}
 
-	// Check if payment is already successful - prevent any updates to successful payments
-	if payment.PaymentStatus == types.PaymentStatusSucceeded {
-		h.logger.Warnw("payment is already successful, skipping update",
+	// Skip if payment is already in a final state (succeeded, failed, refunded)
+	if payment.PaymentStatus == types.PaymentStatusSucceeded ||
+		payment.PaymentStatus == types.PaymentStatusFailed ||
+		payment.PaymentStatus == types.PaymentStatusRefunded ||
+		payment.PaymentStatus == types.PaymentStatusPartiallyRefunded {
+		h.logger.Infow("payment is already in final state, skipping expiration update",
 			"payment_id", payment.ID,
 			"session_id", session.ID,
 			"current_status", payment.PaymentStatus)
 		c.JSON(http.StatusOK, gin.H{
-			"message": "Payment is already successful, no update needed",
+			"message": "Payment is already in final state, no update needed",
 		})
 		return
 	}
 
-	// Make a separate Stripe API call to get current status
-	paymentStatusResp, err := h.stripeService.GetPaymentStatus(c.Request.Context(), session.ID, environmentID)
-	if err != nil {
-		h.logger.Errorw("failed to get payment status from Stripe API",
-			"error", err,
-			"session_id", session.ID,
-			"payment_id", payment.ID)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get payment status from Stripe",
-		})
-		return
-	}
-
-	h.logger.Infow("retrieved payment status from Stripe API",
-		"session_id", session.ID,
-		"payment_intent_id", paymentStatusResp.PaymentIntentID,
-		"payment_method_id", paymentStatusResp.PaymentMethodID,
-		"status", paymentStatusResp.Status,
-		"amount", paymentStatusResp.Amount.String(),
-		"currency", paymentStatusResp.Currency,
-		"payment_id", payment.ID,
-	)
-
-	// Determine payment status based on Stripe API response
-	var paymentStatus string
-	var succeededAt *time.Time
-	var failedAt *time.Time
-	var errorMessage *string
-
-	switch paymentStatusResp.Status {
-	case "complete", "succeeded":
-		paymentStatus = string(types.PaymentStatusSucceeded)
-		now := time.Now()
-		succeededAt = &now
-	case "failed", "canceled":
-		paymentStatus = string(types.PaymentStatusFailed)
-		now := time.Now()
-		failedAt = &now
-		errMsg := "Payment failed or canceled"
-		errorMessage = &errMsg
-	case "pending", "processing":
-		paymentStatus = string(types.PaymentStatusPending)
-	default:
-		paymentStatus = string(types.PaymentStatusPending)
-	}
-
-	// Update payment with data from Stripe API
+	// Only update pending/initiated payments to failed status (expired)
 	paymentService := service.NewPaymentService(h.stripeService.ServiceParams)
+	now := time.Now()
+	failedStatus := string(types.PaymentStatusFailed)
 	updateReq := dto.UpdatePaymentRequest{
-		PaymentStatus: &paymentStatus,
-	}
-
-	// Update payment method ID with payment intent ID (pi_ prefixed)
-	if paymentStatusResp.PaymentIntentID != "" {
-		updateReq.GatewayPaymentID = &paymentStatusResp.PaymentIntentID
-	}
-
-	// Update payment method ID with pm_ prefixed ID from Stripe
-	if paymentStatusResp.PaymentMethodID != "" {
-		updateReq.PaymentMethodID = &paymentStatusResp.PaymentMethodID
-	}
-
-	// Set succeeded_at or failed_at based on status
-	if succeededAt != nil {
-		updateReq.SucceededAt = succeededAt
-	}
-	if failedAt != nil {
-		updateReq.FailedAt = failedAt
-	}
-	if errorMessage != nil {
-		updateReq.ErrorMessage = errorMessage
+		PaymentStatus: &failedStatus,
+		FailedAt:      &now,
+		ErrorMessage:  lo.ToPtr("Payment session expired"),
 	}
 
 	_, err = paymentService.UpdatePayment(c.Request.Context(), payment.ID, updateReq)
 	if err != nil {
-		h.logger.Errorw("failed to update payment status", "error", err, "payment_id", payment.ID)
+		h.logger.Errorw("failed to update payment to expired status", "error", err, "payment_id", payment.ID)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update payment status",
 		})
 		return
 	}
 
-	// Reconcile payment with invoice if payment succeeded
-	if paymentStatus == string(types.PaymentStatusSucceeded) {
-		if err := h.stripeService.ReconcilePaymentWithInvoice(c.Request.Context(), payment.ID, payment.Amount); err != nil {
-			h.logger.Errorw("failed to reconcile payment with invoice",
-				"error", err,
-				"payment_id", payment.ID,
-				"invoice_id", payment.DestinationID,
-			)
-			// Don't fail the webhook if reconciliation fails, but log the error
-			// The payment is still marked as succeeded
-		}
-	}
-
-	h.logger.Infow("successfully updated payment status from expired webhook",
+	h.logger.Infow("successfully marked payment as expired",
 		"payment_id", payment.ID,
 		"session_id", session.ID,
-		"payment_intent_id", paymentStatusResp.PaymentIntentID,
-		"payment_method_id", paymentStatusResp.PaymentMethodID,
-		"status", paymentStatus,
+		"previous_status", payment.PaymentStatus,
+		"new_status", failedStatus,
 		"environment_id", environmentID,
 	)
 }

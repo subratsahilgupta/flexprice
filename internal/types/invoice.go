@@ -156,6 +156,8 @@ const (
 	InvoiceBillingReasonSubscriptionCycle InvoiceBillingReason = "SUBSCRIPTION_CYCLE"
 	// InvoiceBillingReasonSubscriptionUpdate indicates invoice is for subscription changes (upgrades, downgrades)
 	InvoiceBillingReasonSubscriptionUpdate InvoiceBillingReason = "SUBSCRIPTION_UPDATE"
+	// InvoiceBillingReasonProration indicates invoice is for proration credits/charges (cancellations, plan changes)
+	InvoiceBillingReasonProration InvoiceBillingReason = "PRORATION"
 	// InvoiceBillingReasonManual indicates invoice was created manually by an administrator
 	InvoiceBillingReasonManual InvoiceBillingReason = "MANUAL"
 )
@@ -169,6 +171,7 @@ func (r InvoiceBillingReason) Validate() error {
 		InvoiceBillingReasonSubscriptionCreate,
 		InvoiceBillingReasonSubscriptionCycle,
 		InvoiceBillingReasonSubscriptionUpdate,
+		InvoiceBillingReasonProration,
 		InvoiceBillingReasonManual,
 	}
 	if !lo.Contains(allowed, r) {
@@ -292,6 +295,9 @@ type InvoiceFilter struct {
 	// amount_remaining_gt filters invoices with an outstanding balance greater than the specified value
 	// Useful for finding invoices that still have significant unpaid amounts
 	AmountRemainingGt *decimal.Decimal `json:"amount_remaining_gt,omitempty" form:"amount_remaining_gt"`
+
+	// SkipLineItems if true, will not include line items in the response
+	SkipLineItems bool `json:"skip_line_items,omitempty" form:"skip_line_items"`
 }
 
 // NewInvoiceFilter creates a new invoice filter with default options

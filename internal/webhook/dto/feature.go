@@ -8,9 +8,10 @@ type InternalFeatureEvent struct {
 }
 
 type FeatureWebhookPayload struct {
-	Feature *dto.FeatureResponse `json:"feature"`
+	EventType string               `json:"event_type"`
+	Feature   *dto.FeatureResponse `json:"feature"`
 }
 
-func NewFeatureWebhookPayload(feature *dto.FeatureResponse) *FeatureWebhookPayload {
-	return &FeatureWebhookPayload{Feature: feature}
+func NewFeatureWebhookPayload(feature *dto.FeatureResponse, eventType string) *FeatureWebhookPayload {
+	return &FeatureWebhookPayload{EventType: eventType, Feature: feature}
 }

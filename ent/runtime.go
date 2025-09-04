@@ -709,6 +709,10 @@ func init() {
 	entitlementDescIsSoftLimit := entitlementFields[8].Descriptor()
 	// entitlement.DefaultIsSoftLimit holds the default value on creation for the is_soft_limit field.
 	entitlement.DefaultIsSoftLimit = entitlementDescIsSoftLimit.Default.(bool)
+	// entitlementDescDisplayOrder is the schema descriptor for display_order field.
+	entitlementDescDisplayOrder := entitlementFields[10].Descriptor()
+	// entitlement.DefaultDisplayOrder holds the default value on creation for the display_order field.
+	entitlement.DefaultDisplayOrder = entitlementDescDisplayOrder.Default.(int)
 	// entitlementDescID is the schema descriptor for id field.
 	entitlementDescID := entitlementFields[0].Descriptor()
 	// entitlement.IDValidator is a validator for the "id" field. It is called by the builders before save.
@@ -1170,6 +1174,10 @@ func init() {
 	planDescName := planFields[2].Descriptor()
 	// plan.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	plan.NameValidator = planDescName.Validators[0].(func(string) error)
+	// planDescDisplayOrder is the schema descriptor for display_order field.
+	planDescDisplayOrder := planFields[4].Descriptor()
+	// plan.DefaultDisplayOrder holds the default value on creation for the display_order field.
+	plan.DefaultDisplayOrder = planDescDisplayOrder.Default.(int)
 	priceMixin := schema.Price{}.Mixin()
 	priceMixinFields0 := priceMixin[0].Fields()
 	_ = priceMixinFields0
@@ -1241,6 +1249,10 @@ func init() {
 	priceDescEntityType := priceFields[26].Descriptor()
 	// price.DefaultEntityType holds the default value on creation for the entity_type field.
 	price.DefaultEntityType = priceDescEntityType.Default.(string)
+	// priceDescStartDate is the schema descriptor for start_date field.
+	priceDescStartDate := priceFields[29].Descriptor()
+	// price.DefaultStartDate holds the default value on creation for the start_date field.
+	price.DefaultStartDate = priceDescStartDate.Default.(func() time.Time)
 	priceunitMixin := schema.PriceUnit{}.Mixin()
 	priceunitMixinFields0 := priceunitMixin[0].Fields()
 	_ = priceunitMixinFields0
@@ -1487,6 +1499,16 @@ func init() {
 	subscriptionDescOverageFactor := subscriptionFields[25].Descriptor()
 	// subscription.DefaultOverageFactor holds the default value on creation for the overage_factor field.
 	subscription.DefaultOverageFactor = subscriptionDescOverageFactor.Default.(decimal.Decimal)
+	// subscriptionDescCustomerTimezone is the schema descriptor for customer_timezone field.
+	subscriptionDescCustomerTimezone := subscriptionFields[29].Descriptor()
+	// subscription.DefaultCustomerTimezone holds the default value on creation for the customer_timezone field.
+	subscription.DefaultCustomerTimezone = subscriptionDescCustomerTimezone.Default.(string)
+	// subscriptionDescProrationMode is the schema descriptor for proration_mode field.
+	subscriptionDescProrationMode := subscriptionFields[30].Descriptor()
+	// subscription.DefaultProrationMode holds the default value on creation for the proration_mode field.
+	subscription.DefaultProrationMode = subscriptionDescProrationMode.Default.(string)
+	// subscription.ProrationModeValidator is a validator for the "proration_mode" field. It is called by the builders before save.
+	subscription.ProrationModeValidator = subscriptionDescProrationMode.Validators[0].(func(string) error)
 	subscriptionlineitemMixin := schema.SubscriptionLineItem{}.Mixin()
 	subscriptionlineitemMixinFields0 := subscriptionlineitemMixin[0].Fields()
 	_ = subscriptionlineitemMixinFields0

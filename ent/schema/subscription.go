@@ -146,6 +146,12 @@ func (Subscription) Fields() []ent.Field {
 			}).
 			Optional().
 			Comment("Gateway payment method ID for this subscription"),
+		field.String("customer_timezone").
+			Default("UTC"),
+		field.String("proration_mode").
+			NotEmpty().
+			Immutable().
+			Default(string(types.ProrationModeNone)),
 	}
 }
 
