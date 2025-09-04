@@ -1709,9 +1709,29 @@ func (s *invoiceService) publishInternalWebhookEvent(ctx context.Context, eventN
 		Timestamp:     time.Now().UTC(),
 		Payload:       json.RawMessage(webhookPayload),
 	}
+	s.Logger.Infow("attempting to publish webhook event",
+		"webhook_id", webhookEvent.ID,
+		"event_name", eventName,
+		"invoice_id", invoiceID,
+		"tenant_id", webhookEvent.TenantID,
+		"environment_id", webhookEvent.EnvironmentID,
+	)
+
 	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
-		s.Logger.Errorf("failed to publish %s event: %v", webhookEvent.EventName, err)
+		s.Logger.Errorw("failed to publish webhook event",
+			"error", err,
+			"webhook_id", webhookEvent.ID,
+			"event_name", eventName,
+			"invoice_id", invoiceID,
+		)
+		return
 	}
+
+	s.Logger.Infow("webhook event published successfully",
+		"webhook_id", webhookEvent.ID,
+		"event_name", eventName,
+		"invoice_id", invoiceID,
+	)
 }
 
 func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, finalize bool) (*dto.InvoiceResponse, error) {
@@ -2041,16 +2061,46 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
-	// Update only the fields that are provided in the request
-	// For now, we only support updating the PDF URL
+	// Only allow updates for draft or finalized invoices
+	if inv.InvoiceStatus != types.InvoiceStatusDraft && inv.InvoiceStatus != types.InvoiceStatusFinalized {
+		return nil, ierr.NewError("cannot update invoice in current status").
+			WithHint("Invoice can only be updated when in draft or finalized status").
+			WithReportableDetails(map[string]any{
+				"invoice_id":     id,
+				"current_status": inv.InvoiceStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Don't allow updates for paid invoices
+	if inv.PaymentStatus == types.PaymentStatusSucceeded {
+		return nil, ierr.NewError("cannot update paid invoice").
+			WithHint("Invoice cannot be updated after it has been paid").
+			WithReportableDetails(map[string]any{
+				"invoice_id":     id,
+				"payment_status": inv.PaymentStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Update invoice PDF URL if provided
 	if req.InvoicePDFURL != nil {
 		inv.InvoicePDFURL = req.InvoicePDFURL
+	}
+
+	// Update due date if provided
+	if req.DueDate != nil {
+		inv.DueDate = req.DueDate
+		inv.UpdatedAt = time.Now().UTC()
 	}
 
 	// Update the invoice in the repository
 	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
 		return nil, err
 	}
+
+	// Publish webhook event for invoice update
+	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceUpdate, id)
 
 	// Return the updated invoice
 	return s.GetInvoice(ctx, id)

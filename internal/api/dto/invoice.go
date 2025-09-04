@@ -832,7 +832,8 @@ func (r *UpdatePaymentStatusRequest) Validate() error {
 // UpdateInvoiceRequest represents the request payload for updating an invoice
 type UpdateInvoiceRequest struct {
 	// invoice_pdf_url is the URL where customers can download the PDF version of this invoice
-	InvoicePDFURL *string `json:"invoice_pdf_url,omitempty"`
+	InvoicePDFURL *string    `json:"invoice_pdf_url,omitempty"`
+	DueDate       *time.Time `json:"due_date,omitempty"`
 }
 
 func (r *UpdateInvoiceRequest) Validate() error {
@@ -843,6 +844,13 @@ func (r *UpdateInvoiceRequest) Validate() error {
 				WithHint("invalid invoice_pdf_url").
 				Mark(ierr.ErrValidation)
 		}
+	}
+
+	// Validate that the due date is not in the past (optional business rule)
+	if r.DueDate != nil && r.DueDate.Before(time.Now().UTC()) {
+		return ierr.NewError("due_date cannot be in the past").
+			WithHint("Due date must be in the future").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil

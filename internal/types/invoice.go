@@ -245,12 +245,13 @@ const (
 //
 // Note: Sequences reset monthly and are tenant-environment-scoped for isolation.
 type InvoiceConfig struct {
-	InvoiceNumberPrefix        string              `json:"prefix"`
-	InvoiceNumberFormat        InvoiceNumberFormat `json:"format"`
-	InvoiceNumberStartSequence int                 `json:"start_sequence"`
-	InvoiceNumberTimezone      string              `json:"timezone"`
-	InvoiceNumberSeparator     string              `json:"separator"`
-	InvoiceNumberSuffixLength  int                 `json:"suffix_length"`
+	InvoiceNumberPrefix        string              `json:"prefix,omitempty"`
+	InvoiceNumberFormat        InvoiceNumberFormat `json:"format,omitempty"`
+	InvoiceNumberStartSequence int                 `json:"start_sequence,omitempty"`
+	InvoiceNumberTimezone      string              `json:"timezone,omitempty"`
+	InvoiceNumberSeparator     string              `json:"separator,omitempty"`
+	InvoiceNumberSuffixLength  int                 `json:"suffix_length,omitempty"`
+	DueDateDays                *int                `json:"due_date_days,omitempty"` // Number of days after period end when payment is due
 }
 
 // InvoiceFilter represents the filter options for listing invoices
