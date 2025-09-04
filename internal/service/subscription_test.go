@@ -53,6 +53,57 @@ func TestSubscriptionService(t *testing.T) {
 	suite.Run(t, new(SubscriptionServiceSuite))
 }
 
+// TestPaymentBehaviorValidation tests validation of payment behavior and collection method combinations
+func (s *SubscriptionServiceSuite) TestPaymentBehaviorValidation() {
+	tests := []struct {
+		name             string
+		collectionMethod *types.CollectionMethod
+		paymentBehavior  *types.PaymentBehavior
+		expectError      bool
+		description      string
+	}{
+		{
+			name:             "valid_charge_automatically_with_allow_incomplete",
+			collectionMethod: lo.ToPtr(types.CollectionMethodChargeAutomatically),
+			paymentBehavior:  lo.ToPtr(types.PaymentBehaviorAllowIncomplete),
+			expectError:      false,
+			description:      "charge_automatically with allow_incomplete should be valid",
+		},
+		{
+			name:             "valid_send_invoice_with_default_active",
+			collectionMethod: lo.ToPtr(types.CollectionMethodSendInvoice),
+			paymentBehavior:  lo.ToPtr(types.PaymentBehaviorDefaultActive),
+			expectError:      false,
+			description:      "send_invoice with default_active should be valid",
+		},
+	}
+
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			req := &dto.CreateSubscriptionRequest{
+				CustomerID:         "cust_123",
+				PlanID:             "plan_123",
+				StartDate:          lo.ToPtr(time.Now()),
+				Currency:           "usd",
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				BillingCycle:       types.BillingCycleAnniversary,
+				CollectionMethod:   tc.collectionMethod,
+				PaymentBehavior:    tc.paymentBehavior,
+			}
+
+			err := req.Validate()
+
+			if tc.expectError {
+				s.Error(err, tc.description)
+			} else {
+				s.NoError(err, tc.description)
+			}
+		})
+	}
+}
+
 func (s *SubscriptionServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
 	s.ClearStores() // Clear all stores before each test for isolation
@@ -725,7 +776,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 				BillingPeriodCount: 1,
 				BillingCycle:       types.BillingCycleAnniversary,
-				CollectionMethod:   lo.ToPtr(types.CollectionMethodDefaultIncomplete),
+				CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
 			},
 			wantErr: false,
 		},
@@ -793,7 +844,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription() {
 
 			// Verify collection method behavior
 			if tc.input.CollectionMethod != nil {
-				if *tc.input.CollectionMethod == types.CollectionMethodDefaultIncomplete {
+				if *tc.input.CollectionMethod == types.CollectionMethodSendInvoice {
 					// charge_automatically should create active subscription when no invoice is created
 					// (usage-based plan with advance cadence doesn't create invoice at subscription time)
 					s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus,
@@ -835,7 +886,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithCollectionMethod() 
 		},
 		{
 			name:                  "charge_automatically_creates_active_subscription_when_no_invoice",
-			collectionMethod:      lo.ToPtr(types.CollectionMethodDefaultIncomplete),
+			collectionMethod:      lo.ToPtr(types.CollectionMethodSendInvoice),
 			expectedStatus:        types.SubscriptionStatusActive,
 			expectedStatusMessage: "charge_automatically should create active subscription when no invoice is created",
 			description:           "Subscription with charge_automatically should be active when no invoice is created (usage-based plan with advance cadence)",
@@ -904,7 +955,7 @@ func (s *SubscriptionServiceSuite) TestCollectionMethodValidation() {
 		},
 		{
 			name:             "valid_charge_automatically",
-			collectionMethod: types.CollectionMethodDefaultIncomplete,
+			collectionMethod: types.CollectionMethodSendInvoice,
 			expectError:      false,
 			description:      "charge_automatically should be a valid collection method",
 		},

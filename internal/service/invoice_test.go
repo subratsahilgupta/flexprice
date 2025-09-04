@@ -423,9 +423,11 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 				PeriodEnd:      s.testData.subscription.CurrentPeriodEnd,
 				ReferencePoint: tt.referencePoint,
 			}
-			got, err := s.service.CreateSubscriptionInvoice(
+			got, _, err := s.service.CreateSubscriptionInvoice(
 				s.GetContext(),
 				req,
+				nil,
+				types.InvoiceFlowManual,
 			)
 
 			if tt.wantErr {

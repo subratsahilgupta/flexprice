@@ -61,6 +61,9 @@ type CreateSubscriptionRequest struct {
 	// Addons represents addons to be added to the subscription during creation
 	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
 
+	// Payment behavior configuration
+	PaymentBehavior        *types.PaymentBehavior `json:"payment_behavior,omitempty"`
+	GatewayPaymentMethodID *string                `json:"gateway_payment_method_id,omitempty"`
 	// collection_method determines how invoices are collected
 	// "default_incomplete" - subscription waits for payment confirmation before activation
 	// "send_invoice" - subscription activates immediately, invoice is sent for payment
@@ -173,6 +176,9 @@ type SubscriptionResponse struct {
 	Schedule *SubscriptionScheduleResponse `json:"schedule,omitempty"`
 	// CouponAssociations are the coupon associations for this subscription
 	CouponAssociations []*CouponAssociationResponse `json:"coupon_associations,omitempty"`
+
+	// Latest invoice information for incomplete subscriptions
+	LatestInvoice *InvoiceResponse `json:"latest_invoice,omitempty"`
 }
 
 // ListSubscriptionsResponse represents the response for listing subscriptions
@@ -208,11 +214,37 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		return err
 	}
 
-	// Validate collection method if provided
+	// Handle legacy collection method conversion and validation
 	if r.CollectionMethod != nil {
+		// Handle legacy default_incomplete collection method
+		if string(*r.CollectionMethod) == "default_incomplete" {
+			// Convert to send_invoice + default_incomplete for backward compatibility
+			sendInvoiceMethod := types.CollectionMethodSendInvoice
+			r.CollectionMethod = &sendInvoiceMethod
+			if r.PaymentBehavior == nil {
+				defaultIncomplete := types.PaymentBehaviorDefaultIncomplete
+				r.PaymentBehavior = &defaultIncomplete
+			}
+		}
+
 		if err := r.CollectionMethod.Validate(); err != nil {
 			return err
 		}
+	}
+
+	// Set defaults for collection method and payment behavior if not provided
+	if r.CollectionMethod == nil {
+		defaultCollectionMethod := types.CollectionMethodChargeAutomatically
+		r.CollectionMethod = &defaultCollectionMethod
+	}
+	if r.PaymentBehavior == nil {
+		defaultPaymentBehavior := types.PaymentBehaviorDefaultActive
+		r.PaymentBehavior = &defaultPaymentBehavior
+	}
+
+	// Validate payment behavior and collection method combination
+	if err := r.validatePaymentBehaviorForCollectionMethod(*r.CollectionMethod, *r.PaymentBehavior); err != nil {
+		return err
 	}
 
 	// Set default start date if not provided
@@ -450,6 +482,55 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	return nil
 }
 
+// validatePaymentBehaviorForCollectionMethod validates that payment behavior is compatible with collection method
+func (r *CreateSubscriptionRequest) validatePaymentBehaviorForCollectionMethod(collectionMethod types.CollectionMethod, paymentBehavior types.PaymentBehavior) error {
+	switch collectionMethod {
+	case types.CollectionMethodChargeAutomatically:
+		// For charge_automatically, allow_incomplete, error_if_incomplete, and default_active are allowed
+		if paymentBehavior != types.PaymentBehaviorAllowIncomplete &&
+			paymentBehavior != types.PaymentBehaviorErrorIfIncomplete &&
+			paymentBehavior != types.PaymentBehaviorDefaultActive {
+			return ierr.NewError("invalid payment behavior for charge_automatically collection method").
+				WithHint("Only allow_incomplete, error_if_incomplete, and default_active are supported for charge_automatically collection method").
+				WithReportableDetails(map[string]interface{}{
+					"collection_method": collectionMethod,
+					"payment_behavior":  paymentBehavior,
+					"allowed_behaviors": []types.PaymentBehavior{
+						types.PaymentBehaviorAllowIncomplete,
+						types.PaymentBehaviorErrorIfIncomplete,
+						types.PaymentBehaviorDefaultActive,
+					},
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	case types.CollectionMethodSendInvoice:
+		// For send_invoice, only default_active and default_incomplete are allowed
+		if paymentBehavior != types.PaymentBehaviorDefaultActive && paymentBehavior != types.PaymentBehaviorDefaultIncomplete {
+			return ierr.NewError("invalid payment behavior for send_invoice collection method").
+				WithHint("Only default_active and default_incomplete are supported for send_invoice collection method").
+				WithReportableDetails(map[string]interface{}{
+					"collection_method": collectionMethod,
+					"payment_behavior":  paymentBehavior,
+					"allowed_behaviors": []types.PaymentBehavior{
+						types.PaymentBehaviorDefaultActive,
+						types.PaymentBehaviorDefaultIncomplete,
+					},
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+	default:
+		return ierr.NewError("unsupported collection method").
+			WithHint("Only charge_automatically and send_invoice collection methods are supported").
+			WithReportableDetails(map[string]interface{}{
+				"collection_method": collectionMethod,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
 func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(startDate, now time.Time) error {
 	// If the start date is before the current date and proration mode is active, return an error
 	// This prevents creating subscriptions with backdated start dates that would trigger proration
@@ -476,19 +557,34 @@ func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(star
 }
 
 func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscription.Subscription {
-	// Determine initial subscription status based on collection method and payment behavior
-	initialStatus := types.SubscriptionStatusActive
+	// Handle legacy collection method and set defaults
+	paymentBehavior := types.PaymentBehaviorDefaultActive
+	collectionMethod := types.CollectionMethodChargeAutomatically
 
-	// Set status based on collection method
-	if r.CollectionMethod != nil {
-		if *r.CollectionMethod == types.CollectionMethodDefaultIncomplete {
-			// default_incomplete: wait for payment confirmation before activation
-			initialStatus = types.SubscriptionStatusIncomplete
-		} else if *r.CollectionMethod == types.CollectionMethodSendInvoice {
-			// send_invoice: activate immediately, invoice is sent for payment
-			initialStatus = types.SubscriptionStatusActive
+	// Handle legacy default_incomplete collection method conversion
+	if r.CollectionMethod != nil && string(*r.CollectionMethod) == "default_incomplete" {
+		// Convert legacy default_incomplete collection method to send_invoice + default_incomplete
+		collectionMethod = types.CollectionMethodSendInvoice
+		paymentBehavior = types.PaymentBehaviorDefaultIncomplete
+	} else {
+		// Normal flow - use provided values or defaults
+		if r.CollectionMethod != nil {
+			collectionMethod = *r.CollectionMethod
+		}
+		if r.PaymentBehavior != nil {
+			paymentBehavior = *r.PaymentBehavior
 		}
 	}
+
+	// Validate collection method and payment behavior combination
+	if err := r.validatePaymentBehaviorForCollectionMethod(collectionMethod, paymentBehavior); err != nil {
+		// This validation will be caught in the main Validate() method
+		// We don't fail here to allow the conversion to happen first
+	}
+
+	// Initial status will be determined by payment processor based on payment behavior
+	// For now, set to Active - the payment processor will update it
+	initialStatus := types.SubscriptionStatusActive
 
 	if r.CustomerTimezone == "" {
 		r.CustomerTimezone = "UTC"
@@ -513,8 +609,13 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		EnvironmentID:      types.GetEnvironmentID(ctx),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 		BillingCycle:       r.BillingCycle,
-		CustomerTimezone:   r.CustomerTimezone,
-		ProrationMode:      r.ProrationMode,
+
+		// New payment behavior fields
+		PaymentBehavior:        string(paymentBehavior),
+		CollectionMethod:       string(collectionMethod),
+		GatewayPaymentMethodID: r.GatewayPaymentMethodID,
+		CustomerTimezone:       r.CustomerTimezone,
+		ProrationMode:          r.ProrationMode,
 	}
 
 	// Set commitment amount and overage factor if provided

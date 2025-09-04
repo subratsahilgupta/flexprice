@@ -9,6 +9,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -1215,4 +1216,52 @@ func (r *CreateSubscriptionInvoiceRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 	return nil
+}
+
+// PaymentParameters encapsulates payment-related parameters for invoice processing
+type PaymentParameters struct {
+	// CollectionMethod defines how the payment should be collected (charge_automatically or send_invoice)
+	CollectionMethod *types.CollectionMethod `json:"collection_method,omitempty"`
+
+	// PaymentBehavior defines the behavior when payment fails (default_active, error_if_incomplete, etc.)
+	PaymentBehavior *types.PaymentBehavior `json:"payment_behavior,omitempty"`
+
+	// PaymentMethodID is the optional ID of the payment method to use for automatic charges
+	PaymentMethodID *string `json:"payment_method_id,omitempty"`
+}
+
+// NewPaymentParameters creates a new PaymentParameters from subscription data
+func NewPaymentParameters(collectionMethod types.CollectionMethod, paymentBehavior types.PaymentBehavior, paymentMethodID *string) *PaymentParameters {
+	return &PaymentParameters{
+		CollectionMethod: &collectionMethod,
+		PaymentBehavior:  &paymentBehavior,
+		PaymentMethodID:  paymentMethodID,
+	}
+}
+
+// NewPaymentParametersFromSubscription creates PaymentParameters from subscription fields
+func NewPaymentParametersFromSubscription(collectionMethod string, paymentBehavior string, paymentMethodID *string) *PaymentParameters {
+	cm := types.CollectionMethod(collectionMethod)
+	pb := types.PaymentBehavior(paymentBehavior)
+	return &PaymentParameters{
+		CollectionMethod: &cm,
+		PaymentBehavior:  &pb,
+		PaymentMethodID:  paymentMethodID,
+	}
+}
+
+// NormalizePaymentParameters handles backward compatibility for old collection behaviors
+// If collection_method is "default_incomplete", it converts to charge_automatically + default_incomplete
+func (p *PaymentParameters) NormalizePaymentParameters() *PaymentParameters {
+	if p.CollectionMethod != nil && string(*p.CollectionMethod) == "default_incomplete" {
+		// Convert old default_incomplete collection behavior to new format
+		// collection_method: charge_automatically, payment_behavior: default_incomplete
+		normalized := &PaymentParameters{
+			CollectionMethod: lo.ToPtr(types.CollectionMethodSendInvoice),
+			PaymentBehavior:  lo.ToPtr(types.PaymentBehaviorDefaultIncomplete),
+			PaymentMethodID:  p.PaymentMethodID,
+		}
+		return normalized
+	}
+	return p
 }

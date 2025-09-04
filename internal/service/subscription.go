@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -267,7 +268,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 	invoiceService := NewInvoiceService(s.ServiceParams)
 	var invoice *dto.InvoiceResponse
-
+	var updatedSub *subscription.Subscription
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 
 		// Create subscription with line items
@@ -349,31 +350,47 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		// Create invoice for the subscription (in case it has advance charges)
-		invoice, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+		paymentParams := dto.NewPaymentParametersFromSubscription(sub.CollectionMethod, sub.PaymentBehavior, sub.GatewayPaymentMethodID)
+		// Apply backward compatibility normalization
+		paymentParams = paymentParams.NormalizePaymentParameters()
+		invoice, updatedSub, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 			SubscriptionID: sub.ID,
 			PeriodStart:    sub.CurrentPeriodStart,
 			PeriodEnd:      sub.CurrentPeriodEnd,
 			ReferencePoint: types.ReferencePointPeriodStart,
-		})
+		}, paymentParams, types.InvoiceFlowSubscriptionCreation)
+		if err != nil {
+			return err
+		}
 
-		return err
+		// Use the updated subscription from CreateSubscriptionInvoice to avoid extra DB call
+		if updatedSub != nil {
+			sub = updatedSub
+		}
+
+		// if the subscription is created with incomplete status, but it doesn't create an invoice, we need to mark it as active
+		// This applies regardless of collection method - if there's no invoice to pay, the subscription should be active
+		if sub.SubscriptionStatus == types.SubscriptionStatusIncomplete && (invoice == nil || invoice.PaymentStatus == types.PaymentStatusSucceeded) {
+			sub.SubscriptionStatus = types.SubscriptionStatusActive
+			err = s.SubRepo.Update(ctx, sub)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// if the subscription is created with incomplete status, but it doesn't create an invoice, we need to mark it as active
-	// This applies regardless of collection method - if there's no invoice to pay, the subscription should be active
-	if sub.SubscriptionStatus == types.SubscriptionStatusIncomplete && (invoice == nil || invoice.PaymentStatus == types.PaymentStatusSucceeded) {
-		sub.SubscriptionStatus = types.SubscriptionStatusActive
-		err = s.SubRepo.Update(ctx, sub)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Update response to ensure it has the latest subscription data
 	response.Subscription = sub
+
+	// Include latest invoice if created
+	if invoice != nil {
+		response.LatestInvoice = invoice
+	}
 
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionCreated, sub.ID)
 	return response, nil
@@ -743,12 +760,14 @@ func (s *subscriptionService) CancelSubscription(
 
 		if req.CancellationType != types.CancellationTypeEndOfPeriod {
 			invoiceService := NewInvoiceService(s.ServiceParams)
-			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+			paymentParams := dto.NewPaymentParametersFromSubscription(subscription.CollectionMethod, subscription.PaymentBehavior, subscription.GatewayPaymentMethodID)
+			paymentParams = paymentParams.NormalizePaymentParameters()
+			inv, _, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 				SubscriptionID: subscription.ID,
 				PeriodStart:    subscription.CurrentPeriodStart,
 				PeriodEnd:      effectiveDate,
 				ReferencePoint: types.ReferencePointCancel,
-			})
+			}, paymentParams, types.InvoiceFlowManual)
 			if err != nil {
 				return err
 			}
@@ -1605,15 +1624,30 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			period := periods[i]
 
 			// Create a single invoice for both arrear and advance charges at period end
-			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+			paymentParams := dto.NewPaymentParametersFromSubscription(sub.CollectionMethod, sub.PaymentBehavior, sub.GatewayPaymentMethodID)
+			// Apply backward compatibility normalization
+			paymentParams = paymentParams.NormalizePaymentParameters()
+			inv, updatedSub, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 				SubscriptionID: sub.ID,
 				PeriodStart:    period.start,
 				PeriodEnd:      period.end,
 				ReferencePoint: types.ReferencePointPeriodEnd,
-			})
+			}, paymentParams, types.InvoiceFlowRenewal)
 			if err != nil {
 				return err
 			}
+
+			// Use the updated subscription from CreateSubscriptionInvoice to avoid extra DB call
+			if updatedSub != nil {
+				sub = updatedSub
+			}
+
+			s.Logger.Infow("created invoice for period",
+				"subscription_id", sub.ID,
+				"invoice_id", inv.ID,
+				"period_start", period.start,
+				"period_end", period.end,
+				"period_index", i)
 
 			// Check for cancellation at this period end
 			if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(period.end) {

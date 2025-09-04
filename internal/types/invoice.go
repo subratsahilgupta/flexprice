@@ -47,6 +47,39 @@ func (c InvoiceCadence) Validate() error {
 	return nil
 }
 
+// InvoiceFlowType represents the type of invoice flow for payment behavior handling
+type InvoiceFlowType string
+
+const (
+	// InvoiceFlowSubscriptionCreation represents subscription creation flow - applies full payment behavior logic
+	InvoiceFlowSubscriptionCreation InvoiceFlowType = "subscription_creation"
+	// InvoiceFlowRenewal represents renewal/periodic billing flow - always creates invoices, marks as pending on failure
+	InvoiceFlowRenewal InvoiceFlowType = "renewal"
+	// InvoiceFlowManual represents manual invoice creation flow - default behavior
+	InvoiceFlowManual InvoiceFlowType = "manual"
+)
+
+func (f InvoiceFlowType) String() string {
+	return string(f)
+}
+
+func (f InvoiceFlowType) Validate() error {
+	allowed := []InvoiceFlowType{
+		InvoiceFlowSubscriptionCreation,
+		InvoiceFlowRenewal,
+		InvoiceFlowManual,
+	}
+	if !lo.Contains(allowed, f) {
+		return ierr.NewError("invalid invoice flow type").
+			WithHint("Please provide a valid invoice flow type").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
 // InvoiceType categorizes the purpose and nature of the invoice
 type InvoiceType string
 
