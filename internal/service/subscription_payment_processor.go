@@ -195,7 +195,13 @@ func (s *subscriptionPaymentProcessor) attemptPaymentAllowIncomplete(
 	// Only update if the subscription status needs to change
 	if latestSub.SubscriptionStatus != targetStatus {
 		latestSub.SubscriptionStatus = targetStatus
-		return s.SubRepo.Update(ctx, latestSub)
+		err := s.SubRepo.Update(ctx, latestSub)
+		if err != nil {
+			return err
+		}
+		// Update the original subscription object for consistency
+		sub.SubscriptionStatus = latestSub.SubscriptionStatus
+		return nil
 	}
 
 	s.Logger.Infow("subscription status already matches target, skipping update",
