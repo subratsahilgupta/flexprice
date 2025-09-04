@@ -25,6 +25,9 @@ type Repository interface {
 	UpdatePause(ctx context.Context, pause *SubscriptionPause) error
 	ListPauses(ctx context.Context, subscriptionID string) ([]*SubscriptionPause, error)
 	GetWithPauses(ctx context.Context, id string) (*Subscription, []*SubscriptionPause, error)
+
+	// Renewal due alert methods
+	ListSubscriptionsDueForRenewal(ctx context.Context) ([]*Subscription, error)
 }
 
 // SubscriptionScheduleRepository provides access to the subscription schedule store

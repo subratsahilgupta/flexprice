@@ -58,6 +58,9 @@ type SubscriptionService interface {
 	// Line item management
 	AddSubscriptionLineItem(ctx context.Context, subscriptionID string, req dto.CreateSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error)
 	DeleteSubscriptionLineItem(ctx context.Context, lineItemID string, req dto.DeleteSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error)
+
+	// Renewal due alert methods
+	ProcessSubscriptionRenewalDueAlert(ctx context.Context) error
 }
 
 type subscriptionService struct {
@@ -2963,6 +2966,28 @@ func (s *subscriptionService) handleSubscriptionCancellation(ctx context.Context
 func (s *subscriptionService) handleSubscriptionPause(ctx context.Context, subscriptionID string) error {
 	// Future: Defer scheduled applications if we implement full application tracking
 	s.Logger.Infow("subscription paused, recurring grants will be deferred", "subscription_id", subscriptionID)
+	return nil
+}
+
+// ProcessSubscriptionRenewalDueAlert processes subscriptions that are due for renewal in 24 hours
+func (s *subscriptionService) ProcessSubscriptionRenewalDueAlert(ctx context.Context) error {
+	subscriptions, err := s.SubRepo.ListSubscriptionsDueForRenewal(ctx)
+	if err != nil {
+		s.Logger.Errorw("failed to list subscriptions due for renewal", "error", err)
+		return err
+	}
+
+	if len(subscriptions) == 0 {
+		s.Logger.Infow("no subscriptions due for renewal found")
+		return nil
+	}
+
+	s.Logger.Infow("found subscriptions due for renewal", "count", len(subscriptions))
+
+	for _, sub := range subscriptions {
+		s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionRenewalDue, sub.ID)
+	}
+
 	return nil
 }
 
