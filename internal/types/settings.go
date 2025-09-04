@@ -2,7 +2,6 @@ package types
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -171,7 +170,9 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 			}
 			dueDateDays = int(v)
 		default:
-			return fmt.Errorf("invoice_config: 'due_date_days' must be an integer, got %T", dueDateDaysRaw)
+			return ierr.NewErrorf("invoice_config: 'due_date_days' must be an integer, got %T", dueDateDaysRaw).
+				WithHintf("Invoice config due date days must be an integer, got %T", dueDateDaysRaw).
+				Mark(ierr.ErrValidation)
 		}
 
 		if dueDateDays < 0 {
@@ -393,7 +394,9 @@ func ValidateSubscriptionConfig(value map[string]interface{}) error {
 			}
 			dueDateDays = int(v)
 		default:
-			return fmt.Errorf("invoice_config: 'due_date_days' must be an integer, got %T", dueDateDaysRaw)
+			return ierr.NewErrorf("invoice_config: 'due_date_days' must be an integer, got %T", dueDateDaysRaw).
+				WithHintf("Invoice config due date days must be an integer, got %T", dueDateDaysRaw).
+				Mark(ierr.ErrValidation)
 		}
 
 		if dueDateDays < 0 {

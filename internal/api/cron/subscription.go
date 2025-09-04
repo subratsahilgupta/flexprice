@@ -116,6 +116,6 @@ func (h *SubscriptionHandler) ProcessSubscriptionRenewalDueAlerts(c *gin.Context
 		return
 	}
 
-	h.logger.Infow("completed auto-cancellation processing cron job")
+	h.logger.Infow("completed subscription renewal due alerts cron job")
 	c.JSON(http.StatusOK, gin.H{"status": "completed"})
 }
