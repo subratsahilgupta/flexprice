@@ -313,51 +313,6 @@ func (s *walletPaymentService) sortWalletsByBalanceDesc(wallets []*wallet.Wallet
 	})
 }
 
-// sortWalletsByStrategy sorts wallets based on the specified strategy (kept for backward compatibility)
-func (s *walletPaymentService) sortWalletsByStrategy(
-	wallets []*wallet.Wallet,
-	strategy WalletPaymentStrategy,
-) []*wallet.Wallet {
-	result := make([]*wallet.Wallet, 0, len(wallets))
-	if len(wallets) == 0 {
-		return result
-	}
-
-	// Copy wallets to avoid modifying the original slice
-	result = append(result, wallets...)
-
-	if strategy == "" {
-		strategy = PromotionalFirstStrategy
-	}
-
-	// Sort by balance (smallest first to minimize leftover balances)
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Balance.LessThan(result[j].Balance)
-	})
-
-	switch strategy {
-	case PromotionalFirstStrategy:
-		// First separate wallets by type
-		sort.Slice(result, func(i, j int) bool {
-			return result[i].WalletType == types.WalletTypePromotional
-		})
-	case PrepaidFirstStrategy:
-		sort.Slice(result, func(i, j int) bool {
-			return result[i].WalletType == types.WalletTypePrePaid
-		})
-	case BalanceOptimizedStrategy:
-		// Sort by balance (smallest first to minimize leftover balances)
-		sort.Slice(result, func(i, j int) bool {
-			return result[i].Balance.LessThan(result[j].Balance)
-		})
-	default:
-		// Default to promotional first if strategy is not recognized
-		return s.sortWalletsByStrategy(wallets, PromotionalFirstStrategy)
-	}
-
-	return result
-}
-
 // calculatePriceTypeAmounts calculates the total amount for each price type in the invoice
 func (s *walletPaymentService) calculatePriceTypeAmounts(lineItems []*invoice.InvoiceLineItem) map[string]decimal.Decimal {
 	priceTypeAmounts := map[string]decimal.Decimal{
