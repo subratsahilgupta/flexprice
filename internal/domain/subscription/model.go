@@ -106,7 +106,7 @@ type Subscription struct {
 
 	CustomerTimezone string `json:"customer_timezone"`
 
-	ProrationMode types.ProrationMode `json:"proration_mode"`
+	ProrationBehavior types.ProrationBehavior `json:"proration_behavior"`
 
 	types.BaseModel
 }
@@ -168,7 +168,7 @@ func GetSubscriptionFromEnt(sub *ent.Subscription) *Subscription {
 		CouponAssociations: couponAssociations,
 		Pauses:             pauses,
 		CustomerTimezone:   sub.CustomerTimezone,
-		ProrationMode:      types.ProrationMode(sub.ProrationMode),
+		ProrationBehavior:  types.ProrationBehavior(sub.ProrationBehavior),
 		BaseModel: types.BaseModel{
 			TenantID:  sub.TenantID,
 			Status:    types.Status(sub.Status),

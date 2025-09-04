@@ -77,10 +77,10 @@ type ProrationResult struct {
 
 // SubscriptionProrationParams contains all necessary information for subscription-level proration
 type SubscriptionProrationParams struct {
-	Subscription  *subscription.Subscription
-	Prices        map[string]*price.Price // Map of priceID to price
-	ProrationMode types.ProrationMode
-	BillingCycle  types.BillingCycle
+	Subscription      *subscription.Subscription
+	Prices            map[string]*price.Price // Map of priceID to price
+	ProrationBehavior types.ProrationBehavior
+	BillingCycle      types.BillingCycle
 }
 
 // SubscriptionProrationResult contains the results of subscription-level proration

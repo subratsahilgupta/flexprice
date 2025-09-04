@@ -673,41 +673,24 @@ func (s *subscriptionChangeService) createNewSubscription(
 	effectiveDate time.Time,
 ) (*subscription.Subscription, error) {
 
-	prices, err := s.serviceParams.PriceRepo.GetByPlanID(ctx, targetPlan.ID)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to get prices for target plan").
-			Mark(ierr.ErrDatabase)
-	}
-	if len(prices) == 0 {
-		return nil, ierr.NewError("Target plan has no prices").
-			WithHint("Plan ID: " + targetPlan.ID).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Use the first available price to determine billing information
-	// TODO: In the future, we might want to match the current subscription's currency or other criteria
-	targetPrice := prices[0]
-
 	// Build create subscription request based on current subscription but with target plan's billing info
 	createSubReq := dto.CreateSubscriptionRequest{
 		CustomerID:         currentSub.CustomerID,
 		PlanID:             targetPlan.ID,
 		Currency:           currentSub.Currency,
 		LookupKey:          currentSub.LookupKey,
-		BillingCadence:     targetPrice.BillingCadence,
-		BillingPeriod:      targetPrice.BillingPeriod,
-		BillingPeriodCount: targetPrice.BillingPeriodCount,
-		BillingCycle:       currentSub.BillingCycle,
-		StartDate:          lo.ToPtr(currentSub.StartDate),
-		EndDate:            currentSub.EndDate,
+		BillingCadence:     req.BillingCadence,
+		BillingPeriod:      req.BillingPeriod,
+		BillingPeriodCount: req.BillingPeriodCount,
+		BillingCycle:       req.BillingCycle,
+		StartDate:          &effectiveDate,
+		EndDate:            nil,
 		Metadata:           req.Metadata,
-		ProrationMode:      types.ProrationModeActive,
+		ProrationBehavior:  req.ProrationBehavior,
 		CustomerTimezone:   currentSub.CustomerTimezone,
 		CreditGrants:       creditGrantRequests,
 		CommitmentAmount:   currentSub.CommitmentAmount,
 		OverageFactor:      currentSub.OverageFactor,
-		LineItemsStartDate: lo.ToPtr(effectiveDate),
 	}
 
 	// Use the existing subscription service to create the new subscription

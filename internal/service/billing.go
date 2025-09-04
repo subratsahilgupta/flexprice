@@ -1072,7 +1072,7 @@ func (s *billingService) applyProrationToLineItem(
 
 	prorationService := NewProrationService(s.ServiceParams)
 	// Check if proration should be applied
-	if sub.ProrationMode != types.ProrationModeActive {
+	if sub.ProrationBehavior == types.ProrationBehaviorNone {
 		// No proration needed
 		return originalAmount, nil
 	}
@@ -1091,7 +1091,7 @@ func (s *billingService) applyProrationToLineItem(
 		item,
 		priceData,
 		action,
-		types.ProrationBehaviorCreateProrations,
+		sub.ProrationBehavior,
 	)
 	if err != nil {
 		return originalAmount, err
