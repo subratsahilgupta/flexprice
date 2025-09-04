@@ -2,6 +2,7 @@ package types
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -111,6 +112,7 @@ func GetDefaultSettings() map[SettingKey]DefaultSettingValue {
 				"timezone":       "UTC",
 				"separator":      "-",
 				"suffix_length":  5,
+				"due_date_days":  1, // Default to 1 day after period end
 			},
 			Description: "Default configuration for invoice generation and management",
 			Required:    true,
@@ -157,6 +159,28 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 		return errors.New("invoice_config value cannot be nil")
 	}
 
+	// Check if this is a due_date_days only update
+	if dueDateDaysRaw, exists := value["due_date_days"]; exists {
+		var dueDateDays int
+		switch v := dueDateDaysRaw.(type) {
+		case int:
+			dueDateDays = v
+		case float64:
+			if v != float64(int(v)) {
+				return errors.New("invoice_config: 'due_date_days' must be a whole number")
+			}
+			dueDateDays = int(v)
+		default:
+			return fmt.Errorf("invoice_config: 'due_date_days' must be an integer, got %T", dueDateDaysRaw)
+		}
+
+		if dueDateDays < 0 {
+			return errors.New("invoice_config: 'due_date_days' must be greater than or equal to 0")
+		}
+		return nil
+	}
+
+	// If not a due_date_days only update, validate all required fields
 	// Validate prefix
 	prefixRaw, exists := value["prefix"]
 	if !exists {
@@ -355,6 +379,26 @@ func ValidateSubscriptionConfig(value map[string]interface{}) error {
 		}
 		// Store the validated value back for consistency
 		value["auto_cancellation_enabled"] = autoCancellationEnabled
+	}
+
+	// If due_date_days is provided in full config, validate it
+	if dueDateDaysRaw, exists := value["due_date_days"]; exists {
+		var dueDateDays int
+		switch v := dueDateDaysRaw.(type) {
+		case int:
+			dueDateDays = v
+		case float64:
+			if v != float64(int(v)) {
+				return errors.New("invoice_config: 'due_date_days' must be a whole number")
+			}
+			dueDateDays = int(v)
+		default:
+			return fmt.Errorf("invoice_config: 'due_date_days' must be an integer, got %T", dueDateDaysRaw)
+		}
+
+		if dueDateDays < 0 {
+			return errors.New("invoice_config: 'due_date_days' must be greater than or equal to 0")
+		}
 	}
 
 	return nil

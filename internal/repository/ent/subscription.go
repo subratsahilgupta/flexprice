@@ -81,7 +81,12 @@ func (r *subscriptionRepository) Create(ctx context.Context, sub *domainSub.Subs
 		SetCreatedBy(sub.CreatedBy).
 		SetUpdatedBy(sub.UpdatedBy).
 		SetEnvironmentID(sub.EnvironmentID).
+		SetCustomerTimezone(sub.CustomerTimezone).
+		SetProrationMode(string(sub.ProrationMode)).
 		SetVersion(1).
+		SetPaymentBehavior(subscription.PaymentBehavior(sub.PaymentBehavior)).
+		SetCollectionMethod(subscription.CollectionMethod(sub.CollectionMethod)).
+		SetNillableGatewayPaymentMethodID(sub.GatewayPaymentMethodID).
 		Save(ctx)
 
 	if err != nil {
@@ -168,6 +173,9 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 		SetNillableCancelAt(sub.CancelAt).
 		SetPauseStatus(string(sub.PauseStatus)).
 		SetCancelAtPeriodEnd(sub.CancelAtPeriodEnd).
+		SetPaymentBehavior(subscription.PaymentBehavior(sub.PaymentBehavior)).
+		SetCollectionMethod(subscription.CollectionMethod(sub.CollectionMethod)).
+		SetNillableGatewayPaymentMethodID(sub.GatewayPaymentMethodID).
 		SetUpdatedAt(now).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		AddVersion(1) // Increment version atomically
@@ -325,6 +333,40 @@ func (r *subscriptionRepository) List(ctx context.Context, filter *types.Subscri
 	}
 
 	SetSpanSuccess(span)
+	return result, nil
+}
+
+// ListActiveSubscriptionsDueForRenewal retrieves all active subscriptions that are due for renewal in 24 hours
+func (r *subscriptionRepository) ListSubscriptionsDueForRenewal(ctx context.Context) ([]*domainSub.Subscription, error) {
+	now := time.Now().UTC()
+	targetTime := now.Add(24 * time.Hour)
+
+	// Create a 5-minute window around the target time
+	windowStart := targetTime.Add(-1 * time.Hour)
+	windowEnd := targetTime.Add(1 * time.Hour)
+
+	// Find subscriptions ending exactly at the target time
+	subs, err := r.client.Querier(ctx).Subscription.Query().
+		Where(
+			subscription.And(
+				subscription.SubscriptionStatusEQ(string(types.SubscriptionStatusActive)),
+				subscription.StatusEQ(string(types.StatusPublished)),
+				subscription.CurrentPeriodEndGTE(windowStart),
+				subscription.CurrentPeriodEndLTE(windowEnd),
+				subscription.CancelAtPeriodEndEQ(false),
+			),
+		).All(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to domain model
+	result := make([]*domainSub.Subscription, len(subs))
+	for i, sub := range subs {
+		result[i] = domainSub.GetSubscriptionFromEnt(sub)
+	}
+
 	return result, nil
 }
 

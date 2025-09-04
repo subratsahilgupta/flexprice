@@ -40,6 +40,7 @@ import (
 	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
 	_ "github.com/flexprice/flexprice/docs/swagger"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/security"
 	"github.com/gin-gonic/gin"
 )
@@ -163,6 +164,9 @@ func main() {
 			// Temporal
 			provideTemporalClient,
 			provideTemporalService,
+
+			// Proration
+			proration.NewCalculator,
 		),
 	)
 
@@ -208,6 +212,7 @@ func main() {
 			service.NewPriceUnitService,
 			service.NewAddonService,
 			service.NewSettingsService,
+			service.NewSubscriptionChangeService,
 		),
 	)
 
@@ -267,6 +272,7 @@ func provideHandlers(
 	couponService service.CouponService,
 	addonService service.AddonService,
 	settingsService service.SettingsService,
+	subscriptionChangeService service.SubscriptionChangeService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, logger),
@@ -280,6 +286,7 @@ func provideHandlers(
 		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, temporalService, logger),
 		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
 		SubscriptionPause:        v1.NewSubscriptionPauseHandler(subscriptionService, logger),
+		SubscriptionChange:       v1.NewSubscriptionChangeHandler(subscriptionChangeService, logger),
 		Wallet:                   v1.NewWalletHandler(walletService, logger),
 		Tenant:                   v1.NewTenantHandler(tenantService, logger),
 		Invoice:                  v1.NewInvoiceHandler(invoiceService, temporalService, logger),

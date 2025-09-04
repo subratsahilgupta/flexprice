@@ -1054,7 +1054,7 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithEntitlements() {
 					FeatureType:      types.FeatureTypeMetered,
 					IsEnabled:        true,
 					UsageLimit:       lo.ToPtr(int64(1000)), // Allow 1000 units
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      false,
 					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 				}
@@ -1089,7 +1089,7 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithEntitlements() {
 					FeatureType:      types.FeatureTypeMetered,
 					IsEnabled:        true,
 					UsageLimit:       lo.ToPtr(int64(100)), // Only allow 100 units
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      false,
 					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 				}
@@ -1124,7 +1124,7 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithEntitlements() {
 					FeatureType:      types.FeatureTypeMetered,
 					IsEnabled:        true,
 					UsageLimit:       nil, // Unlimited usage
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      false,
 					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 				}
@@ -1159,7 +1159,7 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithEntitlements() {
 					FeatureType:      types.FeatureTypeMetered,
 					IsEnabled:        true,
 					UsageLimit:       lo.ToPtr(int64(100)), // Soft limit of 100 units
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      true,
 					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 				}
@@ -1194,7 +1194,7 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithEntitlements() {
 					FeatureType:      types.FeatureTypeMetered,
 					IsEnabled:        false, // Disabled entitlement
 					UsageLimit:       lo.ToPtr(int64(1000)),
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      false,
 					BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
 				}
@@ -1377,7 +1377,7 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithDailyReset() {
 		FeatureType:      types.FeatureTypeMetered,
 		IsEnabled:        true,
 		UsageLimit:       lo.ToPtr(int64(10)), // 10 requests per day
-		UsageResetPeriod: types.BILLING_PERIOD_DAILY,
+		UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY,
 		IsSoftLimit:      false,
 		BaseModel:        types.GetDefaultBaseModel(ctx),
 	}
