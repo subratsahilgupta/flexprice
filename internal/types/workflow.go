@@ -34,9 +34,9 @@ func (w WorkflowType) String() string {
 // Validate validates the workflow type
 func (w WorkflowType) Validate() error {
 	allowedWorkflows := []WorkflowType{
-		BillingWorkflow,
-		CalculationWorkflow,
-		PriceSyncWorkflow,
+		BillingWorkflow,     // "CronBillingWorkflow"
+		CalculationWorkflow, // "CalculateChargesWorkflow"
+		PriceSyncWorkflow,   // "PriceSyncWorkflow"
 	}
 	if lo.Contains(allowedWorkflows, w) {
 		return nil
