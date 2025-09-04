@@ -1739,15 +1739,8 @@ func (s *billingService) calculateNeverResetUsage(
 	}
 
 	// Calculate cumulative usage totals
-	totalUsage := decimal.Zero
-	for _, result := range totalUsageResult.Results {
-		totalUsage = totalUsage.Add(result.Value)
-	}
-
-	previousPeriodUsage := decimal.Zero
-	for _, result := range previousPeriodUsageResult.Results {
-		previousPeriodUsage = previousPeriodUsage.Add(result.Value)
-	}
+	totalUsage := totalUsageResult.Value
+	previousPeriodUsage := previousPeriodUsageResult.Value
 
 	// Calculate billable quantity = totalUsage - previousPeriodUsage - usageAllowed
 	periodUsage := totalUsage.Sub(previousPeriodUsage)
