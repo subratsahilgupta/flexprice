@@ -136,15 +136,19 @@ func (s *subscriptionPaymentProcessor) handleChargeAutomaticallyMethod(
 	case types.PaymentBehaviorErrorIfIncomplete:
 		return s.attemptPaymentErrorIfIncomplete(ctx, sub, inv, flowType)
 
+	case types.PaymentBehaviorDefaultActive:
+		return s.attemptPaymentDefaultActive(ctx, sub, inv)
+
 	default:
 		return ierr.NewError("unsupported payment behavior for charge_automatically").
-			WithHint("Only allow_incomplete and error_if_incomplete are supported for charge_automatically collection method").
+			WithHint("Only allow_incomplete, error_if_incomplete, and default_active are supported for charge_automatically collection method").
 			WithReportableDetails(map[string]interface{}{
 				"payment_behavior":  behavior,
 				"collection_method": "charge_automatically",
 				"allowed_behaviors": []types.PaymentBehavior{
 					types.PaymentBehaviorAllowIncomplete,
 					types.PaymentBehaviorErrorIfIncomplete,
+					types.PaymentBehaviorDefaultActive,
 				},
 			}).
 			Mark(ierr.ErrInvalidOperation)
@@ -242,6 +246,55 @@ func (s *subscriptionPaymentProcessor) attemptPaymentErrorIfIncomplete(
 		"amount_paid", result.AmountPaid,
 		"flow_type", flowType)
 
+	return nil
+}
+
+// attemptPaymentDefaultActive attempts payment and always marks subscription as active regardless of payment result
+func (s *subscriptionPaymentProcessor) attemptPaymentDefaultActive(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	inv *dto.InvoiceResponse,
+) error {
+	result := s.processPayment(ctx, sub, inv)
+
+	// Get the latest subscription status to check if it was already activated
+	// by payment reconciliation (this can happen when payment succeeds and
+	// triggers subscription activation through payment service)
+	latestSub, err := s.SubRepo.Get(ctx, sub.ID)
+	if err != nil {
+		s.Logger.Errorw("failed to get latest subscription status",
+			"error", err,
+			"subscription_id", sub.ID,
+		)
+		// Continue with original logic if we can't get latest status
+		latestSub = sub
+	}
+
+	// For default_active behavior, always set to active regardless of payment result
+	targetStatus := types.SubscriptionStatusActive
+
+	s.Logger.Infow("default_active payment result",
+		"subscription_id", sub.ID,
+		"payment_success", result.Success,
+		"amount_paid", result.AmountPaid,
+		"current_status", latestSub.SubscriptionStatus,
+		"target_status", targetStatus,
+		"behavior", "always_active",
+	)
+
+	// Only update if the subscription status needs to change
+	if latestSub.SubscriptionStatus != targetStatus {
+		latestSub.SubscriptionStatus = targetStatus
+		return s.SubRepo.Update(ctx, latestSub)
+	}
+
+	s.Logger.Infow("subscription status already matches target, skipping update",
+		"subscription_id", sub.ID,
+		"status", latestSub.SubscriptionStatus,
+	)
+
+	// Update the original subscription object for consistency
+	sub.SubscriptionStatus = latestSub.SubscriptionStatus
 	return nil
 }
 
@@ -741,11 +794,4 @@ func (s *subscriptionPaymentProcessor) checkAvailableCredits(
 	)
 
 	return totalAvailable
-}
-
-// ExpirePendingUpdates is a placeholder for cron job compatibility
-func (s *subscriptionPaymentProcessor) ExpirePendingUpdates(ctx context.Context) error {
-	// Not needed for CreateSubscription flow
-	s.Logger.Infow("expire pending updates called - no-op for create subscription flow")
-	return nil
 }

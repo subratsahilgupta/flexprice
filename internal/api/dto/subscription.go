@@ -150,11 +150,18 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		}
 	}
 
+	// Set defaults for collection method and payment behavior if not provided
+	if r.CollectionMethod == nil {
+		defaultCollectionMethod := types.CollectionMethodChargeAutomatically
+		r.CollectionMethod = &defaultCollectionMethod
+	}
+	if r.PaymentBehavior == nil {
+		defaultPaymentBehavior := types.PaymentBehaviorDefaultActive
+		r.PaymentBehavior = &defaultPaymentBehavior
+	}
+
 	// Validate payment behavior and collection method combination
-	if err := r.validatePaymentBehaviorForCollectionMethod(
-		lo.FromPtrOr(r.CollectionMethod, types.CollectionMethodSendInvoice),
-		lo.FromPtrOr(r.PaymentBehavior, types.PaymentBehaviorDefaultActive),
-	); err != nil {
+	if err := r.validatePaymentBehaviorForCollectionMethod(*r.CollectionMethod, *r.PaymentBehavior); err != nil {
 		return err
 	}
 
@@ -383,16 +390,19 @@ func (r *CreateSubscriptionRequest) Validate() error {
 func (r *CreateSubscriptionRequest) validatePaymentBehaviorForCollectionMethod(collectionMethod types.CollectionMethod, paymentBehavior types.PaymentBehavior) error {
 	switch collectionMethod {
 	case types.CollectionMethodChargeAutomatically:
-		// For charge_automatically, only allow_incomplete and error_if_incomplete are allowed
-		if paymentBehavior != types.PaymentBehaviorAllowIncomplete && paymentBehavior != types.PaymentBehaviorErrorIfIncomplete {
+		// For charge_automatically, allow_incomplete, error_if_incomplete, and default_active are allowed
+		if paymentBehavior != types.PaymentBehaviorAllowIncomplete &&
+			paymentBehavior != types.PaymentBehaviorErrorIfIncomplete &&
+			paymentBehavior != types.PaymentBehaviorDefaultActive {
 			return ierr.NewError("invalid payment behavior for charge_automatically collection method").
-				WithHint("Only allow_incomplete and error_if_incomplete are supported for charge_automatically collection method").
+				WithHint("Only allow_incomplete, error_if_incomplete, and default_active are supported for charge_automatically collection method").
 				WithReportableDetails(map[string]interface{}{
 					"collection_method": collectionMethod,
 					"payment_behavior":  paymentBehavior,
 					"allowed_behaviors": []types.PaymentBehavior{
 						types.PaymentBehaviorAllowIncomplete,
 						types.PaymentBehaviorErrorIfIncomplete,
+						types.PaymentBehaviorDefaultActive,
 					},
 				}).
 				Mark(ierr.ErrValidation)
@@ -429,7 +439,7 @@ func (r *CreateSubscriptionRequest) validatePaymentBehaviorForCollectionMethod(c
 func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscription.Subscription {
 	// Handle legacy collection method and set defaults
 	paymentBehavior := types.PaymentBehaviorDefaultActive
-	collectionMethod := types.CollectionMethodSendInvoice
+	collectionMethod := types.CollectionMethodChargeAutomatically
 
 	// Handle legacy default_incomplete collection method conversion
 	if r.CollectionMethod != nil && string(*r.CollectionMethod) == "default_incomplete" {

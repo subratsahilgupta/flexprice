@@ -274,8 +274,8 @@ func PaymentBehaviorValidator(pb PaymentBehavior) error {
 // CollectionMethod defines the type for the "collection_method" enum field.
 type CollectionMethod string
 
-// CollectionMethodSendInvoice is the default value of the CollectionMethod enum.
-const DefaultCollectionMethod = CollectionMethodSendInvoice
+// CollectionMethodChargeAutomatically is the default value of the CollectionMethod enum.
+const DefaultCollectionMethod = CollectionMethodChargeAutomatically
 
 // CollectionMethod values.
 const (

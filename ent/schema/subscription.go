@@ -138,7 +138,7 @@ func (Subscription) Fields() []ent.Field {
 			Comment("Determines how subscription payments are handled"),
 		field.Enum("collection_method").
 			Values("charge_automatically", "send_invoice").
-			Default("send_invoice").
+			Default("charge_automatically").
 			Comment("Determines how invoices are collected"),
 		field.String("gateway_payment_method_id").
 			SchemaType(map[string]string{
