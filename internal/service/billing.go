@@ -1706,18 +1706,6 @@ func (s *billingService) calculateNeverResetUsage(
 	lineItemPeriodStart := item.GetPeriodStart(periodStart)
 	lineItemPeriodEnd := item.GetPeriodEnd(periodEnd)
 
-	// Skip if line item is not active during this billing period
-	// This handles expired line items or future line items gracefully
-	if lineItemPeriodStart.After(lineItemPeriodEnd) || lineItemPeriodStart.Equal(lineItemPeriodEnd) {
-		s.Logger.Debugw("line item not active during billing period - skipping",
-			"line_item_id", item.ID,
-			"line_item_period_start", lineItemPeriodStart,
-			"line_item_period_end", lineItemPeriodEnd,
-			"period_start", periodStart,
-			"period_end", periodEnd)
-		return decimal.Zero, nil
-	}
-
 	// For never reset entitlements, calculate cumulative usage from subscription start
 	// This maintains the "never reset" behavior while respecting line item boundaries
 
