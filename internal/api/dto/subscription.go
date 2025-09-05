@@ -74,7 +74,7 @@ type CreateSubscriptionRequest struct {
 	// create_prorations means the proration will be calculated and applied.
 	// none means the proration will not be calculated.
 	// This is IGNORED when the billing cycle is anniversary.
-	ProrationBehavior types.ProrationBehavior `json:"proration_behavior"`
+	ProrationBehavior types.ProrationBehavior `json:"proration_behavior,omitempty"`
 
 	// Timezone of the customer.
 	// If not set, the default value is UTC.
@@ -264,15 +264,16 @@ func (r *CreateSubscriptionRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if err := r.ProrationBehavior.Validate(); err != nil {
-		return err
+	if r.ProrationBehavior != "" {
+		if err := r.ProrationBehavior.Validate(); err != nil {
+			return err
+		}
 	}
-
 	if r.Workflow == nil {
 		r.Workflow = lo.ToPtr(types.SubscriptionCreationWorkflow)
 	}
 
-	if r.ProrationBehavior == types.ProrationBehaviorCreateProrations {
+	if r.ProrationBehavior != "" && r.ProrationBehavior == types.ProrationBehaviorCreateProrations {
 		if err := r.validateShouldAllowProrationOnStartDate(r); err != nil {
 			return err
 		}
@@ -293,14 +294,14 @@ func (r *CreateSubscriptionRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	// if r.StartDate != nil && r.StartDate.After(time.Now().UTC()) {
-	// 	return ierr.NewError("start_date cannot be in the future").
-	// 		WithHint("Start date must be in the past or present").
-	// 		WithReportableDetails(map[string]interface{}{
-	// 			"start_date": *r.StartDate,
-	// 		}).
-	// 		Mark(ierr.ErrValidation)
-	// }
+	if r.StartDate != nil && r.StartDate.After(time.Now().UTC()) {
+		return ierr.NewError("start_date cannot be in the future").
+			WithHint("Start date must be in the past or present").
+			WithReportableDetails(map[string]interface{}{
+				"start_date": *r.StartDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
 
 	if r.TrialStart != nil && r.TrialStart.After(*r.StartDate) {
 		return ierr.NewError("trial_start cannot be after start_date").
