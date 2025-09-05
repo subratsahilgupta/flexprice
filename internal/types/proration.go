@@ -60,14 +60,6 @@ const (
 	TerminationReasonExpiration   TerminationReason = "expiration"
 )
 
-// ProrationMode determines how proration is applied.
-type ProrationMode string
-
-const (
-	ProrationModeNone   ProrationMode = "none"
-	ProrationModeActive ProrationMode = "active"
-)
-
 // CancellationType determines when a cancellation takes effect.
 type CancellationType string
 
@@ -76,31 +68,9 @@ const (
 	CancellationTypeEndOfPeriod CancellationType = "end_of_period"
 )
 
-var ProrationModeValues = []ProrationMode{
-	ProrationModeActive,
-	ProrationModeNone,
-}
-
 var CancellationTypeValues = []CancellationType{
 	CancellationTypeImmediate,
 	CancellationTypeEndOfPeriod,
-}
-
-func (p ProrationMode) Validate() error {
-	if !lo.Contains(ProrationModeValues, p) {
-		return ierr.NewError("invalid proration mode").
-			WithHint("Proration mode must be either active or none").
-			WithReportableDetails(map[string]any{
-				"allowed_values": []ProrationMode{ProrationModeActive, ProrationModeNone},
-				"provided_value": p,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-	return nil
-}
-
-func (p ProrationMode) String() string {
-	return string(p)
 }
 
 func (c CancellationType) Validate() error {
