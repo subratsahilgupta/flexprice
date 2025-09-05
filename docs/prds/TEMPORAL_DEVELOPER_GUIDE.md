@@ -24,6 +24,8 @@ This guide will walk you through implementing new workflows and activities in ou
 
 This will help you understand the patterns by seeing them in action!
 
+> **🔄 Sync vs Async Control**: A key feature covered in this guide is how to control whether workflows run synchronously (wait for completion) or asynchronously (return immediately) using the `.Get()` method on workflow execution. This gives you flexibility in how you handle different use cases.
+
 ## 🛠️ Step-by-Step Implementation Guide
 
 Let's implement a **User Data Export** workflow as our example - this is a common use case where you need to export user data asynchronously.
@@ -449,6 +451,78 @@ func (h *UserHandler) ExportUserData(c *gin.Context) {
 }
 ```
 
+### Pattern 1.1: Using .Get() Method for Sync/Async Control
+
+**Control workflow execution mode** using the `.Get()` method on workflow execution.
+
+```go
+// internal/temporal/service.go
+// StartUserDataExportWithMode starts user data export with sync/async control
+func (s *Service) StartUserDataExportWithMode(ctx context.Context, input types.ExportUserDataInput, waitForCompletion bool) (*types.ExportUserDataOutput, error) {
+    tenantID := types.GetTenantID(ctx)
+    environmentID := types.GetEnvironmentID(ctx)
+
+    workflowID := fmt.Sprintf("user-export-%s-%d", tenantID, time.Now().Unix())
+
+    workflowOptions := client.StartWorkflowOptions{
+        ID:        workflowID,
+        TaskQueue: s.cfg.TaskQueue,
+    }
+
+    // Start workflow
+    we, err := s.client.Client.ExecuteWorkflow(ctx, workflowOptions, string(types.UserDataExportWorkflow), models.UserDataExportWorkflowInput{
+        TenantID:      tenantID,
+        EnvironmentID: environmentID,
+        UserFilters:   input.UserFilters,
+        Format:        input.Format,
+        EmailNotify:   input.EmailNotify,
+    })
+    if err != nil {
+        return nil, err
+    }
+
+    if waitForCompletion {
+        // SYNC MODE: Wait for completion using .Get()
+        var result types.ExportUserDataOutput
+        if err := we.Get(ctx, &result); err != nil {
+            return nil, err
+        }
+        return &result, nil
+    } else {
+        // ASYNC MODE: Return immediately with workflow info
+        return &types.ExportUserDataOutput{
+            ExportID: workflowID,
+            Status:   "started",
+        }, nil
+    }
+}
+
+// Usage in HTTP handler
+func (h *UserHandler) ExportUserDataSync(c *gin.Context) {
+    // ... validation code ...
+
+    // SYNC: Wait for completion
+    result, err := h.temporalService.StartUserDataExportWithMode(c.Request.Context(), input, true)
+    if err != nil {
+        c.Error(err)
+        return
+    }
+    c.JSON(http.StatusOK, result)
+}
+
+func (h *UserHandler) ExportUserDataAsync(c *gin.Context) {
+    // ... validation code ...
+
+    // ASYNC: Return immediately
+    result, err := h.temporalService.StartUserDataExportWithMode(c.Request.Context(), input, false)
+    if err != nil {
+        c.Error(err)
+        return
+    }
+    c.JSON(http.StatusAccepted, result)
+}
+```
+
 ### Pattern 2: HTTP Handler Trigger (Asynchronous)
 
 **Trigger from HTTP endpoint** - returns immediately, workflow runs in background.
@@ -674,6 +748,30 @@ RetryPolicy: &temporal.RetryPolicy{
 workflowID := fmt.Sprintf("your-operation-%s-%d", identifier, time.Now().Unix())
 ```
 
+### 6. Sync vs Async Execution Control
+
+```go
+// Use .Get() method to control execution mode
+we, err := client.ExecuteWorkflow(ctx, options, workflowName, input)
+if err != nil {
+    return err
+}
+
+// SYNC: Wait for completion
+var result YourResultType
+if err := we.Get(ctx, &result); err != nil {
+    return err
+}
+return &result, nil
+
+// ASYNC: Return immediately
+return &WorkflowInfo{
+    WorkflowID: we.GetID(),
+    RunID:      we.GetRunID(),
+    Status:     "started",
+}, nil
+```
+
 ## 🔧 Troubleshooting
 
 ### Common Issues
@@ -727,6 +825,93 @@ func (h *UserHandler) ExportUserDataSync(c *gin.Context) {
         return
     }
     c.JSON(http.StatusOK, result)
+}
+```
+
+### Example 1.1: Flexible Sync/Async Control
+
+```go
+// Service method that supports both sync and async modes
+func (s *Service) StartUserDataExportFlexible(ctx context.Context, input types.ExportUserDataInput, mode string) (*types.ExportUserDataOutput, error) {
+    tenantID := types.GetTenantID(ctx)
+    environmentID := types.GetEnvironmentID(ctx)
+
+    workflowID := fmt.Sprintf("user-export-%s-%d", tenantID, time.Now().Unix())
+
+    workflowOptions := client.StartWorkflowOptions{
+        ID:        workflowID,
+        TaskQueue: s.cfg.TaskQueue,
+    }
+
+    we, err := s.client.Client.ExecuteWorkflow(ctx, workflowOptions, string(types.UserDataExportWorkflow), models.UserDataExportWorkflowInput{
+        TenantID:      tenantID,
+        EnvironmentID: environmentID,
+        UserFilters:   input.UserFilters,
+        Format:        input.Format,
+        EmailNotify:   input.EmailNotify,
+    })
+    if err != nil {
+        return nil, err
+    }
+
+    switch mode {
+    case "sync":
+        // Wait for completion using .Get()
+        var result types.ExportUserDataOutput
+        if err := we.Get(ctx, &result); err != nil {
+            return nil, err
+        }
+        return &result, nil
+
+    case "async":
+        // Return immediately
+        return &types.ExportUserDataOutput{
+            ExportID: workflowID,
+            Status:   "started",
+        }, nil
+
+    default:
+        return nil, ierr.NewError("invalid mode: %s", mode).Mark(ierr.ErrValidation)
+    }
+}
+
+// HTTP handlers using the flexible service
+func (h *UserHandler) ExportUserDataSync(c *gin.Context) {
+    var req dto.ExportUserDataRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.Error(ierr.WithError(err).Mark(ierr.ErrValidation))
+        return
+    }
+
+    result, err := h.temporalService.StartUserDataExportFlexible(c.Request.Context(), types.ExportUserDataInput{
+        UserFilters: req.Filters,
+        Format:      req.Format,
+        EmailNotify: req.EmailNotify,
+    }, "sync")
+    if err != nil {
+        c.Error(err)
+        return
+    }
+    c.JSON(http.StatusOK, result)
+}
+
+func (h *UserHandler) ExportUserDataAsync(c *gin.Context) {
+    var req dto.ExportUserDataRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.Error(ierr.WithError(err).Mark(ierr.ErrValidation))
+        return
+    }
+
+    result, err := h.temporalService.StartUserDataExportFlexible(c.Request.Context(), types.ExportUserDataInput{
+        UserFilters: req.Filters,
+        Format:      req.Format,
+        EmailNotify: req.EmailNotify,
+    }, "async")
+    if err != nil {
+        c.Error(err)
+        return
+    }
+    c.JSON(http.StatusAccepted, result)
 }
 ```
 
@@ -830,9 +1015,81 @@ See the complete flow diagram in `temporal_flow_diagram.md` for a detailed visua
 
 This guide should give you everything you need to implement new workflows and activities in our Temporal-based system! 🎉
 
+## 🔄 Quick Reference: Sync vs Async Control
+
+### The `.Get()` Method
+
+The `.Get()` method on workflow execution is the key to controlling sync vs async behavior:
+
+```go
+// Start workflow
+we, err := client.ExecuteWorkflow(ctx, options, workflowName, input)
+if err != nil {
+    return err
+}
+
+// SYNC: Wait for completion
+var result YourResultType
+if err := we.Get(ctx, &result); err != nil {
+    return err
+}
+// Workflow completed, result available
+
+// ASYNC: Return immediately
+// Don't call we.Get() - workflow runs in background
+// Return workflow info instead
+```
+
+### When to Use Each Mode
+
+| Mode      | Use Case                    | Response Time    | Resource Usage         |
+| --------- | --------------------------- | ---------------- | ---------------------- |
+| **Sync**  | User needs immediate result | Slower (waits)   | Higher (blocks thread) |
+| **Async** | Background processing       | Fast (immediate) | Lower (non-blocking)   |
+
+### Common Patterns
+
+```go
+// Pattern 1: Simple sync/async flag
+func StartWorkflow(ctx context.Context, input Input, wait bool) (*Result, error) {
+    we, err := client.ExecuteWorkflow(ctx, options, workflowName, input)
+    if err != nil {
+        return nil, err
+    }
+
+    if wait {
+        var result Result
+        return &result, we.Get(ctx, &result)
+    }
+
+    return &Result{WorkflowID: we.GetID(), Status: "started"}, nil
+}
+
+// Pattern 2: Mode-based control
+func StartWorkflowWithMode(ctx context.Context, input Input, mode string) (*Result, error) {
+    we, err := client.ExecuteWorkflow(ctx, options, workflowName, input)
+    if err != nil {
+        return nil, err
+    }
+
+    switch mode {
+    case "sync":
+        var result Result
+        return &result, we.Get(ctx, &result)
+    case "async":
+        return &Result{WorkflowID: we.GetID(), Status: "started"}, nil
+    default:
+        return nil, errors.New("invalid mode")
+    }
+}
+```
+
+---
+
 **Next Steps:**
 
 1. Study the Plan Price Sync implementation
 2. Follow the step-by-step guide above
 3. Use the flow diagram as a reference
 4. Start with a simple workflow and build up complexity
+5. **Use the `.Get()` method to control sync vs async execution based on your use case**
