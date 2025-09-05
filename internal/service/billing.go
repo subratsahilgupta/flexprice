@@ -1602,12 +1602,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 					}
 
 					// Calculate total cumulative usage from subscription start
-					totalUsage := decimal.Zero
-					for _, result := range totalUsageResult.Results {
-						totalUsage = totalUsage.Add(result.Value)
-					}
-
-					usageByFeature[featureID] = totalUsage
+					usageByFeature[featureID] = totalUsageResult.Value
 
 					s.Logger.Debugw("using cumulative usage for never reset feature summary",
 						"customer_id", customerID,
@@ -1617,7 +1612,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 						"subscription_id", subscriptionID,
 						"subscription_start", sub.StartDate,
 						"current_period_end", sub.CurrentPeriodEnd,
-						"total_cumulative_usage", totalUsage)
+						"total_cumulative_usage", totalUsageResult.Value)
 				} else {
 					currentUsage := usageByFeature[featureID]
 					usageByFeature[featureID] = currentUsage.Add(decimal.NewFromFloat(charge.Quantity))
