@@ -772,7 +772,7 @@ func (s *subscriptionService) CancelSubscription(
 				PeriodStart:    subscription.CurrentPeriodStart,
 				PeriodEnd:      effectiveDate,
 				ReferencePoint: types.ReferencePointCancel,
-			}, paymentParams, types.InvoiceFlowManual)
+			}, paymentParams, types.InvoiceFlowCancel)
 			if err != nil {
 				return err
 			}
