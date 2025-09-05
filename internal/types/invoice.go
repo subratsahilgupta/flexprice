@@ -57,6 +57,8 @@ const (
 	InvoiceFlowRenewal InvoiceFlowType = "renewal"
 	// InvoiceFlowManual represents manual invoice creation flow - default behavior
 	InvoiceFlowManual InvoiceFlowType = "manual"
+	// InvoiceFlowCancel represents subscription cancellation flow - uses subscription's payment method and behavior but doesn't error on manual+renewal
+	InvoiceFlowCancel InvoiceFlowType = "cancel"
 )
 
 func (f InvoiceFlowType) String() string {
@@ -68,6 +70,7 @@ func (f InvoiceFlowType) Validate() error {
 		InvoiceFlowSubscriptionCreation,
 		InvoiceFlowRenewal,
 		InvoiceFlowManual,
+		InvoiceFlowCancel,
 	}
 	if !lo.Contains(allowed, f) {
 		return ierr.NewError("invalid invoice flow type").
