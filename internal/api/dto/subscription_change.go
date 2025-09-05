@@ -22,6 +22,18 @@ type SubscriptionChangeRequest struct {
 
 	// metadata contains additional key-value pairs for storing extra information
 	Metadata map[string]string `json:"metadata,omitempty"`
+
+	// billing_cadence is the billing cadence for the new subscription
+	BillingCadence types.BillingCadence `json:"billing_cadence" validate:"required" binding:"required"`
+
+	// billing_period is the billing period for the new subscription
+	BillingPeriod types.BillingPeriod `json:"billing_period" validate:"required" binding:"required"`
+
+	// billing_period_count is the billing period count for the new subscription
+	BillingPeriodCount int `json:"billing_period_count" validate:"required" binding:"required"`
+
+	// billing_cycle is the billing cycle for the new subscription
+	BillingCycle types.BillingCycle `json:"billing_cycle" validate:"required" binding:"required"`
 }
 
 // Validate validates the subscription change request

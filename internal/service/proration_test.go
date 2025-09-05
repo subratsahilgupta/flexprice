@@ -386,8 +386,8 @@ func (s *ProrationServiceSuite) TestCalculateSubscriptionProration() {
 				Prices: map[string]*price.Price{
 					s.testData.prices.standard.ID: s.testData.prices.standard,
 				},
-				ProrationMode: types.ProrationModeNone,
-				BillingCycle:  types.BillingCycleCalendar,
+				ProrationBehavior: types.ProrationBehaviorNone,
+				BillingCycle:      types.BillingCycleCalendar,
 			},
 			want: &proration.SubscriptionProrationResult{
 				Currency:             "USD",
@@ -419,8 +419,8 @@ func (s *ProrationServiceSuite) TestCalculateSubscriptionProration() {
 				Prices: map[string]*price.Price{
 					s.testData.prices.standard.ID: s.testData.prices.standard,
 				},
-				ProrationMode: types.ProrationModeActive,
-				BillingCycle:  types.BillingCycleAnniversary,
+				ProrationBehavior: types.ProrationBehaviorCreateProrations,
+				BillingCycle:      types.BillingCycleAnniversary,
 			},
 			want: &proration.SubscriptionProrationResult{
 				Currency:             "USD",
@@ -451,9 +451,9 @@ func (s *ProrationServiceSuite) TestCalculateSubscriptionProration() {
 						s.testData.lineItems.standard,
 					},
 				},
-				Prices:        nil,
-				ProrationMode: types.ProrationModeActive,
-				BillingCycle:  types.BillingCycleCalendar,
+				Prices:            nil,
+				ProrationBehavior: types.ProrationBehaviorCreateProrations,
+				BillingCycle:      types.BillingCycleCalendar,
 			},
 			want:    nil,
 			wantErr: true,

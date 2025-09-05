@@ -1438,7 +1438,7 @@ var (
 		{Name: "collection_method", Type: field.TypeEnum, Enums: []string{"charge_automatically", "send_invoice"}, Default: "charge_automatically"},
 		{Name: "gateway_payment_method_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "customer_timezone", Type: field.TypeString, Default: "UTC"},
-		{Name: "proration_mode", Type: field.TypeString, Default: "none"},
+		{Name: "proration_behavior", Type: field.TypeString, Default: "none"},
 	}
 	// SubscriptionsTable holds the schema information for the "subscriptions" table.
 	SubscriptionsTable = &schema.Table{

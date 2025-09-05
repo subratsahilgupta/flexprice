@@ -540,39 +540,8 @@ func (s *subscriptionChangeService) executeChange(
 	req dto.SubscriptionChangeRequest,
 	effectiveDate time.Time,
 ) (*dto.SubscriptionChangeExecuteResponse, error) {
-	logger := s.serviceParams.Logger.With(
-		zap.String("subscription_id", currentSub.ID),
-		zap.String("target_plan_id", targetPlan.ID),
-		zap.String("change_type", string(changeType)),
-	)
 
-	// Step 1: Calculate cancellation proration for old subscription
-	var cancellationProrationResult *proration.SubscriptionProrationResult
-	var prorationDetails *dto.ProrationDetails
-	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations {
-		// Use the cancellation proration method to calculate credits for the old subscription
-		var err error
-		cancellationProrationResult, err = s.prorationService.CalculateSubscriptionCancellationProration(
-			ctx,
-			currentSub,
-			lineItems,
-			types.CancellationTypeImmediate, // Treat subscription change as immediate cancellation
-			effectiveDate,
-			"subscription_change",
-			req.ProrationBehavior,
-		)
-		if err != nil {
-			return nil, ierr.WithError(err).
-				WithHint("Failed to calculate cancellation proration for old subscription").
-				Mark(ierr.ErrSystem)
-		}
-
-		// Convert cancellation proration result to DTO format for response
-		prorationDetails = s.convertCancellationProrationToDetails(cancellationProrationResult, effectiveDate, currentSub)
-	}
-
-	// Step 2: Archive the old subscription
-
+	// Step 1: Archive the old subscription
 	subscriptionService := NewSubscriptionService(s.serviceParams)
 	archivedSub, err := subscriptionService.CancelSubscription(ctx, currentSub.ID, &dto.CancelSubscriptionRequest{
 		CancellationType: types.CancellationTypeImmediate,
@@ -582,37 +551,10 @@ func (s *subscriptionChangeService) executeChange(
 		return nil, err
 	}
 
-	// Step 3: Prepare credit grants for proration credits (before creating new subscription)
-	var creditGrantRequests []dto.CreateCreditGrantRequest
-	if cancellationProrationResult != nil {
-		creditGrantRequests = s.prepareProrationCreditGrantRequests(cancellationProrationResult, effectiveDate)
-	}
-
-	// Step 4: Create new subscription with credit grants
-	newSub, err := s.createNewSubscription(ctx, currentSub, lineItems, targetPlan, req, creditGrantRequests, effectiveDate)
+	// Step 2: Create new subscription with credit grants
+	newSub, err := s.createNewSubscription(ctx, currentSub, lineItems, targetPlan, req, effectiveDate)
 	if err != nil {
 		return nil, err
-	}
-
-	// Get created credit grants if any were requested
-	var creditGrants []*dto.CreditGrantResponse
-	if len(creditGrantRequests) > 0 {
-		// The credit grants were created during subscription creation
-		// Fetch them for the response
-		creditGrantService := NewCreditGrantService(s.serviceParams)
-		creditGrantsResponse, err := creditGrantService.GetCreditGrantsBySubscription(ctx, newSub.ID)
-		if err != nil {
-			logger.Error("failed to fetch created credit grants", zap.Error(err))
-		} else {
-			// Filter to only include the credit grants we just created (by matching metadata)
-			for _, cg := range creditGrantsResponse.Items {
-				if cg.CreditGrant.Metadata != nil {
-					if subscriptionChange, exists := cg.CreditGrant.Metadata["subscription_change"]; exists && subscriptionChange == "true" {
-						creditGrants = append(creditGrants, cg)
-					}
-				}
-			}
-		}
 	}
 
 	response := &dto.SubscriptionChangeExecuteResponse{
@@ -629,37 +571,12 @@ func (s *subscriptionChangeService) executeChange(
 			BillingAnchor:      newSub.BillingAnchor,
 			CreatedAt:          newSub.CreatedAt,
 		},
-		ChangeType:       changeType,
-		ProrationApplied: prorationDetails,
-		CreditGrants:     creditGrants,
-		EffectiveDate:    effectiveDate,
-		Metadata:         req.Metadata,
+		ChangeType:    changeType,
+		EffectiveDate: effectiveDate,
+		Metadata:      req.Metadata,
 	}
 
 	return response, nil
-}
-
-// archiveSubscription marks the current subscription as cancelled/archived
-func (s *subscriptionChangeService) archiveSubscription(
-	ctx context.Context,
-	currentSub *subscription.Subscription,
-	effectiveDate time.Time,
-) (*subscription.Subscription, error) {
-	// Update subscription status to cancelled
-	currentSub.SubscriptionStatus = types.SubscriptionStatusCancelled
-	currentSub.CancelledAt = &effectiveDate
-	currentSub.UpdatedAt = time.Now()
-	currentSub.UpdatedBy = types.GetUserID(ctx)
-	currentSub.Status = types.StatusArchived
-
-	err := s.serviceParams.SubRepo.Update(ctx, currentSub)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to archive old subscription").
-			Mark(ierr.ErrDatabase)
-	}
-
-	return currentSub, nil
 }
 
 // createNewSubscription creates a new subscription with the target plan using the existing subscription service
@@ -669,25 +586,8 @@ func (s *subscriptionChangeService) createNewSubscription(
 	oldLineItems []*subscription.SubscriptionLineItem,
 	targetPlan *plan.Plan,
 	req dto.SubscriptionChangeRequest,
-	creditGrantRequests []dto.CreateCreditGrantRequest,
 	effectiveDate time.Time,
 ) (*subscription.Subscription, error) {
-
-	prices, err := s.serviceParams.PriceRepo.GetByPlanID(ctx, targetPlan.ID)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to get prices for target plan").
-			Mark(ierr.ErrDatabase)
-	}
-	if len(prices) == 0 {
-		return nil, ierr.NewError("Target plan has no prices").
-			WithHint("Plan ID: " + targetPlan.ID).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Use the first available price to determine billing information
-	// TODO: In the future, we might want to match the current subscription's currency or other criteria
-	targetPrice := prices[0]
 
 	// Build create subscription request based on current subscription but with target plan's billing info
 	createSubReq := dto.CreateSubscriptionRequest{
@@ -695,19 +595,19 @@ func (s *subscriptionChangeService) createNewSubscription(
 		PlanID:             targetPlan.ID,
 		Currency:           currentSub.Currency,
 		LookupKey:          currentSub.LookupKey,
-		BillingCadence:     targetPrice.BillingCadence,
-		BillingPeriod:      targetPrice.BillingPeriod,
-		BillingPeriodCount: targetPrice.BillingPeriodCount,
-		BillingCycle:       currentSub.BillingCycle,
-		StartDate:          lo.ToPtr(currentSub.StartDate),
-		EndDate:            currentSub.EndDate,
+		BillingCadence:     req.BillingCadence,
+		BillingPeriod:      req.BillingPeriod,
+		BillingPeriodCount: req.BillingPeriodCount,
+		BillingCycle:       req.BillingCycle,
+		BillingAnchor:      &currentSub.BillingAnchor,
+		StartDate:          &effectiveDate,
+		EndDate:            nil,
 		Metadata:           req.Metadata,
-		ProrationMode:      types.ProrationModeActive,
+		ProrationBehavior:  req.ProrationBehavior,
 		CustomerTimezone:   currentSub.CustomerTimezone,
-		CreditGrants:       creditGrantRequests,
 		CommitmentAmount:   currentSub.CommitmentAmount,
 		OverageFactor:      currentSub.OverageFactor,
-		LineItemsStartDate: lo.ToPtr(effectiveDate),
+		Workflow:           lo.ToPtr(types.SubscriptionChangeWorkflow),
 	}
 
 	// Use the existing subscription service to create the new subscription

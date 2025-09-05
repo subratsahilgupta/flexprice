@@ -134,7 +134,7 @@ func (s *prorationService) CalculateSubscriptionProration(
 	logger.Infow("starting subscription proration calculation",
 		"subscription_id", params.Subscription.ID,
 		"billing_cycle", params.BillingCycle,
-		"proration_mode", params.ProrationMode,
+		"proration_behavior", params.ProrationBehavior,
 		"line_items_count", len(params.Subscription.LineItems))
 
 	result := &proration.SubscriptionProrationResult{
@@ -144,11 +144,11 @@ func (s *prorationService) CalculateSubscriptionProration(
 
 	// Only proceed if proration is needed
 	if params.BillingCycle != types.BillingCycleCalendar ||
-		params.ProrationMode != types.ProrationModeActive {
+		params.ProrationBehavior == types.ProrationBehaviorNone {
 		logger.Infow("skipping proration - not needed",
 			"subscription_id", params.Subscription.ID,
 			"billing_cycle", params.BillingCycle,
-			"proration_mode", params.ProrationMode)
+			"proration_behavior", params.ProrationBehavior)
 		return result, nil
 	}
 
@@ -177,7 +177,7 @@ func (s *prorationService) CalculateSubscriptionProration(
 			item,
 			price,
 			types.ProrationActionAddItem,
-			types.ProrationBehaviorCreateProrations,
+			params.ProrationBehavior,
 		)
 		if err != nil {
 			logger.Errorw("failed to create proration parameters for line item",
@@ -510,106 +510,62 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 	action types.ProrationAction,
 	behavior types.ProrationBehavior,
 ) (proration.ProrationParams, error) {
-	// periodStart, err := types.PreviousBillingDate(
-	// 	subscription.BillingAnchor,
-	// 	subscription.BillingPeriodCount,
-	// 	subscription.BillingPeriod,
-	// )
-	// if err != nil {
-	// 	// Fallback to current period start if calculation fails
-	// 	s.serviceParams.Logger.Warnw("failed to calculate period start for proration, using fallback",
-	// 		"error", err,
-	// 		"subscription_id", subscription.ID,
-	// 		"billing_anchor", subscription.BillingAnchor,
-	// 		"billing_period", subscription.BillingPeriod,
-	// 		"billing_period_count", subscription.BillingPeriodCount)
-	// 	periodStart = subscription.CurrentPeriodStart
-	// }
 
-	prorationDate := time.Now()
+	/*
+		Why are we calculating the previous billing date?
+		We need it to determine the start of the current billing period
+		so we can calculate the total number of days in that period.
 
-	if prorationDate.Before(subscription.CurrentPeriodStart) {
-		prorationDate = subscription.CurrentPeriodStart
+		Example:
+		- Subscription created on 15 Aug 2025
+		- Billing period: monthly
+		- Billing anchor: 1st of the month
+
+		In this case, the period start is 1 Aug 2025,
+		which defines the full billing duration of 31 days.
+	*/
+	var periodStart time.Time
+	if subscription.BillingCycle == types.BillingCycleAnniversary {
+		periodStart = subscription.BillingAnchor
+	} else {
+		previousBillingDate, err := types.PreviousBillingDate(
+			subscription.BillingAnchor,
+			subscription.BillingPeriodCount,
+			subscription.BillingPeriod,
+		)
+		if err != nil {
+			// Fallback to current period start if calculation fails
+			s.serviceParams.Logger.Warnw("failed to calculate period start for proration, using fallback",
+				"error", err,
+				"subscription_id", subscription.ID,
+				"billing_anchor", subscription.BillingAnchor,
+				"billing_period", subscription.BillingPeriod,
+				"billing_period_count", subscription.BillingPeriodCount)
+			periodStart = subscription.CurrentPeriodStart
+		} else {
+			periodStart = previousBillingDate
+		}
 	}
-
 	return proration.ProrationParams{
 		SubscriptionID:        subscription.ID,
 		LineItemID:            item.ID,
 		PlanPayInAdvance:      price.InvoiceCadence == types.InvoiceCadenceAdvance,
-		CurrentPeriodStart:    subscription.CurrentPeriodStart,
+		CurrentPeriodStart:    periodStart,
 		CurrentPeriodEnd:      subscription.CurrentPeriodEnd.Add(time.Second * -1),
 		Action:                action,
 		NewPriceID:            item.PriceID,
 		NewQuantity:           item.Quantity,
 		NewPricePerUnit:       price.Amount,
-		ProrationDate:         prorationDate,
+		ProrationDate:         subscription.StartDate,
 		ProrationBehavior:     behavior,
 		CustomerTimezone:      subscription.CustomerTimezone,
 		OriginalAmountPaid:    decimal.Zero,
 		PreviousCreditsIssued: decimal.Zero,
-		ProrationStrategy:     types.StrategySecondBased,
+		ProrationStrategy:     types.StrategyDayBased,
 		Currency:              price.Currency,
 		PlanDisplayName:       item.PlanDisplayName,
 	}, nil
 }
-
-// TODO: Implement getOriginalAmountPaidForLineItem for credit capping
-// This function should retrieve the original amount paid for a line item in the current billing period
-// Critical for preventing over-crediting customers during multiple subscription changes
-//
-// Implementation should:
-// 1. Query invoice_line_items table for paid invoices in current period
-// 2. Sum positive amounts (charges) for the specific line item
-// 3. Handle partial payments and payment failures
-// 4. Return actual amount customer paid, not just calculated amount
-//
-// Example query:
-// SELECT SUM(ili.amount) FROM invoice_line_items ili
-// JOIN invoices i ON ili.invoice_id = i.id
-// WHERE i.subscription_id = ? AND ili.line_item_id = ?
-//   AND i.period_start >= ? AND i.status = 'paid' AND ili.amount > 0
-
-/*
-func (s *prorationService) getOriginalAmountPaidForLineItem(
-	ctx context.Context,
-	subscriptionID string,
-	lineItemID string,
-	periodStart time.Time,
-) (decimal.Decimal, error) {
-	// Implementation needed for credit capping
-	return decimal.Zero, nil
-}
-*/
-
-// TODO: Implement getPreviousCreditsForLineItem for credit capping
-// This function should get any credits already issued for this line item in the current period
-// Essential for preventing duplicate credits during multiple subscription changes
-//
-// Implementation should:
-// 1. Query invoice_line_items for credit entries (negative amounts)
-// 2. Filter by line item, subscription, and date range
-// 3. Sum absolute values of credit amounts
-// 4. Include proration credits, refunds, and adjustments
-//
-// Example query:
-// SELECT SUM(ABS(ili.amount)) FROM invoice_line_items ili
-// JOIN invoices i ON ili.invoice_id = i.id
-// WHERE i.subscription_id = ? AND ili.line_item_id = ?
-//   AND ili.amount < 0 AND ili.type IN ('proration_credit', 'refund')
-//   AND i.created_at >= ? AND i.created_at < ?
-
-/*
-func (s *prorationService) getPreviousCreditsForLineItem(
-	ctx context.Context,
-	subscriptionID string,
-	lineItemID string,
-	periodStart time.Time,
-	beforeDate time.Time,
-) (decimal.Decimal, error) {
-	// Implementation needed for credit capping
-	return decimal.Zero, nil
-}
-*/
 
 // isRefundEligible determines if a customer is eligible for refund/credit based on cancellation scenario
 func (s *prorationService) isRefundEligible(

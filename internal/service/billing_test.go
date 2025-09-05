@@ -96,6 +96,7 @@ func (s *BillingServiceSuite) setupService() {
 		SettingsRepo:          s.GetStores().SettingsRepo,
 		EventPublisher:        s.GetPublisher(),
 		WebhookPublisher:      s.GetWebhookPublisher(),
+		ProrationCalculator:   s.GetCalculator(),
 	})
 }
 
@@ -1002,25 +1003,26 @@ func (s *BillingServiceSuite) TestCalculateUsageChargesWithEntitlements() {
 
 	// Initialize billing service
 	s.service = NewBillingService(ServiceParams{
-		Logger:          s.GetLogger(),
-		Config:          s.GetConfig(),
-		DB:              s.GetDB(),
-		SubRepo:         s.GetStores().SubscriptionRepo,
-		PlanRepo:        s.GetStores().PlanRepo,
-		PriceRepo:       s.GetStores().PriceRepo,
-		EventRepo:       s.GetStores().EventRepo,
-		MeterRepo:       s.GetStores().MeterRepo,
-		CustomerRepo:    s.GetStores().CustomerRepo,
-		InvoiceRepo:     s.GetStores().InvoiceRepo,
-		EntitlementRepo: s.GetStores().EntitlementRepo,
-		EnvironmentRepo: s.GetStores().EnvironmentRepo,
-		FeatureRepo:     s.GetStores().FeatureRepo,
-		TenantRepo:      s.GetStores().TenantRepo,
-		UserRepo:        s.GetStores().UserRepo,
-		AuthRepo:        s.GetStores().AuthRepo,
-		WalletRepo:      s.GetStores().WalletRepo,
-		PaymentRepo:     s.GetStores().PaymentRepo,
-		EventPublisher:  s.GetPublisher(),
+		Logger:              s.GetLogger(),
+		Config:              s.GetConfig(),
+		DB:                  s.GetDB(),
+		SubRepo:             s.GetStores().SubscriptionRepo,
+		PlanRepo:            s.GetStores().PlanRepo,
+		PriceRepo:           s.GetStores().PriceRepo,
+		EventRepo:           s.GetStores().EventRepo,
+		MeterRepo:           s.GetStores().MeterRepo,
+		CustomerRepo:        s.GetStores().CustomerRepo,
+		InvoiceRepo:         s.GetStores().InvoiceRepo,
+		EntitlementRepo:     s.GetStores().EntitlementRepo,
+		EnvironmentRepo:     s.GetStores().EnvironmentRepo,
+		FeatureRepo:         s.GetStores().FeatureRepo,
+		TenantRepo:          s.GetStores().TenantRepo,
+		UserRepo:            s.GetStores().UserRepo,
+		AuthRepo:            s.GetStores().AuthRepo,
+		WalletRepo:          s.GetStores().WalletRepo,
+		PaymentRepo:         s.GetStores().PaymentRepo,
+		EventPublisher:      s.GetPublisher(),
+		ProrationCalculator: s.GetCalculator(),
 	})
 
 	tests := []struct {

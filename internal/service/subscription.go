@@ -166,7 +166,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	}
 
 	// TODO: handle customer timezone here
-	if sub.BillingCycle == types.BillingCycleCalendar {
+	if req.BillingAnchor != nil {
+		sub.BillingAnchor = *req.BillingAnchor
+	} else if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod)
 	} else {
 		// default to start date for anniversary billing
@@ -224,11 +226,6 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			item.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
 		}
 
-		lineItemStartDate := sub.StartDate
-		if price.Type == types.PRICE_TYPE_USAGE && req.LineItemsStartDate != nil {
-			lineItemStartDate = *req.LineItemsStartDate
-		}
-
 		item.SubscriptionID = sub.ID
 		item.PriceType = price.Type
 		item.EntityID = plan.ID
@@ -241,7 +238,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		item.TrialPeriod = price.TrialPeriod
 		item.PriceUnitID = price.PriceUnitID
 		item.PriceUnit = price.PriceUnit
-		item.StartDate = lineItemStartDate
+		item.StartDate = sub.StartDate
 		if sub.EndDate != nil {
 			item.EndDate = *sub.EndDate
 		}
@@ -751,7 +748,7 @@ func (s *subscriptionService) CancelSubscription(
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 
 		// Step 7: Calculate proration using unified function
-		if req.ProrationBehavior != types.ProrationBehaviorNone {
+		if req.ProrationBehavior == types.ProrationBehaviorCreateProrations {
 			prorationService := NewProrationService(s.ServiceParams)
 			prorationResult, err := prorationService.CalculateSubscriptionCancellationProration(
 				ctx, subscription, lineItems, req.CancellationType, effectiveDate, req.Reason, req.ProrationBehavior)
@@ -3782,7 +3779,6 @@ func (s *subscriptionService) determineEffectiveDate(
 	cancellationType types.CancellationType,
 ) (time.Time, error) {
 	now := time.Now().UTC()
-	// now := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
 
 	switch cancellationType {
 	case types.CancellationTypeImmediate:
@@ -4010,7 +4006,7 @@ func (s *subscriptionService) calculateCreditAmount(creditItems []proration.Pror
 	total := decimal.Zero
 	for _, item := range creditItems {
 		if item.IsCredit {
-			total = total.Add(item.Amount)
+			total = total.Add(item.Amount.Abs())
 		}
 	}
 	return total
