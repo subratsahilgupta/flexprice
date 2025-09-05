@@ -15,6 +15,7 @@ import (
 // SubscriptionPaymentProcessor handles payment processing for subscriptions
 type SubscriptionPaymentProcessor interface {
 	HandlePaymentBehavior(ctx context.Context, subscription *subscription.Subscription, invoice *dto.InvoiceResponse, behavior types.PaymentBehavior, flowType types.InvoiceFlowType) error
+	ProcessCreditsPaymentForInvoice(ctx context.Context, inv *dto.InvoiceResponse, sub *subscription.Subscription) decimal.Decimal
 }
 
 type subscriptionPaymentProcessor struct {
@@ -61,6 +62,23 @@ func (s *subscriptionPaymentProcessor) HandlePaymentBehavior(
 		"collection_method", sub.CollectionMethod,
 		"payment_behavior", behavior,
 	)
+
+	// For manual flows, just attempt payment without changing subscription status
+	if flowType == types.InvoiceFlowManual {
+		s.Logger.Infow("manual flow - attempting payment without subscription status change",
+			"subscription_id", sub.ID,
+			"invoice_id", inv.ID,
+			"amount_due", inv.AmountDue,
+		)
+		// Just attempt payment, don't change subscription status
+		result := s.processPayment(ctx, sub, inv)
+		s.Logger.Infow("manual flow payment result",
+			"subscription_id", sub.ID,
+			"success", result.Success,
+			"amount_paid", result.AmountPaid,
+		)
+		return nil
+	}
 
 	// Handle different collection methods
 	switch types.CollectionMethod(sub.CollectionMethod) {
@@ -464,8 +482,12 @@ func (s *subscriptionPaymentProcessor) processCreditsPayment(
 	sub *subscription.Subscription,
 	inv *dto.InvoiceResponse,
 ) decimal.Decimal {
+	subscriptionID := ""
+	if sub != nil {
+		subscriptionID = sub.ID
+	}
 	s.Logger.Infow("processing credits payment",
-		"subscription_id", sub.ID,
+		"subscription_id", subscriptionID,
 		"invoice_id", inv.ID,
 		"amount_due", inv.AmountDue,
 	)
@@ -484,31 +506,44 @@ func (s *subscriptionPaymentProcessor) processCreditsPayment(
 
 	// Use wallet payment service to process payment
 	walletPaymentService := NewWalletPaymentService(*s.ServiceParams)
+	metadata := types.Metadata{
+		"payment_source": "subscription_auto_payment",
+	}
+	if sub != nil {
+		metadata["subscription_id"] = sub.ID
+	}
+
 	amountPaid, err := walletPaymentService.ProcessInvoicePaymentWithWallets(ctx, domainInvoice, WalletPaymentOptions{
-		Strategy:        PromotionalFirstStrategy,
-		MaxWalletsToUse: 5,
-		AdditionalMetadata: types.Metadata{
-			"subscription_id": sub.ID,
-			"payment_source":  "subscription_auto_payment",
-		},
+		Strategy:           PromotionalFirstStrategy,
+		MaxWalletsToUse:    5,
+		AdditionalMetadata: metadata,
 	})
 
 	if err != nil {
 		s.Logger.Errorw("credits payment failed",
 			"error", err,
-			"subscription_id", sub.ID,
+			"subscription_id", subscriptionID,
 			"invoice_id", inv.ID,
 		)
 		return decimal.Zero
 	}
 
 	s.Logger.Infow("credits payment completed",
-		"subscription_id", sub.ID,
+		"subscription_id", subscriptionID,
 		"invoice_id", inv.ID,
 		"amount_paid", amountPaid,
 	)
 
 	return amountPaid
+}
+
+// ProcessCreditsPaymentForInvoice is a public wrapper for processCreditsPayment to be used by other services
+func (s *subscriptionPaymentProcessor) ProcessCreditsPaymentForInvoice(
+	ctx context.Context,
+	inv *dto.InvoiceResponse,
+	sub *subscription.Subscription,
+) decimal.Decimal {
+	return s.processCreditsPayment(ctx, sub, inv)
 }
 
 // calculateWalletPayableAmount determines how much wallets can pay based on price type restrictions

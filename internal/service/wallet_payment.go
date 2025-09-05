@@ -225,14 +225,8 @@ func (s *walletPaymentService) processWalletPayments(
 	initialAmount := inv.AmountRemaining
 	paymentService := NewPaymentService(s.ServiceParams)
 
-	// Limit the number of wallets if specified
-	maxWallets := len(wallets)
-	if options.MaxWalletsToUse > 0 && options.MaxWalletsToUse < maxWallets {
-		maxWallets = options.MaxWalletsToUse
-	}
-
-	for i, w := range wallets {
-		if i >= maxWallets || remainingAmount.IsZero() {
+	for _, w := range wallets {
+		if remainingAmount.IsZero() {
 			break
 		}
 
