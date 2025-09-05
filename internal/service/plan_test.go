@@ -312,7 +312,7 @@ func (s *PlanServiceSuite) TestCreatePlanWithEntitlements() {
 						FeatureID:        meteredFeature.ID,
 						FeatureType:      types.FeatureTypeMetered,
 						UsageLimit:       lo.ToPtr(int64(1000)),
-						UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+						UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 						IsSoftLimit:      true,
 					},
 				},

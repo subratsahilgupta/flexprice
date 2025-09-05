@@ -40418,6 +40418,11 @@ type SubscriptionMutation struct {
 	billing_cycle              *string
 	commitment_amount          *decimal.Decimal
 	overage_factor             *decimal.Decimal
+	payment_behavior           *subscription.PaymentBehavior
+	collection_method          *subscription.CollectionMethod
+	gateway_payment_method_id  *string
+	customer_timezone          *string
+	proration_behavior         *string
 	clearedFields              map[string]struct{}
 	line_items                 map[string]struct{}
 	removedline_items          map[string]struct{}
@@ -41906,6 +41911,199 @@ func (m *SubscriptionMutation) ResetOverageFactor() {
 	delete(m.clearedFields, subscription.FieldOverageFactor)
 }
 
+// SetPaymentBehavior sets the "payment_behavior" field.
+func (m *SubscriptionMutation) SetPaymentBehavior(sb subscription.PaymentBehavior) {
+	m.payment_behavior = &sb
+}
+
+// PaymentBehavior returns the value of the "payment_behavior" field in the mutation.
+func (m *SubscriptionMutation) PaymentBehavior() (r subscription.PaymentBehavior, exists bool) {
+	v := m.payment_behavior
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaymentBehavior returns the old "payment_behavior" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldPaymentBehavior(ctx context.Context) (v subscription.PaymentBehavior, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaymentBehavior is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaymentBehavior requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaymentBehavior: %w", err)
+	}
+	return oldValue.PaymentBehavior, nil
+}
+
+// ResetPaymentBehavior resets all changes to the "payment_behavior" field.
+func (m *SubscriptionMutation) ResetPaymentBehavior() {
+	m.payment_behavior = nil
+}
+
+// SetCollectionMethod sets the "collection_method" field.
+func (m *SubscriptionMutation) SetCollectionMethod(sm subscription.CollectionMethod) {
+	m.collection_method = &sm
+}
+
+// CollectionMethod returns the value of the "collection_method" field in the mutation.
+func (m *SubscriptionMutation) CollectionMethod() (r subscription.CollectionMethod, exists bool) {
+	v := m.collection_method
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCollectionMethod returns the old "collection_method" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldCollectionMethod(ctx context.Context) (v subscription.CollectionMethod, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCollectionMethod is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCollectionMethod requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCollectionMethod: %w", err)
+	}
+	return oldValue.CollectionMethod, nil
+}
+
+// ResetCollectionMethod resets all changes to the "collection_method" field.
+func (m *SubscriptionMutation) ResetCollectionMethod() {
+	m.collection_method = nil
+}
+
+// SetGatewayPaymentMethodID sets the "gateway_payment_method_id" field.
+func (m *SubscriptionMutation) SetGatewayPaymentMethodID(s string) {
+	m.gateway_payment_method_id = &s
+}
+
+// GatewayPaymentMethodID returns the value of the "gateway_payment_method_id" field in the mutation.
+func (m *SubscriptionMutation) GatewayPaymentMethodID() (r string, exists bool) {
+	v := m.gateway_payment_method_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGatewayPaymentMethodID returns the old "gateway_payment_method_id" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldGatewayPaymentMethodID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGatewayPaymentMethodID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGatewayPaymentMethodID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGatewayPaymentMethodID: %w", err)
+	}
+	return oldValue.GatewayPaymentMethodID, nil
+}
+
+// ClearGatewayPaymentMethodID clears the value of the "gateway_payment_method_id" field.
+func (m *SubscriptionMutation) ClearGatewayPaymentMethodID() {
+	m.gateway_payment_method_id = nil
+	m.clearedFields[subscription.FieldGatewayPaymentMethodID] = struct{}{}
+}
+
+// GatewayPaymentMethodIDCleared returns if the "gateway_payment_method_id" field was cleared in this mutation.
+func (m *SubscriptionMutation) GatewayPaymentMethodIDCleared() bool {
+	_, ok := m.clearedFields[subscription.FieldGatewayPaymentMethodID]
+	return ok
+}
+
+// ResetGatewayPaymentMethodID resets all changes to the "gateway_payment_method_id" field.
+func (m *SubscriptionMutation) ResetGatewayPaymentMethodID() {
+	m.gateway_payment_method_id = nil
+	delete(m.clearedFields, subscription.FieldGatewayPaymentMethodID)
+}
+
+// SetCustomerTimezone sets the "customer_timezone" field.
+func (m *SubscriptionMutation) SetCustomerTimezone(s string) {
+	m.customer_timezone = &s
+}
+
+// CustomerTimezone returns the value of the "customer_timezone" field in the mutation.
+func (m *SubscriptionMutation) CustomerTimezone() (r string, exists bool) {
+	v := m.customer_timezone
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCustomerTimezone returns the old "customer_timezone" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldCustomerTimezone(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCustomerTimezone is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCustomerTimezone requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCustomerTimezone: %w", err)
+	}
+	return oldValue.CustomerTimezone, nil
+}
+
+// ResetCustomerTimezone resets all changes to the "customer_timezone" field.
+func (m *SubscriptionMutation) ResetCustomerTimezone() {
+	m.customer_timezone = nil
+}
+
+// SetProrationBehavior sets the "proration_behavior" field.
+func (m *SubscriptionMutation) SetProrationBehavior(s string) {
+	m.proration_behavior = &s
+}
+
+// ProrationBehavior returns the value of the "proration_behavior" field in the mutation.
+func (m *SubscriptionMutation) ProrationBehavior() (r string, exists bool) {
+	v := m.proration_behavior
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProrationBehavior returns the old "proration_behavior" field's value of the Subscription entity.
+// If the Subscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SubscriptionMutation) OldProrationBehavior(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProrationBehavior is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProrationBehavior requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProrationBehavior: %w", err)
+	}
+	return oldValue.ProrationBehavior, nil
+}
+
+// ResetProrationBehavior resets all changes to the "proration_behavior" field.
+func (m *SubscriptionMutation) ResetProrationBehavior() {
+	m.proration_behavior = nil
+}
+
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by ids.
 func (m *SubscriptionMutation) AddLineItemIDs(ids ...string) {
 	if m.line_items == nil {
@@ -42249,7 +42447,7 @@ func (m *SubscriptionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SubscriptionMutation) Fields() []string {
-	fields := make([]string, 0, 32)
+	fields := make([]string, 0, 37)
 	if m.tenant_id != nil {
 		fields = append(fields, subscription.FieldTenantID)
 	}
@@ -42346,6 +42544,21 @@ func (m *SubscriptionMutation) Fields() []string {
 	if m.overage_factor != nil {
 		fields = append(fields, subscription.FieldOverageFactor)
 	}
+	if m.payment_behavior != nil {
+		fields = append(fields, subscription.FieldPaymentBehavior)
+	}
+	if m.collection_method != nil {
+		fields = append(fields, subscription.FieldCollectionMethod)
+	}
+	if m.gateway_payment_method_id != nil {
+		fields = append(fields, subscription.FieldGatewayPaymentMethodID)
+	}
+	if m.customer_timezone != nil {
+		fields = append(fields, subscription.FieldCustomerTimezone)
+	}
+	if m.proration_behavior != nil {
+		fields = append(fields, subscription.FieldProrationBehavior)
+	}
 	return fields
 }
 
@@ -42418,6 +42631,16 @@ func (m *SubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.CommitmentAmount()
 	case subscription.FieldOverageFactor:
 		return m.OverageFactor()
+	case subscription.FieldPaymentBehavior:
+		return m.PaymentBehavior()
+	case subscription.FieldCollectionMethod:
+		return m.CollectionMethod()
+	case subscription.FieldGatewayPaymentMethodID:
+		return m.GatewayPaymentMethodID()
+	case subscription.FieldCustomerTimezone:
+		return m.CustomerTimezone()
+	case subscription.FieldProrationBehavior:
+		return m.ProrationBehavior()
 	}
 	return nil, false
 }
@@ -42491,6 +42714,16 @@ func (m *SubscriptionMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldCommitmentAmount(ctx)
 	case subscription.FieldOverageFactor:
 		return m.OldOverageFactor(ctx)
+	case subscription.FieldPaymentBehavior:
+		return m.OldPaymentBehavior(ctx)
+	case subscription.FieldCollectionMethod:
+		return m.OldCollectionMethod(ctx)
+	case subscription.FieldGatewayPaymentMethodID:
+		return m.OldGatewayPaymentMethodID(ctx)
+	case subscription.FieldCustomerTimezone:
+		return m.OldCustomerTimezone(ctx)
+	case subscription.FieldProrationBehavior:
+		return m.OldProrationBehavior(ctx)
 	}
 	return nil, fmt.Errorf("unknown Subscription field %s", name)
 }
@@ -42724,6 +42957,41 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetOverageFactor(v)
 		return nil
+	case subscription.FieldPaymentBehavior:
+		v, ok := value.(subscription.PaymentBehavior)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaymentBehavior(v)
+		return nil
+	case subscription.FieldCollectionMethod:
+		v, ok := value.(subscription.CollectionMethod)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCollectionMethod(v)
+		return nil
+	case subscription.FieldGatewayPaymentMethodID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGatewayPaymentMethodID(v)
+		return nil
+	case subscription.FieldCustomerTimezone:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCustomerTimezone(v)
+		return nil
+	case subscription.FieldProrationBehavior:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProrationBehavior(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)
 }
@@ -42820,6 +43088,9 @@ func (m *SubscriptionMutation) ClearedFields() []string {
 	if m.FieldCleared(subscription.FieldOverageFactor) {
 		fields = append(fields, subscription.FieldOverageFactor)
 	}
+	if m.FieldCleared(subscription.FieldGatewayPaymentMethodID) {
+		fields = append(fields, subscription.FieldGatewayPaymentMethodID)
+	}
 	return fields
 }
 
@@ -42872,6 +43143,9 @@ func (m *SubscriptionMutation) ClearField(name string) error {
 		return nil
 	case subscription.FieldOverageFactor:
 		m.ClearOverageFactor()
+		return nil
+	case subscription.FieldGatewayPaymentMethodID:
+		m.ClearGatewayPaymentMethodID()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription nullable field %s", name)
@@ -42976,6 +43250,21 @@ func (m *SubscriptionMutation) ResetField(name string) error {
 		return nil
 	case subscription.FieldOverageFactor:
 		m.ResetOverageFactor()
+		return nil
+	case subscription.FieldPaymentBehavior:
+		m.ResetPaymentBehavior()
+		return nil
+	case subscription.FieldCollectionMethod:
+		m.ResetCollectionMethod()
+		return nil
+	case subscription.FieldGatewayPaymentMethodID:
+		m.ResetGatewayPaymentMethodID()
+		return nil
+	case subscription.FieldCustomerTimezone:
+		m.ResetCustomerTimezone()
+		return nil
+	case subscription.FieldProrationBehavior:
+		m.ResetProrationBehavior()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)

@@ -18,6 +18,12 @@ const (
 	CalculationWorkflow WorkflowType = "CalculationWorkflow"
 	// PriceSyncWorkflow represents the price sync workflow
 	PriceSyncWorkflow WorkflowType = "PriceSyncWorkflow"
+
+	// SubscriptionChangeWorkflow represents the subscription change workflow
+	SubscriptionChangeWorkflow WorkflowType = "SubscriptionChangeWorkflow"
+
+	// SubscriptionCreationWorkflow represents the subscription creation workflow
+	SubscriptionCreationWorkflow WorkflowType = "SubscriptionCreationWorkflow"
 )
 
 // String returns the string representation of the workflow type

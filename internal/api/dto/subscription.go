@@ -61,10 +61,30 @@ type CreateSubscriptionRequest struct {
 	// Addons represents addons to be added to the subscription during creation
 	Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
 
+	// Payment behavior configuration
+	PaymentBehavior        *types.PaymentBehavior `json:"payment_behavior,omitempty"`
+	GatewayPaymentMethodID *string                `json:"gateway_payment_method_id,omitempty"`
 	// collection_method determines how invoices are collected
 	// "default_incomplete" - subscription waits for payment confirmation before activation
 	// "send_invoice" - subscription activates immediately, invoice is sent for payment
 	CollectionMethod *types.CollectionMethod `json:"collection_method,omitempty"`
+
+	// ProrationBehavior controls how proration is handled.
+	// If not set, the default value is none. Possible values are create_prorations and none.
+	// create_prorations means the proration will be calculated and applied.
+	// none means the proration will not be calculated.
+	// This is IGNORED when the billing cycle is anniversary.
+	ProrationBehavior types.ProrationBehavior `json:"proration_behavior,omitempty"`
+
+	// Timezone of the customer.
+	// If not set, the default value is UTC.
+	CustomerTimezone string `json:"customer_timezone" validate:"omitempty,timezone"`
+
+	//Billing Anchor
+	BillingAnchor *time.Time `json:"-"`
+
+	// Workflow
+	Workflow *types.WorkflowType `json:"-"`
 }
 
 // AddAddonRequest is used by body-based endpoint /subscriptions/addon
@@ -86,6 +106,69 @@ type UpdateSubscriptionRequest struct {
 	CancelAtPeriodEnd bool                     `json:"cancel_at_period_end,omitempty"`
 }
 
+// CancelSubscriptionRequest represents the enhanced cancellation request
+type CancelSubscriptionRequest struct {
+
+	// ProrationBehavior controls how proration is handled.
+	ProrationBehavior types.ProrationBehavior `json:"proration_behavior,omitempty"`
+
+	// CancellationType determines when the cancellation takes effect
+	CancellationType types.CancellationType `json:"cancellation_type" validate:"required"`
+
+	// Reason for cancellation (for audit and business intelligence)
+	Reason string `json:"reason,omitempty"`
+}
+
+// CancelSubscriptionResponse represents the enhanced cancellation response
+type CancelSubscriptionResponse struct {
+	// Basic cancellation info
+	SubscriptionID   string                   `json:"subscription_id"`
+	CancellationType types.CancellationType   `json:"cancellation_type"`
+	EffectiveDate    time.Time                `json:"effective_date"`
+	Status           types.SubscriptionStatus `json:"status"`
+	Reason           string                   `json:"reason,omitempty"`
+
+	// Proration details
+	ProrationInvoice  *InvoiceResponse  `json:"proration_invoice,omitempty"`
+	ProrationDetails  []ProrationDetail `json:"proration_details"`
+	TotalCreditAmount decimal.Decimal   `json:"total_credit_amount"`
+
+	// Response metadata
+	Message     string    `json:"message"`
+	ProcessedAt time.Time `json:"processed_at"`
+}
+
+// ProrationDetail provides line-item level proration information
+type ProrationDetail struct {
+	LineItemID     string          `json:"line_item_id"`
+	PriceID        string          `json:"price_id"`
+	PlanName       string          `json:"plan_name,omitempty"`
+	OriginalAmount decimal.Decimal `json:"original_amount"`
+	CreditAmount   decimal.Decimal `json:"credit_amount"`
+	ChargeAmount   decimal.Decimal `json:"charge_amount"`
+	ProrationDays  int             `json:"proration_days"`
+	Description    string          `json:"description,omitempty"`
+}
+
+// Validate validates the cancellation request
+func (r *CancelSubscriptionRequest) Validate() error {
+	// Validate cancellation type
+	if err := r.CancellationType.Validate(); err != nil {
+		return err
+	}
+	// Set default proration behavior if not provided
+	if r.ProrationBehavior == "" {
+		r.ProrationBehavior = types.ProrationBehaviorCreateProrations
+	}
+
+	// Validate proration behavior
+	if err := r.ProrationBehavior.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type SubscriptionResponse struct {
 	*subscription.Subscription
 	Plan     *PlanResponse     `json:"plan"`
@@ -94,6 +177,9 @@ type SubscriptionResponse struct {
 	Schedule *SubscriptionScheduleResponse `json:"schedule,omitempty"`
 	// CouponAssociations are the coupon associations for this subscription
 	CouponAssociations []*CouponAssociationResponse `json:"coupon_associations,omitempty"`
+
+	// Latest invoice information for incomplete subscriptions
+	LatestInvoice *InvoiceResponse `json:"latest_invoice,omitempty"`
 }
 
 // ListSubscriptionsResponse represents the response for listing subscriptions
@@ -129,11 +215,37 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		return err
 	}
 
-	// Validate collection method if provided
+	// Handle legacy collection method conversion and validation
 	if r.CollectionMethod != nil {
+		// Handle legacy default_incomplete collection method
+		if string(*r.CollectionMethod) == "default_incomplete" {
+			// Convert to send_invoice + default_incomplete for backward compatibility
+			sendInvoiceMethod := types.CollectionMethodSendInvoice
+			r.CollectionMethod = &sendInvoiceMethod
+			if r.PaymentBehavior == nil {
+				defaultIncomplete := types.PaymentBehaviorDefaultIncomplete
+				r.PaymentBehavior = &defaultIncomplete
+			}
+		}
+
 		if err := r.CollectionMethod.Validate(); err != nil {
 			return err
 		}
+	}
+
+	// Set defaults for collection method and payment behavior if not provided
+	if r.CollectionMethod == nil {
+		defaultCollectionMethod := types.CollectionMethodChargeAutomatically
+		r.CollectionMethod = &defaultCollectionMethod
+	}
+	if r.PaymentBehavior == nil {
+		defaultPaymentBehavior := types.PaymentBehaviorDefaultActive
+		r.PaymentBehavior = &defaultPaymentBehavior
+	}
+
+	// Validate payment behavior and collection method combination
+	if err := r.validatePaymentBehaviorForCollectionMethod(*r.CollectionMethod, *r.PaymentBehavior); err != nil {
+		return err
 	}
 
 	// Set default start date if not provided
@@ -150,6 +262,23 @@ func (r *CreateSubscriptionRequest) Validate() error {
 				"end_date":   *r.EndDate,
 			}).
 			Mark(ierr.ErrValidation)
+	}
+
+	if r.ProrationBehavior != "" {
+		if err := r.ProrationBehavior.Validate(); err != nil {
+			return err
+		}
+	} else {
+		r.ProrationBehavior = types.ProrationBehaviorNone
+	}
+	if r.Workflow == nil {
+		r.Workflow = lo.ToPtr(types.SubscriptionCreationWorkflow)
+	}
+
+	if r.ProrationBehavior != "" && r.ProrationBehavior == types.ProrationBehaviorCreateProrations {
+		if err := r.validateShouldAllowProrationOnStartDate(r); err != nil {
+			return err
+		}
 	}
 
 	if r.BillingPeriodCount < 1 {
@@ -357,19 +486,112 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	return nil
 }
 
+// validatePaymentBehaviorForCollectionMethod validates that payment behavior is compatible with collection method
+func (r *CreateSubscriptionRequest) validatePaymentBehaviorForCollectionMethod(collectionMethod types.CollectionMethod, paymentBehavior types.PaymentBehavior) error {
+	switch collectionMethod {
+	case types.CollectionMethodChargeAutomatically:
+		// For charge_automatically, allow_incomplete, error_if_incomplete, and default_active are allowed
+		if paymentBehavior != types.PaymentBehaviorAllowIncomplete &&
+			paymentBehavior != types.PaymentBehaviorErrorIfIncomplete &&
+			paymentBehavior != types.PaymentBehaviorDefaultActive {
+			return ierr.NewError("invalid payment behavior for charge_automatically collection method").
+				WithHint("Only allow_incomplete, error_if_incomplete, and default_active are supported for charge_automatically collection method").
+				WithReportableDetails(map[string]interface{}{
+					"collection_method": collectionMethod,
+					"payment_behavior":  paymentBehavior,
+					"allowed_behaviors": []types.PaymentBehavior{
+						types.PaymentBehaviorAllowIncomplete,
+						types.PaymentBehaviorErrorIfIncomplete,
+						types.PaymentBehaviorDefaultActive,
+					},
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	case types.CollectionMethodSendInvoice:
+		// For send_invoice, only default_active and default_incomplete are allowed
+		if paymentBehavior != types.PaymentBehaviorDefaultActive && paymentBehavior != types.PaymentBehaviorDefaultIncomplete {
+			return ierr.NewError("invalid payment behavior for send_invoice collection method").
+				WithHint("Only default_active and default_incomplete are supported for send_invoice collection method").
+				WithReportableDetails(map[string]interface{}{
+					"collection_method": collectionMethod,
+					"payment_behavior":  paymentBehavior,
+					"allowed_behaviors": []types.PaymentBehavior{
+						types.PaymentBehaviorDefaultActive,
+						types.PaymentBehaviorDefaultIncomplete,
+					},
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+	default:
+		return ierr.NewError("unsupported collection method").
+			WithHint("Only charge_automatically and send_invoice collection methods are supported").
+			WithReportableDetails(map[string]interface{}{
+				"collection_method": collectionMethod,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(request *CreateSubscriptionRequest) error {
+	// If the start date is before the current date and proration mode is active, return an error
+	// This prevents creating subscriptions with backdated start dates that would trigger proration
+
+	if request.Workflow == lo.ToPtr(types.SubscriptionChangeWorkflow) {
+		return nil
+	}
+
+	// Compare only the date portions (ignore time) - don't allow before current day
+	now := time.Now().UTC()
+	startDateOnly := time.Date(request.StartDate.Year(), request.StartDate.Month(), request.StartDate.Day(), 0, 0, 0, 0, time.UTC)
+	nowDateOnly := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	if startDateOnly.Before(nowDateOnly) {
+		return ierr.NewError("cannot create subscription with past start date when proration is active and workflow is subscription change").
+			WithHint("Either set start date to current day or later, or disable proration behavior").
+			WithReportableDetails(map[string]interface{}{
+				"start_date":   request.StartDate.Format("2006-01-02"),
+				"current_date": nowDateOnly.Format("2006-01-02"),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
 func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscription.Subscription {
-	// Determine initial subscription status based on collection method and payment behavior
+	// Handle legacy collection method and set defaults
+	paymentBehavior := types.PaymentBehaviorDefaultActive
+	collectionMethod := types.CollectionMethodChargeAutomatically
+
+	// Handle legacy default_incomplete collection method conversion
+	if r.CollectionMethod != nil && string(*r.CollectionMethod) == "default_incomplete" {
+		// Convert legacy default_incomplete collection method to send_invoice + default_incomplete
+		collectionMethod = types.CollectionMethodSendInvoice
+		paymentBehavior = types.PaymentBehaviorDefaultIncomplete
+	} else {
+		// Normal flow - use provided values or defaults
+		if r.CollectionMethod != nil {
+			collectionMethod = *r.CollectionMethod
+		}
+		if r.PaymentBehavior != nil {
+			paymentBehavior = *r.PaymentBehavior
+		}
+	}
+
+	// Validate collection method and payment behavior combination
+	if err := r.validatePaymentBehaviorForCollectionMethod(collectionMethod, paymentBehavior); err != nil {
+		// This validation will be caught in the main Validate() method
+		// We don't fail here to allow the conversion to happen first
+	}
+
+	// Initial status will be determined by payment processor based on payment behavior
+	// For now, set to Active - the payment processor will update it
 	initialStatus := types.SubscriptionStatusActive
 
-	// Set status based on collection method
-	if r.CollectionMethod != nil {
-		if *r.CollectionMethod == types.CollectionMethodDefaultIncomplete {
-			// default_incomplete: wait for payment confirmation before activation
-			initialStatus = types.SubscriptionStatusIncomplete
-		} else if *r.CollectionMethod == types.CollectionMethodSendInvoice {
-			// send_invoice: activate immediately, invoice is sent for payment
-			initialStatus = types.SubscriptionStatusActive
-		}
+	if r.CustomerTimezone == "" {
+		r.CustomerTimezone = "UTC"
 	}
 
 	sub := &subscription.Subscription{
@@ -391,6 +613,13 @@ func (r *CreateSubscriptionRequest) ToSubscription(ctx context.Context) *subscri
 		EnvironmentID:      types.GetEnvironmentID(ctx),
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 		BillingCycle:       r.BillingCycle,
+		CustomerTimezone:   r.CustomerTimezone,
+		ProrationBehavior:  r.ProrationBehavior,
+
+		// New payment behavior fields
+		PaymentBehavior:        string(paymentBehavior),
+		CollectionMethod:       string(collectionMethod),
+		GatewayPaymentMethodID: r.GatewayPaymentMethodID,
 	}
 
 	// Set commitment amount and overage factor if provided

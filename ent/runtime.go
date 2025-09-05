@@ -1499,6 +1499,16 @@ func init() {
 	subscriptionDescOverageFactor := subscriptionFields[25].Descriptor()
 	// subscription.DefaultOverageFactor holds the default value on creation for the overage_factor field.
 	subscription.DefaultOverageFactor = subscriptionDescOverageFactor.Default.(decimal.Decimal)
+	// subscriptionDescCustomerTimezone is the schema descriptor for customer_timezone field.
+	subscriptionDescCustomerTimezone := subscriptionFields[29].Descriptor()
+	// subscription.DefaultCustomerTimezone holds the default value on creation for the customer_timezone field.
+	subscription.DefaultCustomerTimezone = subscriptionDescCustomerTimezone.Default.(string)
+	// subscriptionDescProrationBehavior is the schema descriptor for proration_behavior field.
+	subscriptionDescProrationBehavior := subscriptionFields[30].Descriptor()
+	// subscription.DefaultProrationBehavior holds the default value on creation for the proration_behavior field.
+	subscription.DefaultProrationBehavior = subscriptionDescProrationBehavior.Default.(string)
+	// subscription.ProrationBehaviorValidator is a validator for the "proration_behavior" field. It is called by the builders before save.
+	subscription.ProrationBehaviorValidator = subscriptionDescProrationBehavior.Validators[0].(func(string) error)
 	subscriptionlineitemMixin := schema.SubscriptionLineItem{}.Mixin()
 	subscriptionlineitemMixinFields0 := subscriptionlineitemMixin[0].Fields()
 	_ = subscriptionlineitemMixinFields0
