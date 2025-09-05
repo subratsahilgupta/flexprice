@@ -268,6 +268,8 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		if err := r.ProrationBehavior.Validate(); err != nil {
 			return err
 		}
+	} else {
+		r.ProrationBehavior = types.ProrationBehaviorNone
 	}
 	if r.Workflow == nil {
 		r.Workflow = lo.ToPtr(types.SubscriptionCreationWorkflow)
