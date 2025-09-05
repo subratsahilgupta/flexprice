@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/temporal"
+	_ "github.com/flexprice/flexprice/internal/temporal/models" // Used in Swagger documentation
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -265,7 +266,7 @@ func (h *PlanHandler) GetPlanCreditGrants(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param id path string true "Plan ID"
-// @Success 200 {object} dto.SyncPlanPricesResponse
+// @Success 200 {object} models.TemporalWorkflowResult
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 422 {object} ierr.ErrorResponse
