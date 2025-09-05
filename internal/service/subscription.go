@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -58,6 +59,11 @@ type SubscriptionService interface {
 	// Line item management
 	AddSubscriptionLineItem(ctx context.Context, subscriptionID string, req dto.CreateSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error)
 	DeleteSubscriptionLineItem(ctx context.Context, lineItemID string, req dto.DeleteSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error)
+
+	// Auto-cancellation methods
+	ProcessAutoCancellationSubscriptions(ctx context.Context) error
+	// Renewal due alert methods
+	ProcessSubscriptionRenewalDueAlert(ctx context.Context) error
 }
 
 type subscriptionService struct {
@@ -264,7 +270,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 	invoiceService := NewInvoiceService(s.ServiceParams)
 	var invoice *dto.InvoiceResponse
-
+	var updatedSub *subscription.Subscription
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 
 		// Create subscription with line items
@@ -346,31 +352,47 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		// Create invoice for the subscription (in case it has advance charges)
-		invoice, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+		paymentParams := dto.NewPaymentParametersFromSubscription(sub.CollectionMethod, sub.PaymentBehavior, sub.GatewayPaymentMethodID)
+		// Apply backward compatibility normalization
+		paymentParams = paymentParams.NormalizePaymentParameters()
+		invoice, updatedSub, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 			SubscriptionID: sub.ID,
 			PeriodStart:    sub.CurrentPeriodStart,
 			PeriodEnd:      sub.CurrentPeriodEnd,
 			ReferencePoint: types.ReferencePointPeriodStart,
-		})
+		}, paymentParams, types.InvoiceFlowSubscriptionCreation)
+		if err != nil {
+			return err
+		}
 
-		return err
+		// Use the updated subscription from CreateSubscriptionInvoice to avoid extra DB call
+		if updatedSub != nil {
+			sub = updatedSub
+		}
+
+		// if the subscription is created with incomplete status, but it doesn't create an invoice, we need to mark it as active
+		// This applies regardless of collection method - if there's no invoice to pay, the subscription should be active
+		if sub.SubscriptionStatus == types.SubscriptionStatusIncomplete && (invoice == nil || invoice.PaymentStatus == types.PaymentStatusSucceeded) {
+			sub.SubscriptionStatus = types.SubscriptionStatusActive
+			err = s.SubRepo.Update(ctx, sub)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// if the subscription is created with incomplete status, but it doesn't create an invoice, we need to mark it as active
-	// This applies regardless of collection method - if there's no invoice to pay, the subscription should be active
-	if sub.SubscriptionStatus == types.SubscriptionStatusIncomplete && (invoice == nil || invoice.PaymentStatus == types.PaymentStatusSucceeded) {
-		sub.SubscriptionStatus = types.SubscriptionStatusActive
-		err = s.SubRepo.Update(ctx, sub)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Update response to ensure it has the latest subscription data
 	response.Subscription = sub
+
+	// Include latest invoice if created
+	if invoice != nil {
+		response.LatestInvoice = invoice
+	}
 
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionCreated, sub.ID)
 	return response, nil
@@ -740,12 +762,14 @@ func (s *subscriptionService) CancelSubscription(
 
 		if req.CancellationType != types.CancellationTypeEndOfPeriod {
 			invoiceService := NewInvoiceService(s.ServiceParams)
-			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+			paymentParams := dto.NewPaymentParametersFromSubscription(subscription.CollectionMethod, subscription.PaymentBehavior, subscription.GatewayPaymentMethodID)
+			paymentParams = paymentParams.NormalizePaymentParameters()
+			inv, _, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 				SubscriptionID: subscription.ID,
 				PeriodStart:    subscription.CurrentPeriodStart,
 				PeriodEnd:      effectiveDate,
 				ReferencePoint: types.ReferencePointCancel,
-			})
+			}, paymentParams, types.InvoiceFlowManual)
 			if err != nil {
 				return err
 			}
@@ -1602,15 +1626,30 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			period := periods[i]
 
 			// Create a single invoice for both arrear and advance charges at period end
-			inv, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+			paymentParams := dto.NewPaymentParametersFromSubscription(sub.CollectionMethod, sub.PaymentBehavior, sub.GatewayPaymentMethodID)
+			// Apply backward compatibility normalization
+			paymentParams = paymentParams.NormalizePaymentParameters()
+			inv, updatedSub, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 				SubscriptionID: sub.ID,
 				PeriodStart:    period.start,
 				PeriodEnd:      period.end,
 				ReferencePoint: types.ReferencePointPeriodEnd,
-			})
+			}, paymentParams, types.InvoiceFlowRenewal)
 			if err != nil {
 				return err
 			}
+
+			// Use the updated subscription from CreateSubscriptionInvoice to avoid extra DB call
+			if updatedSub != nil {
+				sub = updatedSub
+			}
+
+			s.Logger.Infow("created invoice for period",
+				"subscription_id", sub.ID,
+				"invoice_id", inv.ID,
+				"period_start", period.start,
+				"period_end", period.end,
+				"period_index", i)
 
 			// Check for cancellation at this period end
 			if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(period.end) {
@@ -2968,6 +3007,28 @@ func (s *subscriptionService) handleSubscriptionPause(ctx context.Context, subsc
 	return nil
 }
 
+// ProcessSubscriptionRenewalDueAlert processes subscriptions that are due for renewal in 24 hours
+func (s *subscriptionService) ProcessSubscriptionRenewalDueAlert(ctx context.Context) error {
+	subscriptions, err := s.SubRepo.ListSubscriptionsDueForRenewal(ctx)
+	if err != nil {
+		s.Logger.Errorw("failed to list subscriptions due for renewal", "error", err)
+		return err
+	}
+
+	if len(subscriptions) == 0 {
+		s.Logger.Infow("no subscriptions due for renewal found")
+		return nil
+	}
+
+	s.Logger.Infow("found subscriptions due for renewal", "count", len(subscriptions))
+
+	for _, sub := range subscriptions {
+		s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionRenewalDue, sub.ID)
+	}
+
+	return nil
+}
+
 func (s *subscriptionService) handleSubscriptionResume(ctx context.Context, subscriptionID string) error {
 	// Process any missed recurring grants
 	return nil
@@ -3494,6 +3555,218 @@ func (s *subscriptionService) ActivateIncompleteSubscription(ctx context.Context
 
 	// Publish webhook event for subscription activation
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventSubscriptionActivated, subscriptionID)
+
+	return nil
+}
+
+// GetSubscriptionConfig retrieves the subscription configuration from settings
+
+// isEligibleForAutoCancellation checks if an active subscription is eligible for auto-cancellation
+func (s *subscriptionService) isEligibleForAutoCancellation(ctx context.Context, sub *subscription.Subscription, config *types.SubscriptionConfig) bool {
+	// First check if auto-cancellation is enabled
+	if !config.AutoCancellationEnabled {
+		s.Logger.Debugw("auto-cancellation not enabled for subscription",
+			"subscription_id", sub.ID)
+		return false
+	}
+
+	// Check if subscription is active
+	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
+		return false
+	}
+
+	now := time.Now().UTC()
+
+	// Query for unpaid invoices
+	filter := &types.InvoiceFilter{
+		SubscriptionID: sub.ID,
+		PaymentStatus: []types.PaymentStatus{
+			types.PaymentStatusPending,
+			types.PaymentStatusFailed,
+		},
+	}
+
+	s.Logger.Debugw("fetching unpaid invoices for auto-cancellation eligibility",
+		"subscription_id", sub.ID,
+		"payment_statuses", filter.PaymentStatus)
+
+	invoices, err := s.InvoiceRepo.List(ctx, filter)
+	if err != nil {
+		s.Logger.Errorw("failed to fetch invoices for auto-cancellation",
+			"subscription_id", sub.ID,
+			"error", err)
+		return false
+	}
+
+	s.Logger.Debugw("found invoices for subscription",
+		"subscription_id", sub.ID,
+		"invoice_count", len(invoices))
+
+	// Check each invoice for eligibility criteria
+	for _, inv := range invoices {
+		// Skip invalid due dates
+		if inv.DueDate == nil {
+			s.Logger.Warnw("invoice has invalid due date, skipping",
+				"subscription_id", sub.ID,
+				"invoice_id", inv.ID)
+			continue
+		}
+
+		// Check amount_remaining (must have outstanding amount)
+		if !inv.AmountRemaining.GreaterThan(decimal.Zero) {
+			s.Logger.Debugw("invoice has no remaining amount, skipping",
+				"subscription_id", sub.ID,
+				"invoice_id", inv.ID,
+				"amount_remaining", inv.AmountRemaining)
+			continue
+		}
+
+		// Calculate grace period end time: due_date + grace_period_days
+		gracePeriodEndTime := inv.DueDate.AddDate(0, 0, config.GracePeriodDays)
+
+		s.Logger.Debugw("evaluating invoice for auto-cancellation",
+			"subscription_id", sub.ID,
+			"invoice_id", inv.ID,
+			"due_date", inv.DueDate,
+			"amount_remaining", inv.AmountRemaining,
+			"grace_period_days", config.GracePeriodDays,
+			"grace_period_end_time", gracePeriodEndTime,
+			"current_time", now,
+			"is_past_grace_period", now.After(gracePeriodEndTime))
+
+		// Check if current time is past grace period end
+		if now.After(gracePeriodEndTime) {
+			s.Logger.Infow("subscription eligible for auto-cancellation",
+				"subscription_id", sub.ID,
+				"invoice_id", inv.ID,
+				"amount_remaining", inv.AmountRemaining,
+				"due_date", inv.DueDate,
+				"grace_period_end_time", gracePeriodEndTime,
+				"current_time", now,
+				"payment_status", inv.PaymentStatus)
+			return true
+		} else {
+			s.Logger.Debugw("invoice not past grace period yet",
+				"subscription_id", sub.ID,
+				"invoice_id", inv.ID,
+				"due_date", inv.DueDate,
+				"grace_period_end_time", gracePeriodEndTime,
+				"days_until_grace_expires", gracePeriodEndTime.Sub(now).Hours()/24)
+		}
+	}
+
+	s.Logger.Debugw("subscription not eligible for auto-cancellation",
+		"subscription_id", sub.ID,
+		"reason", "no invoices past grace period")
+
+	return false
+}
+
+// ProcessAutoCancellationSubscriptions processes subscriptions that are eligible for auto-cancellation
+func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.Context) error {
+	s.Logger.Infow("starting auto-cancellation processing")
+
+	// Get all tenant x environment combinations that have auto-cancellation enabled
+	enabledConfigs, err := s.SettingsRepo.GetAllTenantEnvSubscriptionSettings(ctx)
+	if err != nil {
+		s.Logger.Errorw("failed to list subscription configs", "error", err)
+		return err
+	}
+
+	if len(enabledConfigs) == 0 {
+		s.Logger.Infow("no tenants have auto-cancellation enabled, skipping processing")
+		return nil
+	}
+
+	s.Logger.Infow("found tenants with auto-cancellation enabled",
+		"tenant_count", len(enabledConfigs))
+
+	totalCanceledCount := 0
+	totalFailedCount := 0
+
+	// Process each tenant x environment combination
+	for _, tenantConfig := range enabledConfigs {
+		// Create a new context with tenant and environment IDs
+		tenantCtx := context.WithValue(ctx, types.CtxTenantID, tenantConfig.TenantID)
+		tenantCtx = context.WithValue(tenantCtx, types.CtxEnvironmentID, tenantConfig.EnvironmentID)
+
+		s.Logger.Infow("processing tenant",
+			"tenant_id", tenantConfig.TenantID,
+			"environment_id", tenantConfig.EnvironmentID,
+			"grace_period_days", tenantConfig.GracePeriodDays)
+
+		// Get ONLY ACTIVE subscriptions for this tenant x environment
+		filter := &types.SubscriptionFilter{
+			SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive},
+		}
+
+		subscriptions, err := s.SubRepo.List(tenantCtx, filter)
+		if err != nil {
+			s.Logger.Errorw("failed to get subscriptions for tenant",
+				"tenant_id", tenantConfig.TenantID,
+				"environment_id", tenantConfig.EnvironmentID,
+				"error", err)
+			continue // Skip this tenant but continue with others
+		}
+
+		s.Logger.Infow("found subscriptions for tenant",
+			"tenant_id", tenantConfig.TenantID,
+			"environment_id", tenantConfig.EnvironmentID,
+			"subscription_count", len(subscriptions))
+
+		canceledCount := 0
+		failedCount := 0
+
+		// Process each subscription for this tenant
+		for _, sub := range subscriptions {
+			if s.isEligibleForAutoCancellation(tenantCtx, sub, tenantConfig.SubscriptionConfig) {
+				s.Logger.Infow("auto-cancelling subscription",
+					"subscription_id", sub.ID,
+					"tenant_id", tenantConfig.TenantID,
+					"environment_id", tenantConfig.EnvironmentID,
+					"grace_period_days", tenantConfig.GracePeriodDays)
+
+				// Cancel the subscription
+				if _, err := s.CancelSubscription(tenantCtx, sub.ID, &dto.CancelSubscriptionRequest{
+					CancellationType: types.CancellationTypeImmediate,
+				}); err != nil {
+					s.Logger.Errorw("failed to auto-cancel subscription",
+						"subscription_id", sub.ID,
+						"tenant_id", tenantConfig.TenantID,
+						"environment_id", tenantConfig.EnvironmentID,
+						"error", err)
+					failedCount++
+					continue
+				}
+
+				canceledCount++
+
+				// Log audit trail
+				s.Logger.Infow("successfully auto-canceled subscription",
+					"subscription_id", sub.ID,
+					"reason", "grace_period_expired",
+					"grace_period_days", tenantConfig.GracePeriodDays,
+					"canceled_by", "auto_cancellation_system",
+					"tenant_id", tenantConfig.TenantID,
+					"environment_id", tenantConfig.EnvironmentID)
+			}
+		}
+
+		s.Logger.Infow("completed processing for tenant",
+			"tenant_id", tenantConfig.TenantID,
+			"environment_id", tenantConfig.EnvironmentID,
+			"total_subscriptions", len(subscriptions),
+			"canceled_count", canceledCount,
+			"failed_count", failedCount)
+
+		totalCanceledCount += canceledCount
+		totalFailedCount += failedCount
+	}
+
+	s.Logger.Infow("completed auto-cancellation processing for all tenants",
+		"total_tenants_processed", len(enabledConfigs),
+		"total_canceled", totalCanceledCount,
+		"total_failed", totalFailedCount)
 
 	return nil
 }

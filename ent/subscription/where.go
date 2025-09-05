@@ -221,6 +221,11 @@ func OverageFactor(v decimal.Decimal) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldOverageFactor, v))
 }
 
+// GatewayPaymentMethodID applies equality check predicate on the "gateway_payment_method_id" field. It's identical to GatewayPaymentMethodIDEQ.
+func GatewayPaymentMethodID(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldGatewayPaymentMethodID, v))
+}
+
 // CustomerTimezone applies equality check predicate on the "customer_timezone" field. It's identical to CustomerTimezoneEQ.
 func CustomerTimezone(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldCustomerTimezone, v))
@@ -1944,6 +1949,121 @@ func OverageFactorIsNil() predicate.Subscription {
 // OverageFactorNotNil applies the NotNil predicate on the "overage_factor" field.
 func OverageFactorNotNil() predicate.Subscription {
 	return predicate.Subscription(sql.FieldNotNull(FieldOverageFactor))
+}
+
+// PaymentBehaviorEQ applies the EQ predicate on the "payment_behavior" field.
+func PaymentBehaviorEQ(v PaymentBehavior) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldPaymentBehavior, v))
+}
+
+// PaymentBehaviorNEQ applies the NEQ predicate on the "payment_behavior" field.
+func PaymentBehaviorNEQ(v PaymentBehavior) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldPaymentBehavior, v))
+}
+
+// PaymentBehaviorIn applies the In predicate on the "payment_behavior" field.
+func PaymentBehaviorIn(vs ...PaymentBehavior) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldPaymentBehavior, vs...))
+}
+
+// PaymentBehaviorNotIn applies the NotIn predicate on the "payment_behavior" field.
+func PaymentBehaviorNotIn(vs ...PaymentBehavior) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldPaymentBehavior, vs...))
+}
+
+// CollectionMethodEQ applies the EQ predicate on the "collection_method" field.
+func CollectionMethodEQ(v CollectionMethod) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldCollectionMethod, v))
+}
+
+// CollectionMethodNEQ applies the NEQ predicate on the "collection_method" field.
+func CollectionMethodNEQ(v CollectionMethod) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldCollectionMethod, v))
+}
+
+// CollectionMethodIn applies the In predicate on the "collection_method" field.
+func CollectionMethodIn(vs ...CollectionMethod) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldCollectionMethod, vs...))
+}
+
+// CollectionMethodNotIn applies the NotIn predicate on the "collection_method" field.
+func CollectionMethodNotIn(vs ...CollectionMethod) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldCollectionMethod, vs...))
+}
+
+// GatewayPaymentMethodIDEQ applies the EQ predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDNEQ applies the NEQ predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDNEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDIn applies the In predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldGatewayPaymentMethodID, vs...))
+}
+
+// GatewayPaymentMethodIDNotIn applies the NotIn predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDNotIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldGatewayPaymentMethodID, vs...))
+}
+
+// GatewayPaymentMethodIDGT applies the GT predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDGT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGT(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDGTE applies the GTE predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDGTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGTE(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDLT applies the LT predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDLT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLT(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDLTE applies the LTE predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDLTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLTE(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDContains applies the Contains predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDContains(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContains(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDHasPrefix applies the HasPrefix predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDHasPrefix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasPrefix(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDHasSuffix applies the HasSuffix predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDHasSuffix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasSuffix(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDIsNil applies the IsNil predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDIsNil() predicate.Subscription {
+	return predicate.Subscription(sql.FieldIsNull(FieldGatewayPaymentMethodID))
+}
+
+// GatewayPaymentMethodIDNotNil applies the NotNil predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDNotNil() predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotNull(FieldGatewayPaymentMethodID))
+}
+
+// GatewayPaymentMethodIDEqualFold applies the EqualFold predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDEqualFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEqualFold(FieldGatewayPaymentMethodID, v))
+}
+
+// GatewayPaymentMethodIDContainsFold applies the ContainsFold predicate on the "gateway_payment_method_id" field.
+func GatewayPaymentMethodIDContainsFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContainsFold(FieldGatewayPaymentMethodID, v))
 }
 
 // CustomerTimezoneEQ applies the EQ predicate on the "customer_timezone" field.

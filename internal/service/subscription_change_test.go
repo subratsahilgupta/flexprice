@@ -67,6 +67,7 @@ func (s *SubscriptionChangeServiceTestSuite) setupServices() {
 		TaxAppliedRepo:             s.GetStores().TaxAppliedRepo,
 		CreditNoteRepo:             s.GetStores().CreditNoteRepo,
 		CreditNoteLineItemRepo:     s.GetStores().CreditNoteLineItemRepo,
+		ConnectionRepo:             s.GetStores().ConnectionRepo,
 		SettingsRepo:               s.GetStores().SettingsRepo,
 		EventPublisher:             s.GetPublisher(),
 		WebhookPublisher:           s.GetWebhookPublisher(),

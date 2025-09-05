@@ -268,13 +268,13 @@ func (s *billingService) CalculateUsageCharges(
 					// usage limit is set, so we decrement the usage quantity by the already entitled usage
 
 					// case 1 : when the usage reset period is billing period
-					if matchingEntitlement.UsageResetPeriod == sub.BillingPeriod {
+					if (matchingEntitlement.UsageResetPeriod) == types.EntitlementUsageResetPeriod(sub.BillingPeriod) {
 
 						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
 						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
 						quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
 
-					} else if matchingEntitlement.UsageResetPeriod == types.BILLING_PERIOD_DAILY {
+					} else if matchingEntitlement.UsageResetPeriod == types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY {
 
 						// case 2 : when the usage reset period is daily
 						// For daily reset periods, we need to fetch usage with daily window size
@@ -330,6 +330,11 @@ func (s *billingService) CalculateUsageCharges(
 
 						// Use the total billable quantity for calculation
 						quantityForCalculation = totalBillableQuantity
+					} else if matchingEntitlement.UsageResetPeriod == types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY {
+						// For never type
+						// we will fetch the usage from subscriprion start date to current date
+						// then for calculating this peirods usage we will again fetch the usage from subcriprion start till this current period start date 
+						// then minus overall - till current period date
 					} else {
 						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
 						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
@@ -418,7 +423,7 @@ func (s *billingService) CalculateUsageCharges(
 			}
 
 			// Add usage reset period metadata if entitlement has daily reset
-			if !matchingCharge.IsOverage && ok && matchingEntitlement.IsEnabled && matchingEntitlement.UsageResetPeriod == types.BILLING_PERIOD_DAILY {
+			if !matchingCharge.IsOverage && ok && matchingEntitlement.IsEnabled && matchingEntitlement.UsageResetPeriod == types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY {
 				metadata["usage_reset_period"] = "daily"
 			}
 
@@ -926,8 +931,23 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 	description string, // mark optional
 	metadata types.Metadata, // mark optional
 ) (*dto.CreateInvoiceRequest, error) {
-	// Prepare invoice due date
-	invoiceDueDate := periodEnd.Add(24 * time.Hour * types.InvoiceDefaultDueDays)
+	// Get invoice config for tenant
+	settingsService := NewSettingsService(s.ServiceParams)
+	invoiceConfigResponse, err := settingsService.GetSettingByKey(ctx, types.SettingKeyInvoiceConfig.String())
+	if err != nil {
+		return nil, err
+	}
+
+	// Use the safe conversion function
+	invoiceConfig, err := dto.ConvertToInvoiceConfig(invoiceConfigResponse.Value)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to parse invoice configuration").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Prepare invoice due date using tenant's configuration
+	invoiceDueDate := periodEnd.Add(24 * time.Hour * time.Duration(*invoiceConfig.DueDateDays))
 
 	if result == nil {
 		// prepare result for zero amount invoice
@@ -1109,8 +1129,8 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 	hasUnlimitedEntitlement := false
 	isSoftLimit := false
 	var totalLimit int64 = 0
-	var usageResetPeriod types.BillingPeriod
-	resetPeriodCounts := make(map[types.BillingPeriod]int)
+	var usageResetPeriod types.EntitlementUsageResetPeriod
+	resetPeriodCounts := make(map[types.EntitlementUsageResetPeriod]int)
 
 	for _, e := range entitlements {
 		if !e.IsEnabled {
@@ -1469,7 +1489,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 	usageByFeature := make(map[string]decimal.Decimal)
 	meterFeatureMap := make(map[string]string)
 	featureMeterMap := make(map[string]string)
-	featureUsageResetPeriodMap := make(map[string]types.BillingPeriod)
+	featureUsageResetPeriodMap := make(map[string]types.EntitlementUsageResetPeriod)
 
 	for _, feature := range entitlements.Features {
 		usageByFeature[feature.Feature.ID] = decimal.Zero
@@ -1500,7 +1520,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 				// currentUsage := usageByFeature[featureID]
 				// usageByFeature[featureID] = currentUsage.Add(decimal.NewFromFloat(charge.Quantity))
 				resetPeriod := featureUsageResetPeriodMap[featureID]
-				if resetPeriod == types.BILLING_PERIOD_DAILY {
+				if resetPeriod == types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY {
 					// Handle daily reset features: get today's usage from daily windows
 					meterID := featureMeterMap[featureID]
 					// Create usage request with daily window size for current billing period

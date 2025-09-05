@@ -372,6 +372,9 @@ func (s *planService) UpdatePlan(ctx context.Context, id string, req dto.UpdateP
 	if req.Metadata != nil {
 		plan.Metadata = req.Metadata
 	}
+	if req.DisplayOrder != nil {
+		plan.DisplayOrder = req.DisplayOrder
+	}
 
 	// Start a transaction for updating plan, prices, and entitlements
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {

@@ -124,7 +124,7 @@ func (s *EntitlementServiceSuite) TestCreateEntitlement() {
 			FeatureID:        meteredFeature.ID,
 			FeatureType:      types.FeatureTypeMetered,
 			UsageLimit:       lo.ToPtr(int64(1000)),
-			UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+			UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 			IsSoftLimit:      true,
 		}
 
@@ -493,7 +493,7 @@ func (s *EntitlementServiceSuite) TestCreateEntitlementWithBucketedMaxMeter() {
 			FeatureID:        bucketedMaxFeature.ID,
 			FeatureType:      types.FeatureTypeMetered,
 			UsageLimit:       lo.ToPtr(int64(1000)),
-			UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+			UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 			IsSoftLimit:      true,
 		}
 
@@ -510,7 +510,7 @@ func (s *EntitlementServiceSuite) TestCreateEntitlementWithBucketedMaxMeter() {
 			FeatureID:        regularMaxFeature.ID,
 			FeatureType:      types.FeatureTypeMetered,
 			UsageLimit:       lo.ToPtr(int64(1000)),
-			UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+			UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 			IsSoftLimit:      true,
 		}
 
@@ -587,7 +587,7 @@ func (s *EntitlementServiceSuite) TestCreateBulkEntitlementWithBucketedMaxMeter(
 					FeatureID:        bucketedMaxFeature.ID,
 					FeatureType:      types.FeatureTypeMetered,
 					UsageLimit:       lo.ToPtr(int64(1000)),
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      true,
 				},
 			},
@@ -680,7 +680,7 @@ func (s *EntitlementServiceSuite) TestCreateBulkEntitlement() {
 					FeatureID:        meteredFeature.ID,
 					FeatureType:      types.FeatureTypeMetered,
 					UsageLimit:       lo.ToPtr(int64(1000)),
-					UsageResetPeriod: types.BILLING_PERIOD_MONTHLY,
+					UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
 					IsSoftLimit:      true,
 				},
 				{
@@ -716,7 +716,7 @@ func (s *EntitlementServiceSuite) TestCreateBulkEntitlement() {
 		s.Equal(meteredFeature.ID, ent2.Entitlement.FeatureID)
 		s.Equal(types.FeatureTypeMetered, ent2.Entitlement.FeatureType)
 		s.Equal(int64(1000), *ent2.Entitlement.UsageLimit)
-		s.Equal(types.BILLING_PERIOD_MONTHLY, ent2.Entitlement.UsageResetPeriod)
+		s.Equal(types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY, ent2.Entitlement.UsageResetPeriod)
 		s.True(ent2.Entitlement.IsSoftLimit)
 		s.NotNil(ent2.Feature)
 		s.Equal(meteredFeature.ID, ent2.Feature.Feature.ID)
