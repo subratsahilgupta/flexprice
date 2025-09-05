@@ -427,9 +427,10 @@ func (s *billingService) CalculateUsageCharges(
 
 			// Add usage reset period metadata if entitlement has daily or never reset
 			if !matchingCharge.IsOverage && ok && matchingEntitlement.IsEnabled {
-				if matchingEntitlement.UsageResetPeriod == types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY {
+				switch matchingEntitlement.UsageResetPeriod {
+				case types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY:
 					metadata["usage_reset_period"] = "daily"
-				} else if matchingEntitlement.UsageResetPeriod == types.ENTITLEMENT_USAGE_RESET_PERIOD_NEVER {
+				case types.ENTITLEMENT_USAGE_RESET_PERIOD_NEVER:
 					metadata["usage_reset_period"] = "never"
 				}
 			}
