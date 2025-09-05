@@ -13,24 +13,16 @@ type TemporalActivityType string
 
 const (
 	// Activity Types - must match the method names in activity structs
-	TemporalActivitySyncPlanPrices TemporalActivityType = "SyncPlanPrices"
-	TemporalActivityFetchData      TemporalActivityType = "FetchData"
-	TemporalActivityCalculate      TemporalActivityType = "Calculate"
-)
-
-// Activity Names - using clean aliases for Temporal registration
-const (
-	// Plan Activities
-	PlanActivitySyncPlanPrices = "PlanActivities.SyncPlanPrices"
-
-	// Billing Activities
-	BillingActivityFetchData = "BillingActivities.FetchDataActivity"
-	BillingActivityCalculate = "BillingActivities.CalculateActivity"
+	TemporalActivitySyncPlanPrices       TemporalActivityType = "SyncPlanPrices"
+	TemporalActivityFetchData            TemporalActivityType = "FetchData"
+	TemporalActivityCalculate            TemporalActivityType = "Calculate"
+	TemporalActivitySubscriptionChange   TemporalActivityType = "SubscriptionChange"
+	TemporalActivitySubscriptionCreation TemporalActivityType = "SubscriptionCreation"
 )
 
 // ActivityInfo holds information about an activity
 type ActivityInfo struct {
-	Name string // Fully qualified name (e.g., "PlanActivities.SyncPlanPrices")
+	Name string // Fully qualified name (e.g., "SyncPlanPrices")
 	Type TemporalActivityType
 }
 
@@ -45,6 +37,8 @@ func (a TemporalActivityType) Validate() error {
 		string(TemporalActivitySyncPlanPrices),
 		string(TemporalActivityFetchData),
 		string(TemporalActivityCalculate),
+		string(TemporalActivitySubscriptionChange),
+		string(TemporalActivitySubscriptionCreation),
 	}
 	if !lo.Contains(allowedValues, string(a)) {
 		return ierr.NewError("invalid activity type").
@@ -70,9 +64,12 @@ type TemporalWorkflowType string
 
 const (
 	// Workflow Types - using clean aliases for registration
-	TemporalBillingWorkflow     TemporalWorkflowType = "CronBillingWorkflow"
-	TemporalCalculationWorkflow TemporalWorkflowType = "CalculateChargesWorkflow"
-	TemporalPriceSyncWorkflow   TemporalWorkflowType = "PriceSyncWorkflow"
+	TemporalBillingWorkflow              TemporalWorkflowType = "CronBillingWorkflow"
+	TemporalCalculationWorkflow          TemporalWorkflowType = "CalculateChargesWorkflow"
+	TemporalPriceSyncWorkflow            TemporalWorkflowType = "PriceSyncWorkflow"
+	TemporalSubscriptionChangeWorkflow   TemporalWorkflowType = "SubscriptionChangeWorkflow"
+	TemporalSubscriptionCreationWorkflow TemporalWorkflowType = "SubscriptionCreationWorkflow"
+	
 )
 
 // String returns the string representation of the workflow type
@@ -83,9 +80,11 @@ func (w TemporalWorkflowType) String() string {
 // Validate validates the workflow type
 func (w TemporalWorkflowType) Validate() error {
 	allowedWorkflows := []TemporalWorkflowType{
-		TemporalBillingWorkflow,     // "CronBillingWorkflow"
-		TemporalCalculationWorkflow, // "CalculateChargesWorkflow"
-		TemporalPriceSyncWorkflow,   // "PriceSyncWorkflow"
+		TemporalBillingWorkflow,              // "CronBillingWorkflow"
+		TemporalCalculationWorkflow,          // "CalculateChargesWorkflow"
+		TemporalPriceSyncWorkflow,            // "PriceSyncWorkflow"
+		TemporalSubscriptionChangeWorkflow,   // "SubscriptionChangeWorkflow"
+		TemporalSubscriptionCreationWorkflow, // "SubscriptionCreationWorkflow"
 	}
 	if lo.Contains(allowedWorkflows, w) {
 		return nil
