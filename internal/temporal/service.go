@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
@@ -59,7 +58,7 @@ func (s *Service) StartBillingWorkflow(ctx context.Context, input models.Billing
 }
 
 // StartPlanPriceSync starts a price sync workflow for a plan
-func (s *Service) StartPlanPriceSync(ctx context.Context, planID string) (*dto.SyncPlanPricesResponse, error) {
+func (s *Service) StartPlanPriceSync(ctx context.Context, planID string) (*models.TemporalWorkflowResult, error) {
 
 	// Extract tenant and environment from context using proper type assertion
 	tenantID := types.GetTenantID(ctx)
@@ -72,7 +71,7 @@ func (s *Service) StartPlanPriceSync(ctx context.Context, planID string) (*dto.S
 		TaskQueue: s.cfg.TaskQueue,
 	}
 
-	we, err := s.client.Client.ExecuteWorkflow(ctx, workflowOptions, string(types.PriceSyncWorkflow), models.PriceSyncWorkflowInput{
+	we, err := s.client.Client.ExecuteWorkflow(ctx, workflowOptions, string(types.TemporalPriceSyncWorkflow), models.PriceSyncWorkflowInput{
 		PlanID:        planID,
 		TenantID:      tenantID,
 		EnvironmentID: environmentID,
@@ -81,13 +80,10 @@ func (s *Service) StartPlanPriceSync(ctx context.Context, planID string) (*dto.S
 		return nil, err
 	}
 
-	// Wait for workflow completion since this is a direct API call
-	var result dto.SyncPlanPricesResponse
-	if err := we.Get(ctx, &result); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
+	return &models.TemporalWorkflowResult{
+		WorkflowID: we.GetID(),
+		RunID:      we.GetRunID(),
+	}, nil
 }
 
 // Close closes the temporal client

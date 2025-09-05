@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/temporal/activities"
 	"github.com/flexprice/flexprice/internal/temporal/models"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
@@ -24,22 +25,18 @@ func PriceSyncWorkflow(ctx workflow.Context, in models.PriceSyncWorkflowInput) (
 	}
 
 	// Create activity input with context
-	activityInput := struct {
-		PlanID        string `json:"plan_id"`
-		TenantID      string `json:"tenant_id"`
-		EnvironmentID string `json:"environment_id"`
-	}{
+	activityInput := activities.SyncPlanPricesInput{
 		PlanID:        in.PlanID,
 		TenantID:      in.TenantID,
 		EnvironmentID: in.EnvironmentID,
 	}
 
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 5 * time.Minute,
+		StartToCloseTimeout: time.Minute * 30,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
-			MaximumInterval:    time.Minute,
+			MaximumInterval:    time.Minute * 5,
 			MaximumAttempts:    3,
 		},
 	}
