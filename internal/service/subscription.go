@@ -726,7 +726,7 @@ func (s *subscriptionService) CancelSubscription(
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 
 		// Step 7: Calculate proration using unified function
-		if req.ProrationBehavior != types.ProrationBehaviorNone {
+		if req.ProrationBehavior == types.ProrationBehaviorCreateProrations {
 			prorationService := NewProrationService(s.ServiceParams)
 			prorationResult, err := prorationService.CalculateSubscriptionCancellationProration(
 				ctx, subscription, lineItems, req.CancellationType, effectiveDate, req.Reason, req.ProrationBehavior)
@@ -3506,7 +3506,6 @@ func (s *subscriptionService) determineEffectiveDate(
 	cancellationType types.CancellationType,
 ) (time.Time, error) {
 	now := time.Now().UTC()
-	// now := time.Date(2025, 9, 15, 12, 0, 0, 0, time.UTC)
 
 	switch cancellationType {
 	case types.CancellationTypeImmediate:
@@ -3734,7 +3733,7 @@ func (s *subscriptionService) calculateCreditAmount(creditItems []proration.Pror
 	total := decimal.Zero
 	for _, item := range creditItems {
 		if item.IsCredit {
-			total = total.Add(item.Amount)
+			total = total.Add(item.Amount.Abs())
 		}
 	}
 	return total

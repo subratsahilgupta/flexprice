@@ -79,6 +79,9 @@ type CreateSubscriptionRequest struct {
 
 	//Billing Anchor
 	BillingAnchor *time.Time `json:"-"`
+
+	// Workflow
+	Workflow *types.WorkflowType `json:"-"`
 }
 
 // AddAddonRequest is used by body-based endpoint /subscriptions/addon
@@ -228,20 +231,20 @@ func (r *CreateSubscriptionRequest) Validate() error {
 			}).
 			Mark(ierr.ErrValidation)
 	}
-	// If proration behavior is not set, set it to none
-	if r.ProrationBehavior == "" {
-		r.ProrationBehavior = types.ProrationBehaviorNone
-	}
 
 	if err := r.ProrationBehavior.Validate(); err != nil {
 		return err
 	}
 
-	// if r.ProrationBehavior == types.ProrationBehaviorCreateProrations {
-	// 	if err := r.validateShouldAllowProrationOnStartDate(*r.StartDate, time.Now().UTC()); err != nil {
-	// 		return err
-	// 	}
-	// }
+	if r.Workflow == nil {
+		r.Workflow = lo.ToPtr(types.SubscriptionCreationWorkflow)
+	}
+
+	if r.ProrationBehavior == types.ProrationBehaviorCreateProrations {
+		if err := r.validateShouldAllowProrationOnStartDate(r); err != nil {
+			return err
+		}
+	}
 
 	if r.BillingPeriodCount < 1 {
 		return ierr.NewError("billing_period_count must be greater than 0").
@@ -448,27 +451,26 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	return nil
 }
 
-func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(startDate, now time.Time) error {
-	// If the start date is before the current date and proration mode is active, return an error
-	// This prevents creating subscriptions with backdated start dates that would trigger proration
+func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(request *CreateSubscriptionRequest) error {
 
-	// Compare only the date portions (ignore time)
-	startDateOnly := startDate.Truncate(24 * time.Hour)
-	nowDateOnly := now.Truncate(24 * time.Hour)
+	if request.Workflow == lo.ToPtr(types.SubscriptionChangeWorkflow) {
+		return nil
+	}
 
-	if r.ProrationBehavior == types.ProrationBehaviorCreateProrations && startDateOnly.Before(nowDateOnly) {
-		return ierr.NewError("cannot create subscription with past start date when proration is active").
-			WithHint("Either set start date to current time or later, or disable proration behavior").
+	// Compare only the date portions (ignore time) - don't allow before current day
+	now := time.Now().UTC()
+	startDateOnly := time.Date(request.StartDate.Year(), request.StartDate.Month(), request.StartDate.Day(), 0, 0, 0, 0, time.UTC)
+	nowDateOnly := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	if startDateOnly.Before(nowDateOnly) {
+		return ierr.NewError("cannot create subscription with past start date when proration is active and workflow is subscription change").
+			WithHint("Either set start date to current day or later, or disable proration behavior").
 			WithReportableDetails(map[string]interface{}{
-				"start_date":         startDate.Format(time.RFC3339),
-				"current_time":       now.Format(time.RFC3339),
-				"proration_behavior": string(r.ProrationBehavior),
+				"start_date":   request.StartDate.Format("2006-01-02"),
+				"current_date": nowDateOnly.Format("2006-01-02"),
 			}).
 			Mark(ierr.ErrValidation)
 	}
-
-	// Allow past start dates without proration
-	// Allow current/future dates with any proration mode
 	return nil
 }
 

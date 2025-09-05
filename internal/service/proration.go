@@ -524,22 +524,28 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 		In this case, the period start is 1 Aug 2025,
 		which defines the full billing duration of 31 days.
 	*/
-	periodStart, err := types.PreviousBillingDate(
-		subscription.BillingAnchor,
-		subscription.BillingPeriodCount,
-		subscription.BillingPeriod,
-	)
-	if err != nil {
-		// Fallback to current period start if calculation fails
-		s.serviceParams.Logger.Warnw("failed to calculate period start for proration, using fallback",
-			"error", err,
-			"subscription_id", subscription.ID,
-			"billing_anchor", subscription.BillingAnchor,
-			"billing_period", subscription.BillingPeriod,
-			"billing_period_count", subscription.BillingPeriodCount)
-		periodStart = subscription.CurrentPeriodStart
+	var periodStart time.Time
+	if subscription.BillingCycle == types.BillingCycleAnniversary {
+		periodStart = subscription.BillingAnchor
+	} else {
+		previousBillingDate, err := types.PreviousBillingDate(
+			subscription.BillingAnchor,
+			subscription.BillingPeriodCount,
+			subscription.BillingPeriod,
+		)
+		if err != nil {
+			// Fallback to current period start if calculation fails
+			s.serviceParams.Logger.Warnw("failed to calculate period start for proration, using fallback",
+				"error", err,
+				"subscription_id", subscription.ID,
+				"billing_anchor", subscription.BillingAnchor,
+				"billing_period", subscription.BillingPeriod,
+				"billing_period_count", subscription.BillingPeriodCount)
+			periodStart = subscription.CurrentPeriodStart
+		} else {
+			periodStart = previousBillingDate
+		}
 	}
-
 	return proration.ProrationParams{
 		SubscriptionID:        subscription.ID,
 		LineItemID:            item.ID,
