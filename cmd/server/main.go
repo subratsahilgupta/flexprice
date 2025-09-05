@@ -563,20 +563,20 @@ func handleEventConsumption(ctx context.Context, cfg *config.Configuration, log 
 	log.Debugf("Starting to process event: %+v", event)
 
 	// Start an event processing span
-	eventSpan, ctx := sentryService.MonitorEventProcessing(
-		ctx,
-		event.EventName,
-		event.Timestamp,
-		map[string]interface{}{
-			"event_id":       event.ID,
-			"tenant_id":      event.TenantID,
-			"source":         event.Source,
-			"environment_id": event.EnvironmentID,
-		},
-	)
-	if eventSpan != nil {
-		defer eventSpan.Finish()
-	}
+	// eventSpan, ctx := sentryService.MonitorEventProcessing(
+	// 	ctx,
+	// 	event.EventName,
+	// 	event.Timestamp,
+	// 	map[string]interface{}{
+	// 		"event_id":       event.ID,
+	// 		"tenant_id":      event.TenantID,
+	// 		"source":         event.Source,
+	// 		"environment_id": event.EnvironmentID,
+	// 	},
+	// )
+	// if eventSpan != nil {
+	// 	defer eventSpan.Finish()
+	// }
 
 	eventsToInsert := []*events.Event{&event}
 
