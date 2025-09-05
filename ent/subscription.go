@@ -92,8 +92,8 @@ type Subscription struct {
 	GatewayPaymentMethodID string `json:"gateway_payment_method_id,omitempty"`
 	// CustomerTimezone holds the value of the "customer_timezone" field.
 	CustomerTimezone string `json:"customer_timezone,omitempty"`
-	// ProrationMode holds the value of the "proration_mode" field.
-	ProrationMode string `json:"proration_mode,omitempty"`
+	// ProrationBehavior holds the value of the "proration_behavior" field.
+	ProrationBehavior string `json:"proration_behavior,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the SubscriptionQuery when eager-loading is set.
 	Edges        SubscriptionEdges `json:"edges"`
@@ -188,7 +188,7 @@ func (*Subscription) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case subscription.FieldBillingPeriodCount, subscription.FieldVersion:
 			values[i] = new(sql.NullInt64)
-		case subscription.FieldID, subscription.FieldTenantID, subscription.FieldStatus, subscription.FieldCreatedBy, subscription.FieldUpdatedBy, subscription.FieldEnvironmentID, subscription.FieldLookupKey, subscription.FieldCustomerID, subscription.FieldPlanID, subscription.FieldSubscriptionStatus, subscription.FieldCurrency, subscription.FieldBillingCadence, subscription.FieldBillingPeriod, subscription.FieldPauseStatus, subscription.FieldActivePauseID, subscription.FieldBillingCycle, subscription.FieldPaymentBehavior, subscription.FieldCollectionMethod, subscription.FieldGatewayPaymentMethodID, subscription.FieldCustomerTimezone, subscription.FieldProrationMode:
+		case subscription.FieldID, subscription.FieldTenantID, subscription.FieldStatus, subscription.FieldCreatedBy, subscription.FieldUpdatedBy, subscription.FieldEnvironmentID, subscription.FieldLookupKey, subscription.FieldCustomerID, subscription.FieldPlanID, subscription.FieldSubscriptionStatus, subscription.FieldCurrency, subscription.FieldBillingCadence, subscription.FieldBillingPeriod, subscription.FieldPauseStatus, subscription.FieldActivePauseID, subscription.FieldBillingCycle, subscription.FieldPaymentBehavior, subscription.FieldCollectionMethod, subscription.FieldGatewayPaymentMethodID, subscription.FieldCustomerTimezone, subscription.FieldProrationBehavior:
 			values[i] = new(sql.NullString)
 		case subscription.FieldCreatedAt, subscription.FieldUpdatedAt, subscription.FieldBillingAnchor, subscription.FieldStartDate, subscription.FieldEndDate, subscription.FieldCurrentPeriodStart, subscription.FieldCurrentPeriodEnd, subscription.FieldCancelledAt, subscription.FieldCancelAt, subscription.FieldTrialStart, subscription.FieldTrialEnd:
 			values[i] = new(sql.NullTime)
@@ -439,11 +439,11 @@ func (s *Subscription) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				s.CustomerTimezone = value.String
 			}
-		case subscription.FieldProrationMode:
+		case subscription.FieldProrationBehavior:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field proration_mode", values[i])
+				return fmt.Errorf("unexpected type %T for field proration_behavior", values[i])
 			} else if value.Valid {
-				s.ProrationMode = value.String
+				s.ProrationBehavior = value.String
 			}
 		default:
 			s.selectValues.Set(columns[i], values[i])
@@ -635,8 +635,8 @@ func (s *Subscription) String() string {
 	builder.WriteString("customer_timezone=")
 	builder.WriteString(s.CustomerTimezone)
 	builder.WriteString(", ")
-	builder.WriteString("proration_mode=")
-	builder.WriteString(s.ProrationMode)
+	builder.WriteString("proration_behavior=")
+	builder.WriteString(s.ProrationBehavior)
 	builder.WriteByte(')')
 	return builder.String()
 }

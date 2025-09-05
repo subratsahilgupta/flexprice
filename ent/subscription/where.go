@@ -231,9 +231,9 @@ func CustomerTimezone(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldCustomerTimezone, v))
 }
 
-// ProrationMode applies equality check predicate on the "proration_mode" field. It's identical to ProrationModeEQ.
-func ProrationMode(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldProrationMode, v))
+// ProrationBehavior applies equality check predicate on the "proration_behavior" field. It's identical to ProrationBehaviorEQ.
+func ProrationBehavior(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldProrationBehavior, v))
 }
 
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
@@ -2131,69 +2131,69 @@ func CustomerTimezoneContainsFold(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldContainsFold(FieldCustomerTimezone, v))
 }
 
-// ProrationModeEQ applies the EQ predicate on the "proration_mode" field.
-func ProrationModeEQ(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEQ(FieldProrationMode, v))
+// ProrationBehaviorEQ applies the EQ predicate on the "proration_behavior" field.
+func ProrationBehaviorEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEQ(FieldProrationBehavior, v))
 }
 
-// ProrationModeNEQ applies the NEQ predicate on the "proration_mode" field.
-func ProrationModeNEQ(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNEQ(FieldProrationMode, v))
+// ProrationBehaviorNEQ applies the NEQ predicate on the "proration_behavior" field.
+func ProrationBehaviorNEQ(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNEQ(FieldProrationBehavior, v))
 }
 
-// ProrationModeIn applies the In predicate on the "proration_mode" field.
-func ProrationModeIn(vs ...string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldIn(FieldProrationMode, vs...))
+// ProrationBehaviorIn applies the In predicate on the "proration_behavior" field.
+func ProrationBehaviorIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldIn(FieldProrationBehavior, vs...))
 }
 
-// ProrationModeNotIn applies the NotIn predicate on the "proration_mode" field.
-func ProrationModeNotIn(vs ...string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldNotIn(FieldProrationMode, vs...))
+// ProrationBehaviorNotIn applies the NotIn predicate on the "proration_behavior" field.
+func ProrationBehaviorNotIn(vs ...string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotIn(FieldProrationBehavior, vs...))
 }
 
-// ProrationModeGT applies the GT predicate on the "proration_mode" field.
-func ProrationModeGT(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGT(FieldProrationMode, v))
+// ProrationBehaviorGT applies the GT predicate on the "proration_behavior" field.
+func ProrationBehaviorGT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGT(FieldProrationBehavior, v))
 }
 
-// ProrationModeGTE applies the GTE predicate on the "proration_mode" field.
-func ProrationModeGTE(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldGTE(FieldProrationMode, v))
+// ProrationBehaviorGTE applies the GTE predicate on the "proration_behavior" field.
+func ProrationBehaviorGTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldGTE(FieldProrationBehavior, v))
 }
 
-// ProrationModeLT applies the LT predicate on the "proration_mode" field.
-func ProrationModeLT(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLT(FieldProrationMode, v))
+// ProrationBehaviorLT applies the LT predicate on the "proration_behavior" field.
+func ProrationBehaviorLT(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLT(FieldProrationBehavior, v))
 }
 
-// ProrationModeLTE applies the LTE predicate on the "proration_mode" field.
-func ProrationModeLTE(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldLTE(FieldProrationMode, v))
+// ProrationBehaviorLTE applies the LTE predicate on the "proration_behavior" field.
+func ProrationBehaviorLTE(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldLTE(FieldProrationBehavior, v))
 }
 
-// ProrationModeContains applies the Contains predicate on the "proration_mode" field.
-func ProrationModeContains(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldContains(FieldProrationMode, v))
+// ProrationBehaviorContains applies the Contains predicate on the "proration_behavior" field.
+func ProrationBehaviorContains(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContains(FieldProrationBehavior, v))
 }
 
-// ProrationModeHasPrefix applies the HasPrefix predicate on the "proration_mode" field.
-func ProrationModeHasPrefix(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldHasPrefix(FieldProrationMode, v))
+// ProrationBehaviorHasPrefix applies the HasPrefix predicate on the "proration_behavior" field.
+func ProrationBehaviorHasPrefix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasPrefix(FieldProrationBehavior, v))
 }
 
-// ProrationModeHasSuffix applies the HasSuffix predicate on the "proration_mode" field.
-func ProrationModeHasSuffix(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldHasSuffix(FieldProrationMode, v))
+// ProrationBehaviorHasSuffix applies the HasSuffix predicate on the "proration_behavior" field.
+func ProrationBehaviorHasSuffix(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldHasSuffix(FieldProrationBehavior, v))
 }
 
-// ProrationModeEqualFold applies the EqualFold predicate on the "proration_mode" field.
-func ProrationModeEqualFold(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldEqualFold(FieldProrationMode, v))
+// ProrationBehaviorEqualFold applies the EqualFold predicate on the "proration_behavior" field.
+func ProrationBehaviorEqualFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldEqualFold(FieldProrationBehavior, v))
 }
 
-// ProrationModeContainsFold applies the ContainsFold predicate on the "proration_mode" field.
-func ProrationModeContainsFold(v string) predicate.Subscription {
-	return predicate.Subscription(sql.FieldContainsFold(FieldProrationMode, v))
+// ProrationBehaviorContainsFold applies the ContainsFold predicate on the "proration_behavior" field.
+func ProrationBehaviorContainsFold(v string) predicate.Subscription {
+	return predicate.Subscription(sql.FieldContainsFold(FieldProrationBehavior, v))
 }
 
 // HasLineItems applies the HasEdge predicate on the "line_items" edge.

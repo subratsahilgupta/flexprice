@@ -40422,7 +40422,7 @@ type SubscriptionMutation struct {
 	collection_method          *subscription.CollectionMethod
 	gateway_payment_method_id  *string
 	customer_timezone          *string
-	proration_mode             *string
+	proration_behavior         *string
 	clearedFields              map[string]struct{}
 	line_items                 map[string]struct{}
 	removedline_items          map[string]struct{}
@@ -42068,40 +42068,40 @@ func (m *SubscriptionMutation) ResetCustomerTimezone() {
 	m.customer_timezone = nil
 }
 
-// SetProrationMode sets the "proration_mode" field.
-func (m *SubscriptionMutation) SetProrationMode(s string) {
-	m.proration_mode = &s
+// SetProrationBehavior sets the "proration_behavior" field.
+func (m *SubscriptionMutation) SetProrationBehavior(s string) {
+	m.proration_behavior = &s
 }
 
-// ProrationMode returns the value of the "proration_mode" field in the mutation.
-func (m *SubscriptionMutation) ProrationMode() (r string, exists bool) {
-	v := m.proration_mode
+// ProrationBehavior returns the value of the "proration_behavior" field in the mutation.
+func (m *SubscriptionMutation) ProrationBehavior() (r string, exists bool) {
+	v := m.proration_behavior
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldProrationMode returns the old "proration_mode" field's value of the Subscription entity.
+// OldProrationBehavior returns the old "proration_behavior" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldProrationMode(ctx context.Context) (v string, err error) {
+func (m *SubscriptionMutation) OldProrationBehavior(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldProrationMode is only allowed on UpdateOne operations")
+		return v, errors.New("OldProrationBehavior is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldProrationMode requires an ID field in the mutation")
+		return v, errors.New("OldProrationBehavior requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldProrationMode: %w", err)
+		return v, fmt.Errorf("querying old value for OldProrationBehavior: %w", err)
 	}
-	return oldValue.ProrationMode, nil
+	return oldValue.ProrationBehavior, nil
 }
 
-// ResetProrationMode resets all changes to the "proration_mode" field.
-func (m *SubscriptionMutation) ResetProrationMode() {
-	m.proration_mode = nil
+// ResetProrationBehavior resets all changes to the "proration_behavior" field.
+func (m *SubscriptionMutation) ResetProrationBehavior() {
+	m.proration_behavior = nil
 }
 
 // AddLineItemIDs adds the "line_items" edge to the SubscriptionLineItem entity by ids.
@@ -42556,8 +42556,8 @@ func (m *SubscriptionMutation) Fields() []string {
 	if m.customer_timezone != nil {
 		fields = append(fields, subscription.FieldCustomerTimezone)
 	}
-	if m.proration_mode != nil {
-		fields = append(fields, subscription.FieldProrationMode)
+	if m.proration_behavior != nil {
+		fields = append(fields, subscription.FieldProrationBehavior)
 	}
 	return fields
 }
@@ -42639,8 +42639,8 @@ func (m *SubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.GatewayPaymentMethodID()
 	case subscription.FieldCustomerTimezone:
 		return m.CustomerTimezone()
-	case subscription.FieldProrationMode:
-		return m.ProrationMode()
+	case subscription.FieldProrationBehavior:
+		return m.ProrationBehavior()
 	}
 	return nil, false
 }
@@ -42722,8 +42722,8 @@ func (m *SubscriptionMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldGatewayPaymentMethodID(ctx)
 	case subscription.FieldCustomerTimezone:
 		return m.OldCustomerTimezone(ctx)
-	case subscription.FieldProrationMode:
-		return m.OldProrationMode(ctx)
+	case subscription.FieldProrationBehavior:
+		return m.OldProrationBehavior(ctx)
 	}
 	return nil, fmt.Errorf("unknown Subscription field %s", name)
 }
@@ -42985,12 +42985,12 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetCustomerTimezone(v)
 		return nil
-	case subscription.FieldProrationMode:
+	case subscription.FieldProrationBehavior:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetProrationMode(v)
+		m.SetProrationBehavior(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)
@@ -43263,8 +43263,8 @@ func (m *SubscriptionMutation) ResetField(name string) error {
 	case subscription.FieldCustomerTimezone:
 		m.ResetCustomerTimezone()
 		return nil
-	case subscription.FieldProrationMode:
-		m.ResetProrationMode()
+	case subscription.FieldProrationBehavior:
+		m.ResetProrationBehavior()
 		return nil
 	}
 	return fmt.Errorf("unknown Subscription field %s", name)
