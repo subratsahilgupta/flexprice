@@ -105,7 +105,7 @@ func (s *billingService) CalculateFixedCharges(
 		amount := priceService.CalculateCost(ctx, price.Price, item.Quantity)
 
 		// Apply proration if applicable
-		proratedAmount, err := s.applyProrationToLineItem(ctx, sub, item, price.Price, amount)
+		proratedAmount, err := s.applyProrationToLineItem(ctx, sub, item, price.Price, amount, &periodStart, &periodEnd)
 		if err != nil {
 			s.Logger.Warnw("failed to apply proration to line item, using original amount",
 				"error", err,
@@ -333,7 +333,7 @@ func (s *billingService) CalculateUsageCharges(
 					} else if matchingEntitlement.UsageResetPeriod == types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY {
 						// For never type
 						// we will fetch the usage from subscriprion start date to current date
-						// then for calculating this peirods usage we will again fetch the usage from subcriprion start till this current period start date 
+						// then for calculating this peirods usage we will again fetch the usage from subcriprion start till this current period start date
 						// then minus overall - till current period date
 					} else {
 						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
@@ -1088,6 +1088,8 @@ func (s *billingService) applyProrationToLineItem(
 	item *subscription.SubscriptionLineItem,
 	priceData *price.Price,
 	originalAmount decimal.Decimal,
+	periodStart *time.Time,
+	periodEnd *time.Time,
 ) (decimal.Decimal, error) {
 
 	prorationService := NewProrationService(s.ServiceParams)
@@ -1095,6 +1097,14 @@ func (s *billingService) applyProrationToLineItem(
 	if sub.ProrationBehavior == types.ProrationBehaviorNone {
 		// No proration needed
 		return originalAmount, nil
+	}
+
+	// Check if period dates match subscription's current period
+	if periodStart != nil && periodEnd != nil {
+		if !periodStart.Equal(sub.CurrentPeriodStart) || !periodEnd.Equal(sub.CurrentPeriodEnd) {
+			// Period doesn't match subscription's current period, don't apply proration
+			return originalAmount, nil
+		}
 	}
 
 	// If it's a usage charge, don't apply proration (usage is typically calculated for actual usage in the period)
