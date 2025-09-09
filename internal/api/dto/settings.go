@@ -51,15 +51,25 @@ func ConvertToInvoiceConfig(value map[string]interface{}) (*types.InvoiceConfig,
 	if invoiceNumberTimezone, ok := value["timezone"].(string); ok {
 		invoiceConfig.InvoiceNumberTimezone = invoiceNumberTimezone
 	}
-	if invoiceNumberStartSequence, ok := value["start_sequence"].(float64); ok {
-		invoiceConfig.InvoiceNumberStartSequence = int(invoiceNumberStartSequence)
+	if startSequenceRaw, exists := value["start_sequence"]; exists {
+		switch v := startSequenceRaw.(type) {
+		case int:
+			invoiceConfig.InvoiceNumberStartSequence = v
+		case float64:
+			invoiceConfig.InvoiceNumberStartSequence = int(v)
+		}
 	}
 
 	if invoiceNumberSeparator, ok := value["separator"].(string); ok {
 		invoiceConfig.InvoiceNumberSeparator = invoiceNumberSeparator
 	}
-	if invoiceNumberSuffixLength, ok := value["suffix_length"].(float64); ok {
-		invoiceConfig.InvoiceNumberSuffixLength = int(invoiceNumberSuffixLength)
+	if suffixLengthRaw, exists := value["suffix_length"]; exists {
+		switch v := suffixLengthRaw.(type) {
+		case int:
+			invoiceConfig.InvoiceNumberSuffixLength = v
+		case float64:
+			invoiceConfig.InvoiceNumberSuffixLength = int(v)
+		}
 	}
 
 	return invoiceConfig, nil
