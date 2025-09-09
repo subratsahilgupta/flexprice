@@ -425,7 +425,7 @@ func (s *eventPostProcessingService) prepareProcessedEvents(ctx context.Context,
 	featureMeterMap := make(map[string]*feature.Feature)                  // Map meter_id -> feature
 	subLineItemMap := make(map[string]*subscription.SubscriptionLineItem) // Map price_id -> line item
 
-	addonIDs := make([]string, 0)
+	addonIDs := make([]string, 0) // Collects addon EntityIDs for bulk price fetching
 	// Extract meters, prices and line items from subscriptions
 	for _, sub := range subscriptions {
 		if sub.Plan == nil || sub.Plan.Prices == nil {
