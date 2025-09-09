@@ -457,6 +457,7 @@ func (s *eventPostProcessingService) prepareProcessedEvents(ctx context.Context,
 	}
 
 	// Fetch addon prices in bulk if we have addon IDs
+	addonIDs = lo.Uniq(addonIDs)
 	if len(addonIDs) > 0 {
 		priceService := NewPriceService(s.ServiceParams)
 		priceFilter := types.NewNoLimitPriceFilter().
@@ -472,7 +473,6 @@ func (s *eventPostProcessingService) prepareProcessedEvents(ctx context.Context,
 				"event_id", event.ID,
 				"addon_count", len(addonIDs),
 			)
-			// TODO: add sentry span for failed to get addon prices
 			return results, err
 		}
 
