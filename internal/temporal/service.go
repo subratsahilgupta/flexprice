@@ -63,7 +63,7 @@ func (s *Service) StartPlanPriceSync(ctx context.Context, planID string) (*model
 	// Extract tenant and environment from context using proper type assertion
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
-
+	userID := types.GetUserID(ctx)
 	workflowID := fmt.Sprintf("price-sync-%s-%d", planID, time.Now().Unix())
 
 	workflowOptions := client.StartWorkflowOptions{
@@ -75,6 +75,7 @@ func (s *Service) StartPlanPriceSync(ctx context.Context, planID string) (*model
 		PlanID:        planID,
 		TenantID:      tenantID,
 		EnvironmentID: environmentID,
+		UserID:        userID,
 	})
 	if err != nil {
 		return nil, err

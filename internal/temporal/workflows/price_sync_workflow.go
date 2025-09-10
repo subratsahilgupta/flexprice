@@ -29,6 +29,7 @@ func PriceSyncWorkflow(ctx workflow.Context, in models.PriceSyncWorkflowInput) (
 		PlanID:        in.PlanID,
 		TenantID:      in.TenantID,
 		EnvironmentID: in.EnvironmentID,
+		UserID:        in.UserID,
 	}
 
 	ao := workflow.ActivityOptions{

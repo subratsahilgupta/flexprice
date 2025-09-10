@@ -53,6 +53,7 @@ type PriceSyncWorkflowInput struct {
 	PlanID        string `json:"plan_id"`
 	TenantID      string `json:"tenant_id"`
 	EnvironmentID string `json:"environment_id"`
+	UserID        string `json:"user_id"`
 }
 
 func (p *PriceSyncWorkflowInput) Validate() error {
@@ -62,8 +63,8 @@ func (p *PriceSyncWorkflowInput) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if p.TenantID == "" || p.EnvironmentID == "" {
-		return ierr.NewError("tenant ID and environment ID are required").
+	if p.TenantID == "" || p.EnvironmentID == "" || p.UserID == "" {
+		return ierr.NewError("tenant ID, environment ID and user ID are required").
 			WithHint("Tenant ID and environment ID are required").
 			Mark(ierr.ErrValidation)
 	}
