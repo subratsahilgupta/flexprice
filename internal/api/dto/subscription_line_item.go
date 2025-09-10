@@ -82,12 +82,31 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 		BaseModel:      types.GetDefaultBaseModel(ctx),
 	}
 
-	// Set entity-specific fields
+	if params.Price != nil && params.Price.Type == types.PRICE_TYPE_USAGE {
+		// Usage-based pricing
+		lineItem.MeterID = params.Price.MeterID
+		if params.Price.Meter != nil {
+			lineItem.MeterDisplayName = params.Price.Meter.Name
+			// Meter name takes priority for display name
+			lineItem.DisplayName = params.Price.Meter.Name
+		}
+		lineItem.Quantity = decimal.Zero // Start with zero for usage-based pricing
+	} else {
+		// Fixed pricing - set default quantity first
+		if params.Price != nil {
+			lineItem.Quantity = params.Price.GetDefaultQuantity()
+		} else {
+			lineItem.Quantity = decimal.NewFromInt(1)
+		}
+	}
+
+	// Set entity-specific fields (only if display name not already set by meter)
 	switch params.EntityType {
 	case types.SubscriptionLineItemEntityTypePlan:
 		if params.Plan != nil {
 			lineItem.EntityID = params.Plan.ID
 			lineItem.PlanDisplayName = params.Plan.Name
+			// Only use plan name if display name not set by meter
 			if lineItem.DisplayName == "" {
 				lineItem.DisplayName = params.Plan.Name
 			}
@@ -95,6 +114,7 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 	case types.SubscriptionLineItemEntityTypeAddon:
 		if params.Addon != nil {
 			lineItem.EntityID = params.Addon.ID
+			// Only use addon name if display name not set by meter
 			if lineItem.DisplayName == "" {
 				lineItem.DisplayName = params.Addon.Name
 			}
@@ -109,11 +129,9 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 		}
 	}
 
-	// Set quantity if provided, otherwise default to 1 for non-usage prices
+	// Override quantity if provided in request
 	if !r.Quantity.IsZero() {
 		lineItem.Quantity = r.Quantity
-	} else {
-		lineItem.Quantity = params.Price.GetDefaultQuantity()
 	}
 
 	// Set dates if provided
@@ -127,23 +145,11 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 		lineItem.EndDate = r.EndDate.UTC()
 	}
 
-	// Handle usage-based pricing
-	if params.Price.Type == types.PRICE_TYPE_USAGE && params.Price.MeterID != "" {
-		lineItem.MeterID = params.Price.MeterID
-		if params.Price.Meter != nil {
-			lineItem.MeterDisplayName = params.Price.Meter.Name
-			// If no display name is set, use meter name
-			if lineItem.DisplayName == "" {
-				lineItem.DisplayName = params.Price.Meter.Name
-			}
-		}
-	}
-
 	return lineItem
 }
 
 // Validate validates the delete subscription line item request
 func (r *DeleteSubscriptionLineItemRequest) Validate() error {
-	
+
 	return nil
 }
