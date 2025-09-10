@@ -2049,15 +2049,17 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 			Mark(ierr.ErrValidation)
 	}
 
-	// Don't allow updates for paid invoices
+	// For paid invoices, only allow updates to safe fields (PDF URL and due date)
 	if inv.PaymentStatus == types.PaymentStatusSucceeded {
-		return nil, ierr.NewError("cannot update paid invoice").
-			WithHint("Invoice cannot be updated after it has been paid").
-			WithReportableDetails(map[string]any{
-				"invoice_id":     id,
-				"payment_status": inv.PaymentStatus,
-			}).
-			Mark(ierr.ErrValidation)
+		if !isSafeUpdateForPaidInvoice(req) {
+			return nil, ierr.NewError("cannot update paid invoice").
+				WithHint("Only PDF URL and due date can be updated for paid invoices").
+				WithReportableDetails(map[string]any{
+					"invoice_id":     id,
+					"payment_status": inv.PaymentStatus,
+				}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 
 	// Update invoice PDF URL if provided
@@ -2536,4 +2538,15 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 	}
 
 	return usageBreakdownResponse, nil
+}
+
+// isSafeUpdateForPaidInvoice checks if the update request contains only safe fields for paid invoices
+func isSafeUpdateForPaidInvoice(req dto.UpdateInvoiceRequest) bool {
+	// Currently, UpdateInvoiceRequest only contains InvoicePDFURL and DueDate
+	// Both of these are considered safe for paid invoices
+	// In the future, if more fields are added, they should be categorized here
+
+	// For now, all fields in UpdateInvoiceRequest are safe
+	// This function is here for future extensibility
+	return true
 }
