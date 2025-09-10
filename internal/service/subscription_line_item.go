@@ -38,13 +38,14 @@ func (s *subscriptionService) AddSubscriptionLineItem(ctx context.Context, subsc
 	}
 
 	// Get entity details and price with expanded data
-	price, err := s.PriceRepo.Get(ctx, req.PriceID)
+	priceService := NewPriceService(s.ServiceParams)
+	price, err := priceService.GetPrice(ctx, req.PriceID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Set the price in params
-	params.Price = &dto.PriceResponse{Price: price}
+	params.Price = price
 
 	if price.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
 		planService := NewPlanService(s.ServiceParams)

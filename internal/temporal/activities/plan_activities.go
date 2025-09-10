@@ -28,6 +28,7 @@ func NewPlanActivities(planService service.PlanService) *PlanActivities {
 type SyncPlanPricesInput struct {
 	PlanID        string `json:"plan_id"`
 	TenantID      string `json:"tenant_id"`
+	UserID        string `json:"user_id"`
 	EnvironmentID string `json:"environment_id"`
 }
 
@@ -48,8 +49,9 @@ func (a *PlanActivities) SyncPlanPrices(ctx context.Context, input SyncPlanPrice
 			Mark(ierr.ErrValidation)
 	}
 
-	ctx = context.WithValue(ctx, types.CtxTenantID, input.TenantID)
-	ctx = context.WithValue(ctx, types.CtxEnvironmentID, input.EnvironmentID)
+	ctx = types.SetTenantID(ctx, input.TenantID)
+	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	result, err := a.planService.SyncPlanPrices(ctx, input.PlanID)
 	if err != nil {
