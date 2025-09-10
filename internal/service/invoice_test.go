@@ -1600,7 +1600,7 @@ func (s *InvoiceServiceSuite) TestUpdateInvoice() {
 		})
 	}
 
-	// Test updating a paid invoice (should fail)
+	// Test updating a paid invoice (should now succeed for safe fields)
 	paidInvoice, err := s.service.CreateOneOffInvoice(ctx, dto.CreateInvoiceRequest{
 		CustomerID:    s.testData.customer.ID,
 		InvoiceType:   types.InvoiceTypeOneOff,
@@ -1613,9 +1613,15 @@ func (s *InvoiceServiceSuite) TestUpdateInvoice() {
 	})
 	s.Require().NoError(err)
 
-	_, err = s.service.UpdateInvoice(ctx, paidInvoice.ID, dto.UpdateInvoiceRequest{
-		DueDate: lo.ToPtr(time.Now().UTC().Add(24 * time.Hour)),
+	// Update PDF URL and due date for paid invoice (should succeed)
+	updatedPaidInvoice, err := s.service.UpdateInvoice(ctx, paidInvoice.ID, dto.UpdateInvoiceRequest{
+		DueDate:       lo.ToPtr(time.Now().UTC().Add(24 * time.Hour)),
+		InvoicePDFURL: lo.ToPtr("https://example.com/paid-invoice.pdf"),
 	})
-	s.Require().Error(err)
-	s.Contains(err.Error(), "cannot update paid invoice")
+	s.Require().NoError(err)
+	s.Require().NotNil(updatedPaidInvoice)
+	s.Require().Equal(types.PaymentStatusSucceeded, updatedPaidInvoice.PaymentStatus) // Payment status should remain unchanged
+	s.Require().NotNil(updatedPaidInvoice.DueDate)
+	s.Require().NotNil(updatedPaidInvoice.InvoicePDFURL)
+	s.Require().Equal("https://example.com/paid-invoice.pdf", *updatedPaidInvoice.InvoicePDFURL)
 }
