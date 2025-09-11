@@ -451,7 +451,7 @@ func (h *InvoiceHandler) RecalculateInvoice(c *gin.Context) {
 // UpdateInvoice godoc
 // @Summary Update an invoice
 // @Description Update invoice details like PDF URL and due date.
-// Only works for draft or finalized invoices that haven't been paid.
+// Works for draft, finalized, and paid invoices. Only safe fields like PDF URL and due date can be updated for paid invoices.
 // @Tags Invoices
 // @Accept json
 // @Produce json
