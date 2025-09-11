@@ -17,6 +17,7 @@ import (
 func main() {
 	// Parse command line flags
 	dryRun := flag.Bool("dry-run", false, "Print migration SQL without executing it")
+	timeout := flag.Int("timeout", 300, "Timeout in seconds for the migration")
 	flag.Parse()
 
 	// Load configuration
@@ -42,7 +43,7 @@ func main() {
 	}
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*timeout)*time.Second)
 	defer cancel()
 
 	// Run auto migration

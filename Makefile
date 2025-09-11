@@ -86,20 +86,20 @@ generate-ent: install-ent
 .PHONY: migrate-ent
 migrate-ent:
 	@echo "Running Ent migrations..."
-	@go run cmd/migrate/main.go
+	@go run cmd/migrate/main.go --timeout 300
 	@echo "Ent migrations complete"
 
 .PHONY: migrate-ent-dry-run
 migrate-ent-dry-run:
 	@echo "Generating SQL migration statements (dry run)..."
-	@go run cmd/migrate/main.go --dry-run
+	@go run cmd/migrate/main.go --dry-run --timeout 300
 	@echo "SQL migration statements generated"
 
 .PHONY: generate-migration
 generate-migration:
 	@echo "Generating SQL migration file..."
 	@mkdir -p migrations/ent
-	@go run cmd/migrate/main.go --dry-run > migrations/ent/migration_$(shell date +%Y%m%d%H%M%S).sql
+	@go run cmd/migrate/main.go --dry-run --timeout 300 > migrations/ent/migration_$(shell date +%Y%m%d%H%M%S).sql
 	@echo "SQL migration file generated in migrations/ent/"
 
 # Initialize databases and required topics
