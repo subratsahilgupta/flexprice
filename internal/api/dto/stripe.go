@@ -1,6 +1,8 @@
 package dto
 
 import (
+	"strings"
+
 	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
@@ -82,4 +84,101 @@ type PaymentStatusResponse struct {
 	CreatedAt       int64             `json:"created_at"`
 	ExpiresAt       int64             `json:"expires_at"`
 	Metadata        map[string]string `json:"metadata"`
+}
+
+// CreateSetupIntentRequest represents a request to create a Setup Intent session
+type CreateSetupIntentRequest struct {
+	CustomerID         string         `json:"customer_id" binding:"required"`
+	Usage              string         `json:"usage,omitempty"`                // "on_session" or "off_session" (default: "off_session")
+	PaymentMethodTypes []string       `json:"payment_method_types,omitempty"` // defaults to ["card"]
+	SuccessURL         string         `json:"success_url,omitempty"`          // User-configurable success redirect URL
+	CancelURL          string         `json:"cancel_url,omitempty"`           // User-configurable cancel redirect URL
+	Metadata           types.Metadata `json:"metadata,omitempty"`
+}
+
+// SetupIntentResponse represents a response from creating a Setup Intent session
+type SetupIntentResponse struct {
+	SetupIntentID     string `json:"setup_intent_id"`
+	CheckoutSessionID string `json:"checkout_session_id"`
+	CheckoutURL       string `json:"checkout_url"`
+	ClientSecret      string `json:"client_secret"`
+	Status            string `json:"status"`
+	Usage             string `json:"usage"`
+	CustomerID        string `json:"customer_id"`
+	CreatedAt         int64  `json:"created_at"`
+	ExpiresAt         int64  `json:"expires_at"`
+}
+
+// Validate validates the create Setup Intent request
+func (r *CreateSetupIntentRequest) Validate() error {
+	if r.CustomerID == "" {
+		return errors.NewError("customer_id is required").
+			WithHint("Customer ID is required").
+			Mark(errors.ErrValidation)
+	}
+
+	// Validate usage parameter
+	if r.Usage != "" && r.Usage != "on_session" && r.Usage != "off_session" {
+		return errors.NewError("invalid usage parameter").
+			WithHint("Usage must be 'on_session' or 'off_session'").
+			Mark(errors.ErrValidation)
+	}
+
+	// Validate payment method types
+	if len(r.PaymentMethodTypes) > 0 {
+		for _, pmType := range r.PaymentMethodTypes {
+			if pmType != "card" && pmType != "us_bank_account" && pmType != "sepa_debit" {
+				return errors.NewError("unsupported payment method type").
+					WithHint("Supported payment method types: card, us_bank_account, sepa_debit").
+					WithReportableDetails(map[string]interface{}{
+						"payment_method_type": pmType,
+					}).
+					Mark(errors.ErrValidation)
+			}
+		}
+	}
+
+	// Validate URLs if provided (basic URL format validation)
+	if r.SuccessURL != "" {
+		if !isValidURL(r.SuccessURL) {
+			return errors.NewError("invalid success_url format").
+				WithHint("Success URL must be a valid HTTP/HTTPS URL").
+				WithReportableDetails(map[string]interface{}{
+					"success_url": r.SuccessURL,
+				}).
+				Mark(errors.ErrValidation)
+		}
+	}
+
+	if r.CancelURL != "" {
+		if !isValidURL(r.CancelURL) {
+			return errors.NewError("invalid cancel_url format").
+				WithHint("Cancel URL must be a valid HTTP/HTTPS URL").
+				WithReportableDetails(map[string]interface{}{
+					"cancel_url": r.CancelURL,
+				}).
+				Mark(errors.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
+// isValidURL checks if a string is a valid HTTP/HTTPS URL
+func isValidURL(urlStr string) bool {
+	if urlStr == "" {
+		return true // Empty URLs are allowed (optional)
+	}
+
+	// Must start with http:// or https://
+	if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
+		return false
+	}
+
+	// Basic length check
+	if len(urlStr) > 2048 {
+		return false // URLs longer than 2048 chars are generally not supported
+	}
+
+	return true
 }

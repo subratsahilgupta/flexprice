@@ -1565,3 +1565,190 @@ func (s *StripeService) UpdateStripeCustomerMetadata(ctx context.Context, stripe
 
 	return nil
 }
+
+// SetupIntent creates a Setup Intent with the configured payment provider (generic method)
+func (s *StripeService) SetupIntent(ctx context.Context, req *dto.CreateSetupIntentRequest) (*dto.SetupIntentResponse, error) {
+	// For now, we only support Stripe, but this can be extended for other providers
+	return s.createStripeSetupIntent(ctx, req)
+}
+
+// CreateStripeSetupIntent creates a Setup Intent with Stripe Checkout session for saving payment methods
+func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.CreateSetupIntentRequest) (*dto.SetupIntentResponse, error) {
+	s.Logger.Infow("creating stripe setup intent",
+		"customer_id", req.CustomerID,
+		"usage", req.Usage,
+		"payment_method_types", req.PaymentMethodTypes,
+	)
+
+	// Get Stripe connection for this environment
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe connection").
+			WithHint("Stripe connection not configured for this environment").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Debug logging for context
+	s.Logger.Infow("setup intent context debug",
+		"customer_id", req.CustomerID,
+		"tenant_id", types.GetTenantID(ctx),
+		"environment_id", types.GetEnvironmentID(ctx),
+	)
+
+	// Ensure customer is synced to Stripe before creating setup intent
+	customerResp, err := s.EnsureCustomerSyncedToStripe(ctx, req.CustomerID)
+	if err != nil {
+		s.Logger.Errorw("failed to sync customer to Stripe",
+			"error", err,
+			"customer_id", req.CustomerID,
+			"tenant_id", types.GetTenantID(ctx),
+			"environment_id", types.GetEnvironmentID(ctx),
+		)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to sync customer to Stripe").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get Stripe customer ID (should exist after sync)
+	stripeCustomerID, exists := customerResp.Customer.Metadata["stripe_customer_id"]
+	if !exists || stripeCustomerID == "" {
+		return nil, ierr.NewError("customer does not have Stripe customer ID after sync").
+			WithHint("Failed to sync customer to Stripe").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get Stripe configuration
+	stripeConfig, err := s.GetDecryptedStripeConfig(conn)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe configuration").
+			WithHint("Invalid Stripe configuration").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Initialize Stripe client
+	stripeClient := stripe.NewClient(stripeConfig.SecretKey, nil)
+
+	// Set default values
+	usage := req.Usage
+	if usage == "" {
+		usage = "off_session" // Default as per Stripe documentation
+	}
+
+	paymentMethodTypes := req.PaymentMethodTypes
+	if len(paymentMethodTypes) == 0 {
+		paymentMethodTypes = []string{"card"} // Default to card
+	}
+
+	// Use user-provided URLs directly (no defaults)
+	successURL := req.SuccessURL
+	cancelURL := req.CancelURL
+
+	// Build metadata for the setup intent
+	metadata := map[string]string{
+		"customer_id":    req.CustomerID,
+		"environment_id": types.GetEnvironmentID(ctx),
+		"usage":          usage,
+	}
+
+	// Add custom metadata if provided
+	for k, v := range req.Metadata {
+		metadata[k] = v
+	}
+
+	// Create Setup Intent first
+	setupIntentParams := &stripe.SetupIntentCreateParams{
+		Customer: stripe.String(stripeCustomerID),
+		Usage:    stripe.String(usage),
+		Metadata: metadata,
+	}
+
+	// Add payment method types
+	for _, pmType := range paymentMethodTypes {
+		setupIntentParams.PaymentMethodTypes = append(setupIntentParams.PaymentMethodTypes, stripe.String(pmType))
+	}
+
+	setupIntent, err := stripeClient.V1SetupIntents.Create(context.Background(), setupIntentParams)
+	if err != nil {
+		s.Logger.Errorw("failed to create Stripe setup intent",
+			"error", err,
+			"customer_id", req.CustomerID)
+		return nil, ierr.NewError("failed to create setup intent").
+			WithHint("Unable to create Stripe setup intent").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": req.CustomerID,
+				"error":       err.Error(),
+			}).
+			Mark(ierr.ErrSystem)
+	}
+
+	s.Logger.Infow("created stripe setup intent",
+		"setup_intent_id", setupIntent.ID,
+		"customer_id", req.CustomerID,
+		"usage", usage,
+	)
+
+	// Create Checkout Session in setup mode
+	checkoutParams := &stripe.CheckoutSessionCreateParams{
+		Mode:     stripe.String("setup"),
+		Customer: stripe.String(stripeCustomerID),
+		PaymentMethodTypes: func() []*string {
+			var pmTypes []*string
+			for _, pmType := range paymentMethodTypes {
+				pmTypes = append(pmTypes, stripe.String(pmType))
+			}
+			return pmTypes
+		}(),
+		SuccessURL: stripe.String(successURL),
+		CancelURL:  stripe.String(cancelURL),
+		Metadata:   metadata,
+	}
+
+	// Link the setup intent to the checkout session
+	checkoutParams.SetupIntentData = &stripe.CheckoutSessionCreateSetupIntentDataParams{
+		Metadata: metadata,
+	}
+
+	checkoutSession, err := stripeClient.V1CheckoutSessions.Create(context.Background(), checkoutParams)
+	if err != nil {
+		s.Logger.Errorw("failed to create Stripe checkout session for setup intent",
+			"error", err,
+			"setup_intent_id", setupIntent.ID,
+			"customer_id", req.CustomerID)
+		return nil, ierr.NewError("failed to create setup intent checkout session").
+			WithHint("Unable to create Stripe checkout session").
+			WithReportableDetails(map[string]interface{}{
+				"setup_intent_id": setupIntent.ID,
+				"customer_id":     req.CustomerID,
+				"error":           err.Error(),
+			}).
+			Mark(ierr.ErrSystem)
+	}
+
+	response := &dto.SetupIntentResponse{
+		SetupIntentID:     setupIntent.ID,
+		CheckoutSessionID: checkoutSession.ID,
+		CheckoutURL:       checkoutSession.URL,
+		ClientSecret:      setupIntent.ClientSecret,
+		Status:            string(setupIntent.Status),
+		Usage:             usage,
+		CustomerID:        req.CustomerID,
+		CreatedAt:         setupIntent.Created,
+		ExpiresAt:         checkoutSession.ExpiresAt,
+	}
+
+	s.Logger.Infow("successfully created stripe setup intent with checkout session",
+		"setup_intent_id", setupIntent.ID,
+		"checkout_session_id", checkoutSession.ID,
+		"checkout_url", checkoutSession.URL,
+		"customer_id", req.CustomerID,
+		"usage", usage,
+	)
+
+	return response, nil
+}
