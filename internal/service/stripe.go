@@ -652,7 +652,7 @@ func (s *StripeService) GetCustomerPaymentMethods(ctx context.Context, req *dto.
 	// List payment methods for the customer
 	params := &stripe.PaymentMethodListParams{
 		Customer: stripe.String(stripeCustomerID),
-		Type:     stripe.String("card"),
+		// No Type restriction - list ALL payment method types (card, us_bank_account, sepa_debit, etc.)
 	}
 
 	paymentMethods := stripeClient.V1PaymentMethods.List(context.Background(), params)
@@ -1567,15 +1567,15 @@ func (s *StripeService) UpdateStripeCustomerMetadata(ctx context.Context, stripe
 }
 
 // SetupIntent creates a Setup Intent with the configured payment provider (generic method)
-func (s *StripeService) SetupIntent(ctx context.Context, req *dto.CreateSetupIntentRequest) (*dto.SetupIntentResponse, error) {
+func (s *StripeService) SetupIntent(ctx context.Context, customerID string, req *dto.CreateSetupIntentRequest) (*dto.SetupIntentResponse, error) {
 	// For now, we only support Stripe, but this can be extended for other providers
-	return s.createStripeSetupIntent(ctx, req)
+	return s.createStripeSetupIntent(ctx, customerID, req)
 }
 
 // CreateStripeSetupIntent creates a Setup Intent with Stripe Checkout session for saving payment methods
-func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.CreateSetupIntentRequest) (*dto.SetupIntentResponse, error) {
+func (s *StripeService) createStripeSetupIntent(ctx context.Context, customerID string, req *dto.CreateSetupIntentRequest) (*dto.SetupIntentResponse, error) {
 	s.Logger.Infow("creating stripe setup intent",
-		"customer_id", req.CustomerID,
+		"customer_id", customerID,
 		"usage", req.Usage,
 		"payment_method_types", req.PaymentMethodTypes,
 	)
@@ -1590,24 +1590,24 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.Cr
 
 	// Debug logging for context
 	s.Logger.Infow("setup intent context debug",
-		"customer_id", req.CustomerID,
+		"customer_id", customerID,
 		"tenant_id", types.GetTenantID(ctx),
 		"environment_id", types.GetEnvironmentID(ctx),
 	)
 
 	// Ensure customer is synced to Stripe before creating setup intent
-	customerResp, err := s.EnsureCustomerSyncedToStripe(ctx, req.CustomerID)
+	customerResp, err := s.EnsureCustomerSyncedToStripe(ctx, customerID)
 	if err != nil {
 		s.Logger.Errorw("failed to sync customer to Stripe",
 			"error", err,
-			"customer_id", req.CustomerID,
+			"customer_id", customerID,
 			"tenant_id", types.GetTenantID(ctx),
 			"environment_id", types.GetEnvironmentID(ctx),
 		)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to sync customer to Stripe").
 			WithReportableDetails(map[string]interface{}{
-				"customer_id": req.CustomerID,
+				"customer_id": customerID,
 			}).
 			Mark(ierr.ErrValidation)
 	}
@@ -1618,7 +1618,7 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.Cr
 		return nil, ierr.NewError("customer does not have Stripe customer ID after sync").
 			WithHint("Failed to sync customer to Stripe").
 			WithReportableDetails(map[string]interface{}{
-				"customer_id": req.CustomerID,
+				"customer_id": customerID,
 			}).
 			Mark(ierr.ErrValidation)
 	}
@@ -1641,9 +1641,7 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.Cr
 	}
 
 	paymentMethodTypes := req.PaymentMethodTypes
-	if len(paymentMethodTypes) == 0 {
-		paymentMethodTypes = []string{"card"} // Default to card
-	}
+	// If no payment method types specified, let Stripe use its defaults (supports all available types)
 
 	// Use user-provided URLs directly (no defaults)
 	successURL := req.SuccessURL
@@ -1651,7 +1649,7 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.Cr
 
 	// Build metadata for the setup intent
 	metadata := map[string]string{
-		"customer_id":    req.CustomerID,
+		"customer_id":    customerID,
 		"environment_id": types.GetEnvironmentID(ctx),
 		"usage":          usage,
 	}
@@ -1668,20 +1666,22 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.Cr
 		Metadata: metadata,
 	}
 
-	// Add payment method types
-	for _, pmType := range paymentMethodTypes {
-		setupIntentParams.PaymentMethodTypes = append(setupIntentParams.PaymentMethodTypes, stripe.String(pmType))
+	// Add payment method types if specified (if empty, Stripe will use all available types)
+	if len(paymentMethodTypes) > 0 {
+		for _, pmType := range paymentMethodTypes {
+			setupIntentParams.PaymentMethodTypes = append(setupIntentParams.PaymentMethodTypes, stripe.String(pmType))
+		}
 	}
 
 	setupIntent, err := stripeClient.V1SetupIntents.Create(context.Background(), setupIntentParams)
 	if err != nil {
 		s.Logger.Errorw("failed to create Stripe setup intent",
 			"error", err,
-			"customer_id", req.CustomerID)
+			"customer_id", customerID)
 		return nil, ierr.NewError("failed to create setup intent").
 			WithHint("Unable to create Stripe setup intent").
 			WithReportableDetails(map[string]interface{}{
-				"customer_id": req.CustomerID,
+				"customer_id": customerID,
 				"error":       err.Error(),
 			}).
 			Mark(ierr.ErrSystem)
@@ -1689,24 +1689,27 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.Cr
 
 	s.Logger.Infow("created stripe setup intent",
 		"setup_intent_id", setupIntent.ID,
-		"customer_id", req.CustomerID,
+		"customer_id", customerID,
 		"usage", usage,
 	)
 
 	// Create Checkout Session in setup mode
 	checkoutParams := &stripe.CheckoutSessionCreateParams{
-		Mode:     stripe.String("setup"),
-		Customer: stripe.String(stripeCustomerID),
-		PaymentMethodTypes: func() []*string {
-			var pmTypes []*string
-			for _, pmType := range paymentMethodTypes {
-				pmTypes = append(pmTypes, stripe.String(pmType))
-			}
-			return pmTypes
-		}(),
+		Mode:       stripe.String("setup"),
+		Customer:   stripe.String(stripeCustomerID),
+		Currency:   stripe.String("usd"), // Required by Stripe even for setup mode
 		SuccessURL: stripe.String(successURL),
 		CancelURL:  stripe.String(cancelURL),
 		Metadata:   metadata,
+	}
+
+	// Add payment method types if specified (if empty, Stripe will use all available types)
+	if len(paymentMethodTypes) > 0 {
+		var pmTypes []*string
+		for _, pmType := range paymentMethodTypes {
+			pmTypes = append(pmTypes, stripe.String(pmType))
+		}
+		checkoutParams.PaymentMethodTypes = pmTypes
 	}
 
 	// Link the setup intent to the checkout session
@@ -1719,12 +1722,12 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.Cr
 		s.Logger.Errorw("failed to create Stripe checkout session for setup intent",
 			"error", err,
 			"setup_intent_id", setupIntent.ID,
-			"customer_id", req.CustomerID)
+			"customer_id", customerID)
 		return nil, ierr.NewError("failed to create setup intent checkout session").
 			WithHint("Unable to create Stripe checkout session").
 			WithReportableDetails(map[string]interface{}{
 				"setup_intent_id": setupIntent.ID,
-				"customer_id":     req.CustomerID,
+				"customer_id":     customerID,
 				"error":           err.Error(),
 			}).
 			Mark(ierr.ErrSystem)
@@ -1737,7 +1740,7 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.Cr
 		ClientSecret:      setupIntent.ClientSecret,
 		Status:            string(setupIntent.Status),
 		Usage:             usage,
-		CustomerID:        req.CustomerID,
+		CustomerID:        customerID,
 		CreatedAt:         setupIntent.Created,
 		ExpiresAt:         checkoutSession.ExpiresAt,
 	}
@@ -1746,8 +1749,213 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, req *dto.Cr
 		"setup_intent_id", setupIntent.ID,
 		"checkout_session_id", checkoutSession.ID,
 		"checkout_url", checkoutSession.URL,
-		"customer_id", req.CustomerID,
+		"customer_id", customerID,
 		"usage", usage,
+	)
+
+	return response, nil
+}
+
+// getPaymentMethodDetails retrieves payment method details from Stripe
+func (s *StripeService) getPaymentMethodDetails(stripeClient *stripe.Client, paymentMethodID string) (*dto.PaymentMethodResponse, error) {
+	paymentMethod, err := stripeClient.V1PaymentMethods.Retrieve(context.Background(), paymentMethodID, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &dto.PaymentMethodResponse{
+		ID:   paymentMethod.ID,
+		Type: string(paymentMethod.Type),
+		Customer: func() string {
+			if paymentMethod.Customer != nil {
+				return paymentMethod.Customer.ID
+			}
+			return ""
+		}(),
+		Created:  paymentMethod.Created,
+		Metadata: make(map[string]interface{}),
+	}
+
+	// Convert metadata
+	for k, v := range paymentMethod.Metadata {
+		response.Metadata[k] = v
+	}
+
+	// Add card details if it's a card
+	if paymentMethod.Type == stripe.PaymentMethodTypeCard && paymentMethod.Card != nil {
+		response.Card = &dto.CardDetails{
+			Brand:       string(paymentMethod.Card.Brand),
+			Last4:       paymentMethod.Card.Last4,
+			ExpMonth:    int(paymentMethod.Card.ExpMonth),
+			ExpYear:     int(paymentMethod.Card.ExpYear),
+			Fingerprint: paymentMethod.Card.Fingerprint,
+		}
+	}
+
+	return response, nil
+}
+
+// ListCustomerPaymentMethods lists only the successfully saved payment methods for a customer (generic method)
+func (s *StripeService) ListCustomerPaymentMethods(ctx context.Context, customerID string, req *dto.ListPaymentMethodsRequest) (*dto.ListSetupIntentsResponse, error) {
+	// For now, we only support Stripe, but this can be extended for other providers
+	return s.listStripeCustomerPaymentMethods(ctx, customerID, req)
+}
+
+// listStripeCustomerPaymentMethods lists only successfully saved payment methods using Stripe's Customer.ListPaymentMethods
+func (s *StripeService) listStripeCustomerPaymentMethods(ctx context.Context, customerID string, req *dto.ListPaymentMethodsRequest) (*dto.ListSetupIntentsResponse, error) {
+	s.Logger.Infow("listing stripe customer payment methods",
+		"customer_id", customerID,
+		"limit", req.Limit,
+	)
+
+	// Get Stripe connection for this environment
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe connection").
+			WithHint("Stripe connection not configured for this environment").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Ensure customer is synced to Stripe
+	customerResp, err := s.EnsureCustomerSyncedToStripe(ctx, customerID)
+	if err != nil {
+		s.Logger.Errorw("failed to sync customer to Stripe",
+			"error", err,
+			"customer_id", customerID,
+		)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to sync customer to Stripe").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": customerID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get Stripe customer ID
+	stripeCustomerID, exists := customerResp.Customer.Metadata["stripe_customer_id"]
+	if !exists || stripeCustomerID == "" {
+		return nil, ierr.NewError("customer does not have Stripe customer ID after sync").
+			WithHint("Failed to sync customer to Stripe").
+			WithReportableDetails(map[string]interface{}{
+				"customer_id": customerID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get Stripe configuration
+	stripeConfig, err := s.GetDecryptedStripeConfig(conn)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe configuration").
+			WithHint("Invalid Stripe configuration").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Initialize Stripe client
+	stripeClient := stripe.NewClient(stripeConfig.SecretKey, nil)
+
+	// Set default limit if not provided
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10 // Default limit
+	}
+	if limit > 100 {
+		limit = 100 // Max limit
+	}
+
+	// Build Stripe API parameters for listing payment methods
+	params := &stripe.PaymentMethodListParams{
+		Customer: stripe.String(stripeCustomerID),
+		// No Type restriction - list ALL payment method types (card, us_bank_account, sepa_debit, etc.)
+	}
+	params.Limit = stripe.Int64(int64(limit))
+
+	// Add pagination parameters
+	if req.StartingAfter != "" {
+		params.StartingAfter = stripe.String(req.StartingAfter)
+	}
+	if req.EndingBefore != "" {
+		params.EndingBefore = stripe.String(req.EndingBefore)
+	}
+
+	// List Payment Methods from Stripe (only successfully saved ones)
+	paymentMethodsList := stripeClient.V1PaymentMethods.List(context.Background(), params)
+
+	var setupIntents []dto.SetupIntentListItem
+	var hasMore bool
+	var totalCount int
+
+	// Iterate through the payment methods
+	paymentMethodsList(func(pm *stripe.PaymentMethod, err error) bool {
+		if err != nil {
+			s.Logger.Errorw("failed to iterate payment methods",
+				"error", err,
+				"customer_id", customerID,
+				"stripe_customer_id", stripeCustomerID)
+			return false // Stop iteration on error
+		}
+
+		// Create a simplified setup intent item representing the saved payment method
+		item := dto.SetupIntentListItem{
+			ID:              pm.ID,         // Use payment method ID as the main ID
+			Status:          "succeeded",   // All listed payment methods are successfully saved
+			Usage:           "off_session", // Payment methods are typically for off-session use
+			CustomerID:      customerID,
+			PaymentMethodID: pm.ID,
+			CreatedAt:       pm.Created,
+		}
+
+		// Add payment method details
+		pmDetails := &dto.PaymentMethodResponse{
+			ID:   pm.ID,
+			Type: string(pm.Type),
+			Customer: func() string {
+				if pm.Customer != nil {
+					return pm.Customer.ID
+				}
+				return stripeCustomerID
+			}(),
+			Created:  pm.Created,
+			Metadata: make(map[string]interface{}),
+		}
+
+		// Convert metadata
+		for k, v := range pm.Metadata {
+			pmDetails.Metadata[k] = v
+		}
+
+		// Add card details if it's a card
+		if pm.Type == stripe.PaymentMethodTypeCard && pm.Card != nil {
+			pmDetails.Card = &dto.CardDetails{
+				Brand:       string(pm.Card.Brand),
+				Last4:       pm.Card.Last4,
+				ExpMonth:    int(pm.Card.ExpMonth),
+				ExpYear:     int(pm.Card.ExpYear),
+				Fingerprint: pm.Card.Fingerprint,
+			}
+		}
+
+		item.PaymentMethodDetails = pmDetails
+		setupIntents = append(setupIntents, item)
+		totalCount++
+		return true // Continue iteration
+	})
+
+	// Check if there are more results
+	if len(setupIntents) == limit {
+		hasMore = true
+	}
+
+	response := &dto.ListSetupIntentsResponse{
+		Data:       setupIntents,
+		HasMore:    hasMore,
+		TotalCount: totalCount,
+	}
+
+	s.Logger.Infow("successfully listed stripe customer payment methods",
+		"customer_id", customerID,
+		"stripe_customer_id", stripeCustomerID,
+		"count", len(setupIntents),
+		"has_more", hasMore,
 	)
 
 	return response, nil

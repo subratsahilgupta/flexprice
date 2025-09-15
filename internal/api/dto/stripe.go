@@ -88,7 +88,6 @@ type PaymentStatusResponse struct {
 
 // CreateSetupIntentRequest represents a request to create a Setup Intent session
 type CreateSetupIntentRequest struct {
-	CustomerID         string         `json:"customer_id" binding:"required"`
 	Usage              string         `json:"usage,omitempty"`                // "on_session" or "off_session" (default: "off_session")
 	PaymentMethodTypes []string       `json:"payment_method_types,omitempty"` // defaults to ["card"]
 	SuccessURL         string         `json:"success_url,omitempty"`          // User-configurable success redirect URL
@@ -109,14 +108,46 @@ type SetupIntentResponse struct {
 	ExpiresAt         int64  `json:"expires_at"`
 }
 
+// ListSetupIntentsRequest represents a request to list Setup Intents for a customer
+type ListSetupIntentsRequest struct {
+	CustomerID      string `json:"customer_id" binding:"required"`
+	PaymentMethodID string `json:"payment_method_id,omitempty"` // Filter by specific payment method
+	Status          string `json:"status,omitempty"`            // Filter by status (succeeded, requires_payment_method, etc.)
+	Limit           int    `json:"limit,omitempty"`             // Number of results to return (default: 10, max: 100)
+	StartingAfter   string `json:"starting_after,omitempty"`    // Pagination cursor
+	EndingBefore    string `json:"ending_before,omitempty"`     // Pagination cursor
+}
+
+// SetupIntentListItem represents a single Setup Intent in the list response
+type SetupIntentListItem struct {
+	ID                   string                 `json:"id"`
+	Status               string                 `json:"status"`
+	Usage                string                 `json:"usage"`
+	CustomerID           string                 `json:"customer_id"`
+	PaymentMethodID      string                 `json:"payment_method_id,omitempty"`
+	PaymentMethodDetails *PaymentMethodResponse `json:"payment_method_details,omitempty"`
+	CreatedAt            int64                  `json:"created_at"`
+	CancellationReason   string                 `json:"cancellation_reason,omitempty"`
+	LastSetupError       string                 `json:"last_setup_error,omitempty"`
+	Metadata             map[string]string      `json:"metadata,omitempty"`
+}
+
+// ListSetupIntentsResponse represents the response from listing Setup Intents
+type ListSetupIntentsResponse struct {
+	Data       []SetupIntentListItem `json:"data"`
+	HasMore    bool                  `json:"has_more"`
+	TotalCount int                   `json:"total_count"`
+}
+
+// ListPaymentMethodsRequest represents a request to list payment methods for a customer (GET request)
+type ListPaymentMethodsRequest struct {
+	Limit         int    `json:"limit,omitempty"`          // Number of results to return (default: 10, max: 100)
+	StartingAfter string `json:"starting_after,omitempty"` // Pagination cursor
+	EndingBefore  string `json:"ending_before,omitempty"`  // Pagination cursor
+}
+
 // Validate validates the create Setup Intent request
 func (r *CreateSetupIntentRequest) Validate() error {
-	if r.CustomerID == "" {
-		return errors.NewError("customer_id is required").
-			WithHint("Customer ID is required").
-			Mark(errors.ErrValidation)
-	}
-
 	// Validate usage parameter
 	if r.Usage != "" && r.Usage != "on_session" && r.Usage != "off_session" {
 		return errors.NewError("invalid usage parameter").
@@ -159,6 +190,62 @@ func (r *CreateSetupIntentRequest) Validate() error {
 				}).
 				Mark(errors.ErrValidation)
 		}
+	}
+
+	return nil
+}
+
+// Validate validates the list Setup Intents request
+func (r *ListSetupIntentsRequest) Validate() error {
+	if r.CustomerID == "" {
+		return errors.NewError("customer_id is required").
+			WithHint("Customer ID is required").
+			Mark(errors.ErrValidation)
+	}
+
+	// Validate limit parameter
+	if r.Limit < 0 || r.Limit > 100 {
+		return errors.NewError("invalid limit parameter").
+			WithHint("Limit must be between 0 and 100").
+			WithReportableDetails(map[string]interface{}{
+				"limit": r.Limit,
+			}).
+			Mark(errors.ErrValidation)
+	}
+
+	// Validate status parameter if provided
+	if r.Status != "" {
+		validStatuses := []string{"requires_payment_method", "requires_confirmation", "requires_action", "processing", "succeeded", "canceled"}
+		isValid := false
+		for _, validStatus := range validStatuses {
+			if r.Status == validStatus {
+				isValid = true
+				break
+			}
+		}
+		if !isValid {
+			return errors.NewError("invalid status parameter").
+				WithHint("Status must be one of: requires_payment_method, requires_confirmation, requires_action, processing, succeeded, canceled").
+				WithReportableDetails(map[string]interface{}{
+					"status": r.Status,
+				}).
+				Mark(errors.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
+// Validate validates the list payment methods request
+func (r *ListPaymentMethodsRequest) Validate() error {
+	// Validate limit parameter
+	if r.Limit < 0 || r.Limit > 100 {
+		return errors.NewError("invalid limit parameter").
+			WithHint("Limit must be between 0 and 100").
+			WithReportableDetails(map[string]interface{}{
+				"limit": r.Limit,
+			}).
+			Mark(errors.ErrValidation)
 	}
 
 	return nil

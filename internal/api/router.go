@@ -176,7 +176,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.GET("/:id/wallets", handlers.Wallet.GetWalletsByCustomerID)
 			customer.GET("/:id/invoices/summary", handlers.Invoice.GetCustomerInvoiceSummary)
 			customer.GET("/wallets", handlers.Wallet.GetCustomerWallets)
-
 		}
 
 		plan := v1Private.Group("/plans")
@@ -308,11 +307,12 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			payments.PUT("/:id", handlers.Payment.UpdatePayment)
 			payments.DELETE("/:id", handlers.Payment.DeletePayment)
 			payments.POST("/:id/process", handlers.Payment.ProcessPayment)
-		}
 
-		setupIntents := v1Private.Group("/setup-intents")
-		{
-			setupIntents.POST("/sessions", handlers.SetupIntent.CreateSetupIntentSession)
+			custPaymentsGroup := payments.Group("/customers")
+			{
+				custPaymentsGroup.GET("/:id/methods", handlers.SetupIntent.ListCustomerPaymentMethods)
+				custPaymentsGroup.POST("/:id/setup/intent", handlers.SetupIntent.CreateSetupIntentSession)
+			}
 		}
 
 		tasks := v1Private.Group("/tasks")
