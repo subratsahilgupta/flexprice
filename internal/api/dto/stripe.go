@@ -126,6 +126,7 @@ type SetupIntentListItem struct {
 	CustomerID           string                 `json:"customer_id"`
 	PaymentMethodID      string                 `json:"payment_method_id,omitempty"`
 	PaymentMethodDetails *PaymentMethodResponse `json:"payment_method_details,omitempty"`
+	IsDefault            bool                   `json:"is_default"`
 	CreatedAt            int64                  `json:"created_at"`
 	CancellationReason   string                 `json:"cancellation_reason,omitempty"`
 	LastSetupError       string                 `json:"last_setup_error,omitempty"`

@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -47,10 +48,14 @@ func (h *SetupIntentHandler) CreateSetupIntentSession(c *gin.Context) {
 	}
 
 	var req dto.CreateSetupIntentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	// Use strict JSON binding to reject unknown fields
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
 		h.log.Error("Failed to bind JSON", "error", err)
 		c.Error(ierr.WithError(err).
-			WithHint("Invalid request format").
+			WithHint("Invalid request format. Unknown fields are not allowed.").
 			Mark(ierr.ErrValidation))
 		return
 	}

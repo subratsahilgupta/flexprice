@@ -1853,6 +1853,16 @@ func (s *StripeService) listStripeCustomerPaymentMethods(ctx context.Context, cu
 	// Initialize Stripe client
 	stripeClient := stripe.NewClient(stripeConfig.SecretKey, nil)
 
+	// Get customer's default payment method ID
+	var defaultPaymentMethodID string
+	customer, err := stripeClient.V1Customers.Retrieve(context.Background(), stripeCustomerID, nil)
+	if err == nil && customer.InvoiceSettings != nil && customer.InvoiceSettings.DefaultPaymentMethod != nil {
+		defaultPaymentMethodID = customer.InvoiceSettings.DefaultPaymentMethod.ID
+		s.Logger.Infow("found default payment method for customer",
+			"customer_id", customerID,
+			"default_payment_method_id", defaultPaymentMethodID)
+	}
+
 	// Set default limit if not provided
 	limit := req.Limit
 	if limit <= 0 {
@@ -1901,6 +1911,7 @@ func (s *StripeService) listStripeCustomerPaymentMethods(ctx context.Context, cu
 			Usage:           "off_session", // Payment methods are typically for off-session use
 			CustomerID:      customerID,
 			PaymentMethodID: pm.ID,
+			IsDefault:       pm.ID == defaultPaymentMethodID, // Mark if this is the default payment method
 			CreatedAt:       pm.Created,
 		}
 
