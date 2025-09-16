@@ -59,7 +59,8 @@ func (w WebhookEventType) Validate() error {
 		WebhookEventTypeCheckoutSessionAsyncPaymentFailed,
 		WebhookEventTypeCheckoutSessionExpired,
 		WebhookEventTypeCustomerCreated,
-		WebhookEventTypePaymentIntentPaymentFailed:
+		WebhookEventTypePaymentIntentPaymentFailed,
+		WebhookEventTypeInvoicePaymentPaid:
 		return nil
 	default:
 		return ierr.NewError("invalid webhook event type").
@@ -72,6 +73,7 @@ func (w WebhookEventType) Validate() error {
 					WebhookEventTypeCheckoutSessionExpired,
 					WebhookEventTypeCustomerCreated,
 					WebhookEventTypePaymentIntentPaymentFailed,
+					WebhookEventTypeInvoicePaymentPaid,
 				},
 			}).
 			Mark(ierr.ErrValidation)
