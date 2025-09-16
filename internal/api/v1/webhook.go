@@ -1160,16 +1160,69 @@ func (h *WebhookHandler) handleInvoicePaymentPaid(c *gin.Context, event *stripe.
 	// Set context with environment ID
 	ctx := types.SetEnvironmentID(c.Request.Context(), environmentID)
 
-	// Sync FlexPrice credit payments to this Stripe invoice
-	if err := h.syncFlexPriceCreditPayments(ctx, stripeInvoiceID); err != nil {
-		h.logger.Errorw("failed to sync FlexPrice credit payments",
-			"error", err,
+	// Get payment intent details to check payment source
+	paymentIntentID := ""
+	if invoicePayment.Payment != nil && invoicePayment.Payment.PaymentIntent != nil {
+		paymentIntentID = invoicePayment.Payment.PaymentIntent.ID
+	}
+
+	if paymentIntentID == "" {
+		h.logger.Warnw("no payment intent found in invoice payment",
 			"stripe_invoice_id", stripeInvoiceID,
 			"event_id", event.ID)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to sync credit payments",
+		c.JSON(http.StatusOK, gin.H{
+			"message": "No payment intent found",
 		})
 		return
+	}
+
+	// Get payment intent details from Stripe
+	paymentIntent, err := h.stripeService.GetPaymentIntent(ctx, paymentIntentID, environmentID)
+	if err != nil {
+		h.logger.Errorw("failed to get payment intent from Stripe",
+			"error", err,
+			"payment_intent_id", paymentIntentID,
+			"stripe_invoice_id", stripeInvoiceID)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get payment intent details",
+		})
+		return
+	}
+
+	// Check payment source to determine processing approach
+	paymentSource := paymentIntent.Metadata["payment_source"]
+	if paymentSource == "flexprice" {
+		// This is a FlexPrice-initiated payment - sync credit payments
+		h.logger.Infow("processing FlexPrice-initiated payment - syncing credit payments",
+			"payment_intent_id", paymentIntentID,
+			"stripe_invoice_id", stripeInvoiceID)
+
+		if err := h.syncFlexPriceCreditPayments(ctx, stripeInvoiceID); err != nil {
+			h.logger.Errorw("failed to sync FlexPrice credit payments",
+				"error", err,
+				"stripe_invoice_id", stripeInvoiceID,
+				"event_id", event.ID)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to sync credit payments",
+			})
+			return
+		}
+	} else {
+		// This is an external Stripe payment - process reconciliation
+		h.logger.Infow("processing external Stripe payment - reconciling invoice",
+			"payment_intent_id", paymentIntentID,
+			"stripe_invoice_id", stripeInvoiceID)
+
+		if err := h.stripeService.ProcessExternalStripePayment(ctx, paymentIntent, stripeInvoiceID); err != nil {
+			h.logger.Errorw("failed to process external Stripe payment",
+				"error", err,
+				"payment_intent_id", paymentIntentID,
+				"stripe_invoice_id", stripeInvoiceID)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to process external payment",
+			})
+			return
+		}
 	}
 
 	h.logger.Infow("successfully processed invoice payment webhook",

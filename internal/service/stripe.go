@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/connection"
@@ -983,6 +984,7 @@ func (s *StripeService) ChargeSavedPaymentMethod(ctx context.Context, req *dto.C
 			"flexprice_customer_id": req.CustomerID,
 			"environment_id":        types.GetEnvironmentID(ctx),
 			"invoice_id":            req.InvoiceID,
+			"payment_source":        "flexprice", // KEY DIFFERENTIATOR
 		},
 	}
 
@@ -1662,6 +1664,254 @@ func (s *StripeService) AttachPaymentToStripeInvoice(ctx context.Context, stripe
 	s.Logger.Infow("successfully attached payment to Stripe invoice",
 		"payment_intent_id", paymentIntentID,
 		"stripe_invoice_id", stripeInvoiceID)
+
+	return nil
+}
+
+// GetPaymentIntent retrieves a payment intent from Stripe
+func (s *StripeService) GetPaymentIntent(ctx context.Context, paymentIntentID, environmentID string) (*stripe.PaymentIntent, error) {
+	// Get Stripe connection
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe connection").
+			WithHint("Stripe connection not configured for this environment").
+			Mark(ierr.ErrNotFound)
+	}
+
+	stripeConfig, err := s.GetDecryptedStripeConfig(conn)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe configuration").
+			WithHint("Invalid Stripe configuration").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Initialize Stripe client
+	client := stripe.NewClient(stripeConfig.SecretKey, nil)
+
+	// Retrieve the payment intent
+	paymentIntent, err := client.V1PaymentIntents.Retrieve(ctx, paymentIntentID, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return paymentIntent, nil
+}
+
+// ProcessExternalStripePayment processes an external Stripe payment and reconciles it with FlexPrice
+func (s *StripeService) ProcessExternalStripePayment(ctx context.Context, paymentIntent *stripe.PaymentIntent, stripeInvoiceID string) error {
+	// Find the FlexPrice invoice via entity integration mapping
+	flexInvoiceID, err := s.getFlexPriceInvoiceID(ctx, stripeInvoiceID)
+	if err != nil {
+		s.Logger.Errorw("failed to find FlexPrice invoice for Stripe payment",
+			"error", err,
+			"stripe_invoice_id", stripeInvoiceID,
+			"payment_intent_id", paymentIntent.ID)
+		return err
+	}
+
+	if flexInvoiceID == "" {
+		s.Logger.Warnw("no FlexPrice invoice found for external Stripe payment",
+			"payment_intent_id", paymentIntent.ID,
+			"stripe_invoice_id", stripeInvoiceID)
+		return nil // Not an error, just no FlexPrice invoice to sync
+	}
+
+	// Process the external payment
+	return s.createExternalPaymentRecord(ctx, paymentIntent, flexInvoiceID)
+}
+
+// getFlexPriceInvoiceID finds the FlexPrice invoice ID from Stripe invoice ID via entity integration mapping
+func (s *StripeService) getFlexPriceInvoiceID(ctx context.Context, stripeInvoiceID string) (string, error) {
+	// Create filter to find entity integration mapping for the Stripe invoice
+	filter := &types.EntityIntegrationMappingFilter{
+		EntityType:        types.IntegrationEntityTypeInvoice,
+		ProviderTypes:     []string{string(types.SecretProviderStripe)},
+		ProviderEntityIDs: []string{stripeInvoiceID},
+	}
+
+	// Get entity integration mappings
+	mappings, err := s.EntityIntegrationMappingRepo.List(ctx, filter)
+	if err != nil {
+		return "", err
+	}
+
+	if len(mappings) == 0 {
+		return "", nil // No mapping found, not an error
+	}
+
+	return mappings[0].EntityID, nil
+}
+
+// createExternalPaymentRecord creates a payment record and reconciles the invoice for external Stripe payments
+func (s *StripeService) createExternalPaymentRecord(ctx context.Context, paymentIntent *stripe.PaymentIntent, invoiceID string) error {
+	// Convert amount from cents to decimal
+	amount := decimal.NewFromInt(paymentIntent.Amount).Div(decimal.NewFromInt(100))
+
+	// Get invoice to validate payment amount
+	invoiceService := NewInvoiceService(s.ServiceParams)
+	invoiceResp, err := invoiceService.GetInvoice(ctx, invoiceID)
+	if err != nil {
+		s.Logger.Errorw("failed to get invoice for payment validation",
+			"error", err,
+			"invoice_id", invoiceID,
+			"payment_intent_id", paymentIntent.ID)
+		return err
+	}
+
+	// Check if invoice is already paid
+	if invoiceResp.PaymentStatus == types.PaymentStatusSucceeded {
+		s.Logger.Infow("invoice is already paid, skipping payment processing",
+			"invoice_id", invoiceID,
+			"payment_intent_id", paymentIntent.ID,
+			"payment_status", invoiceResp.PaymentStatus)
+		return nil
+	}
+
+	// Validate payment amount doesn't exceed remaining balance
+	if amount.GreaterThan(invoiceResp.AmountRemaining) {
+		s.Logger.Warnw("payment amount exceeds invoice remaining balance",
+			"payment_amount", amount,
+			"invoice_remaining", invoiceResp.AmountRemaining,
+			"invoice_id", invoiceID,
+			"payment_intent_id", paymentIntent.ID)
+		// Continue processing but log the warning
+	}
+
+	// Create payment record
+	paymentService := NewPaymentService(s.ServiceParams)
+
+	// Create as CARD payment with all Stripe details (same as regular Stripe charge)
+	gatewayType := types.PaymentGatewayTypeStripe
+	createReq := &dto.CreatePaymentRequest{
+		DestinationType:   types.PaymentDestinationTypeInvoice,
+		DestinationID:     invoiceID,
+		PaymentMethodType: types.PaymentMethodTypeCard, // Mark as card payment
+		Amount:            amount,
+		Currency:          strings.ToUpper(string(paymentIntent.Currency)),
+		PaymentGateway:    &gatewayType,
+		ProcessPayment:    false, // Don't process - already succeeded in Stripe
+		Metadata: types.Metadata{
+			"payment_source":        "stripe_external",
+			"stripe_payment_intent": paymentIntent.ID,
+			"webhook_event_id":      paymentIntent.ID, // For idempotency
+		},
+	}
+
+	// Add customer ID if available
+	if paymentIntent.Customer != nil {
+		createReq.Metadata["stripe_customer_id"] = paymentIntent.Customer.ID
+	}
+
+	// Add Stripe payment method ID (required for CARD payments)
+	if paymentIntent.PaymentMethod != nil {
+		createReq.PaymentMethodID = paymentIntent.PaymentMethod.ID
+	}
+
+	paymentResp, err := paymentService.CreatePayment(ctx, createReq)
+	if err != nil {
+		s.Logger.Errorw("failed to create external payment record",
+			"error", err,
+			"payment_intent_id", paymentIntent.ID,
+			"invoice_id", invoiceID)
+		return err
+	}
+
+	// Update payment to succeeded status with all Stripe details (same as regular Stripe charge)
+	now := time.Now().UTC()
+	updateReq := dto.UpdatePaymentRequest{
+		PaymentStatus:    lo.ToPtr(string(types.PaymentStatusSucceeded)),
+		GatewayPaymentID: lo.ToPtr(paymentIntent.ID),
+		PaymentGateway:   lo.ToPtr(string(types.PaymentGatewayTypeStripe)),
+		SucceededAt:      lo.ToPtr(now),
+	}
+
+	// Add payment method ID if available
+	if paymentIntent.PaymentMethod != nil {
+		updateReq.PaymentMethodID = lo.ToPtr(paymentIntent.PaymentMethod.ID)
+	}
+
+	_, err = paymentService.UpdatePayment(ctx, paymentResp.ID, updateReq)
+	if err != nil {
+		s.Logger.Errorw("failed to update external payment status",
+			"error", err,
+			"payment_id", paymentResp.ID,
+			"payment_intent_id", paymentIntent.ID)
+		return err
+	}
+
+	s.Logger.Infow("successfully created external payment record",
+		"payment_id", paymentResp.ID,
+		"payment_intent_id", paymentIntent.ID,
+		"invoice_id", invoiceID,
+		"amount", amount)
+
+	// Reconcile the invoice with the payment
+	if err := s.reconcileInvoiceWithExternalPayment(ctx, invoiceID, amount); err != nil {
+		s.Logger.Errorw("failed to reconcile invoice with external payment",
+			"error", err,
+			"invoice_id", invoiceID,
+			"payment_id", paymentResp.ID,
+			"amount", amount)
+		return err
+	}
+
+	return nil
+}
+
+// reconcileInvoiceWithExternalPayment updates the invoice amounts and status
+func (s *StripeService) reconcileInvoiceWithExternalPayment(ctx context.Context, invoiceID string, paymentAmount decimal.Decimal) error {
+	invoiceService := NewInvoiceService(s.ServiceParams)
+
+	// Get the current invoice to calculate proper payment status
+	invoiceResp, err := invoiceService.GetInvoice(ctx, invoiceID)
+	if err != nil {
+		s.Logger.Errorw("failed to get invoice for external payment reconciliation",
+			"error", err,
+			"invoice_id", invoiceID)
+		return err
+	}
+
+	// Calculate new amounts
+	newAmountPaid := invoiceResp.AmountPaid.Add(paymentAmount)
+	newAmountRemaining := invoiceResp.AmountDue.Sub(newAmountPaid)
+
+	// Determine payment status based on remaining amount
+	var newPaymentStatus types.PaymentStatus
+	if newAmountRemaining.IsZero() {
+		newPaymentStatus = types.PaymentStatusSucceeded
+	} else if newAmountRemaining.IsNegative() {
+		// Invoice is overpaid
+		newPaymentStatus = types.PaymentStatusOverpaid
+		// For overpaid invoices, amount_remaining should be 0
+		newAmountRemaining = decimal.Zero
+	} else {
+		newPaymentStatus = types.PaymentStatusPending // Partial payment
+	}
+
+	s.Logger.Infow("calculated payment status for external payment",
+		"invoice_id", invoiceID,
+		"payment_amount", paymentAmount,
+		"current_amount_paid", invoiceResp.AmountPaid,
+		"new_amount_paid", newAmountPaid,
+		"amount_due", invoiceResp.AmountDue,
+		"new_amount_remaining", newAmountRemaining,
+		"new_payment_status", newPaymentStatus)
+
+	// Use the existing ReconcilePaymentStatus method with calculated status
+	err = invoiceService.ReconcilePaymentStatus(ctx, invoiceID, newPaymentStatus, &paymentAmount)
+	if err != nil {
+		s.Logger.Errorw("failed to update invoice payment status",
+			"error", err,
+			"invoice_id", invoiceID,
+			"payment_amount", paymentAmount,
+			"payment_status", newPaymentStatus)
+		return err
+	}
+
+	s.Logger.Infow("successfully reconciled invoice with external payment",
+		"invoice_id", invoiceID,
+		"payment_amount", paymentAmount,
+		"payment_status", newPaymentStatus)
 
 	return nil
 }
