@@ -83,3 +83,20 @@ type PaymentStatusResponse struct {
 	ExpiresAt       int64             `json:"expires_at"`
 	Metadata        map[string]string `json:"metadata"`
 }
+
+// StripeInvoiceSyncRequest represents the request for syncing an invoice to Stripe
+type StripeInvoiceSyncRequest struct {
+	InvoiceID        string                 `json:"invoice_id"`
+	CollectionMethod types.CollectionMethod `json:"collection_method"`
+	PaymentBehavior  *types.PaymentBehavior `json:"payment_behavior,omitempty"`
+}
+
+// StripeInvoiceSyncResponse represents the response from Stripe invoice sync
+type StripeInvoiceSyncResponse struct {
+	StripeInvoiceID  string                 `json:"stripe_invoice_id"`
+	Status           string                 `json:"status"`
+	PaymentIntentID  string                 `json:"payment_intent_id,omitempty"`
+	HostedInvoiceURL string                 `json:"hosted_invoice_url,omitempty"`
+	InvoicePDF       string                 `json:"invoice_pdf,omitempty"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+}

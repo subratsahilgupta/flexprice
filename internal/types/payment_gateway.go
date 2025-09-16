@@ -48,6 +48,7 @@ const (
 	WebhookEventTypeCheckoutSessionExpired               WebhookEventType = "checkout.session.expired"
 	WebhookEventTypeCustomerCreated                      WebhookEventType = "customer.created"
 	WebhookEventTypePaymentIntentPaymentFailed           WebhookEventType = "payment_intent.payment_failed"
+	WebhookEventTypeInvoicePaymentPaid                   WebhookEventType = "invoice_payment.paid"
 )
 
 // Validate validates the webhook event type
