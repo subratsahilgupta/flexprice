@@ -1570,8 +1570,19 @@ func (s *StripeService) UpdateStripeCustomerMetadata(ctx context.Context, stripe
 
 // SetupIntent creates a Setup Intent with the configured payment provider (generic method)
 func (s *StripeService) SetupIntent(ctx context.Context, customerID string, req *dto.CreateSetupIntentRequest) (*dto.SetupIntentResponse, error) {
-	// For now, we only support Stripe, but this can be extended for other providers
-	return s.createStripeSetupIntent(ctx, customerID, req)
+	// Route to appropriate provider based on request
+	switch req.Provider {
+	case string(types.PaymentMethodProviderStripe):
+		return s.createStripeSetupIntent(ctx, customerID, req)
+	default:
+		return nil, ierr.NewError("unsupported payment provider").
+			WithHint("Currently only 'stripe' provider is supported").
+			WithReportableDetails(map[string]interface{}{
+				"provider":            req.Provider,
+				"supported_providers": []string{"stripe"},
+			}).
+			Mark(ierr.ErrValidation)
+	}
 }
 
 // CreateStripeSetupIntent creates a Setup Intent with Stripe Checkout session for saving payment methods
@@ -1810,27 +1821,24 @@ func (s *StripeService) getPaymentMethodDetails(ctx context.Context, stripeClien
 func (s *StripeService) ListCustomerPaymentMethods(ctx context.Context, customerID string, req *dto.ListPaymentMethodsRequest) (*dto.MultiProviderPaymentMethodsResponse, error) {
 	response := &dto.MultiProviderPaymentMethodsResponse{}
 
-	// Get all connections for this environment
-	connections, err := s.ConnectionRepo.List(ctx, &types.ConnectionFilter{})
-	if err != nil {
-		s.Logger.Errorw("failed to get connections for environment", "error", err)
-		// Continue with empty response rather than failing
-	}
-
-	// Process each provider
-	for _, conn := range connections {
-		switch conn.ProviderType {
-		case types.SecretProviderStripe:
-			stripePaymentMethods, err := s.listStripeCustomerPaymentMethods(ctx, customerID, req)
-			if err != nil {
-				s.Logger.Errorw("failed to get Stripe payment methods", "error", err, "customer_id", customerID)
-				continue // Skip this provider but continue with others
-			}
-			response.Stripe = stripePaymentMethods.Data
-
-		default:
-			s.Logger.Infow("unsupported provider for payment methods", "provider", conn.ProviderType, "customer_id", customerID)
+	// Route to appropriate provider based on request
+	switch req.Provider {
+	case string(types.PaymentMethodProviderStripe):
+		stripePaymentMethods, err := s.listStripeCustomerPaymentMethods(ctx, customerID, req)
+		if err != nil {
+			s.Logger.Errorw("failed to get Stripe payment methods", "error", err, "customer_id", customerID)
+			return nil, err
 		}
+		response.Stripe = stripePaymentMethods.Data
+
+	default:
+		return nil, ierr.NewError("unsupported payment provider").
+			WithHint("Currently only 'stripe' provider is supported").
+			WithReportableDetails(map[string]interface{}{
+				"provider":            req.Provider,
+				"supported_providers": []types.PaymentMethodProvider{types.PaymentMethodProviderStripe},
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	return response, nil

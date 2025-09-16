@@ -80,9 +80,11 @@ func (h *SetupIntentHandler) CreateSetupIntentSession(c *gin.Context) {
 // @Summary List saved payment methods for a customer
 // @Description List only successfully saved payment methods for a customer (clean list without failed attempts)
 // @Tags Payments
+// @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Param id path string true "Customer ID"
+// @Param request body dto.ListPaymentMethodsRequest true "Payment methods request"
 // @Param limit query int false "Number of results to return (default: 10, max: 100)"
 // @Param starting_after query string false "Pagination cursor for results after this ID"
 // @Param ending_before query string false "Pagination cursor for results before this ID"
@@ -101,13 +103,25 @@ func (h *SetupIntentHandler) ListCustomerPaymentMethods(c *gin.Context) {
 		return
 	}
 
-	// Build request struct
-	req := dto.ListPaymentMethodsRequest{
-		StartingAfter: c.Query("starting_after"),
-		EndingBefore:  c.Query("ending_before"),
+	// Parse request body for provider and other parameters
+	var req dto.ListPaymentMethodsRequest
+	// Use strict JSON binding to reject unknown fields
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format. Unknown fields are not allowed.").
+			Mark(ierr.ErrValidation))
+		return
 	}
 
-	// Parse limit parameter
+	// Add query parameters for pagination
+	req.StartingAfter = c.Query("starting_after")
+	req.EndingBefore = c.Query("ending_before")
+
+	// Parse limit parameter from query
 	if limitStr := c.Query("limit"); limitStr != "" {
 		if limit, err := strconv.Atoi(limitStr); err == nil {
 			req.Limit = limit

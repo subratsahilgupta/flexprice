@@ -195,3 +195,9 @@ func (f *PaymentFilter) IsUnlimited() bool {
 	}
 	return f.QueryFilter.IsUnlimited()
 }
+
+type PaymentMethodProvider string
+
+const (
+	PaymentMethodProviderStripe PaymentMethodProvider = "stripe"
+)

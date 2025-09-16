@@ -88,6 +88,7 @@ type PaymentStatusResponse struct {
 
 // CreateSetupIntentRequest represents a request to create a Setup Intent session
 type CreateSetupIntentRequest struct {
+	Provider           string         `json:"provider" binding:"required"`    // Payment provider: "stripe", "razorpay", etc.
 	Usage              string         `json:"usage,omitempty"`                // "on_session" or "off_session" (default: "off_session")
 	PaymentMethodTypes []string       `json:"payment_method_types,omitempty"` // defaults to ["card"]
 	SuccessURL         string         `json:"success_url,omitempty"`          // User-configurable success redirect URL
@@ -149,13 +150,33 @@ type MultiProviderPaymentMethodsResponse struct {
 
 // ListPaymentMethodsRequest represents a request to list payment methods for a customer (GET request)
 type ListPaymentMethodsRequest struct {
-	Limit         int    `json:"limit,omitempty"`          // Number of results to return (default: 10, max: 100)
-	StartingAfter string `json:"starting_after,omitempty"` // Pagination cursor
-	EndingBefore  string `json:"ending_before,omitempty"`  // Pagination cursor
+	Provider      string `json:"provider" binding:"required"` // Payment provider: "stripe", "razorpay", etc.
+	Limit         int    `json:"limit,omitempty"`             // Number of results to return (default: 10, max: 100)
+	StartingAfter string `json:"starting_after,omitempty"`    // Pagination cursor
+	EndingBefore  string `json:"ending_before,omitempty"`     // Pagination cursor
 }
 
 // Validate validates the create Setup Intent request
 func (r *CreateSetupIntentRequest) Validate() error {
+	// Validate provider parameter
+	if r.Provider == "" {
+		return errors.NewError("provider is required").
+			WithHint("Please provide a payment provider").
+			Mark(errors.ErrValidation)
+	}
+
+	switch r.Provider {
+	case string(types.PaymentMethodProviderStripe):
+	default:
+		return errors.NewError("unsupported payment provider").
+			WithHint("Currently only 'stripe' provider is supported").
+			WithReportableDetails(map[string]interface{}{
+				"provider":            r.Provider,
+				"supported_providers": []types.PaymentMethodProvider{types.PaymentMethodProviderStripe},
+			}).
+			Mark(errors.ErrValidation)
+	}
+
 	// Validate usage parameter
 	if r.Usage != "" && r.Usage != "on_session" && r.Usage != "off_session" {
 		return errors.NewError("invalid usage parameter").
@@ -246,6 +267,23 @@ func (r *ListSetupIntentsRequest) Validate() error {
 
 // Validate validates the list payment methods request
 func (r *ListPaymentMethodsRequest) Validate() error {
+	// Validate provider parameter
+	if r.Provider == "" {
+		return errors.NewError("provider is required").
+			WithHint("Please provide a payment provider").
+			Mark(errors.ErrValidation)
+	}
+
+	if r.Provider != string(types.PaymentMethodProviderStripe) {
+		return errors.NewError("unsupported payment provider").
+			WithHint("Currently only 'stripe' provider is supported").
+			WithReportableDetails(map[string]interface{}{
+				"provider":            r.Provider,
+				"supported_providers": []types.PaymentMethodProvider{types.PaymentMethodProviderStripe},
+			}).
+			Mark(errors.ErrValidation)
+	}
+
 	// Validate limit parameter
 	if r.Limit < 0 || r.Limit > 100 {
 		return errors.NewError("invalid limit parameter").
