@@ -103,7 +103,10 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	environmentID := c.Param("environment_id")
 
 	if tenantID == "" || environmentID == "" {
-		h.logger.Errorw("missing tenant_id or environment_id in webhook URL")
+		h.logger.Errorw("missing tenant_id or environment_id in webhook URL",
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+			"url_path", c.Request.URL.Path)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "tenant_id and environment_id are required",
 		})
@@ -123,7 +126,10 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	// Get Stripe signature from headers
 	signature := c.GetHeader("Stripe-Signature")
 	if signature == "" {
-		h.logger.Errorw("missing Stripe-Signature header")
+		h.logger.Errorw("missing Stripe-Signature header",
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+			"headers", c.Request.Header)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Missing Stripe-Signature header",
 		})
@@ -165,6 +171,8 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	if stripeConfig.WebhookSecret == "" {
 		h.logger.Errorw("webhook secret not configured for Stripe connection",
 			"environment_id", environmentID,
+			"tenant_id", tenantID,
+			"connection_id", conn.ID,
 		)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Webhook secret not configured",
@@ -180,14 +188,55 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 	)
 
 	// Parse and verify the webhook event
+	h.logger.Infow("attempting to parse webhook event",
+		"body_length", len(body),
+		"signature_present", signature != "",
+		"webhook_secret_configured", stripeConfig.WebhookSecret != "",
+		"environment_id", environmentID)
+
 	event, err := h.stripeService.ParseWebhookEvent(body, signature, stripeConfig.WebhookSecret)
 	if err != nil {
-		h.logger.Errorw("failed to parse/verify Stripe webhook event", "error", err)
+		h.logger.Errorw("failed to parse/verify Stripe webhook event",
+			"error", err,
+			"error_type", fmt.Sprintf("%T", err),
+			"body_length", len(body),
+			"signature", signature,
+			"environment_id", environmentID)
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Failed to verify webhook signature",
+			"error":   "Failed to verify webhook signature",
+			"details": err.Error(),
 		})
 		return
 	}
+
+	// Parse webhook event without signature verification (TEMPORARY)
+	// event := &stripe.Event{}
+	// err = json.Unmarshal(body, event)
+	// if err != nil {
+	// 	h.logger.Errorw("failed to parse webhook event JSON",
+	// 		"error", err,
+	// 		"body_length", len(body),
+	// 		"environment_id", environmentID)
+	// 	c.JSON(http.StatusBadRequest, gin.H{
+	// 		"error":   "Failed to parse webhook event JSON",
+	// 		"details": err.Error(),
+	// 	})
+	// 	return
+	// }
+
+	// h.logger.Infow("successfully parsed webhook event (without signature verification)",
+	// 	"event_type", event.Type,
+	// 	"event_id", event.ID,
+	// 	"environment_id", environmentID)
+
+	// Log the event type for debugging
+	// h.logger.Infow("processing webhook event",
+	// 	"event_type", event.Type,
+	// 	"event_id", event.ID,
+	// 	"environment_id", environmentID,
+	// 	"tenant_id", tenantID,
+	// 	"event_created", event.Created,
+	// 	"event_livemode", event.Livemode)
 
 	// Handle different event types
 	switch string(event.Type) {
@@ -203,6 +252,9 @@ func (h *WebhookHandler) HandleStripeWebhook(c *gin.Context) {
 		h.handleCheckoutSessionExpired(c, event, environmentID)
 	case string(types.WebhookEventTypePaymentIntentPaymentFailed):
 		h.handlePaymentIntentPaymentFailed(c, event, environmentID)
+	case string(types.WebhookEventTypeSetupIntentSucceeded):
+		h.logger.Infow("handling setup_intent.succeeded webhook")
+		h.handleSetupIntentSucceeded(c, event, environmentID)
 
 	default:
 		h.logger.Infow("unhandled Stripe webhook event type", "type", event.Type)
@@ -1096,5 +1148,107 @@ func (h *WebhookHandler) handlePaymentIntentPaymentFailed(c *gin.Context, event 
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment intent payment failed webhook processed successfully",
+	})
+}
+
+// handleSetupIntentSucceeded handles setup_intent.succeeded webhook
+func (h *WebhookHandler) handleSetupIntentSucceeded(c *gin.Context, event *stripe.Event, environmentID string) {
+	var setupIntent stripe.SetupIntent
+	err := json.Unmarshal(event.Data.Raw, &setupIntent)
+	if err != nil {
+		h.logger.Errorw("failed to parse setup intent from webhook", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Failed to parse setup intent data",
+		})
+		return
+	}
+
+	h.logger.Infow("received setup_intent.succeeded webhook",
+		"setup_intent_id", setupIntent.ID,
+		"status", setupIntent.Status,
+		"environment_id", environmentID,
+		"event_id", event.ID,
+		"event_type", event.Type,
+		"has_payment_method", setupIntent.PaymentMethod != nil,
+		"payment_method_id", func() string {
+			if setupIntent.PaymentMethod != nil {
+				return setupIntent.PaymentMethod.ID
+			}
+			return ""
+		}(),
+		"metadata", setupIntent.Metadata,
+	)
+
+	// Check if setup intent succeeded and has a payment method
+	if setupIntent.Status != stripe.SetupIntentStatusSucceeded || setupIntent.PaymentMethod == nil {
+		h.logger.Infow("setup intent not in succeeded status or no payment method attached",
+			"setup_intent_id", setupIntent.ID,
+			"status", setupIntent.Status,
+			"has_payment_method", setupIntent.PaymentMethod != nil)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Setup intent not succeeded or no payment method",
+		})
+		return
+	}
+
+	// Check if set_default was requested
+	setAsDefault, exists := setupIntent.Metadata["set_default"]
+	h.logger.Infow("checking set_default metadata",
+		"setup_intent_id", setupIntent.ID,
+		"set_default_exists", exists,
+		"set_default_value", setAsDefault,
+		"all_metadata", setupIntent.Metadata)
+
+	if !exists || setAsDefault != "true" {
+		h.logger.Infow("set_as_default not requested for this setup intent",
+			"setup_intent_id", setupIntent.ID,
+			"set_default_exists", exists,
+			"set_default_value", setAsDefault)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Set as default not requested",
+		})
+		return
+	}
+
+	// Get customer ID from metadata
+	customerID, exists := setupIntent.Metadata["customer_id"]
+	if !exists {
+		h.logger.Errorw("customer_id not found in setup intent metadata",
+			"setup_intent_id", setupIntent.ID)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Customer ID not found in setup intent metadata",
+		})
+		return
+	}
+
+	// Set the payment method as default
+	paymentMethodID := setupIntent.PaymentMethod.ID
+	h.logger.Infow("attempting to set payment method as default",
+		"setup_intent_id", setupIntent.ID,
+		"customer_id", customerID,
+		"payment_method_id", paymentMethodID)
+
+	err = h.stripeService.SetDefaultPaymentMethod(c.Request.Context(), customerID, paymentMethodID)
+	if err != nil {
+		h.logger.Errorw("failed to set payment method as default",
+			"error", err,
+			"error_type", fmt.Sprintf("%T", err),
+			"setup_intent_id", setupIntent.ID,
+			"customer_id", customerID,
+			"payment_method_id", paymentMethodID)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to set payment method as default",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	h.logger.Infow("successfully processed setup intent and set payment method as default",
+		"setup_intent_id", setupIntent.ID,
+		"customer_id", customerID,
+		"payment_method_id", paymentMethodID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Setup intent processed and payment method set as default",
 	})
 }

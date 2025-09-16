@@ -749,6 +749,8 @@ func (s *StripeService) SetDefaultPaymentMethod(ctx context.Context, customerID,
 		"customer_id", customerID,
 		"stripe_customer_id", stripeCustomerID,
 		"payment_method_id", paymentMethodID,
+		"tenant_id", types.GetTenantID(ctx),
+		"environment_id", types.GetEnvironmentID(ctx),
 	)
 
 	// Update customer's default payment method in Stripe
@@ -1664,7 +1666,8 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, customerID 
 		metadata["set_default"] = "true"
 		s.Logger.Infow("setup intent will be set as default when succeeded",
 			"customer_id", customerID,
-			"set_default", "true")
+			"set_default", "true",
+			"metadata", metadata)
 	}
 
 	// Create Setup Intent first
