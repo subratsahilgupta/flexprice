@@ -255,7 +255,7 @@ func (s *StripeService) CreateCustomerInStripe(ctx context.Context, customerID s
 		}
 	}
 
-	stripeCustomer, err := sc.V1Customers.Create(context.Background(), params)
+	stripeCustomer, err := sc.V1Customers.Create(ctx, params)
 	if err != nil {
 		return ierr.NewError("failed to create customer in Stripe").
 			WithHint("Stripe API error").
@@ -564,7 +564,7 @@ func (s *StripeService) CreatePaymentLink(ctx context.Context, req *dto.CreateSt
 	}
 
 	// Create the checkout session
-	session, err := stripeClient.V1CheckoutSessions.Create(context.Background(), params)
+	session, err := stripeClient.V1CheckoutSessions.Create(ctx, params)
 	if err != nil {
 		s.Logger.Errorw("failed to create Stripe checkout session",
 			"error", err,
@@ -655,7 +655,7 @@ func (s *StripeService) GetCustomerPaymentMethods(ctx context.Context, req *dto.
 		// No Type restriction - list ALL payment method types (card, us_bank_account, sepa_debit, etc.)
 	}
 
-	paymentMethods := stripeClient.V1PaymentMethods.List(context.Background(), params)
+	paymentMethods := stripeClient.V1PaymentMethods.List(ctx, params)
 	var responses []*dto.PaymentMethodResponse
 
 	paymentMethods(func(pm *stripe.PaymentMethod, err error) bool {
@@ -758,7 +758,7 @@ func (s *StripeService) SetDefaultPaymentMethod(ctx context.Context, customerID,
 		},
 	}
 
-	_, err = stripeClient.V1Customers.Update(context.Background(), stripeCustomerID, params)
+	_, err = stripeClient.V1Customers.Update(ctx, stripeCustomerID, params)
 	if err != nil {
 		s.Logger.Errorw("failed to set default payment method in Stripe",
 			"error", err,
@@ -820,7 +820,7 @@ func (s *StripeService) GetDefaultPaymentMethod(ctx context.Context, customerID 
 	}
 
 	// Get customer from Stripe to find default payment method
-	customer, err := stripeClient.V1Customers.Retrieve(context.Background(), stripeCustomerID, nil)
+	customer, err := stripeClient.V1Customers.Retrieve(ctx, stripeCustomerID, nil)
 	if err != nil {
 		s.Logger.Errorw("failed to get customer from Stripe",
 			"error", err,
@@ -845,7 +845,7 @@ func (s *StripeService) GetDefaultPaymentMethod(ctx context.Context, customerID 
 	defaultPaymentMethodID := customer.InvoiceSettings.DefaultPaymentMethod.ID
 
 	// Get the payment method details
-	paymentMethod, err := stripeClient.V1PaymentMethods.Retrieve(context.Background(), defaultPaymentMethodID, nil)
+	paymentMethod, err := stripeClient.V1PaymentMethods.Retrieve(ctx, defaultPaymentMethodID, nil)
 	if err != nil {
 		s.Logger.Errorw("failed to get default payment method from Stripe",
 			"error", err,
@@ -974,7 +974,7 @@ func (s *StripeService) ChargeSavedPaymentMethod(ctx context.Context, req *dto.C
 		},
 	}
 
-	paymentIntent, err := stripeClient.V1PaymentIntents.Create(context.Background(), params)
+	paymentIntent, err := stripeClient.V1PaymentIntents.Create(ctx, params)
 	if err != nil {
 		// Handle specific error cases
 		if stripeErr, ok := err.(*stripe.Error); ok {
@@ -1275,7 +1275,7 @@ func (s *StripeService) GetPaymentStatus(ctx context.Context, sessionID string, 
 			stripe.String("customer"),
 		},
 	}
-	session, err := stripeClient.V1CheckoutSessions.Retrieve(context.Background(), sessionID, params)
+	session, err := stripeClient.V1CheckoutSessions.Retrieve(ctx, sessionID, params)
 	if err != nil {
 		s.Logger.Errorw("failed to get Stripe checkout session",
 			"error", err,
@@ -1324,7 +1324,7 @@ func (s *StripeService) GetPaymentStatus(ctx context.Context, sessionID string, 
 
 		// Get payment method ID from payment intent
 		if paymentIntentID != "" {
-			paymentIntent, err := stripeClient.V1PaymentIntents.Retrieve(context.Background(), paymentIntentID, nil)
+			paymentIntent, err := stripeClient.V1PaymentIntents.Retrieve(ctx, paymentIntentID, nil)
 			if err != nil {
 				s.Logger.Warnw("failed to get payment intent details",
 					"error", err,
@@ -1434,7 +1434,7 @@ func (s *StripeService) GetPaymentStatusByPaymentIntent(ctx context.Context, pay
 			stripe.String("customer"),
 		},
 	}
-	paymentIntent, err := stripeClient.V1PaymentIntents.Retrieve(context.Background(), paymentIntentID, params)
+	paymentIntent, err := stripeClient.V1PaymentIntents.Retrieve(ctx, paymentIntentID, params)
 	if err != nil {
 		s.Logger.Errorw("failed to get Stripe payment intent",
 			"error", err,
@@ -1548,7 +1548,7 @@ func (s *StripeService) UpdateStripeCustomerMetadata(ctx context.Context, stripe
 	params.AddMetadata("external_id", externalID)
 
 	// Update the Stripe customer
-	_, err = sc.V1Customers.Update(context.Background(), stripeCustomerID, params)
+	_, err = sc.V1Customers.Update(ctx, stripeCustomerID, params)
 	if err != nil {
 		s.Logger.Errorw("failed to update Stripe customer metadata",
 			"stripe_customer_id", stripeCustomerID,
@@ -1659,6 +1659,14 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, customerID 
 		metadata[k] = v
 	}
 
+	// Add set_default flag to metadata if requested
+	if req.SetDefault {
+		metadata["set_default"] = "true"
+		s.Logger.Infow("setup intent will be set as default when succeeded",
+			"customer_id", customerID,
+			"set_default", "true")
+	}
+
 	// Create Setup Intent first
 	setupIntentParams := &stripe.SetupIntentCreateParams{
 		Customer: stripe.String(stripeCustomerID),
@@ -1673,7 +1681,7 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, customerID 
 		}
 	}
 
-	setupIntent, err := stripeClient.V1SetupIntents.Create(context.Background(), setupIntentParams)
+	setupIntent, err := stripeClient.V1SetupIntents.Create(ctx, setupIntentParams)
 	if err != nil {
 		s.Logger.Errorw("failed to create Stripe setup intent",
 			"error", err,
@@ -1717,7 +1725,7 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, customerID 
 		Metadata: metadata,
 	}
 
-	checkoutSession, err := stripeClient.V1CheckoutSessions.Create(context.Background(), checkoutParams)
+	checkoutSession, err := stripeClient.V1CheckoutSessions.Create(ctx, checkoutParams)
 	if err != nil {
 		s.Logger.Errorw("failed to create Stripe checkout session for setup intent",
 			"error", err,
@@ -1757,8 +1765,8 @@ func (s *StripeService) createStripeSetupIntent(ctx context.Context, customerID 
 }
 
 // getPaymentMethodDetails retrieves payment method details from Stripe
-func (s *StripeService) getPaymentMethodDetails(stripeClient *stripe.Client, paymentMethodID string) (*dto.PaymentMethodResponse, error) {
-	paymentMethod, err := stripeClient.V1PaymentMethods.Retrieve(context.Background(), paymentMethodID, nil)
+func (s *StripeService) getPaymentMethodDetails(ctx context.Context, stripeClient *stripe.Client, paymentMethodID string) (*dto.PaymentMethodResponse, error) {
+	paymentMethod, err := stripeClient.V1PaymentMethods.Retrieve(ctx, paymentMethodID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1796,9 +1804,33 @@ func (s *StripeService) getPaymentMethodDetails(stripeClient *stripe.Client, pay
 }
 
 // ListCustomerPaymentMethods lists only the successfully saved payment methods for a customer (generic method)
-func (s *StripeService) ListCustomerPaymentMethods(ctx context.Context, customerID string, req *dto.ListPaymentMethodsRequest) (*dto.ListSetupIntentsResponse, error) {
-	// For now, we only support Stripe, but this can be extended for other providers
-	return s.listStripeCustomerPaymentMethods(ctx, customerID, req)
+func (s *StripeService) ListCustomerPaymentMethods(ctx context.Context, customerID string, req *dto.ListPaymentMethodsRequest) (*dto.MultiProviderPaymentMethodsResponse, error) {
+	response := &dto.MultiProviderPaymentMethodsResponse{}
+
+	// Get all connections for this environment
+	connections, err := s.ConnectionRepo.List(ctx, &types.ConnectionFilter{})
+	if err != nil {
+		s.Logger.Errorw("failed to get connections for environment", "error", err)
+		// Continue with empty response rather than failing
+	}
+
+	// Process each provider
+	for _, conn := range connections {
+		switch conn.ProviderType {
+		case types.SecretProviderStripe:
+			stripePaymentMethods, err := s.listStripeCustomerPaymentMethods(ctx, customerID, req)
+			if err != nil {
+				s.Logger.Errorw("failed to get Stripe payment methods", "error", err, "customer_id", customerID)
+				continue // Skip this provider but continue with others
+			}
+			response.Stripe = stripePaymentMethods.Data
+
+		default:
+			s.Logger.Infow("unsupported provider for payment methods", "provider", conn.ProviderType, "customer_id", customerID)
+		}
+	}
+
+	return response, nil
 }
 
 // listStripeCustomerPaymentMethods lists only successfully saved payment methods using Stripe's Customer.ListPaymentMethods
@@ -1855,7 +1887,7 @@ func (s *StripeService) listStripeCustomerPaymentMethods(ctx context.Context, cu
 
 	// Get customer's default payment method ID
 	var defaultPaymentMethodID string
-	customer, err := stripeClient.V1Customers.Retrieve(context.Background(), stripeCustomerID, nil)
+	customer, err := stripeClient.V1Customers.Retrieve(ctx, stripeCustomerID, nil)
 	if err == nil && customer.InvoiceSettings != nil && customer.InvoiceSettings.DefaultPaymentMethod != nil {
 		defaultPaymentMethodID = customer.InvoiceSettings.DefaultPaymentMethod.ID
 		s.Logger.Infow("found default payment method for customer",
@@ -1888,7 +1920,7 @@ func (s *StripeService) listStripeCustomerPaymentMethods(ctx context.Context, cu
 	}
 
 	// List Payment Methods from Stripe (only successfully saved ones)
-	paymentMethodsList := stripeClient.V1PaymentMethods.List(context.Background(), params)
+	paymentMethodsList := stripeClient.V1PaymentMethods.List(ctx, params)
 
 	var setupIntents []dto.SetupIntentListItem
 	var hasMore bool

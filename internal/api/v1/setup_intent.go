@@ -55,13 +55,10 @@ func (h *SetupIntentHandler) CreateSetupIntentSession(c *gin.Context) {
 	if err := decoder.Decode(&req); err != nil {
 		h.log.Error("Failed to bind JSON", "error", err)
 		c.Error(ierr.WithError(err).
-			WithHint("Invalid request format. Unknown fields are not allowed.").
+			WithHint("Invalid request format. Unknown fields are not allowed").
 			Mark(ierr.ErrValidation))
 		return
 	}
-
-	// // Set customer ID from URL path
-	// req.CustomerID = customerID
 
 	// Validate the request
 	if err := req.Validate(); err != nil {
@@ -89,7 +86,7 @@ func (h *SetupIntentHandler) CreateSetupIntentSession(c *gin.Context) {
 // @Param limit query int false "Number of results to return (default: 10, max: 100)"
 // @Param starting_after query string false "Pagination cursor for results after this ID"
 // @Param ending_before query string false "Pagination cursor for results before this ID"
-// @Success 200 {object} dto.ListSetupIntentsResponse
+// @Success 200 {object} dto.MultiProviderPaymentMethodsResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
 // @Router /payments/customers/{id}/methods [get]

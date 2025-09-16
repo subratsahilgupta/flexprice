@@ -92,6 +92,7 @@ type CreateSetupIntentRequest struct {
 	PaymentMethodTypes []string       `json:"payment_method_types,omitempty"` // defaults to ["card"]
 	SuccessURL         string         `json:"success_url,omitempty"`          // User-configurable success redirect URL
 	CancelURL          string         `json:"cancel_url,omitempty"`           // User-configurable cancel redirect URL
+	SetDefault         bool           `json:"set_default,omitempty"`          // Whether to set the payment method as default when setup succeeds
 	Metadata           types.Metadata `json:"metadata,omitempty"`
 }
 
@@ -138,6 +139,12 @@ type ListSetupIntentsResponse struct {
 	Data       []SetupIntentListItem `json:"data"`
 	HasMore    bool                  `json:"has_more"`
 	TotalCount int                   `json:"total_count"`
+}
+
+// MultiProviderPaymentMethodsResponse represents payment methods grouped by provider
+type MultiProviderPaymentMethodsResponse struct {
+	Stripe []SetupIntentListItem `json:"stripe,omitempty"`
+	// Add more providers as needed
 }
 
 // ListPaymentMethodsRequest represents a request to list payment methods for a customer (GET request)
