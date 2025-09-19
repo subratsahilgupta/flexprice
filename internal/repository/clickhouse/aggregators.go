@@ -62,6 +62,8 @@ func GetAggregator(aggregationType types.AggregationType) events.Aggregator {
 		return &SumWithMultiAggregator{}
 	case types.AggregationMax:
 		return &MaxAggregator{}
+	case types.AggregationWeightedSum:
+		return &WeightedSumAggregator{}
 	}
 	return nil
 }
@@ -708,6 +710,61 @@ func (a *MaxAggregator) getWindowedQuery(ctx context.Context, params *events.Usa
 
 func (a *MaxAggregator) GetType() types.AggregationType {
 	return types.AggregationMax
+}
+
+// WeightedSumAggregator implements weighted sum aggregation
+type WeightedSumAggregator struct{}
+
+func (a *WeightedSumAggregator) GetQuery(ctx context.Context, params *events.UsageParams) string {
+	externalCustomerFilter := ""
+	if params.ExternalCustomerID != "" {
+		externalCustomerFilter = fmt.Sprintf("AND external_customer_id = '%s'", params.ExternalCustomerID)
+	}
+
+	customerFilter := ""
+	if params.CustomerID != "" {
+		customerFilter = fmt.Sprintf("AND customer_id = '%s'", params.CustomerID)
+	}
+
+	filterConditions := buildFilterConditions(params.Filters)
+	timeConditions := buildTimeConditions(params)
+
+	return fmt.Sprintf(`
+    WITH
+		toDateTime('%s') AS period_start,
+		toDateTime('%s') AS period_end,
+		dateDiff('second', period_start, period_end) AS total_seconds
+	SELECT
+		sum(
+			JSONExtractFloat(properties, '%s') *
+			dateDiff('second', timestamp, period_end)
+		) / nullIf(total_seconds, 0) AS usage
+	FROM events
+	WHERE event_name = '%s'
+	AND tenant_id = '%s'
+	AND environment_id = '%s'
+	AND timestamp >= period_start
+	AND timestamp <  period_end
+		%s
+		%s
+		%s
+		%s
+	`,
+		formatClickHouseDateTime(params.StartTime),
+		formatClickHouseDateTime(params.EndTime),
+		params.PropertyName,
+		params.EventName,
+		types.GetTenantID(ctx),
+		types.GetEnvironmentID(ctx),
+		externalCustomerFilter,
+		customerFilter,
+		filterConditions,
+		timeConditions,
+	)
+}
+
+func (a *WeightedSumAggregator) GetType() types.AggregationType {
+	return types.AggregationWeightedSum
 }
 
 // // buildFilterGroupsQuery builds a query that matches events to the most specific filter group
