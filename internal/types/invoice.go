@@ -254,7 +254,6 @@ type InvoiceConfig struct {
 	InvoiceNumberTimezone      string              `json:"timezone,omitempty"`
 	InvoiceNumberSeparator     string              `json:"separator,omitempty"`
 	InvoiceNumberSuffixLength  int                 `json:"suffix_length,omitempty"`
-	DueDateDays                *int                `json:"due_date_days,omitempty"` // Number of days after period end when payment is due
 }
 
 // InvoiceFilter represents the filter options for listing invoices

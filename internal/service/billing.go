@@ -1000,23 +1000,23 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 	description string, // mark optional
 	metadata types.Metadata, // mark optional
 ) (*dto.CreateInvoiceRequest, error) {
-	// Get invoice config for tenant
+	// Get invoice due date config for tenant
 	settingsService := NewSettingsService(s.ServiceParams)
-	invoiceConfigResponse, err := settingsService.GetSettingByKey(ctx, types.SettingKeyInvoiceConfig.String())
+	dueDateConfigResponse, err := settingsService.GetSettingByKey(ctx, types.SettingKeyInvoiceDueDateConfig.String())
 	if err != nil {
 		return nil, err
 	}
 
-	// Use the safe conversion function
-	invoiceConfig, err := dto.ConvertToInvoiceConfig(invoiceConfigResponse.Value)
+	// Use the safe conversion function for due date config
+	dueDateConfig, err := dto.ConvertToDueDateConfig(dueDateConfigResponse.Value)
 	if err != nil {
 		return nil, ierr.WithError(err).
-			WithHint("Failed to parse invoice configuration").
+			WithHint("Failed to parse invoice due date configuration").
 			Mark(ierr.ErrValidation)
 	}
 
 	// Prepare invoice due date using tenant's configuration
-	invoiceDueDate := periodEnd.Add(24 * time.Hour * time.Duration(*invoiceConfig.DueDateDays))
+	invoiceDueDate := periodEnd.Add(24 * time.Hour * time.Duration(dueDateConfig.DueDateDays))
 
 	if result == nil {
 		// prepare result for zero amount invoice

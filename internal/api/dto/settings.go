@@ -26,20 +26,7 @@ type SettingResponse struct {
 func ConvertToInvoiceConfig(value map[string]interface{}) (*types.InvoiceConfig, error) {
 
 	invoiceConfig := &types.InvoiceConfig{}
-	if dueDateDaysRaw, exists := value["due_date_days"]; exists {
-		switch v := dueDateDaysRaw.(type) {
-		case int:
-			dueDateDays := v
-			invoiceConfig.DueDateDays = &dueDateDays
-		case float64:
-			dueDateDays := int(v)
-			invoiceConfig.DueDateDays = &dueDateDays
-		}
-	} else {
-		// Get default value and convert to pointer
-		defaultDays := types.GetDefaultSettings()[types.SettingKeyInvoiceConfig].DefaultValue["due_date_days"].(int)
-		invoiceConfig.DueDateDays = &defaultDays
-	}
+	// Note: DueDateDays is no longer set here - it should be retrieved from invoice_due_date_config setting
 
 	if invoiceNumberPrefix, ok := value["prefix"].(string); ok {
 		invoiceConfig.InvoiceNumberPrefix = invoiceNumberPrefix
@@ -73,6 +60,25 @@ func ConvertToInvoiceConfig(value map[string]interface{}) (*types.InvoiceConfig,
 	}
 
 	return invoiceConfig, nil
+}
+
+func ConvertToDueDateConfig(value map[string]interface{}) (*types.DueDateConfig, error) {
+	dueDateConfig := &types.DueDateConfig{}
+
+	if dueDateDaysRaw, exists := value["due_date_days"]; exists {
+		switch v := dueDateDaysRaw.(type) {
+		case int:
+			dueDateConfig.DueDateDays = v
+		case float64:
+			dueDateConfig.DueDateDays = int(v)
+		}
+	} else {
+		// Get default value
+		defaultDays := types.GetDefaultSettings()[types.SettingKeyInvoiceDueDateConfig].DefaultValue["due_date_days"].(int)
+		dueDateConfig.DueDateDays = defaultDays
+	}
+
+	return dueDateConfig, nil
 }
 
 // CreateSettingRequest represents the request to create a new setting

@@ -11,8 +11,9 @@ import (
 type SettingKey string
 
 const (
-	SettingKeyInvoiceConfig      SettingKey = "invoice_config"
-	SettingKeySubscriptionConfig SettingKey = "subscription_config"
+	SettingKeyInvoiceConfig        SettingKey = "invoice_config"
+	SettingKeyInvoiceDueDateConfig SettingKey = "invoice_due_date_config"
+	SettingKeySubscriptionConfig   SettingKey = "subscription_config"
 )
 
 func (s SettingKey) String() string {
@@ -31,6 +32,11 @@ type DefaultSettingValue struct {
 type SubscriptionConfig struct {
 	GracePeriodDays         int  `json:"grace_period_days"`
 	AutoCancellationEnabled bool `json:"auto_cancellation_enabled"`
+}
+
+// DueDateConfig represents the configuration for invoice due dates
+type DueDateConfig struct {
+	DueDateDays int `json:"due_date_days"`
 }
 
 // TenantEnvConfig represents a generic configuration for a specific tenant and environment
@@ -111,9 +117,16 @@ func GetDefaultSettings() map[SettingKey]DefaultSettingValue {
 				"timezone":       "UTC",
 				"separator":      "-",
 				"suffix_length":  5,
-				"due_date_days":  1, // Default to 1 day after period end
 			},
-			Description: "Default configuration for invoice generation and management",
+			Description: "Default configuration for invoice sequence prefix generation",
+			Required:    true,
+		},
+		SettingKeyInvoiceDueDateConfig: {
+			Key: SettingKeyInvoiceDueDateConfig,
+			DefaultValue: map[string]interface{}{
+				"due_date_days": 1, // Default to 1 day after period end
+			},
+			Description: "Default configuration for invoice due date calculation",
 			Required:    true,
 		},
 		SettingKeySubscriptionConfig: {
@@ -143,6 +156,8 @@ func ValidateSettingValue(key string, value map[string]interface{}) error {
 	switch SettingKey(key) {
 	case SettingKeyInvoiceConfig:
 		return ValidateInvoiceConfig(value)
+	case SettingKeyInvoiceDueDateConfig:
+		return ValidateDueDateConfig(value)
 	case SettingKeySubscriptionConfig:
 		return ValidateSubscriptionConfig(value)
 	default:
@@ -158,30 +173,26 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 		return errors.New("invoice_config value cannot be nil")
 	}
 
-	// Check if this is a due_date_days only update
-	if dueDateDaysRaw, exists := value["due_date_days"]; exists {
-		var dueDateDays int
-		switch v := dueDateDaysRaw.(type) {
-		case int:
-			dueDateDays = v
-		case float64:
-			if v != float64(int(v)) {
-				return errors.New("invoice_config: 'due_date_days' must be a whole number")
-			}
-			dueDateDays = int(v)
-		default:
-			return ierr.NewErrorf("invoice_config: 'due_date_days' must be an integer, got %T", dueDateDaysRaw).
-				WithHintf("Invoice config due date days must be an integer, got %T", dueDateDaysRaw).
-				Mark(ierr.ErrValidation)
-		}
-
-		if dueDateDays < 0 {
-			return errors.New("invoice_config: 'due_date_days' must be greater than or equal to 0")
-		}
-		return nil
+	// Define allowed fields for invoice_config
+	allowedFields := map[string]bool{
+		"prefix":         true,
+		"format":         true,
+		"start_sequence": true,
+		"timezone":       true,
+		"separator":      true,
+		"suffix_length":  true,
 	}
 
-	// If not a due_date_days only update, validate all required fields
+	// Check for any disallowed fields
+	for field := range value {
+		if !allowedFields[field] {
+			return ierr.NewErrorf("invoice_config: '%s' is not allowed in invoice configuration", field).
+				WithHintf("Invoice config only allows: prefix, format, start_sequence, timezone, separator, suffix_length").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	// Validate all required fields for invoice sequence configuration
 	// Validate prefix
 	prefixRaw, exists := value["prefix"]
 	if !exists {
@@ -339,9 +350,74 @@ func ValidateInvoiceConfig(value map[string]interface{}) error {
 	return nil
 }
 
+// ValidateDueDateConfig validates due date configuration settings
+func ValidateDueDateConfig(value map[string]interface{}) error {
+	if value == nil {
+		return errors.New("invoice_due_date_config value cannot be nil")
+	}
+
+	// Define allowed fields for invoice_due_date_config
+	allowedFields := map[string]bool{
+		"due_date_days": true,
+	}
+
+	// Check for any disallowed fields
+	for field := range value {
+		if !allowedFields[field] {
+			return ierr.NewErrorf("invoice_due_date_config: '%s' is not allowed in due date configuration", field).
+				WithHintf("Invoice due date config only allows: due_date_days").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	// Validate due_date_days
+	dueDateDaysRaw, exists := value["due_date_days"]
+	if !exists {
+		return ierr.NewErrorf("invoice_due_date_config: 'due_date_days' is required").
+			WithHintf("Invoice due date config due date days is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	var dueDateDays int
+	switch v := dueDateDaysRaw.(type) {
+	case int:
+		dueDateDays = v
+	case float64:
+		if v != float64(int(v)) {
+			return errors.New("invoice_due_date_config: 'due_date_days' must be a whole number")
+		}
+		dueDateDays = int(v)
+	default:
+		return ierr.NewErrorf("invoice_due_date_config: 'due_date_days' must be an integer, got %T", dueDateDaysRaw).
+			WithHintf("Invoice due date config due date days must be an integer, got %T", dueDateDaysRaw).
+			Mark(ierr.ErrValidation)
+	}
+
+	if dueDateDays < 0 {
+		return errors.New("invoice_due_date_config: 'due_date_days' must be greater than or equal to 0")
+	}
+
+	return nil
+}
+
 func ValidateSubscriptionConfig(value map[string]interface{}) error {
 	if value == nil {
 		return errors.New("subscription_config value cannot be nil")
+	}
+
+	// Define allowed fields for subscription_config
+	allowedFields := map[string]bool{
+		"grace_period_days":         true,
+		"auto_cancellation_enabled": true,
+	}
+
+	// Check for any disallowed fields
+	for field := range value {
+		if !allowedFields[field] {
+			return ierr.NewErrorf("subscription_config: '%s' is not allowed in subscription configuration", field).
+				WithHintf("Subscription config only allows: grace_period_days, auto_cancellation_enabled").
+				Mark(ierr.ErrValidation)
+		}
 	}
 
 	// Validate grace_period_days if provided
@@ -380,28 +456,6 @@ func ValidateSubscriptionConfig(value map[string]interface{}) error {
 		}
 		// Store the validated value back for consistency
 		value["auto_cancellation_enabled"] = autoCancellationEnabled
-	}
-
-	// If due_date_days is provided in full config, validate it
-	if dueDateDaysRaw, exists := value["due_date_days"]; exists {
-		var dueDateDays int
-		switch v := dueDateDaysRaw.(type) {
-		case int:
-			dueDateDays = v
-		case float64:
-			if v != float64(int(v)) {
-				return errors.New("invoice_config: 'due_date_days' must be a whole number")
-			}
-			dueDateDays = int(v)
-		default:
-			return ierr.NewErrorf("invoice_config: 'due_date_days' must be an integer, got %T", dueDateDaysRaw).
-				WithHintf("Invoice config due date days must be an integer, got %T", dueDateDaysRaw).
-				Mark(ierr.ErrValidation)
-		}
-
-		if dueDateDays < 0 {
-			return errors.New("invoice_config: 'due_date_days' must be greater than or equal to 0")
-		}
 	}
 
 	return nil
