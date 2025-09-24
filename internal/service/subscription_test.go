@@ -3118,18 +3118,18 @@ func (s *SubscriptionServiceSuite) TestListSubscriptions() {
 		wantErr   bool
 	}{
 		{
-			name:      "list_all_subscriptions",
+			name:      "list_subscriptions_defaults_to_active_only",
 			input:     &types.SubscriptionFilter{QueryFilter: types.NewDefaultQueryFilter()},
-			wantCount: 3, // 2 new + 1 from setupTestData
+			wantCount: 2, // Only active subscriptions (1 from setupTestData + 1 from test)
 			wantErr:   false,
 		},
 		{
-			name: "filter_by_customer",
+			name: "filter_by_customer_defaults_to_active_only",
 			input: &types.SubscriptionFilter{
 				QueryFilter: types.NewDefaultQueryFilter(),
 				CustomerID:  s.testData.customer.ID,
 			},
-			wantCount: 3,
+			wantCount: 2, // Only active subscriptions for this customer (1 from setupTestData + 1 from test)
 			wantErr:   false,
 		},
 		{
@@ -3148,6 +3148,18 @@ func (s *SubscriptionServiceSuite) TestListSubscriptions() {
 				SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusCancelled},
 			},
 			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name: "filter_by_all_statuses_explicitly",
+			input: &types.SubscriptionFilter{
+				QueryFilter: types.NewDefaultQueryFilter(),
+				SubscriptionStatus: []types.SubscriptionStatus{
+					types.SubscriptionStatusActive,
+					types.SubscriptionStatusCancelled,
+				},
+			},
+			wantCount: 3, // All subscriptions when explicitly requesting all statuses
 			wantErr:   false,
 		},
 	}
