@@ -867,6 +867,11 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 		"limit", filter.GetLimit(),
 		"offset", filter.GetOffset())
 
+	// Add active status to filter
+	if filter.SubscriptionStatus == nil {
+		filter.SubscriptionStatus = append(filter.SubscriptionStatus, types.SubscriptionStatusActive)
+	}
+
 	subscriptions, err := s.SubRepo.List(ctx, filter)
 	if err != nil {
 		s.Logger.Errorw("failed to list subscriptions from repository", "error", err, "filter", filter)
