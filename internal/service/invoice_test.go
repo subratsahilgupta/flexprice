@@ -344,7 +344,7 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 			referencePoint:  types.ReferencePointPeriodStart,
 			expectedAmount:  decimal.Zero, // The invoice has no remaining amount to pay after processing
 			expectedCharges: 0,            // No line items due to the way the test is set up
-			expectNil:       false,        // Zero-amount invoices are now created for audit trail
+			expectNil:       false,        // Zero-amount invoices created for manual/renewal flows
 		},
 		{
 			name: "period_end reference point - no charges to invoice",
@@ -411,7 +411,7 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 			expectedAmount:  decimal.Zero,
 			expectedCharges: 0,
 			wantErr:         false,
-			expectNil:       false, // Zero-amount invoices are now created for audit trail
+			expectNil:       false, // Zero-amount invoices created for manual/renewal flows
 		},
 	}
 

@@ -1044,6 +1044,15 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 		"invoice_request", invoiceReq,
 		"is_zero_amount", invoiceReq.Subtotal.IsZero())
 
+	// For subscription creation, skip zero-amount invoices
+	// For renewals/period updates, create zero-amount invoices for audit trail
+	if invoiceReq.Subtotal.IsZero() && flowType == types.InvoiceFlowSubscriptionCreation {
+		s.Logger.Debugw("skipping zero-amount invoice for subscription creation",
+			"subscription_id", req.SubscriptionID,
+			"flow_type", flowType)
+		return nil, subscription, nil
+	}
+
 	// Create the invoice
 	inv, err := s.CreateInvoice(ctx, *invoiceReq)
 	if err != nil {

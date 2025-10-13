@@ -146,9 +146,11 @@ func (s *SubscriptionServiceSuite) setupService() {
 		CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
 		CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
 		SettingsRepo:               s.GetStores().SettingsRepo,
+		ConnectionRepo:             s.GetStores().ConnectionRepo,
 		EventPublisher:             s.GetPublisher(),
 		WebhookPublisher:           s.GetWebhookPublisher(),
 		ProrationCalculator:        s.GetCalculator(),
+		IntegrationFactory:         s.GetIntegrationFactory(),
 	})
 }
 
