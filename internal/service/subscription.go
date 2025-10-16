@@ -3782,7 +3782,7 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 
 		invoices, err := s.InvoiceRepo.List(tenantCtx, invoicesFilter)
 		if err != nil {
-			s.Logger.Debugw("failed to get invoices for tenant",
+			s.Logger.Errorw("failed to get invoices for tenant",
 				"tenant_id", tenantConfig.TenantID,
 				"environment_id", tenantConfig.EnvironmentID,
 				"error", err)
@@ -3865,7 +3865,7 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 
 		subscriptions, err := s.SubRepo.List(tenantCtx, filter)
 		if err != nil {
-			s.Logger.Debugw("failed to get subscriptions for tenant",
+			s.Logger.Errorw("failed to get subscriptions for tenant",
 				"tenant_id", tenantConfig.TenantID,
 				"environment_id", tenantConfig.EnvironmentID,
 				"error", err)
