@@ -100,6 +100,7 @@ func (s *InvoiceServiceSuite) setupService() {
 		TaxRateRepo:                  s.GetStores().TaxRateRepo,
 		TaxAppliedRepo:               s.GetStores().TaxAppliedRepo,
 		TaxAssociationRepo:           s.GetStores().TaxAssociationRepo,
+		IntegrationFactory:           s.GetIntegrationFactory(),
 		SettingsRepo:                 s.GetStores().SettingsRepo,
 		ConnectionRepo:               s.GetStores().ConnectionRepo,
 		EntityIntegrationMappingRepo: s.GetStores().EntityIntegrationMappingRepo,

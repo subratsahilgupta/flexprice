@@ -235,9 +235,21 @@ func (s *onboardingService) processMessage(msg *message.Message) error {
 func (s *onboardingService) generateEvents(ctx context.Context, eventMsg *types.OnboardingEventsMessage) {
 	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
 
-	// Create a ticker to generate events at a rate of 5 per second
-	ticker := time.NewTicker(time.Millisecond * 200)
-	defer ticker.Stop()
+	// Calculate total events to generate
+	totalEvents := eventMsg.Duration * 5
+	numMeters := len(eventMsg.Meters)
+
+	if numMeters == 0 {
+		s.Logger.Warnw("no meters found, skipping event generation",
+			"customer_id", eventMsg.CustomerID,
+			"feature_id", eventMsg.FeatureID,
+		)
+		return
+	}
+
+	// Calculate events per meter using floor division
+	baseEventsPerMeter := totalEvents / numMeters
+	remainder := totalEvents % numMeters
 
 	// Create a counter for successful events
 	successCount := 0
@@ -247,17 +259,34 @@ func (s *onboardingService) generateEvents(ctx context.Context, eventMsg *types.
 		"customer_id", eventMsg.CustomerID,
 		"feature_id", eventMsg.FeatureID,
 		"duration", eventMsg.Duration,
+		"total_events", totalEvents,
+		"num_meters", numMeters,
+		"base_events_per_meter", baseEventsPerMeter,
+		"remainder", remainder,
 	)
 
-	// multiply duration by 5
-	duration := eventMsg.Duration * 5
+	// Create a ticker to generate events at a rate of 5 per second
+	ticker := time.NewTicker(time.Millisecond * 200)
+	defer ticker.Stop()
 
-	// Generate events
-	for i := 0; i < duration; i++ {
-		select {
-		case <-ticker.C:
-			// Generate an event for each meter
-			for _, meter := range eventMsg.Meters {
+	// Generate events for each meter with proper distribution
+	for meterIdx, meter := range eventMsg.Meters {
+		// Calculate events for this specific meter
+		eventsForThisMeter := baseEventsPerMeter
+		if meterIdx < remainder {
+			eventsForThisMeter++ // Give +1 extra event to first 'remainder' meters
+		}
+
+		s.Logger.Infow("generating events for meter",
+			"meter_index", meterIdx+1,
+			"meter_name", meter.EventName,
+			"events_to_generate", eventsForThisMeter,
+		)
+
+		// Generate the allocated events for this meter
+		for i := 0; i < eventsForThisMeter; i++ {
+			select {
+			case <-ticker.C:
 				// Create event request
 				eventReq := s.createEventRequest(eventMsg, &meter)
 
@@ -268,8 +297,9 @@ func (s *onboardingService) generateEvents(ctx context.Context, eventMsg *types.
 						"error", err,
 						"customer_id", eventMsg.CustomerID,
 						"event_name", meter.EventName,
+						"meter_index", meterIdx+1,
 						"event_number", i+1,
-						"total_events", eventMsg.Duration,
+						"total_events_for_meter", eventsForThisMeter,
 					)
 					continue
 				}
@@ -279,20 +309,21 @@ func (s *onboardingService) generateEvents(ctx context.Context, eventMsg *types.
 					"customer_id", eventMsg.CustomerID,
 					"event_name", meter.EventName,
 					"event_id", eventReq.EventID,
+					"meter_index", meterIdx+1,
 					"event_number", i+1,
-					"total_events", eventMsg.Duration,
+					"total_events_for_meter", eventsForThisMeter,
 				)
+			case <-ctx.Done():
+				s.Logger.Warnw("context cancelled, stopping event generation",
+					"customer_id", eventMsg.CustomerID,
+					"feature_id", eventMsg.FeatureID,
+					"events_generated", successCount,
+					"events_failed", errorCount,
+					"total_expected", totalEvents,
+					"reason", ctx.Err(),
+				)
+				return
 			}
-		case <-ctx.Done():
-			s.Logger.Warnw("context cancelled, stopping event generation",
-				"customer_id", eventMsg.CustomerID,
-				"feature_id", eventMsg.FeatureID,
-				"events_generated", successCount,
-				"events_failed", errorCount,
-				"total_expected", eventMsg.Duration,
-				"reason", ctx.Err(),
-			)
-			return
 		}
 	}
 
@@ -300,6 +331,7 @@ func (s *onboardingService) generateEvents(ctx context.Context, eventMsg *types.
 		"customer_id", eventMsg.CustomerID,
 		"feature_id", eventMsg.FeatureID,
 		"duration", eventMsg.Duration,
+		"total_events_expected", totalEvents,
 		"events_generated", successCount,
 		"events_failed", errorCount,
 	)
@@ -502,7 +534,7 @@ func (s *onboardingService) createDefaultMeters(ctx context.Context) ([]*meter.M
 		Name:      "LLM Usage",
 		EventName: "llm_usage",
 		Aggregation: meter.Aggregation{
-			Type: types.AggregationSum,
+			Type:  types.AggregationSum,
 			Field: "value",
 		},
 		Filters: modelFilters,
