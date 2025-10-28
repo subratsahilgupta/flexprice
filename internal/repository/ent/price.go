@@ -574,11 +574,6 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 		// - End date should be after current time (or null)
 		query = query.Where(
 			price.Or(
-				price.StartDateIsNil(),
-				price.StartDateLTE(now),
-				price.StartDateEQ(now),
-			),
-			price.Or(
 				price.EndDateIsNil(),
 				price.EndDateGT(now),
 			),

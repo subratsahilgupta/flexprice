@@ -200,9 +200,14 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		item.TrialPeriod = price.TrialPeriod
 		item.PriceUnitID = price.PriceUnitID
 		item.PriceUnit = price.PriceUnit
-		item.StartDate = sub.StartDate
 		if sub.EndDate != nil {
 			item.EndDate = *sub.EndDate
+		}
+		// Set start date to the price start date if it is after the subscription start date
+		if price.StartDate.After(sub.StartDate) {
+			item.StartDate = lo.FromPtr(price.StartDate)
+		} else {
+			item.StartDate = sub.StartDate
 		}
 	}
 
