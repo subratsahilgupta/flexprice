@@ -2065,7 +2065,10 @@ func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 	var err error
 
 	if entityType == types.PRICE_ENTITY_TYPE_PLAN {
-		pricesResponse, err = priceService.GetPricesByPlanID(ctx, entityID)
+		pricesResponse, err = priceService.GetPricesByPlanID(ctx, dto.GetPricesByPlanRequest{
+			PlanID:       entityID,
+			AllowExpired: false,
+		})
 	} else if entityType == types.PRICE_ENTITY_TYPE_ADDON {
 		pricesResponse, err = priceService.GetPricesByAddonID(ctx, entityID)
 	}

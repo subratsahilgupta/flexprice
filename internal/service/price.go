@@ -18,7 +18,7 @@ type PriceService interface {
 	CreatePrice(ctx context.Context, req dto.CreatePriceRequest) (*dto.PriceResponse, error)
 	CreateBulkPrice(ctx context.Context, req dto.CreateBulkPriceRequest) (*dto.CreateBulkPriceResponse, error)
 	GetPrice(ctx context.Context, id string) (*dto.PriceResponse, error)
-	GetPricesByPlanID(ctx context.Context, planID string) (*dto.ListPricesResponse, error)
+	GetPricesByPlanID(ctx context.Context, req dto.GetPricesByPlanRequest) (*dto.ListPricesResponse, error)
 	GetPricesBySubscriptionID(ctx context.Context, subscriptionID string) (*dto.ListPricesResponse, error)
 	GetPricesByAddonID(ctx context.Context, addonID string) (*dto.ListPricesResponse, error)
 	GetPricesByCostsheetID(ctx context.Context, costsheetID string) (*dto.ListPricesResponse, error)
@@ -524,17 +524,16 @@ func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceRespo
 	return response, nil
 }
 
-func (s *priceService) GetPricesByPlanID(ctx context.Context, planID string) (*dto.ListPricesResponse, error) {
-	if planID == "" {
-		return nil, ierr.NewError("plan_id is required").
-			WithHint("Plan ID is required").
-			Mark(ierr.ErrValidation)
+func (s *priceService) GetPricesByPlanID(ctx context.Context, req dto.GetPricesByPlanRequest) (*dto.ListPricesResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
 	}
 
 	priceFilter := types.NewNoLimitPriceFilter().
-		WithEntityIDs([]string{planID}).
+		WithEntityIDs([]string{req.PlanID}).
 		WithStatus(types.StatusPublished).
 		WithEntityType(types.PRICE_ENTITY_TYPE_PLAN).
+		WithAllowExpiredPrices(req.AllowExpired).
 		WithExpand(string(types.ExpandMeters) + "," + string(types.ExpandPriceUnit) + "," + string(types.ExpandGroups))
 
 	response, err := s.GetPrices(ctx, priceFilter)
