@@ -932,11 +932,38 @@ func (s *priceService) DeletePrice(ctx context.Context, id string, req dto.Delet
 		return err
 	}
 
-	if req.EndDate != nil {
-		price.EndDate = req.EndDate
-	} else {
-		price.EndDate = lo.ToPtr(time.Now().UTC())
+	// Check if price is already terminated
+	if price.EndDate != nil {
+		return ierr.NewError("price is already terminated").
+			WithHint("Cannot terminate a price that has already been terminated").
+			WithReportableDetails(map[string]interface{}{
+				"price_id": id,
+				"end_date": price.EndDate,
+			}).
+			Mark(ierr.ErrValidation)
 	}
+
+	// Set end date and validate
+	var endDate time.Time
+	if req.EndDate != nil {
+		endDate = req.EndDate.UTC()
+	} else {
+		endDate = time.Now().UTC()
+	}
+
+	// Validate end date is after start date
+	if price.StartDate != nil && endDate.Before(*price.StartDate) {
+		return ierr.NewError("end date must be after start date").
+			WithHint("The termination date must be after the price's start date").
+			WithReportableDetails(map[string]interface{}{
+				"price_id":   id,
+				"start_date": price.StartDate,
+				"end_date":   endDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	price.EndDate = &endDate
 
 	if err := s.PriceRepo.Update(ctx, price); err != nil {
 		return err
