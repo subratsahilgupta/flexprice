@@ -769,7 +769,9 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 		return item.PriceID
 	})
 	priceService := NewPriceService(s.ServiceParams)
-	priceFilter := types.NewNoLimitPriceFilter().WithPriceIDs(priceIds)
+	priceFilter := types.NewNoLimitPriceFilter().
+		WithPriceIDs(priceIds).
+		WithAllowExpiredPrices(true)
 	prices, err := priceService.GetPrices(ctx, priceFilter)
 	if err != nil {
 		return nil, err
