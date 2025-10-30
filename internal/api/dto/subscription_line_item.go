@@ -244,3 +244,4 @@ func (r *UpdateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 
 	return newLineItem
 }
+

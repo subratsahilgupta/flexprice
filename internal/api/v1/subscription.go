@@ -367,3 +367,43 @@ func (h *SubscriptionHandler) UpdateSubscriptionLineItem(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
+// @Summary Delete subscription line item
+// @Description Delete a subscription line item by setting its end date
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Line Item ID"
+// @Param request body dto.DeleteSubscriptionLineItemRequest true "Delete Line Item Request"
+// @Success 200 {object} dto.SubscriptionLineItemResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /subscriptions/lineitems/{id} [delete]
+func (h *SubscriptionHandler) DeleteSubscriptionLineItem(c *gin.Context) {
+	lineItemID := c.Param("id")
+	if lineItemID == "" {
+		c.Error(ierr.NewError("line item ID is required").
+			WithHint("Please provide a valid line item ID").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	var req dto.DeleteSubscriptionLineItemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.DeleteSubscriptionLineItem(c.Request.Context(), lineItemID, req)
+	if err != nil {
+		h.log.Error("Failed to delete subscription line item", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}

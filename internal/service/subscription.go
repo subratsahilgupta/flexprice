@@ -200,9 +200,14 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		item.TrialPeriod = price.TrialPeriod
 		item.PriceUnitID = price.PriceUnitID
 		item.PriceUnit = price.PriceUnit
-		item.StartDate = sub.StartDate
 		if sub.EndDate != nil {
 			item.EndDate = *sub.EndDate
+		}
+		// Set start date to the price start date if it is after the subscription start date
+		if price.StartDate != nil && price.StartDate.After(sub.StartDate) {
+			item.StartDate = lo.FromPtr(price.StartDate)
+		} else {
+			item.StartDate = sub.StartDate
 		}
 	}
 
@@ -708,16 +713,16 @@ func (s *subscriptionService) handleCreditGrants(
 }
 
 func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*dto.SubscriptionResponse, error) {
-	// Get subscription with line items
-	subscription, _, err := s.SubRepo.GetWithLineItems(ctx, id)
+	// Get sub with line items
+	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	response := &dto.SubscriptionResponse{Subscription: subscription}
+	response := &dto.SubscriptionResponse{Subscription: sub}
 
 	// if subscription pause status is not none, get all pauses
-	if subscription.PauseStatus != types.PauseStatusNone {
+	if sub.PauseStatus != types.PauseStatusNone {
 		pauses, err := s.SubRepo.ListPauses(ctx, id)
 		if err != nil {
 			return nil, err
@@ -728,7 +733,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 	// expand plan
 	planService := NewPlanService(s.ServiceParams)
 
-	plan, err := planService.GetPlan(ctx, subscription.PlanID)
+	plan, err := planService.GetPlan(ctx, sub.PlanID)
 	if err != nil {
 		return nil, err
 	}
@@ -736,7 +741,7 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 
 	// expand customer
 	customerService := NewCustomerService(s.ServiceParams)
-	customer, err := customerService.GetCustomer(ctx, subscription.CustomerID)
+	customer, err := customerService.GetCustomer(ctx, sub.CustomerID)
 	if err != nil {
 		return nil, err
 	}
@@ -757,6 +762,28 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 			"error", err)
 	} else {
 		response.CouponAssociations = couponAssociations
+	}
+
+	// expand price for subscription line items
+	priceIds := lo.Map(lineItems, func(item *subscription.SubscriptionLineItem, _ int) string {
+		return item.PriceID
+	})
+	priceService := NewPriceService(s.ServiceParams)
+	priceFilter := types.NewNoLimitPriceFilter().
+		WithPriceIDs(priceIds).
+		WithAllowExpiredPrices(true)
+	prices, err := priceService.GetPrices(ctx, priceFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	priceMap := make(map[string]*price.Price)
+	for _, price := range prices.Items {
+		priceMap[price.ID] = price.Price
+	}
+
+	for _, lineItem := range sub.LineItems {
+		lineItem.Price = priceMap[lineItem.PriceID]
 	}
 
 	return response, nil
@@ -2040,7 +2067,10 @@ func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 	var err error
 
 	if entityType == types.PRICE_ENTITY_TYPE_PLAN {
-		pricesResponse, err = priceService.GetPricesByPlanID(ctx, entityID)
+		pricesResponse, err = priceService.GetPricesByPlanID(ctx, dto.GetPricesByPlanRequest{
+			PlanID:       entityID,
+			AllowExpired: false,
+		})
 	} else if entityType == types.PRICE_ENTITY_TYPE_ADDON {
 		pricesResponse, err = priceService.GetPricesByAddonID(ctx, entityID)
 	}

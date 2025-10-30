@@ -95,11 +95,40 @@ func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, li
 		return nil, err
 	}
 
-	// Set end date and update
-	lineItem.EndDate = req.EndDate.UTC()
-	if lineItem.EndDate.IsZero() {
-		lineItem.EndDate = time.Now().UTC()
+	// Check if line item is already terminated
+	if !lineItem.EndDate.IsZero() {
+		return nil, ierr.NewError("line item is already terminated").
+			WithHint("Cannot terminate a line item that has already been terminated").
+			WithReportableDetails(map[string]interface{}{
+				"line_item_id": lineItemID,
+				"end_date":     lineItem.EndDate,
+			}).
+			Mark(ierr.ErrValidation)
 	}
+
+	// Set end date and update
+	var endDate time.Time
+	if req.EndDate != nil {
+		endDate = req.EndDate.UTC()
+	} else {
+		endDate = time.Now().UTC()
+	}
+
+	startDateUTC := lineItem.StartDate.UTC()
+
+	// Validate end date is after start date
+	if !endDate.After(startDateUTC) {
+		return nil, ierr.NewError("end date must be after start date").
+			WithHint("The termination date must be after the line item's start date").
+			WithReportableDetails(map[string]interface{}{
+				"line_item_id": lineItemID,
+				"start_date":   startDateUTC,
+				"end_date":     endDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	lineItem.EndDate = endDate
 
 	if err := s.SubscriptionLineItemRepo.Update(ctx, lineItem); err != nil {
 		return nil, err

@@ -668,6 +668,7 @@ type SubscriptionLineItemRequest struct {
 // SubscriptionLineItemResponse represents the response for a subscription line item
 type SubscriptionLineItemResponse struct {
 	*subscription.SubscriptionLineItem
+	Price *PriceResponse `json:"price,omitempty"`
 }
 
 // OverrideLineItemRequest represents a price override for a specific subscription
