@@ -114,13 +114,15 @@ func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, li
 		endDate = time.Now().UTC()
 	}
 
+	startDateUTC := lineItem.StartDate.UTC()
+
 	// Validate end date is after start date
-	if endDate.Before(lineItem.StartDate) {
+	if !endDate.After(startDateUTC) {
 		return nil, ierr.NewError("end date must be after start date").
 			WithHint("The termination date must be after the line item's start date").
 			WithReportableDetails(map[string]interface{}{
 				"line_item_id": lineItemID,
-				"start_date":   lineItem.StartDate,
+				"start_date":   startDateUTC,
 				"end_date":     endDate,
 			}).
 			Mark(ierr.ErrValidation)
