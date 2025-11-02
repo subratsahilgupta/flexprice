@@ -119,12 +119,24 @@ func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyR
 
 	// If we have a user_id, fetch the user and copy roles
 	if userID != "" {
+		s.logger.Debugw("Fetching user for role copying", "user_id", userID)
 		user, err := s.userRepo.GetByID(ctx, userID)
 		if err != nil {
+			// If user_id was explicitly provided in request (not from context), fail hard
+			if req.UserID != "" {
+				return nil, "", ierr.WithError(err).
+					WithHint("User not found for provided user_id").
+					WithReportableDetails(map[string]interface{}{
+						"user_id": userID,
+					}).
+					Mark(ierr.ErrNotFound)
+			}
+
+			// If from context, warn and continue with empty roles (backward compatibility)
 			s.logger.Warnw("failed to fetch user for role copying", "error", err, "user_id", userID)
-			// Continue without roles - backward compatibility
 			roles = []string{}
 		} else if user != nil {
+			s.logger.Debugw("User fetched successfully", "user_id", userID, "user_type", user.Type, "user_roles", user.Roles)
 			roles = user.Roles
 			userType = user.Type
 
@@ -143,6 +155,8 @@ func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyR
 		// No user ID at all - create API key with empty roles (full access)
 		roles = []string{}
 	}
+
+	s.logger.Debugw("Creating API key with roles", "user_id", userID, "roles", roles, "user_type", userType)
 
 	// Create secret entity
 	secretEntity := &secret.Secret{
@@ -164,6 +178,14 @@ func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyR
 	if err := s.repo.Create(ctx, secretEntity); err != nil {
 		return nil, "", err
 	}
+
+	// DEBUG: Log the final secret entity with roles
+	s.logger.Debugw("API Key created successfully",
+		"secret_id", secretEntity.ID,
+		"roles", secretEntity.Roles,
+		"user_type", secretEntity.UserType,
+		"user_id", userID,
+	)
 
 	return secretEntity, apiKey, nil
 }
