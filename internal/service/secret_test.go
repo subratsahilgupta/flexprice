@@ -54,7 +54,8 @@ func (s *SecretServiceSuite) setupService() {
 	s.Require().NoError(err, "Failed to create encryption service")
 
 	s.secretRepo = s.GetStores().SecretRepo
-	s.service = NewSecretService(s.secretRepo, cfg, s.GetLogger())
+	userRepo := s.GetStores().UserRepo
+	s.service = NewSecretService(s.secretRepo, userRepo, cfg, s.GetLogger())
 }
 
 func (s *SecretServiceSuite) setupTestData() {

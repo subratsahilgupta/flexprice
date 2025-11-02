@@ -60,6 +60,20 @@ func (r *InMemoryUserStore) GetByID(ctx context.Context, userID string) (*user.U
 	return nil, errors.New("user not found")
 }
 
+// ListByType retrieves all users by type from the in-memory store
+func (r *InMemoryUserStore) ListByType(ctx context.Context, tenantID, userType string) ([]*user.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var users []*user.User
+	for _, u := range r.users {
+		if u.TenantID == tenantID && u.Type == userType {
+			users = append(users, u)
+		}
+	}
+	return users, nil
+}
+
 func (s *InMemoryUserStore) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
