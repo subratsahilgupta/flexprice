@@ -1489,16 +1489,12 @@ func init() {
 	secretDescProvider := secretFields[3].Descriptor()
 	// secret.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
 	secret.ProviderValidator = secretDescProvider.Validators[0].(func(string) error)
-	// secretDescPermissions is the schema descriptor for permissions field.
-	secretDescPermissions := secretFields[6].Descriptor()
-	// secret.DefaultPermissions holds the default value on creation for the permissions field.
-	secret.DefaultPermissions = secretDescPermissions.Default.([]string)
 	// secretDescRoles is the schema descriptor for roles field.
-	secretDescRoles := secretFields[10].Descriptor()
+	secretDescRoles := secretFields[9].Descriptor()
 	// secret.DefaultRoles holds the default value on creation for the roles field.
 	secret.DefaultRoles = secretDescRoles.Default.([]string)
 	// secretDescUserType is the schema descriptor for user_type field.
-	secretDescUserType := secretFields[11].Descriptor()
+	secretDescUserType := secretFields[10].Descriptor()
 	// secret.DefaultUserType holds the default value on creation for the user_type field.
 	secret.DefaultUserType = secretDescUserType.Default.(string)
 	settingsMixin := schema.Settings{}.Mixin()

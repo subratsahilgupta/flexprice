@@ -151,24 +151,6 @@ func (su *SecretUpdate) ClearDisplayID() *SecretUpdate {
 	return su
 }
 
-// SetPermissions sets the "permissions" field.
-func (su *SecretUpdate) SetPermissions(s []string) *SecretUpdate {
-	su.mutation.SetPermissions(s)
-	return su
-}
-
-// AppendPermissions appends s to the "permissions" field.
-func (su *SecretUpdate) AppendPermissions(s []string) *SecretUpdate {
-	su.mutation.AppendPermissions(s)
-	return su
-}
-
-// ClearPermissions clears the value of the "permissions" field.
-func (su *SecretUpdate) ClearPermissions() *SecretUpdate {
-	su.mutation.ClearPermissions()
-	return su
-}
-
 // SetExpiresAt sets the "expires_at" field.
 func (su *SecretUpdate) SetExpiresAt(t time.Time) *SecretUpdate {
 	su.mutation.SetExpiresAt(t)
@@ -371,17 +353,6 @@ func (su *SecretUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if su.mutation.DisplayIDCleared() {
 		_spec.ClearField(secret.FieldDisplayID, field.TypeString)
 	}
-	if value, ok := su.mutation.Permissions(); ok {
-		_spec.SetField(secret.FieldPermissions, field.TypeJSON, value)
-	}
-	if value, ok := su.mutation.AppendedPermissions(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, secret.FieldPermissions, value)
-		})
-	}
-	if su.mutation.PermissionsCleared() {
-		_spec.ClearField(secret.FieldPermissions, field.TypeJSON)
-	}
 	if value, ok := su.mutation.ExpiresAt(); ok {
 		_spec.SetField(secret.FieldExpiresAt, field.TypeTime, value)
 	}
@@ -556,24 +527,6 @@ func (suo *SecretUpdateOne) SetNillableDisplayID(s *string) *SecretUpdateOne {
 // ClearDisplayID clears the value of the "display_id" field.
 func (suo *SecretUpdateOne) ClearDisplayID() *SecretUpdateOne {
 	suo.mutation.ClearDisplayID()
-	return suo
-}
-
-// SetPermissions sets the "permissions" field.
-func (suo *SecretUpdateOne) SetPermissions(s []string) *SecretUpdateOne {
-	suo.mutation.SetPermissions(s)
-	return suo
-}
-
-// AppendPermissions appends s to the "permissions" field.
-func (suo *SecretUpdateOne) AppendPermissions(s []string) *SecretUpdateOne {
-	suo.mutation.AppendPermissions(s)
-	return suo
-}
-
-// ClearPermissions clears the value of the "permissions" field.
-func (suo *SecretUpdateOne) ClearPermissions() *SecretUpdateOne {
-	suo.mutation.ClearPermissions()
 	return suo
 }
 
@@ -808,17 +761,6 @@ func (suo *SecretUpdateOne) sqlSave(ctx context.Context) (_node *Secret, err err
 	}
 	if suo.mutation.DisplayIDCleared() {
 		_spec.ClearField(secret.FieldDisplayID, field.TypeString)
-	}
-	if value, ok := suo.mutation.Permissions(); ok {
-		_spec.SetField(secret.FieldPermissions, field.TypeJSON, value)
-	}
-	if value, ok := suo.mutation.AppendedPermissions(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, secret.FieldPermissions, value)
-		})
-	}
-	if suo.mutation.PermissionsCleared() {
-		_spec.ClearField(secret.FieldPermissions, field.TypeJSON)
 	}
 	if value, ok := suo.mutation.ExpiresAt(); ok {
 		_spec.SetField(secret.FieldExpiresAt, field.TypeTime, value)

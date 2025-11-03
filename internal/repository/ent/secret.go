@@ -61,7 +61,6 @@ func (r *secretRepository) Create(ctx context.Context, s *domainSecret.Secret) e
 		SetValue(s.Value).
 		SetDisplayID(s.DisplayID).
 		SetEnvironmentID(s.EnvironmentID).
-		SetPermissions(s.Permissions).
 		SetRoles(s.Roles).
 		SetUserType(s.UserType).
 		SetStatus(string(s.Status)).

@@ -44,10 +44,6 @@ func (Secret) Fields() []ent.Field {
 		field.String("display_id").
 			Optional().
 			Comment("First 8 characters of the API key or integration ID for display purposes"),
-		field.Strings("permissions").
-			Optional().
-			Default([]string{}).
-			Comment("List of permissions granted to this secret"),
 		field.Time("expires_at").
 			Optional().
 			Nillable().

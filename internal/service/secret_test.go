@@ -71,13 +71,14 @@ func (s *SecretServiceSuite) setupTestData() {
 
 	// Create test API key
 	apiKey := &secret.Secret{
-		ID:          "secret_test_api_key",
-		Name:        "Test API Key",
-		Type:        types.SecretTypePrivateKey,
-		Provider:    types.SecretProviderFlexPrice,
-		Value:       s.encryptionSvc.Hash("test_api_key"),
-		DisplayID:   "test1",
-		Permissions: []string{"read", "write"},
+		ID:        "secret_test_api_key",
+		Name:      "Test API Key",
+		Type:      types.SecretTypePrivateKey,
+		Provider:  types.SecretProviderFlexPrice,
+		Value:     s.encryptionSvc.Hash("test_api_key"),
+		DisplayID: "test1",
+		Roles:     []string{}, // Empty roles = full access
+		UserType:  "user",     // Default user type
 		BaseModel: types.BaseModel{
 			TenantID:  types.DefaultTenantID,
 			Status:    types.StatusPublished,
@@ -171,11 +172,6 @@ func (s *SecretServiceSuite) TestCreateAPIKey() {
 			s.Equal(types.SecretProviderFlexPrice, resp.Provider)
 			s.NotEmpty(resp.DisplayID)
 			s.Len(resp.DisplayID, 10)
-
-			// Verify default permissions
-			if len(tt.req.Permissions) == 0 {
-				s.Equal([]string{"read", "write"}, resp.Permissions)
-			}
 		})
 	}
 }

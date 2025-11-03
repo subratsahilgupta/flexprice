@@ -1468,7 +1468,6 @@ var (
 		{Name: "provider", Type: field.TypeString},
 		{Name: "value", Type: field.TypeString, Nullable: true},
 		{Name: "display_id", Type: field.TypeString, Nullable: true},
-		{Name: "permissions", Type: field.TypeJSON, Nullable: true},
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
 		{Name: "provider_data", Type: field.TypeJSON, Nullable: true},

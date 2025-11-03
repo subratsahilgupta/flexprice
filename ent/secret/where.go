@@ -919,16 +919,6 @@ func DisplayIDContainsFold(v string) predicate.Secret {
 	return predicate.Secret(sql.FieldContainsFold(FieldDisplayID, v))
 }
 
-// PermissionsIsNil applies the IsNil predicate on the "permissions" field.
-func PermissionsIsNil() predicate.Secret {
-	return predicate.Secret(sql.FieldIsNull(FieldPermissions))
-}
-
-// PermissionsNotNil applies the NotNil predicate on the "permissions" field.
-func PermissionsNotNil() predicate.Secret {
-	return predicate.Secret(sql.FieldNotNull(FieldPermissions))
-}
-
 // ExpiresAtEQ applies the EQ predicate on the "expires_at" field.
 func ExpiresAtEQ(v time.Time) predicate.Secret {
 	return predicate.Secret(sql.FieldEQ(FieldExpiresAt, v))

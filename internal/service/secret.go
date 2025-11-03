@@ -100,12 +100,6 @@ func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyR
 	// Hash the entire API key for storage
 	hashedKey := s.encryptionService.Hash(apiKey)
 
-	// Set default permissions if none provided
-	permissions := req.Permissions
-	if len(permissions) == 0 {
-		permissions = []string{"read", "write"}
-	}
-
 	// Determine which user to get roles from
 	userID := req.UserID
 	if userID == "" {
@@ -167,7 +161,6 @@ func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyR
 		Provider:      types.SecretProviderFlexPrice,
 		Value:         hashedKey,
 		DisplayID:     generateDisplayID(apiKey),
-		Permissions:   permissions,
 		ExpiresAt:     req.ExpiresAt,
 		Roles:         roles,
 		UserType:      userType,

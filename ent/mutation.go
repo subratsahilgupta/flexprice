@@ -41560,33 +41560,31 @@ func (m *ScheduledTaskMutation) ResetEdge(name string) error {
 // SecretMutation represents an operation that mutates the Secret nodes in the graph.
 type SecretMutation struct {
 	config
-	op                Op
-	typ               string
-	id                *string
-	tenant_id         *string
-	status            *string
-	created_at        *time.Time
-	updated_at        *time.Time
-	created_by        *string
-	updated_by        *string
-	environment_id    *string
-	name              *string
-	_type             *string
-	provider          *string
-	value             *string
-	display_id        *string
-	permissions       *[]string
-	appendpermissions []string
-	expires_at        *time.Time
-	last_used_at      *time.Time
-	provider_data     *map[string]string
-	roles             *[]string
-	appendroles       []string
-	user_type         *string
-	clearedFields     map[string]struct{}
-	done              bool
-	oldValue          func(context.Context) (*Secret, error)
-	predicates        []predicate.Secret
+	op             Op
+	typ            string
+	id             *string
+	tenant_id      *string
+	status         *string
+	created_at     *time.Time
+	updated_at     *time.Time
+	created_by     *string
+	updated_by     *string
+	environment_id *string
+	name           *string
+	_type          *string
+	provider       *string
+	value          *string
+	display_id     *string
+	expires_at     *time.Time
+	last_used_at   *time.Time
+	provider_data  *map[string]string
+	roles          *[]string
+	appendroles    []string
+	user_type      *string
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*Secret, error)
+	predicates     []predicate.Secret
 }
 
 var _ ent.Mutation = (*SecretMutation)(nil)
@@ -42190,71 +42188,6 @@ func (m *SecretMutation) ResetDisplayID() {
 	delete(m.clearedFields, secret.FieldDisplayID)
 }
 
-// SetPermissions sets the "permissions" field.
-func (m *SecretMutation) SetPermissions(s []string) {
-	m.permissions = &s
-	m.appendpermissions = nil
-}
-
-// Permissions returns the value of the "permissions" field in the mutation.
-func (m *SecretMutation) Permissions() (r []string, exists bool) {
-	v := m.permissions
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldPermissions returns the old "permissions" field's value of the Secret entity.
-// If the Secret object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SecretMutation) OldPermissions(ctx context.Context) (v []string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldPermissions is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldPermissions requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldPermissions: %w", err)
-	}
-	return oldValue.Permissions, nil
-}
-
-// AppendPermissions adds s to the "permissions" field.
-func (m *SecretMutation) AppendPermissions(s []string) {
-	m.appendpermissions = append(m.appendpermissions, s...)
-}
-
-// AppendedPermissions returns the list of values that were appended to the "permissions" field in this mutation.
-func (m *SecretMutation) AppendedPermissions() ([]string, bool) {
-	if len(m.appendpermissions) == 0 {
-		return nil, false
-	}
-	return m.appendpermissions, true
-}
-
-// ClearPermissions clears the value of the "permissions" field.
-func (m *SecretMutation) ClearPermissions() {
-	m.permissions = nil
-	m.appendpermissions = nil
-	m.clearedFields[secret.FieldPermissions] = struct{}{}
-}
-
-// PermissionsCleared returns if the "permissions" field was cleared in this mutation.
-func (m *SecretMutation) PermissionsCleared() bool {
-	_, ok := m.clearedFields[secret.FieldPermissions]
-	return ok
-}
-
-// ResetPermissions resets all changes to the "permissions" field.
-func (m *SecretMutation) ResetPermissions() {
-	m.permissions = nil
-	m.appendpermissions = nil
-	delete(m.clearedFields, secret.FieldPermissions)
-}
-
 // SetExpiresAt sets the "expires_at" field.
 func (m *SecretMutation) SetExpiresAt(t time.Time) {
 	m.expires_at = &t
@@ -42550,7 +42483,7 @@ func (m *SecretMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SecretMutation) Fields() []string {
-	fields := make([]string, 0, 18)
+	fields := make([]string, 0, 17)
 	if m.tenant_id != nil {
 		fields = append(fields, secret.FieldTenantID)
 	}
@@ -42586,9 +42519,6 @@ func (m *SecretMutation) Fields() []string {
 	}
 	if m.display_id != nil {
 		fields = append(fields, secret.FieldDisplayID)
-	}
-	if m.permissions != nil {
-		fields = append(fields, secret.FieldPermissions)
 	}
 	if m.expires_at != nil {
 		fields = append(fields, secret.FieldExpiresAt)
@@ -42637,8 +42567,6 @@ func (m *SecretMutation) Field(name string) (ent.Value, bool) {
 		return m.Value()
 	case secret.FieldDisplayID:
 		return m.DisplayID()
-	case secret.FieldPermissions:
-		return m.Permissions()
 	case secret.FieldExpiresAt:
 		return m.ExpiresAt()
 	case secret.FieldLastUsedAt:
@@ -42682,8 +42610,6 @@ func (m *SecretMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldValue(ctx)
 	case secret.FieldDisplayID:
 		return m.OldDisplayID(ctx)
-	case secret.FieldPermissions:
-		return m.OldPermissions(ctx)
 	case secret.FieldExpiresAt:
 		return m.OldExpiresAt(ctx)
 	case secret.FieldLastUsedAt:
@@ -42787,13 +42713,6 @@ func (m *SecretMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDisplayID(v)
 		return nil
-	case secret.FieldPermissions:
-		v, ok := value.([]string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetPermissions(v)
-		return nil
 	case secret.FieldExpiresAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -42874,9 +42793,6 @@ func (m *SecretMutation) ClearedFields() []string {
 	if m.FieldCleared(secret.FieldDisplayID) {
 		fields = append(fields, secret.FieldDisplayID)
 	}
-	if m.FieldCleared(secret.FieldPermissions) {
-		fields = append(fields, secret.FieldPermissions)
-	}
 	if m.FieldCleared(secret.FieldExpiresAt) {
 		fields = append(fields, secret.FieldExpiresAt)
 	}
@@ -42920,9 +42836,6 @@ func (m *SecretMutation) ClearField(name string) error {
 		return nil
 	case secret.FieldDisplayID:
 		m.ClearDisplayID()
-		return nil
-	case secret.FieldPermissions:
-		m.ClearPermissions()
 		return nil
 	case secret.FieldExpiresAt:
 		m.ClearExpiresAt()
@@ -42982,9 +42895,6 @@ func (m *SecretMutation) ResetField(name string) error {
 		return nil
 	case secret.FieldDisplayID:
 		m.ResetDisplayID()
-		return nil
-	case secret.FieldPermissions:
-		m.ResetPermissions()
 		return nil
 	case secret.FieldExpiresAt:
 		m.ResetExpiresAt()

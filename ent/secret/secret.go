@@ -37,8 +37,6 @@ const (
 	FieldValue = "value"
 	// FieldDisplayID holds the string denoting the display_id field in the database.
 	FieldDisplayID = "display_id"
-	// FieldPermissions holds the string denoting the permissions field in the database.
-	FieldPermissions = "permissions"
 	// FieldExpiresAt holds the string denoting the expires_at field in the database.
 	FieldExpiresAt = "expires_at"
 	// FieldLastUsedAt holds the string denoting the last_used_at field in the database.
@@ -68,7 +66,6 @@ var Columns = []string{
 	FieldProvider,
 	FieldValue,
 	FieldDisplayID,
-	FieldPermissions,
 	FieldExpiresAt,
 	FieldLastUsedAt,
 	FieldProviderData,
@@ -105,8 +102,6 @@ var (
 	TypeValidator func(string) error
 	// ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
 	ProviderValidator func(string) error
-	// DefaultPermissions holds the default value on creation for the "permissions" field.
-	DefaultPermissions []string
 	// DefaultRoles holds the default value on creation for the "roles" field.
 	DefaultRoles []string
 	// DefaultUserType holds the default value on creation for the "user_type" field.

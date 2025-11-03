@@ -5,7 +5,6 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 )
 
 // Secret represents a credential in the system
@@ -17,7 +16,6 @@ type Secret struct {
 	Value         string
 	DisplayID     string
 	EnvironmentID string
-	Permissions   []string
 	ExpiresAt     *time.Time
 	LastUsedAt    *time.Time
 	ProviderData  map[string]string
@@ -40,7 +38,6 @@ func FromEnt(e *ent.Secret) *Secret {
 		Value:         e.Value,
 		DisplayID:     e.DisplayID,
 		EnvironmentID: e.EnvironmentID,
-		Permissions:   e.Permissions,
 		ExpiresAt:     e.ExpiresAt,
 		LastUsedAt:    e.LastUsedAt,
 		ProviderData:  e.ProviderData,
@@ -87,11 +84,6 @@ func (s *Secret) IsIntegration() bool {
 // IsActive returns true if the secret is active (published status)
 func (s *Secret) IsActive() bool {
 	return s.Status == types.StatusPublished
-}
-
-// HasPermission checks if the secret has the specified permission
-func (s *Secret) HasPermission(permission string) bool {
-	return lo.Contains(s.Permissions, permission)
 }
 
 // IsExpired checks if the secret has expired

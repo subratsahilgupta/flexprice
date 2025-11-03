@@ -42,8 +42,6 @@ type Secret struct {
 	Value string `json:"value,omitempty"`
 	// First 8 characters of the API key or integration ID for display purposes
 	DisplayID string `json:"display_id,omitempty"`
-	// List of permissions granted to this secret
-	Permissions []string `json:"permissions,omitempty"`
 	// Expiration time for the secret
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// Last time this secret was used
@@ -62,7 +60,7 @@ func (*Secret) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case secret.FieldPermissions, secret.FieldProviderData, secret.FieldRoles:
+		case secret.FieldProviderData, secret.FieldRoles:
 			values[i] = new([]byte)
 		case secret.FieldID, secret.FieldTenantID, secret.FieldStatus, secret.FieldCreatedBy, secret.FieldUpdatedBy, secret.FieldEnvironmentID, secret.FieldName, secret.FieldType, secret.FieldProvider, secret.FieldValue, secret.FieldDisplayID, secret.FieldUserType:
 			values[i] = new(sql.NullString)
@@ -160,14 +158,6 @@ func (s *Secret) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field display_id", values[i])
 			} else if value.Valid {
 				s.DisplayID = value.String
-			}
-		case secret.FieldPermissions:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field permissions", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &s.Permissions); err != nil {
-					return fmt.Errorf("unmarshal field permissions: %w", err)
-				}
 			}
 		case secret.FieldExpiresAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -276,9 +266,6 @@ func (s *Secret) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("display_id=")
 	builder.WriteString(s.DisplayID)
-	builder.WriteString(", ")
-	builder.WriteString("permissions=")
-	builder.WriteString(fmt.Sprintf("%v", s.Permissions))
 	builder.WriteString(", ")
 	if v := s.ExpiresAt; v != nil {
 		builder.WriteString("expires_at=")

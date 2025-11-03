@@ -156,12 +156,6 @@ func (sc *SecretCreate) SetNillableDisplayID(s *string) *SecretCreate {
 	return sc
 }
 
-// SetPermissions sets the "permissions" field.
-func (sc *SecretCreate) SetPermissions(s []string) *SecretCreate {
-	sc.mutation.SetPermissions(s)
-	return sc
-}
-
 // SetExpiresAt sets the "expires_at" field.
 func (sc *SecretCreate) SetExpiresAt(t time.Time) *SecretCreate {
 	sc.mutation.SetExpiresAt(t)
@@ -272,10 +266,6 @@ func (sc *SecretCreate) defaults() {
 	if _, ok := sc.mutation.EnvironmentID(); !ok {
 		v := secret.DefaultEnvironmentID
 		sc.mutation.SetEnvironmentID(v)
-	}
-	if _, ok := sc.mutation.Permissions(); !ok {
-		v := secret.DefaultPermissions
-		sc.mutation.SetPermissions(v)
 	}
 	if _, ok := sc.mutation.Roles(); !ok {
 		v := secret.DefaultRoles
@@ -412,10 +402,6 @@ func (sc *SecretCreate) createSpec() (*Secret, *sqlgraph.CreateSpec) {
 	if value, ok := sc.mutation.DisplayID(); ok {
 		_spec.SetField(secret.FieldDisplayID, field.TypeString, value)
 		_node.DisplayID = value
-	}
-	if value, ok := sc.mutation.Permissions(); ok {
-		_spec.SetField(secret.FieldPermissions, field.TypeJSON, value)
-		_node.Permissions = value
 	}
 	if value, ok := sc.mutation.ExpiresAt(); ok {
 		_spec.SetField(secret.FieldExpiresAt, field.TypeTime, value)

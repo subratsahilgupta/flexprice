@@ -65,7 +65,7 @@ func (h *SecretHandler) ListAPIKeys(c *gin.Context) {
 
 // CreateAPIKey godoc
 // @Summary Create a new API key
-// @Description Create a new API key with the specified type and permissions
+// @Description Create a new API key with the specified type. RBAC roles are inherited from the user or service account.
 // @Tags secrets
 // @Accept json
 // @Produce json
