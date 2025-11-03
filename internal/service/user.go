@@ -16,7 +16,6 @@ type UserService interface {
 	GetUserInfo(ctx context.Context) (*dto.UserResponse, error)
 	CreateUser(ctx context.Context, req *dto.CreateUserRequest) (*dto.UserResponse, error)
 	GetByID(ctx context.Context, userID, tenantID string) (*user.User, error)
-	ListServiceAccounts(ctx context.Context, tenantID string) ([]*user.User, error)
 	ListUsersByFilter(ctx context.Context, filter *types.UserFilter) (*dto.ListUsersResponse, error)
 }
 
@@ -105,9 +104,9 @@ func (s *userService) CreateUser(ctx context.Context, req *dto.CreateUserRequest
 	// Create service account with RBAC roles
 	newUser := &user.User{
 		ID:    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER),
-		Email: "",                       // Service accounts have no email
-		Type:  string(userType),         // Always service_account
-		Roles: req.Roles,                // Required roles
+		Email: "",               // Service accounts have no email
+		Type:  string(userType), // Always service_account
+		Roles: req.Roles,        // Required roles
 		BaseModel: types.BaseModel{
 			TenantID:  tenantID,
 			Status:    types.StatusPublished,
@@ -139,16 +138,6 @@ func (s *userService) GetByID(ctx context.Context, userID, tenantID string) (*us
 	}
 
 	return user, nil
-}
-
-func (s *userService) ListServiceAccounts(ctx context.Context, tenantID string) ([]*user.User, error) {
-	// Get all users for the tenant filtered by type=service_account
-	users, err := s.userRepo.ListByType(ctx, tenantID, string(user.UserTypeServiceAccount))
-	if err != nil {
-		return nil, err
-	}
-
-	return users, nil
 }
 
 func (s *userService) ListUsersByFilter(ctx context.Context, filter *types.UserFilter) (*dto.ListUsersResponse, error) {

@@ -167,45 +167,6 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domainU
 	return domainUser.FromEnt(user), nil
 }
 
-// ListByType retrieves all users by type
-func (r *userRepository) ListByType(ctx context.Context, tenantID, userType string) ([]*domainUser.User, error) {
-	// Start a span for this repository operation
-	span := StartRepositorySpan(ctx, "user", "list_by_type", map[string]interface{}{
-		"tenant_id": tenantID,
-		"user_type": userType,
-	})
-	defer FinishSpan(span)
-
-	client := r.client.Reader(ctx)
-	users, err := client.User.
-		Query().
-		Where(
-			entUser.TenantID(tenantID),
-			entUser.Type(userType),
-			entUser.Status(string(types.StatusPublished)),
-		).
-		All(ctx)
-
-	if err != nil {
-		SetSpanError(span, err)
-		return nil, ierr.WithError(err).
-			WithHint("Failed to list users by type").
-			WithReportableDetails(map[string]interface{}{
-				"tenant_id": tenantID,
-				"user_type": userType,
-			}).
-			Mark(ierr.ErrDatabase)
-	}
-
-	SetSpanSuccess(span)
-	domainUsers := make([]*domainUser.User, len(users))
-	for i, u := range users {
-		domainUsers[i] = domainUser.FromEnt(u)
-	}
-
-	return domainUsers, nil
-}
-
 // ListByFilter retrieves users by filter with pagination
 func (r *userRepository) ListByFilter(ctx context.Context, tenantID string, filter *types.UserFilter) ([]*domainUser.User, int64, error) {
 	// Start a span for this repository operation

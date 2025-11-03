@@ -80,7 +80,7 @@ func main() {
 			security.NewEncryptionService,
 
 			// RBAC
-			provideRBACService,
+			rbac.NewRBACService,
 
 			// storage
 			s3.NewService,
@@ -344,16 +344,6 @@ func provideHandlers(
 
 func provideRouter(handlers api.Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService, envAccessService service.EnvAccessService, rbacService *rbac.RBACService) *gin.Engine {
 	return api.NewRouter(handlers, cfg, logger, secretService, envAccessService, rbacService)
-}
-
-func provideRBACService(cfg *config.Configuration) (*rbac.RBACService, error) {
-	// Load roles.json from config directory
-	// Use absolute path from config or fallback to relative path for development
-	rolesPath := cfg.RBAC.RolesConfigPath
-	if rolesPath == "" {
-		rolesPath = "internal/config/rbac/roles.json"
-	}
-	return rbac.NewRBACService(rolesPath)
 }
 
 func provideTemporalConfig(cfg *config.Configuration) *config.TemporalConfig {

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/flexprice/flexprice/internal/config"
 )
 
 // Service handles permission checks with set-based lookups
@@ -23,8 +25,14 @@ type Role struct {
 	Permissions map[string][]string `json:"permissions"`
 }
 
-// NewService loads roles.json and optimizes for fast lookups
-func NewRBACService(configPath string) (*RBACService, error) {
+// NewRBACService loads roles.json from config and optimizes for fast lookups
+func NewRBACService(cfg *config.Configuration) (*RBACService, error) {
+	// Get roles path from config or use default
+	configPath := cfg.RBAC.RolesConfigPath
+	if configPath == "" {
+		configPath = "internal/config/rbac/roles.json"
+	}
+
 	// Load JSON
 	data, err := os.ReadFile(configPath)
 	if err != nil {
