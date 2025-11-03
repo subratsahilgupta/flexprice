@@ -127,7 +127,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		events := v1Private.Group("/events")
 		{
 			events.POST("", permissionMW.RequirePermission("event", "write"), handlers.Events.IngestEvent)
-			events.POST("/bulk", handlers.Events.BulkIngestEvent)
+			events.POST("/bulk", permissionMW.RequirePermission("event", "write"), handlers.Events.BulkIngestEvent)
 			events.GET("", handlers.Events.GetEvents)
 			events.POST("/query", handlers.Events.QueryEvents)
 			events.POST("/usage", handlers.Events.GetUsage)

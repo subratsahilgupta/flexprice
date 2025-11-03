@@ -37,6 +37,16 @@ type User struct {
 	types.BaseModel
 }
 
+// Validate validates the user
+func (u *User) Validate() error {
+	// Validate user type
+	ut := UserType(u.Type)
+	if err := ut.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func NewUser(email, tenantID string) *User {
 	return &User{
 		ID:    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER),

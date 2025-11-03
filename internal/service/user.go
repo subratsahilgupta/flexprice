@@ -117,6 +117,11 @@ func (s *userService) CreateUser(ctx context.Context, req *dto.CreateUserRequest
 		},
 	}
 
+	// Validate user before creating
+	if err := newUser.Validate(); err != nil {
+		return nil, err
+	}
+
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
 		return nil, err
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/user"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
@@ -54,26 +55,28 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 // @Failure 500 {object} errors.ErrorResponse
 // @Router /users [post]
 func (h *UserHandler) CreateUser(c *gin.Context) {
-	// First, validate no extra fields in raw JSON
-	var rawJSON map[string]interface{}
-	if err := c.ShouldBindJSON(&rawJSON); err != nil {
-		h.logger.Errorw("failed to bind raw JSON", "error", err)
-		c.Error(err)
-		return
-	}
-
-	// Re-bind to the actual struct after raw validation
+	// Use strict JSON decoder to reject unknown fields
 	var req dto.CreateUserRequest
-	jsonBytes, _ := json.Marshal(rawJSON)
-	if err := json.Unmarshal(jsonBytes, &req); err != nil {
-		h.logger.Errorw("failed to unmarshal request", "error", err)
-		c.Error(err)
+	dec := json.NewDecoder(c.Request.Body)
+	dec.DisallowUnknownFields()
+	
+	if err := dec.Decode(&req); err != nil {
+		h.logger.Errorw("invalid request body", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request body. Only 'type' and 'roles' fields are allowed").
+			Mark(ierr.ErrValidation))
 		return
 	}
 
-	// Validate no extra fields
-	if err := req.ValidateNoExtraFields(rawJSON); err != nil {
-		h.logger.Errorw("extra fields in request", "error", err)
+	// Enforce req.Type == "service_account" defensively
+	if req.Type != string(user.UserTypeServiceAccount) {
+		err := ierr.NewError("only service accounts can be created via this endpoint").
+			WithHint("Regular user accounts cannot be created via API. Use type='service_account'").
+			WithReportableDetails(map[string]interface{}{
+				"provided_type": req.Type,
+			}).
+			Mark(ierr.ErrValidation)
+		h.logger.Errorw("invalid user type", "type", req.Type)
 		c.Error(err)
 		return
 	}
