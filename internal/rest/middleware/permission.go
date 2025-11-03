@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rbac"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -28,29 +28,14 @@ func NewPermissionMiddleware(rbacService *rbac.RBACService, logger *logger.Logge
 // This is called explicitly in route definitions
 func (pm *PermissionMiddleware) RequirePermission(entity string, action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get secret from context (set by auth middleware)
-		secretInterface, exists := c.Get("secret")
-		if !exists {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "Unauthorized",
-			})
-			return
-		}
-
-		// Convert to domain secret
-		secretEntity, ok := secretInterface.(*secret.Secret)
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-				"error": "Internal server error",
-			})
-			return
-		}
+		// Get roles from context (set by auth middleware)
+		roles := types.GetRoles(c.Request.Context())
 
 		// Check permission using set-based lookup
-		if !pm.rbacService.HasPermission(secretEntity.Roles, entity, action) {
+		if !pm.rbacService.HasPermission(roles, entity, action) {
 			pm.logger.Info("Permission denied",
-				"secret_id", secretEntity.ID,
-				"roles", secretEntity.Roles,
+				"user_id", types.GetUserID(c.Request.Context()),
+				"roles", roles,
 				"entity", entity,
 				"action", action,
 				"path", c.Request.URL.Path,
