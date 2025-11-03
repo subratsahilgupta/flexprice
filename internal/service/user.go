@@ -67,7 +67,7 @@ func (s *userService) CreateUser(ctx context.Context, req *dto.CreateUserRequest
 		return nil, err
 	}
 
-	// Validate roles if provided
+	// Validate roles (required for service accounts)
 	for _, role := range req.Roles {
 		if !s.rbacService.ValidateRole(role) {
 			return nil, ierr.NewError("invalid role").
@@ -79,14 +79,11 @@ func (s *userService) CreateUser(ctx context.Context, req *dto.CreateUserRequest
 		}
 	}
 
-	// Get tenant ID from request or context
-	tenantID := req.TenantID
-	if tenantID == "" {
-		tenantID = types.GetTenantID(ctx)
-	}
+	// Get tenant ID from context
+	tenantID := types.GetTenantID(ctx)
 	if tenantID == "" {
 		return nil, ierr.NewError("tenant ID is required").
-			WithHint("Tenant ID is required").
+			WithHint("Tenant ID is required in context").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -96,43 +93,8 @@ func (s *userService) CreateUser(ctx context.Context, req *dto.CreateUserRequest
 		return nil, err
 	}
 
-	// Determine email based on user type
-	email := req.Email
-	userType := user.UserType(req.Type)
-
-	// Default type to "user" if empty
-	if userType == "" {
-		userType = user.UserTypeUser
-	}
-
-	// Validate user type
-	if err := userType.Validate(); err != nil {
-		return nil, err
-	}
-
-	// Service accounts have NO email
-	if userType == user.UserTypeServiceAccount {
-		email = "" // No email for service accounts
-	}
-
-	// Check if user already exists (only for regular users with emails)
-	if userType == user.UserTypeUser && email != "" {
-		existingUser, err := s.userRepo.GetByEmail(ctx, email)
-		if err != nil {
-			// Only ignore not found errors, propagate others (like DB errors)
-			if !ierr.IsNotFound(err) {
-				return nil, err
-			}
-		}
-		if existingUser != nil {
-			return nil, ierr.NewError("user already exists").
-				WithHint("A user with this email already exists").
-				WithReportableDetails(map[string]interface{}{
-					"email": email,
-				}).
-				Mark(ierr.ErrAlreadyExists)
-		}
-	}
+	// Only service accounts can be created - no email
+	userType := user.UserTypeServiceAccount
 
 	// Get current user ID for audit fields
 	currentUserID := types.GetUserID(ctx)
@@ -140,12 +102,12 @@ func (s *userService) CreateUser(ctx context.Context, req *dto.CreateUserRequest
 		currentUserID = "system"
 	}
 
-	// Create user with RBAC fields
+	// Create service account with RBAC roles
 	newUser := &user.User{
 		ID:    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER),
-		Email: email,            // Empty for service accounts
-		Type:  string(userType), // Use validated and defaulted type
-		Roles: req.Roles,
+		Email: "",                       // Service accounts have no email
+		Type:  string(userType),         // Always service_account
+		Roles: req.Roles,                // Required roles
 		BaseModel: types.BaseModel{
 			TenantID:  tenantID,
 			Status:    types.StatusPublished,

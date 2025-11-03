@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -41,21 +42,38 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
-// @Summary Create user
-// @Description Create a new user with optional roles
+// @Summary Create service account
+// @Description Create a new service account with required roles. Only service accounts can be created via this endpoint.
 // @Tags Users
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body dto.CreateUserRequest true "Create user request"
+// @Param request body dto.CreateUserRequest true "Create service account request (type must be 'service_account', roles are required)"
 // @Success 201 {object} dto.UserResponse
 // @Failure 400 {object} errors.ErrorResponse
 // @Failure 500 {object} errors.ErrorResponse
 // @Router /users [post]
 func (h *UserHandler) CreateUser(c *gin.Context) {
+	// First, validate no extra fields in raw JSON
+	var rawJSON map[string]interface{}
+	if err := c.ShouldBindJSON(&rawJSON); err != nil {
+		h.logger.Errorw("failed to bind raw JSON", "error", err)
+		c.Error(err)
+		return
+	}
+
+	// Re-bind to the actual struct after raw validation
 	var req dto.CreateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.logger.Errorw("failed to bind request", "error", err)
+	jsonBytes, _ := json.Marshal(rawJSON)
+	if err := json.Unmarshal(jsonBytes, &req); err != nil {
+		h.logger.Errorw("failed to unmarshal request", "error", err)
+		c.Error(err)
+		return
+	}
+
+	// Validate no extra fields
+	if err := req.ValidateNoExtraFields(rawJSON); err != nil {
+		h.logger.Errorw("extra fields in request", "error", err)
 		c.Error(err)
 		return
 	}

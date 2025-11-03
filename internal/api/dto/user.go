@@ -8,12 +8,10 @@ import (
 	"github.com/flexprice/flexprice/internal/validator"
 )
 
-// CreateUserRequest represents the request to create a new user
+// CreateUserRequest represents the request to create a new user (service accounts only)
 type CreateUserRequest struct {
-	Email    string   `json:"email" binding:"omitempty,email" validate:"omitempty,email"` // Required only for type=user
-	Type     string   `json:"type" binding:"omitempty" validate:"omitempty"`              // Default: "user"
-	Roles    []string `json:"roles,omitempty"`
-	TenantID string   `json:"tenant_id,omitempty"` // Optional - will use from context if not provided
+	Type  string   `json:"type" binding:"required" validate:"required"`              // Must be "service_account"
+	Roles []string `json:"roles" binding:"required,min=1" validate:"required,min=1"` // Roles are required
 }
 
 func (r *CreateUserRequest) Validate() error {
@@ -21,36 +19,39 @@ func (r *CreateUserRequest) Validate() error {
 		return err
 	}
 
-	// Default type to "user" if not provided
-	if r.Type == "" {
-		r.Type = string(user.UserTypeUser)
+	// Only service accounts can be created via API
+	if r.Type != string(user.UserTypeServiceAccount) {
+		return ierr.NewError("only service accounts can be created via this endpoint").
+			WithHint("Regular user accounts cannot be created via API. Use type='service_account'").
+			Mark(ierr.ErrValidation)
 	}
 
-	// Validate user type using enum
-	userType := user.UserType(r.Type)
-	if err := userType.Validate(); err != nil {
-		return err
-	}
-
-	// Service accounts MUST have roles
-	if userType == user.UserTypeServiceAccount && len(r.Roles) == 0 {
+	// Service accounts MUST have roles (already validated by binding tag, but double-check)
+	if len(r.Roles) == 0 {
 		return ierr.NewError("service accounts must have at least one role").
 			WithHint("Service accounts require role assignment").
 			Mark(ierr.ErrValidation)
 	}
 
-	// Regular users MUST have email
-	if userType == user.UserTypeUser && r.Email == "" {
-		return ierr.NewError("email is required for user type").
-			WithHint("Regular users must have an email address").
-			Mark(ierr.ErrValidation)
+	return nil
+}
+
+// ValidateNoExtraFields checks if the raw JSON contains any fields beyond type and roles
+func (r *CreateUserRequest) ValidateNoExtraFields(rawJSON map[string]interface{}) error {
+	allowedFields := map[string]bool{
+		"type":  true,
+		"roles": true,
 	}
 
-	// Service accounts CANNOT have email
-	if userType == user.UserTypeServiceAccount && r.Email != "" {
-		return ierr.NewError("service accounts cannot have email").
-			WithHint("Service accounts do not use email addresses").
-			Mark(ierr.ErrValidation)
+	for field := range rawJSON {
+		if !allowedFields[field] {
+			return ierr.NewError("unexpected field in request").
+				WithHint("Only 'type' and 'roles' fields are allowed for service account creation").
+				WithReportableDetails(map[string]interface{}{
+					"invalid_field": field,
+				}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 
 	return nil
