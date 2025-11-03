@@ -4,6 +4,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 )
 
@@ -72,3 +73,6 @@ func NewUserResponse(user *user.User, tenant *tenant.Tenant) *UserResponse {
 		Tenant: NewTenantResponse(tenant),
 	}
 }
+
+// ListUsersResponse is the response type for listing users with pagination
+type ListUsersResponse = types.ListResponse[*UserResponse]

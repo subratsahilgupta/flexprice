@@ -131,8 +131,8 @@ func (h *SecretHandler) CreateServiceAccountAPIKey(c *gin.Context) {
 		return
 	}
 
-	// Override user_id from path parameter
-	req.UserID = serviceAccountID
+	// Override service_account_id from path parameter
+	req.ServiceAccountID = serviceAccountID
 
 	secret, apiKey, err := h.service.CreateAPIKey(c.Request.Context(), &req)
 	if err != nil {

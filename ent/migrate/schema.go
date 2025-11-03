@@ -2062,17 +2062,12 @@ var (
 			{
 				Name:    "idx_user_tenant_status",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[1], UsersColumns[2]},
+				Columns: []*schema.Column{UsersColumns[1], UsersColumns[2], UsersColumns[8]},
 			},
 			{
 				Name:    "idx_user_tenant_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{UsersColumns[1], UsersColumns[3]},
-			},
-			{
-				Name:    "idx_user_type",
-				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[8]},
 			},
 		},
 	}

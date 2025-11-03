@@ -12,10 +12,10 @@ import (
 
 // CreateAPIKeyRequest represents the request to create a new API key
 type CreateAPIKeyRequest struct {
-	Name      string           `json:"name" binding:"required" validate:"required"`
-	Type      types.SecretType `json:"type" binding:"required" validate:"required"`
-	ExpiresAt *time.Time       `json:"expires_at,omitempty"`
-	UserID    string           `json:"user_id,omitempty"` // Optional: if provided, must be a service_account user_id
+	Name             string           `json:"name" binding:"required" validate:"required"`
+	Type             types.SecretType `json:"type" binding:"required" validate:"required"`
+	ExpiresAt        *time.Time       `json:"expires_at,omitempty"`
+	ServiceAccountID string           `json:"service_account_id,omitempty"`
 }
 
 func (r *CreateAPIKeyRequest) Validate() error {

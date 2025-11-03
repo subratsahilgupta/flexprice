@@ -4,9 +4,12 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 )
 
 func NewUserHandler(userService service.UserService, logger *logger.Logger) *UserHandler {
@@ -65,4 +68,43 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, user)
+}
+
+// @Summary List service accounts with filters
+// @Description Search and filter service accounts by type, roles, etc.
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param filter body types.UserFilter true "Filter parameters"
+// @Success 200 {object} dto.ListUsersResponse
+// @Failure 400 {object} errors.ErrorResponse
+// @Failure 500 {object} errors.ErrorResponse
+// @Router /users/service-accounts/search [post]
+func (h *UserHandler) ListServiceAccounts(c *gin.Context) {
+	var filter types.UserFilter
+	if err := c.ShouldBindJSON(&filter); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid filter parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Set default limit if not provided
+	if filter.GetLimit() == 0 {
+		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
+	}
+
+	// Force type to service_account
+	serviceAccountType := "service_account"
+	filter.Type = &serviceAccountType
+
+	users, err := h.userService.ListUsersByFilter(c.Request.Context(), &filter)
+	if err != nil {
+		h.logger.Errorw("failed to list service accounts", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, users)
 }

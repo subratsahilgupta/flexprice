@@ -205,3 +205,102 @@ func (r *userRepository) ListByType(ctx context.Context, tenantID, userType stri
 
 	return domainUsers, nil
 }
+
+// ListByFilter retrieves users by filter with pagination
+func (r *userRepository) ListByFilter(ctx context.Context, tenantID string, filter *types.UserFilter) ([]*domainUser.User, int64, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "user", "list_by_filter", map[string]interface{}{
+		"tenant_id": tenantID,
+		"filter":    filter,
+	})
+	defer FinishSpan(span)
+
+	client := r.client.Reader(ctx)
+	query := client.User.
+		Query().
+		Where(
+			entUser.TenantID(tenantID),
+			entUser.Status(string(types.StatusPublished)),
+		)
+
+	// Apply type filter
+	if filter.Type != nil && *filter.Type != "" {
+		query = query.Where(entUser.Type(*filter.Type))
+	}
+
+	// Apply user IDs filter
+	if len(filter.UserIDs) > 0 {
+		query = query.Where(entUser.IDIn(filter.UserIDs...))
+	}
+
+	// Note: Roles filter is not supported at database level for JSON arrays
+	// Filter roles in-memory if needed
+
+	// Get total count before pagination
+	total, err := query.Count(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, 0, ierr.WithError(err).
+			WithHint("Failed to count users").
+			WithReportableDetails(map[string]interface{}{
+				"tenant_id": tenantID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Apply pagination
+	if filter.Limit != nil {
+		query = query.Limit(int(*filter.Limit))
+	}
+	if filter.Offset != nil {
+		query = query.Offset(int(*filter.Offset))
+	}
+
+	// Apply sorting
+	if len(filter.Sort) > 0 {
+		for _, sort := range filter.Sort {
+			switch sort.Field {
+			case "created_at":
+				if sort.Direction == types.SortDirectionDesc {
+					query = query.Order(ent.Desc(entUser.FieldCreatedAt))
+				} else {
+					query = query.Order(ent.Asc(entUser.FieldCreatedAt))
+				}
+			case "email":
+				if sort.Direction == types.SortDirectionDesc {
+					query = query.Order(ent.Desc(entUser.FieldEmail))
+				} else {
+					query = query.Order(ent.Asc(entUser.FieldEmail))
+				}
+			case "type":
+				if sort.Direction == types.SortDirectionDesc {
+					query = query.Order(ent.Desc(entUser.FieldType))
+				} else {
+					query = query.Order(ent.Asc(entUser.FieldType))
+				}
+			}
+		}
+	} else {
+		// Default sort by created_at desc
+		query = query.Order(ent.Desc(entUser.FieldCreatedAt))
+	}
+
+	users, err := query.All(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, 0, ierr.WithError(err).
+			WithHint("Failed to list users by filter").
+			WithReportableDetails(map[string]interface{}{
+				"tenant_id": tenantID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	domainUsers := make([]*domainUser.User, len(users))
+	for i, u := range users {
+		domainUsers[i] = domainUser.FromEnt(u)
+	}
+
+	return domainUsers, int64(total), nil
+}

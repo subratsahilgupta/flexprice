@@ -112,8 +112,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			user.GET("/me", handlers.User.GetUserInfo)
 			user.POST("", handlers.User.CreateUser)
-			user.GET("/service-accounts", handlers.RBAC.ListServiceAccounts)
-			user.GET("/service-accounts/:id", handlers.RBAC.GetServiceAccount)
+			user.POST("/service-accounts/search", handlers.User.ListServiceAccounts)
 		}
 
 		environment := v1Private.Group("/environments")

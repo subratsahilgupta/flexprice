@@ -17,6 +17,7 @@ type UserService interface {
 	CreateUser(ctx context.Context, req *dto.CreateUserRequest) (*dto.UserResponse, error)
 	GetByID(ctx context.Context, userID, tenantID string) (*user.User, error)
 	ListServiceAccounts(ctx context.Context, tenantID string) ([]*user.User, error)
+	ListUsersByFilter(ctx context.Context, filter *types.UserFilter) (*dto.ListUsersResponse, error)
 }
 
 type userService struct {
@@ -186,4 +187,51 @@ func (s *userService) ListServiceAccounts(ctx context.Context, tenantID string) 
 	}
 
 	return users, nil
+}
+
+func (s *userService) ListUsersByFilter(ctx context.Context, filter *types.UserFilter) (*dto.ListUsersResponse, error) {
+	// Get tenant ID from context
+	tenantID := types.GetTenantID(ctx)
+	if tenantID == "" {
+		return nil, ierr.NewError("tenant_id not found in context").
+			WithHint("Authentication context is missing tenant information").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get users by filter from repository
+	users, total, err := s.userRepo.ListByFilter(ctx, tenantID, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get tenant for response construction
+	tenant, err := s.tenantRepo.GetByID(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to DTOs
+	userResponses := make([]*dto.UserResponse, len(users))
+	for i, u := range users {
+		userResponses[i] = dto.NewUserResponse(u, tenant)
+	}
+
+	// Calculate limit and offset for pagination
+	limit := 50 // default
+	if filter.Limit != nil {
+		limit = *filter.Limit
+	}
+	offset := 0
+	if filter.Offset != nil {
+		offset = *filter.Offset
+	}
+
+	return &dto.ListUsersResponse{
+		Items: userResponses,
+		Pagination: types.NewPaginationResponse(
+			int(total),
+			limit,
+			offset,
+		),
+	}, nil
 }
