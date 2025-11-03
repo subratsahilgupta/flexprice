@@ -38,10 +38,9 @@ func (r *userRepository) Create(ctx context.Context, user *domainUser.User) erro
 	defer FinishSpan(span)
 
 	client := r.client.Writer(ctx)
-	_, err := client.User.
+	builder := client.User.
 		Create().
 		SetID(user.ID).
-		SetEmail(user.Email).
 		SetType(user.Type).
 		SetRoles(user.Roles).
 		SetTenantID(user.TenantID).
@@ -49,8 +48,14 @@ func (r *userRepository) Create(ctx context.Context, user *domainUser.User) erro
 		SetCreatedBy(user.CreatedBy).
 		SetUpdatedBy(user.UpdatedBy).
 		SetCreatedAt(user.CreatedAt).
-		SetUpdatedAt(user.UpdatedAt).
-		Save(ctx)
+		SetUpdatedAt(user.UpdatedAt)
+
+	// Set email only if it's not empty (service accounts have no email)
+	if user.Email != "" {
+		builder.SetEmail(user.Email)
+	}
+
+	_, err := builder.Save(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
