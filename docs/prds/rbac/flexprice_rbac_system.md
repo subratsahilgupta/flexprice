@@ -1,11 +1,14 @@
 # Flexprice RBAC System
 
 ## Document Information
-- **Version**: 2.0
-- **Last Updated**: November 1, 2025
+- **Version**: 2.2
+- **Last Updated**: November 3, 2025
 - **Status**: Draft
-- **Owner**: Engineering Team
-- **Major Changes**: Simplified to explicit permission declarations with set-based lookups. Added name/description to roles for UI/UX.
+- **Owner**: Tsage
+- **Major Changes**: 
+  - v2.0: Simplified to explicit permission declarations with set-based lookups
+  - v2.1: Added name/description to roles for UI/UX
+  - v2.2: Updated to context-based RBAC implementation (roles stored in request context, not Gin context)
 
 ---
 
@@ -81,13 +84,15 @@ Flexprice's RBAC (Role-Based Access Control) system introduces fine-grained acce
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Authentication Middleware                      │
-│              (Validates API Key)                            │
+│              1. Validates API Key                           │
+│              2. Fetches roles from secrets table            │
+│              3. Sets roles in request context               │
 └───────────────────────────┬─────────────────────────────────┘
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │     Permission Middleware: RequirePermission(entity, action)│
-│     1. Get roles from secret (in context)                   │
+│     1. Get roles from request context                       │
 │     2. Check: permissions[role][entity][action] == true     │
 │     3. Return 403 if denied, continue if allowed            │
 └───────────────────────────┬─────────────────────────────────┘
@@ -118,6 +123,14 @@ Flexprice's RBAC (Role-Based Access Control) system introduces fine-grained acce
 - **Zero performance impact**: permission checks never touch name/description
 - Stored separately in memory - only accessed for `GET /api/v1/rbac/roles` endpoint
 - Enables dynamic role selection in frontend without hardcoding role lists
+
+**Context-Based Architecture**
+- Roles are stored in `context.Context` (request-scoped), not Gin context
+- Authentication middleware fetches roles from secrets table and sets them using `context.WithValue(ctx, types.CtxRoles, roles)`
+- Permission middleware retrieves roles using `types.GetRoles(c.Request.Context())`
+- Clean separation: roles live alongside `tenant_id`, `user_id`, `environment_id` in request context
+- Type-safe: `[]string` directly, no `interface{}` casting or domain model coupling
+- Follows existing context pattern: similar to `types.GetTenantID()`, `types.GetUserID()`
 
 ---
 
@@ -544,15 +557,16 @@ System Flow:
    ├─ Extract API key from Authorization header
    ├─ Query secrets table for key
    ├─ If not found → 401 Unauthorized
-   └─ If found → Load secret object (includes roles), add to context
+   ├─ If found → Load secret object (includes roles)
+   └─ Set roles in request context: context.WithValue(ctx, CtxRoles, roles)
 
 2. Permission Middleware: RequirePermission("feature", "list")
-   ├─ Get secret from context
+   ├─ Get roles from request context: types.GetRoles(c.Request.Context())
    ├─ Check if roles array is empty
    │  ├─ If empty → ALLOW (full access - backward compatibility)
    │  └─ If not empty → Continue to permission check
    │
-   ├─ Call rbacService.HasPermission(secret.Roles, "feature", "list")
+   ├─ Call rbacService.HasPermission(roles, "feature", "list")
    │  └─ O(1) lookup: permissions[role]["feature"]["list"]
    │
    ├─ If any role grants permission → ALLOW, continue
@@ -619,6 +633,7 @@ import (
     "net/http"
     "github.com/gin-gonic/gin"
     "github.com/flexprice/flexprice/internal/rbac"
+    "github.com/flexprice/flexprice/internal/types"
 )
 
 type PermissionMiddleware struct {
@@ -633,21 +648,13 @@ func NewPermissionMiddleware(rbacService *rbac.Service) *PermissionMiddleware {
 // This is called explicitly in route definitions
 func (pm *PermissionMiddleware) RequirePermission(entity string, action string) gin.HandlerFunc {
     return func(c *gin.Context) {
-        // 1. Get secret from context (set by auth middleware)
-        secretInterface, exists := c.Get("secret")
-        if !exists {
-            c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-                "error": "Unauthorized",
-            })
-            return
-        }
-        
-        secret := secretInterface.(*models.Secret)
+        // 1. Get roles from request context (set by auth middleware)
+        roles := types.GetRoles(c.Request.Context())
         
         // 2. Check permission using set-based lookup
-        if !pm.rbacService.HasPermission(secret.Roles, entity, action) {
+        if !pm.rbacService.HasPermission(roles, entity, action) {
             log.Info("Permission denied: user=%s, roles=%v, entity=%s, action=%s",
-                secret.UserID, secret.Roles, entity, action)
+                types.GetUserID(c.Request.Context()), roles, entity, action)
             
             c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
                 "error": "Forbidden",
@@ -662,7 +669,7 @@ func (pm *PermissionMiddleware) RequirePermission(entity string, action string) 
 }
 ```
 
-**Simplicity**: ~40 lines total. No regex, no mapping files, no complexity.
+**Simplicity**: ~40 lines total. No regex, no mapping files, no complexity. Roles retrieved directly from request context.
 
 #### Router Registration
 
@@ -1761,6 +1768,7 @@ import (
     
     "github.com/gin-gonic/gin"
     "github.com/flexprice/flexprice/internal/rbac"
+    "github.com/flexprice/flexprice/internal/types"
     "github.com/flexprice/flexprice/internal/logger"
 )
 
@@ -1778,26 +1786,14 @@ func NewPermissionMiddleware(rbacService *rbac.Service, logger *logger.Logger) *
 
 func (pm *PermissionMiddleware) RequirePermission(entity string, action string) gin.HandlerFunc {
     return func(c *gin.Context) {
-        secretInterface, exists := c.Get("secret")
-        if !exists {
-            c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-                "error": "Unauthorized",
-            })
-            return
-        }
+        // Get roles from request context (set by auth middleware)
+        roles := types.GetRoles(c.Request.Context())
         
-        secret, ok := secretInterface.(*models.Secret)
-        if !ok {
-            c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-                "error": "Internal server error",
-            })
-            return
-        }
-        
-        if !pm.rbacService.HasPermission(secret.Roles, entity, action) {
+        // Check permission using set-based lookup
+        if !pm.rbacService.HasPermission(roles, entity, action) {
             pm.logger.Info("Permission denied",
-                "user_id", secret.UserID,
-                "roles", secret.Roles,
+                "user_id", types.GetUserID(c.Request.Context()),
+                "roles", roles,
                 "entity", entity,
                 "action", action,
                 "path", c.Request.URL.Path,
@@ -1814,6 +1810,11 @@ func (pm *PermissionMiddleware) RequirePermission(entity string, action string) 
     }
 }
 ```
+
+**Key Points:**
+- Roles are fetched from `c.Request.Context()` using `types.GetRoles()`
+- No coupling to secret domain model
+- Clean, type-safe access to roles array
 
 #### Frontend UI Example
 
@@ -1886,9 +1887,10 @@ function CreateServiceAccountForm() {
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0 | 2025-10-31 | Engineering Team | Initial draft based on design specifications |
-| 2.0 | 2025-11-01 | Engineering Team | Major update: Simplified to explicit permission declarations with set-based lookups. Removed automatic endpoint mapping system. |
-| 2.1 | 2025-11-01 | Engineering Team | Added name and description fields to role definitions for UI/UX. Updated RBAC service to store metadata separately. Clarified zero performance impact on permission checks. |
+| 1.0 | 2025-10-31 | Tsage | Initial draft based on design specifications |
+| 2.0 | 2025-11-01 | Tsage | Major update: Simplified to explicit permission declarations with set-based lookups. Removed automatic endpoint mapping system. |
+| 2.1 | 2025-11-01 | Tsage | Added name and description fields to role definitions for UI/UX. Updated RBAC service to store metadata separately. Clarified zero performance impact on permission checks. |
+| 2.2 | 2025-11-03 | Tsage | **Context-Based Implementation**: Updated permission middleware to retrieve roles from `context.Context` instead of Gin context. Auth middleware now sets roles in request context using `context.WithValue()`. Added `types.GetRoles()` helper. Removed secret entity coupling from permission checks. |
 
 ---
 
