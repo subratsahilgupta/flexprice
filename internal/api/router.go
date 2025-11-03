@@ -392,7 +392,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			{
 				apiKeys.GET("", handlers.Secret.ListAPIKeys)
 				apiKeys.POST("", handlers.Secret.CreateAPIKey)
-				apiKeys.POST("/service-account/:id", handlers.Secret.CreateServiceAccountAPIKey)
 				apiKeys.DELETE("/:id", handlers.Secret.DeleteAPIKey)
 			}
 

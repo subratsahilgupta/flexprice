@@ -65,12 +65,12 @@ func (h *SecretHandler) ListAPIKeys(c *gin.Context) {
 
 // CreateAPIKey godoc
 // @Summary Create a new API key
-// @Description Create a new API key with the specified type. RBAC roles are inherited from the user or service account.
+// @Description Create a new API key. Provide 'service_account_id' in body to create API key for a service account, otherwise creates for authenticated user.
 // @Tags secrets
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body dto.CreateAPIKeyRequest true "API key creation request"
+// @Param request body dto.CreateAPIKeyRequest true "API key creation request (include 'service_account_id' for service accounts)"
 // @Success 201 {object} dto.CreateAPIKeyResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
@@ -88,55 +88,6 @@ func (h *SecretHandler) CreateAPIKey(c *gin.Context) {
 	secret, apiKey, err := h.service.CreateAPIKey(c.Request.Context(), &req)
 	if err != nil {
 		h.logger.Errorw("failed to create api key", "error", err)
-		c.Error(err)
-		return
-	}
-
-	c.JSON(http.StatusCreated, dto.CreateAPIKeyResponse{
-		Secret: *dto.ToSecretResponse(secret),
-		APIKey: apiKey,
-	})
-}
-
-// CreateServiceAccountAPIKey godoc
-// @Summary Create a new API key for a service account
-// @Description Create a new API key for a specific service account using the service account ID from path parameter
-// @Tags secrets
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param id path string true "Service Account User ID"
-// @Param request body dto.CreateAPIKeyRequest true "API key creation request"
-// @Success 201 {object} dto.CreateAPIKeyResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /secrets/api/keys/service-account/{id} [post]
-func (h *SecretHandler) CreateServiceAccountAPIKey(c *gin.Context) {
-	// Get service account ID from path parameter
-	serviceAccountID := c.Param("id")
-	if serviceAccountID == "" {
-		c.Error(ierr.NewError("service account ID is required").
-			WithHint("Please provide a valid service account ID").
-			Mark(ierr.ErrValidation))
-		return
-	}
-
-	var req dto.CreateAPIKeyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.logger.Errorw("failed to bind request", "error", err)
-		c.Error(ierr.WithError(err).
-			WithHint("Please check the request payload").
-			Mark(ierr.ErrValidation))
-		return
-	}
-
-	// Override service_account_id from path parameter
-	req.ServiceAccountID = serviceAccountID
-
-	secret, apiKey, err := h.service.CreateAPIKey(c.Request.Context(), &req)
-	if err != nil {
-		h.logger.Errorw("failed to create api key for service account", "error", err, "service_account_id", serviceAccountID)
 		c.Error(err)
 		return
 	}
