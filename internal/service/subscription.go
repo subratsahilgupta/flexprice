@@ -4868,10 +4868,15 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 		}
 
 		// Apply overrides - ONLY these 3 fields can be overridden
-		if override.UsageLimit != nil {
+		// Filter based on feature type since for metered features, nil is also a valid value
+		switch parentEnt.FeatureType {
+		case types.FeatureTypeMetered:
+			// For metered features, UsageLimit can be overridden (including nil for unlimited)
+			// Simply use whatever value is provided (even if nil)
 			newEnt.UsageLimit = override.UsageLimit
-		} else {
-			newEnt.UsageLimit = parentEnt.UsageLimit
+		default:
+			// For non-metered features, UsageLimit is not relevant, leave as nil
+			newEnt.UsageLimit = nil
 		}
 
 		if override.IsEnabled != nil {

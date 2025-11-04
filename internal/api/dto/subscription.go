@@ -717,7 +717,8 @@ type OverrideEntitlementRequest struct {
 	EntitlementID string `json:"entitlement_id" validate:"required"`
 
 	// UsageLimit is the new usage limit (only these 3 fields can be overridden)
-	UsageLimit *int64 `json:"usage_limit,omitempty"`
+	// For metered features, nil means unlimited usage
+	UsageLimit *int64 `json:"usage_limit"`
 
 	// IsEnabled determines if the entitlement is enabled or disabled
 	IsEnabled *bool `json:"is_enabled,omitempty"`
