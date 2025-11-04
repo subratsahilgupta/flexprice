@@ -169,12 +169,17 @@ func EntitlementToResponse(e *entitlement.Entitlement) *EntitlementResponse {
 		return nil
 	}
 
-	return &EntitlementResponse{
+	resp := &EntitlementResponse{
 		Entitlement: e,
-
-		// TODO: !REMOVE after migration
-		PlanID: e.EntityID,
 	}
+
+	// TODO: !REMOVE after migration
+	// Only set PlanID when entity_type is PLAN
+	if e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_PLAN {
+		resp.PlanID = e.EntityID
+	}
+
+	return resp
 }
 
 // EntitlementsToResponse converts a slice of entitlements to responses
