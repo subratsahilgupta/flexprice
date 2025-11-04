@@ -6,6 +6,7 @@ import (
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/rest/middleware"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/gin-gonic/gin"
@@ -50,6 +51,7 @@ type Handlers struct {
 	Group                    *v1.GroupHandler
 	ScheduledTask            *v1.ScheduledTaskHandler
 	AlertLogsHandler         *v1.AlertLogsHandler
+	RBAC                     *v1.RBACHandler
 
 	// Portal handlers
 	Onboarding *v1.OnboardingHandler
@@ -60,7 +62,7 @@ type Handlers struct {
 	CronInvoice      *cron.InvoiceHandler
 }
 
-func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService, envAccessService service.EnvAccessService) *gin.Engine {
+func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logger, secretService service.SecretService, envAccessService service.EnvAccessService, rbacService *rbac.RBACService) *gin.Engine {
 	// gin.SetMode(gin.ReleaseMode)
 
 	router := gin.Default()
@@ -70,6 +72,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		middleware.SentryMiddleware(cfg),    // Add Sentry middleware
 		middleware.PyroscopeMiddleware(cfg), // Add Pyroscope middleware
 	)
+
+	// Initialize permission middleware
+	permissionMW := middleware.NewPermissionMiddleware(rbacService, logger)
 
 	// Add middleware to set swagger host dynamically
 	router.Use(func(c *gin.Context) {
@@ -106,6 +111,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		user := v1Private.Group("/users")
 		{
 			user.GET("/me", handlers.User.GetUserInfo)
+			user.POST("", handlers.User.CreateUser)
+			user.POST("/search", handlers.User.ListUsersByFilter)
 		}
 
 		environment := v1Private.Group("/environments")
@@ -119,8 +126,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		// Events routes
 		events := v1Private.Group("/events")
 		{
-			events.POST("", handlers.Events.IngestEvent)
-			events.POST("/bulk", handlers.Events.BulkIngestEvent)
+			events.POST("", permissionMW.RequirePermission("event", "write"), handlers.Events.IngestEvent)
+			events.POST("/bulk", permissionMW.RequirePermission("event", "write"), handlers.Events.BulkIngestEvent)
 			events.GET("", handlers.Events.GetEvents)
 			events.POST("/query", handlers.Events.QueryEvents)
 			events.POST("/usage", handlers.Events.GetUsage)
@@ -527,6 +534,13 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	{
 		// list alert logs by filter
 		alert.POST("/search", handlers.AlertLogsHandler.ListAlertLogsByFilter)
+	}
+
+	// RBAC routes
+	rbac := v1Private.Group("/rbac")
+	{
+		rbac.GET("/roles", handlers.RBAC.ListRoles)
+		rbac.GET("/roles/:id", handlers.RBAC.GetRole)
 	}
 
 	return router

@@ -16,6 +16,7 @@ const (
 	CtxEnvironmentID ContextKey = "ctx_environment_id"
 	CtxDBTransaction ContextKey = "ctx_db_transaction"
 	CtxForceWriter   ContextKey = "ctx_force_writer" // Force DB operations to use writer connection
+	CtxRoles         ContextKey = "ctx_roles"        // RBAC roles array for permission checks
 
 	// Default values
 	DefaultTenantID = "00000000-0000-0000-0000-000000000000"
@@ -55,6 +56,14 @@ func GetEnvironmentID(ctx context.Context) string {
 		return environmentID
 	}
 	return ""
+}
+
+// GetRoles returns the RBAC roles array from the context
+func GetRoles(ctx context.Context) []string {
+	if roles, ok := ctx.Value(CtxRoles).([]string); ok {
+		return roles
+	}
+	return []string{} // Empty roles = full access
 }
 
 // SetTenantID sets the tenant ID in the context

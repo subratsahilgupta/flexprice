@@ -1468,10 +1468,11 @@ var (
 		{Name: "provider", Type: field.TypeString},
 		{Name: "value", Type: field.TypeString, Nullable: true},
 		{Name: "display_id", Type: field.TypeString, Nullable: true},
-		{Name: "permissions", Type: field.TypeJSON, Nullable: true},
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true},
 		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
 		{Name: "provider_data", Type: field.TypeJSON, Nullable: true},
+		{Name: "roles", Type: field.TypeJSON, Nullable: true},
+		{Name: "user_type", Type: field.TypeString, Nullable: true, Default: "user"},
 	}
 	// SecretsTable holds the schema information for the "secrets" table.
 	SecretsTable = &schema.Table{
@@ -2040,7 +2041,9 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
-		{Name: "email", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "email", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
+		{Name: "type", Type: field.TypeString, Default: "user"},
+		{Name: "roles", Type: field.TypeJSON, Nullable: true},
 	}
 	// UsersTable holds the schema information for the "users" table.
 	UsersTable = &schema.Table{
@@ -2053,13 +2056,13 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{UsersColumns[7]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "status = 'published'",
+					Where: "status = 'published' AND email IS NOT NULL AND email != ''",
 				},
 			},
 			{
 				Name:    "idx_user_tenant_status",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[1], UsersColumns[2]},
+				Columns: []*schema.Column{UsersColumns[1], UsersColumns[2], UsersColumns[8]},
 			},
 			{
 				Name:    "idx_user_tenant_created_at",
