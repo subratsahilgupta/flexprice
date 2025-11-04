@@ -695,6 +695,98 @@ func (s *WalletServiceSuite) TestTopUpWallet() {
 	s.Equal(2, *foundTx.Priority, "Transaction priority mismatch")
 }
 
+func (s *WalletServiceSuite) TestTopUpWalletWithNegativeCredits() {
+	// First, add some credits to the wallet
+	topUpReq := &dto.TopUpWalletRequest{
+		CreditsToAdd:      decimal.NewFromInt(500),
+		IdempotencyKey:    lo.ToPtr("test_topup_positive"),
+		TransactionReason: types.TransactionReasonFreeCredit,
+	}
+	resp, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, topUpReq)
+	s.NoError(err)
+	s.NotNil(resp)
+	s.True(decimal.NewFromInt(1500).Equal(resp.Balance), // Initial balance 1000 + 500 = 1500
+		"Balance mismatch: expected %s, got %s",
+		decimal.NewFromInt(1500), resp.Balance)
+
+	// Now use negative credits to correct/reverse some of the balance
+	negTopUpReq := &dto.TopUpWalletRequest{
+		CreditsToAdd:      decimal.NewFromInt(-200),
+		IdempotencyKey:    lo.ToPtr("test_topup_negative"),
+		TransactionReason: types.TransactionReasonCreditCorrection,
+		Description:       "Credit correction for mistaken top-up",
+	}
+	resp, err = s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, negTopUpReq)
+	s.NoError(err)
+	s.NotNil(resp)
+	s.True(decimal.NewFromInt(1300).Equal(resp.Balance), // 1500 - 200 = 1300
+		"Balance after negative topup mismatch: expected %s, got %s",
+		decimal.NewFromInt(1300), resp.Balance)
+
+	// Verify the transaction was recorded as a debit
+	filter := types.NewWalletTransactionFilter()
+	filter.WalletID = &s.testData.wallet.ID
+	filter.Type = lo.ToPtr(types.TransactionTypeDebit)
+	transactions, err := s.GetStores().WalletRepo.ListWalletTransactions(s.GetContext(), filter)
+	s.NoError(err)
+	s.NotEmpty(transactions)
+
+	// Find the transaction with the matching idempotency key
+	var foundTx *wallet.Transaction
+	for _, tx := range transactions {
+		if tx.IdempotencyKey == "test_topup_negative" {
+			foundTx = tx
+			break
+		}
+	}
+
+	s.NotNil(foundTx, "Transaction with matching idempotency key not found")
+	s.Equal(types.TransactionReasonCreditCorrection, foundTx.TransactionReason, "Transaction reason mismatch")
+	s.True(decimal.NewFromInt(200).Equal(foundTx.CreditAmount), "Transaction amount mismatch")
+}
+
+func (s *WalletServiceSuite) TestTopUpWalletWithNegativeCreditsInvalidReason() {
+	// Try to use negative credits without CREDIT_CORRECTION reason
+	negTopUpReq := &dto.TopUpWalletRequest{
+		CreditsToAdd:      decimal.NewFromInt(-100),
+		IdempotencyKey:    lo.ToPtr("test_topup_negative_invalid"),
+		TransactionReason: types.TransactionReasonFreeCredit, // Wrong reason for negative credits
+	}
+	_, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, negTopUpReq)
+	s.Error(err)
+	s.Contains(err.Error(), "negative credits_to_add is only allowed for CREDIT_CORRECTION transaction reason")
+}
+
+func (s *WalletServiceSuite) TestTopUpWalletWithPositiveCreditsCorrectionReason() {
+	// Try to use CREDIT_CORRECTION reason with positive credits
+	posTopUpReq := &dto.TopUpWalletRequest{
+		CreditsToAdd:      decimal.NewFromInt(100),
+		IdempotencyKey:    lo.ToPtr("test_topup_positive_invalid_reason"),
+		TransactionReason: types.TransactionReasonCreditCorrection, // Wrong - should only be used for negative values
+	}
+	_, err := s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, posTopUpReq)
+	s.Error(err)
+	s.Contains(err.Error(), "CREDIT_CORRECTION transaction reason is only allowed for negative credits_to_add")
+}
+
+func (s *WalletServiceSuite) TestTopUpWalletWithNegativeCreditsInsufficientBalance() {
+	// Reset the wallet's initial state to zero
+	s.testData.wallet.Balance = decimal.Zero
+	s.testData.wallet.CreditBalance = decimal.Zero
+	err := s.GetStores().WalletRepo.UpdateWalletBalance(s.GetContext(), s.testData.wallet.ID, decimal.Zero, decimal.Zero)
+	s.NoError(err)
+
+	// Try to deduct more credits than available
+	negTopUpReq := &dto.TopUpWalletRequest{
+		CreditsToAdd:      decimal.NewFromInt(-100),
+		IdempotencyKey:    lo.ToPtr("test_topup_negative_insufficient"),
+		TransactionReason: types.TransactionReasonCreditCorrection,
+	}
+	_, err = s.service.TopUpWallet(s.GetContext(), s.testData.wallet.ID, negTopUpReq)
+	s.Error(err)
+	s.Contains(err.Error(), "insufficient balance")
+}
+
 func (s *WalletServiceSuite) TestTerminateWallet() {
 	// Reset the wallet's initial state
 	s.testData.wallet.Balance = decimal.Zero

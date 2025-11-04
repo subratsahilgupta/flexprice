@@ -311,6 +311,13 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 
 	// Handle special case for purchased credits with invoice
 	if req.TransactionReason == types.TransactionReasonPurchasedCreditInvoiced {
+		// Don't allow purchased credit invoiced with negative values
+		if req.CreditsToAdd.LessThan(decimal.Zero) {
+			return nil, ierr.NewError("purchased credit invoiced cannot have negative credits").
+				WithHint("Purchased credit invoiced transactions must have positive credits").
+				Mark(ierr.ErrValidation)
+		}
+
 		paymentID, err := s.handlePurchasedCreditInvoicedTransaction(
 			ctx,
 			walletID,
@@ -324,11 +331,22 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		referenceType = types.WalletTxReferenceTypePayment
 	}
 
-	// Create wallet credit operation
-	creditReq := &wallet.WalletOperation{
+	// Determine transaction type based on credit amount
+	// Negative values should be treated as debits
+	transactionType := types.TransactionTypeCredit
+	creditAmount := req.CreditsToAdd
+
+	if req.CreditsToAdd.LessThan(decimal.Zero) {
+		// For negative values, convert to positive and use debit operation
+		transactionType = types.TransactionTypeDebit
+		creditAmount = req.CreditsToAdd.Abs()
+	}
+
+	// Create wallet operation
+	operation := &wallet.WalletOperation{
 		WalletID:          walletID,
-		Type:              types.TransactionTypeCredit,
-		CreditAmount:      req.CreditsToAdd,
+		Type:              transactionType,
+		CreditAmount:      creditAmount,
 		Description:       req.Description,
 		Metadata:          req.Metadata,
 		TransactionReason: req.TransactionReason,
@@ -339,9 +357,15 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		Priority:          req.Priority,
 	}
 
-	// Process wallet credit
-	if err := s.CreditWallet(ctx, creditReq); err != nil {
-		return nil, err
+	// Process wallet operation (credit or debit)
+	if transactionType == types.TransactionTypeCredit {
+		if err := s.CreditWallet(ctx, operation); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.DebitWallet(ctx, operation); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.GetWalletByID(ctx, walletID)
@@ -733,11 +757,21 @@ func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.W
 	}
 
 	if totalAvailable.LessThan(req.CreditAmount) {
+		// Get wallet to show actual balance vs requested
+		w, walletErr := s.WalletRepo.GetWalletByID(ctx, req.WalletID)
+		var walletBalance decimal.Decimal
+		if walletErr == nil {
+			walletBalance = w.CreditBalance
+		}
+
 		return ierr.NewError("insufficient balance").
-			WithHint("Insufficient balance to process debit operation").
+			WithHint("Insufficient balance to process debit operation. This can happen if you have many expired credits or if the limit of eligible credits was reached.").
 			WithReportableDetails(map[string]interface{}{
-				"wallet_id": req.WalletID,
-				"amount":    req.CreditAmount,
+				"wallet_id":              req.WalletID,
+				"requested_debit_amount": req.CreditAmount,
+				"eligible_credits_found": totalAvailable,
+				"wallet_balance":         walletBalance,
+				"credits_examined":       len(credits),
 			}).
 			Mark(ierr.ErrInvalidOperation)
 	}
@@ -867,13 +901,13 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 
 	// Log the alert
 	alertService := NewAlertLogsService(s.ServiceParams)
-	
+
 	// Get customer ID from wallet if available
 	var customerID *string
 	if w.CustomerID != "" {
 		customerID = lo.ToPtr(w.CustomerID)
 	}
-	
+
 	logAlertReq := &LogAlertRequest{
 		EntityType:  types.AlertEntityTypeWallet,
 		EntityID:    w.ID,

@@ -395,9 +395,11 @@ type TopUpWalletRequest struct {
 }
 
 func (r *TopUpWalletRequest) Validate() error {
-	if r.CreditsToAdd.LessThanOrEqual(decimal.Zero) {
-		return ierr.NewError("credits_to_add must be greater than 0").
-			WithHint("Credits to add must be a positive value").
+	// Allow both positive and negative values
+	// Negative values are used for credit corrections/reversals
+	if r.CreditsToAdd.IsZero() {
+		return ierr.NewError("credits_to_add cannot be zero").
+			WithHint("Credits to add must be a non-zero value").
 			WithReportableDetails(map[string]interface{}{
 				"credits_to_add": r.CreditsToAdd,
 			}).
@@ -410,6 +412,7 @@ func (r *TopUpWalletRequest) Validate() error {
 		types.TransactionReasonPurchasedCreditDirect,
 		types.TransactionReasonSubscriptionCredit,
 		types.TransactionReasonCreditNote,
+		types.TransactionReasonCreditCorrection,
 	}
 
 	if !lo.Contains(allowedTransactionReasons, r.TransactionReason) {
@@ -418,6 +421,28 @@ func (r *TopUpWalletRequest) Validate() error {
 			WithReportableDetails(map[string]interface{}{
 				"transaction_reason": r.TransactionReason,
 				"allowed_reasons":    allowedTransactionReasons,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate that negative values are only allowed for credit correction
+	if r.CreditsToAdd.LessThan(decimal.Zero) && r.TransactionReason != types.TransactionReasonCreditCorrection {
+		return ierr.NewError("negative credits_to_add is only allowed for CREDIT_CORRECTION transaction reason").
+			WithHint("To deduct credits, use transaction_reason: CREDIT_CORRECTION").
+			WithReportableDetails(map[string]interface{}{
+				"credits_to_add":     r.CreditsToAdd,
+				"transaction_reason": r.TransactionReason,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate that CREDIT_CORRECTION is only used for negative values
+	if r.TransactionReason == types.TransactionReasonCreditCorrection && r.CreditsToAdd.GreaterThan(decimal.Zero) {
+		return ierr.NewError("CREDIT_CORRECTION transaction reason is only allowed for negative credits_to_add").
+			WithHint("To add credits, use a different transaction_reason like FREE_CREDIT_GRANT, PURCHASED_CREDIT_DIRECT, etc.").
+			WithReportableDetails(map[string]interface{}{
+				"credits_to_add":     r.CreditsToAdd,
+				"transaction_reason": r.TransactionReason,
 			}).
 			Mark(ierr.ErrValidation)
 	}
