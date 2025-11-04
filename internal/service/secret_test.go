@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/secret"
+	domainUser "github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/security"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -68,6 +69,22 @@ func (s *SecretServiceSuite) setupTestData() {
 		_ = s.secretRepo.Delete(s.GetContext(), s.testData.secrets.integration.ID)
 		s.testData.secrets.integration = nil
 	}
+
+	// Create default test user (needed for API key creation)
+	userRepo := s.GetStores().UserRepo
+	testUser := &domainUser.User{
+		ID:    types.DefaultUserID,
+		Email: "test@example.com",
+		Type:  types.UserTypeUser,
+		Roles: []string{}, // Empty roles = full access
+		BaseModel: types.BaseModel{
+			TenantID:  types.DefaultTenantID,
+			Status:    types.StatusPublished,
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		},
+	}
+	_ = userRepo.Create(s.GetContext(), testUser)
 
 	// Create test API key
 	apiKey := &secret.Secret{
