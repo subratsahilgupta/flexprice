@@ -220,9 +220,15 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 	}
 
+	// Extract addon IDs from request for entitlement override processing
+	addonIDs := make([]string, 0, len(req.Addons))
+	for _, addonReq := range req.Addons {
+		addonIDs = append(addonIDs, addonReq.AddonID)
+	}
+
 	// Process entitlement overrides if provided
 	if len(req.OverrideEntitlements) > 0 {
-		err = s.ProcessSubscriptionEntitlementOverrides(ctx, sub, req.OverrideEntitlements)
+		err = s.ProcessSubscriptionEntitlementOverrides(ctx, sub, req.OverrideEntitlements, addonIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -4762,10 +4768,12 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.
 }
 
 // ProcessSubscriptionEntitlementOverrides creates subscription-scoped entitlement overrides
+// addonIDs should contain the addon IDs from the subscription creation request (for when subscription doesn't exist in DB yet)
 func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	overrideRequests []dto.OverrideEntitlementRequest,
+	addonIDs []string,
 ) error {
 	if len(overrideRequests) == 0 {
 		return nil
@@ -4773,7 +4781,8 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 
 	s.Logger.Infow("processing entitlement overrides",
 		"subscription_id", sub.ID,
-		"override_count", len(overrideRequests))
+		"override_count", len(overrideRequests),
+		"addon_count", len(addonIDs))
 
 	// Get plan entitlements to validate and copy from
 	planEntitlements, err := s.EntitlementRepo.ListByPlanIDs(ctx, []string{sub.PlanID})
@@ -4789,24 +4798,10 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 		entitlementMap[ent.ID] = ent
 	}
 
-	// Get addon associations for this subscription to fetch addon entitlements
-	addonAssociationFilter := types.NewAddonAssociationFilter()
-	addonAssociationFilter.EntityIDs = []string{sub.ID}
-	addonAssociationFilter.EntityType = lo.ToPtr(types.AddonAssociationEntityTypeSubscription)
-
-	addonAssociations, err := s.AddonAssociationRepo.List(ctx, addonAssociationFilter)
-	if err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to fetch addon associations").
-			Mark(ierr.ErrDatabase)
-	}
-
-	// If there are addon associations, fetch addon entitlements
-	if len(addonAssociations) > 0 {
-		addonIDs := lo.Map(addonAssociations, func(aa *addonassociation.AddonAssociation, _ int) string {
-			return aa.AddonID
-		})
-
+	// If there are addon IDs provided, fetch addon entitlements
+	// Note: We use addonIDs from the request instead of querying the database
+	// because during subscription creation, addons haven't been associated yet
+	if len(addonIDs) > 0 {
 		addonEntitlements, err := s.EntitlementRepo.ListByAddonIDs(ctx, addonIDs)
 		if err != nil {
 			return ierr.WithError(err).
@@ -4899,6 +4894,15 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 				return ierr.NewError("static_value cannot be set for metered features").
 					WithHint("Only usage_limit and is_enabled can be overridden for metered features").
 					Mark(ierr.ErrValidation)
+			}
+			// Ensure UsageResetPeriod is set for metered features
+			// If parent has empty reset period, default to MONTHLY
+			if newEnt.UsageResetPeriod == "" {
+				newEnt.UsageResetPeriod = types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY
+				s.Logger.Warnw("subscription entitlement override: parent entitlement had empty usage_reset_period, defaulting to MONTHLY",
+					"subscription_id", sub.ID,
+					"parent_entitlement_id", parentEnt.ID,
+					"feature_id", parentEnt.FeatureID)
 			}
 		case types.FeatureTypeStatic:
 			// For static features, static_value is required
