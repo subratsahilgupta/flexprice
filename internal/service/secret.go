@@ -107,48 +107,31 @@ func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyR
 		userID = types.GetUserID(ctx)
 	}
 
-	// Default values for roles and user_type
-	var roles []string
-	userType := "user"
-
-	// If we have a user_id, fetch the user and copy roles
-	if userID != "" {
-		s.logger.Debugw("Fetching user for role copying", "user_id", userID)
-		user, err := s.userRepo.GetByID(ctx, userID)
-		if err != nil {
-		// If service_account_id was explicitly provided in request (not from context), fail hard
-		if req.ServiceAccountID != "" {
-			return nil, "", ierr.WithError(err).
-				WithHint("User not found for provided service_account_id").
-				WithReportableDetails(map[string]interface{}{
-					"user_id": userID,
-				}).
-				Mark(ierr.ErrNotFound)
-			}
-
-			// If from context, warn and continue with empty roles (backward compatibility)
-			s.logger.Warnw("failed to fetch user for role copying", "error", err, "user_id", userID)
-			roles = []string{}
-		} else if user != nil {
-			s.logger.Debugw("User fetched successfully", "user_id", userID, "user_type", user.Type, "user_roles", user.Roles)
-			roles = user.Roles
-			userType = user.Type
-
-		// If service_account_id was explicitly provided, verify it's a service_account
-		if req.ServiceAccountID != "" && userType != "service_account" {
-			return nil, "", ierr.NewError("provided service_account_id must be a service_account").
-				WithHint("Only service account user IDs can be explicitly provided").
-				WithReportableDetails(map[string]interface{}{
-					"user_id":   userID,
-					"user_type": userType,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-		}
-	} else {
-		// No user ID at all - create API key with empty roles (full access)
-		roles = []string{}
+	// Fetch user to get roles and type
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, "", ierr.WithError(err).
+			WithHint("User not found").
+			WithReportableDetails(map[string]interface{}{
+				"user_id": userID,
+			}).
+			Mark(ierr.ErrNotFound)
 	}
+
+	// If service_account_id was explicitly provided, verify it's a service_account
+	if req.ServiceAccountID != "" && user.Type != types.UserTypeServiceAccount {
+		return nil, "", ierr.NewError("provided service_account_id must be a service_account").
+			WithHint("Only service account user IDs can be explicitly provided").
+			WithReportableDetails(map[string]interface{}{
+				"user_id":   userID,
+				"user_type": user.Type,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get roles and user type from fetched user
+	roles := user.Roles
+	userType := string(user.Type)
 
 	s.logger.Debugw("Creating API key with roles", "user_id", userID, "roles", roles, "user_type", userType)
 

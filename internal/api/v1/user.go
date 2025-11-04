@@ -1,11 +1,9 @@
 package v1
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/user"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
@@ -55,29 +53,12 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 // @Failure 500 {object} errors.ErrorResponse
 // @Router /users [post]
 func (h *UserHandler) CreateUser(c *gin.Context) {
-	// Use strict JSON decoder to reject unknown fields
 	var req dto.CreateUserRequest
-	dec := json.NewDecoder(c.Request.Body)
-	dec.DisallowUnknownFields()
-	
-	if err := dec.Decode(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Errorw("invalid request body", "error", err)
 		c.Error(ierr.WithError(err).
-			WithHint("Invalid request body. Only 'type' and 'roles' fields are allowed").
+			WithHint("Invalid request. Only 'type' and 'roles' fields are allowed").
 			Mark(ierr.ErrValidation))
-		return
-	}
-
-	// Enforce req.Type == "service_account" defensively
-	if req.Type != string(user.UserTypeServiceAccount) {
-		err := ierr.NewError("only service accounts can be created via this endpoint").
-			WithHint("Regular user accounts cannot be created via API. Use type='service_account'").
-			WithReportableDetails(map[string]interface{}{
-				"provided_type": req.Type,
-			}).
-			Mark(ierr.ErrValidation)
-		h.logger.Errorw("invalid user type", "type", req.Type)
-		c.Error(err)
 		return
 	}
 
@@ -101,8 +82,8 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 // @Success 200 {object} dto.ListUsersResponse
 // @Failure 400 {object} errors.ErrorResponse
 // @Failure 500 {object} errors.ErrorResponse
-// @Router /users/service-accounts/search [post]
-func (h *UserHandler) ListServiceAccounts(c *gin.Context) {
+// @Router /users/search [post]
+func (h *UserHandler) ListUsersByFilter(c *gin.Context) {
 	var filter types.UserFilter
 	if err := c.ShouldBindJSON(&filter); err != nil {
 		c.Error(ierr.WithError(err).
@@ -116,9 +97,8 @@ func (h *UserHandler) ListServiceAccounts(c *gin.Context) {
 		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
 	}
 
-	// Force type to service_account
-	serviceAccountType := "service_account"
-	filter.Type = &serviceAccountType
+	// Force type to service_account using enum
+	filter.Type = lo.ToPtr(types.UserTypeServiceAccount)
 
 	users, err := h.userService.ListUsersByFilter(c.Request.Context(), &filter)
 	if err != nil {

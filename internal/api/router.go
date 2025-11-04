@@ -112,7 +112,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			user.GET("/me", handlers.User.GetUserInfo)
 			user.POST("", handlers.User.CreateUser)
-			user.POST("/service-accounts/search", handlers.User.ListServiceAccounts)
+			user.POST("/search", handlers.User.ListUsersByFilter)
 		}
 
 		environment := v1Private.Group("/environments")

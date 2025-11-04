@@ -10,8 +10,8 @@ import (
 
 // CreateUserRequest represents the request to create a new user (service accounts only)
 type CreateUserRequest struct {
-	Type  string   `json:"type" binding:"required" validate:"required"`              // Must be "service_account"
-	Roles []string `json:"roles" binding:"required,min=1" validate:"required,min=1"` // Roles are required
+	Type  types.UserType `json:"type" binding:"required" validate:"required"`              // Must be "service_account"
+	Roles []string       `json:"roles" binding:"required,min=1" validate:"required,min=1"` // Roles are required
 }
 
 func (r *CreateUserRequest) Validate() error {
@@ -19,8 +19,13 @@ func (r *CreateUserRequest) Validate() error {
 		return err
 	}
 
+	// Validate the user type enum
+	if err := r.Type.Validate(); err != nil {
+		return err
+	}
+
 	// Only service accounts can be created via API
-	if r.Type != string(user.UserTypeServiceAccount) {
+	if r.Type != types.UserTypeServiceAccount {
 		return ierr.NewError("only service accounts can be created via this endpoint").
 			WithHint("Regular user accounts cannot be created via API. Use type='service_account'").
 			Mark(ierr.ErrValidation)
@@ -36,41 +41,20 @@ func (r *CreateUserRequest) Validate() error {
 	return nil
 }
 
-// ValidateNoExtraFields checks if the raw JSON contains any fields beyond type and roles
-func (r *CreateUserRequest) ValidateNoExtraFields(rawJSON map[string]interface{}) error {
-	allowedFields := map[string]bool{
-		"type":  true,
-		"roles": true,
-	}
-
-	for field := range rawJSON {
-		if !allowedFields[field] {
-			return ierr.NewError("unexpected field in request").
-				WithHint("Only 'type' and 'roles' fields are allowed for service account creation").
-				WithReportableDetails(map[string]interface{}{
-					"invalid_field": field,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	return nil
-}
-
 type UserResponse struct {
 	ID     string          `json:"id"`
 	Email  string          `json:"email,omitempty"` // Empty for service accounts
-	Type   string          `json:"type"`
+	Type   types.UserType  `json:"type"`
 	Roles  []string        `json:"roles,omitempty"`
 	Tenant *TenantResponse `json:"tenant"`
 }
 
-func NewUserResponse(user *user.User, tenant *tenant.Tenant) *UserResponse {
+func NewUserResponse(u *user.User, tenant *tenant.Tenant) *UserResponse {
 	return &UserResponse{
-		ID:     user.ID,
-		Email:  user.Email,
-		Type:   user.Type,
-		Roles:  user.Roles,
+		ID:     u.ID,
+		Email:  u.Email,
+		Type:   u.Type,
+		Roles:  u.Roles,
 		Tenant: NewTenantResponse(tenant),
 	}
 }

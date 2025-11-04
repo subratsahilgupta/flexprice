@@ -25,7 +25,7 @@ func NewRBACHandler(rbacService *rbac.RBACService, userService service.UserServi
 
 // ListRoles returns all available roles with their metadata
 // @Summary List all RBAC roles
-// @Description Returns all available roles with their permissions, names, and descriptions for UI consumption
+// @Description Returns all available roles with their permissions, names, and descriptions
 // @Tags RBAC
 // @Accept json
 // @Produce json

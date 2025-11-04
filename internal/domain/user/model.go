@@ -4,44 +4,22 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
-	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 )
 
-// UserType represents the type of user
-type UserType string
-
-const (
-	UserTypeUser           UserType = "user"
-	UserTypeServiceAccount UserType = "service_account"
-)
-
-// Validate validates the user type
-func (ut UserType) Validate() error {
-	switch ut {
-	case UserTypeUser, UserTypeServiceAccount:
-		return nil
-	default:
-		return ierr.NewError("invalid user type").
-			WithHint("User type must be 'user' or 'service_account'").
-			Mark(ierr.ErrValidation)
-	}
-}
-
 type User struct {
-	ID    string   `json:"id"`
-	Email string   `json:"email"` // Empty for service accounts
-	Type  string   `json:"type"`
-	Roles []string `json:"roles"`
+	ID    string         `json:"id"`
+	Email string         `json:"email"` // Empty for service accounts
+	Type  types.UserType `json:"type"`
+	Roles []string       `json:"roles"`
 	types.BaseModel
 }
 
 // Validate validates the user
 func (u *User) Validate() error {
 	// Validate user type
-	ut := UserType(u.Type)
-	if err := ut.Validate(); err != nil {
+	if err := u.Type.Validate(); err != nil {
 		return err
 	}
 	return nil
@@ -51,7 +29,7 @@ func NewUser(email, tenantID string) *User {
 	return &User{
 		ID:    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER),
 		Email: email,
-		Type:  "user",
+		Type:  types.UserTypeUser,
 		Roles: []string{},
 		BaseModel: types.BaseModel{
 			TenantID:  tenantID,
@@ -73,7 +51,7 @@ func FromEnt(e *ent.User) *User {
 	return &User{
 		ID:    e.ID,
 		Email: lo.FromPtrOr(e.Email, ""),
-		Type:  e.Type,
+		Type:  types.UserType(e.Type),
 		Roles: e.Roles,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,

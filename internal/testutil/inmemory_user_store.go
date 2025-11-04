@@ -62,9 +62,15 @@ func (r *InMemoryUserStore) GetByID(ctx context.Context, userID string) (*user.U
 }
 
 // ListByFilter is a minimal implementation for testing
-func (r *InMemoryUserStore) ListByFilter(ctx context.Context, tenantID string, filter *types.UserFilter) ([]*user.User, int64, error) {
+func (r *InMemoryUserStore) ListByFilter(ctx context.Context, filter *types.UserFilter) ([]*user.User, int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Get tenant ID from context
+	tenantID, ok := ctx.Value(types.CtxTenantID).(string)
+	if !ok {
+		return nil, 0, errors.New("tenant ID not found in context")
+	}
 
 	var result []*user.User
 	for _, u := range r.users {

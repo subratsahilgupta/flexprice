@@ -41,7 +41,7 @@ func (r *userRepository) Create(ctx context.Context, user *domainUser.User) erro
 	builder := client.User.
 		Create().
 		SetID(user.ID).
-		SetType(user.Type).
+		SetType(string(user.Type)).
 		SetRoles(user.Roles).
 		SetTenantID(user.TenantID).
 		SetStatus(string(user.Status)).
@@ -168,7 +168,15 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domainU
 }
 
 // ListByFilter retrieves users by filter with pagination
-func (r *userRepository) ListByFilter(ctx context.Context, tenantID string, filter *types.UserFilter) ([]*domainUser.User, int64, error) {
+func (r *userRepository) ListByFilter(ctx context.Context, filter *types.UserFilter) ([]*domainUser.User, int64, error) {
+	// Get tenant ID from context
+	tenantID, ok := ctx.Value(types.CtxTenantID).(string)
+	if !ok {
+		return nil, 0, ierr.NewError("tenant ID not found in context").
+			WithHint("Authentication context is missing tenant ID").
+			Mark(ierr.ErrValidation)
+	}
+
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "user", "list_by_filter", map[string]interface{}{
 		"tenant_id": tenantID,
@@ -186,7 +194,7 @@ func (r *userRepository) ListByFilter(ctx context.Context, tenantID string, filt
 
 	// Apply type filter
 	if filter.Type != nil && *filter.Type != "" {
-		query = query.Where(entUser.Type(*filter.Type))
+		query = query.Where(entUser.Type(string(*filter.Type)))
 	}
 
 	// Apply user IDs filter

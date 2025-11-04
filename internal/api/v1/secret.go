@@ -70,7 +70,7 @@ func (h *SecretHandler) ListAPIKeys(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body dto.CreateAPIKeyRequest true "API key creation request (include 'service_account_id' for service accounts)"
+// @Param request body dto.CreateAPIKeyRequest true "API key creation request\"
 // @Success 201 {object} dto.CreateAPIKeyResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse

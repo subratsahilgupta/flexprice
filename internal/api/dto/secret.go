@@ -68,7 +68,7 @@ type SecretResponse struct {
 	Provider   types.SecretProvider `json:"provider"`
 	DisplayID  string               `json:"display_id"`
 	Roles      []string             `json:"roles,omitempty"`     // RBAC roles
-	UserType   string               `json:"user_type,omitempty"` // "user" or "service_account"
+	UserType   types.UserType       `json:"user_type,omitempty"` // "user" or "service_account"
 	ExpiresAt  *time.Time           `json:"expires_at,omitempty"`
 	LastUsedAt *time.Time           `json:"last_used_at,omitempty"`
 	Status     types.Status         `json:"status"`
@@ -97,8 +97,8 @@ func ToSecretResponse(s *secret.Secret) *SecretResponse {
 		Type:       s.Type,
 		Provider:   s.Provider,
 		DisplayID:  s.DisplayID,
-		Roles:      s.Roles,    // RBAC roles
-		UserType:   s.UserType, // User type
+		Roles:      s.Roles,                    // RBAC roles
+		UserType:   types.UserType(s.UserType), // User type
 		ExpiresAt:  s.ExpiresAt,
 		LastUsedAt: s.LastUsedAt,
 		Status:     s.Status,
