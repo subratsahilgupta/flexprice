@@ -127,6 +127,7 @@ type CustomerUsageSummaryResponse struct {
 type FeatureUsageSummary struct {
 	Feature          *FeatureResponse     `json:"feature"`
 	TotalLimit       *int64               `json:"total_limit"`
+	IsUnlimited      bool                 `json:"is_unlimited"`
 	CurrentUsage     decimal.Decimal      `json:"current_usage"`
 	UsagePercent     decimal.Decimal      `json:"usage_percent"`
 	IsEnabled        bool                 `json:"is_enabled"`

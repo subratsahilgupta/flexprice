@@ -1820,6 +1820,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 		featureSummary := &dto.FeatureUsageSummary{
 			Feature:          feature.Feature,
 			TotalLimit:       feature.Entitlement.UsageLimit,
+			IsUnlimited:      feature.Entitlement.UsageLimit == nil,
 			CurrentUsage:     usage,
 			UsagePercent:     s.getUsagePercent(usage, feature.Entitlement.UsageLimit),
 			IsEnabled:        feature.Entitlement.IsEnabled,
