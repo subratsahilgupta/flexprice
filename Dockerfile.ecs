@@ -45,9 +45,8 @@ COPY --from=builder /app/server /app/server
 COPY --from=typst /bin/typst /usr/local/bin/
 
 # configs & assets
-COPY internal/config ./config
-COPY assets/fonts ./assets/fonts
-COPY assets/typst-templates ./assets/typst-templates
+COPY internal/config/* ./config/
+COPY assets/* ./assets/
 
 RUN chmod +x /app/server
 
