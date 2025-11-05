@@ -698,17 +698,32 @@ func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.Wa
 		return err
 	}
 
-	// Convert amount to credit amount if provided and perform credit operation
-	if req.Amount.GreaterThan(decimal.Zero) {
+	// Normalize all inputs into CreditAmount (internal processing field)
+	// Priority: Amount > CreditAmount > DebitAmount
+	// Note: CreditAmount is used internally for BOTH credit and debit operations
+	// The Type field determines direction (add vs subtract)
+
+	switch {
+	case req.Amount.GreaterThan(decimal.Zero):
+		// Amount provided - convert to credits
 		req.CreditAmount = s.GetCreditsFromCurrencyAmount(req.Amount, w.ConversionRate)
-	} else if req.CreditAmount.GreaterThan(decimal.Zero) {
+
+	case req.DebitAmount.GreaterThan(decimal.Zero):
+		// DebitAmount provided - normalize to CreditAmount
+		req.CreditAmount = req.DebitAmount
+		req.Amount = s.GetCurrencyAmountFromCredits(req.DebitAmount, w.ConversionRate)
+
+	case req.CreditAmount.GreaterThan(decimal.Zero):
+		// CreditAmount already set - just convert to Amount
 		req.Amount = s.GetCurrencyAmountFromCredits(req.CreditAmount, w.ConversionRate)
-	} else {
-		return ierr.NewError("amount or credit amount is required").
-			WithHint("Amount or credit amount is required").
+
+	default:
+		return ierr.NewError("amount, credit_amount or debit_amount is required").
+			WithHint("Amount, credit amount or debit amount is required").
 			Mark(ierr.ErrValidation)
 	}
 
+	// Credit amount is validated for it is used internally for both credit and debit operations
 	if req.CreditAmount.LessThanOrEqual(decimal.Zero) {
 		return ierr.NewError("wallet transaction amount must be greater than 0").
 			WithHint("Wallet transaction amount must be greater than 0").
@@ -1598,80 +1613,18 @@ func (s *walletService) ManualBalanceDebit(ctx context.Context, walletID string,
 			Mark(ierr.ErrInvalidOperation)
 	}
 
-	// Convert credits to amount if needed
-	var creditsToDebit decimal.Decimal
-	if !req.CreditsToDebit.IsZero() {
-		creditsToDebit = req.CreditsToDebit
-	} else if !req.Amount.IsZero() {
-		creditsToDebit = s.GetCreditsFromCurrencyAmount(req.Amount, w.ConversionRate)
-	} else {
-		return nil, ierr.NewError("credits_to_debit or amount is required").
-			WithHint("Either credits_to_debit or amount must be provided").
-			Mark(ierr.ErrValidation)
+	debitReq := &wallet.WalletOperation{
+		WalletID:          walletID,
+		DebitAmount:       req.CreditsToDebit,
+		Type:              types.TransactionTypeDebit,
+		Description:       req.Description,
+		TransactionReason: req.TransactionReason,
+		ReferenceType:     types.WalletTxReferenceTypeRequest,
+		IdempotencyKey:    *req.IdempotencyKey,
+		ReferenceID:       types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
 	}
 
-	// Check sufficient balance
-	if w.CreditBalance.LessThan(creditsToDebit) {
-		return nil, ierr.NewError("insufficient balance").
-			WithHint("Wallet does not have enough credits for this debit").
-			WithReportableDetails(map[string]interface{}{
-				"wallet_id":       walletID,
-				"current_balance": w.CreditBalance,
-				"requested_debit": creditsToDebit,
-			}).
-			Mark(ierr.ErrInvalidOperation)
-	}
-
-	// Calculate new balances
-	newCreditBalance := w.CreditBalance.Sub(creditsToDebit)
-	newBalance := s.GetCurrencyAmountFromCredits(newCreditBalance, w.ConversionRate)
-	amount := s.GetCurrencyAmountFromCredits(creditsToDebit, w.ConversionRate)
-
-	// Create transaction record
-	tx := &wallet.Transaction{
-		ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
-		WalletID:            walletID,
-		Type:                types.TransactionTypeDebit,
-		Amount:              amount,
-		CreditAmount:        creditsToDebit,
-		ReferenceType:       types.WalletTxReferenceTypeRequest,
-		ReferenceID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
-		Description:         req.Description,
-		Metadata:            req.Metadata,
-		TxStatus:            types.TransactionStatusCompleted,
-		TransactionReason:   req.TransactionReason,
-		CreditBalanceBefore: w.CreditBalance,
-		CreditBalanceAfter:  newCreditBalance,
-		CreditsAvailable:    decimal.Zero, // Debit transactions don't add available credits
-		EnvironmentID:       types.GetEnvironmentID(ctx),
-		IdempotencyKey:      *req.IdempotencyKey,
-		BaseModel:           types.GetDefaultBaseModel(ctx),
-	}
-
-	// Execute in transaction
-	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
-		// Create transaction record
-		if err := s.WalletRepo.CreateTransaction(ctx, tx); err != nil {
-			return err
-		}
-
-		// Update wallet balance directly
-		if err := s.WalletRepo.UpdateWalletBalance(ctx, walletID, newBalance, newCreditBalance); err != nil {
-			return err
-		}
-
-		s.Logger.Infow("manual balance debit completed",
-			"wallet_id", walletID,
-			"credits_debited", creditsToDebit,
-			"old_balance", w.CreditBalance,
-			"new_balance", newCreditBalance,
-		)
-
-		// Publish transaction webhook event
-		s.publishInternalTransactionWebhookEvent(ctx, types.WebhookEventWalletTransactionCreated, tx.ID)
-		return nil
-	})
-
+	err = s.DebitWallet(ctx, debitReq)
 	if err != nil {
 		return nil, err
 	}

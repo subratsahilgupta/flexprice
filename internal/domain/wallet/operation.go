@@ -12,11 +12,22 @@ import (
 type WalletOperation struct {
 	WalletID string                `json:"wallet_id"`
 	Type     types.TransactionType `json:"type"`
-	// Amount is the amount of the transaction in the wallet's currency
+	// Amount is the amount of the transaction in the wallet's currency (e.g., USD, EUR)
+	// Priority: If Amount is provided along with CreditAmount or DebitAmount, Amount takes precedence
+	// The Type field (CREDIT or DEBIT) determines the operation direction
 	Amount decimal.Decimal `json:"amount"`
-	// CreditAmount is the amount of the transaction in the wallet's credit currency
-	// If both are provided, Amount is used
-	CreditAmount      decimal.Decimal             `json:"credit_amount"`
+
+	// CreditAmount is the amount of credits to add/remove from the wallet
+	// Used when you want to specify credits directly instead of currency amount
+	// Priority: Only used if Amount is not provided
+	// Conflicts: Cannot be provided together with DebitAmount
+	CreditAmount decimal.Decimal `json:"credit_amount,omitempty"`
+
+	// DebitAmount is the amount of credits to debit from the wallet
+	// Introduced as an explicit alternative to CreditAmount for debit operations
+	// Priority: Only used if Amount and CreditAmount are not provided
+	// Conflicts: Cannot be provided together with CreditAmount
+	DebitAmount       decimal.Decimal             `json:"debit_amount,omitempty"`
 	ReferenceType     types.WalletTxReferenceType `json:"reference_type,omitempty"`
 	ReferenceID       string                      `json:"reference_id,omitempty"`
 	Description       string                      `json:"description,omitempty"`
@@ -37,9 +48,49 @@ func (w *WalletOperation) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if w.Amount.IsZero() && w.CreditAmount.IsZero() {
-		return ierr.NewError("amount or credit_amount must be provided").
-			WithHint("Either amount or credit amount must be specified for the operation").
+	// Check if at least one amount field is provided
+	if w.Amount.IsZero() && w.CreditAmount.IsZero() && w.DebitAmount.IsZero() {
+		return ierr.NewError("amount, credit_amount or debit_amount must be provided").
+			WithHint("Either amount, credit_amount or debit_amount must be specified for the operation").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Case 3: Both credit_amount and debit_amount provided - throw error (conflicting)
+	if !w.CreditAmount.IsZero() && !w.DebitAmount.IsZero() {
+		return ierr.NewError("credit_amount and debit_amount cannot be provided together").
+			WithHint("credit_amount and debit_amount are conflicting fields and cannot be provided together").
+			WithReportableDetails(map[string]interface{}{
+				"credit_amount": w.CreditAmount,
+				"debit_amount":  w.DebitAmount,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate negative values
+	if w.Amount.LessThan(decimal.Zero) {
+		return ierr.NewError("amount cannot be negative").
+			WithHint("Amount must be zero or positive").
+			WithReportableDetails(map[string]interface{}{
+				"amount": w.Amount,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if w.CreditAmount.LessThan(decimal.Zero) {
+		return ierr.NewError("credit_amount cannot be negative").
+			WithHint("Credit amount must be zero or positive").
+			WithReportableDetails(map[string]interface{}{
+				"credit_amount": w.CreditAmount,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if w.DebitAmount.LessThan(decimal.Zero) {
+		return ierr.NewError("debit_amount cannot be negative").
+			WithHint("Debit amount must be zero or positive").
+			WithReportableDetails(map[string]interface{}{
+				"debit_amount": w.DebitAmount,
+			}).
 			Mark(ierr.ErrValidation)
 	}
 
