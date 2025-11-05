@@ -59,8 +59,9 @@ type AggregatedEntitlement struct {
 type EntitlementSourceEntityType string
 
 const (
-	EntitlementSourceEntityTypePlan  EntitlementSourceEntityType = "plan"
-	EntitlementSourceEntityTypeAddon EntitlementSourceEntityType = "addon"
+	EntitlementSourceEntityTypePlan         EntitlementSourceEntityType = "plan"
+	EntitlementSourceEntityTypeAddon        EntitlementSourceEntityType = "addon"
+	EntitlementSourceEntityTypeSubscription EntitlementSourceEntityType = "subscription"
 )
 
 func (e EntitlementSourceEntityType) Validate() error {
@@ -68,6 +69,7 @@ func (e EntitlementSourceEntityType) Validate() error {
 	allowedValues := []string{
 		string(EntitlementSourceEntityTypePlan),
 		string(EntitlementSourceEntityTypeAddon),
+		string(EntitlementSourceEntityTypeSubscription),
 	}
 
 	if !lo.Contains(allowedValues, string(e)) {
