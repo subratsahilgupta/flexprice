@@ -7964,7 +7964,7 @@ const docTemplate = `{
                 "summary": "Create a new API key",
                 "parameters": [
                     {
-                        "description": "API key creation request\\",
+                        "description": "API key creation request",
                         "name": "request",
                         "in": "body",
                         "required": true,
