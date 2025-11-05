@@ -220,15 +220,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 	}
 
-	// Extract addon IDs from request for entitlement override processing
-	addonIDs := make([]string, 0, len(req.Addons))
-	for _, addonReq := range req.Addons {
-		addonIDs = append(addonIDs, addonReq.AddonID)
-	}
-
 	// Process entitlement overrides if provided
 	if len(req.OverrideEntitlements) > 0 {
-		err = s.ProcessSubscriptionEntitlementOverrides(ctx, sub, req.OverrideEntitlements, addonIDs)
+		err = s.ProcessSubscriptionEntitlementOverrides(ctx, sub, req.OverrideEntitlements)
 		if err != nil {
 			return nil, err
 		}
@@ -4768,12 +4762,11 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.
 }
 
 // ProcessSubscriptionEntitlementOverrides creates subscription-scoped entitlement overrides
-// addonIDs should contain the addon IDs from the subscription creation request (for when subscription doesn't exist in DB yet)
+// Only plan entitlements can be overridden, not addon entitlements
 func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	overrideRequests []dto.OverrideEntitlementRequest,
-	addonIDs []string,
 ) error {
 	if len(overrideRequests) == 0 {
 		return nil
@@ -4781,8 +4774,7 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 
 	s.Logger.Infow("processing entitlement overrides",
 		"subscription_id", sub.ID,
-		"override_count", len(overrideRequests),
-		"addon_count", len(addonIDs))
+		"override_count", len(overrideRequests))
 
 	// Get plan entitlements to validate and copy from
 	planEntitlements, err := s.EntitlementRepo.ListByPlanIDs(ctx, []string{sub.PlanID})
@@ -4798,40 +4790,38 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 		entitlementMap[ent.ID] = ent
 	}
 
-	// If there are addon IDs provided, fetch addon entitlements
-	// Note: We use addonIDs from the request instead of querying the database
-	// because during subscription creation, addons haven't been associated yet
-	if len(addonIDs) > 0 {
-		addonEntitlements, err := s.EntitlementRepo.ListByAddonIDs(ctx, addonIDs)
-		if err != nil {
-			return ierr.WithError(err).
-				WithHint("Failed to fetch addon entitlements").
-				Mark(ierr.ErrDatabase)
-		}
-
-		// Add addon entitlements to the map
-		for _, ent := range addonEntitlements {
-			entitlementMap[ent.ID] = ent
-		}
-
-		s.Logger.Infow("fetched addon entitlements",
-			"subscription_id", sub.ID,
-			"addon_count", len(addonIDs),
-			"addon_entitlement_count", len(addonEntitlements))
-	}
-
-	// Process each override request
+	// Validate that ONLY plan entitlements are being overridden (no addon entitlements)
 	for _, override := range overrideRequests {
 		// Validate the override request
 		if err := override.Validate(); err != nil {
 			return err
 		}
 
-		// Get the parent entitlement
-		parentEnt, exists := entitlementMap[override.EntitlementID]
-		if !exists {
+		// Check if the entitlement exists in plan
+		parentEnt, existsInPlan := entitlementMap[override.EntitlementID]
+
+		if !existsInPlan {
+			// The entitlement is not in the plan, check if it might be an addon entitlement
+			// by fetching the entitlement directly to give a better error message
+			checkEnt, err := s.EntitlementRepo.Get(ctx, override.EntitlementID)
+			if err == nil && checkEnt != nil {
+				// Entitlement exists but is not a plan entitlement
+				if checkEnt.EntityType == types.ENTITLEMENT_ENTITY_TYPE_ADDON {
+					return ierr.NewError("only plan entitlements can be overridden").
+						WithHint("Addon entitlements cannot be overridden at subscription level. Only plan entitlements can be overridden.").
+						WithReportableDetails(map[string]interface{}{
+							"entitlement_id": override.EntitlementID,
+							"entity_type":    checkEnt.EntityType,
+							"entity_id":      checkEnt.EntityID,
+							"plan_id":        sub.PlanID,
+						}).
+						Mark(ierr.ErrValidation)
+				}
+			}
+
+			// Either entitlement doesn't exist or belongs to a different plan
 			return ierr.NewError("entitlement not found").
-				WithHint(fmt.Sprintf("Entitlement %s does not belong to plan or addons of subscription %s", override.EntitlementID, sub.ID)).
+				WithHint(fmt.Sprintf("Entitlement %s does not belong to plan %s", override.EntitlementID, sub.PlanID)).
 				WithReportableDetails(map[string]interface{}{
 					"entitlement_id":  override.EntitlementID,
 					"subscription_id": sub.ID,
@@ -4840,17 +4830,23 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 				Mark(ierr.ErrNotFound)
 		}
 
-		// Validate that parent entitlement belongs to PLAN or ADDON
-		if parentEnt.EntityType != types.ENTITLEMENT_ENTITY_TYPE_PLAN &&
-			parentEnt.EntityType != types.ENTITLEMENT_ENTITY_TYPE_ADDON {
-			return ierr.NewError("can only override plan or addon entitlements").
-				WithHint("Subscription entitlements cannot be overridden").
+		// Double-check entity type (should always be PLAN at this point, but defensive programming)
+		if parentEnt.EntityType != types.ENTITLEMENT_ENTITY_TYPE_PLAN {
+			return ierr.NewError("only plan entitlements can be overridden").
+				WithHint("Only plan entitlements can be overridden at subscription level.").
 				WithReportableDetails(map[string]interface{}{
 					"entitlement_id": override.EntitlementID,
 					"entity_type":    parentEnt.EntityType,
+					"plan_id":        sub.PlanID,
 				}).
 				Mark(ierr.ErrValidation)
 		}
+	}
+
+	// Process each override request
+	for _, override := range overrideRequests {
+		// Get the parent entitlement (already validated above)
+		parentEnt := entitlementMap[override.EntitlementID]
 
 		// Create subscription-scoped entitlement with overrides
 		newEnt := &entitlement.Entitlement{
