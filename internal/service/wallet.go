@@ -699,7 +699,7 @@ func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.Wa
 	}
 
 	// Normalize all inputs into CreditAmount (internal processing field)
-	// Priority: Amount > CreditAmount > DebitAmount
+	// Priority: Amount > CreditAmount
 	// Note: CreditAmount is used internally for BOTH credit and debit operations
 	// The Type field determines direction (add vs subtract)
 
@@ -708,18 +708,13 @@ func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.Wa
 		// Amount provided - convert to credits
 		req.CreditAmount = s.GetCreditsFromCurrencyAmount(req.Amount, w.ConversionRate)
 
-	case req.DebitAmount.GreaterThan(decimal.Zero):
-		// DebitAmount provided - normalize to CreditAmount
-		req.CreditAmount = req.DebitAmount
-		req.Amount = s.GetCurrencyAmountFromCredits(req.DebitAmount, w.ConversionRate)
-
 	case req.CreditAmount.GreaterThan(decimal.Zero):
 		// CreditAmount already set - just convert to Amount
 		req.Amount = s.GetCurrencyAmountFromCredits(req.CreditAmount, w.ConversionRate)
 
 	default:
-		return ierr.NewError("amount, credit_amount or debit_amount is required").
-			WithHint("Amount, credit amount or debit amount is required").
+		return ierr.NewError("amount or credit_amount is required").
+			WithHint("Amount or credit amount is required").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -1615,7 +1610,7 @@ func (s *walletService) ManualBalanceDebit(ctx context.Context, walletID string,
 
 	debitReq := &wallet.WalletOperation{
 		WalletID:          walletID,
-		DebitAmount:       req.CreditsToDebit,
+		CreditAmount:      req.Credits,
 		Type:              types.TransactionTypeDebit,
 		Description:       req.Description,
 		TransactionReason: req.TransactionReason,
