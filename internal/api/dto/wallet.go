@@ -482,3 +482,50 @@ func (r *GetCustomerWalletsRequest) Validate() error {
 
 	return nil
 }
+
+// DebitWalletRequest represents a request to debit credits from a wallet
+type ManualBalanceDebitRequest struct {
+	// credits_to_debit is the number of credits to debit from the wallet
+	CreditsToDebit decimal.Decimal `json:"credits_to_debit"`
+	// amount is the amount in the currency of the wallet to be debited
+	// NOTE: this is not the number of credits to debit, but the amount in the currency
+	// amount = credits_to_debit * conversion_rate
+	// if both amount and credits_to_debit are provided, amount will be ignored
+	// ex if the wallet has a conversion_rate of 2 then debiting an amount of
+	// 10 USD in the wallet wil debit 5 credits in the wallet
+	Amount            decimal.Decimal         `json:"amount"`
+	TransactionReason types.TransactionReason `json:"transaction_reason,omitempty" binding:"required"`
+	// idempotency_key is a unique key for the transaction
+	IdempotencyKey *string `json:"idempotency_key" binding:"required"`
+	// description to add any specific details about the transaction
+	Description string `json:"description,omitempty"`
+	// metadata is a map of key-value pairs to store any additional information about the transaction
+	Metadata types.Metadata `json:"metadata,omitempty"`
+}
+
+func (r *ManualBalanceDebitRequest) Validate() error {
+	if r.CreditsToDebit.LessThanOrEqual(decimal.Zero) {
+		return ierr.NewError("credits_to_debit must be greater than 0").
+			WithHint("Credits to debit must be a positive value").
+			WithReportableDetails(map[string]interface{}{
+				"credits_to_debit": r.CreditsToDebit,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	allowedTransactionReasons := []types.TransactionReason{
+		types.TransactionReasonManualBalanceDebit,
+	}
+
+	if !lo.Contains(allowedTransactionReasons, r.TransactionReason) {
+		return ierr.NewError("transaction_reason must be one of the allowed values").
+			WithHint("Invalid transaction reason").
+			WithReportableDetails(map[string]interface{}{
+				"transaction_reason": r.TransactionReason,
+				"allowed_reasons":    allowedTransactionReasons,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}

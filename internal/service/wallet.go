@@ -52,6 +52,9 @@ type WalletService interface {
 	// DebitWallet processes a debit operation on a wallet
 	DebitWallet(ctx context.Context, req *wallet.WalletOperation) error
 
+	// ManualBalanceDebit processes a manual balance debit operation on a wallet
+	ManualBalanceDebit(ctx context.Context, walletID string, req *dto.ManualBalanceDebitRequest) (*dto.WalletResponse, error)
+
 	// CreditWallet processes a credit operation on a wallet
 	CreditWallet(ctx context.Context, req *wallet.WalletOperation) error
 
@@ -867,13 +870,13 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 
 	// Log the alert
 	alertService := NewAlertLogsService(s.ServiceParams)
-	
+
 	// Get customer ID from wallet if available
 	var customerID *string
 	if w.CustomerID != "" {
 		customerID = lo.ToPtr(w.CustomerID)
 	}
-	
+
 	logAlertReq := &LogAlertRequest{
 		EntityType:  types.AlertEntityTypeWallet,
 		EntityID:    w.ID,
@@ -1571,4 +1574,107 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 		BalanceUpdatedAt:      lo.ToPtr(w.UpdatedAt),
 		CurrentPeriodUsage:    &totalPendingCharges,
 	}, nil
+}
+
+func (s *walletService) ManualBalanceDebit(ctx context.Context, walletID string, req *dto.ManualBalanceDebitRequest) (*dto.WalletResponse, error) {
+	if walletID == "" {
+		return nil, ierr.NewError("wallet_id is required").
+			WithHint("Wallet ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
+	if err != nil {
+		return nil, err
+	}
+
+	if w.WalletStatus != types.WalletStatusActive {
+		return nil, ierr.NewError("wallet is not active").
+			WithHint("Wallet is not active").
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	// Convert credits to amount if needed
+	var creditsToDebit decimal.Decimal
+	if !req.CreditsToDebit.IsZero() {
+		creditsToDebit = req.CreditsToDebit
+	} else if !req.Amount.IsZero() {
+		creditsToDebit = s.GetCreditsFromCurrencyAmount(req.Amount, w.ConversionRate)
+	} else {
+		return nil, ierr.NewError("credits_to_debit or amount is required").
+			WithHint("Either credits_to_debit or amount must be provided").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Check sufficient balance
+	if w.CreditBalance.LessThan(creditsToDebit) {
+		return nil, ierr.NewError("insufficient balance").
+			WithHint("Wallet does not have enough credits for this debit").
+			WithReportableDetails(map[string]interface{}{
+				"wallet_id":       walletID,
+				"current_balance": w.CreditBalance,
+				"requested_debit": creditsToDebit,
+			}).
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	// Calculate new balances
+	newCreditBalance := w.CreditBalance.Sub(creditsToDebit)
+	newBalance := s.GetCurrencyAmountFromCredits(newCreditBalance, w.ConversionRate)
+	amount := s.GetCurrencyAmountFromCredits(creditsToDebit, w.ConversionRate)
+
+	// Create transaction record
+	tx := &wallet.Transaction{
+		ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
+		WalletID:            walletID,
+		Type:                types.TransactionTypeDebit,
+		Amount:              amount,
+		CreditAmount:        creditsToDebit,
+		ReferenceType:       types.WalletTxReferenceTypeRequest,
+		ReferenceID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
+		Description:         req.Description,
+		Metadata:            req.Metadata,
+		TxStatus:            types.TransactionStatusCompleted,
+		TransactionReason:   req.TransactionReason,
+		CreditBalanceBefore: w.CreditBalance,
+		CreditBalanceAfter:  newCreditBalance,
+		CreditsAvailable:    decimal.Zero, // Debit transactions don't add available credits
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		IdempotencyKey:      *req.IdempotencyKey,
+		BaseModel:           types.GetDefaultBaseModel(ctx),
+	}
+
+	// Execute in transaction
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// Create transaction record
+		if err := s.WalletRepo.CreateTransaction(ctx, tx); err != nil {
+			return err
+		}
+
+		// Update wallet balance directly
+		if err := s.WalletRepo.UpdateWalletBalance(ctx, walletID, newBalance, newCreditBalance); err != nil {
+			return err
+		}
+
+		s.Logger.Infow("manual balance debit completed",
+			"wallet_id", walletID,
+			"credits_debited", creditsToDebit,
+			"old_balance", w.CreditBalance,
+			"new_balance", newCreditBalance,
+		)
+
+		// Publish transaction webhook event
+		s.publishInternalTransactionWebhookEvent(ctx, types.WebhookEventWalletTransactionCreated, tx.ID)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetWalletByID(ctx, walletID)
 }
