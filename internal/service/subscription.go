@@ -220,14 +220,6 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 	}
 
-	// Process entitlement overrides if provided
-	if len(req.OverrideEntitlements) > 0 {
-		err = s.ProcessSubscriptionEntitlementOverrides(ctx, sub, req.OverrideEntitlements)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	sub.LineItems = lineItems
 
 	s.Logger.Infow("creating subscription",
@@ -261,6 +253,14 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		// Handle addons if provided
 		if len(req.Addons) > 0 {
 			err = s.handleSubscriptionAddons(ctx, sub, req.Addons)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Process entitlement overrides if provided
+		if len(req.OverrideEntitlements) > 0 {
+			err = s.ProcessSubscriptionEntitlementOverrides(ctx, sub, req.OverrideEntitlements)
 			if err != nil {
 				return err
 			}

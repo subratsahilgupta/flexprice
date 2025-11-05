@@ -94,6 +94,6 @@ func (Entitlement) Indexes() []ent.Index {
 
 		index.Fields("tenant_id", "environment_id", "entity_type", "entity_id"),
 		index.Fields("tenant_id", "environment_id", "feature_id"),
-		index.Fields("parent_entitlement_id"),
+		index.Fields("tenant_id", "environment_id", "parent_entitlement_id"),
 	}
 }

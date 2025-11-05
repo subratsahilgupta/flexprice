@@ -747,9 +747,9 @@ var (
 				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7], EntitlementsColumns[10]},
 			},
 			{
-				Name:    "entitlement_parent_entitlement_id",
+				Name:    "entitlement_tenant_id_environment_id_parent_entitlement_id",
 				Unique:  false,
-				Columns: []*schema.Column{EntitlementsColumns[18]},
+				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7], EntitlementsColumns[18]},
 			},
 		},
 	}
