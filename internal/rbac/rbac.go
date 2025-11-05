@@ -30,7 +30,7 @@ func NewRBACService(cfg *config.Configuration) (*RBACService, error) {
 	// Get roles path from config or use default
 	configPath := cfg.RBAC.RolesConfigPath
 	if configPath == "" {
-		configPath = "internal/config/rbac/roles.json"
+		configPath = "./config/rbac/roles.json"
 	}
 
 	// Load JSON
