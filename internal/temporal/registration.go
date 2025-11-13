@@ -4,10 +4,12 @@ import (
 	"fmt"
 
 	"github.com/flexprice/flexprice/internal/service"
+	billingActivities "github.com/flexprice/flexprice/internal/temporal/activities/billing"
 	exportActivities "github.com/flexprice/flexprice/internal/temporal/activities/export"
 	hubspotActivities "github.com/flexprice/flexprice/internal/temporal/activities/hubspot"
 	planActivities "github.com/flexprice/flexprice/internal/temporal/activities/plan"
 	taskActivities "github.com/flexprice/flexprice/internal/temporal/activities/task"
+	temporalClient "github.com/flexprice/flexprice/internal/temporal/client"
 	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/temporal/workflows"
 	exportWorkflows "github.com/flexprice/flexprice/internal/temporal/workflows/export"
@@ -22,7 +24,7 @@ type WorkerConfig struct {
 }
 
 // RegisterWorkflowsAndActivities registers all workflows and activities with the temporal service
-func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalService, params service.ServiceParams) error {
+func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalService, params service.ServiceParams, temporalClient temporalClient.TemporalClient) error {
 	// Create activity instances with dependencies
 	planService := service.NewPlanService(params)
 	planActivities := planActivities.NewPlanActivities(planService)
@@ -60,9 +62,19 @@ func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalServ
 		params.Logger,
 	)
 
+	// Billing activities
+	subscriptionBillingActivities := billingActivities.NewSubscriptionBillingActivities(
+		params.SubRepo,
+		params.InvoiceRepo,
+		service.NewSubscriptionService(params),
+		service.NewInvoiceService(params),
+		temporalClient,
+		params.Logger,
+	)
+
 	// Get all task queues and register workflows/activities for each
 	for _, taskQueue := range types.GetAllTaskQueues() {
-		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities)
+		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, subscriptionBillingActivities)
 		if err := registerWorker(temporalService, config); err != nil {
 			return fmt.Errorf("failed to register worker for task queue %s: %w", taskQueue, err)
 		}
@@ -81,6 +93,7 @@ func buildWorkerConfig(
 	exportActivity *exportActivities.ExportActivity,
 	hubspotDealSyncActivities *hubspotActivities.DealSyncActivities,
 	hubspotInvoiceSyncActivities *hubspotActivities.InvoiceSyncActivities,
+	subscriptionBillingActivities *billingActivities.SubscriptionBillingActivities,
 ) WorkerConfig {
 	workflowsList := []interface{}{}
 	activitiesList := []interface{}{}
@@ -115,6 +128,24 @@ func buildWorkerConfig(
 			taskActivity.CompleteTask,
 			scheduledTaskActivity.GetScheduledTaskDetails,
 			exportActivity.ExportData,
+		)
+
+	case types.TemporalTaskQueueBilling:
+		// Billing workflows
+		workflowsList = append(workflowsList,
+			workflows.SubscriptionSchedulerWorkflow,
+			workflows.ProcessSingleSubscriptionWorkflow,
+		)
+		// Billing activities
+		activitiesList = append(activitiesList,
+			subscriptionBillingActivities.FetchSubscriptionBatch,
+			subscriptionBillingActivities.EnqueueSubscriptionWorkflows,
+			subscriptionBillingActivities.CheckPause,
+			subscriptionBillingActivities.CalculateBillingPeriods,
+			subscriptionBillingActivities.CreateInvoice,
+			subscriptionBillingActivities.SyncToExternalVendor,
+			subscriptionBillingActivities.AttemptPayment,
+			subscriptionBillingActivities.UpdateSubscriptionPeriod,
 		)
 	}
 

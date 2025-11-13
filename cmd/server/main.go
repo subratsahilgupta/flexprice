@@ -27,7 +27,7 @@ import (
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/svix"
 	"github.com/flexprice/flexprice/internal/temporal"
-	"github.com/flexprice/flexprice/internal/temporal/client"
+	temporalclient "github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/temporal/models"
 	temporalservice "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/temporal/worker"
@@ -350,7 +350,7 @@ func provideTemporalConfig(cfg *config.Configuration) *config.TemporalConfig {
 	return &cfg.Temporal
 }
 
-func provideTemporalClient(cfg *config.TemporalConfig, log *logger.Logger) (client.TemporalClient, error) {
+func provideTemporalClient(cfg *config.TemporalConfig, log *logger.Logger) (temporalclient.TemporalClient, error) {
 	log.Info("Initializing Temporal client", "address", cfg.Address, "namespace", cfg.Namespace)
 
 	// Use default options and merge with config
@@ -367,7 +367,7 @@ func provideTemporalClient(cfg *config.TemporalConfig, log *logger.Logger) (clie
 	options.TLS = cfg.TLS
 
 	// Create temporal client directly
-	temporalClient, err := client.NewTemporalClient(options, log)
+	temporalClient, err := temporalclient.NewTemporalClient(options, log)
 	if err != nil {
 		log.Error("Failed to create Temporal client", "error", err)
 		return nil, fmt.Errorf("failed to create temporal client: %w", err)
@@ -377,11 +377,11 @@ func provideTemporalClient(cfg *config.TemporalConfig, log *logger.Logger) (clie
 	return temporalClient, nil
 }
 
-func provideTemporalWorkerManager(temporalClient client.TemporalClient, log *logger.Logger) worker.TemporalWorkerManager {
+func provideTemporalWorkerManager(temporalClient temporalclient.TemporalClient, log *logger.Logger) worker.TemporalWorkerManager {
 	return worker.NewTemporalWorkerManager(temporalClient, log)
 }
 
-func provideTemporalService(temporalClient client.TemporalClient, workerManager worker.TemporalWorkerManager, log *logger.Logger) temporalservice.TemporalService {
+func provideTemporalService(temporalClient temporalclient.TemporalClient, workerManager worker.TemporalWorkerManager, log *logger.Logger) temporalservice.TemporalService {
 	// Initialize the global Temporal service instance
 	temporalservice.InitializeGlobalTemporalService(temporalClient, workerManager, log)
 
@@ -400,7 +400,7 @@ func startServer(
 	cfg *config.Configuration,
 	r *gin.Engine,
 	consumer kafka.MessageConsumer,
-	temporalClient client.TemporalClient,
+	temporalClient temporalclient.TemporalClient,
 	temporalService temporalservice.TemporalService,
 	webhookService *webhook.WebhookService,
 	router *pubsubRouter.Router,
@@ -426,7 +426,7 @@ func startServer(
 		// Register all handlers and start router once
 		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, cfg, true)
 		startRouter(lc, router, log)
-		startTemporalWorker(lc, temporalService, params)
+		startTemporalWorker(lc, temporalService, temporalClient, params)
 	case types.ModeAPI:
 		startAPIServer(lc, r, cfg, log)
 
@@ -435,7 +435,7 @@ func startServer(
 		startRouter(lc, router, log)
 
 	case types.ModeTemporalWorker:
-		startTemporalWorker(lc, temporalService, params)
+		startTemporalWorker(lc, temporalService, temporalClient, params)
 	case types.ModeConsumer:
 		if consumer == nil {
 			log.Fatal("Kafka consumer required for consumer mode")
@@ -452,12 +452,13 @@ func startServer(
 func startTemporalWorker(
 	lc fx.Lifecycle,
 	temporalService temporalservice.TemporalService,
+	temporalClient temporalclient.TemporalClient,
 	params service.ServiceParams,
 ) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			// Register workflows and activities first (this creates the workers)
-			if err := temporal.RegisterWorkflowsAndActivities(temporalService, params); err != nil {
+			if err := temporal.RegisterWorkflowsAndActivities(temporalService, params, temporalClient); err != nil {
 				return fmt.Errorf("failed to register workflows and activities: %w", err)
 			}
 
