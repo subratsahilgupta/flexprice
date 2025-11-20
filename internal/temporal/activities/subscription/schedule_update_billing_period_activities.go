@@ -75,7 +75,14 @@ func (s *SubscriptionActivities) ScheduleSubscriptionUpdateBillingPeriod(ctx con
 			_, err := temporalSvc.ExecuteWorkflow(
 				ctx,
 				WorkflowProcessSubscriptionBillingPeriodUpdate,
-				nil,
+				subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowInput{
+					SubscriptionID: sub.ID,
+					TenantID:       sub.TenantID,
+					EnvironmentID:  sub.EnvironmentID,
+					UserID:         sub.CreatedBy,
+					PeriodStart:    sub.CurrentPeriodStart,
+					PeriodEnd:      sub.CurrentPeriodEnd,
+				},
 			)
 			if err != nil {
 				return response, err
@@ -83,11 +90,7 @@ func (s *SubscriptionActivities) ScheduleSubscriptionUpdateBillingPeriod(ctx con
 
 			response.SubscriptionIDs = append(response.SubscriptionIDs, sub.ID)
 		}
-
-		offset += len(subs.Items)
-		if len(subs.Items) < input.BatchSize {
-			break // No more subscriptions to fetch
-		}
+		break
 	}
 
 	return response, nil

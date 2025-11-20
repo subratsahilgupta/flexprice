@@ -1,6 +1,6 @@
 package subscription
 
-const DEFAULT_BATCH_SIZE = 100
+const DEFAULT_BATCH_SIZE = 10
 
 type ScheduleSubscriptionUpdateBillingPeriodWorkflowInput struct {
 	BatchSize int `json:"batch_size"`
