@@ -2,7 +2,6 @@ package activities
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -12,9 +11,9 @@ import (
 	"github.com/flexprice/flexprice/internal/service"
 	temporalClient "github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/temporal/models"
+	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
-	"go.temporal.io/sdk/client"
 )
 
 const BillingActivityPrefix = "BillingActivities"
@@ -114,6 +113,13 @@ func (a *SubscriptionBillingActivities) EnqueueSubscriptionWorkflows(ctx context
 	successCount := 0
 	failureCount := 0
 
+	temporalSvc := temporalService.GetGlobalTemporalService()
+	if temporalSvc == nil {
+		return ierr.NewError("temporal service not initialized").
+			WithHint("Temporal service must be initialized before use").
+			Mark(ierr.ErrInternal)
+	}
+
 	// Start workflow for each subscription
 	for _, subscriptionID := range input.SubscriptionIDs {
 		workflowInput := models.ProcessSingleSubscriptionWorkflowInput{
@@ -122,15 +128,7 @@ func (a *SubscriptionBillingActivities) EnqueueSubscriptionWorkflows(ctx context
 			EnvironmentID:  input.EnvironmentID,
 		}
 
-		workflowID := fmt.Sprintf("process-subscription-%s-%d", subscriptionID, time.Now().Unix())
-
-		options := client.StartWorkflowOptions{
-			ID:                       workflowID,
-			TaskQueue:                types.TemporalTaskQueueBilling.String(),
-			WorkflowExecutionTimeout: 30 * time.Minute,
-		}
-
-		_, err := a.temporalClient.GetRawClient().ExecuteWorkflow(ctx, options, types.TemporalProcessSingleSubscriptionWorkflow.String(), workflowInput)
+		_, err := temporalSvc.ExecuteWorkflow(ctx, types.TemporalProcessSingleSubscriptionWorkflow, workflowInput)
 		if err != nil {
 			a.logger.Errorw("Failed to start workflow for subscription",
 				"subscription_id", subscriptionID,
