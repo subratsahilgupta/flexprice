@@ -74,6 +74,4 @@ func (s *SubscriptionActivities) ScheduleSubscriptionUpdateBillingPeriod(ctx con
 	}
 
 	return response, nil
-
-	return nil, nil
 }

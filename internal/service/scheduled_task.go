@@ -697,7 +697,7 @@ func (s *scheduledTaskService) ScheduleUpdateBillingPeriod(ctx context.Context) 
 				BatchSize: 100,
 			},
 		},
-		TaskQueue:                string(types.TemporalTaskQueueExport),
+		TaskQueue:                string(types.TemporalTaskQueueSubscription),
 		WorkflowExecutionTimeout: 15 * time.Minute,
 		WorkflowRunTimeout:       15 * time.Minute,
 		WorkflowTaskTimeout:      15 * time.Minute,
