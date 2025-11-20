@@ -6,11 +6,17 @@ import (
 
 	"github.com/flexprice/flexprice/internal/service"
 	subscriptionModels "github.com/flexprice/flexprice/internal/temporal/models/subscription"
+	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 )
 
 const ActivityPrefix = "SubscriptionActivities"
+
+const (
+	// Workflow name - must match the function name
+	WorkflowProcessSubscriptionBillingPeriodUpdate = "ProcessSubscriptionBillingPeriodUpdateWorkflow"
+)
 
 // SubscriptionActivities contains all subscription-related activities
 // When registered with Temporal, methods will be called as "SubscriptionActivities.ScheduleSubscriptionUpdateBillingPeriod"
@@ -56,6 +62,8 @@ func (s *SubscriptionActivities) ScheduleSubscriptionUpdateBillingPeriod(ctx con
 		if err != nil {
 			return response, err
 		}
+
+		temporalSvc := temporalService.GetGlobalTemporalService()
 		for _, sub := range subs.Items {
 			// update context to include the tenant id
 			ctx = context.WithValue(ctx, types.CtxTenantID, sub.TenantID)
@@ -63,6 +71,15 @@ func (s *SubscriptionActivities) ScheduleSubscriptionUpdateBillingPeriod(ctx con
 			ctx = context.WithValue(ctx, types.CtxUserID, sub.CreatedBy)
 
 			// Here we need to launch a new workflow to update the billing period
+
+			_, err := temporalSvc.ExecuteWorkflow(
+				ctx,
+				WorkflowProcessSubscriptionBillingPeriodUpdate,
+				nil,
+			)
+			if err != nil {
+				return response, err
+			}
 
 			response.SubscriptionIDs = append(response.SubscriptionIDs, sub.ID)
 		}

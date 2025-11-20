@@ -65,10 +65,15 @@ func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalServ
 
 	subscriptionService := service.NewSubscriptionService(params)
 
-	subscriptionActivities := subscriptionActivities.NewSubscriptionActivities(subscriptionService)
+	scheduleSubscriptionActivities := subscriptionActivities.NewSubscriptionActivities(subscriptionService)
+	updateBillingPeriodActivities := subscriptionActivities.NewUpdateBillingPeriodActivities(
+		subscriptionService,
+		params,
+		params.Logger,
+	)
 	// Get all task queues and register workflows/activities for each
 	for _, taskQueue := range types.GetAllTaskQueues() {
-		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, subscriptionService, subscriptionActivities)
+		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, subscriptionService, scheduleSubscriptionActivities, updateBillingPeriodActivities)
 		if err := registerWorker(temporalService, config); err != nil {
 			return fmt.Errorf("failed to register worker for task queue %s: %w", taskQueue, err)
 		}
@@ -89,6 +94,7 @@ func buildWorkerConfig(
 	hubspotInvoiceSyncActivities *hubspotActivities.InvoiceSyncActivities,
 	subscriptionService service.SubscriptionService,
 	subscriptionActivities *subscriptionActivities.SubscriptionActivities,
+	updateBillingPeriodActivities *subscriptionActivities.UpdateBillingPeriodActivities,
 ) WorkerConfig {
 	workflowsList := []interface{}{}
 	activitiesList := []interface{}{}
@@ -125,8 +131,22 @@ func buildWorkerConfig(
 			exportActivity.ExportData,
 		)
 	case types.TemporalTaskQueueSubscription:
-		workflowsList = append(workflowsList, subscriptionWorkflows.ScheduleSubscriptionUpdateBillingPeriodWorkflow)
-		activitiesList = append(activitiesList, subscriptionActivities.ScheduleSubscriptionUpdateBillingPeriod)
+		workflowsList = append(
+			workflowsList,
+			subscriptionWorkflows.ScheduleSubscriptionUpdateBillingPeriodWorkflow,
+			subscriptionWorkflows.ProcessSubscriptionBillingPeriodUpdateWorkflow,
+		)
+		activitiesList = append(activitiesList,
+			subscriptionActivities.ScheduleSubscriptionUpdateBillingPeriod,
+			updateBillingPeriodActivities.CheckSubscriptionPauseStatusActivity,
+			updateBillingPeriodActivities.CalculatePeriodsActivity,
+			updateBillingPeriodActivities.ProcessPeriodsActivity,
+			updateBillingPeriodActivities.CreateInvoicesActivity,
+			updateBillingPeriodActivities.UpdateSubscriptionPeriodActivity,
+			updateBillingPeriodActivities.SyncInvoiceToExternalVendorActivity,
+			updateBillingPeriodActivities.AttemptPaymentActivity,
+			updateBillingPeriodActivities.CheckSubscriptionCancellationActivity,
+		)
 	}
 	return WorkerConfig{
 		TaskQueue:  taskQueue,
