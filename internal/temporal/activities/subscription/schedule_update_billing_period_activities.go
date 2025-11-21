@@ -90,7 +90,10 @@ func (s *SubscriptionActivities) ScheduleSubscriptionUpdateBillingPeriod(ctx con
 
 			response.SubscriptionIDs = append(response.SubscriptionIDs, sub.ID)
 		}
-		break
+		offset += len(subs.Items)
+		if len(subs.Items) < input.BatchSize {
+			break // No more subscriptions to fetch
+		}
 	}
 
 	return response, nil

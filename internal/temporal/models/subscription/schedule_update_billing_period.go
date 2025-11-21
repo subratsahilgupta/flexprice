@@ -1,6 +1,6 @@
 package subscription
 
-const DEFAULT_BATCH_SIZE = 10
+import "github.com/flexprice/flexprice/internal/types"
 
 type ScheduleSubscriptionUpdateBillingPeriodWorkflowInput struct {
 	BatchSize int `json:"batch_size"`
@@ -9,7 +9,7 @@ type ScheduleSubscriptionUpdateBillingPeriodWorkflowInput struct {
 // Validate validates the schedule subscription update billing period workflow input
 func (i *ScheduleSubscriptionUpdateBillingPeriodWorkflowInput) Validate() error {
 	if i.BatchSize <= 0 {
-		i.BatchSize = DEFAULT_BATCH_SIZE // Default to 100
+		i.BatchSize = types.DEFAULT_BATCH_SIZE
 	}
 	return nil
 }

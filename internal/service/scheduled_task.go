@@ -694,7 +694,7 @@ func (s *scheduledTaskService) ScheduleUpdateBillingPeriod(ctx context.Context) 
 		Workflow: subscriptionWorkflows.ScheduleSubscriptionUpdateBillingPeriodWorkflow,
 		Args: []interface{}{
 			subscriptionModels.ScheduleSubscriptionUpdateBillingPeriodWorkflowInput{
-				BatchSize: 10,
+				BatchSize: types.DEFAULT_BATCH_SIZE,
 			},
 		},
 		TaskQueue:                string(types.TemporalTaskQueueSubscription),
