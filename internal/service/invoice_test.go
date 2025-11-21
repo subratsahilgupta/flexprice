@@ -105,6 +105,7 @@ func (s *InvoiceServiceSuite) setupService() {
 		ConnectionRepo:               s.GetStores().ConnectionRepo,
 		EntityIntegrationMappingRepo: s.GetStores().EntityIntegrationMappingRepo,
 		AlertLogsRepo:                s.GetStores().AlertLogsRepo,
+		FeatureUsageRepo:             s.GetStores().FeatureUsageRepo,
 	})
 }
 
