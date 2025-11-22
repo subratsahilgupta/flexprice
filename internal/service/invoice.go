@@ -11,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	pdf "github.com/flexprice/flexprice/internal/domain/pdf"
+	domainPrice "github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -1891,6 +1892,56 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 	// Prepare line items
 	var lineItems []pdf.LineItemData
 
+	// Batch fetch prices and groups to avoid N+1 queries
+	var priceMap map[string]*domainPrice.Price
+	var groupMap map[string]string // groupID -> groupName
+
+	// Collect all price IDs
+	priceIDs := make([]string, 0)
+	for _, item := range inv.LineItems {
+		if item.PriceID != nil && *item.PriceID != "" {
+			priceIDs = append(priceIDs, *item.PriceID)
+		}
+	}
+
+	// Batch fetch all prices
+	if len(priceIDs) > 0 {
+		priceIDs = lo.Uniq(priceIDs)
+		priceFilter := types.NewNoLimitPriceFilter().WithPriceIDs(priceIDs)
+		prices, err := s.PriceRepo.List(ctx, priceFilter)
+		if err == nil {
+			priceMap = make(map[string]*domainPrice.Price, len(prices))
+			for _, p := range prices {
+				priceMap[p.ID] = p
+			}
+
+			// Collect unique group IDs from prices
+			groupIDs := make([]string, 0)
+			for _, p := range prices {
+				if p.GroupID != "" {
+					groupIDs = append(groupIDs, p.GroupID)
+				}
+			}
+
+			// Batch fetch all groups
+			if len(groupIDs) > 0 {
+				groupIDs = lo.Uniq(groupIDs)
+				groupService := NewGroupService(s.ServiceParams)
+				groupFilter := &types.GroupFilter{
+					QueryFilter: types.NewNoLimitQueryFilter(),
+					GroupIDs:    groupIDs,
+				}
+				groupsResponse, err := groupService.ListGroups(ctx, groupFilter)
+				if err == nil && groupsResponse != nil {
+					groupMap = make(map[string]string, len(groupsResponse.Items))
+					for _, g := range groupsResponse.Items {
+						groupMap[g.ID] = g.Name
+					}
+				}
+			}
+		}
+	}
+
 	// Process line items - filter out zero-amount items for PDF
 	for _, item := range inv.LineItems {
 		// Skip line items with zero amount for PDF generation
@@ -1936,12 +1987,12 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 			}
 		}
 
-		// Fetch group name if price has a group
+		// Get group name from batch-fetched maps
 		groupName := "--"
 		if item.PriceID != nil && *item.PriceID != "" {
-			if price, err := s.PriceRepo.Get(ctx, *item.PriceID); err == nil && price != nil && price.GroupID != "" {
-				if group, err := NewGroupService(s.ServiceParams).GetGroup(ctx, price.GroupID); err == nil && group != nil {
-					groupName = group.Name
+			if price, ok := priceMap[*item.PriceID]; ok && price != nil && price.GroupID != "" {
+				if name, ok := groupMap[price.GroupID]; ok && name != "" {
+					groupName = name
 				}
 			}
 		}
