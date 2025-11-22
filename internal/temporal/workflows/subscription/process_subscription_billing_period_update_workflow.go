@@ -19,6 +19,7 @@ const (
 	ActivityCheckSubscriptionCancellation = "CheckSubscriptionCancellationActivity"
 	ActivitySyncInvoiceToExternalVendor   = "SyncInvoiceToExternalVendorActivity"
 	ActivityAttemptPayment                = "AttemptPaymentActivity"
+	ActivityCancelSubscription            = "CancelSubscriptionActivity"
 )
 
 // ProcessSubscriptionBillingPeriodUpdateWorkflow processes a subscription billing period update workflow

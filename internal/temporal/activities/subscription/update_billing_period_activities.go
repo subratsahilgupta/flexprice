@@ -338,7 +338,7 @@ func (s *UpdateBillingPeriodActivities) ProcessPeriodsActivity(
 				"cancel_at", *sub.CancelAt)
 			// Update subscription status to cancelled
 			sub.SubscriptionStatus = types.SubscriptionStatusCancelled
-			sub.CancelledAt = sub.CancelAt
+			sub.EndDate = sub.CancelAt
 			if err := s.serviceParams.SubRepo.Update(ctx, sub); err != nil {
 				return nil, err
 			}
