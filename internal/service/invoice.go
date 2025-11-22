@@ -1936,10 +1936,21 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 			}
 		}
 
+		// Fetch group name if price has a group
+		groupName := "--"
+		if item.PriceID != nil && *item.PriceID != "" {
+			if price, err := s.PriceRepo.Get(ctx, *item.PriceID); err == nil && price != nil && price.GroupID != "" {
+				if group, err := NewGroupService(s.ServiceParams).GetGroup(ctx, price.GroupID); err == nil && group != nil {
+					groupName = group.Name
+				}
+			}
+		}
+
 		lineItem := pdf.LineItemData{
 			PlanDisplayName: planDisplayName,
 			DisplayName:     displayName,
 			Description:     description,
+			Group:           groupName,
 			Amount:          amount, // Keep original sign
 			Quantity:        item.Quantity.InexactFloat64(),
 			Currency:        types.GetCurrencySymbol(item.Currency),
