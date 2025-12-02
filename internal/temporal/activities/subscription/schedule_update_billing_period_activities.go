@@ -15,7 +15,7 @@ const ActivityPrefix = "SubscriptionActivities"
 
 const (
 	// Workflow name - must match the function name
-	WorkflowProcessSubscriptionBillingPeriodUpdate = "ProcessSubscriptionBillingPeriodUpdateWorkflow"
+	WorkflowProcessSubscriptionBilling = "ProcessSubscriptionBillingWorkflow"
 )
 
 // SubscriptionActivities contains all subscription-related activities
@@ -31,16 +31,16 @@ func NewSubscriptionActivities(subscriptionService service.SubscriptionService) 
 	}
 }
 
-// SyncPlanPrices syncs plan prices
-// This method will be registered as "SyncPlanPrices" in Temporal
-func (s *SubscriptionActivities) ScheduleSubscriptionUpdateBillingPeriod(ctx context.Context, input subscriptionModels.ScheduleSubscriptionUpdateBillingPeriodWorkflowInput) (*subscriptionModels.ScheduleSubscriptionUpdateBillingPeriodWorkflowResult, error) {
+// ScheduleBillingActivity schedules billing workflows for subscriptions
+// This method will be registered as "ScheduleBillingActivity" in Temporal
+func (s *SubscriptionActivities) ScheduleBillingActivity(ctx context.Context, input subscriptionModels.ScheduleSubscriptionBillingWorkflowInput) (*subscriptionModels.ScheduleSubscriptionBillingWorkflowResult, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
 
 	now := time.Now().UTC()
 
-	response := &subscriptionModels.ScheduleSubscriptionUpdateBillingPeriodWorkflowResult{
+	response := &subscriptionModels.ScheduleSubscriptionBillingWorkflowResult{
 		SubscriptionIDs: make([]string, 0),
 	}
 
@@ -74,8 +74,8 @@ func (s *SubscriptionActivities) ScheduleSubscriptionUpdateBillingPeriod(ctx con
 
 			_, err := temporalSvc.ExecuteWorkflow(
 				ctx,
-				WorkflowProcessSubscriptionBillingPeriodUpdate,
-				subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowInput{
+				WorkflowProcessSubscriptionBilling,
+				subscriptionModels.ProcessSubscriptionBillingWorkflowInput{
 					SubscriptionID: sub.ID,
 					TenantID:       sub.TenantID,
 					EnvironmentID:  sub.EnvironmentID,
@@ -87,8 +87,8 @@ func (s *SubscriptionActivities) ScheduleSubscriptionUpdateBillingPeriod(ctx con
 			if err != nil {
 				return response, err
 			}
-
 			response.SubscriptionIDs = append(response.SubscriptionIDs, sub.ID)
+			break
 		}
 		offset += len(subs.Items)
 		if len(subs.Items) < input.BatchSize {

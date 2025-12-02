@@ -10,19 +10,18 @@ import (
 
 const (
 	// Workflow name - must match the function name
-	WorkflowProcessSubscriptionBillingPeriodUpdate = "ProcessSubscriptionBillingPeriodUpdateWorkflow"
+	WorkflowProcessSubscriptionBilling = "ProcessSubscriptionBillingWorkflow"
 	// Activity names - must match the registered method names
-	ActivityCheckSubscriptionPauseStatus  = "CheckSubscriptionPauseStatusActivity"
-	ActivityCalculatePeriods              = "CalculatePeriodsActivity"
-	ActivityProcessPeriods                = "ProcessPeriodsActivity"
-	ActivityUpdateSubscriptionPeriod      = "UpdateSubscriptionPeriodActivity"
-	ActivityCheckSubscriptionCancellation = "CheckSubscriptionCancellationActivity"
-	ActivitySyncInvoiceToExternalVendor   = "SyncInvoiceToExternalVendorActivity"
-	ActivityAttemptPayment                = "AttemptPaymentActivity"
-	ActivityCancelSubscription            = "CancelSubscriptionActivity"
+	ActivityCheckPause          = "CheckPauseActivity"
+	ActivityCalculatePeriods    = "CalculatePeriodsActivity"
+	ActivityProcessPeriods      = "ProcessPeriodsActivity"
+	ActivityUpdateCurrentPeriod = "UpdateCurrentPeriodActivity"
+	ActivityCheckCancellation   = "CheckCancellationActivity"
+	ActivitySyncInvoice         = "SyncInvoiceActivity"
+	ActivityAttemptPayment      = "AttemptPaymentActivity"
 )
 
-// ProcessSubscriptionBillingPeriodUpdateWorkflow processes a subscription billing period update workflow
+// ProcessSubscriptionBillingWorkflow processes a subscription billing workflow
 // This workflow orchestrates the complete billing period processing:
 // 1. Check pause status and handle pause/resume
 // 2. Calculate billing periods up to current time
@@ -31,12 +30,12 @@ const (
 // 5. Check for cancellation
 // 6. Sync invoices to external vendors (non-blocking)
 // 7. Attempt payment for invoices
-func ProcessSubscriptionBillingPeriodUpdateWorkflow(
+func ProcessSubscriptionBillingWorkflow(
 	ctx workflow.Context,
-	input subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowInput,
-) (*subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowResult, error) {
+	input subscriptionModels.ProcessSubscriptionBillingWorkflowInput,
+) (*subscriptionModels.ProcessSubscriptionBillingWorkflowResult, error) {
 	logger := workflow.GetLogger(ctx)
-	logger.Info("Starting process subscription billing period update workflow",
+	logger.Info("Starting process subscription billing workflow",
 		"subscription_id", input.SubscriptionID,
 		"tenant_id", input.TenantID,
 		"environment_id", input.EnvironmentID)
@@ -45,7 +44,7 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 	if err := input.Validate(); err != nil {
 		logger.Error("Invalid workflow input", "error", err)
 		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowResult{
+		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
 			Success:     false,
 			Error:       &errorMsg,
 			CompletedAt: workflow.Now(ctx),
@@ -81,13 +80,13 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 		CurrentTime:    now,
 	}
 
-	err := workflow.ExecuteActivity(ctx, ActivityCheckSubscriptionPauseStatus, pauseStatusInput).Get(ctx, &pauseStatusOutput)
+	err := workflow.ExecuteActivity(ctx, ActivityCheckPause, pauseStatusInput).Get(ctx, &pauseStatusOutput)
 	if err != nil {
 		logger.Error("Failed to check subscription pause status",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
 		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowResult{
+		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
 			Success:     false,
 			Error:       &errorMsg,
 			CompletedAt: workflow.Now(ctx),
@@ -100,7 +99,7 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 			"subscription_id", input.SubscriptionID,
 			"is_paused", pauseStatusOutput.IsPaused,
 			"was_resumed", pauseStatusOutput.WasResumed)
-		return &subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowResult{
+		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
 			Success:     true,
 			CompletedAt: workflow.Now(ctx),
 		}, nil
@@ -127,7 +126,7 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 			"error", err,
 			"subscription_id", input.SubscriptionID)
 		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowResult{
+		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
 			Success:     false,
 			Error:       &errorMsg,
 			CompletedAt: workflow.Now(ctx),
@@ -139,7 +138,7 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 		logger.Info("No period transitions needed",
 			"subscription_id", input.SubscriptionID,
 			"periods_count", len(periodsOutput.Periods))
-		return &subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowResult{
+		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
 			Success:     true,
 			CompletedAt: workflow.Now(ctx),
 		}, nil
@@ -172,7 +171,7 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 			"error", err,
 			"subscription_id", input.SubscriptionID)
 		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowResult{
+		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
 			Success:     false,
 			Error:       &errorMsg,
 			CompletedAt: workflow.Now(ctx),
@@ -203,13 +202,13 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 		PeriodEnd:      newPeriod.End,
 	}
 
-	err = workflow.ExecuteActivity(ctx, ActivityUpdateSubscriptionPeriod, updatePeriodInput).Get(ctx, &updatePeriodOutput)
+	err = workflow.ExecuteActivity(ctx, ActivityUpdateCurrentPeriod, updatePeriodInput).Get(ctx, &updatePeriodOutput)
 	if err != nil {
 		logger.Error("Failed to update subscription period",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
 		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowResult{
+		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
 			Success:     false,
 			Error:       &errorMsg,
 			CompletedAt: workflow.Now(ctx),
@@ -231,7 +230,7 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 		PeriodEnd:      newPeriod.End,
 	}
 
-	err = workflow.ExecuteActivity(ctx, ActivityCheckSubscriptionCancellation, cancellationInput).Get(ctx, &cancellationOutput)
+	err = workflow.ExecuteActivity(ctx, ActivityCheckCancellation, cancellationInput).Get(ctx, &cancellationOutput)
 	if err != nil {
 		logger.Error("Failed to check subscription cancellation",
 			"error", err,
@@ -275,7 +274,7 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 		}
 
 		// Execute sync asynchronously - don't block on errors
-		_ = workflow.ExecuteActivity(syncCtx, ActivitySyncInvoiceToExternalVendor, syncInput).Get(syncCtx, nil)
+		_ = workflow.ExecuteActivity(syncCtx, ActivitySyncInvoice, syncInput).Get(syncCtx, nil)
 		// Errors are logged in the activity, we continue regardless
 
 		// Step 7: Attempt payment (blocking)
@@ -301,12 +300,12 @@ func ProcessSubscriptionBillingPeriodUpdateWorkflow(
 		}
 	}
 
-	logger.Info("Process subscription billing period update workflow completed successfully",
+	logger.Info("Process subscription billing workflow completed successfully",
 		"subscription_id", input.SubscriptionID,
 		"periods_processed", processPeriodsOutput.PeriodsProcessed,
 		"invoices_created", len(processPeriodsOutput.InvoiceIDs))
 
-	return &subscriptionModels.ProcessSubscriptionUpdateBillingPeriodWorkflowResult{
+	return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
 		Success:     true,
 		CompletedAt: workflow.Now(ctx),
 	}, nil

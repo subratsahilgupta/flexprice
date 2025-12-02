@@ -9,7 +9,6 @@ import (
 	planActivities "github.com/flexprice/flexprice/internal/temporal/activities/plan"
 	subscriptionActivities "github.com/flexprice/flexprice/internal/temporal/activities/subscription"
 	taskActivities "github.com/flexprice/flexprice/internal/temporal/activities/task"
-	temporalClient "github.com/flexprice/flexprice/internal/temporal/client"
 	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/temporal/workflows"
 	exportWorkflows "github.com/flexprice/flexprice/internal/temporal/workflows/export"
@@ -25,7 +24,7 @@ type WorkerConfig struct {
 }
 
 // RegisterWorkflowsAndActivities registers all workflows and activities with the temporal service
-func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalService, params service.ServiceParams, temporalClient temporalClient.TemporalClient) error {
+func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalService, params service.ServiceParams) error {
 	// Create activity instances with dependencies
 	planService := service.NewPlanService(params)
 	planActivities := planActivities.NewPlanActivities(planService)
@@ -65,15 +64,15 @@ func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalServ
 
 	subscriptionService := service.NewSubscriptionService(params)
 
-	scheduleSubscriptionActivities := subscriptionActivities.NewSubscriptionActivities(subscriptionService)
-	updateBillingPeriodActivities := subscriptionActivities.NewUpdateBillingPeriodActivities(
+	scheduleBillingActivities := subscriptionActivities.NewSubscriptionActivities(subscriptionService)
+	billingActivities := subscriptionActivities.NewBillingActivities(
 		subscriptionService,
 		params,
 		params.Logger,
 	)
 	// Get all task queues and register workflows/activities for each
 	for _, taskQueue := range types.GetAllTaskQueues() {
-		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, subscriptionService, scheduleSubscriptionActivities, updateBillingPeriodActivities)
+		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, subscriptionService, scheduleBillingActivities, billingActivities)
 		if err := registerWorker(temporalService, config); err != nil {
 			return fmt.Errorf("failed to register worker for task queue %s: %w", taskQueue, err)
 		}
@@ -93,8 +92,8 @@ func buildWorkerConfig(
 	hubspotDealSyncActivities *hubspotActivities.DealSyncActivities,
 	hubspotInvoiceSyncActivities *hubspotActivities.InvoiceSyncActivities,
 	subscriptionService service.SubscriptionService,
-	subscriptionActivities *subscriptionActivities.SubscriptionActivities,
-	updateBillingPeriodActivities *subscriptionActivities.UpdateBillingPeriodActivities,
+	scheduleBillingActivities *subscriptionActivities.SubscriptionActivities,
+	billingActivities *subscriptionActivities.BillingActivities,
 ) WorkerConfig {
 	workflowsList := []interface{}{}
 	activitiesList := []interface{}{}
@@ -133,19 +132,19 @@ func buildWorkerConfig(
 	case types.TemporalTaskQueueSubscription:
 		workflowsList = append(
 			workflowsList,
-			subscriptionWorkflows.ScheduleSubscriptionUpdateBillingPeriodWorkflow,
-			subscriptionWorkflows.ProcessSubscriptionBillingPeriodUpdateWorkflow,
+			subscriptionWorkflows.ScheduleSubscriptionBillingWorkflow,
+			subscriptionWorkflows.ProcessSubscriptionBillingWorkflow,
 		)
 		activitiesList = append(activitiesList,
-			subscriptionActivities.ScheduleSubscriptionUpdateBillingPeriod,
-			updateBillingPeriodActivities.CheckSubscriptionPauseStatusActivity,
-			updateBillingPeriodActivities.CalculatePeriodsActivity,
-			updateBillingPeriodActivities.ProcessPeriodsActivity,
-			updateBillingPeriodActivities.CreateInvoicesActivity,
-			updateBillingPeriodActivities.UpdateSubscriptionPeriodActivity,
-			updateBillingPeriodActivities.SyncInvoiceToExternalVendorActivity,
-			updateBillingPeriodActivities.AttemptPaymentActivity,
-			updateBillingPeriodActivities.CheckSubscriptionCancellationActivity,
+			scheduleBillingActivities.ScheduleBillingActivity,
+			billingActivities.CheckPauseActivity,
+			billingActivities.CalculatePeriodsActivity,
+			billingActivities.ProcessPeriodsActivity,
+			billingActivities.CreateInvoicesActivity,
+			billingActivities.UpdateCurrentPeriodActivity,
+			billingActivities.SyncInvoiceActivity,
+			billingActivities.AttemptPaymentActivity,
+			billingActivities.CheckCancellationActivity,
 		)
 	}
 	return WorkerConfig{

@@ -10,27 +10,27 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-type UpdateBillingPeriodActivities struct {
+type BillingActivities struct {
 	subscriptionService service.SubscriptionService
 	serviceParams       service.ServiceParams
 	logger              *logger.Logger
 }
 
-func NewUpdateBillingPeriodActivities(
+func NewBillingActivities(
 	subscriptionService service.SubscriptionService,
 	serviceParams service.ServiceParams,
 	logger *logger.Logger,
-) *UpdateBillingPeriodActivities {
-	return &UpdateBillingPeriodActivities{
+) *BillingActivities {
+	return &BillingActivities{
 		subscriptionService: subscriptionService,
 		serviceParams:       serviceParams,
 		logger:              logger,
 	}
 }
 
-// CheckSubscriptionPauseStatusActivity checks and handles subscription pause status
+// CheckPauseActivity checks and handles subscription pause status
 // It activates scheduled pauses, handles auto-resume, and returns whether processing should continue
-func (s *UpdateBillingPeriodActivities) CheckSubscriptionPauseStatusActivity(
+func (s *BillingActivities) CheckPauseActivity(
 	ctx context.Context,
 	input subscriptionModels.CheckSubscriptionPauseStatusActivityInput,
 ) (*subscriptionModels.CheckSubscriptionPauseStatusActivityOutput, error) {
@@ -182,7 +182,7 @@ func (s *UpdateBillingPeriodActivities) CheckSubscriptionPauseStatusActivity(
 }
 
 // CalculatePeriodsActivity calculates billing periods from the current period up to the specified time
-func (s *UpdateBillingPeriodActivities) CalculatePeriodsActivity(
+func (s *BillingActivities) CalculatePeriodsActivity(
 	ctx context.Context,
 	input subscriptionModels.CalculatePeriodsActivityInput,
 ) (*subscriptionModels.CalculatePeriodsActivityOutput, error) {
@@ -280,7 +280,7 @@ func (s *UpdateBillingPeriodActivities) CalculatePeriodsActivity(
 
 // ProcessPeriodsActivity processes all billing periods by calling CreateInvoicesActivity for each period
 // and checking for cancellation after each period
-func (s *UpdateBillingPeriodActivities) ProcessPeriodsActivity(
+func (s *BillingActivities) ProcessPeriodsActivity(
 	ctx context.Context,
 	input subscriptionModels.ProcessPeriodsActivityInput,
 ) (*subscriptionModels.ProcessPeriodsActivityOutput, error) {
@@ -388,7 +388,7 @@ func (s *UpdateBillingPeriodActivities) ProcessPeriodsActivity(
 
 // CreateInvoicesActivity creates and finalizes an invoice for a specific billing period
 // This activity does NOT sync to external vendors or attempt payment - those are handled separately
-func (s *UpdateBillingPeriodActivities) CreateInvoicesActivity(
+func (s *BillingActivities) CreateInvoicesActivity(
 	ctx context.Context,
 	input subscriptionModels.CreateInvoicesActivityInput,
 ) (*subscriptionModels.CreateInvoicesActivityOutput, error) {
@@ -487,8 +487,8 @@ func (s *UpdateBillingPeriodActivities) CreateInvoicesActivity(
 	}, nil
 }
 
-// UpdateSubscriptionPeriodActivity updates the subscription to the new current period
-func (s *UpdateBillingPeriodActivities) UpdateSubscriptionPeriodActivity(
+// UpdateCurrentPeriodActivity updates the subscription to the new current period
+func (s *BillingActivities) UpdateCurrentPeriodActivity(
 	ctx context.Context,
 	input subscriptionModels.UpdateSubscriptionPeriodActivityInput,
 ) (*subscriptionModels.UpdateSubscriptionPeriodActivityOutput, error) {
@@ -530,8 +530,8 @@ func (s *UpdateBillingPeriodActivities) UpdateSubscriptionPeriodActivity(
 	}, nil
 }
 
-// SyncInvoiceToExternalVendorActivity syncs an invoice to external vendors (Stripe, etc.)
-func (s *UpdateBillingPeriodActivities) SyncInvoiceToExternalVendorActivity(
+// SyncInvoiceActivity syncs an invoice to external vendors (Stripe, etc.)
+func (s *BillingActivities) SyncInvoiceActivity(
 	ctx context.Context,
 	input subscriptionModels.SyncInvoiceToExternalVendorActivityInput,
 ) (*subscriptionModels.SyncInvoiceToExternalVendorActivityOutput, error) {
@@ -626,7 +626,7 @@ func (s *UpdateBillingPeriodActivities) SyncInvoiceToExternalVendorActivity(
 }
 
 // AttemptPaymentActivity attempts to collect payment for an invoice
-func (s *UpdateBillingPeriodActivities) AttemptPaymentActivity(
+func (s *BillingActivities) AttemptPaymentActivity(
 	ctx context.Context,
 	input subscriptionModels.AttemptPaymentActivityInput,
 ) (*subscriptionModels.AttemptPaymentActivityOutput, error) {
@@ -659,8 +659,8 @@ func (s *UpdateBillingPeriodActivities) AttemptPaymentActivity(
 	}, nil
 }
 
-// CheckSubscriptionCancellationActivity checks if a subscription should be cancelled
-func (s *UpdateBillingPeriodActivities) CheckSubscriptionCancellationActivity(
+// CheckCancellationActivity checks if a subscription should be cancelled
+func (s *BillingActivities) CheckCancellationActivity(
 	ctx context.Context,
 	input subscriptionModels.CheckSubscriptionCancellationActivityInput,
 ) (*subscriptionModels.CheckSubscriptionCancellationActivityOutput, error) {

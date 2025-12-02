@@ -6,8 +6,8 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
-// ProcessSubscriptionUpdateBillingPeriodWorkflowInput represents the input for processing a single subscription update billing period workflow
-type ProcessSubscriptionUpdateBillingPeriodWorkflowInput struct {
+// ProcessSubscriptionBillingWorkflowInput represents the input for processing a single subscription billing workflow
+type ProcessSubscriptionBillingWorkflowInput struct {
 	SubscriptionID string    `json:"subscription_id"`
 	TenantID       string    `json:"tenant_id"`
 	UserID         string    `json:"user_id"`
@@ -16,8 +16,8 @@ type ProcessSubscriptionUpdateBillingPeriodWorkflowInput struct {
 	PeriodEnd      time.Time `json:"period_end"`
 }
 
-// Validate validates the schedule subscription update billing period workflow input
-func (i *ProcessSubscriptionUpdateBillingPeriodWorkflowInput) Validate() error {
+// Validate validates the process subscription billing workflow input
+func (i *ProcessSubscriptionBillingWorkflowInput) Validate() error {
 	if i.SubscriptionID == "" {
 		return ierr.NewError("subscription_id is required").
 			WithHint("Subscription ID is required").
@@ -59,7 +59,7 @@ func (i *ProcessSubscriptionUpdateBillingPeriodWorkflowInput) Validate() error {
 	return nil
 }
 
-type ProcessSubscriptionUpdateBillingPeriodWorkflowResult struct {
+type ProcessSubscriptionBillingWorkflowResult struct {
 	Success     bool      `json:"success"`
 	Error       *string   `json:"error,omitempty"`
 	CompletedAt time.Time `json:"completed_at"`
