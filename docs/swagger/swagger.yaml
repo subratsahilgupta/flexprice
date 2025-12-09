@@ -1,35 +1,5 @@
 basePath: /v1
 definitions:
-  addon.Addon:
-    properties:
-      created_at:
-        type: string
-      created_by:
-        type: string
-      description:
-        type: string
-      environment_id:
-        type: string
-      id:
-        type: string
-      lookup_key:
-        type: string
-      metadata:
-        additionalProperties: true
-        type: object
-      name:
-        type: string
-      status:
-        $ref: '#/definitions/types.Status'
-      tenant_id:
-        type: string
-      type:
-        $ref: '#/definitions/types.AddonType'
-      updated_at:
-        type: string
-      updated_by:
-        type: string
-    type: object
   costsheet.Filter:
     properties:
       costsheetIDs:
@@ -72,58 +42,10 @@ definitions:
         - $ref: '#/definitions/types.TimeRangeFilter'
         description: TimeRangeFilter allows filtering by time periods
     type: object
-  coupon.Coupon:
-    properties:
-      amount_off:
-        type: number
-      cadence:
-        $ref: '#/definitions/types.CouponCadence'
-      created_at:
-        type: string
-      created_by:
-        type: string
-      currency:
-        type: string
-      duration_in_periods:
-        type: integer
-      environment_id:
-        type: string
-      id:
-        type: string
-      max_redemptions:
-        type: integer
-      metadata:
-        additionalProperties:
-          type: string
-        type: object
-      name:
-        type: string
-      percentage_off:
-        type: number
-      redeem_after:
-        type: string
-      redeem_before:
-        type: string
-      rules:
-        additionalProperties: true
-        type: object
-      status:
-        $ref: '#/definitions/types.Status'
-      tenant_id:
-        type: string
-      total_redemptions:
-        type: integer
-      type:
-        $ref: '#/definitions/types.CouponType'
-      updated_at:
-        type: string
-      updated_by:
-        type: string
-    type: object
   coupon_association.CouponAssociation:
     properties:
       coupon:
-        $ref: '#/definitions/coupon.Coupon'
+        $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_coupon.Coupon'
       coupon_id:
         type: string
       created_at:
@@ -192,59 +114,13 @@ definitions:
       updated_by:
         type: string
     type: object
-  customer.Customer:
+  dto.ActivateDraftSubscriptionRequest:
     properties:
-      address_city:
-        description: AddressCity is the city of the customer's address
+      start_date:
+        description: start_date is the new start date for the subscription when activating
         type: string
-      address_country:
-        description: AddressCountry is the country of the customer's address (ISO
-          3166-1 alpha-2)
-        type: string
-      address_line1:
-        description: AddressLine1 is the first line of the customer's address
-        type: string
-      address_line2:
-        description: AddressLine2 is the second line of the customer's address
-        type: string
-      address_postal_code:
-        description: AddressPostalCode is the postal code of the customer's address
-        type: string
-      address_state:
-        description: AddressState is the state of the customer's address
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: string
-      email:
-        description: Email is the email of the customer
-        type: string
-      environment_id:
-        description: EnvironmentID is the environment identifier for the customer
-        type: string
-      external_id:
-        description: ExternalID is the external identifier for the customer
-        type: string
-      id:
-        description: ID is the unique identifier for the customer
-        type: string
-      metadata:
-        additionalProperties:
-          type: string
-        description: Metadata
-        type: object
-      name:
-        description: Name is the name of the customer
-        type: string
-      status:
-        $ref: '#/definitions/types.Status'
-      tenant_id:
-        type: string
-      updated_at:
-        type: string
-      updated_by:
-        type: string
+    required:
+    - start_date
     type: object
   dto.AddAddonToSubscriptionRequest:
     properties:
@@ -703,7 +579,7 @@ definitions:
   dto.CouponAssociationResponse:
     properties:
       coupon:
-        $ref: '#/definitions/coupon.Coupon'
+        $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_coupon.Coupon'
       coupon_id:
         type: string
       created_at:
@@ -1139,6 +1015,15 @@ definitions:
         type: object
       name:
         description: name is the full name or company name of the customer
+        type: string
+      parent_customer_external_id:
+        description: |-
+          parent_customer_external_id is the external ID of the parent customer from your system
+          Exactly one of parent_customer_id or parent_customer_external_id may be provided
+        type: string
+      parent_customer_id:
+        description: parent_customer_id is the internal FlexPrice ID of the parent
+          customer
         type: string
       tax_rate_overrides:
         description: tax_rate_overrides contains tax rate configurations to be linked
@@ -1856,6 +1741,9 @@ definitions:
           Timezone of the customer.
           If not set, the default value is UTC.
         type: string
+      enable_true_up:
+        description: Enable Commitment True Up Fee
+        type: boolean
       end_date:
         type: string
       external_customer_id:
@@ -1865,6 +1753,13 @@ definitions:
         type: string
       gateway_payment_method_id:
         type: string
+      invoice_billing:
+        allOf:
+        - $ref: '#/definitions/types.InvoiceBilling'
+        description: |-
+          invoice_billing determines which customer should receive invoices for a subscription
+          "invoice_to_parent" - Invoices are sent to the parent customer
+          "invoice_to_self" - Invoices are sent to the subscription's customer
       line_item_coupons:
         additionalProperties:
           items:
@@ -1916,6 +1811,12 @@ definitions:
           This is IGNORED when the billing cycle is anniversary.
       start_date:
         type: string
+      subscription_status:
+        allOf:
+        - $ref: '#/definitions/types.SubscriptionStatus'
+        description: |-
+          SubscriptionStatus determines the initial status of the subscription
+          If set to "draft", the subscription will be created as a draft (skips invoice creation and payment processing)
       tax_rate_overrides:
         description: "tax_rate_overrides is the tax rate overrides\tto be applied
           to the subscription"
@@ -2104,6 +2005,53 @@ definitions:
     required:
     - currency
     type: object
+  dto.CreditGrantApplicationResponse:
+    properties:
+      application_reason:
+        $ref: '#/definitions/types.CreditGrantApplicationReason'
+      application_status:
+        $ref: '#/definitions/types.ApplicationStatus'
+      applied_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      credit_grant_id:
+        type: string
+      credits:
+        type: number
+      environment_id:
+        type: string
+      failure_reason:
+        type: string
+      id:
+        type: string
+      idempotency_key:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      period_end:
+        type: string
+      period_start:
+        type: string
+      retry_count:
+        type: integer
+      scheduled_for:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        type: string
+      subscription_status_at_application:
+        $ref: '#/definitions/types.SubscriptionStatus'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   dto.CreditGrantResponse:
     properties:
       cadence:
@@ -2173,7 +2121,7 @@ definitions:
         type: string
       customer:
         allOf:
-        - $ref: '#/definitions/customer.Customer'
+        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_customer.Customer'
         description: customer contains the customer information associated with this
           credit note
       customer_id:
@@ -2361,6 +2309,11 @@ definitions:
       name:
         description: Name is the name of the customer
         type: string
+      parent_customer:
+        $ref: '#/definitions/dto.CustomerResponse'
+      parent_customer_id:
+        description: ParentCustomerID is the parent customer identifier for the customer
+        type: string
       status:
         $ref: '#/definitions/types.Status'
       tenant_id:
@@ -2535,6 +2488,20 @@ definitions:
         type: object
       source:
         type: string
+      timestamp:
+        type: string
+    type: object
+  dto.EventCostInfo:
+    properties:
+      costNanoUsd:
+        type: number
+      requestId:
+        type: string
+    type: object
+  dto.EventCountPoint:
+    properties:
+      event_count:
+        type: integer
       timestamp:
         type: string
     type: object
@@ -2737,10 +2704,21 @@ definitions:
       total_count:
         type: integer
     type: object
+  dto.GetHuggingFaceBillingDataResponse:
+    properties:
+      requests:
+        items:
+          $ref: '#/definitions/dto.EventCostInfo'
+        type: array
+    type: object
   dto.GetMonitoringDataResponse:
     properties:
       consumption_lag:
         type: integer
+      points:
+        items:
+          $ref: '#/definitions/dto.EventCountPoint'
+        type: array
       post_processing_lag:
         type: integer
       total_count:
@@ -3463,6 +3441,15 @@ definitions:
       items:
         items:
           $ref: '#/definitions/dto.CouponResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
+  dto.ListCreditGrantApplicationsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.CreditGrantApplicationResponse'
         type: array
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
@@ -4739,6 +4726,11 @@ definitions:
         type: string
       created_by:
         type: string
+      credit_grants:
+        description: Credit grants are the credit grants for this subscription
+        items:
+          $ref: '#/definitions/dto.CreditGrantResponse'
+        type: array
       currency:
         description: Currency is the currency of the subscription in lowercase 3 digit
           ISO codes
@@ -4760,6 +4752,8 @@ definitions:
         type: string
       customer_timezone:
         type: string
+      enable_true_up:
+        type: boolean
       end_date:
         description: EndDate is the end date of the subscription
         type: string
@@ -4772,6 +4766,11 @@ definitions:
         type: string
       id:
         description: ID is the unique identifier for the subscription
+        type: string
+      invoicing_customer_id:
+        description: |-
+          InvoicingCustomerID is the customer ID to use for invoicing
+          This can differ from the subscription customer (e.g., parent company invoicing for child company)
         type: string
       latest_invoice:
         allOf:
@@ -5178,8 +5177,21 @@ definitions:
       transaction_reason:
         $ref: '#/definitions/types.TransactionReason'
     required:
-    - idempotency_key
     - transaction_reason
+    type: object
+  dto.TopUpWalletResponse:
+    properties:
+      invoice_id:
+        description: Invoice ID if an invoice was created (only for PURCHASED_CREDIT_INVOICED)
+        type: string
+      wallet:
+        allOf:
+        - $ref: '#/definitions/dto.WalletResponse'
+        description: Wallet details after the operation
+      wallet_transaction:
+        allOf:
+        - $ref: '#/definitions/dto.WalletTransactionResponse'
+        description: Wallet transaction created (could be PENDING or COMPLETED)
     type: object
   dto.TriggerForceRunRequest:
     properties:
@@ -5314,6 +5326,16 @@ definitions:
         type: object
       name:
         description: name is the updated name or company name for the customer
+        type: string
+      parent_customer_external_id:
+        description: |-
+          parent_customer_external_id is the external ID of the parent customer from your system
+          Exactly one of parent_customer_id or parent_customer_external_id may be provided
+          If you provide the external ID, the parent customer value will be ignored
+        type: string
+      parent_customer_id:
+        description: parent_customer_id is the internal FlexPrice ID of the parent
+          customer
         type: string
     type: object
   dto.UpdateEntitlementRequest:
@@ -5734,7 +5756,7 @@ definitions:
         type: string
       addon:
         allOf:
-        - $ref: '#/definitions/addon.Addon'
+        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_addon.Addon'
         description: Full addon object (only if expand includes "addon")
       aggregation_type:
         $ref: '#/definitions/types.AggregationType'
@@ -5747,7 +5769,7 @@ definitions:
         type: string
       feature:
         allOf:
-        - $ref: '#/definitions/feature.Feature'
+        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_feature.Feature'
         description: Full feature object (only if expand includes "feature")
       feature_id:
         type: string
@@ -5762,7 +5784,7 @@ definitions:
         type: string
       plan:
         allOf:
-        - $ref: '#/definitions/plan.Plan'
+        - $ref: '#/definitions/github_com_flexprice_flexprice_internal_domain_plan.Plan'
         description: Full plan object (only if expand includes "plan")
       plan_id:
         type: string
@@ -5914,6 +5936,8 @@ definitions:
         $ref: '#/definitions/types.Status'
       tenant_id:
         type: string
+      unpaid_invoices_amount:
+        type: number
       updated_at:
         type: string
       updated_by:
@@ -6022,7 +6046,145 @@ definitions:
       success:
         type: boolean
     type: object
-  feature.Feature:
+  gin.H:
+    additionalProperties: {}
+    type: object
+  github_com_flexprice_flexprice_internal_domain_addon.Addon:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      environment_id:
+        type: string
+      id:
+        type: string
+      lookup_key:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      type:
+        $ref: '#/definitions/types.AddonType'
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  github_com_flexprice_flexprice_internal_domain_coupon.Coupon:
+    properties:
+      amount_off:
+        type: number
+      cadence:
+        $ref: '#/definitions/types.CouponCadence'
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      duration_in_periods:
+        type: integer
+      environment_id:
+        type: string
+      id:
+        type: string
+      max_redemptions:
+        type: integer
+      metadata:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      percentage_off:
+        type: number
+      redeem_after:
+        type: string
+      redeem_before:
+        type: string
+      rules:
+        additionalProperties: true
+        type: object
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      total_redemptions:
+        type: integer
+      type:
+        $ref: '#/definitions/types.CouponType'
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  github_com_flexprice_flexprice_internal_domain_customer.Customer:
+    properties:
+      address_city:
+        description: AddressCity is the city of the customer's address
+        type: string
+      address_country:
+        description: AddressCountry is the country of the customer's address (ISO
+          3166-1 alpha-2)
+        type: string
+      address_line1:
+        description: AddressLine1 is the first line of the customer's address
+        type: string
+      address_line2:
+        description: AddressLine2 is the second line of the customer's address
+        type: string
+      address_postal_code:
+        description: AddressPostalCode is the postal code of the customer's address
+        type: string
+      address_state:
+        description: AddressState is the state of the customer's address
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      email:
+        description: Email is the email of the customer
+        type: string
+      environment_id:
+        description: EnvironmentID is the environment identifier for the customer
+        type: string
+      external_id:
+        description: ExternalID is the external identifier for the customer
+        type: string
+      id:
+        description: ID is the unique identifier for the customer
+        type: string
+      metadata:
+        additionalProperties:
+          type: string
+        description: Metadata
+        type: object
+      name:
+        description: Name is the name of the customer
+        type: string
+      parent_customer_id:
+        description: ParentCustomerID is the parent customer identifier for the customer
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
+  github_com_flexprice_flexprice_internal_domain_feature.Feature:
     properties:
       alert_settings:
         $ref: '#/definitions/types.AlertSettings'
@@ -6059,8 +6221,34 @@ definitions:
       updated_by:
         type: string
     type: object
-  gin.H:
-    additionalProperties: {}
+  github_com_flexprice_flexprice_internal_domain_plan.Plan:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      display_order:
+        type: integer
+      environment_id:
+        type: string
+      id:
+        type: string
+      lookup_key:
+        type: string
+      metadata:
+        $ref: '#/definitions/types.Metadata'
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
     type: object
   github_com_flexprice_flexprice_internal_types.Value:
     properties:
@@ -6171,35 +6359,6 @@ definitions:
       run_id:
         type: string
       workflow_id:
-        type: string
-    type: object
-  plan.Plan:
-    properties:
-      created_at:
-        type: string
-      created_by:
-        type: string
-      description:
-        type: string
-      display_order:
-        type: integer
-      environment_id:
-        type: string
-      id:
-        type: string
-      lookup_key:
-        type: string
-      metadata:
-        $ref: '#/definitions/types.Metadata'
-      name:
-        type: string
-      status:
-        $ref: '#/definitions/types.Status'
-      tenant_id:
-        type: string
-      updated_at:
-        type: string
-      updated_by:
         type: string
     type: object
   price.JSONBFilters:
@@ -6774,6 +6933,20 @@ definitions:
     - AlertTypeLowOngoingBalance
     - AlertTypeLowCreditBalance
     - AlertTypeFeatureWalletBalance
+  types.ApplicationStatus:
+    enum:
+    - applied
+    - failed
+    - pending
+    - skipped
+    - cancelled
+    type: string
+    x-enum-varnames:
+    - ApplicationStatusApplied
+    - ApplicationStatusFailed
+    - ApplicationStatusPending
+    - ApplicationStatusSkipped
+    - ApplicationStatusCancelled
   types.AutoTopupTrigger:
     enum:
     - disabled
@@ -6840,6 +7013,24 @@ definitions:
     x-enum-varnames:
     - CancellationTypeImmediate
     - CancellationTypeEndOfPeriod
+  types.ChargebeeConnectionMetadata:
+    properties:
+      api_key:
+        description: Chargebee API key (encrypted)
+        type: string
+      site:
+        description: Chargebee site name (not encrypted)
+        type: string
+      webhook_password:
+        description: Basic Auth password for webhooks (encrypted)
+        type: string
+      webhook_secret:
+        description: Chargebee Webhook Secret (encrypted, optional, NOT USED in v2)
+        type: string
+      webhook_username:
+        description: Basic Auth username for webhooks (encrypted)
+        type: string
+    type: object
   types.CollectionMethod:
     enum:
     - charge_automatically
@@ -6887,10 +7078,14 @@ definitions:
     type: object
   types.ConnectionMetadata:
     properties:
+      chargebee:
+        $ref: '#/definitions/types.ChargebeeConnectionMetadata'
       generic:
         $ref: '#/definitions/types.GenericConnectionMetadata'
       hubspot:
         $ref: '#/definitions/types.HubSpotConnectionMetadata'
+      razorpay:
+        $ref: '#/definitions/types.RazorpayConnectionMetadata'
       s3:
         $ref: '#/definitions/types.S3ConnectionMetadata'
       settings:
@@ -6921,6 +7116,16 @@ definitions:
     x-enum-varnames:
     - CouponTypeFixed
     - CouponTypePercentage
+  types.CreditGrantApplicationReason:
+    enum:
+    - first_time_recurring_credit_grant
+    - recurring_credit_grant
+    - onetime_credit_grant
+    type: string
+    x-enum-varnames:
+    - ApplicationReasonFirstTimeRecurringCreditGrant
+    - ApplicationReasonRecurringCreditGrant
+    - ApplicationReasonOnetimeCreditGrant
   types.CreditGrantCadence:
     enum:
     - ONETIME
@@ -7045,6 +7250,10 @@ definitions:
         - asc
         - desc
         type: string
+      parent_customer_ids:
+        items:
+          type: string
+        type: array
       sort:
         items:
           $ref: '#/definitions/types.SortCondition'
@@ -7288,6 +7497,8 @@ definitions:
     - payment
     - credit_note
     - addon
+    - item
+    - item_price
     type: string
     x-enum-varnames:
     - IntegrationEntityTypeCustomer
@@ -7297,6 +7508,16 @@ definitions:
     - IntegrationEntityTypePayment
     - IntegrationEntityTypeCreditNote
     - IntegrationEntityTypeAddon
+    - IntegrationEntityTypeItem
+    - IntegrationEntityTypeItemPrice
+  types.InvoiceBilling:
+    enum:
+    - invoice_to_parent
+    - invoice_to_self
+    type: string
+    x-enum-varnames:
+    - InvoiceBillingInvoiceToParent
+    - InvoiceBillingInvoiceToSelf
   types.InvoiceBillingReason:
     enum:
     - SUBSCRIPTION_CREATE
@@ -7483,9 +7704,11 @@ definitions:
   types.PaymentGatewayType:
     enum:
     - stripe
+    - razorpay
     type: string
     x-enum-varnames:
     - PaymentGatewayTypeStripe
+    - PaymentGatewayTypeRazorpay
   types.PaymentMethodType:
     enum:
     - CARD
@@ -7623,6 +7846,18 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
     type: object
+  types.RazorpayConnectionMetadata:
+    properties:
+      key_id:
+        description: Razorpay Key ID (encrypted)
+        type: string
+      secret_key:
+        description: Razorpay Secret Key (encrypted)
+        type: string
+      webhook_secret:
+        description: Razorpay Webhook Secret (encrypted, optional)
+        type: string
+    type: object
   types.ResetUsage:
     enum:
     - BILLING_PERIOD
@@ -7731,12 +7966,16 @@ definitions:
     - stripe
     - s3
     - hubspot
+    - razorpay
+    - chargebee
     type: string
     x-enum-varnames:
     - SecretProviderFlexPrice
     - SecretProviderStripe
     - SecretProviderS3
     - SecretProviderHubSpot
+    - SecretProviderRazorpay
+    - SecretProviderChargebee
   types.SecretType:
     enum:
     - private_key
@@ -7815,9 +8054,17 @@ definitions:
         type: string
       expand:
         type: string
+      external_customer_id:
+        description: ExternalCustomerID filters by external customer ID
+        type: string
       filters:
         items:
           $ref: '#/definitions/types.FilterCondition'
+        type: array
+      invoicing_customer_ids:
+        description: InvoicingCustomerIDs filters by invoicing customer ID
+        items:
+          type: string
         type: array
       limit:
         maximum: 1000
@@ -7873,6 +8120,7 @@ definitions:
     - past_due
     - trialing
     - unpaid
+    - draft
     type: string
     x-enum-varnames:
     - SubscriptionStatusActive
@@ -7883,6 +8131,7 @@ definitions:
     - SubscriptionStatusPastDue
     - SubscriptionStatusTrialing
     - SubscriptionStatusUnpaid
+    - SubscriptionStatusDraft
   types.SyncConfig:
     properties:
       deal:
@@ -7895,6 +8144,8 @@ definitions:
         allOf:
         - $ref: '#/definitions/types.EntitySyncConfig'
         description: Integration sync (Stripe, Razorpay, etc.)
+      quote:
+        $ref: '#/definitions/types.EntitySyncConfig'
       subscription:
         $ref: '#/definitions/types.EntitySyncConfig'
     type: object
@@ -8607,6 +8858,8 @@ paths:
         - stripe
         - s3
         - hubspot
+        - razorpay
+        - chargebee
         in: query
         name: provider_type
         type: string
@@ -8615,6 +8868,8 @@ paths:
         - SecretProviderStripe
         - SecretProviderS3
         - SecretProviderHubSpot
+        - SecretProviderRazorpay
+        - SecretProviderChargebee
       - in: query
         name: start_time
         type: string
@@ -9859,6 +10114,12 @@ paths:
         in: query
         name: order
         type: string
+      - collectionFormat: csv
+        in: query
+        items:
+          type: string
+        name: parent_customer_ids
+        type: array
       - in: query
         name: start_time
         type: string
@@ -10060,6 +10321,39 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get customer entitlements
+      tags:
+      - Customers
+  /customers/{id}/grants/upcoming:
+    get:
+      description: Get upcoming credit grant applications for a customer
+      parameters:
+      - description: Customer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListCreditGrantApplicationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get upcoming credit grant applications
       tags:
       - Customers
   /customers/{id}/invoices/summary:
@@ -11007,10 +11301,34 @@ paths:
       summary: Bulk Ingest events
       tags:
       - Events
+  /events/huggingface-inference:
+    post:
+      description: Retrieve hugging face inference data for events
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GetHuggingFaceBillingDataResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get hugging face inference data
+      tags:
+      - Events
   /events/monitoring:
     get:
       description: Retrieve monitoring data for events including consumer lag and
         event metrics (last 24 hours by default)
+      parameters:
+      - description: Window size for time series data (e.g., 'HOUR', 'DAY') - optional
+        in: query
+        name: window_size
+        type: string
       produces:
       - application/json
       responses:
@@ -11018,8 +11336,12 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/dto.GetMonitoringDataResponse'
+        "400":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
@@ -13537,6 +13859,17 @@ paths:
       - in: query
         name: expand
         type: string
+      - description: ExternalCustomerID filters by external customer ID
+        in: query
+        name: external_customer_id
+        type: string
+      - collectionFormat: csv
+        description: InvoicingCustomerIDs filters by invoicing customer ID
+        in: query
+        items:
+          type: string
+        name: invoicing_customer_ids
+        type: array
       - in: query
         maximum: 1000
         minimum: 1
@@ -13589,6 +13922,7 @@ paths:
           - past_due
           - trialing
           - unpaid
+          - draft
           type: string
         name: subscription_status
         type: array
@@ -13674,6 +14008,43 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get subscription
+      tags:
+      - Subscriptions
+  /subscriptions/{id}/activate:
+    post:
+      consumes:
+      - application/json
+      description: Activate a draft subscription with a new start date
+      parameters:
+      - description: Subscription ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Activate Draft Subscription Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.ActivateDraftSubscriptionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.SubscriptionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Activate draft subscription
       tags:
       - Subscriptions
   /subscriptions/{id}/cancel:
@@ -13837,6 +14208,39 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get subscription entitlements
+      tags:
+      - Subscriptions
+  /subscriptions/{id}/grants/upcoming:
+    get:
+      description: Get upcoming credit grant applications for a subscription
+      parameters:
+      - description: Subscription ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ListCreditGrantApplicationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get upcoming credit grant applications
       tags:
       - Subscriptions
   /subscriptions/{id}/pause:
@@ -15463,7 +15867,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/dto.WalletResponse'
+            $ref: '#/definitions/dto.TopUpWalletResponse'
         "400":
           description: Bad Request
           schema:
@@ -15618,6 +16022,52 @@ paths:
       summary: Get wallet transactions
       tags:
       - Wallets
+  /webhooks/chargebee/{tenant_id}/{environment_id}:
+    post:
+      consumes:
+      - application/json
+      description: Process incoming Chargebee webhook events for payment status updates
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenant_id
+        required: true
+        type: string
+      - description: Environment ID
+        in: path
+        name: environment_id
+        required: true
+        type: string
+      - description: Basic Auth credentials
+        in: header
+        name: Authorization
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook processed successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Handle Chargebee webhook events
+      tags:
+      - Webhooks
   /webhooks/hubspot/{tenant_id}/{environment_id}:
     post:
       consumes:
@@ -15649,6 +16099,39 @@ paths:
             additionalProperties: true
             type: object
       summary: Handle HubSpot webhook events
+      tags:
+      - Webhooks
+  /webhooks/razorpay/{tenant_id}/{environment_id}:
+    post:
+      consumes:
+      - application/json
+      description: Process incoming Razorpay webhook events for payment capture and
+        failure
+      parameters:
+      - description: Tenant ID
+        in: path
+        name: tenant_id
+        required: true
+        type: string
+      - description: Environment ID
+        in: path
+        name: environment_id
+        required: true
+        type: string
+      - description: Razorpay webhook signature
+        in: header
+        name: X-Razorpay-Signature
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Webhook received (always returns 200)
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Handle Razorpay webhook events
       tags:
       - Webhooks
   /webhooks/stripe/{tenant_id}/{environment_id}:

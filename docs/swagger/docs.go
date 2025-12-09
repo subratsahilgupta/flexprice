@@ -678,14 +678,18 @@ const docTemplate = `{
                             "flexprice",
                             "stripe",
                             "s3",
-                            "hubspot"
+                            "hubspot",
+                            "razorpay",
+                            "chargebee"
                         ],
                         "type": "string",
                         "x-enum-varnames": [
                             "SecretProviderFlexPrice",
                             "SecretProviderStripe",
                             "SecretProviderS3",
-                            "SecretProviderHubSpot"
+                            "SecretProviderHubSpot",
+                            "SecretProviderRazorpay",
+                            "SecretProviderChargebee"
                         ],
                         "name": "provider_type",
                         "in": "query"
@@ -2636,6 +2640,15 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "name": "parent_customer_ids",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "name": "start_time",
                         "in": "query"
@@ -3182,6 +3195,58 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/customers/{id}/grants/upcoming": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get upcoming credit grant applications for a customer",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Get upcoming credit grant applications",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListCreditGrantApplicationsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -4421,6 +4486,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/events/huggingface-inference": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieve hugging face inference data for events",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Get hugging face inference data",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetHuggingFaceBillingDataResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/events/monitoring": {
             "get": {
                 "security": [
@@ -4436,6 +4532,14 @@ const docTemplate = `{
                     "Events"
                 ],
                 "summary": "Get monitoring data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Window size for time series data (e.g., 'HOUR', 'DAY') - optional",
+                        "name": "window_size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -4443,8 +4547,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/dto.GetMonitoringDataResponse"
                         }
                     },
+                    "400": {
+                        "description": "Validation error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -8328,6 +8438,22 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "ExternalCustomerID filters by external customer ID",
+                        "name": "external_customer_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "InvoicingCustomerIDs filters by invoicing customer ID",
+                        "name": "invoicing_customer_ids",
+                        "in": "query"
+                    },
+                    {
                         "maximum": 1000,
                         "minimum": 1,
                         "type": "integer",
@@ -8395,7 +8521,8 @@ const docTemplate = `{
                                 "incomplete_expired",
                                 "past_due",
                                 "trialing",
-                                "unpaid"
+                                "unpaid",
+                                "draft"
                             ],
                             "type": "string"
                         },
@@ -8844,6 +8971,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/subscriptions/{id}/activate": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Activate a draft subscription with a new start date",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Activate draft subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Activate Draft Subscription Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ActivateDraftSubscriptionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.SubscriptionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/subscriptions/{id}/cancel": {
             "post": {
                 "security": [
@@ -9072,6 +9257,58 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/dto.SubscriptionEntitlementsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions/{id}/grants/upcoming": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get upcoming credit grant applications for a subscription",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Get upcoming credit grant applications",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ListCreditGrantApplicationsResponse"
                         }
                     },
                     "400": {
@@ -11314,7 +11551,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/dto.WalletResponse"
+                            "$ref": "#/definitions/dto.TopUpWalletResponse"
                         }
                     },
                     "400": {
@@ -11540,6 +11777,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/webhooks/chargebee/{tenant_id}/{environment_id}": {
+            "post": {
+                "description": "Process incoming Chargebee webhook events for payment status updates",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Handle Chargebee webhook events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenant_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Environment ID",
+                        "name": "environment_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Basic Auth credentials",
+                        "name": "Authorization",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Webhook processed successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/webhooks/hubspot/{tenant_id}/{environment_id}": {
             "post": {
                 "description": "Process incoming HubSpot webhook events for deal closed won and customer creation",
@@ -11572,6 +11876,53 @@ const docTemplate = `{
                         "type": "string",
                         "description": "HubSpot webhook signature",
                         "name": "X-HubSpot-Signature-v3",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Webhook received (always returns 200)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/webhooks/razorpay/{tenant_id}/{environment_id}": {
+            "post": {
+                "description": "Process incoming Razorpay webhook events for payment capture and failure",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Handle Razorpay webhook events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tenant ID",
+                        "name": "tenant_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Environment ID",
+                        "name": "environment_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Razorpay webhook signature",
+                        "name": "X-Razorpay-Signature",
                         "in": "header",
                         "required": true
                     }
@@ -11650,51 +12001,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "addon.Addon": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "environment_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "lookup_key": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "type": {
-                    "$ref": "#/definitions/types.AddonType"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
         "costsheet.Filter": {
             "type": "object",
             "properties": {
@@ -11761,83 +12067,11 @@ const docTemplate = `{
                 }
             }
         },
-        "coupon.Coupon": {
-            "type": "object",
-            "properties": {
-                "amount_off": {
-                    "type": "number"
-                },
-                "cadence": {
-                    "$ref": "#/definitions/types.CouponCadence"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "duration_in_periods": {
-                    "type": "integer"
-                },
-                "environment_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "max_redemptions": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "percentage_off": {
-                    "type": "number"
-                },
-                "redeem_after": {
-                    "type": "string"
-                },
-                "redeem_before": {
-                    "type": "string"
-                },
-                "rules": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "total_redemptions": {
-                    "type": "integer"
-                },
-                "type": {
-                    "$ref": "#/definitions/types.CouponType"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
         "coupon_association.CouponAssociation": {
             "type": "object",
             "properties": {
                 "coupon": {
-                    "$ref": "#/definitions/coupon.Coupon"
+                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_coupon.Coupon"
                 },
                 "coupon_id": {
                     "type": "string"
@@ -11940,76 +12174,14 @@ const docTemplate = `{
                 }
             }
         },
-        "customer.Customer": {
+        "dto.ActivateDraftSubscriptionRequest": {
             "type": "object",
+            "required": [
+                "start_date"
+            ],
             "properties": {
-                "address_city": {
-                    "description": "AddressCity is the city of the customer's address",
-                    "type": "string"
-                },
-                "address_country": {
-                    "description": "AddressCountry is the country of the customer's address (ISO 3166-1 alpha-2)",
-                    "type": "string"
-                },
-                "address_line1": {
-                    "description": "AddressLine1 is the first line of the customer's address",
-                    "type": "string"
-                },
-                "address_line2": {
-                    "description": "AddressLine2 is the second line of the customer's address",
-                    "type": "string"
-                },
-                "address_postal_code": {
-                    "description": "AddressPostalCode is the postal code of the customer's address",
-                    "type": "string"
-                },
-                "address_state": {
-                    "description": "AddressState is the state of the customer's address",
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "email": {
-                    "description": "Email is the email of the customer",
-                    "type": "string"
-                },
-                "environment_id": {
-                    "description": "EnvironmentID is the environment identifier for the customer",
-                    "type": "string"
-                },
-                "external_id": {
-                    "description": "ExternalID is the external identifier for the customer",
-                    "type": "string"
-                },
-                "id": {
-                    "description": "ID is the unique identifier for the customer",
-                    "type": "string"
-                },
-                "metadata": {
-                    "description": "Metadata",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "name": {
-                    "description": "Name is the name of the customer",
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
+                "start_date": {
+                    "description": "start_date is the new start date for the subscription when activating",
                     "type": "string"
                 }
             }
@@ -12707,7 +12879,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "coupon": {
-                    "$ref": "#/definitions/coupon.Coupon"
+                    "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_coupon.Coupon"
                 },
                 "coupon_id": {
                     "type": "string"
@@ -13325,6 +13497,14 @@ const docTemplate = `{
                 },
                 "name": {
                     "description": "name is the full name or company name of the customer",
+                    "type": "string"
+                },
+                "parent_customer_external_id": {
+                    "description": "parent_customer_external_id is the external ID of the parent customer from your system\nExactly one of parent_customer_id or parent_customer_external_id may be provided",
+                    "type": "string"
+                },
+                "parent_customer_id": {
+                    "description": "parent_customer_id is the internal FlexPrice ID of the parent customer",
                     "type": "string"
                 },
                 "tax_rate_overrides": {
@@ -14290,6 +14470,10 @@ const docTemplate = `{
                     "description": "Timezone of the customer.\nIf not set, the default value is UTC.",
                     "type": "string"
                 },
+                "enable_true_up": {
+                    "description": "Enable Commitment True Up Fee",
+                    "type": "boolean"
+                },
                 "end_date": {
                     "type": "string"
                 },
@@ -14299,6 +14483,14 @@ const docTemplate = `{
                 },
                 "gateway_payment_method_id": {
                     "type": "string"
+                },
+                "invoice_billing": {
+                    "description": "invoice_billing determines which customer should receive invoices for a subscription\n\"invoice_to_parent\" - Invoices are sent to the parent customer\n\"invoice_to_self\" - Invoices are sent to the subscription's customer",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.InvoiceBilling"
+                        }
+                    ]
                 },
                 "line_item_coupons": {
                     "type": "object",
@@ -14364,6 +14556,14 @@ const docTemplate = `{
                 },
                 "start_date": {
                     "type": "string"
+                },
+                "subscription_status": {
+                    "description": "SubscriptionStatus determines the initial status of the subscription\nIf set to \"draft\", the subscription will be created as a draft (skips invoice creation and payment processing)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.SubscriptionStatus"
+                        }
+                    ]
                 },
                 "tax_rate_overrides": {
                     "description": "tax_rate_overrides is the tax rate overrides\tto be applied to the subscription",
@@ -14607,6 +14807,77 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.CreditGrantApplicationResponse": {
+            "type": "object",
+            "properties": {
+                "application_reason": {
+                    "$ref": "#/definitions/types.CreditGrantApplicationReason"
+                },
+                "application_status": {
+                    "$ref": "#/definitions/types.ApplicationStatus"
+                },
+                "applied_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "credit_grant_id": {
+                    "type": "string"
+                },
+                "credits": {
+                    "type": "number"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "failure_reason": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "retry_count": {
+                    "type": "integer"
+                },
+                "scheduled_for": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "subscription_status_at_application": {
+                    "$ref": "#/definitions/types.SubscriptionStatus"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.CreditGrantResponse": {
             "type": "object",
             "properties": {
@@ -14712,7 +14983,7 @@ const docTemplate = `{
                     "description": "customer contains the customer information associated with this credit note",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/customer.Customer"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_customer.Customer"
                         }
                     ]
                 },
@@ -14955,6 +15226,13 @@ const docTemplate = `{
                 },
                 "name": {
                     "description": "Name is the name of the customer",
+                    "type": "string"
+                },
+                "parent_customer": {
+                    "$ref": "#/definitions/dto.CustomerResponse"
+                },
+                "parent_customer_id": {
+                    "description": "ParentCustomerID is the parent customer identifier for the customer",
                     "type": "string"
                 },
                 "status": {
@@ -15218,6 +15496,28 @@ const docTemplate = `{
                 },
                 "source": {
                     "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.EventCostInfo": {
+            "type": "object",
+            "properties": {
+                "costNanoUsd": {
+                    "type": "number"
+                },
+                "requestId": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.EventCountPoint": {
+            "type": "object",
+            "properties": {
+                "event_count": {
+                    "type": "integer"
                 },
                 "timestamp": {
                     "type": "string"
@@ -15500,11 +15800,28 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.GetHuggingFaceBillingDataResponse": {
+            "type": "object",
+            "properties": {
+                "requests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EventCostInfo"
+                    }
+                }
+            }
+        },
         "dto.GetMonitoringDataResponse": {
             "type": "object",
             "properties": {
                 "consumption_lag": {
                     "type": "integer"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.EventCountPoint"
+                    }
                 },
                 "post_processing_lag": {
                     "type": "integer"
@@ -16436,6 +16753,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/dto.CouponResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "dto.ListCreditGrantApplicationsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreditGrantApplicationResponse"
                     }
                 },
                 "pagination": {
@@ -18229,6 +18560,13 @@ const docTemplate = `{
                 "created_by": {
                     "type": "string"
                 },
+                "credit_grants": {
+                    "description": "Credit grants are the credit grants for this subscription",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreditGrantResponse"
+                    }
+                },
                 "currency": {
                     "description": "Currency is the currency of the subscription in lowercase 3 digit ISO codes",
                     "type": "string"
@@ -18251,6 +18589,9 @@ const docTemplate = `{
                 "customer_timezone": {
                     "type": "string"
                 },
+                "enable_true_up": {
+                    "type": "boolean"
+                },
                 "end_date": {
                     "description": "EndDate is the end date of the subscription",
                     "type": "string"
@@ -18265,6 +18606,10 @@ const docTemplate = `{
                 },
                 "id": {
                     "description": "ID is the unique identifier for the subscription",
+                    "type": "string"
+                },
+                "invoicing_customer_id": {
+                    "description": "InvoicingCustomerID is the customer ID to use for invoicing\nThis can differ from the subscription customer (e.g., parent company invoicing for child company)",
                     "type": "string"
                 },
                 "latest_invoice": {
@@ -18817,7 +19162,6 @@ const docTemplate = `{
         "dto.TopUpWalletRequest": {
             "type": "object",
             "required": [
-                "idempotency_key",
                 "transaction_reason"
             ],
             "properties": {
@@ -18855,6 +19199,31 @@ const docTemplate = `{
                 },
                 "transaction_reason": {
                     "$ref": "#/definitions/types.TransactionReason"
+                }
+            }
+        },
+        "dto.TopUpWalletResponse": {
+            "type": "object",
+            "properties": {
+                "invoice_id": {
+                    "description": "Invoice ID if an invoice was created (only for PURCHASED_CREDIT_INVOICED)",
+                    "type": "string"
+                },
+                "wallet": {
+                    "description": "Wallet details after the operation",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.WalletResponse"
+                        }
+                    ]
+                },
+                "wallet_transaction": {
+                    "description": "Wallet transaction created (could be PENDING or COMPLETED)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.WalletTransactionResponse"
+                        }
+                    ]
                 }
             }
         },
@@ -19035,6 +19404,14 @@ const docTemplate = `{
                 },
                 "name": {
                     "description": "name is the updated name or company name for the customer",
+                    "type": "string"
+                },
+                "parent_customer_external_id": {
+                    "description": "parent_customer_external_id is the external ID of the parent customer from your system\nExactly one of parent_customer_id or parent_customer_external_id may be provided\nIf you provide the external ID, the parent customer value will be ignored",
+                    "type": "string"
+                },
+                "parent_customer_id": {
+                    "description": "parent_customer_id is the internal FlexPrice ID of the parent customer",
                     "type": "string"
                 }
             }
@@ -19651,7 +20028,7 @@ const docTemplate = `{
                     "description": "Full addon object (only if expand includes \"addon\")",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/addon.Addon"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_addon.Addon"
                         }
                     ]
                 },
@@ -19672,7 +20049,7 @@ const docTemplate = `{
                     "description": "Full feature object (only if expand includes \"feature\")",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/feature.Feature"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_feature.Feature"
                         }
                     ]
                 },
@@ -19698,7 +20075,7 @@ const docTemplate = `{
                     "description": "Full plan object (only if expand includes \"plan\")",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/plan.Plan"
+                            "$ref": "#/definitions/github_com_flexprice_flexprice_internal_domain_plan.Plan"
                         }
                     ]
                 },
@@ -19922,6 +20299,9 @@ const docTemplate = `{
                 "tenant_id": {
                     "type": "string"
                 },
+                "unpaid_invoices_amount": {
+                    "type": "number"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -20086,7 +20466,206 @@ const docTemplate = `{
                 }
             }
         },
-        "feature.Feature": {
+        "gin.H": {
+            "type": "object",
+            "additionalProperties": {}
+        },
+        "github_com_flexprice_flexprice_internal_domain_addon.Addon": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.AddonType"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_flexprice_flexprice_internal_domain_coupon.Coupon": {
+            "type": "object",
+            "properties": {
+                "amount_off": {
+                    "type": "number"
+                },
+                "cadence": {
+                    "$ref": "#/definitions/types.CouponCadence"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "duration_in_periods": {
+                    "type": "integer"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "max_redemptions": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "percentage_off": {
+                    "type": "number"
+                },
+                "redeem_after": {
+                    "type": "string"
+                },
+                "redeem_before": {
+                    "type": "string"
+                },
+                "rules": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "total_redemptions": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.CouponType"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_flexprice_flexprice_internal_domain_customer.Customer": {
+            "type": "object",
+            "properties": {
+                "address_city": {
+                    "description": "AddressCity is the city of the customer's address",
+                    "type": "string"
+                },
+                "address_country": {
+                    "description": "AddressCountry is the country of the customer's address (ISO 3166-1 alpha-2)",
+                    "type": "string"
+                },
+                "address_line1": {
+                    "description": "AddressLine1 is the first line of the customer's address",
+                    "type": "string"
+                },
+                "address_line2": {
+                    "description": "AddressLine2 is the second line of the customer's address",
+                    "type": "string"
+                },
+                "address_postal_code": {
+                    "description": "AddressPostalCode is the postal code of the customer's address",
+                    "type": "string"
+                },
+                "address_state": {
+                    "description": "AddressState is the state of the customer's address",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "email": {
+                    "description": "Email is the email of the customer",
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the customer",
+                    "type": "string"
+                },
+                "external_id": {
+                    "description": "ExternalID is the external identifier for the customer",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the customer",
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "Name is the name of the customer",
+                    "type": "string"
+                },
+                "parent_customer_id": {
+                    "description": "ParentCustomerID is the parent customer identifier for the customer",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_flexprice_flexprice_internal_domain_feature.Feature": {
             "type": "object",
             "properties": {
                 "alert_settings": {
@@ -20142,9 +20721,49 @@ const docTemplate = `{
                 }
             }
         },
-        "gin.H": {
+        "github_com_flexprice_flexprice_internal_domain_plan.Plan": {
             "type": "object",
-            "additionalProperties": {}
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_order": {
+                    "type": "integer"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
         },
         "github_com_flexprice_flexprice_internal_types.Value": {
             "type": "object",
@@ -20281,50 +20900,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "workflow_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "plan.Plan": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "display_order": {
-                    "type": "integer"
-                },
-                "environment_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "lookup_key": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
                     "type": "string"
                 }
             }
@@ -21117,6 +21692,23 @@ const docTemplate = `{
                 "AlertTypeFeatureWalletBalance"
             ]
         },
+        "types.ApplicationStatus": {
+            "type": "string",
+            "enum": [
+                "applied",
+                "failed",
+                "pending",
+                "skipped",
+                "cancelled"
+            ],
+            "x-enum-varnames": [
+                "ApplicationStatusApplied",
+                "ApplicationStatusFailed",
+                "ApplicationStatusPending",
+                "ApplicationStatusSkipped",
+                "ApplicationStatusCancelled"
+            ]
+        },
         "types.AutoTopupTrigger": {
             "type": "string",
             "enum": [
@@ -21204,6 +21796,31 @@ const docTemplate = `{
                 "CancellationTypeEndOfPeriod"
             ]
         },
+        "types.ChargebeeConnectionMetadata": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "description": "Chargebee API key (encrypted)",
+                    "type": "string"
+                },
+                "site": {
+                    "description": "Chargebee site name (not encrypted)",
+                    "type": "string"
+                },
+                "webhook_password": {
+                    "description": "Basic Auth password for webhooks (encrypted)",
+                    "type": "string"
+                },
+                "webhook_secret": {
+                    "description": "Chargebee Webhook Secret (encrypted, optional, NOT USED in v2)",
+                    "type": "string"
+                },
+                "webhook_username": {
+                    "description": "Basic Auth username for webhooks (encrypted)",
+                    "type": "string"
+                }
+            }
+        },
         "types.CollectionMethod": {
             "type": "string",
             "enum": [
@@ -21272,11 +21889,17 @@ const docTemplate = `{
         "types.ConnectionMetadata": {
             "type": "object",
             "properties": {
+                "chargebee": {
+                    "$ref": "#/definitions/types.ChargebeeConnectionMetadata"
+                },
                 "generic": {
                     "$ref": "#/definitions/types.GenericConnectionMetadata"
                 },
                 "hubspot": {
                     "$ref": "#/definitions/types.HubSpotConnectionMetadata"
+                },
+                "razorpay": {
+                    "$ref": "#/definitions/types.RazorpayConnectionMetadata"
                 },
                 "s3": {
                     "$ref": "#/definitions/types.S3ConnectionMetadata"
@@ -21319,6 +21942,19 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "CouponTypeFixed",
                 "CouponTypePercentage"
+            ]
+        },
+        "types.CreditGrantApplicationReason": {
+            "type": "string",
+            "enum": [
+                "first_time_recurring_credit_grant",
+                "recurring_credit_grant",
+                "onetime_credit_grant"
+            ],
+            "x-enum-varnames": [
+                "ApplicationReasonFirstTimeRecurringCreditGrant",
+                "ApplicationReasonRecurringCreditGrant",
+                "ApplicationReasonOnetimeCreditGrant"
             ]
         },
         "types.CreditGrantCadence": {
@@ -21483,6 +22119,12 @@ const docTemplate = `{
                         "asc",
                         "desc"
                     ]
+                },
+                "parent_customer_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "sort": {
                     "type": "array",
@@ -21816,7 +22458,9 @@ const docTemplate = `{
                 "subscription",
                 "payment",
                 "credit_note",
-                "addon"
+                "addon",
+                "item",
+                "item_price"
             ],
             "x-enum-varnames": [
                 "IntegrationEntityTypeCustomer",
@@ -21825,7 +22469,20 @@ const docTemplate = `{
                 "IntegrationEntityTypeSubscription",
                 "IntegrationEntityTypePayment",
                 "IntegrationEntityTypeCreditNote",
-                "IntegrationEntityTypeAddon"
+                "IntegrationEntityTypeAddon",
+                "IntegrationEntityTypeItem",
+                "IntegrationEntityTypeItemPrice"
+            ]
+        },
+        "types.InvoiceBilling": {
+            "type": "string",
+            "enum": [
+                "invoice_to_parent",
+                "invoice_to_self"
+            ],
+            "x-enum-varnames": [
+                "InvoiceBillingInvoiceToParent",
+                "InvoiceBillingInvoiceToSelf"
             ]
         },
         "types.InvoiceBillingReason": {
@@ -22057,10 +22714,12 @@ const docTemplate = `{
         "types.PaymentGatewayType": {
             "type": "string",
             "enum": [
-                "stripe"
+                "stripe",
+                "razorpay"
             ],
             "x-enum-varnames": [
-                "PaymentGatewayTypeStripe"
+                "PaymentGatewayTypeStripe",
+                "PaymentGatewayTypeRazorpay"
             ]
         },
         "types.PaymentMethodType": {
@@ -22246,6 +22905,23 @@ const docTemplate = `{
                 }
             }
         },
+        "types.RazorpayConnectionMetadata": {
+            "type": "object",
+            "properties": {
+                "key_id": {
+                    "description": "Razorpay Key ID (encrypted)",
+                    "type": "string"
+                },
+                "secret_key": {
+                    "description": "Razorpay Secret Key (encrypted)",
+                    "type": "string"
+                },
+                "webhook_secret": {
+                    "description": "Razorpay Webhook Secret (encrypted, optional)",
+                    "type": "string"
+                }
+            }
+        },
         "types.ResetUsage": {
             "type": "string",
             "enum": [
@@ -22392,13 +23068,17 @@ const docTemplate = `{
                 "flexprice",
                 "stripe",
                 "s3",
-                "hubspot"
+                "hubspot",
+                "razorpay",
+                "chargebee"
             ],
             "x-enum-varnames": [
                 "SecretProviderFlexPrice",
                 "SecretProviderStripe",
                 "SecretProviderS3",
-                "SecretProviderHubSpot"
+                "SecretProviderHubSpot",
+                "SecretProviderRazorpay",
+                "SecretProviderChargebee"
             ]
         },
         "types.SecretType": {
@@ -22510,10 +23190,21 @@ const docTemplate = `{
                 "expand": {
                     "type": "string"
                 },
+                "external_customer_id": {
+                    "description": "ExternalCustomerID filters by external customer ID",
+                    "type": "string"
+                },
                 "filters": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "invoicing_customer_ids": {
+                    "description": "InvoicingCustomerIDs filters by invoicing customer ID",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 },
                 "limit": {
@@ -22588,7 +23279,8 @@ const docTemplate = `{
                 "incomplete_expired",
                 "past_due",
                 "trialing",
-                "unpaid"
+                "unpaid",
+                "draft"
             ],
             "x-enum-varnames": [
                 "SubscriptionStatusActive",
@@ -22598,7 +23290,8 @@ const docTemplate = `{
                 "SubscriptionStatusIncompleteExpired",
                 "SubscriptionStatusPastDue",
                 "SubscriptionStatusTrialing",
-                "SubscriptionStatusUnpaid"
+                "SubscriptionStatusUnpaid",
+                "SubscriptionStatusDraft"
             ]
         },
         "types.SyncConfig": {
@@ -22622,6 +23315,9 @@ const docTemplate = `{
                             "$ref": "#/definitions/types.EntitySyncConfig"
                         }
                     ]
+                },
+                "quote": {
+                    "$ref": "#/definitions/types.EntitySyncConfig"
                 },
                 "subscription": {
                     "$ref": "#/definitions/types.EntitySyncConfig"
