@@ -50,7 +50,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		w.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
-	wallet, err := client.Wallet.Create().
+	walletBuilder := client.Wallet.Create().
 		SetID(w.ID).
 		SetTenantID(w.TenantID).
 		SetCustomerID(w.CustomerID).
@@ -61,9 +61,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetBalance(w.Balance).
 		SetCreditBalance(w.CreditBalance).
 		SetWalletStatus(string(w.WalletStatus)).
-		SetAutoTopupTrigger(string(w.AutoTopupTrigger)).
-		SetAutoTopupMinBalance(w.AutoTopupMinBalance).
-		SetAutoTopupAmount(w.AutoTopupAmount).
+		SetNillableAutoTopup(w.AutoTopup).
 		SetWalletType(string(w.WalletType)).
 		SetConfig(w.Config).
 		SetConversionRate(w.ConversionRate).
@@ -74,9 +72,14 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetUpdatedAt(w.UpdatedAt).
 		SetEnvironmentID(w.EnvironmentID).
 		SetAlertEnabled(w.AlertEnabled).
-		SetAlertConfig(w.AlertConfig).
-		SetAlertState(w.AlertState).
-		Save(ctx)
+		SetAlertState(w.AlertState)
+
+	// alert config is optional; only set when provided to avoid nil Validate panic
+	if w.AlertConfig != nil {
+		walletBuilder.SetAlertConfig(w.AlertConfig)
+	}
+
+	wallet, err := walletBuilder.Save(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
@@ -878,18 +881,8 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 	if w.Metadata != nil {
 		update.SetMetadata(w.Metadata)
 	}
-	if w.AutoTopupTrigger != "" {
-		if w.AutoTopupTrigger == types.AutoTopupTriggerDisabled {
-			// When disabling auto top-up, set all related fields to NULL
-			update.SetAutoTopupTrigger(string(types.AutoTopupTriggerDisabled))
-			update.ClearAutoTopupMinBalance()
-			update.ClearAutoTopupAmount()
-		} else {
-			// When enabling auto top-up, set all required fields
-			update.SetAutoTopupTrigger(string(w.AutoTopupTrigger))
-			update.SetAutoTopupMinBalance(w.AutoTopupMinBalance)
-			update.SetAutoTopupAmount(w.AutoTopupAmount)
-		}
+	if w.AutoTopup != nil {
+		update.SetAutoTopup(*w.AutoTopup)
 	}
 	// Check if Config has any non-nil fields
 	if w.Config.AllowedPriceTypes != nil {

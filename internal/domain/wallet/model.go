@@ -6,32 +6,28 @@ import (
 	"github.com/flexprice/flexprice/ent"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
 // Wallet represents a credit wallet for a customer
 type Wallet struct {
-	ID                  string                 `db:"id" json:"id"`
-	CustomerID          string                 `db:"customer_id" json:"customer_id"`
-	Currency            string                 `db:"currency" json:"currency"`
-	Balance             decimal.Decimal        `db:"balance" json:"balance" swaggertype:"string"`
-	CreditBalance       decimal.Decimal        `db:"credit_balance" json:"credit_balance" swaggertype:"string"`
-	WalletStatus        types.WalletStatus     `db:"wallet_status" json:"wallet_status"`
-	Name                string                 `db:"name" json:"name,omitempty"`
-	Description         string                 `db:"description" json:"description"`
-	Metadata            types.Metadata         `db:"metadata" json:"metadata"`
-	AutoTopupTrigger    types.AutoTopupTrigger `db:"auto_topup_trigger" json:"auto_topup_trigger"`
-	AutoTopupMinBalance decimal.Decimal        `db:"auto_topup_min_balance" json:"auto_topup_min_balance" swaggertype:"string"`
-	AutoTopupAmount     decimal.Decimal        `db:"auto_topup_amount" json:"auto_topup_amount" swaggertype:"string"`
-	WalletType          types.WalletType       `db:"wallet_type" json:"wallet_type"`
-	Config              types.WalletConfig     `db:"config" json:"config"`
-	ConversionRate      decimal.Decimal        `db:"conversion_rate" json:"conversion_rate" swaggertype:"string"`
-	EnvironmentID       string                 `db:"environment_id" json:"environment_id"`
-	AlertEnabled        bool                   `db:"alert_enabled" json:"alert_enabled"`
-	AlertConfig         *types.AlertConfig     `db:"alert_config" json:"alert_config,omitempty"`
-
-	AlertState string `db:"alert_state" json:"alert_state"`
+	ID             string             `db:"id" json:"id"`
+	CustomerID     string             `db:"customer_id" json:"customer_id"`
+	Currency       string             `db:"currency" json:"currency"`
+	Balance        decimal.Decimal    `db:"balance" json:"balance" swaggertype:"string"`
+	CreditBalance  decimal.Decimal    `db:"credit_balance" json:"credit_balance" swaggertype:"string"`
+	WalletStatus   types.WalletStatus `db:"wallet_status" json:"wallet_status"`
+	Name           string             `db:"name" json:"name,omitempty"`
+	Description    string             `db:"description" json:"description"`
+	Metadata       types.Metadata     `db:"metadata" json:"metadata"`
+	AutoTopup      *types.AutoTopup   `db:"auto_topup" json:"auto_topup"`
+	WalletType     types.WalletType   `db:"wallet_type" json:"wallet_type"`
+	Config         types.WalletConfig `db:"config" json:"config"`
+	ConversionRate decimal.Decimal    `db:"conversion_rate" json:"conversion_rate" swaggertype:"string"`
+	EnvironmentID  string             `db:"environment_id" json:"environment_id"`
+	AlertEnabled   bool               `db:"alert_enabled" json:"alert_enabled"`
+	AlertConfig    *types.AlertConfig `db:"alert_config" json:"alert_config,omitempty"`
+	AlertState     string             `db:"alert_state" json:"alert_state"`
 	types.BaseModel
 }
 
@@ -81,25 +77,28 @@ func FromEnt(e *ent.Wallet) *Wallet {
 	}
 
 	return &Wallet{
-		ID:                  e.ID,
-		CustomerID:          e.CustomerID,
-		Currency:            e.Currency,
-		Balance:             e.Balance,
-		CreditBalance:       e.CreditBalance,
-		WalletStatus:        types.WalletStatus(e.WalletStatus),
-		Name:                e.Name,
-		Description:         e.Description,
-		Metadata:            e.Metadata,
-		AutoTopupTrigger:    types.AutoTopupTrigger(lo.FromPtr(e.AutoTopupTrigger)),
-		AutoTopupMinBalance: lo.FromPtr(e.AutoTopupMinBalance),
-		AutoTopupAmount:     lo.FromPtr(e.AutoTopupAmount),
-		WalletType:          types.WalletType(e.WalletType),
-		Config:              e.Config,
-		ConversionRate:      e.ConversionRate,
-		EnvironmentID:       e.EnvironmentID,
-		AlertEnabled:        e.AlertEnabled,
-		AlertConfig:         e.AlertConfig,
-		AlertState:          e.AlertState,
+		ID:            e.ID,
+		CustomerID:    e.CustomerID,
+		Currency:      e.Currency,
+		Balance:       e.Balance,
+		CreditBalance: e.CreditBalance,
+		WalletStatus:  types.WalletStatus(e.WalletStatus),
+		Name:          e.Name,
+		Description:   e.Description,
+		Metadata:      e.Metadata,
+		AutoTopup: &types.AutoTopup{
+			Enabled:   e.AutoTopup.Enabled,
+			Threshold: e.AutoTopup.Threshold,
+			Amount:    e.AutoTopup.Amount,
+			Invoicing: e.AutoTopup.Invoicing,
+		},
+		WalletType:     types.WalletType(e.WalletType),
+		Config:         e.Config,
+		ConversionRate: e.ConversionRate,
+		EnvironmentID:  e.EnvironmentID,
+		AlertEnabled:   e.AlertEnabled,
+		AlertConfig:    e.AlertConfig,
+		AlertState:     e.AlertState,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),
