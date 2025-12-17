@@ -3549,7 +3549,6 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 		endReason = req.Reason
 	}
 
-	association.AddonStatus = types.AddonStatusCancelled
 	association.CancellationReason = endReason
 	association.CancelledAt = effectiveEndDate
 	association.EndDate = effectiveEndDate
@@ -4637,6 +4636,7 @@ func (s *subscriptionService) GetSubscriptionEntitlements(ctx context.Context, s
 		EntityID:   subscriptionID,
 		EntityType: types.AddonAssociationEntityTypeSubscription,
 		StartDate:  &sub.CurrentPeriodStart,
+		EndDate:    &sub.CurrentPeriodEnd,
 	})
 	if err != nil {
 		return nil, ierr.WithError(err).
