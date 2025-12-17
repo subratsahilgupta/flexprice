@@ -72,7 +72,7 @@ func (Wallet) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			Default(string(types.WalletStatusActive)),
-		field.JSON("auto_topup", types.AutoTopup{}).
+		field.JSON("auto_topup", &types.AutoTopup{}).
 			Optional().
 			SchemaType(map[string]string{
 				"postgres": "jsonb",

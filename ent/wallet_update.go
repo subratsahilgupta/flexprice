@@ -179,16 +179,8 @@ func (wu *WalletUpdate) SetNillableWalletStatus(s *string) *WalletUpdate {
 }
 
 // SetAutoTopup sets the "auto_topup" field.
-func (wu *WalletUpdate) SetAutoTopup(tt types.AutoTopup) *WalletUpdate {
+func (wu *WalletUpdate) SetAutoTopup(tt *types.AutoTopup) *WalletUpdate {
 	wu.mutation.SetAutoTopup(tt)
-	return wu
-}
-
-// SetNillableAutoTopup sets the "auto_topup" field if the given value is not nil.
-func (wu *WalletUpdate) SetNillableAutoTopup(tt *types.AutoTopup) *WalletUpdate {
-	if tt != nil {
-		wu.SetAutoTopup(*tt)
-	}
 	return wu
 }
 
@@ -595,16 +587,8 @@ func (wuo *WalletUpdateOne) SetNillableWalletStatus(s *string) *WalletUpdateOne 
 }
 
 // SetAutoTopup sets the "auto_topup" field.
-func (wuo *WalletUpdateOne) SetAutoTopup(tt types.AutoTopup) *WalletUpdateOne {
+func (wuo *WalletUpdateOne) SetAutoTopup(tt *types.AutoTopup) *WalletUpdateOne {
 	wuo.mutation.SetAutoTopup(tt)
-	return wuo
-}
-
-// SetNillableAutoTopup sets the "auto_topup" field if the given value is not nil.
-func (wuo *WalletUpdateOne) SetNillableAutoTopup(tt *types.AutoTopup) *WalletUpdateOne {
-	if tt != nil {
-		wuo.SetAutoTopup(*tt)
-	}
 	return wuo
 }
 

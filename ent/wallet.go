@@ -51,7 +51,7 @@ type Wallet struct {
 	// WalletStatus holds the value of the "wallet_status" field.
 	WalletStatus string `json:"wallet_status,omitempty"`
 	// AutoTopup holds the value of the "auto_topup" field.
-	AutoTopup types.AutoTopup `json:"auto_topup,omitempty"`
+	AutoTopup *types.AutoTopup `json:"auto_topup,omitempty"`
 	// WalletType holds the value of the "wallet_type" field.
 	WalletType string `json:"wallet_type,omitempty"`
 	// ConversionRate holds the value of the "conversion_rate" field.

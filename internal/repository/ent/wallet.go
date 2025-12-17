@@ -61,7 +61,6 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetBalance(w.Balance).
 		SetCreditBalance(w.CreditBalance).
 		SetWalletStatus(string(w.WalletStatus)).
-		SetNillableAutoTopup(w.AutoTopup).
 		SetWalletType(string(w.WalletType)).
 		SetConfig(w.Config).
 		SetConversionRate(w.ConversionRate).
@@ -79,6 +78,9 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		walletBuilder.SetAlertConfig(w.AlertConfig)
 	}
 
+	if w.AutoTopup != nil {
+		walletBuilder.SetAutoTopup(w.AutoTopup)
+	}
 	wallet, err := walletBuilder.Save(ctx)
 
 	if err != nil {
@@ -882,7 +884,7 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 		update.SetMetadata(w.Metadata)
 	}
 	if w.AutoTopup != nil {
-		update.SetAutoTopup(*w.AutoTopup)
+		update.SetAutoTopup(w.AutoTopup)
 	}
 	// Check if Config has any non-nil fields
 	if w.Config.AllowedPriceTypes != nil {

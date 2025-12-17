@@ -59782,7 +59782,7 @@ type WalletMutation struct {
 	balance         *decimal.Decimal
 	credit_balance  *decimal.Decimal
 	wallet_status   *string
-	auto_topup      *types.AutoTopup
+	auto_topup      **types.AutoTopup
 	wallet_type     *string
 	conversion_rate *decimal.Decimal
 	_config         *types.WalletConfig
@@ -60518,12 +60518,12 @@ func (m *WalletMutation) ResetWalletStatus() {
 }
 
 // SetAutoTopup sets the "auto_topup" field.
-func (m *WalletMutation) SetAutoTopup(tt types.AutoTopup) {
+func (m *WalletMutation) SetAutoTopup(tt *types.AutoTopup) {
 	m.auto_topup = &tt
 }
 
 // AutoTopup returns the value of the "auto_topup" field in the mutation.
-func (m *WalletMutation) AutoTopup() (r types.AutoTopup, exists bool) {
+func (m *WalletMutation) AutoTopup() (r *types.AutoTopup, exists bool) {
 	v := m.auto_topup
 	if v == nil {
 		return
@@ -60534,7 +60534,7 @@ func (m *WalletMutation) AutoTopup() (r types.AutoTopup, exists bool) {
 // OldAutoTopup returns the old "auto_topup" field's value of the Wallet entity.
 // If the Wallet object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletMutation) OldAutoTopup(ctx context.Context) (v types.AutoTopup, err error) {
+func (m *WalletMutation) OldAutoTopup(ctx context.Context) (v *types.AutoTopup, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldAutoTopup is only allowed on UpdateOne operations")
 	}
@@ -61155,7 +61155,7 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 		m.SetWalletStatus(v)
 		return nil
 	case wallet.FieldAutoTopup:
-		v, ok := value.(types.AutoTopup)
+		v, ok := value.(*types.AutoTopup)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

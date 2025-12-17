@@ -20,7 +20,7 @@ type Wallet struct {
 	Name           string             `db:"name" json:"name,omitempty"`
 	Description    string             `db:"description" json:"description"`
 	Metadata       types.Metadata     `db:"metadata" json:"metadata"`
-	AutoTopup      *types.AutoTopup   `db:"auto_topup" json:"auto_topup"`
+	AutoTopup      *types.AutoTopup   `db:"auto_topup" json:"auto_topup,omitempty"`
 	WalletType     types.WalletType   `db:"wallet_type" json:"wallet_type"`
 	Config         types.WalletConfig `db:"config" json:"config"`
 	ConversionRate decimal.Decimal    `db:"conversion_rate" json:"conversion_rate" swaggertype:"string"`
@@ -76,24 +76,19 @@ func FromEnt(e *ent.Wallet) *Wallet {
 		return nil
 	}
 
-	return &Wallet{
-		ID:            e.ID,
-		CustomerID:    e.CustomerID,
-		Currency:      e.Currency,
-		Balance:       e.Balance,
-		CreditBalance: e.CreditBalance,
-		WalletStatus:  types.WalletStatus(e.WalletStatus),
-		Name:          e.Name,
-		Description:   e.Description,
-		Metadata:      e.Metadata,
-		AutoTopup: &types.AutoTopup{
-			Enabled:   e.AutoTopup.Enabled,
-			Threshold: e.AutoTopup.Threshold,
-			Amount:    e.AutoTopup.Amount,
-			Invoicing: e.AutoTopup.Invoicing,
-		},
+	wallet := &Wallet{
+		ID:             e.ID,
+		CustomerID:     e.CustomerID,
+		Currency:       e.Currency,
+		Balance:        e.Balance,
+		CreditBalance:  e.CreditBalance,
+		WalletStatus:   types.WalletStatus(e.WalletStatus),
+		Name:           e.Name,
+		Description:    e.Description,
+		Metadata:       e.Metadata,
 		WalletType:     types.WalletType(e.WalletType),
 		Config:         e.Config,
+		AutoTopup:      e.AutoTopup,
 		ConversionRate: e.ConversionRate,
 		EnvironmentID:  e.EnvironmentID,
 		AlertEnabled:   e.AlertEnabled,
@@ -108,6 +103,16 @@ func FromEnt(e *ent.Wallet) *Wallet {
 			UpdatedBy: e.UpdatedBy,
 		},
 	}
+
+	if e.AutoTopup != nil && e.AutoTopup.Enabled != nil && e.AutoTopup.Threshold != nil && e.AutoTopup.Amount != nil && e.AutoTopup.Invoicing != nil {
+		wallet.AutoTopup = &types.AutoTopup{
+			Enabled:   e.AutoTopup.Enabled,
+			Threshold: e.AutoTopup.Threshold,
+			Amount:    e.AutoTopup.Amount,
+			Invoicing: e.AutoTopup.Invoicing,
+		}
+	}
+	return wallet
 }
 
 // FromEntList converts a list of ent wallets to domain wallets

@@ -193,16 +193,8 @@ func (wc *WalletCreate) SetNillableWalletStatus(s *string) *WalletCreate {
 }
 
 // SetAutoTopup sets the "auto_topup" field.
-func (wc *WalletCreate) SetAutoTopup(tt types.AutoTopup) *WalletCreate {
+func (wc *WalletCreate) SetAutoTopup(tt *types.AutoTopup) *WalletCreate {
 	wc.mutation.SetAutoTopup(tt)
-	return wc
-}
-
-// SetNillableAutoTopup sets the "auto_topup" field if the given value is not nil.
-func (wc *WalletCreate) SetNillableAutoTopup(tt *types.AutoTopup) *WalletCreate {
-	if tt != nil {
-		wc.SetAutoTopup(*tt)
-	}
 	return wc
 }
 

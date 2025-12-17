@@ -119,42 +119,6 @@ func (t WalletTxReferenceType) Validate() error {
 	return nil
 }
 
-// // AutoTopupTrigger represents the type of trigger for auto top-up
-// type AutoTopupTrigger string
-
-// const (
-// 	// AutoTopupTriggerDisabled represents disabled auto top-up
-// 	AutoTopupTriggerDisabled AutoTopupTrigger = "disabled"
-// 	// AutoTopupTriggerBalanceBelowThreshold represents auto top-up when balance goes below threshold
-// 	AutoTopupTriggerBalanceBelowThreshold AutoTopupTrigger = "balance_below_threshold"
-// )
-
-// func (t AutoTopupTrigger) Validate() error {
-// 	allowedValues := []string{
-// 		string(AutoTopupTriggerDisabled),
-// 		string(AutoTopupTriggerBalanceBelowThreshold),
-// 	}
-// 	if t == "" {
-// 		return nil
-// 	}
-
-// 	if !lo.Contains(allowedValues, string(t)) {
-// 		return ierr.NewError("invalid auto top-up trigger").
-// 			WithHint("Invalid auto top-up trigger").
-// 			WithReportableDetails(map[string]any{
-// 				"allowed": allowedValues,
-// 				"type":    t,
-// 			}).
-// 			Mark(ierr.ErrValidation)
-// 	}
-// 	return nil
-// }
-
-// // String returns the string representation of AutoTopupTrigger
-// func (t AutoTopupTrigger) String() string {
-// 	return string(t)
-// }
-
 // WalletTransactionFilter represents the filter options for wallet transactions
 type WalletTransactionFilter struct {
 	*QueryFilter
