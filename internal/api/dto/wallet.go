@@ -76,14 +76,6 @@ type UpdateWalletRequest struct {
 }
 
 func (r *UpdateWalletRequest) Validate() error {
-	if r.AutoTopup != nil {
-		if err := r.AutoTopup.Validate(); err != nil {
-			return ierr.WithError(err).
-				WithHint("Invalid auto-topup configuration").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
 	if r.Config != nil {
 		if err := r.Config.Validate(); err != nil {
 			return err

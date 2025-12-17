@@ -1278,7 +1278,24 @@ func (s *walletService) UpdateWallet(ctx context.Context, id string, req *dto.Up
 		existing.Metadata = *req.Metadata
 	}
 	if req.AutoTopup != nil {
-		existing.AutoTopup = req.AutoTopup
+		// Preserve existing fields so ent validator still gets required values
+		current := existing.AutoTopup
+		if current == nil {
+			current = &types.AutoTopup{}
+		}
+		if req.AutoTopup.Enabled != nil {
+			current.Enabled = req.AutoTopup.Enabled
+		}
+		if req.AutoTopup.Threshold != nil {
+			current.Threshold = req.AutoTopup.Threshold
+		}
+		if req.AutoTopup.Amount != nil {
+			current.Amount = req.AutoTopup.Amount
+		}
+		if req.AutoTopup.Invoicing != nil {
+			current.Invoicing = req.AutoTopup.Invoicing
+		}
+		existing.AutoTopup = current
 	}
 	if req.Config != nil {
 		existing.Config = *req.Config
@@ -2338,14 +2355,12 @@ func (s *walletService) CheckWalletBalanceAlert(ctx context.Context, req *wallet
 				"event_id", req.ID,
 			)
 			// Trigger auto top-up if enabled
-			if w.AutoTopup != nil && w.AutoTopup.Enabled != nil && *w.AutoTopup.Enabled {
-				err := s.checkAutoTopup(ctx, w, lo.FromPtr(balance.RealTimeCreditBalance))
-				if err != nil {
-					s.Logger.Errorw("failed to trigger auto top-up",
-						"error", err,
-						"wallet_id", w.ID,
-					)
-				}
+			err := s.checkAutoTopup(ctx, w, lo.FromPtr(balance.RealTimeCreditBalance))
+			if err != nil {
+				s.Logger.Errorw("failed to trigger auto top-up",
+					"error", err,
+					"wallet_id", w.ID,
+				)
 			}
 			continue
 		}
@@ -2577,18 +2592,15 @@ func (s *walletService) CheckWalletBalanceAlert(ctx context.Context, req *wallet
 		)
 
 		// Check auto top-up
-		if w.AutoTopup != nil && w.AutoTopup.Enabled != nil && *w.AutoTopup.Enabled {
-			err := s.checkAutoTopup(ctx, w, lo.FromPtr(balance.RealTimeCreditBalance))
-			if err != nil {
-				s.Logger.Errorw("failed to trigger auto top-up",
-					"error", err,
-					"wallet_id", w.ID,
-				)
-				continue
-			}
+		err = s.checkAutoTopup(ctx, w, lo.FromPtr(balance.RealTimeCreditBalance))
+		if err != nil {
+			s.Logger.Errorw("failed to trigger auto top-up",
+				"error", err,
+				"wallet_id", w.ID,
+			)
+			continue
 		}
 	}
-
 	s.Logger.Infow("completed wallet balance alert check for customer",
 		"customer_id", req.CustomerID,
 		"wallets_processed", len(wallets),
@@ -2625,6 +2637,16 @@ func (s *walletService) PublishWalletBalanceAlertEvent(ctx context.Context, cust
 
 // checkAutoTopup checks if auto top-up is enabled and triggers it if needed
 func (s *walletService) checkAutoTopup(ctx context.Context, w *wallet.Wallet, ongoingBalance decimal.Decimal) error {
+
+	if w.AutoTopup == nil || w.AutoTopup.Enabled == nil || !*w.AutoTopup.Enabled {
+		return ierr.NewError("auto top-up is not enabled").
+			WithHint("Auto top-up is not enabled").
+			WithReportableDetails(map[string]interface{}{
+				"wallet_id": w.ID,
+			}).
+			Mark(ierr.ErrInvalidOperation)
+	}
+
 	// Check if ongoing balance is below threshold
 	if ongoingBalance.LessThanOrEqual(*w.AutoTopup.Threshold) {
 		// Top up wallet
@@ -2644,11 +2666,18 @@ func (s *walletService) checkAutoTopup(ctx context.Context, w *wallet.Wallet, on
 				"auto_topup_amount", *w.AutoTopup.Amount,
 			)
 		}
-		s.Logger.Infow("auto top-up triggered",
+		s.Logger.Debugw("auto top-up triggered",
 			"wallet_id", w.ID,
 			"auto_topup_threshold", *w.AutoTopup.Threshold,
 			"auto_topup_amount", *w.AutoTopup.Amount,
 		)
 	}
+
+	s.Logger.Infow("auto top-up completed",
+		"wallet_id", w.ID,
+		"auto_topup_threshold", *w.AutoTopup.Threshold,
+		"auto_topup_amount", *w.AutoTopup.Amount,
+	)
+
 	return nil
 }
