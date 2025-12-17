@@ -3532,26 +3532,27 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 			Mark(ierr.ErrValidation)
 	}
 
-	// get entity type and entity id from addon association
-	entityType := association.EntityType
-	entityID := association.EntityID
-
 	// get cancel at date from subscription
-	var cancelAt *time.Time
+	var effectiveEndDate *time.Time
 
-	if entityType == types.AddonAssociationEntityTypeSubscription {
-		sub, err := s.SubRepo.Get(ctx, entityID)
+	if association.EntityType == types.AddonAssociationEntityTypeSubscription {
+		sub, err := s.SubRepo.Get(ctx, association.EntityID)
 		if err != nil {
 			return err
 		}
 
-		cancelAt = &sub.CurrentPeriodEnd
+		effectiveEndDate = lo.ToPtr(sub.CurrentPeriodEnd)
+	}
+
+	endReason := "Cancelled by API"
+	if req.Reason != "" {
+		endReason = req.Reason
 	}
 
 	association.AddonStatus = types.AddonStatusCancelled
-	association.CancellationReason = "Cancelled by API"
-	association.CancelledAt = cancelAt
-	association.EndDate = cancelAt
+	association.CancellationReason = endReason
+	association.CancelledAt = effectiveEndDate
+	association.EndDate = effectiveEndDate
 
 	// Get line items to terminate
 	lineItemFilter := types.NewSubscriptionLineItemFilter()
@@ -3569,7 +3570,7 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 			return err
 		}
 
-		deleteReq := dto.DeleteSubscriptionLineItemRequest{EffectiveFrom: cancelAt}
+		deleteReq := dto.DeleteSubscriptionLineItemRequest{EffectiveFrom: effectiveEndDate}
 		for _, lineItem := range lineItems {
 			if _, err := s.DeleteSubscriptionLineItem(ctx, lineItem.ID, deleteReq); err != nil {
 				return err

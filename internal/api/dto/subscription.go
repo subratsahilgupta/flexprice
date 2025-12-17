@@ -326,6 +326,7 @@ type AddAddonRequest struct {
 // RemoveAddonRequest is used by body-based endpoint /subscriptions/addon (DELETE)
 type RemoveAddonRequest struct {
 	AddonAssociationID string `json:"addon_association_id" validate:"required"`
+	Reason             string `json:"reason,omitempty"`
 }
 
 func (r *RemoveAddonRequest) Validate() error {

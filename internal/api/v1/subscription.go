@@ -489,7 +489,7 @@ func (h *SubscriptionHandler) GetUpcomingCreditGrantApplications(c *gin.Context)
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /subscriptions/{id}/addons/active [get]
+// @Router /subscriptions/{id}/addons/associations [get]
 func (h *SubscriptionHandler) GetActiveAddonAssociations(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 )
@@ -134,6 +135,7 @@ type GetActiveAddonAssociationRequest struct {
 	EntityID   string                           `json:"entity_id" validate:"required"`
 	EntityType types.AddonAssociationEntityType `json:"entity_type" validate:"required"`
 	StartDate  *time.Time                       `json:"start_date,omitempty"`
+	EndDate    *time.Time                       `json:"end_date,omitempty"`
 }
 
 func (r *GetActiveAddonAssociationRequest) Validate() error {
@@ -144,6 +146,13 @@ func (r *GetActiveAddonAssociationRequest) Validate() error {
 
 	if err := r.EntityType.Validate(); err != nil {
 		return err
+	}
+
+	// Ensure end date is not before start date
+	if r.StartDate != nil && r.EndDate != nil && r.EndDate.Before(*r.StartDate) {
+		return ierr.NewError("end_date cannot be before start_date").
+			WithHint("Provide an end_date that is on or after start_date").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }

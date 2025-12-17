@@ -512,8 +512,8 @@ func (r *CreatePriceRequest) Validate() error {
 
 	// if price type is usage and entity type is addon, throw an error
 	if r.Type == types.PRICE_TYPE_USAGE && r.EntityType == types.PRICE_ENTITY_TYPE_ADDON {
-		return ierr.NewError("usage based addon cannot be added to a subscription").
-			WithHint("Usage based addon cannot be added to a subscription").
+		return ierr.NewError("Usage based price cannot be added to an addon").
+			WithHint("Usage based price cannot be added to an addon").
 			Mark(ierr.ErrValidation)
 	}
 

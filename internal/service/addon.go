@@ -366,8 +366,24 @@ func (s *addonService) GetActiveAddonAssociation(ctx context.Context, req dto.Ge
 		periodStart = &now
 	}
 
-	// Get active addon associations from repository (filtered at DB level)
-	associations, err := s.AddonAssociationRepo.GetActiveAddonAssociation(ctx, req.EntityID, req.EntityType, periodStart, req.AddonIds)
+	// Use end date if provided; if nil we treat it as point-in-time at start
+	periodEnd := req.EndDate
+	if periodEnd == nil {
+		periodEnd = periodStart
+	}
+
+	// Build filter to fetch active addon associations using the generic list method
+	filter := types.NewNoLimitAddonAssociationFilter()
+	filter.EntityIDs = []string{req.EntityID}
+	filter.EntityType = &req.EntityType
+	filter.AddonStatus = lo.ToPtr(string(types.AddonStatusActive))
+	filter.StartDate = periodStart
+	filter.EndDate = periodEnd
+	if len(req.AddonIds) > 0 {
+		filter.AddonIDs = req.AddonIds
+	}
+
+	associations, err := s.AddonAssociationRepo.List(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
