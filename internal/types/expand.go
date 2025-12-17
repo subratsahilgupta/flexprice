@@ -152,6 +152,14 @@ var (
 			ExpandWallet:        {},
 		},
 	}
+
+	// AddonAssociationExpandConfig defines what can be expanded on an addon association
+	AddonAssociationExpandConfig = ExpandConfig{
+		AllowedFields: []ExpandableField{ExpandAddons, ExpandSubscription},
+		NestedExpands: map[ExpandableField][]ExpandableField{
+			ExpandAddons: {},
+		},
+	}
 )
 
 // Expand represents the expand parameter in API requests

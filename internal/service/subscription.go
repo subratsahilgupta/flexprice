@@ -3387,7 +3387,7 @@ func (s *subscriptionService) addAddonToSubscription(
 		return nil, err
 	}
 
-	if len(activeAddons) > 0 {
+	if activeAddons != nil && len(activeAddons.Items) > 0 {
 		return nil, ierr.NewError("addon is already added to subscription").
 			WithHint("Cannot add addon to subscription that already has an active instance").
 			WithReportableDetails(map[string]interface{}{
@@ -4648,8 +4648,11 @@ func (s *subscriptionService) GetSubscriptionEntitlements(ctx context.Context, s
 	}
 
 	// Step 3: Extract unique addon IDs
-	addonIDs := lo.Uniq(lo.Map(activeAddons, func(assoc *dto.AddonAssociationResponse, _ int) string {
-		return assoc.AddonID
+	addonIDs := lo.Uniq(lo.Map(activeAddons.Items, func(assoc *dto.AddonAssociationResponse, _ int) string {
+		if assoc != nil {
+			return assoc.AddonID
+		}
+		return ""
 	}))
 
 	// Step 4: Fetch addon entitlements if any addons exist
@@ -5097,7 +5100,7 @@ func (s *subscriptionService) ListByCustomerID(ctx context.Context, customerID s
 	return subscriptions, nil
 }
 
-func (s *subscriptionService) GetActiveAddonAssociations(ctx context.Context, subscriptionID string) (dto.ListAddonAssociationsResponse, error) {
+func (s *subscriptionService) GetActiveAddonAssociations(ctx context.Context, subscriptionID string) (*dto.ListAddonAssociationsResponse, error) {
 	addonService := NewAddonService(s.ServiceParams)
 	associations, err := addonService.GetActiveAddonAssociation(ctx, dto.GetActiveAddonAssociationRequest{
 		EntityID:   subscriptionID,

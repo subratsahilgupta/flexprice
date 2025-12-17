@@ -124,10 +124,12 @@ func (r *AddAddonToSubscriptionRequest) Validate() error {
 // AddonAssociationResponse represents the response for an addon association
 type AddonAssociationResponse struct {
 	*addonassociation.AddonAssociation
+	Addon        *AddonResponse        `json:"addon,omitempty"`
+	Subscription *SubscriptionResponse `json:"subscription,omitempty"`
 }
 
 // ListAddonAssociationsResponse represents the response for listing addon associations
-type ListAddonAssociationsResponse = []*AddonAssociationResponse
+type ListAddonAssociationsResponse = types.ListResponse[*AddonAssociationResponse]
 
 // GetActiveAddonAssociationRequest represents the request to get active addon associations
 type GetActiveAddonAssociationRequest struct {
