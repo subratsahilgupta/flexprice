@@ -139,7 +139,6 @@ func buildWorkerConfig(
 			scheduleBillingActivities.ScheduleBillingActivity,
 			billingActivities.CheckPauseActivity,
 			billingActivities.CalculatePeriodsActivity,
-			billingActivities.ProcessPeriodsActivity,
 			billingActivities.CreateInvoicesActivity,
 			billingActivities.UpdateCurrentPeriodActivity,
 			billingActivities.SyncInvoiceActivity,

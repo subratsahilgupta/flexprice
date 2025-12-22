@@ -14,7 +14,7 @@ const (
 	// Activity names - must match the registered method names
 	ActivityCheckPause          = "CheckPauseActivity"
 	ActivityCalculatePeriods    = "CalculatePeriodsActivity"
-	ActivityProcessPeriods      = "ProcessPeriodsActivity"
+	ActivityCreateInvoices      = "CreateInvoicesActivity"
 	ActivityUpdateCurrentPeriod = "UpdateCurrentPeriodActivity"
 	ActivityCheckCancellation   = "CheckCancellationActivity"
 	ActivitySyncInvoice         = "SyncInvoiceActivity"
@@ -25,9 +25,9 @@ const (
 // This workflow orchestrates the complete billing period processing:
 // 1. Check pause status and handle pause/resume
 // 2. Calculate billing periods up to current time
-// 3. Process periods (create invoices for all except the last one)
+// 3. For each period (except the last), create invoice and check for cancellation
 // 4. Update subscription to new current period
-// 5. Check for cancellation
+// 5. Check for final cancellation
 // 6. Sync invoices to external vendors (non-blocking)
 // 7. Attempt payment for invoices
 func ProcessSubscriptionBillingWorkflow(
@@ -157,31 +157,94 @@ func ProcessSubscriptionBillingWorkflow(
 		"subscription_id", input.SubscriptionID,
 		"periods_to_process", len(periodsOutput.Periods)-1)
 
-	var processPeriodsOutput subscriptionModels.ProcessPeriodsActivityOutput
-	processPeriodsInput := subscriptionModels.ProcessPeriodsActivityInput{
-		SubscriptionID: input.SubscriptionID,
-		TenantID:       input.TenantID,
-		EnvironmentID:  input.EnvironmentID,
-		Periods:        periodsOutput.Periods,
-	}
+	invoiceIDs := []string{}
+	periodsProcessed := 0
 
-	err = workflow.ExecuteActivity(ctx, ActivityProcessPeriods, processPeriodsInput).Get(ctx, &processPeriodsOutput)
-	if err != nil {
-		logger.Error("Failed to process periods",
-			"error", err,
-			"subscription_id", input.SubscriptionID)
-		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
-			Success:     false,
-			Error:       &errorMsg,
-			CompletedAt: workflow.Now(ctx),
-		}, nil
+	// Process all periods except the last one (which becomes the new current period)
+	for i := 0; i < len(periodsOutput.Periods)-1; i++ {
+		period := periodsOutput.Periods[i]
+
+		logger.Info("Processing period",
+			"subscription_id", input.SubscriptionID,
+			"period_index", i,
+			"period_start", period.Start,
+			"period_end", period.End)
+
+		// Create invoice for this period
+		var createInvoiceOutput subscriptionModels.CreateInvoicesActivityOutput
+		createInvoiceInput := subscriptionModels.CreateInvoicesActivityInput{
+			SubscriptionID: input.SubscriptionID,
+			TenantID:       input.TenantID,
+			EnvironmentID:  input.EnvironmentID,
+			PeriodStart:    period.Start,
+			PeriodEnd:      period.End,
+		}
+
+		err = workflow.ExecuteActivity(ctx, ActivityCreateInvoices, createInvoiceInput).Get(ctx, &createInvoiceOutput)
+		if err != nil {
+			logger.Error("Failed to create invoice for period",
+				"error", err,
+				"subscription_id", input.SubscriptionID,
+				"period_index", i,
+				"period_start", period.Start,
+				"period_end", period.End)
+			errorMsg := err.Error()
+			return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
+				Success:     false,
+				Error:       &errorMsg,
+				CompletedAt: workflow.Now(ctx),
+			}, nil
+		}
+
+		periodsProcessed++
+
+		// Add invoice ID if invoice was created
+		if createInvoiceOutput.InvoiceCreated && createInvoiceOutput.InvoiceID != nil {
+			invoiceIDs = append(invoiceIDs, *createInvoiceOutput.InvoiceID)
+			logger.Info("Created invoice for period",
+				"subscription_id", input.SubscriptionID,
+				"invoice_id", *createInvoiceOutput.InvoiceID,
+				"period_index", i,
+				"period_start", period.Start,
+				"period_end", period.End)
+		} else {
+			logger.Debug("No invoice created for period (zero amount)",
+				"subscription_id", input.SubscriptionID,
+				"period_index", i,
+				"period_start", period.Start,
+				"period_end", period.End)
+		}
+
+		// Check for cancellation at this period's end
+		var cancellationOutput subscriptionModels.CheckSubscriptionCancellationActivityOutput
+		cancellationInput := subscriptionModels.CheckSubscriptionCancellationActivityInput{
+			SubscriptionID: input.SubscriptionID,
+			TenantID:       input.TenantID,
+			EnvironmentID:  input.EnvironmentID,
+			PeriodEnd:      period.End,
+		}
+
+		err = workflow.ExecuteActivity(ctx, ActivityCheckCancellation, cancellationInput).Get(ctx, &cancellationOutput)
+		if err != nil {
+			logger.Error("Failed to check subscription cancellation",
+				"error", err,
+				"subscription_id", input.SubscriptionID,
+				"period_end", period.End)
+			// Don't fail the workflow for this, just log the error
+		} else if cancellationOutput.ShouldCancel {
+			logger.Info("Subscription should be cancelled at period end",
+				"subscription_id", input.SubscriptionID,
+				"period_end", period.End,
+				"cancelled_at", cancellationOutput.CancelledAt)
+			// Break out of loop - no more periods to process
+			break
+		}
 	}
 
 	logger.Info("Processed periods and created invoices",
 		"subscription_id", input.SubscriptionID,
-		"periods_processed", processPeriodsOutput.PeriodsProcessed,
-		"invoices_created", len(processPeriodsOutput.InvoiceIDs))
+		"periods_processed", periodsProcessed,
+		"invoices_created", len(invoiceIDs))
 
 	// ================================================================================
 	// STEP 4: Update Subscription Period
@@ -260,7 +323,7 @@ func ProcessSubscriptionBillingWorkflow(
 	syncCtx := workflow.WithActivityOptions(ctx, syncActivityOptions)
 
 	// Process each invoice
-	for _, invoiceID := range processPeriodsOutput.InvoiceIDs {
+	for _, invoiceID := range invoiceIDs {
 		logger.Info("Processing invoice",
 			"subscription_id", input.SubscriptionID,
 			"invoice_id", invoiceID)
@@ -302,8 +365,8 @@ func ProcessSubscriptionBillingWorkflow(
 
 	logger.Info("Process subscription billing workflow completed successfully",
 		"subscription_id", input.SubscriptionID,
-		"periods_processed", processPeriodsOutput.PeriodsProcessed,
-		"invoices_created", len(processPeriodsOutput.InvoiceIDs))
+		"periods_processed", periodsProcessed,
+		"invoices_created", len(invoiceIDs))
 
 	return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
 		Success:     true,

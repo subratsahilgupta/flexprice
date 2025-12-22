@@ -352,9 +352,9 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 		return s.buildHubSpotDealSyncInput(ctx, tenantID, environmentID, params)
 	case types.TemporalHubSpotInvoiceSyncWorkflow:
 		return s.buildHubSpotInvoiceSyncInput(ctx, tenantID, environmentID, params)
-	case types.TemporalScheduleSubscriptionUpdateBillingPeriodWorkflow:
+	case types.TemporalScheduleSubscriptionBillingWorkflow:
 		return params, nil
-	case types.TemporalProcessSubscriptionBillingPeriodUpdateWorkflow:
+	case types.TemporalProcessSubscriptionBillingWorkflow:
 		return params, nil
 	default:
 		return nil, errors.NewError("unsupported workflow type").

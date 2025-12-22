@@ -154,45 +154,6 @@ type CalculatePeriodsActivityOutput struct {
 	FinalPeriodEnd *time.Time      `json:"final_period_end,omitempty"`
 }
 
-// ProcessPeriodsActivityInput represents the input for processing billing periods
-type ProcessPeriodsActivityInput struct {
-	SubscriptionID string          `json:"subscription_id"`
-	TenantID       string          `json:"tenant_id"`
-	EnvironmentID  string          `json:"environment_id"`
-	Periods        []BillingPeriod `json:"periods"`
-}
-
-// Validate validates the process periods activity input
-func (i *ProcessPeriodsActivityInput) Validate() error {
-	if i.SubscriptionID == "" {
-		return ierr.NewError("subscription_id is required").
-			WithHint("Subscription ID is required").
-			Mark(ierr.ErrValidation)
-	}
-	if i.TenantID == "" {
-		return ierr.NewError("tenant_id is required").
-			WithHint("Tenant ID is required").
-			Mark(ierr.ErrValidation)
-	}
-	if i.EnvironmentID == "" {
-		return ierr.NewError("environment_id is required").
-			WithHint("Environment ID is required").
-			Mark(ierr.ErrValidation)
-	}
-	if len(i.Periods) == 0 {
-		return ierr.NewError("periods are required").
-			WithHint("At least one period is required").
-			Mark(ierr.ErrValidation)
-	}
-	return nil
-}
-
-// ProcessPeriodsActivityOutput represents the output for processing billing periods
-type ProcessPeriodsActivityOutput struct {
-	InvoiceIDs       []string `json:"invoice_ids"`
-	PeriodsProcessed int      `json:"periods_processed"`
-}
-
 // CreateInvoicesActivityInput represents the input for creating an invoice for a period
 type CreateInvoicesActivityInput struct {
 	SubscriptionID string    `json:"subscription_id"`

@@ -178,6 +178,8 @@ func (s *BillingActivities) CheckPauseActivity(
 	}
 
 	// No pause-related actions needed, continue with normal processing
+	s.logger.Infow("no pause-related actions needed, continue with normal processing",
+		"subscription_id", sub.ID)
 	return output, nil
 }
 
@@ -276,114 +278,6 @@ func (s *BillingActivities) CalculatePeriodsActivity(
 	}
 
 	return output, nil
-}
-
-// ProcessPeriodsActivity processes all billing periods by calling CreateInvoicesActivity for each period
-// and checking for cancellation after each period
-func (s *BillingActivities) ProcessPeriodsActivity(
-	ctx context.Context,
-	input subscriptionModels.ProcessPeriodsActivityInput,
-) (*subscriptionModels.ProcessPeriodsActivityOutput, error) {
-	if err := input.Validate(); err != nil {
-		return nil, err
-	}
-
-	// Set context values
-	ctx = types.SetTenantID(ctx, input.TenantID)
-	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
-
-	// Get the subscription
-	sub, err := s.serviceParams.SubRepo.Get(ctx, input.SubscriptionID)
-	if err != nil {
-		return nil, err
-	}
-
-	invoiceIDs := []string{}
-
-	// Process all periods except the last one (which becomes the new current period)
-	for i := 0; i < len(input.Periods)-1; i++ {
-		period := input.Periods[i]
-
-		// Create invoice for this period using CreateInvoicesActivity
-		createInvoiceInput := subscriptionModels.CreateInvoicesActivityInput{
-			SubscriptionID: input.SubscriptionID,
-			TenantID:       input.TenantID,
-			EnvironmentID:  input.EnvironmentID,
-			PeriodStart:    period.Start,
-			PeriodEnd:      period.End,
-		}
-
-		createInvoiceOutput, err := s.CreateInvoicesActivity(ctx, createInvoiceInput)
-		if err != nil {
-			s.logger.Errorw("failed to create invoice for period",
-				"subscription_id", sub.ID,
-				"period_start", period.Start,
-				"period_end", period.End,
-				"period_index", i,
-				"error", err)
-			return nil, err
-		}
-
-		// Refresh subscription to get latest state
-		sub, err = s.serviceParams.SubRepo.Get(ctx, input.SubscriptionID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Check for cancellation at this period end
-		if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(period.End) {
-			s.logger.Infow("subscription should be cancelled at period end",
-				"subscription_id", sub.ID,
-				"period_end", period.End,
-				"cancel_at", *sub.CancelAt)
-			// Update subscription status to cancelled
-			sub.SubscriptionStatus = types.SubscriptionStatusCancelled
-			sub.EndDate = sub.CancelAt
-			if err := s.serviceParams.SubRepo.Update(ctx, sub); err != nil {
-				return nil, err
-			}
-			// Break out of loop - no more periods to process
-			break
-		}
-
-		// Check if this period end matches the subscription end date
-		if sub.EndDate != nil && period.End.Equal(*sub.EndDate) {
-			s.logger.Infow("subscription should be cancelled (end date reached)",
-				"subscription_id", sub.ID,
-				"period_end", period.End,
-				"end_date", *sub.EndDate)
-			// Update subscription status to cancelled
-			sub.SubscriptionStatus = types.SubscriptionStatusCancelled
-			sub.CancelledAt = sub.EndDate
-			if err := s.serviceParams.SubRepo.Update(ctx, sub); err != nil {
-				return nil, err
-			}
-			// Break out of loop - no more periods to process
-			break
-		}
-
-		// Add invoice ID if invoice was created
-		if createInvoiceOutput.InvoiceCreated && createInvoiceOutput.InvoiceID != nil {
-			invoiceIDs = append(invoiceIDs, *createInvoiceOutput.InvoiceID)
-			s.logger.Infow("created invoice for period",
-				"subscription_id", sub.ID,
-				"invoice_id", *createInvoiceOutput.InvoiceID,
-				"period_start", period.Start,
-				"period_end", period.End,
-				"period_index", i)
-		} else {
-			s.logger.Debugw("no invoice created for period (zero amount)",
-				"subscription_id", sub.ID,
-				"period_start", period.Start,
-				"period_end", period.End,
-				"period_index", i)
-		}
-	}
-
-	return &subscriptionModels.ProcessPeriodsActivityOutput{
-		InvoiceIDs:       invoiceIDs,
-		PeriodsProcessed: len(input.Periods) - 1,
-	}, nil
 }
 
 // CreateInvoicesActivity creates and finalizes an invoice for a specific billing period
@@ -659,7 +553,7 @@ func (s *BillingActivities) AttemptPaymentActivity(
 	}, nil
 }
 
-// CheckCancellationActivity checks if a subscription should be cancelled
+// CheckCancellationActivity checks if a subscription should be cancelled and performs the cancellation
 func (s *BillingActivities) CheckCancellationActivity(
 	ctx context.Context,
 	input subscriptionModels.CheckSubscriptionCancellationActivityInput,
@@ -686,7 +580,20 @@ func (s *BillingActivities) CheckCancellationActivity(
 	if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(input.PeriodEnd) {
 		output.ShouldCancel = true
 		output.CancelledAt = sub.CancelAt
-		s.logger.Infow("subscription should be cancelled at period end",
+
+		// Update subscription status to cancelled
+		sub.SubscriptionStatus = types.SubscriptionStatusCancelled
+		sub.EndDate = sub.CancelAt
+		if err := s.serviceParams.SubRepo.Update(ctx, sub); err != nil {
+			s.logger.Errorw("failed to cancel subscription at period end",
+				"subscription_id", sub.ID,
+				"period_end", input.PeriodEnd,
+				"cancel_at", *sub.CancelAt,
+				"error", err)
+			return nil, err
+		}
+
+		s.logger.Infow("subscription cancelled at period end",
 			"subscription_id", sub.ID,
 			"period_end", input.PeriodEnd,
 			"cancel_at", *sub.CancelAt)
@@ -697,7 +604,20 @@ func (s *BillingActivities) CheckCancellationActivity(
 	if sub.EndDate != nil && input.PeriodEnd.Equal(*sub.EndDate) {
 		output.ShouldCancel = true
 		output.CancelledAt = sub.EndDate
-		s.logger.Infow("subscription should be cancelled (end date reached)",
+
+		// Update subscription status to cancelled
+		sub.SubscriptionStatus = types.SubscriptionStatusCancelled
+		sub.CancelledAt = sub.EndDate
+		if err := s.serviceParams.SubRepo.Update(ctx, sub); err != nil {
+			s.logger.Errorw("failed to cancel subscription (end date reached)",
+				"subscription_id", sub.ID,
+				"period_end", input.PeriodEnd,
+				"end_date", *sub.EndDate,
+				"error", err)
+			return nil, err
+		}
+
+		s.logger.Infow("subscription cancelled (end date reached)",
 			"subscription_id", sub.ID,
 			"period_end", input.PeriodEnd,
 			"end_date", *sub.EndDate)
