@@ -299,6 +299,14 @@ func (s *costsheetUsageTrackingService) prepareProcessedEvents(ctx context.Conte
 	// CASE 1: Get active costsheet (with caching)
 	costSheet, err := s.getActiveCostsheetWithCache(ctx)
 	if err != nil {
+		if ierr.IsNotFound(err) {
+			s.Logger.Debugw("no active costsheet found for event, skipping",
+				"event_id", event.ID,
+				"tenant_id", event.TenantID,
+				"environment_id", event.EnvironmentID,
+			)
+			return results, nil
+		}
 		return results, err
 	}
 
@@ -1375,7 +1383,6 @@ func (s *costsheetUsageTrackingService) getActiveCostsheetWithCache(ctx context.
 		var err error
 		costSheet, err = costSheetService.GetActiveCostsheetForTenant(ctx)
 		if err != nil {
-			s.Logger.Warnw("failed to get active costsheet", "error", err, "tenant_id", tenantID, "environment_id", environmentID)
 			return nil, err
 		}
 
