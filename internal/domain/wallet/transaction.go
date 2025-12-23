@@ -145,3 +145,13 @@ type CreditTopupsExportData struct {
 	TransactionReason   types.TransactionReason
 	CreatedAt           time.Time
 }
+
+// CreditUsageExportData represents the joined data for credit usage export
+type CreditUsageExportData struct {
+	CustomerID         string
+	CustomerName       string
+	CustomerExternalID string
+	CurrentBalance     decimal.Decimal
+	RealtimeBalance    decimal.Decimal
+	NumberOfWallets    int
+}
