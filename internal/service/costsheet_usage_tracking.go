@@ -300,7 +300,7 @@ func (s *costsheetUsageTrackingService) prepareProcessedEvents(ctx context.Conte
 	costSheet, err := s.getActiveCostsheetWithCache(ctx)
 	if err != nil {
 		if ierr.IsNotFound(err) {
-			s.Logger.Warnw("no active costsheet found for event, skipping",
+			s.Logger.Debugw("no active costsheet found for event, skipping",
 				"event_id", event.ID,
 				"tenant_id", event.TenantID,
 				"environment_id", event.EnvironmentID,
