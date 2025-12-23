@@ -459,16 +459,6 @@ func (s *creditGrantService) ApplyCreditGrantToWallet(ctx context.Context, grant
 					}).
 					Mark(ierr.ErrValidation)
 			}
-
-			s.Logger.Infow("calculated duration-based expiry date",
-				"grant_id", grant.ID,
-				"subscription_id", subscription.ID,
-				"expiry_type", grant.ExpirationType,
-				"duration", grant.ExpirationDuration,
-				"duration_unit", grant.ExpirationDurationUnit,
-				"grant_time", now,
-				"expiry_date", expiryDate,
-			)
 		}
 	}
 
@@ -476,13 +466,6 @@ func (s *creditGrantService) ApplyCreditGrantToWallet(ctx context.Context, grant
 		// For billing cycle expiry, use the current period end when the grant is applied
 		// For recurring grants, this will be the period end for the current billing period
 		expiryDate = &subscription.CurrentPeriodEnd
-		s.Logger.Infow("using billing cycle expiry date",
-			"grant_id", grant.ID,
-			"subscription_id", subscription.ID,
-			"expiry_type", grant.ExpirationType,
-			"current_period_end", subscription.CurrentPeriodEnd,
-			"expiry_date", expiryDate,
-		)
 	}
 
 	// Prepare top-up request
