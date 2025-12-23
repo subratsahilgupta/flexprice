@@ -401,7 +401,7 @@ func (s *featureUsageTrackingService) prepareProcessedEvents(ctx context.Context
 	filter := types.NewSubscriptionFilter()
 	filter.CustomerID = customer.ID
 	filter.WithLineItems = true
-	filter.Expand = lo.ToPtr(string(types.ExpandPrices) + "," + string(types.ExpandMeters) + "," + string(types.ExpandFeatures))
+	filter.Expand = lo.ToPtr(string(types.ExpandPrices) + "," + string(types.ExpandMeters))
 	filter.SubscriptionStatus = []types.SubscriptionStatus{
 		types.SubscriptionStatusActive,
 		types.SubscriptionStatusTrialing,
