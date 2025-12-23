@@ -67,48 +67,62 @@ func (h *WalletCronHandler) ExpireCredits(c *gin.Context) {
 	}
 
 	for _, tenant := range tenants {
-		tenantResponse := &dto.ExpiredCreditsResponseItem{
-			TenantID: tenant.ID,
-			Count:    0,
-		}
-
-		h.logger.Infow("tenant", "id", tenant.ID, "name", tenant.Name)
 		ctx := context.WithValue(c.Request.Context(), types.CtxTenantID, tenant.ID)
-		ctx = context.WithValue(ctx, types.CtxEnvironmentID, "")
-		// Get transactions with expired credits
-		transactions, err := h.walletService.ListWalletTransactionsByFilter(ctx, filter)
+		// fetch all environments for the tenant
+		environments, err := h.environmentService.GetEnvironments(ctx, types.GetDefaultFilter())
 		if err != nil {
-			h.logger.Errorw("failed to list expired credits",
-				"error", err,
-			)
+			h.logger.Errorw("failed to get all environments", "error", err)
 			c.Error(err)
 			return
 		}
 
-		h.logger.Infow("found expired credits", "count", len(transactions.Items))
+		for _, environment := range environments.Environments {
+			ctx = context.WithValue(ctx, types.CtxEnvironmentID, environment.ID)
 
-		// Process each expired credit
-		for _, tx := range transactions.Items {
-			if err := h.walletService.ExpireCredits(ctx, tx.ID); err != nil {
-				h.logger.Errorw("failed to expire credits",
-					"transaction_id", tx.ID,
-					"error", err,
-				)
-				response.Failed++
-				continue
+			tenantResponse := &dto.ExpiredCreditsResponseItem{
+				TenantID:      tenant.ID,
+				EnvironmentID: environment.ID,
+				Count:         0,
 			}
 
-			tenantResponse.Count++
-			response.Success++
+			// Get transactions with expired credits
+			transactions, err := h.walletService.ListWalletTransactionsByFilter(ctx, filter)
+			if err != nil {
+				h.logger.Errorw("failed to list expired credits",
+					"error", err,
+				)
+				c.Error(err)
+				return
+			}
 
-			h.logger.Infow("expired credits successfully",
-				"transaction_id", tx.ID,
-				"wallet_id", tx.WalletID,
-				"amount", tx.CreditsAvailable,
-			)
+			h.logger.Infow("found expired credits", "count", len(transactions.Items))
+
+			// Process each expired credit
+			for _, tx := range transactions.Items {
+				tenantResponse.Count++
+				response.Total++
+
+				// Setting same user for expiry as creation for RBAC in future
+				ctx = context.WithValue(ctx, types.CtxUserID, tx.CreatedBy)
+				if err := h.walletService.ExpireCredits(ctx, tx.ID); err != nil {
+					h.logger.Errorw("failed to expire credits",
+						"transaction_id", tx.ID,
+						"error", err,
+					)
+					response.Failed++
+					continue
+				}
+
+				response.Success++
+				h.logger.Infow("expired credits successfully",
+					"transaction_id", tx.ID,
+					"wallet_id", tx.WalletID,
+					"amount", tx.CreditsAvailable,
+				)
+			}
+
+			response.Items = append(response.Items, tenantResponse)
 		}
-
-		response.Items = append(response.Items, tenantResponse)
 	}
 
 	h.logger.Infow("completed credit expiry cron job")

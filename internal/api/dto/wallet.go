@@ -442,8 +442,9 @@ type WalletBalanceResponse struct {
 }
 
 type ExpiredCreditsResponseItem struct {
-	TenantID string `json:"tenant_id"`
-	Count    int    `json:"count"`
+	TenantID      string `json:"tenant_id"`
+	EnvironmentID string `json:"environment_id"`
+	Count         int    `json:"count"`
 }
 
 type ExpiredCreditsResponse struct {
