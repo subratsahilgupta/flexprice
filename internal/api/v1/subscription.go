@@ -268,7 +268,7 @@ func (h *SubscriptionHandler) ListSubscriptionsByFilter(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body dto.AddAddonToSubscriptionRequest true "Add Addon Request"
+// @Param request body dto.AddAddonRequest true "Add Addon Request"
 // @Success 200 {object} dto.AddonAssociationResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
@@ -300,7 +300,7 @@ func (h *SubscriptionHandler) AddAddonToSubscription(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param request body dto.RemoveAddonRequest true "Remove Addon Request"
-// @Success 200 {object} gin.H
+// @Success 200 {object} dto.SuccessResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
 // @Router /subscriptions/addon [delete]
