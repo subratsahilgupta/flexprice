@@ -80,6 +80,7 @@ func (s SubscriptionStatus) Validate() error {
 		SubscriptionStatusPastDue,
 		SubscriptionStatusTrialing,
 		SubscriptionStatusUnpaid,
+		SubscriptionStatusIncompleteExpired,
 		SubscriptionStatusDraft,
 	}
 
