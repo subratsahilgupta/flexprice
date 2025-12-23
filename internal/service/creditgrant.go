@@ -328,11 +328,8 @@ func (s *creditGrantService) CreateScheduledCreditGrantApplication(
 		applicationReason = types.ApplicationReasonOnetimeCreditGrant
 	}
 
-	// Schedule for subscription start date, or now if subscription start is in the past
+	// Schedule for subscription start date (even if in the past for backdated subscriptions)
 	scheduledFor := subscription.StartDate
-	if scheduledFor.Before(time.Now().UTC()) {
-		scheduledFor = time.Now().UTC()
-	}
 
 	cga := &domainCreditGrantApplication.CreditGrantApplication{
 		ID:                              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CREDIT_GRANT_APPLICATION),
