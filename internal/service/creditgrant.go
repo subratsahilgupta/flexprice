@@ -425,7 +425,10 @@ func (s *creditGrantService) ApplyCreditGrantToWallet(ctx context.Context, grant
 	}
 
 	// Calculate expiry date
+	// IMPORTANT: For recurring grants, expiry should be calculated from when the credit is actually granted,
+	// not from subscription start date. This ensures each grant has its own expiry timeline.
 	var expiryDate *time.Time
+	now := time.Now().UTC()
 
 	if grant.ExpirationType == types.CreditGrantExpiryTypeNever {
 		expiryDate = nil
@@ -433,18 +436,20 @@ func (s *creditGrantService) ApplyCreditGrantToWallet(ctx context.Context, grant
 
 	if grant.ExpirationType == types.CreditGrantExpiryTypeDuration {
 		if grant.ExpirationDurationUnit != nil && grant.ExpirationDuration != nil && lo.FromPtr(grant.ExpirationDuration) > 0 {
+			// Calculate expiry from current time (when grant is being applied), not subscription start
+			// This ensures recurring grants each have their own expiry timeline
 			switch lo.FromPtr(grant.ExpirationDurationUnit) {
 			case types.CreditGrantExpiryDurationUnitDays:
-				expiry := subscription.StartDate.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration))
+				expiry := now.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration))
 				expiryDate = &expiry
 			case types.CreditGrantExpiryDurationUnitWeeks:
-				expiry := subscription.StartDate.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration)*7)
+				expiry := now.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration)*7)
 				expiryDate = &expiry
 			case types.CreditGrantExpiryDurationUnitMonths:
-				expiry := subscription.StartDate.AddDate(0, lo.FromPtr(grant.ExpirationDuration), 0)
+				expiry := now.AddDate(0, lo.FromPtr(grant.ExpirationDuration), 0)
 				expiryDate = &expiry
 			case types.CreditGrantExpiryDurationUnitYears:
-				expiry := subscription.StartDate.AddDate(lo.FromPtr(grant.ExpirationDuration), 0, 0)
+				expiry := now.AddDate(lo.FromPtr(grant.ExpirationDuration), 0, 0)
 				expiryDate = &expiry
 			default:
 				return ierr.NewError("invalid expiration duration unit").
@@ -454,11 +459,30 @@ func (s *creditGrantService) ApplyCreditGrantToWallet(ctx context.Context, grant
 					}).
 					Mark(ierr.ErrValidation)
 			}
+
+			s.Logger.Infow("calculated duration-based expiry date",
+				"grant_id", grant.ID,
+				"subscription_id", subscription.ID,
+				"expiry_type", grant.ExpirationType,
+				"duration", grant.ExpirationDuration,
+				"duration_unit", grant.ExpirationDurationUnit,
+				"grant_time", now,
+				"expiry_date", expiryDate,
+			)
 		}
 	}
 
 	if grant.ExpirationType == types.CreditGrantExpiryTypeBillingCycle {
+		// For billing cycle expiry, use the current period end when the grant is applied
+		// For recurring grants, this will be the period end for the current billing period
 		expiryDate = &subscription.CurrentPeriodEnd
+		s.Logger.Infow("using billing cycle expiry date",
+			"grant_id", grant.ID,
+			"subscription_id", subscription.ID,
+			"expiry_type", grant.ExpirationType,
+			"current_period_end", subscription.CurrentPeriodEnd,
+			"expiry_date", expiryDate,
+		)
 	}
 
 	// Prepare top-up request
