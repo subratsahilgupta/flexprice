@@ -82,7 +82,7 @@ type Price struct {
 
 	BillingCadence types.BillingCadence `db:"billing_cadence" json:"billing_cadence"`
 
-	InvoiceCadence types.InvoiceCadence `db:"invoice_cadence" json:"invoice_cadence`
+	InvoiceCadence types.InvoiceCadence `db:"invoice_cadence" json:"invoice_cadence"`
 
 	// TrialPeriod is the number of days for the trial period
 	// Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
