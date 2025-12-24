@@ -14,7 +14,7 @@ type CreditGrant struct {
 	Scope                  types.CreditGrantScope               `json:"scope"`
 	PlanID                 *string                              `json:"plan_id,omitempty"`
 	SubscriptionID         *string                              `json:"subscription_id,omitempty"`
-	Credits                decimal.Decimal                      `json:"credits"`
+	Credits                decimal.Decimal                      `json:"credits" swaggertype:"string"`
 	Cadence                types.CreditGrantCadence             `json:"cadence"`
 	Period                 *types.CreditGrantPeriod             `json:"period,omitempty"`
 	PeriodCount            *int                                 `json:"period_count,omitempty"`

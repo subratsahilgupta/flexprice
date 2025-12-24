@@ -78,7 +78,7 @@ type Price struct {
 	DisplayName string `db:"display_name" json:"display_name"`
 
 	// MinQuantity is the minimum quantity of the price
-	MinQuantity *decimal.Decimal `db:"min_quantity" json:"min_quantity"`
+	MinQuantity *decimal.Decimal `db:"min_quantity" json:"min_quantity" swaggertype:"string"`
 
 	BillingCadence types.BillingCadence `db:"billing_cadence" json:"billing_cadence"`
 

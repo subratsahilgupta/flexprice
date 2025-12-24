@@ -86,7 +86,7 @@ definitions:
   creditnote.CreditNoteLineItem:
     properties:
       amount:
-        type: number
+        type: string
       created_at:
         type: string
       created_by:
@@ -121,6 +121,23 @@ definitions:
         type: string
     required:
     - start_date
+    type: object
+  dto.AddAddonRequest:
+    properties:
+      addon_id:
+        type: string
+      end_date:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      start_date:
+        type: string
+      subscription_id:
+        type: string
+    required:
+    - addon_id
+    - subscription_id
     type: object
   dto.AddAddonToSubscriptionRequest:
     properties:
@@ -1932,7 +1949,7 @@ definitions:
       created_by:
         type: string
       credits:
-        type: number
+        type: string
       environment_id:
         type: string
       expiration_duration:
@@ -2061,7 +2078,7 @@ definitions:
       total_amount:
         description: total_amount is the total including creditable invoice-level
           discounts or minimums, and tax
-        type: number
+        type: string
       updated_at:
         type: string
       updated_by:
@@ -2212,6 +2229,11 @@ definitions:
       id:
         type: string
       message:
+        type: string
+    type: object
+  dto.DeletePriceRequest:
+    properties:
+      end_date:
         type: string
     type: object
   dto.DeleteSubscriptionLineItemRequest:
@@ -3955,7 +3977,7 @@ definitions:
         type: string
       min_quantity:
         description: MinQuantity is the minimum quantity of the price
-        type: number
+        type: string
       parent_price_id:
         description: ParentPriceID references the root price (always set for price
           lineage tracking)
@@ -4804,6 +4826,11 @@ definitions:
         $ref: '#/definitions/price.Price'
       quantity:
         type: number
+    type: object
+  dto.SuccessResponse:
+    properties:
+      message:
+        type: string
     type: object
   dto.TaskResponse:
     properties:
@@ -5837,9 +5864,6 @@ definitions:
     type: object
   errors.ErrorDetail:
     properties:
-      details:
-        additionalProperties: {}
-        type: object
       internal_error:
         type: string
       message:
@@ -5851,9 +5875,6 @@ definitions:
         $ref: '#/definitions/errors.ErrorDetail'
       success:
         type: boolean
-    type: object
-  gin.H:
-    additionalProperties: {}
     type: object
   github_com_flexprice_flexprice_internal_domain_addon.Addon:
     properties:
@@ -6264,7 +6285,7 @@ definitions:
         type: string
       min_quantity:
         description: MinQuantity is the minimum quantity of the price
-        type: number
+        type: string
       parent_price_id:
         description: ParentPriceID references the root price (always set for price
           lineage tracking)
@@ -8571,7 +8592,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -9269,6 +9290,40 @@ paths:
       summary: Get combined revenue and cost analytics
       tags:
       - Costs
+  /costs/analytics-v2:
+    post:
+      consumes:
+      - application/json
+      description: Retrieve combined analytics with ROI, margin, and detailed breakdowns.
+        If start_time and end_time are not provided, defaults to last 7 days.
+      parameters:
+      - description: Combined analytics request (start_time/end_time optional - defaults
+          to last 7 days)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.GetCostAnalyticsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GetDetailedCostAnalyticsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get combined revenue and cost analytics
+      tags:
+      - Costs
   /costs/search:
     post:
       consumes:
@@ -9691,7 +9746,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -10715,7 +10770,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -11560,7 +11615,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -12119,7 +12174,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -12154,7 +12209,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -12226,7 +12281,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -12337,7 +12392,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -12558,7 +12613,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -12787,7 +12842,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -13180,13 +13235,19 @@ paths:
         name: id
         required: true
         type: string
+      - description: Delete Price Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.DeletePriceRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -13386,7 +13447,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -14363,7 +14424,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
@@ -14387,7 +14448,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/dto.AddAddonToSubscriptionRequest'
+          $ref: '#/definitions/dto.AddAddonRequest'
       produces:
       - application/json
       responses:
@@ -14738,7 +14799,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/gin.H'
+            $ref: '#/definitions/dto.SuccessResponse'
         "400":
           description: Bad Request
           schema:
