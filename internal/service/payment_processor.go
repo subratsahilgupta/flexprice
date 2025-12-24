@@ -593,13 +593,16 @@ func (p *paymentProcessor) handleCreditsPayment(ctx context.Context, paymentObj 
 		ReferenceID:       paymentObj.ID,
 		Description:       fmt.Sprintf("Payment for invoice %s", paymentObj.DestinationID),
 		TransactionReason: types.TransactionReasonInvoicePayment,
-		InvoiceID:         &paymentObj.DestinationID,
 		Metadata: types.Metadata{
 			"payment_id":     paymentObj.ID,
 			"invoice_id":     paymentObj.DestinationID,
 			"payment_method": string(paymentObj.PaymentMethodType),
 			"wallet_type":    string(selectedWallet.WalletType),
 		},
+	}
+
+	if paymentObj.DestinationType == types.PaymentDestinationTypeInvoice {
+		operation.InvoiceID = &paymentObj.DestinationID
 	}
 
 	// Create wallet service
