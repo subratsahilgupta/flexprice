@@ -236,13 +236,13 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 // this is to ensure that the highest priority credits are used first, then the oldest credits,
 // and if there are multiple credits with the same priority and expiry date,
 // the credits with the highest credit amount are used first
-func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int, periodEnd time.Time) ([]*walletdomain.Transaction, error) {
+func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int, timeReference time.Time) ([]*walletdomain.Transaction, error) {
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "wallet", "find_eligible_credits", map[string]interface{}{
 		"wallet_id":       walletID,
 		"required_amount": requiredAmount.String(),
 		"page_size":       pageSize,
-		"period_end":      periodEnd.Format(time.RFC3339),
+		"time_reference":  timeReference.Format(time.RFC3339),
 	})
 	defer FinishSpan(span)
 
@@ -258,7 +258,7 @@ func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID str
 				wallettransaction.CreditsAvailableGT(decimal.Zero),
 				wallettransaction.Or(
 					wallettransaction.ExpiryDateIsNil(),
-					wallettransaction.ExpiryDateGTE(periodEnd),
+					wallettransaction.ExpiryDateGTE(timeReference),
 				),
 				wallettransaction.StatusEQ(string(types.StatusPublished)),
 			).

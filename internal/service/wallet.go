@@ -1408,16 +1408,17 @@ func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.W
 		credits = append(credits, parentCreditTx)
 
 	} else {
-		invoiceID := req.Metadata["invoice_id"]
-		periodEnd := time.Now().UTC()
-		if invoiceID != "" {
-			invoice, err := s.InvoiceRepo.Get(ctx, invoiceID)
+		// Determine the time reference for finding eligible credits
+		timeReference := time.Now().UTC()
+		if req.InvoiceID != nil && *req.InvoiceID != "" {
+			// Use invoice's period end as the time reference
+			invoice, err := s.InvoiceRepo.Get(ctx, *req.InvoiceID)
 			if err != nil {
 				return err
 			}
-			periodEnd = *invoice.PeriodEnd
+			timeReference = *invoice.PeriodEnd
 		}
-		credits, err = s.WalletRepo.FindEligibleCredits(ctx, req.WalletID, req.CreditAmount, 100, periodEnd)
+		credits, err = s.WalletRepo.FindEligibleCredits(ctx, req.WalletID, req.CreditAmount, 100, timeReference)
 		if err != nil {
 			return err
 		}
