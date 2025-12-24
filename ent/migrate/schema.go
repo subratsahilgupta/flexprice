@@ -462,11 +462,14 @@ var (
 		{Name: "cadence", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "period", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "period_count", Type: field.TypeInt, Nullable: true},
-		{Name: "expiration_type", Type: field.TypeString, Default: "NEVER", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "expiration_type", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "expiration_duration", Type: field.TypeInt, Nullable: true},
 		{Name: "expiration_duration_unit", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "priority", Type: field.TypeInt, Nullable: true},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "start_date", Type: field.TypeTime, Nullable: true},
+		{Name: "end_date", Type: field.TypeTime, Nullable: true},
+		{Name: "credit_grant_anchor", Type: field.TypeTime, Nullable: true},
 		{Name: "plan_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "subscription_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
@@ -478,13 +481,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "credit_grants_plans_credit_grants",
-				Columns:    []*schema.Column{CreditGrantsColumns[19]},
+				Columns:    []*schema.Column{CreditGrantsColumns[22]},
 				RefColumns: []*schema.Column{PlansColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "credit_grants_subscriptions_credit_grants",
-				Columns:    []*schema.Column{CreditGrantsColumns[20]},
+				Columns:    []*schema.Column{CreditGrantsColumns[23]},
 				RefColumns: []*schema.Column{SubscriptionsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -498,7 +501,7 @@ var (
 			{
 				Name:    "idx_plan_id_not_null",
 				Unique:  false,
-				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[9], CreditGrantsColumns[19]},
+				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[9], CreditGrantsColumns[22]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "plan_id IS NOT NULL",
 				},
@@ -506,7 +509,7 @@ var (
 			{
 				Name:    "idx_subscription_id_not_null",
 				Unique:  false,
-				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[9], CreditGrantsColumns[20]},
+				Columns: []*schema.Column{CreditGrantsColumns[1], CreditGrantsColumns[7], CreditGrantsColumns[9], CreditGrantsColumns[23]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "subscription_id IS NOT NULL",
 				},

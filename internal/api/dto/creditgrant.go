@@ -2,6 +2,7 @@ package dto
 
 import (
 	"context"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	domainCreditGrantApplication "github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
@@ -27,6 +28,9 @@ type CreateCreditGrantRequest struct {
 	ExpirationDurationUnit *types.CreditGrantExpiryDurationUnit `json:"expiration_duration_unit,omitempty"`
 	Priority               *int                                 `json:"priority,omitempty"`
 	Metadata               types.Metadata                       `json:"metadata,omitempty"`
+	CreditGrantAnchor      *time.Time                           `json:"-"`
+	StartDate              *time.Time                           `json:"-"`
+	EndDate                *time.Time                           `json:"-"`
 }
 
 // UpdateCreditGrantRequest represents the request to update an existing credit grant
@@ -161,6 +165,44 @@ func (r *CreateCreditGrantRequest) Validate() error {
 
 	}
 
+	// Validate date fields
+	// StartDate and EndDate can only be provided for subscription-scoped grants
+	if r.Scope == types.CreditGrantScopeSubscription {
+		// StartDate is required for subscription-scoped grants
+		if r.StartDate == nil {
+			return errors.NewError("start_date is required for SUBSCRIPTION-scoped grants").
+				WithHint("Please provide a start date for the credit grant").
+				WithReportableDetails(map[string]interface{}{
+					"scope": r.Scope,
+				}).
+				Mark(errors.ErrValidation)
+		}
+
+		// If EndDate is provided, it must be >= StartDate
+		if r.EndDate != nil {
+			if r.EndDate.Before(*r.StartDate) {
+				return errors.NewError("end_date cannot be before start_date").
+					WithHint("Credit grant end date must be on or after the start date").
+					WithReportableDetails(map[string]interface{}{
+						"start_date": r.StartDate,
+						"end_date":   r.EndDate,
+					}).
+					Mark(errors.ErrValidation)
+			}
+		}
+	} else if r.Scope == types.CreditGrantScopePlan {
+		// For plan-scoped grants, StartDate and EndDate are not allowed
+		if r.StartDate != nil || r.EndDate != nil {
+			return errors.NewError("start_date and end_date are not allowed for PLAN-scoped grants").
+				WithHint("Start date and end date are not allowed for PLAN-scoped grants").
+				WithReportableDetails(map[string]interface{}{
+					"scope": r.Scope,
+				}).
+				Mark(errors.ErrValidation)
+		}
+
+	}
+
 	return nil
 }
 
@@ -181,6 +223,9 @@ func (r *CreateCreditGrantRequest) ToCreditGrant(ctx context.Context) *creditgra
 		ExpirationDurationUnit: r.ExpirationDurationUnit,
 		Priority:               r.Priority,
 		Metadata:               r.Metadata,
+		StartDate:              r.StartDate,
+		EndDate:                r.EndDate,
+		CreditGrantAnchor:      r.CreditGrantAnchor,
 		EnvironmentID:          types.GetEnvironmentID(ctx),
 		BaseModel:              types.GetDefaultBaseModel(ctx),
 	}

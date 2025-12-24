@@ -1,6 +1,8 @@
 package creditgrant
 
 import (
+	"time"
+
 	"github.com/flexprice/flexprice/ent"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -23,6 +25,9 @@ type CreditGrant struct {
 	ExpirationDurationUnit *types.CreditGrantExpiryDurationUnit `json:"expiration_duration_unit,omitempty"`
 	Priority               *int                                 `json:"priority,omitempty"`
 	Metadata               types.Metadata                       `json:"metadata,omitempty"`
+	StartDate              *time.Time                           `json:"start_date,omitempty"`
+	EndDate                *time.Time                           `json:"end_date,omitempty"`
+	CreditGrantAnchor      *time.Time                           `json:"credit_grant_anchor,omitempty"`
 	EnvironmentID          string                               `json:"environment_id"`
 	types.BaseModel
 }
@@ -128,6 +133,9 @@ func FromEnt(c *ent.CreditGrant) *CreditGrant {
 		ExpirationDuration:     c.ExpirationDuration,
 		ExpirationDurationUnit: c.ExpirationDurationUnit,
 		Metadata:               c.Metadata,
+		StartDate:              c.StartDate,
+		EndDate:                c.EndDate,
+		CreditGrantAnchor:      c.CreditGrantAnchor,
 		EnvironmentID:          c.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  c.TenantID,
