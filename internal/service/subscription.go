@@ -1105,6 +1105,11 @@ func (s *subscriptionService) handleCreditGrants(
 		// Ensure subscription ID is set and scope is SUBSCRIPTION
 		grantReq.SubscriptionID = &subscription.ID
 		grantReq.Scope = types.CreditGrantScopeSubscription
+		grantReq.StartDate = lo.ToPtr(subscription.StartDate)
+		grantReq.EndDate = subscription.EndDate
+
+		// Set credit grant anchor to subscription start date for now can change it later if needed
+		grantReq.CreditGrantAnchor = lo.ToPtr(subscription.StartDate)
 
 		// Create credit grant in DB
 		createdGrant, err := creditGrantService.CreateCreditGrant(ctx, grantReq)
