@@ -307,6 +307,22 @@ func main() {
 
 	fmt.Println("✓ Credit Notes API Tests Completed!\n")
 
+	// Run all Events API tests
+	fmt.Println("========================================")
+	fmt.Println("EVENTS API TESTS")
+	fmt.Println("========================================\n")
+
+	// Sync event operations
+	testCreateEvent(ctx, client)
+	testQueryEvents(ctx, client)
+
+	// Async event operations
+	testAsyncEventEnqueue(ctx, client)
+	testAsyncEventEnqueueWithOptions(ctx, client)
+	testAsyncEventBatch(ctx, client)
+
+	fmt.Println("✓ Events API Tests Completed!\n")
+
 	// Cleanup: Delete all created entities
 	fmt.Println("========================================")
 	fmt.Println("CLEANUP - DELETING TEST DATA")
@@ -4138,4 +4154,269 @@ func testFinalizeCreditNote(ctx context.Context, client *flexprice.APIClient) {
 	} else {
 		fmt.Println()
 	}
+}
+
+// ========================================
+// EVENTS API TESTS
+// ========================================
+
+var (
+	testEventID         string
+	testEventName       string
+	testEventCustomerID string
+)
+
+// Test 1: Create an event
+func testCreateEvent(ctx context.Context, client *flexprice.APIClient) {
+	fmt.Println("--- Test 1: Create Event ---")
+
+	// Use test customer external ID if available, otherwise generate a unique one
+	if testExternalID == "" {
+		testEventCustomerID = fmt.Sprintf("test-customer-%d", time.Now().Unix())
+	} else {
+		testEventCustomerID = testExternalID
+	}
+
+	testEventName = fmt.Sprintf("Test Event %d", time.Now().Unix())
+
+	eventRequest := flexprice.DtoIngestEventRequest{
+		EventName:          testEventName,
+		ExternalCustomerId: testEventCustomerID,
+		Properties: &map[string]string{
+			"source":      "sdk_test",
+			"environment": "test",
+			"test_run":    time.Now().Format(time.RFC3339),
+		},
+		Source:    lo.ToPtr("sdk_test"),
+		Timestamp: lo.ToPtr(time.Now().Format(time.RFC3339)),
+	}
+
+	result, response, err := client.EventsAPI.EventsPost(ctx).
+		Event(eventRequest).
+		Execute()
+
+	if err != nil {
+		log.Printf("❌ Error creating event: %v\n", err)
+		fmt.Println()
+		return
+	}
+
+	if response.StatusCode != 202 {
+		log.Printf("❌ Expected status code 202, got %d\n", response.StatusCode)
+		fmt.Println()
+		return
+	}
+
+	// The result is a map[string]string, so we can access it directly
+	if result != nil {
+		if eventId, ok := result["event_id"]; ok {
+			testEventID = eventId
+			fmt.Printf("✓ Event created successfully!\n")
+			fmt.Printf("  Event ID: %s\n", eventId)
+			fmt.Printf("  Event Name: %s\n", testEventName)
+			fmt.Printf("  Customer ID: %s\n\n", testEventCustomerID)
+		} else {
+			fmt.Printf("✓ Event created successfully!\n")
+			fmt.Printf("  Event Name: %s\n", testEventName)
+			fmt.Printf("  Customer ID: %s\n", testEventCustomerID)
+			fmt.Printf("  Response: %v\n\n", result)
+		}
+	} else {
+		fmt.Printf("✓ Event created successfully!\n")
+		fmt.Printf("  Event Name: %s\n", testEventName)
+		fmt.Printf("  Customer ID: %s\n\n", testEventCustomerID)
+	}
+}
+
+// Test 2: Query events
+func testQueryEvents(ctx context.Context, client *flexprice.APIClient) {
+	fmt.Println("--- Test 2: Query Events ---")
+
+	// Skip if no event was created
+	if testEventName == "" {
+		log.Printf("⚠ Warning: No event created, skipping query test\n")
+		fmt.Println()
+		return
+	}
+
+	queryRequest := flexprice.DtoGetEventsRequest{
+		ExternalCustomerId: &testEventCustomerID,
+		EventName:          &testEventName,
+	}
+
+	events, response, err := client.EventsAPI.EventsQueryPost(ctx).
+		Request(queryRequest).
+		Execute()
+
+	if err != nil {
+		log.Printf("⚠ Warning: Error querying events: %v\n", err)
+		fmt.Println("⚠ Skipping query events test\n")
+		return
+	}
+
+	if response.StatusCode != 200 {
+		log.Printf("⚠ Warning: Expected status code 200, got %d\n", response.StatusCode)
+		fmt.Println("⚠ Skipping query events test\n")
+		return
+	}
+
+	fmt.Printf("✓ Events queried successfully!\n")
+	if events.Events != nil {
+		fmt.Printf("  Found %d events\n", len(events.Events))
+		for i, event := range events.Events {
+			if i < 3 { // Show first 3 events
+				if event.Id != nil {
+					fmt.Printf("  - Event %d: %s - %s\n", i+1, *event.Id, *event.EventName)
+				} else {
+					fmt.Printf("  - Event %d: %s\n", i+1, *event.EventName)
+				}
+			}
+		}
+	} else {
+		fmt.Println("  No events found")
+	}
+	fmt.Println()
+}
+
+// Test 3: Async event - Simple enqueue
+func testAsyncEventEnqueue(ctx context.Context, client *flexprice.APIClient) {
+	fmt.Println("--- Test 3: Async Event - Simple Enqueue ---")
+
+	// Create an AsyncClient
+	asyncConfig := flexprice.DefaultAsyncConfig()
+	asyncConfig.Debug = false // Disable debug in tests
+
+	asyncClient := client.NewAsyncClient()
+	// Ensure the client is closed properly on exit
+	defer asyncClient.Close()
+
+	// Use test customer external ID if available
+	customerID := testEventCustomerID
+	if customerID == "" {
+		if testExternalID != "" {
+			customerID = testExternalID
+		} else {
+			customerID = fmt.Sprintf("test-customer-%d", time.Now().Unix())
+		}
+	}
+
+	// Enqueue a simple event
+	err := asyncClient.Enqueue(
+		"api_request",
+		customerID,
+		map[string]interface{}{
+			"path":             "/api/resource",
+			"method":           "GET",
+			"status":           "200",
+			"response_time_ms": 150,
+		},
+	)
+
+	if err != nil {
+		log.Printf("❌ Error enqueueing async event: %v\n", err)
+		fmt.Println()
+		return
+	}
+
+	fmt.Printf("✓ Async event enqueued successfully!\n")
+	fmt.Printf("  Event Name: api_request\n")
+	fmt.Printf("  Customer ID: %s\n\n", customerID)
+}
+
+// Test 4: Async event - Enqueue with options
+func testAsyncEventEnqueueWithOptions(ctx context.Context, client *flexprice.APIClient) {
+	fmt.Println("--- Test 4: Async Event - Enqueue With Options ---")
+
+	// Create an AsyncClient
+	asyncConfig := flexprice.DefaultAsyncConfig()
+	asyncConfig.Debug = false // Disable debug in tests
+
+	asyncClient := client.NewAsyncClient()
+	// Ensure the client is closed properly on exit
+	defer asyncClient.Close()
+
+	// Use test customer external ID if available
+	customerID := testEventCustomerID
+	if customerID == "" {
+		if testExternalID != "" {
+			customerID = testExternalID
+		} else {
+			customerID = fmt.Sprintf("test-customer-%d", time.Now().Unix())
+		}
+	}
+
+	// Enqueue event with custom options
+	err := asyncClient.EnqueueWithOptions(flexprice.EventOptions{
+		EventName:          "file_upload",
+		ExternalCustomerID: customerID,
+		Properties: map[string]interface{}{
+			"file_size_bytes": 1048576,
+			"file_type":       "image/jpeg",
+			"storage_bucket":  "user_uploads",
+		},
+		Source:    "sdk_test",
+		Timestamp: time.Now().Format(time.RFC3339),
+	})
+
+	if err != nil {
+		log.Printf("❌ Error enqueueing async event with options: %v\n", err)
+		fmt.Println()
+		return
+	}
+
+	fmt.Printf("✓ Async event with options enqueued successfully!\n")
+	fmt.Printf("  Event Name: file_upload\n")
+	fmt.Printf("  Customer ID: %s\n\n", customerID)
+}
+
+// Test 5: Async event - Batch enqueue
+func testAsyncEventBatch(ctx context.Context, client *flexprice.APIClient) {
+	fmt.Println("--- Test 5: Async Event - Batch Enqueue ---")
+
+	// Create an AsyncClient
+	asyncConfig := flexprice.DefaultAsyncConfig()
+	asyncConfig.Debug = false // Disable debug in tests
+
+	asyncClient := client.NewAsyncClient()
+	// Ensure the client is closed properly on exit
+	defer asyncClient.Close()
+
+	// Use test customer external ID if available
+	customerID := testEventCustomerID
+	if customerID == "" {
+		if testExternalID != "" {
+			customerID = testExternalID
+		} else {
+			customerID = fmt.Sprintf("test-customer-%d", time.Now().Unix())
+		}
+	}
+
+	// Enqueue multiple events in a batch
+	batchCount := 5
+	for i := 0; i < batchCount; i++ {
+		err := asyncClient.Enqueue(
+			"batch_example",
+			customerID,
+			map[string]interface{}{
+				"index": i,
+				"batch": "demo",
+			},
+		)
+		if err != nil {
+			log.Printf("❌ Error enqueueing batch event %d: %v\n", i, err)
+			fmt.Println()
+			return
+		}
+	}
+
+	fmt.Printf("✓ Enqueued %d batch events successfully!\n", batchCount)
+	fmt.Printf("  Event Name: batch_example\n")
+	fmt.Printf("  Customer ID: %s\n", customerID)
+	fmt.Printf("  Waiting for events to be processed...\n")
+
+	// Sleep to allow background processing to complete
+	// In a real application, you don't need this as the deferred Close()
+	// will wait for all events to be processed
+	time.Sleep(time.Second * 2)
+	fmt.Println()
 }

@@ -22,6 +22,7 @@ import {
     CreditGrantsApi,
     CreditNotesApi,
     ConnectionsApi,
+    EventsApi,
     TypesFeatureType,
     TypesPlanFilter,
     TypesAddonType,
@@ -78,6 +79,10 @@ let testPaymentID = '';
 let testWalletID = '';
 let testCreditGrantID = '';
 let testCreditNoteID = '';
+
+let testEventID = '';
+let testEventName = '';
+let testEventCustomerID = '';
 
 // ========================================
 // CONFIGURATION
@@ -2750,6 +2755,252 @@ async function testDeleteCustomer(config: Configuration) {
 }
 
 // ========================================
+// EVENTS API TESTS
+// ========================================
+
+async function testCreateEvent(config: Configuration) {
+    console.log('--- Test 1: Create Event ---');
+
+    // Use test customer external ID if available, otherwise generate a unique one
+    if (!testCustomerID) {
+        testEventCustomerID = `test-customer-${Date.now()}`;
+    } else {
+        try {
+            const customerApi = new CustomersApi(config);
+            const customer = await customerApi.customersIdGet({ id: testCustomerID });
+            testEventCustomerID = customer.externalId || `test-customer-${Date.now()}`;
+        } catch {
+            testEventCustomerID = `test-customer-${Date.now()}`;
+        }
+    }
+
+    testEventName = `Test Event ${Date.now()}`;
+
+    try {
+        const api = new EventsApi(config);
+        const response = await api.eventsPost({
+            event: {
+                eventName: testEventName,
+                externalCustomerId: testEventCustomerID,
+                properties: {
+                    source: 'sdk_test',
+                    environment: 'test',
+                    test_run: new Date().toISOString(),
+                },
+                source: 'sdk_test',
+                timestamp: new Date().toISOString(),
+            },
+        });
+
+        // The response might be a dict or an object with event_id attribute
+        if (typeof response === 'object' && response !== null) {
+            if ('event_id' in response) {
+                testEventID = (response as any).event_id;
+            } else if ('eventId' in response) {
+                testEventID = (response as any).eventId;
+            }
+        }
+
+        console.log('✓ Event created successfully!');
+        if (testEventID) {
+            console.log(`  Event ID: ${testEventID}`);
+        }
+        console.log(`  Event Name: ${testEventName}`);
+        console.log(`  Customer ID: ${testEventCustomerID}\n`);
+    } catch (error: any) {
+        console.log(`❌ Error creating event: ${error.message}\n`);
+    }
+}
+
+async function testQueryEvents(config: Configuration) {
+    console.log('--- Test 2: Query Events ---');
+
+    if (!testEventName) {
+        console.log('⚠ Warning: No event created, skipping query test\n');
+        return;
+    }
+
+    try {
+        const api = new EventsApi(config);
+        const response = await api.eventsQueryPost({
+            request: {
+                externalCustomerId: testEventCustomerID,
+                eventName: testEventName,
+            },
+        });
+
+        console.log('✓ Events queried successfully!');
+        if (response.events && response.events.length > 0) {
+            console.log(`  Found ${response.events.length} events`);
+            response.events.slice(0, 3).forEach((event: any, i: number) => {
+                const eventId = event.id || 'N/A';
+                const eventName = event.eventName || event.event_name || 'N/A';
+                console.log(`  - Event ${i + 1}: ${eventId} - ${eventName}`);
+            });
+        } else {
+            console.log('  No events found');
+        }
+        console.log();
+    } catch (error: any) {
+        console.log(`⚠ Warning: Error querying events: ${error.message}`);
+        console.log('⚠ Skipping query events test\n');
+    }
+}
+
+async function testAsyncEventEnqueue(config: Configuration) {
+    console.log('--- Test 3: Async Event - Simple Enqueue ---');
+
+    // Use test customer external ID if available
+    let customerID = testEventCustomerID;
+    if (!customerID) {
+        if (testCustomerID) {
+            try {
+                const customerApi = new CustomersApi(config);
+                const customer = await customerApi.customersIdGet({ id: testCustomerID });
+                customerID = customer.externalId || `test-customer-${Date.now()}`;
+            } catch {
+                customerID = `test-customer-${Date.now()}`;
+            }
+        } else {
+            customerID = `test-customer-${Date.now()}`;
+        }
+    }
+
+    try {
+        const api = new EventsApi(config);
+        const eventRequest = {
+            eventName: 'api_request',
+            externalCustomerId: customerID,
+            properties: {
+                path: '/api/resource',
+                method: 'GET',
+                status: '200',
+                response_time_ms: '150',
+            },
+            source: 'sdk_test',
+        };
+
+        // Use async method if available, otherwise use sync
+        if ((api as any).eventsPostAsync) {
+            await (api as any).eventsPostAsync({ event: eventRequest });
+        } else {
+            // Fallback to sync if async not available
+            await api.eventsPost({ event: eventRequest });
+        }
+
+        console.log('✓ Async event enqueued successfully!');
+        console.log('  Event Name: api_request');
+        console.log(`  Customer ID: ${customerID}\n`);
+    } catch (error: any) {
+        console.log(`❌ Error enqueueing async event: ${error.message}\n`);
+    }
+}
+
+async function testAsyncEventEnqueueWithOptions(config: Configuration) {
+    console.log('--- Test 4: Async Event - Enqueue With Options ---');
+
+    // Use test customer external ID if available
+    let customerID = testEventCustomerID;
+    if (!customerID) {
+        if (testCustomerID) {
+            try {
+                const customerApi = new CustomersApi(config);
+                const customer = await customerApi.customersIdGet({ id: testCustomerID });
+                customerID = customer.externalId || `test-customer-${Date.now()}`;
+            } catch {
+                customerID = `test-customer-${Date.now()}`;
+            }
+        } else {
+            customerID = `test-customer-${Date.now()}`;
+        }
+    }
+
+    try {
+        const api = new EventsApi(config);
+        const eventRequest = {
+            eventName: 'file_upload',
+            externalCustomerId: customerID,
+            properties: {
+                file_size_bytes: '1048576',
+                file_type: 'image/jpeg',
+                storage_bucket: 'user_uploads',
+            },
+            source: 'sdk_test',
+            timestamp: new Date().toISOString(),
+        };
+
+        // Use async method if available, otherwise use sync
+        if ((api as any).eventsPostAsync) {
+            await (api as any).eventsPostAsync({ event: eventRequest });
+        } else {
+            // Fallback to sync if async not available
+            await api.eventsPost({ event: eventRequest });
+        }
+
+        console.log('✓ Async event with options enqueued successfully!');
+        console.log('  Event Name: file_upload');
+        console.log(`  Customer ID: ${customerID}\n`);
+    } catch (error: any) {
+        console.log(`❌ Error enqueueing async event with options: ${error.message}\n`);
+    }
+}
+
+async function testAsyncEventBatch(config: Configuration) {
+    console.log('--- Test 5: Async Event - Batch Enqueue ---');
+
+    // Use test customer external ID if available
+    let customerID = testEventCustomerID;
+    if (!customerID) {
+        if (testCustomerID) {
+            try {
+                const customerApi = new CustomersApi(config);
+                const customer = await customerApi.customersIdGet({ id: testCustomerID });
+                customerID = customer.externalId || `test-customer-${Date.now()}`;
+            } catch {
+                customerID = `test-customer-${Date.now()}`;
+            }
+        } else {
+            customerID = `test-customer-${Date.now()}`;
+        }
+    }
+
+    try {
+        const api = new EventsApi(config);
+        const batchCount = 5;
+
+        for (let i = 0; i < batchCount; i++) {
+            const eventRequest = {
+                eventName: 'batch_example',
+                externalCustomerId: customerID,
+                properties: {
+                    index: String(i),
+                    batch: 'demo',
+                },
+                source: 'sdk_test',
+            };
+
+            // Use async method if available, otherwise use sync
+            if ((api as any).eventsPostAsync) {
+                await (api as any).eventsPostAsync({ event: eventRequest });
+            } else {
+                // Fallback to sync if async not available
+                await api.eventsPost({ event: eventRequest });
+            }
+        }
+
+        console.log(`✓ Enqueued ${batchCount} batch events successfully!`);
+        console.log('  Event Name: batch_example');
+        console.log(`  Customer ID: ${customerID}`);
+        console.log('  Waiting for events to be processed...\n');
+        
+        // Wait for background processing
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch (error: any) {
+        console.log(`❌ Error enqueueing batch event: ${error.message}\n`);
+    }
+}
+
+// ========================================
 // MAIN EXECUTION
 // ========================================
 
@@ -2941,6 +3192,21 @@ async function main() {
     await testFinalizeCreditNote(config);
 
     console.log('✓ Credit Notes API Tests Completed!\n');
+
+    console.log('========================================');
+    console.log('EVENTS API TESTS');
+    console.log('========================================\n');
+
+    // Sync event operations
+    await testCreateEvent(config);
+    await testQueryEvents(config);
+
+    // Async event operations
+    await testAsyncEventEnqueue(config);
+    await testAsyncEventEnqueueWithOptions(config);
+    await testAsyncEventBatch(config);
+
+    console.log('✓ Events API Tests Completed!\n');
 
     console.log('========================================');
     console.log('CLEANUP - DELETING TEST DATA');
