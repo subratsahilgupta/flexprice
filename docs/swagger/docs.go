@@ -9050,6 +9050,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/subscriptions/{id}/addons/associations": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get active addon associations for a subscription",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Get active addon associations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.AddonAssociationResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/subscriptions/{id}/cancel": {
             "post": {
                 "security": [
@@ -11620,70 +11675,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/wallets/{id}/debit": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Debit a wallet by debiting credits from a wallet",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Wallets"
-                ],
-                "summary": "Debit a wallet",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Wallet ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Debit wallet request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.ManualBalanceDebitRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.WalletResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/wallets/{id}/terminate": {
             "post": {
                 "security": [
@@ -12544,9 +12535,6 @@ const docTemplate = `{
                 "addon_id": {
                     "type": "string"
                 },
-                "end_date": {
-                    "type": "string"
-                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": true
@@ -12568,9 +12556,6 @@ const docTemplate = `{
                 "addon_id": {
                     "type": "string"
                 },
-                "end_date": {
-                    "type": "string"
-                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": true
@@ -12583,6 +12568,9 @@ const docTemplate = `{
         "dto.AddonAssociationResponse": {
             "type": "object",
             "properties": {
+                "addon": {
+                    "$ref": "#/definitions/dto.AddonResponse"
+                },
                 "addon_id": {
                     "type": "string"
                 },
@@ -12625,6 +12613,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
+                },
+                "subscription": {
+                    "$ref": "#/definitions/dto.SubscriptionResponse"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -17333,43 +17324,6 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.ManualBalanceDebitRequest": {
-            "type": "object",
-            "required": [
-                "idempotency_key",
-                "transaction_reason"
-            ],
-            "properties": {
-                "credits": {
-                    "description": "credits is the number of credits to debit from the wallet",
-                    "type": "string"
-                },
-                "description": {
-                    "description": "description to add any specific details about the transaction",
-                    "type": "string"
-                },
-                "idempotency_key": {
-                    "description": "idempotency_key is a unique key for the transaction",
-                    "type": "string"
-                },
-                "metadata": {
-                    "description": "metadata is a map of key-value pairs to store any additional information about the transaction",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
-                },
-                "transaction_reason": {
-                    "description": "transaction_reason is the reason for the transaction",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TransactionReason"
-                        }
-                    ]
-                }
-            }
-        },
         "dto.MeterResponse": {
             "type": "object",
             "properties": {
@@ -18073,9 +18027,6 @@ const docTemplate = `{
             ],
             "properties": {
                 "addon_association_id": {
-                    "type": "string"
-                },
-                "effective_from": {
                     "type": "string"
                 },
                 "reason": {
@@ -23296,12 +23247,14 @@ const docTemplate = `{
             "enum": [
                 "events",
                 "invoice",
-                "credit_topups"
+                "credit_topups",
+                "credit_usage"
             ],
             "x-enum-varnames": [
                 "ScheduledTaskEntityTypeEvents",
                 "ScheduledTaskEntityTypeInvoice",
-                "ScheduledTaskEntityTypeCreditTopups"
+                "ScheduledTaskEntityTypeCreditTopups",
+                "ScheduledTaskEntityTypeCreditUsage"
             ]
         },
         "types.ScheduledTaskInterval": {
