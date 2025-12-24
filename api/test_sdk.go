@@ -2460,10 +2460,6 @@ func testPreviewInvoice(ctx context.Context, client *flexprice.APIClient) {
 
 	// Use subscription ID if available, otherwise use hardcoded one
 	subsID := testSubscriptionID
-	if subsID == "" {
-		subsID = "subs_01KD2CMBDPEN2CGWFFKFJS77SK"
-	}
-
 	previewRequest := flexprice.DtoGetPreviewInvoiceRequest{
 		SubscriptionId: subsID,
 	}

@@ -1396,7 +1396,7 @@ async function testPreviewInvoice(config: Configuration) {
     try {
         const api = new InvoicesApi(config);
         const response = await api.invoicesPreviewPost({
-            request: { subscriptionId: testSubscriptionID || 'subs_01KD2CMBDPEN2CGWFFKFJS77SK' },
+            request: { subscriptionId: testSubscriptionID},
         });
 
         console.log('✓ Invoice preview generated!');
