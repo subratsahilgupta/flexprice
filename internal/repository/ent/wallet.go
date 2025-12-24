@@ -50,7 +50,7 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		w.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
-	wallet, err := client.Wallet.Create().
+	walletBuilder := client.Wallet.Create().
 		SetID(w.ID).
 		SetTenantID(w.TenantID).
 		SetCustomerID(w.CustomerID).
@@ -61,9 +61,6 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetBalance(w.Balance).
 		SetCreditBalance(w.CreditBalance).
 		SetWalletStatus(w.WalletStatus).
-		SetAutoTopupTrigger(w.AutoTopupTrigger).
-		SetAutoTopupMinBalance(w.AutoTopupMinBalance).
-		SetAutoTopupAmount(w.AutoTopupAmount).
 		SetWalletType(w.WalletType).
 		SetConfig(w.Config).
 		SetConversionRate(w.ConversionRate).
@@ -75,8 +72,12 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 		SetEnvironmentID(w.EnvironmentID).
 		SetAlertEnabled(w.AlertEnabled).
 		SetNillableAlertConfig(w.AlertConfig).
-		SetAlertState(types.AlertState(w.AlertState)).
-		Save(ctx)
+		SetAlertState(types.AlertState(w.AlertState))
+
+	if w.AutoTopup != nil {
+		walletBuilder.SetAutoTopup(w.AutoTopup)
+	}
+	wallet, err := walletBuilder.Save(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
@@ -236,12 +237,13 @@ func (r *walletRepository) UpdateWalletStatus(ctx context.Context, id string, st
 // this is to ensure that the highest priority credits are used first, then the oldest credits,
 // and if there are multiple credits with the same priority and expiry date,
 // the credits with the highest credit amount are used first
-func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int) ([]*walletdomain.Transaction, error) {
+func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int, timeReference time.Time) ([]*walletdomain.Transaction, error) {
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "wallet", "find_eligible_credits", map[string]interface{}{
 		"wallet_id":       walletID,
 		"required_amount": requiredAmount.String(),
 		"page_size":       pageSize,
+		"time_reference":  timeReference.Format(time.RFC3339),
 	})
 	defer FinishSpan(span)
 
@@ -257,7 +259,7 @@ func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID str
 				wallettransaction.CreditsAvailableGT(decimal.Zero),
 				wallettransaction.Or(
 					wallettransaction.ExpiryDateIsNil(),
-					wallettransaction.ExpiryDateGTE(time.Now().UTC()),
+					wallettransaction.ExpiryDateGTE(timeReference),
 				),
 				wallettransaction.StatusEQ(string(types.StatusPublished)),
 			).
@@ -878,18 +880,8 @@ func (r *walletRepository) UpdateWallet(ctx context.Context, id string, w *walle
 	if w.Metadata != nil {
 		update.SetMetadata(w.Metadata)
 	}
-	if w.AutoTopupTrigger != "" {
-		if w.AutoTopupTrigger == types.AutoTopupTriggerDisabled {
-			// When disabling auto top-up, set all related fields to NULL
-			update.SetAutoTopupTrigger(types.AutoTopupTriggerDisabled)
-			update.ClearAutoTopupMinBalance()
-			update.ClearAutoTopupAmount()
-		} else {
-			// When enabling auto top-up, set all required fields
-			update.SetAutoTopupTrigger(w.AutoTopupTrigger)
-			update.SetAutoTopupMinBalance(w.AutoTopupMinBalance)
-			update.SetAutoTopupAmount(w.AutoTopupAmount)
-		}
+	if w.AutoTopup != nil {
+		update.SetAutoTopup(w.AutoTopup)
 	}
 	// Check if Config has any non-nil fields
 	if w.Config.AllowedPriceTypes != nil {

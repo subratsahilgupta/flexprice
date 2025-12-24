@@ -409,7 +409,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -1057,6 +1057,57 @@ const docTemplate = `{
             }
         },
         "/costs/analytics": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieve combined analytics with ROI, margin, and detailed breakdowns. If start_time and end_time are not provided, defaults to last 7 days.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Costs"
+                ],
+                "summary": "Get combined revenue and cost analytics",
+                "parameters": [
+                    {
+                        "description": "Combined analytics request (start_time/end_time optional - defaults to last 7 days)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetCostAnalyticsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GetDetailedCostAnalyticsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/costs/analytics-v2": {
             "post": {
                 "security": [
                     {
@@ -2056,7 +2107,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -3757,7 +3808,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -5045,7 +5096,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -5809,7 +5860,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -5864,7 +5915,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -5977,7 +6028,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -6148,7 +6199,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -6498,7 +6549,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -6919,7 +6970,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -7733,7 +7784,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -7879,13 +7930,22 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Delete Price Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.DeletePriceRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -8595,7 +8655,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/dto.AddAddonToSubscriptionRequest"
+                            "$ref": "#/definitions/dto.AddAddonRequest"
                         }
                     }
                 ],
@@ -8652,7 +8712,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -8977,6 +9037,61 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/subscriptions/{id}/addons/associations": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get active addon associations for a subscription",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Subscriptions"
+                ],
+                "summary": "Get active addon associations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.AddonAssociationResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -10181,7 +10296,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/gin.H"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -11560,70 +11675,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/wallets/{id}/debit": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Debit a wallet by debiting credits from a wallet",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Wallets"
-                ],
-                "summary": "Debit a wallet",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Wallet ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Debit wallet request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.ManualBalanceDebitRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/dto.WalletResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/wallets/{id}/terminate": {
             "post": {
                 "security": [
@@ -12419,7 +12470,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "amount": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "created_at": {
                     "type": "string"
@@ -12474,6 +12525,28 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.AddAddonRequest": {
+            "type": "object",
+            "required": [
+                "addon_id",
+                "subscription_id"
+            ],
+            "properties": {
+                "addon_id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.AddAddonToSubscriptionRequest": {
             "type": "object",
             "required": [
@@ -12481,9 +12554,6 @@ const docTemplate = `{
             ],
             "properties": {
                 "addon_id": {
-                    "type": "string"
-                },
-                "end_date": {
                     "type": "string"
                 },
                 "metadata": {
@@ -12498,6 +12568,9 @@ const docTemplate = `{
         "dto.AddonAssociationResponse": {
             "type": "object",
             "properties": {
+                "addon": {
+                    "$ref": "#/definitions/dto.AddonResponse"
+                },
                 "addon_id": {
                     "type": "string"
                 },
@@ -12540,6 +12613,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
+                },
+                "subscription": {
+                    "$ref": "#/definitions/dto.SubscriptionResponse"
                 },
                 "tenant_id": {
                     "type": "string"
@@ -14993,7 +15069,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "credits": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "environment_id": {
                     "type": "string"
@@ -15176,7 +15252,7 @@ const docTemplate = `{
                 },
                 "total_amount": {
                     "description": "total_amount is the total including creditable invoice-level discounts or minimums, and tax",
-                    "type": "number"
+                    "type": "string"
                 },
                 "updated_at": {
                     "type": "string"
@@ -15378,6 +15454,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.DeletePriceRequest": {
+            "type": "object",
+            "properties": {
+                "end_date": {
                     "type": "string"
                 }
             }
@@ -17240,43 +17324,6 @@ const docTemplate = `{
                 }
             }
         },
-        "dto.ManualBalanceDebitRequest": {
-            "type": "object",
-            "required": [
-                "idempotency_key",
-                "transaction_reason"
-            ],
-            "properties": {
-                "credits": {
-                    "description": "credits is the number of credits to debit from the wallet",
-                    "type": "string"
-                },
-                "description": {
-                    "description": "description to add any specific details about the transaction",
-                    "type": "string"
-                },
-                "idempotency_key": {
-                    "description": "idempotency_key is a unique key for the transaction",
-                    "type": "string"
-                },
-                "metadata": {
-                    "description": "metadata is a map of key-value pairs to store any additional information about the transaction",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Metadata"
-                        }
-                    ]
-                },
-                "transaction_reason": {
-                    "description": "transaction_reason is the reason for the transaction",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TransactionReason"
-                        }
-                    ]
-                }
-            }
-        },
         "dto.MeterResponse": {
             "type": "object",
             "properties": {
@@ -17752,7 +17799,7 @@ const docTemplate = `{
                 },
                 "min_quantity": {
                     "description": "MinQuantity is the minimum quantity of the price",
-                    "type": "number"
+                    "type": "string"
                 },
                 "parent_price_id": {
                     "description": "ParentPriceID references the root price (always set for price lineage tracking)",
@@ -17980,9 +18027,6 @@ const docTemplate = `{
             ],
             "properties": {
                 "addon_association_id": {
-                    "type": "string"
-                },
-                "effective_from": {
                     "type": "string"
                 },
                 "reason": {
@@ -18941,6 +18985,14 @@ const docTemplate = `{
                 },
                 "quantity": {
                     "type": "number"
+                }
+            }
+        },
+        "dto.SuccessResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
                 }
             }
         },
@@ -20455,10 +20507,6 @@ const docTemplate = `{
         "errors.ErrorDetail": {
             "type": "object",
             "properties": {
-                "details": {
-                    "type": "object",
-                    "additionalProperties": {}
-                },
                 "internal_error": {
                     "type": "string"
                 },
@@ -20477,10 +20525,6 @@ const docTemplate = `{
                     "type": "boolean"
                 }
             }
-        },
-        "gin.H": {
-            "type": "object",
-            "additionalProperties": {}
         },
         "github_com_flexprice_flexprice_internal_domain_addon.Addon": {
             "type": "object",
@@ -21039,7 +21083,7 @@ const docTemplate = `{
                 },
                 "min_quantity": {
                     "description": "MinQuantity is the minimum quantity of the price",
-                    "type": "number"
+                    "type": "string"
                 },
                 "parent_price_id": {
                     "description": "ParentPriceID references the root price (always set for price lineage tracking)",
@@ -23203,12 +23247,14 @@ const docTemplate = `{
             "enum": [
                 "events",
                 "invoice",
-                "credit_topups"
+                "credit_topups",
+                "credit_usage"
             ],
             "x-enum-varnames": [
                 "ScheduledTaskEntityTypeEvents",
                 "ScheduledTaskEntityTypeInvoice",
-                "ScheduledTaskEntityTypeCreditTopups"
+                "ScheduledTaskEntityTypeCreditTopups",
+                "ScheduledTaskEntityTypeCreditUsage"
             ]
         },
         "types.ScheduledTaskInterval": {
