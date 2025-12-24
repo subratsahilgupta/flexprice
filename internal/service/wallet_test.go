@@ -734,6 +734,7 @@ func (s *WalletServiceSuite) TestTerminateWallet() {
 		s.testData.wallet.ID,
 		decimal.NewFromInt(1000),
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 	s.Len(eligibleCredits, 1)
@@ -782,6 +783,7 @@ func (s *WalletServiceSuite) TestTerminateWallet() {
 		s.testData.wallet.ID,
 		decimal.NewFromInt(1),
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 	s.Empty(remainingCredits)
@@ -1270,6 +1272,7 @@ func (s *WalletServiceSuite) TestDebitWithMultipleCredits() {
 		s.testData.wallet.ID,
 		decimal.NewFromInt(100),
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 	s.NotEmpty(eligibleCredits)
@@ -1325,6 +1328,7 @@ func (s *WalletServiceSuite) TestDebitWithMultipleCredits() {
 		s.testData.wallet.ID,
 		decimal.NewFromInt(110),
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 	s.NotEmpty(remainingCredits)
@@ -1386,6 +1390,7 @@ func (s *WalletServiceSuite) TestDebitWithPrioritizedCredits() {
 		s.testData.wallet.ID,
 		decimal.NewFromInt(200),
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 	s.Len(eligibleCredits, 5)
@@ -1419,6 +1424,7 @@ func (s *WalletServiceSuite) TestDebitWithPrioritizedCredits() {
 		s.testData.wallet.ID,
 		decimal.NewFromInt(200),
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 
@@ -1580,6 +1586,7 @@ func (s *WalletServiceSuite) TestDebitTransactionConsistency() {
 		s.testData.wallet.ID,
 		decimal.NewFromInt(100),
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 	s.Len(eligibleCredits, 1)
@@ -1609,6 +1616,7 @@ func (s *WalletServiceSuite) TestDebitTransactionConsistency() {
 		s.testData.wallet.ID,
 		decimal.NewFromInt(1),
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 	s.Empty(eligibleCredits, "Should have no eligible credits remaining")
@@ -1743,6 +1751,7 @@ func (s *WalletServiceSuite) TestDebitAvailableCreditsAccuracy() {
 		s.testData.wallet.ID,
 		expectedTotal,
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 	s.NotEmpty(eligibleCredits)
@@ -1780,6 +1789,7 @@ func (s *WalletServiceSuite) TestDebitAvailableCreditsAccuracy() {
 		s.testData.wallet.ID,
 		expectedRemaining,
 		100,
+		time.Now().UTC(),
 	)
 	s.NoError(err)
 	s.NotEmpty(eligibleCredits)
