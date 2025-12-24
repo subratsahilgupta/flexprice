@@ -104,12 +104,12 @@ func SubscriptionLineItemFromEnt(e *ent.SubscriptionLineItem) *SubscriptionLineI
 		return nil
 	}
 
-	var priceType, meterID, meterDisplayName, displayName string
+	var meterID, meterDisplayName, displayName string
 	var priceUnitID, priceUnit string
 	var startDate, endDate time.Time
 	var subscriptionPhaseID *string
 
-	priceType = lo.FromPtr(e.PriceType)
+	priceType := lo.FromPtr(e.PriceType)
 	if e.MeterID != nil {
 		meterID = *e.MeterID
 	}
@@ -149,7 +149,7 @@ func SubscriptionLineItemFromEnt(e *ent.SubscriptionLineItem) *SubscriptionLineI
 		EntityType:              types.SubscriptionLineItemEntityType(e.EntityType),
 		PlanDisplayName:         lo.FromPtr(e.PlanDisplayName),
 		PriceID:                 e.PriceID,
-		PriceType:               types.PriceType(priceType),
+		PriceType:               priceType,
 		MeterID:                 meterID,
 		MeterDisplayName:        meterDisplayName,
 		PriceUnitID:             priceUnitID,
@@ -157,8 +157,8 @@ func SubscriptionLineItemFromEnt(e *ent.SubscriptionLineItem) *SubscriptionLineI
 		DisplayName:             displayName,
 		Quantity:                e.Quantity,
 		Currency:                e.Currency,
-		BillingPeriod:           types.BillingPeriod(e.BillingPeriod),
-		InvoiceCadence:          types.InvoiceCadence(e.InvoiceCadence),
+		BillingPeriod:           e.BillingPeriod,
+		InvoiceCadence:          e.InvoiceCadence,
 		TrialPeriod:             e.TrialPeriod,
 		StartDate:               startDate,
 		EndDate:                 endDate,

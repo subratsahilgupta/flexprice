@@ -78,7 +78,7 @@ type Price struct {
 	DisplayName string `db:"display_name" json:"display_name"`
 
 	// MinQuantity is the minimum quantity of the price
-	MinQuantity *decimal.Decimal `db:"min_quantity" json:"min_quantity"`
+	MinQuantity *decimal.Decimal `db:"min_quantity" json:"min_quantity" swaggertype:"string"`
 
 	BillingCadence types.BillingCadence `db:"billing_cadence" json:"billing_cadence"`
 
@@ -88,12 +88,12 @@ type Price struct {
 	// Note: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)
 	TrialPeriod int `db:"trial_period" json:"trial_period"`
 
-	TierMode types.BillingTier `db:"tier_mode" json:"tier_mode"`
+	TierMode types.BillingTier `db:"tier_mode" json:"tier_mode,omitempty"`
 
-	Tiers JSONBTiers `db:"tiers,jsonb" json:"tiers"`
+	Tiers JSONBTiers `db:"tiers,jsonb" json:"tiers,omitempty"`
 
 	// PriceUnitTiers are the tiers for the price unit
-	PriceUnitTiers JSONBTiers `db:"price_unit_tiers,jsonb" json:"price_unit_tiers"`
+	PriceUnitTiers JSONBTiers `db:"price_unit_tiers,jsonb" json:"price_unit_tiers,omitempty"`
 
 	// MeterID is the id of the meter for usage based pricing
 	MeterID string `db:"meter_id" json:"meter_id"`
@@ -385,16 +385,16 @@ func FromEnt(e *ent.Price) *Price {
 		Amount:                 e.Amount,
 		Currency:               e.Currency,
 		DisplayAmount:          e.DisplayAmount,
-		PriceUnitType:          types.PriceUnitType(e.PriceUnitType),
-		Type:                   types.PriceType(e.Type),
-		BillingPeriod:          types.BillingPeriod(e.BillingPeriod),
+		PriceUnitType:          e.PriceUnitType,
+		Type:                   e.Type,
+		BillingPeriod:          e.BillingPeriod,
 		BillingPeriodCount:     e.BillingPeriodCount,
-		BillingModel:           types.BillingModel(e.BillingModel),
+		BillingModel:           e.BillingModel,
 		DisplayName:            e.DisplayName,
-		BillingCadence:         types.BillingCadence(e.BillingCadence),
-		InvoiceCadence:         types.InvoiceCadence(e.InvoiceCadence),
+		BillingCadence:         e.BillingCadence,
+		InvoiceCadence:         e.InvoiceCadence,
 		TrialPeriod:            e.TrialPeriod,
-		TierMode:               types.BillingTier(lo.FromPtr(e.TierMode)),
+		TierMode:               lo.FromPtr(e.TierMode),
 		Tiers:                  tiers,
 		PriceUnitTiers:         priceUnitTiers,
 		MeterID:                lo.FromPtr(e.MeterID),
@@ -408,7 +408,7 @@ func FromEnt(e *ent.Price) *Price {
 		PriceUnitAmount:        lo.FromPtrOr(e.PriceUnitAmount, decimal.Zero),
 		DisplayPriceUnitAmount: e.DisplayPriceUnitAmount,
 		ConversionRate:         lo.FromPtrOr(e.ConversionRate, decimal.Zero),
-		EntityType:             types.PriceEntityType(lo.FromPtr(e.EntityType)),
+		EntityType:             lo.FromPtr(e.EntityType),
 		EntityID:               lo.FromPtr(e.EntityID),
 		ParentPriceID:          lo.FromPtr(e.ParentPriceID),
 		GroupID:                lo.FromPtr(e.GroupID),

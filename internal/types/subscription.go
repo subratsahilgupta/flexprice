@@ -27,7 +27,8 @@ func (i InvoiceBilling) Validate() error {
 		InvoiceBillingInvoiceToParent,
 		InvoiceBillingInvoiceToSelf,
 	}
-	if !lo.Contains(allowed, i) {
+
+	if i != "" && !lo.Contains(allowed, i) {
 		return ierr.NewError("invalid invoice billing").
 			WithHint("Invalid invoice billing").
 			WithReportableDetails(map[string]any{
@@ -79,9 +80,11 @@ func (s SubscriptionStatus) Validate() error {
 		SubscriptionStatusPastDue,
 		SubscriptionStatusTrialing,
 		SubscriptionStatusUnpaid,
+		SubscriptionStatusIncompleteExpired,
 		SubscriptionStatusDraft,
 	}
-	if !lo.Contains(allowed, s) {
+
+	if s != "" && !lo.Contains(allowed, s) {
 		return ierr.NewError("invalid subscription status").
 			WithHint("Invalid subscription status").
 			WithReportableDetails(map[string]any{
@@ -121,7 +124,8 @@ func (p PaymentBehavior) Validate() error {
 		PaymentBehaviorErrorIfIncomplete,
 		PaymentBehaviorDefaultActive,
 	}
-	if !lo.Contains(allowed, p) {
+
+	if p != "" && !lo.Contains(allowed, p) {
 		return ierr.NewError("invalid payment behavior").
 			WithHint("Invalid payment behavior").
 			WithReportableDetails(map[string]any{
@@ -153,7 +157,8 @@ func (c CollectionMethod) Validate() error {
 		CollectionMethodChargeAutomatically,
 		CollectionMethodSendInvoice,
 	}
-	if !lo.Contains(allowed, c) {
+
+	if c != "" && !lo.Contains(allowed, c) {
 		return ierr.NewError("invalid collection method").
 			WithHint("Invalid collection method").
 			WithReportableDetails(map[string]any{
@@ -198,7 +203,7 @@ func (s PauseStatus) Validate() error {
 		PauseStatusCancelled,
 	}
 
-	if !lo.Contains(allowed, s) {
+	if s != "" && !lo.Contains(allowed, s) {
 		return ierr.NewError("invalid pause status").
 			WithHint("Invalid pause status").
 			WithReportableDetails(map[string]any{
@@ -370,7 +375,7 @@ func (s SubscriptionChangeType) String() string {
 }
 
 func (s SubscriptionChangeType) Validate() error {
-	if !lo.Contains(SubscriptionChangeTypeValues, s) {
+	if s != "" && !lo.Contains(SubscriptionChangeTypeValues, s) {
 		return ierr.NewError("invalid subscription change type").
 			WithHint("Subscription change type must be upgrade, downgrade, or lateral").
 			WithReportableDetails(map[string]any{

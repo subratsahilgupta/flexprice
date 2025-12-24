@@ -1416,9 +1416,21 @@ func (s *walletService) validateWalletOperation(w *wallet.Wallet, req *wallet.Wa
 // processDebitOperation handles the debit operation with credit selection and consumption
 func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.WalletOperation) error {
 	// Find eligible credits with pagination
-	credits, err := s.WalletRepo.FindEligibleCredits(ctx, req.WalletID, req.CreditAmount, 100)
-	if err != nil {
-		return err
+	credits := []*wallet.Transaction{}
+	var err error
+	if req.ParentCreditTxID != "" {
+		// Get the parent debit transaction
+		parentCreditTx, err := s.WalletRepo.GetTransactionByID(ctx, req.ParentCreditTxID)
+		if err != nil {
+			return err
+		}
+		credits = append(credits, parentCreditTx)
+
+	} else {
+		credits, err = s.WalletRepo.FindEligibleCredits(ctx, req.WalletID, req.CreditAmount, 100)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Calculate total available balance
@@ -1598,6 +1610,7 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 	// Create a debit operation for the expired credits
 	debitReq := &wallet.WalletOperation{
 		WalletID:          tx.WalletID,
+		ParentCreditTxID:  tx.ID,
 		Type:              types.TransactionTypeDebit,
 		CreditAmount:      tx.CreditsAvailable,
 		Description:       fmt.Sprintf("Credit expiry for transaction %s", tx.ID),

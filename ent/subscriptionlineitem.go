@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -41,13 +42,13 @@ type SubscriptionLineItem struct {
 	// EntityID holds the value of the "entity_id" field.
 	EntityID *string `json:"entity_id,omitempty"`
 	// EntityType holds the value of the "entity_type" field.
-	EntityType string `json:"entity_type,omitempty"`
+	EntityType types.InvoiceLineItemEntityType `json:"entity_type,omitempty"`
 	// PlanDisplayName holds the value of the "plan_display_name" field.
 	PlanDisplayName *string `json:"plan_display_name,omitempty"`
 	// PriceID holds the value of the "price_id" field.
 	PriceID string `json:"price_id,omitempty"`
 	// PriceType holds the value of the "price_type" field.
-	PriceType *string `json:"price_type,omitempty"`
+	PriceType *types.PriceType `json:"price_type,omitempty"`
 	// MeterID holds the value of the "meter_id" field.
 	MeterID *string `json:"meter_id,omitempty"`
 	// MeterDisplayName holds the value of the "meter_display_name" field.
@@ -63,9 +64,9 @@ type SubscriptionLineItem struct {
 	// Currency holds the value of the "currency" field.
 	Currency string `json:"currency,omitempty"`
 	// BillingPeriod holds the value of the "billing_period" field.
-	BillingPeriod string `json:"billing_period,omitempty"`
+	BillingPeriod types.BillingPeriod `json:"billing_period,omitempty"`
 	// InvoiceCadence holds the value of the "invoice_cadence" field.
-	InvoiceCadence string `json:"invoice_cadence,omitempty"`
+	InvoiceCadence types.InvoiceCadence `json:"invoice_cadence,omitempty"`
 	// TrialPeriod holds the value of the "trial_period" field.
 	TrialPeriod int `json:"trial_period,omitempty"`
 	// StartDate holds the value of the "start_date" field.
@@ -230,7 +231,7 @@ func (sli *SubscriptionLineItem) assignValues(columns []string, values []any) er
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field entity_type", values[i])
 			} else if value.Valid {
-				sli.EntityType = value.String
+				sli.EntityType = types.InvoiceLineItemEntityType(value.String)
 			}
 		case subscriptionlineitem.FieldPlanDisplayName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -249,8 +250,8 @@ func (sli *SubscriptionLineItem) assignValues(columns []string, values []any) er
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field price_type", values[i])
 			} else if value.Valid {
-				sli.PriceType = new(string)
-				*sli.PriceType = value.String
+				sli.PriceType = new(types.PriceType)
+				*sli.PriceType = types.PriceType(value.String)
 			}
 		case subscriptionlineitem.FieldMeterID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -303,13 +304,13 @@ func (sli *SubscriptionLineItem) assignValues(columns []string, values []any) er
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field billing_period", values[i])
 			} else if value.Valid {
-				sli.BillingPeriod = value.String
+				sli.BillingPeriod = types.BillingPeriod(value.String)
 			}
 		case subscriptionlineitem.FieldInvoiceCadence:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field invoice_cadence", values[i])
 			} else if value.Valid {
-				sli.InvoiceCadence = value.String
+				sli.InvoiceCadence = types.InvoiceCadence(value.String)
 			}
 		case subscriptionlineitem.FieldTrialPeriod:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -465,7 +466,7 @@ func (sli *SubscriptionLineItem) String() string {
 	}
 	builder.WriteString(", ")
 	builder.WriteString("entity_type=")
-	builder.WriteString(sli.EntityType)
+	builder.WriteString(fmt.Sprintf("%v", sli.EntityType))
 	builder.WriteString(", ")
 	if v := sli.PlanDisplayName; v != nil {
 		builder.WriteString("plan_display_name=")
@@ -477,7 +478,7 @@ func (sli *SubscriptionLineItem) String() string {
 	builder.WriteString(", ")
 	if v := sli.PriceType; v != nil {
 		builder.WriteString("price_type=")
-		builder.WriteString(*v)
+		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	if v := sli.MeterID; v != nil {
@@ -512,10 +513,10 @@ func (sli *SubscriptionLineItem) String() string {
 	builder.WriteString(sli.Currency)
 	builder.WriteString(", ")
 	builder.WriteString("billing_period=")
-	builder.WriteString(sli.BillingPeriod)
+	builder.WriteString(fmt.Sprintf("%v", sli.BillingPeriod))
 	builder.WriteString(", ")
 	builder.WriteString("invoice_cadence=")
-	builder.WriteString(sli.InvoiceCadence)
+	builder.WriteString(fmt.Sprintf("%v", sli.InvoiceCadence))
 	builder.WriteString(", ")
 	builder.WriteString("trial_period=")
 	builder.WriteString(fmt.Sprintf("%v", sli.TrialPeriod))

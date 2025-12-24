@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/ent"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -76,24 +77,29 @@ func FromEnt(e *ent.Wallet) *Wallet {
 		return nil
 	}
 
-	wallet := &Wallet{
+	alertConfig := lo.ToPtr(e.AlertConfig)
+	if alertConfig == nil || alertConfig.Threshold == nil {
+		alertConfig = nil
+	}
+
+	return &Wallet{
 		ID:             e.ID,
 		CustomerID:     e.CustomerID,
 		Currency:       e.Currency,
 		Balance:        e.Balance,
 		CreditBalance:  e.CreditBalance,
-		WalletStatus:   types.WalletStatus(e.WalletStatus),
+		WalletStatus:   e.WalletStatus,
 		Name:           e.Name,
 		Description:    e.Description,
 		Metadata:       e.Metadata,
-		WalletType:     types.WalletType(e.WalletType),
-		Config:         e.Config,
 		AutoTopup:      e.AutoTopup,
+		WalletType:     e.WalletType,
+		Config:         e.Config,
 		ConversionRate: e.ConversionRate,
 		EnvironmentID:  e.EnvironmentID,
 		AlertEnabled:   e.AlertEnabled,
-		AlertConfig:    e.AlertConfig,
-		AlertState:     e.AlertState,
+		AlertConfig:    alertConfig,
+		AlertState:     string(e.AlertState),
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),
@@ -103,16 +109,6 @@ func FromEnt(e *ent.Wallet) *Wallet {
 			UpdatedBy: e.UpdatedBy,
 		},
 	}
-
-	if e.AutoTopup != nil && e.AutoTopup.Enabled != nil && e.AutoTopup.Threshold != nil && e.AutoTopup.Amount != nil && e.AutoTopup.Invoicing != nil {
-		wallet.AutoTopup = &types.AutoTopup{
-			Enabled:   e.AutoTopup.Enabled,
-			Threshold: e.AutoTopup.Threshold,
-			Amount:    e.AutoTopup.Amount,
-			Invoicing: e.AutoTopup.Invoicing,
-		}
-	}
-	return wallet
 }
 
 // FromEntList converts a list of ent wallets to domain wallets

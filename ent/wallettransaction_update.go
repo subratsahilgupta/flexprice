@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -90,15 +91,15 @@ func (wtu *WalletTransactionUpdate) ClearCustomerID() *WalletTransactionUpdate {
 }
 
 // SetType sets the "type" field.
-func (wtu *WalletTransactionUpdate) SetType(s string) *WalletTransactionUpdate {
-	wtu.mutation.SetType(s)
+func (wtu *WalletTransactionUpdate) SetType(tt types.TransactionType) *WalletTransactionUpdate {
+	wtu.mutation.SetType(tt)
 	return wtu
 }
 
 // SetNillableType sets the "type" field if the given value is not nil.
-func (wtu *WalletTransactionUpdate) SetNillableType(s *string) *WalletTransactionUpdate {
-	if s != nil {
-		wtu.SetType(*s)
+func (wtu *WalletTransactionUpdate) SetNillableType(tt *types.TransactionType) *WalletTransactionUpdate {
+	if tt != nil {
+		wtu.SetType(*tt)
 	}
 	return wtu
 }
@@ -160,15 +161,15 @@ func (wtu *WalletTransactionUpdate) SetNillableCreditBalanceAfter(d *decimal.Dec
 }
 
 // SetReferenceType sets the "reference_type" field.
-func (wtu *WalletTransactionUpdate) SetReferenceType(s string) *WalletTransactionUpdate {
-	wtu.mutation.SetReferenceType(s)
+func (wtu *WalletTransactionUpdate) SetReferenceType(ttrt types.WalletTxReferenceType) *WalletTransactionUpdate {
+	wtu.mutation.SetReferenceType(ttrt)
 	return wtu
 }
 
 // SetNillableReferenceType sets the "reference_type" field if the given value is not nil.
-func (wtu *WalletTransactionUpdate) SetNillableReferenceType(s *string) *WalletTransactionUpdate {
-	if s != nil {
-		wtu.SetReferenceType(*s)
+func (wtu *WalletTransactionUpdate) SetNillableReferenceType(ttrt *types.WalletTxReferenceType) *WalletTransactionUpdate {
+	if ttrt != nil {
+		wtu.SetReferenceType(*ttrt)
 	}
 	return wtu
 }
@@ -232,15 +233,15 @@ func (wtu *WalletTransactionUpdate) ClearMetadata() *WalletTransactionUpdate {
 }
 
 // SetTransactionStatus sets the "transaction_status" field.
-func (wtu *WalletTransactionUpdate) SetTransactionStatus(s string) *WalletTransactionUpdate {
-	wtu.mutation.SetTransactionStatus(s)
+func (wtu *WalletTransactionUpdate) SetTransactionStatus(ts types.TransactionStatus) *WalletTransactionUpdate {
+	wtu.mutation.SetTransactionStatus(ts)
 	return wtu
 }
 
 // SetNillableTransactionStatus sets the "transaction_status" field if the given value is not nil.
-func (wtu *WalletTransactionUpdate) SetNillableTransactionStatus(s *string) *WalletTransactionUpdate {
-	if s != nil {
-		wtu.SetTransactionStatus(*s)
+func (wtu *WalletTransactionUpdate) SetNillableTransactionStatus(ts *types.TransactionStatus) *WalletTransactionUpdate {
+	if ts != nil {
+		wtu.SetTransactionStatus(*ts)
 	}
 	return wtu
 }
@@ -350,8 +351,18 @@ func (wtu *WalletTransactionUpdate) defaults() {
 // check runs all checks and user-defined validators on the builder.
 func (wtu *WalletTransactionUpdate) check() error {
 	if v, ok := wtu.mutation.GetType(); ok {
-		if err := wallettransaction.TypeValidator(v); err != nil {
+		if err := wallettransaction.TypeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "WalletTransaction.type": %w`, err)}
+		}
+	}
+	if v, ok := wtu.mutation.ReferenceType(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "reference_type", err: fmt.Errorf(`ent: validator failed for field "WalletTransaction.reference_type": %w`, err)}
+		}
+	}
+	if v, ok := wtu.mutation.TransactionStatus(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "transaction_status", err: fmt.Errorf(`ent: validator failed for field "WalletTransaction.transaction_status": %w`, err)}
 		}
 	}
 	return nil
@@ -540,15 +551,15 @@ func (wtuo *WalletTransactionUpdateOne) ClearCustomerID() *WalletTransactionUpda
 }
 
 // SetType sets the "type" field.
-func (wtuo *WalletTransactionUpdateOne) SetType(s string) *WalletTransactionUpdateOne {
-	wtuo.mutation.SetType(s)
+func (wtuo *WalletTransactionUpdateOne) SetType(tt types.TransactionType) *WalletTransactionUpdateOne {
+	wtuo.mutation.SetType(tt)
 	return wtuo
 }
 
 // SetNillableType sets the "type" field if the given value is not nil.
-func (wtuo *WalletTransactionUpdateOne) SetNillableType(s *string) *WalletTransactionUpdateOne {
-	if s != nil {
-		wtuo.SetType(*s)
+func (wtuo *WalletTransactionUpdateOne) SetNillableType(tt *types.TransactionType) *WalletTransactionUpdateOne {
+	if tt != nil {
+		wtuo.SetType(*tt)
 	}
 	return wtuo
 }
@@ -610,15 +621,15 @@ func (wtuo *WalletTransactionUpdateOne) SetNillableCreditBalanceAfter(d *decimal
 }
 
 // SetReferenceType sets the "reference_type" field.
-func (wtuo *WalletTransactionUpdateOne) SetReferenceType(s string) *WalletTransactionUpdateOne {
-	wtuo.mutation.SetReferenceType(s)
+func (wtuo *WalletTransactionUpdateOne) SetReferenceType(ttrt types.WalletTxReferenceType) *WalletTransactionUpdateOne {
+	wtuo.mutation.SetReferenceType(ttrt)
 	return wtuo
 }
 
 // SetNillableReferenceType sets the "reference_type" field if the given value is not nil.
-func (wtuo *WalletTransactionUpdateOne) SetNillableReferenceType(s *string) *WalletTransactionUpdateOne {
-	if s != nil {
-		wtuo.SetReferenceType(*s)
+func (wtuo *WalletTransactionUpdateOne) SetNillableReferenceType(ttrt *types.WalletTxReferenceType) *WalletTransactionUpdateOne {
+	if ttrt != nil {
+		wtuo.SetReferenceType(*ttrt)
 	}
 	return wtuo
 }
@@ -682,15 +693,15 @@ func (wtuo *WalletTransactionUpdateOne) ClearMetadata() *WalletTransactionUpdate
 }
 
 // SetTransactionStatus sets the "transaction_status" field.
-func (wtuo *WalletTransactionUpdateOne) SetTransactionStatus(s string) *WalletTransactionUpdateOne {
-	wtuo.mutation.SetTransactionStatus(s)
+func (wtuo *WalletTransactionUpdateOne) SetTransactionStatus(ts types.TransactionStatus) *WalletTransactionUpdateOne {
+	wtuo.mutation.SetTransactionStatus(ts)
 	return wtuo
 }
 
 // SetNillableTransactionStatus sets the "transaction_status" field if the given value is not nil.
-func (wtuo *WalletTransactionUpdateOne) SetNillableTransactionStatus(s *string) *WalletTransactionUpdateOne {
-	if s != nil {
-		wtuo.SetTransactionStatus(*s)
+func (wtuo *WalletTransactionUpdateOne) SetNillableTransactionStatus(ts *types.TransactionStatus) *WalletTransactionUpdateOne {
+	if ts != nil {
+		wtuo.SetTransactionStatus(*ts)
 	}
 	return wtuo
 }
@@ -813,8 +824,18 @@ func (wtuo *WalletTransactionUpdateOne) defaults() {
 // check runs all checks and user-defined validators on the builder.
 func (wtuo *WalletTransactionUpdateOne) check() error {
 	if v, ok := wtuo.mutation.GetType(); ok {
-		if err := wallettransaction.TypeValidator(v); err != nil {
+		if err := wallettransaction.TypeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "WalletTransaction.type": %w`, err)}
+		}
+	}
+	if v, ok := wtuo.mutation.ReferenceType(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "reference_type", err: fmt.Errorf(`ent: validator failed for field "WalletTransaction.reference_type": %w`, err)}
+		}
+	}
+	if v, ok := wtuo.mutation.TransactionStatus(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "transaction_status", err: fmt.Errorf(`ent: validator failed for field "WalletTransaction.transaction_status": %w`, err)}
 		}
 	}
 	return nil

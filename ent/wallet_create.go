@@ -179,15 +179,15 @@ func (wc *WalletCreate) SetCreditBalance(d decimal.Decimal) *WalletCreate {
 }
 
 // SetWalletStatus sets the "wallet_status" field.
-func (wc *WalletCreate) SetWalletStatus(s string) *WalletCreate {
-	wc.mutation.SetWalletStatus(s)
+func (wc *WalletCreate) SetWalletStatus(ts types.WalletStatus) *WalletCreate {
+	wc.mutation.SetWalletStatus(ts)
 	return wc
 }
 
 // SetNillableWalletStatus sets the "wallet_status" field if the given value is not nil.
-func (wc *WalletCreate) SetNillableWalletStatus(s *string) *WalletCreate {
-	if s != nil {
-		wc.SetWalletStatus(*s)
+func (wc *WalletCreate) SetNillableWalletStatus(ts *types.WalletStatus) *WalletCreate {
+	if ts != nil {
+		wc.SetWalletStatus(*ts)
 	}
 	return wc
 }
@@ -199,15 +199,15 @@ func (wc *WalletCreate) SetAutoTopup(tt *types.AutoTopup) *WalletCreate {
 }
 
 // SetWalletType sets the "wallet_type" field.
-func (wc *WalletCreate) SetWalletType(s string) *WalletCreate {
-	wc.mutation.SetWalletType(s)
+func (wc *WalletCreate) SetWalletType(tt types.WalletType) *WalletCreate {
+	wc.mutation.SetWalletType(tt)
 	return wc
 }
 
 // SetNillableWalletType sets the "wallet_type" field if the given value is not nil.
-func (wc *WalletCreate) SetNillableWalletType(s *string) *WalletCreate {
-	if s != nil {
-		wc.SetWalletType(*s)
+func (wc *WalletCreate) SetNillableWalletType(tt *types.WalletType) *WalletCreate {
+	if tt != nil {
+		wc.SetWalletType(*tt)
 	}
 	return wc
 }
@@ -233,8 +233,16 @@ func (wc *WalletCreate) SetNillableConfig(tc *types.WalletConfig) *WalletCreate 
 }
 
 // SetAlertConfig sets the "alert_config" field.
-func (wc *WalletCreate) SetAlertConfig(tc *types.AlertConfig) *WalletCreate {
+func (wc *WalletCreate) SetAlertConfig(tc types.AlertConfig) *WalletCreate {
 	wc.mutation.SetAlertConfig(tc)
+	return wc
+}
+
+// SetNillableAlertConfig sets the "alert_config" field if the given value is not nil.
+func (wc *WalletCreate) SetNillableAlertConfig(tc *types.AlertConfig) *WalletCreate {
+	if tc != nil {
+		wc.SetAlertConfig(*tc)
+	}
 	return wc
 }
 
@@ -253,15 +261,15 @@ func (wc *WalletCreate) SetNillableAlertEnabled(b *bool) *WalletCreate {
 }
 
 // SetAlertState sets the "alert_state" field.
-func (wc *WalletCreate) SetAlertState(s string) *WalletCreate {
-	wc.mutation.SetAlertState(s)
+func (wc *WalletCreate) SetAlertState(ts types.AlertState) *WalletCreate {
+	wc.mutation.SetAlertState(ts)
 	return wc
 }
 
 // SetNillableAlertState sets the "alert_state" field if the given value is not nil.
-func (wc *WalletCreate) SetNillableAlertState(s *string) *WalletCreate {
-	if s != nil {
-		wc.SetAlertState(*s)
+func (wc *WalletCreate) SetNillableAlertState(ts *types.AlertState) *WalletCreate {
+	if ts != nil {
+		wc.SetAlertState(*ts)
 	}
 	return wc
 }
@@ -396,6 +404,11 @@ func (wc *WalletCreate) check() error {
 	}
 	if _, ok := wc.mutation.WalletType(); !ok {
 		return &ValidationError{Name: "wallet_type", err: errors.New(`ent: missing required field "Wallet.wallet_type"`)}
+	}
+	if v, ok := wc.mutation.WalletType(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "wallet_type", err: fmt.Errorf(`ent: validator failed for field "Wallet.wallet_type": %w`, err)}
+		}
 	}
 	if _, ok := wc.mutation.ConversionRate(); !ok {
 		return &ValidationError{Name: "conversion_rate", err: errors.New(`ent: missing required field "Wallet.conversion_rate"`)}

@@ -43,7 +43,7 @@ type Price struct {
 	// DisplayAmount holds the value of the "display_amount" field.
 	DisplayAmount string `json:"display_amount,omitempty"`
 	// PriceUnitType holds the value of the "price_unit_type" field.
-	PriceUnitType string `json:"price_unit_type,omitempty"`
+	PriceUnitType types.PriceUnitType `json:"price_unit_type,omitempty"`
 	// PriceUnitID holds the value of the "price_unit_id" field.
 	PriceUnitID *string `json:"price_unit_id,omitempty"`
 	// PriceUnit holds the value of the "price_unit" field.
@@ -57,17 +57,17 @@ type Price struct {
 	// MinQuantity holds the value of the "min_quantity" field.
 	MinQuantity *decimal.Decimal `json:"min_quantity,omitempty"`
 	// Type holds the value of the "type" field.
-	Type string `json:"type,omitempty"`
+	Type types.PriceType `json:"type,omitempty"`
 	// BillingPeriod holds the value of the "billing_period" field.
-	BillingPeriod string `json:"billing_period,omitempty"`
+	BillingPeriod types.BillingPeriod `json:"billing_period,omitempty"`
 	// BillingPeriodCount holds the value of the "billing_period_count" field.
 	BillingPeriodCount int `json:"billing_period_count,omitempty"`
 	// BillingModel holds the value of the "billing_model" field.
-	BillingModel string `json:"billing_model,omitempty"`
+	BillingModel types.BillingModel `json:"billing_model,omitempty"`
 	// BillingCadence holds the value of the "billing_cadence" field.
-	BillingCadence string `json:"billing_cadence,omitempty"`
+	BillingCadence types.BillingCadence `json:"billing_cadence,omitempty"`
 	// InvoiceCadence holds the value of the "invoice_cadence" field.
-	InvoiceCadence string `json:"invoice_cadence,omitempty"`
+	InvoiceCadence types.InvoiceCadence `json:"invoice_cadence,omitempty"`
 	// TrialPeriod holds the value of the "trial_period" field.
 	TrialPeriod int `json:"trial_period,omitempty"`
 	// MeterID holds the value of the "meter_id" field.
@@ -75,7 +75,7 @@ type Price struct {
 	// FilterValues holds the value of the "filter_values" field.
 	FilterValues map[string][]string `json:"filter_values,omitempty"`
 	// TierMode holds the value of the "tier_mode" field.
-	TierMode *string `json:"tier_mode,omitempty"`
+	TierMode *types.BillingTier `json:"tier_mode,omitempty"`
 	// Tiers holds the value of the "tiers" field.
 	Tiers []*types.PriceTier `json:"tiers,omitempty"`
 	// PriceUnitTiers holds the value of the "price_unit_tiers" field.
@@ -89,7 +89,7 @@ type Price struct {
 	// Metadata holds the value of the "metadata" field.
 	Metadata map[string]string `json:"metadata,omitempty"`
 	// EntityType holds the value of the "entity_type" field.
-	EntityType *string `json:"entity_type,omitempty"`
+	EntityType *types.PriceEntityType `json:"entity_type,omitempty"`
 	// EntityID holds the value of the "entity_id" field.
 	EntityID *string `json:"entity_id,omitempty"`
 	// ParentPriceID holds the value of the "parent_price_id" field.
@@ -211,7 +211,7 @@ func (pr *Price) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field price_unit_type", values[i])
 			} else if value.Valid {
-				pr.PriceUnitType = value.String
+				pr.PriceUnitType = types.PriceUnitType(value.String)
 			}
 		case price.FieldPriceUnitID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -257,13 +257,13 @@ func (pr *Price) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field type", values[i])
 			} else if value.Valid {
-				pr.Type = value.String
+				pr.Type = types.PriceType(value.String)
 			}
 		case price.FieldBillingPeriod:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field billing_period", values[i])
 			} else if value.Valid {
-				pr.BillingPeriod = value.String
+				pr.BillingPeriod = types.BillingPeriod(value.String)
 			}
 		case price.FieldBillingPeriodCount:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -275,19 +275,19 @@ func (pr *Price) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field billing_model", values[i])
 			} else if value.Valid {
-				pr.BillingModel = value.String
+				pr.BillingModel = types.BillingModel(value.String)
 			}
 		case price.FieldBillingCadence:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field billing_cadence", values[i])
 			} else if value.Valid {
-				pr.BillingCadence = value.String
+				pr.BillingCadence = types.BillingCadence(value.String)
 			}
 		case price.FieldInvoiceCadence:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field invoice_cadence", values[i])
 			} else if value.Valid {
-				pr.InvoiceCadence = value.String
+				pr.InvoiceCadence = types.InvoiceCadence(value.String)
 			}
 		case price.FieldTrialPeriod:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -314,8 +314,8 @@ func (pr *Price) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field tier_mode", values[i])
 			} else if value.Valid {
-				pr.TierMode = new(string)
-				*pr.TierMode = value.String
+				pr.TierMode = new(types.BillingTier)
+				*pr.TierMode = types.BillingTier(value.String)
 			}
 		case price.FieldTiers:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -365,8 +365,8 @@ func (pr *Price) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field entity_type", values[i])
 			} else if value.Valid {
-				pr.EntityType = new(string)
-				*pr.EntityType = value.String
+				pr.EntityType = new(types.PriceEntityType)
+				*pr.EntityType = types.PriceEntityType(value.String)
 			}
 		case price.FieldEntityID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -473,7 +473,7 @@ func (pr *Price) String() string {
 	builder.WriteString(pr.DisplayAmount)
 	builder.WriteString(", ")
 	builder.WriteString("price_unit_type=")
-	builder.WriteString(pr.PriceUnitType)
+	builder.WriteString(fmt.Sprintf("%v", pr.PriceUnitType))
 	builder.WriteString(", ")
 	if v := pr.PriceUnitID; v != nil {
 		builder.WriteString("price_unit_id=")
@@ -502,22 +502,22 @@ func (pr *Price) String() string {
 	}
 	builder.WriteString(", ")
 	builder.WriteString("type=")
-	builder.WriteString(pr.Type)
+	builder.WriteString(fmt.Sprintf("%v", pr.Type))
 	builder.WriteString(", ")
 	builder.WriteString("billing_period=")
-	builder.WriteString(pr.BillingPeriod)
+	builder.WriteString(fmt.Sprintf("%v", pr.BillingPeriod))
 	builder.WriteString(", ")
 	builder.WriteString("billing_period_count=")
 	builder.WriteString(fmt.Sprintf("%v", pr.BillingPeriodCount))
 	builder.WriteString(", ")
 	builder.WriteString("billing_model=")
-	builder.WriteString(pr.BillingModel)
+	builder.WriteString(fmt.Sprintf("%v", pr.BillingModel))
 	builder.WriteString(", ")
 	builder.WriteString("billing_cadence=")
-	builder.WriteString(pr.BillingCadence)
+	builder.WriteString(fmt.Sprintf("%v", pr.BillingCadence))
 	builder.WriteString(", ")
 	builder.WriteString("invoice_cadence=")
-	builder.WriteString(pr.InvoiceCadence)
+	builder.WriteString(fmt.Sprintf("%v", pr.InvoiceCadence))
 	builder.WriteString(", ")
 	builder.WriteString("trial_period=")
 	builder.WriteString(fmt.Sprintf("%v", pr.TrialPeriod))
@@ -532,7 +532,7 @@ func (pr *Price) String() string {
 	builder.WriteString(", ")
 	if v := pr.TierMode; v != nil {
 		builder.WriteString("tier_mode=")
-		builder.WriteString(*v)
+		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	builder.WriteString("tiers=")
@@ -555,7 +555,7 @@ func (pr *Price) String() string {
 	builder.WriteString(", ")
 	if v := pr.EntityType; v != nil {
 		builder.WriteString("entity_type=")
-		builder.WriteString(*v)
+		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
 	if v := pr.EntityID; v != nil {

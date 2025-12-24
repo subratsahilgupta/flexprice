@@ -19811,14 +19811,14 @@ type EntitlementMutation struct {
 	created_by            *string
 	updated_by            *string
 	environment_id        *string
-	entity_type           *string
+	entity_type           *types.EntitlementEntityType
 	entity_id             *string
 	feature_id            *string
-	feature_type          *string
+	feature_type          *types.FeatureType
 	is_enabled            *bool
 	usage_limit           *int64
 	addusage_limit        *int64
-	usage_reset_period    *string
+	usage_reset_period    *types.EntitlementUsageResetPeriod
 	is_soft_limit         *bool
 	static_value          *string
 	display_order         *int
@@ -20226,12 +20226,12 @@ func (m *EntitlementMutation) ResetEnvironmentID() {
 }
 
 // SetEntityType sets the "entity_type" field.
-func (m *EntitlementMutation) SetEntityType(s string) {
-	m.entity_type = &s
+func (m *EntitlementMutation) SetEntityType(tet types.EntitlementEntityType) {
+	m.entity_type = &tet
 }
 
 // EntityType returns the value of the "entity_type" field in the mutation.
-func (m *EntitlementMutation) EntityType() (r string, exists bool) {
+func (m *EntitlementMutation) EntityType() (r types.EntitlementEntityType, exists bool) {
 	v := m.entity_type
 	if v == nil {
 		return
@@ -20242,7 +20242,7 @@ func (m *EntitlementMutation) EntityType() (r string, exists bool) {
 // OldEntityType returns the old "entity_type" field's value of the Entitlement entity.
 // If the Entitlement object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *EntitlementMutation) OldEntityType(ctx context.Context) (v string, err error) {
+func (m *EntitlementMutation) OldEntityType(ctx context.Context) (v types.EntitlementEntityType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldEntityType is only allowed on UpdateOne operations")
 	}
@@ -20360,12 +20360,12 @@ func (m *EntitlementMutation) ResetFeatureID() {
 }
 
 // SetFeatureType sets the "feature_type" field.
-func (m *EntitlementMutation) SetFeatureType(s string) {
-	m.feature_type = &s
+func (m *EntitlementMutation) SetFeatureType(tt types.FeatureType) {
+	m.feature_type = &tt
 }
 
 // FeatureType returns the value of the "feature_type" field in the mutation.
-func (m *EntitlementMutation) FeatureType() (r string, exists bool) {
+func (m *EntitlementMutation) FeatureType() (r types.FeatureType, exists bool) {
 	v := m.feature_type
 	if v == nil {
 		return
@@ -20376,7 +20376,7 @@ func (m *EntitlementMutation) FeatureType() (r string, exists bool) {
 // OldFeatureType returns the old "feature_type" field's value of the Entitlement entity.
 // If the Entitlement object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *EntitlementMutation) OldFeatureType(ctx context.Context) (v string, err error) {
+func (m *EntitlementMutation) OldFeatureType(ctx context.Context) (v types.FeatureType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldFeatureType is only allowed on UpdateOne operations")
 	}
@@ -20502,12 +20502,12 @@ func (m *EntitlementMutation) ResetUsageLimit() {
 }
 
 // SetUsageResetPeriod sets the "usage_reset_period" field.
-func (m *EntitlementMutation) SetUsageResetPeriod(s string) {
-	m.usage_reset_period = &s
+func (m *EntitlementMutation) SetUsageResetPeriod(turp types.EntitlementUsageResetPeriod) {
+	m.usage_reset_period = &turp
 }
 
 // UsageResetPeriod returns the value of the "usage_reset_period" field in the mutation.
-func (m *EntitlementMutation) UsageResetPeriod() (r string, exists bool) {
+func (m *EntitlementMutation) UsageResetPeriod() (r types.EntitlementUsageResetPeriod, exists bool) {
 	v := m.usage_reset_period
 	if v == nil {
 		return
@@ -20518,7 +20518,7 @@ func (m *EntitlementMutation) UsageResetPeriod() (r string, exists bool) {
 // OldUsageResetPeriod returns the old "usage_reset_period" field's value of the Entitlement entity.
 // If the Entitlement object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *EntitlementMutation) OldUsageResetPeriod(ctx context.Context) (v string, err error) {
+func (m *EntitlementMutation) OldUsageResetPeriod(ctx context.Context) (v types.EntitlementUsageResetPeriod, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldUsageResetPeriod is only allowed on UpdateOne operations")
 	}
@@ -20977,7 +20977,7 @@ func (m *EntitlementMutation) SetField(name string, value ent.Value) error {
 		m.SetEnvironmentID(v)
 		return nil
 	case entitlement.FieldEntityType:
-		v, ok := value.(string)
+		v, ok := value.(types.EntitlementEntityType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -20998,7 +20998,7 @@ func (m *EntitlementMutation) SetField(name string, value ent.Value) error {
 		m.SetFeatureID(v)
 		return nil
 	case entitlement.FieldFeatureType:
-		v, ok := value.(string)
+		v, ok := value.(types.FeatureType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -21019,7 +21019,7 @@ func (m *EntitlementMutation) SetField(name string, value ent.Value) error {
 		m.SetUsageLimit(v)
 		return nil
 	case entitlement.FieldUsageResetPeriod:
-		v, ok := value.(string)
+		v, ok := value.(types.EntitlementUsageResetPeriod)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -25349,9 +25349,9 @@ type InvoiceMutation struct {
 	environment_id             *string
 	customer_id                *string
 	subscription_id            *string
-	invoice_type               *string
-	invoice_status             *string
-	payment_status             *string
+	invoice_type               *types.InvoiceType
+	invoice_status             *types.InvoiceStatus
+	payment_status             *types.PaymentStatus
 	currency                   *string
 	amount_due                 *decimal.Decimal
 	amount_paid                *decimal.Decimal
@@ -25367,7 +25367,7 @@ type InvoiceMutation struct {
 	paid_at                    *time.Time
 	voided_at                  *time.Time
 	finalized_at               *time.Time
-	billing_period             *string
+	billing_period             *types.BillingPeriod
 	period_start               *time.Time
 	period_end                 *time.Time
 	invoice_pdf_url            *string
@@ -25872,12 +25872,12 @@ func (m *InvoiceMutation) ResetSubscriptionID() {
 }
 
 // SetInvoiceType sets the "invoice_type" field.
-func (m *InvoiceMutation) SetInvoiceType(s string) {
-	m.invoice_type = &s
+func (m *InvoiceMutation) SetInvoiceType(tt types.InvoiceType) {
+	m.invoice_type = &tt
 }
 
 // InvoiceType returns the value of the "invoice_type" field in the mutation.
-func (m *InvoiceMutation) InvoiceType() (r string, exists bool) {
+func (m *InvoiceMutation) InvoiceType() (r types.InvoiceType, exists bool) {
 	v := m.invoice_type
 	if v == nil {
 		return
@@ -25888,7 +25888,7 @@ func (m *InvoiceMutation) InvoiceType() (r string, exists bool) {
 // OldInvoiceType returns the old "invoice_type" field's value of the Invoice entity.
 // If the Invoice object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceMutation) OldInvoiceType(ctx context.Context) (v string, err error) {
+func (m *InvoiceMutation) OldInvoiceType(ctx context.Context) (v types.InvoiceType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldInvoiceType is only allowed on UpdateOne operations")
 	}
@@ -25908,12 +25908,12 @@ func (m *InvoiceMutation) ResetInvoiceType() {
 }
 
 // SetInvoiceStatus sets the "invoice_status" field.
-func (m *InvoiceMutation) SetInvoiceStatus(s string) {
-	m.invoice_status = &s
+func (m *InvoiceMutation) SetInvoiceStatus(ts types.InvoiceStatus) {
+	m.invoice_status = &ts
 }
 
 // InvoiceStatus returns the value of the "invoice_status" field in the mutation.
-func (m *InvoiceMutation) InvoiceStatus() (r string, exists bool) {
+func (m *InvoiceMutation) InvoiceStatus() (r types.InvoiceStatus, exists bool) {
 	v := m.invoice_status
 	if v == nil {
 		return
@@ -25924,7 +25924,7 @@ func (m *InvoiceMutation) InvoiceStatus() (r string, exists bool) {
 // OldInvoiceStatus returns the old "invoice_status" field's value of the Invoice entity.
 // If the Invoice object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceMutation) OldInvoiceStatus(ctx context.Context) (v string, err error) {
+func (m *InvoiceMutation) OldInvoiceStatus(ctx context.Context) (v types.InvoiceStatus, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldInvoiceStatus is only allowed on UpdateOne operations")
 	}
@@ -25944,12 +25944,12 @@ func (m *InvoiceMutation) ResetInvoiceStatus() {
 }
 
 // SetPaymentStatus sets the "payment_status" field.
-func (m *InvoiceMutation) SetPaymentStatus(s string) {
-	m.payment_status = &s
+func (m *InvoiceMutation) SetPaymentStatus(ts types.PaymentStatus) {
+	m.payment_status = &ts
 }
 
 // PaymentStatus returns the value of the "payment_status" field in the mutation.
-func (m *InvoiceMutation) PaymentStatus() (r string, exists bool) {
+func (m *InvoiceMutation) PaymentStatus() (r types.PaymentStatus, exists bool) {
 	v := m.payment_status
 	if v == nil {
 		return
@@ -25960,7 +25960,7 @@ func (m *InvoiceMutation) PaymentStatus() (r string, exists bool) {
 // OldPaymentStatus returns the old "payment_status" field's value of the Invoice entity.
 // If the Invoice object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceMutation) OldPaymentStatus(ctx context.Context) (v string, err error) {
+func (m *InvoiceMutation) OldPaymentStatus(ctx context.Context) (v types.PaymentStatus, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldPaymentStatus is only allowed on UpdateOne operations")
 	}
@@ -26663,12 +26663,12 @@ func (m *InvoiceMutation) ResetFinalizedAt() {
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (m *InvoiceMutation) SetBillingPeriod(s string) {
-	m.billing_period = &s
+func (m *InvoiceMutation) SetBillingPeriod(tp types.BillingPeriod) {
+	m.billing_period = &tp
 }
 
 // BillingPeriod returns the value of the "billing_period" field in the mutation.
-func (m *InvoiceMutation) BillingPeriod() (r string, exists bool) {
+func (m *InvoiceMutation) BillingPeriod() (r types.BillingPeriod, exists bool) {
 	v := m.billing_period
 	if v == nil {
 		return
@@ -26679,7 +26679,7 @@ func (m *InvoiceMutation) BillingPeriod() (r string, exists bool) {
 // OldBillingPeriod returns the old "billing_period" field's value of the Invoice entity.
 // If the Invoice object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceMutation) OldBillingPeriod(ctx context.Context) (v *string, err error) {
+func (m *InvoiceMutation) OldBillingPeriod(ctx context.Context) (v *types.BillingPeriod, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldBillingPeriod is only allowed on UpdateOne operations")
 	}
@@ -27672,21 +27672,21 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 		m.SetSubscriptionID(v)
 		return nil
 	case invoice.FieldInvoiceType:
-		v, ok := value.(string)
+		v, ok := value.(types.InvoiceType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetInvoiceType(v)
 		return nil
 	case invoice.FieldInvoiceStatus:
-		v, ok := value.(string)
+		v, ok := value.(types.InvoiceStatus)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetInvoiceStatus(v)
 		return nil
 	case invoice.FieldPaymentStatus:
-		v, ok := value.(string)
+		v, ok := value.(types.PaymentStatus)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -27798,7 +27798,7 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 		m.SetFinalizedAt(v)
 		return nil
 	case invoice.FieldBillingPeriod:
-		v, ok := value.(string)
+		v, ok := value.(types.BillingPeriod)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -28331,10 +28331,10 @@ type InvoiceLineItemMutation struct {
 	customer_id                *string
 	subscription_id            *string
 	entity_id                  *string
-	entity_type                *string
+	entity_type                *types.InvoiceLineItemEntityType
 	plan_display_name          *string
 	price_id                   *string
-	price_type                 *string
+	price_type                 *types.PriceType
 	meter_id                   *string
 	meter_display_name         *string
 	price_unit_id              *string
@@ -28925,12 +28925,12 @@ func (m *InvoiceLineItemMutation) ResetEntityID() {
 }
 
 // SetEntityType sets the "entity_type" field.
-func (m *InvoiceLineItemMutation) SetEntityType(s string) {
-	m.entity_type = &s
+func (m *InvoiceLineItemMutation) SetEntityType(tliet types.InvoiceLineItemEntityType) {
+	m.entity_type = &tliet
 }
 
 // EntityType returns the value of the "entity_type" field in the mutation.
-func (m *InvoiceLineItemMutation) EntityType() (r string, exists bool) {
+func (m *InvoiceLineItemMutation) EntityType() (r types.InvoiceLineItemEntityType, exists bool) {
 	v := m.entity_type
 	if v == nil {
 		return
@@ -28941,7 +28941,7 @@ func (m *InvoiceLineItemMutation) EntityType() (r string, exists bool) {
 // OldEntityType returns the old "entity_type" field's value of the InvoiceLineItem entity.
 // If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceLineItemMutation) OldEntityType(ctx context.Context) (v *string, err error) {
+func (m *InvoiceLineItemMutation) OldEntityType(ctx context.Context) (v *types.InvoiceLineItemEntityType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldEntityType is only allowed on UpdateOne operations")
 	}
@@ -29072,12 +29072,12 @@ func (m *InvoiceLineItemMutation) ResetPriceID() {
 }
 
 // SetPriceType sets the "price_type" field.
-func (m *InvoiceLineItemMutation) SetPriceType(s string) {
-	m.price_type = &s
+func (m *InvoiceLineItemMutation) SetPriceType(tt types.PriceType) {
+	m.price_type = &tt
 }
 
 // PriceType returns the value of the "price_type" field in the mutation.
-func (m *InvoiceLineItemMutation) PriceType() (r string, exists bool) {
+func (m *InvoiceLineItemMutation) PriceType() (r types.PriceType, exists bool) {
 	v := m.price_type
 	if v == nil {
 		return
@@ -29088,7 +29088,7 @@ func (m *InvoiceLineItemMutation) PriceType() (r string, exists bool) {
 // OldPriceType returns the old "price_type" field's value of the InvoiceLineItem entity.
 // If the InvoiceLineItem object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceLineItemMutation) OldPriceType(ctx context.Context) (v *string, err error) {
+func (m *InvoiceLineItemMutation) OldPriceType(ctx context.Context) (v *types.PriceType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldPriceType is only allowed on UpdateOne operations")
 	}
@@ -30134,7 +30134,7 @@ func (m *InvoiceLineItemMutation) SetField(name string, value ent.Value) error {
 		m.SetEntityID(v)
 		return nil
 	case invoicelineitem.FieldEntityType:
-		v, ok := value.(string)
+		v, ok := value.(types.InvoiceLineItemEntityType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -30155,7 +30155,7 @@ func (m *InvoiceLineItemMutation) SetField(name string, value ent.Value) error {
 		m.SetPriceID(v)
 		return nil
 	case invoicelineitem.FieldPriceType:
-		v, ok := value.(string)
+		v, ok := value.(types.PriceType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -36684,25 +36684,25 @@ type PriceMutation struct {
 	amount                    *decimal.Decimal
 	currency                  *string
 	display_amount            *string
-	price_unit_type           *string
+	price_unit_type           *types.PriceUnitType
 	price_unit_id             *string
 	price_unit                *string
 	price_unit_amount         *decimal.Decimal
 	display_price_unit_amount *string
 	conversion_rate           *decimal.Decimal
 	min_quantity              *decimal.Decimal
-	_type                     *string
-	billing_period            *string
+	_type                     *types.PriceType
+	billing_period            *types.BillingPeriod
 	billing_period_count      *int
 	addbilling_period_count   *int
-	billing_model             *string
-	billing_cadence           *string
-	invoice_cadence           *string
+	billing_model             *types.BillingModel
+	billing_cadence           *types.BillingCadence
+	invoice_cadence           *types.InvoiceCadence
 	trial_period              *int
 	addtrial_period           *int
 	meter_id                  *string
 	filter_values             *map[string][]string
-	tier_mode                 *string
+	tier_mode                 *types.BillingTier
 	tiers                     *[]*types.PriceTier
 	appendtiers               []*types.PriceTier
 	price_unit_tiers          *[]*types.PriceTier
@@ -36711,7 +36711,7 @@ type PriceMutation struct {
 	lookup_key                *string
 	description               *string
 	metadata                  *map[string]string
-	entity_type               *string
+	entity_type               *types.PriceEntityType
 	entity_id                 *string
 	parent_price_id           *string
 	start_date                *time.Time
@@ -37276,12 +37276,12 @@ func (m *PriceMutation) ResetDisplayAmount() {
 }
 
 // SetPriceUnitType sets the "price_unit_type" field.
-func (m *PriceMutation) SetPriceUnitType(s string) {
-	m.price_unit_type = &s
+func (m *PriceMutation) SetPriceUnitType(tut types.PriceUnitType) {
+	m.price_unit_type = &tut
 }
 
 // PriceUnitType returns the value of the "price_unit_type" field in the mutation.
-func (m *PriceMutation) PriceUnitType() (r string, exists bool) {
+func (m *PriceMutation) PriceUnitType() (r types.PriceUnitType, exists bool) {
 	v := m.price_unit_type
 	if v == nil {
 		return
@@ -37292,7 +37292,7 @@ func (m *PriceMutation) PriceUnitType() (r string, exists bool) {
 // OldPriceUnitType returns the old "price_unit_type" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldPriceUnitType(ctx context.Context) (v string, err error) {
+func (m *PriceMutation) OldPriceUnitType(ctx context.Context) (v types.PriceUnitType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldPriceUnitType is only allowed on UpdateOne operations")
 	}
@@ -37606,12 +37606,12 @@ func (m *PriceMutation) ResetMinQuantity() {
 }
 
 // SetType sets the "type" field.
-func (m *PriceMutation) SetType(s string) {
-	m._type = &s
+func (m *PriceMutation) SetType(tt types.PriceType) {
+	m._type = &tt
 }
 
 // GetType returns the value of the "type" field in the mutation.
-func (m *PriceMutation) GetType() (r string, exists bool) {
+func (m *PriceMutation) GetType() (r types.PriceType, exists bool) {
 	v := m._type
 	if v == nil {
 		return
@@ -37622,7 +37622,7 @@ func (m *PriceMutation) GetType() (r string, exists bool) {
 // OldType returns the old "type" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldType(ctx context.Context) (v string, err error) {
+func (m *PriceMutation) OldType(ctx context.Context) (v types.PriceType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldType is only allowed on UpdateOne operations")
 	}
@@ -37642,12 +37642,12 @@ func (m *PriceMutation) ResetType() {
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (m *PriceMutation) SetBillingPeriod(s string) {
-	m.billing_period = &s
+func (m *PriceMutation) SetBillingPeriod(tp types.BillingPeriod) {
+	m.billing_period = &tp
 }
 
 // BillingPeriod returns the value of the "billing_period" field in the mutation.
-func (m *PriceMutation) BillingPeriod() (r string, exists bool) {
+func (m *PriceMutation) BillingPeriod() (r types.BillingPeriod, exists bool) {
 	v := m.billing_period
 	if v == nil {
 		return
@@ -37658,7 +37658,7 @@ func (m *PriceMutation) BillingPeriod() (r string, exists bool) {
 // OldBillingPeriod returns the old "billing_period" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldBillingPeriod(ctx context.Context) (v string, err error) {
+func (m *PriceMutation) OldBillingPeriod(ctx context.Context) (v types.BillingPeriod, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldBillingPeriod is only allowed on UpdateOne operations")
 	}
@@ -37734,12 +37734,12 @@ func (m *PriceMutation) ResetBillingPeriodCount() {
 }
 
 // SetBillingModel sets the "billing_model" field.
-func (m *PriceMutation) SetBillingModel(s string) {
-	m.billing_model = &s
+func (m *PriceMutation) SetBillingModel(tm types.BillingModel) {
+	m.billing_model = &tm
 }
 
 // BillingModel returns the value of the "billing_model" field in the mutation.
-func (m *PriceMutation) BillingModel() (r string, exists bool) {
+func (m *PriceMutation) BillingModel() (r types.BillingModel, exists bool) {
 	v := m.billing_model
 	if v == nil {
 		return
@@ -37750,7 +37750,7 @@ func (m *PriceMutation) BillingModel() (r string, exists bool) {
 // OldBillingModel returns the old "billing_model" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldBillingModel(ctx context.Context) (v string, err error) {
+func (m *PriceMutation) OldBillingModel(ctx context.Context) (v types.BillingModel, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldBillingModel is only allowed on UpdateOne operations")
 	}
@@ -37770,12 +37770,12 @@ func (m *PriceMutation) ResetBillingModel() {
 }
 
 // SetBillingCadence sets the "billing_cadence" field.
-func (m *PriceMutation) SetBillingCadence(s string) {
-	m.billing_cadence = &s
+func (m *PriceMutation) SetBillingCadence(tc types.BillingCadence) {
+	m.billing_cadence = &tc
 }
 
 // BillingCadence returns the value of the "billing_cadence" field in the mutation.
-func (m *PriceMutation) BillingCadence() (r string, exists bool) {
+func (m *PriceMutation) BillingCadence() (r types.BillingCadence, exists bool) {
 	v := m.billing_cadence
 	if v == nil {
 		return
@@ -37786,7 +37786,7 @@ func (m *PriceMutation) BillingCadence() (r string, exists bool) {
 // OldBillingCadence returns the old "billing_cadence" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldBillingCadence(ctx context.Context) (v string, err error) {
+func (m *PriceMutation) OldBillingCadence(ctx context.Context) (v types.BillingCadence, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldBillingCadence is only allowed on UpdateOne operations")
 	}
@@ -37806,12 +37806,12 @@ func (m *PriceMutation) ResetBillingCadence() {
 }
 
 // SetInvoiceCadence sets the "invoice_cadence" field.
-func (m *PriceMutation) SetInvoiceCadence(s string) {
-	m.invoice_cadence = &s
+func (m *PriceMutation) SetInvoiceCadence(tc types.InvoiceCadence) {
+	m.invoice_cadence = &tc
 }
 
 // InvoiceCadence returns the value of the "invoice_cadence" field in the mutation.
-func (m *PriceMutation) InvoiceCadence() (r string, exists bool) {
+func (m *PriceMutation) InvoiceCadence() (r types.InvoiceCadence, exists bool) {
 	v := m.invoice_cadence
 	if v == nil {
 		return
@@ -37822,7 +37822,7 @@ func (m *PriceMutation) InvoiceCadence() (r string, exists bool) {
 // OldInvoiceCadence returns the old "invoice_cadence" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldInvoiceCadence(ctx context.Context) (v string, err error) {
+func (m *PriceMutation) OldInvoiceCadence(ctx context.Context) (v types.InvoiceCadence, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldInvoiceCadence is only allowed on UpdateOne operations")
 	}
@@ -38009,12 +38009,12 @@ func (m *PriceMutation) ResetFilterValues() {
 }
 
 // SetTierMode sets the "tier_mode" field.
-func (m *PriceMutation) SetTierMode(s string) {
-	m.tier_mode = &s
+func (m *PriceMutation) SetTierMode(tt types.BillingTier) {
+	m.tier_mode = &tt
 }
 
 // TierMode returns the value of the "tier_mode" field in the mutation.
-func (m *PriceMutation) TierMode() (r string, exists bool) {
+func (m *PriceMutation) TierMode() (r types.BillingTier, exists bool) {
 	v := m.tier_mode
 	if v == nil {
 		return
@@ -38025,7 +38025,7 @@ func (m *PriceMutation) TierMode() (r string, exists bool) {
 // OldTierMode returns the old "tier_mode" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldTierMode(ctx context.Context) (v *string, err error) {
+func (m *PriceMutation) OldTierMode(ctx context.Context) (v *types.BillingTier, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTierMode is only allowed on UpdateOne operations")
 	}
@@ -38384,12 +38384,12 @@ func (m *PriceMutation) ResetMetadata() {
 }
 
 // SetEntityType sets the "entity_type" field.
-func (m *PriceMutation) SetEntityType(s string) {
-	m.entity_type = &s
+func (m *PriceMutation) SetEntityType(tet types.PriceEntityType) {
+	m.entity_type = &tet
 }
 
 // EntityType returns the value of the "entity_type" field in the mutation.
-func (m *PriceMutation) EntityType() (r string, exists bool) {
+func (m *PriceMutation) EntityType() (r types.PriceEntityType, exists bool) {
 	v := m.entity_type
 	if v == nil {
 		return
@@ -38400,7 +38400,7 @@ func (m *PriceMutation) EntityType() (r string, exists bool) {
 // OldEntityType returns the old "entity_type" field's value of the Price entity.
 // If the Price object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PriceMutation) OldEntityType(ctx context.Context) (v *string, err error) {
+func (m *PriceMutation) OldEntityType(ctx context.Context) (v *types.PriceEntityType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldEntityType is only allowed on UpdateOne operations")
 	}
@@ -39096,7 +39096,7 @@ func (m *PriceMutation) SetField(name string, value ent.Value) error {
 		m.SetDisplayAmount(v)
 		return nil
 	case price.FieldPriceUnitType:
-		v, ok := value.(string)
+		v, ok := value.(types.PriceUnitType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -39145,14 +39145,14 @@ func (m *PriceMutation) SetField(name string, value ent.Value) error {
 		m.SetMinQuantity(v)
 		return nil
 	case price.FieldType:
-		v, ok := value.(string)
+		v, ok := value.(types.PriceType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetType(v)
 		return nil
 	case price.FieldBillingPeriod:
-		v, ok := value.(string)
+		v, ok := value.(types.BillingPeriod)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -39166,21 +39166,21 @@ func (m *PriceMutation) SetField(name string, value ent.Value) error {
 		m.SetBillingPeriodCount(v)
 		return nil
 	case price.FieldBillingModel:
-		v, ok := value.(string)
+		v, ok := value.(types.BillingModel)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBillingModel(v)
 		return nil
 	case price.FieldBillingCadence:
-		v, ok := value.(string)
+		v, ok := value.(types.BillingCadence)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBillingCadence(v)
 		return nil
 	case price.FieldInvoiceCadence:
-		v, ok := value.(string)
+		v, ok := value.(types.InvoiceCadence)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -39208,7 +39208,7 @@ func (m *PriceMutation) SetField(name string, value ent.Value) error {
 		m.SetFilterValues(v)
 		return nil
 	case price.FieldTierMode:
-		v, ok := value.(string)
+		v, ok := value.(types.BillingTier)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -39257,7 +39257,7 @@ func (m *PriceMutation) SetField(name string, value ent.Value) error {
 		m.SetMetadata(v)
 		return nil
 	case price.FieldEntityType:
-		v, ok := value.(string)
+		v, ok := value.(types.PriceEntityType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -44124,7 +44124,7 @@ type SubscriptionMutation struct {
 	lookup_key                 *string
 	customer_id                *string
 	plan_id                    *string
-	subscription_status        *string
+	subscription_status        *types.SubscriptionStatus
 	currency                   *string
 	billing_anchor             *time.Time
 	start_date                 *time.Time
@@ -44136,23 +44136,23 @@ type SubscriptionMutation struct {
 	cancel_at_period_end       *bool
 	trial_start                *time.Time
 	trial_end                  *time.Time
-	billing_cadence            *string
-	billing_period             *string
+	billing_cadence            *types.BillingCadence
+	billing_period             *types.BillingPeriod
 	billing_period_count       *int
 	addbilling_period_count    *int
 	version                    *int
 	addversion                 *int
 	metadata                   *map[string]string
-	pause_status               *string
+	pause_status               *types.PauseStatus
 	active_pause_id            *string
-	billing_cycle              *string
+	billing_cycle              *types.BillingCycle
 	commitment_amount          *decimal.Decimal
 	overage_factor             *decimal.Decimal
-	payment_behavior           *subscription.PaymentBehavior
-	collection_method          *subscription.CollectionMethod
+	payment_behavior           *types.PaymentBehavior
+	collection_method          *types.CollectionMethod
 	gateway_payment_method_id  *string
 	customer_timezone          *string
-	proration_behavior         *string
+	proration_behavior         *types.ProrationBehavior
 	enable_true_up             *bool
 	clearedFields              map[string]struct{}
 	line_items                 map[string]struct{}
@@ -44697,12 +44697,12 @@ func (m *SubscriptionMutation) ResetPlanID() {
 }
 
 // SetSubscriptionStatus sets the "subscription_status" field.
-func (m *SubscriptionMutation) SetSubscriptionStatus(s string) {
-	m.subscription_status = &s
+func (m *SubscriptionMutation) SetSubscriptionStatus(ts types.SubscriptionStatus) {
+	m.subscription_status = &ts
 }
 
 // SubscriptionStatus returns the value of the "subscription_status" field in the mutation.
-func (m *SubscriptionMutation) SubscriptionStatus() (r string, exists bool) {
+func (m *SubscriptionMutation) SubscriptionStatus() (r types.SubscriptionStatus, exists bool) {
 	v := m.subscription_status
 	if v == nil {
 		return
@@ -44713,7 +44713,7 @@ func (m *SubscriptionMutation) SubscriptionStatus() (r string, exists bool) {
 // OldSubscriptionStatus returns the old "subscription_status" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldSubscriptionStatus(ctx context.Context) (v string, err error) {
+func (m *SubscriptionMutation) OldSubscriptionStatus(ctx context.Context) (v types.SubscriptionStatus, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldSubscriptionStatus is only allowed on UpdateOne operations")
 	}
@@ -45194,12 +45194,12 @@ func (m *SubscriptionMutation) ResetTrialEnd() {
 }
 
 // SetBillingCadence sets the "billing_cadence" field.
-func (m *SubscriptionMutation) SetBillingCadence(s string) {
-	m.billing_cadence = &s
+func (m *SubscriptionMutation) SetBillingCadence(tc types.BillingCadence) {
+	m.billing_cadence = &tc
 }
 
 // BillingCadence returns the value of the "billing_cadence" field in the mutation.
-func (m *SubscriptionMutation) BillingCadence() (r string, exists bool) {
+func (m *SubscriptionMutation) BillingCadence() (r types.BillingCadence, exists bool) {
 	v := m.billing_cadence
 	if v == nil {
 		return
@@ -45210,7 +45210,7 @@ func (m *SubscriptionMutation) BillingCadence() (r string, exists bool) {
 // OldBillingCadence returns the old "billing_cadence" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldBillingCadence(ctx context.Context) (v string, err error) {
+func (m *SubscriptionMutation) OldBillingCadence(ctx context.Context) (v types.BillingCadence, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldBillingCadence is only allowed on UpdateOne operations")
 	}
@@ -45230,12 +45230,12 @@ func (m *SubscriptionMutation) ResetBillingCadence() {
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (m *SubscriptionMutation) SetBillingPeriod(s string) {
-	m.billing_period = &s
+func (m *SubscriptionMutation) SetBillingPeriod(tp types.BillingPeriod) {
+	m.billing_period = &tp
 }
 
 // BillingPeriod returns the value of the "billing_period" field in the mutation.
-func (m *SubscriptionMutation) BillingPeriod() (r string, exists bool) {
+func (m *SubscriptionMutation) BillingPeriod() (r types.BillingPeriod, exists bool) {
 	v := m.billing_period
 	if v == nil {
 		return
@@ -45246,7 +45246,7 @@ func (m *SubscriptionMutation) BillingPeriod() (r string, exists bool) {
 // OldBillingPeriod returns the old "billing_period" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldBillingPeriod(ctx context.Context) (v string, err error) {
+func (m *SubscriptionMutation) OldBillingPeriod(ctx context.Context) (v types.BillingPeriod, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldBillingPeriod is only allowed on UpdateOne operations")
 	}
@@ -45427,12 +45427,12 @@ func (m *SubscriptionMutation) ResetMetadata() {
 }
 
 // SetPauseStatus sets the "pause_status" field.
-func (m *SubscriptionMutation) SetPauseStatus(s string) {
-	m.pause_status = &s
+func (m *SubscriptionMutation) SetPauseStatus(ts types.PauseStatus) {
+	m.pause_status = &ts
 }
 
 // PauseStatus returns the value of the "pause_status" field in the mutation.
-func (m *SubscriptionMutation) PauseStatus() (r string, exists bool) {
+func (m *SubscriptionMutation) PauseStatus() (r types.PauseStatus, exists bool) {
 	v := m.pause_status
 	if v == nil {
 		return
@@ -45443,7 +45443,7 @@ func (m *SubscriptionMutation) PauseStatus() (r string, exists bool) {
 // OldPauseStatus returns the old "pause_status" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldPauseStatus(ctx context.Context) (v string, err error) {
+func (m *SubscriptionMutation) OldPauseStatus(ctx context.Context) (v types.PauseStatus, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldPauseStatus is only allowed on UpdateOne operations")
 	}
@@ -45512,12 +45512,12 @@ func (m *SubscriptionMutation) ResetActivePauseID() {
 }
 
 // SetBillingCycle sets the "billing_cycle" field.
-func (m *SubscriptionMutation) SetBillingCycle(s string) {
-	m.billing_cycle = &s
+func (m *SubscriptionMutation) SetBillingCycle(tc types.BillingCycle) {
+	m.billing_cycle = &tc
 }
 
 // BillingCycle returns the value of the "billing_cycle" field in the mutation.
-func (m *SubscriptionMutation) BillingCycle() (r string, exists bool) {
+func (m *SubscriptionMutation) BillingCycle() (r types.BillingCycle, exists bool) {
 	v := m.billing_cycle
 	if v == nil {
 		return
@@ -45528,7 +45528,7 @@ func (m *SubscriptionMutation) BillingCycle() (r string, exists bool) {
 // OldBillingCycle returns the old "billing_cycle" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldBillingCycle(ctx context.Context) (v string, err error) {
+func (m *SubscriptionMutation) OldBillingCycle(ctx context.Context) (v types.BillingCycle, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldBillingCycle is only allowed on UpdateOne operations")
 	}
@@ -45646,12 +45646,12 @@ func (m *SubscriptionMutation) ResetOverageFactor() {
 }
 
 // SetPaymentBehavior sets the "payment_behavior" field.
-func (m *SubscriptionMutation) SetPaymentBehavior(sb subscription.PaymentBehavior) {
-	m.payment_behavior = &sb
+func (m *SubscriptionMutation) SetPaymentBehavior(tb types.PaymentBehavior) {
+	m.payment_behavior = &tb
 }
 
 // PaymentBehavior returns the value of the "payment_behavior" field in the mutation.
-func (m *SubscriptionMutation) PaymentBehavior() (r subscription.PaymentBehavior, exists bool) {
+func (m *SubscriptionMutation) PaymentBehavior() (r types.PaymentBehavior, exists bool) {
 	v := m.payment_behavior
 	if v == nil {
 		return
@@ -45662,7 +45662,7 @@ func (m *SubscriptionMutation) PaymentBehavior() (r subscription.PaymentBehavior
 // OldPaymentBehavior returns the old "payment_behavior" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldPaymentBehavior(ctx context.Context) (v subscription.PaymentBehavior, err error) {
+func (m *SubscriptionMutation) OldPaymentBehavior(ctx context.Context) (v types.PaymentBehavior, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldPaymentBehavior is only allowed on UpdateOne operations")
 	}
@@ -45682,12 +45682,12 @@ func (m *SubscriptionMutation) ResetPaymentBehavior() {
 }
 
 // SetCollectionMethod sets the "collection_method" field.
-func (m *SubscriptionMutation) SetCollectionMethod(sm subscription.CollectionMethod) {
-	m.collection_method = &sm
+func (m *SubscriptionMutation) SetCollectionMethod(tm types.CollectionMethod) {
+	m.collection_method = &tm
 }
 
 // CollectionMethod returns the value of the "collection_method" field in the mutation.
-func (m *SubscriptionMutation) CollectionMethod() (r subscription.CollectionMethod, exists bool) {
+func (m *SubscriptionMutation) CollectionMethod() (r types.CollectionMethod, exists bool) {
 	v := m.collection_method
 	if v == nil {
 		return
@@ -45698,7 +45698,7 @@ func (m *SubscriptionMutation) CollectionMethod() (r subscription.CollectionMeth
 // OldCollectionMethod returns the old "collection_method" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldCollectionMethod(ctx context.Context) (v subscription.CollectionMethod, err error) {
+func (m *SubscriptionMutation) OldCollectionMethod(ctx context.Context) (v types.CollectionMethod, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCollectionMethod is only allowed on UpdateOne operations")
 	}
@@ -45803,12 +45803,12 @@ func (m *SubscriptionMutation) ResetCustomerTimezone() {
 }
 
 // SetProrationBehavior sets the "proration_behavior" field.
-func (m *SubscriptionMutation) SetProrationBehavior(s string) {
-	m.proration_behavior = &s
+func (m *SubscriptionMutation) SetProrationBehavior(tb types.ProrationBehavior) {
+	m.proration_behavior = &tb
 }
 
 // ProrationBehavior returns the value of the "proration_behavior" field in the mutation.
-func (m *SubscriptionMutation) ProrationBehavior() (r string, exists bool) {
+func (m *SubscriptionMutation) ProrationBehavior() (r types.ProrationBehavior, exists bool) {
 	v := m.proration_behavior
 	if v == nil {
 		return
@@ -45819,7 +45819,7 @@ func (m *SubscriptionMutation) ProrationBehavior() (r string, exists bool) {
 // OldProrationBehavior returns the old "proration_behavior" field's value of the Subscription entity.
 // If the Subscription object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionMutation) OldProrationBehavior(ctx context.Context) (v string, err error) {
+func (m *SubscriptionMutation) OldProrationBehavior(ctx context.Context) (v types.ProrationBehavior, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldProrationBehavior is only allowed on UpdateOne operations")
 	}
@@ -46679,7 +46679,7 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		m.SetPlanID(v)
 		return nil
 	case subscription.FieldSubscriptionStatus:
-		v, ok := value.(string)
+		v, ok := value.(types.SubscriptionStatus)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -46763,14 +46763,14 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		m.SetTrialEnd(v)
 		return nil
 	case subscription.FieldBillingCadence:
-		v, ok := value.(string)
+		v, ok := value.(types.BillingCadence)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBillingCadence(v)
 		return nil
 	case subscription.FieldBillingPeriod:
-		v, ok := value.(string)
+		v, ok := value.(types.BillingPeriod)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -46798,7 +46798,7 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		m.SetMetadata(v)
 		return nil
 	case subscription.FieldPauseStatus:
-		v, ok := value.(string)
+		v, ok := value.(types.PauseStatus)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -46812,7 +46812,7 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		m.SetActivePauseID(v)
 		return nil
 	case subscription.FieldBillingCycle:
-		v, ok := value.(string)
+		v, ok := value.(types.BillingCycle)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -46833,14 +46833,14 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		m.SetOverageFactor(v)
 		return nil
 	case subscription.FieldPaymentBehavior:
-		v, ok := value.(subscription.PaymentBehavior)
+		v, ok := value.(types.PaymentBehavior)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPaymentBehavior(v)
 		return nil
 	case subscription.FieldCollectionMethod:
-		v, ok := value.(subscription.CollectionMethod)
+		v, ok := value.(types.CollectionMethod)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -46861,7 +46861,7 @@ func (m *SubscriptionMutation) SetField(name string, value ent.Value) error {
 		m.SetCustomerTimezone(v)
 		return nil
 	case subscription.FieldProrationBehavior:
-		v, ok := value.(string)
+		v, ok := value.(types.ProrationBehavior)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -47418,10 +47418,10 @@ type SubscriptionLineItemMutation struct {
 	environment_id             *string
 	customer_id                *string
 	entity_id                  *string
-	entity_type                *string
+	entity_type                *types.InvoiceLineItemEntityType
 	plan_display_name          *string
 	price_id                   *string
-	price_type                 *string
+	price_type                 *types.PriceType
 	meter_id                   *string
 	meter_display_name         *string
 	price_unit_id              *string
@@ -47429,8 +47429,8 @@ type SubscriptionLineItemMutation struct {
 	display_name               *string
 	quantity                   *decimal.Decimal
 	currency                   *string
-	billing_period             *string
-	invoice_cadence            *string
+	billing_period             *types.BillingPeriod
+	invoice_cadence            *types.InvoiceCadence
 	trial_period               *int
 	addtrial_period            *int
 	start_date                 *time.Time
@@ -47971,12 +47971,12 @@ func (m *SubscriptionLineItemMutation) ResetEntityID() {
 }
 
 // SetEntityType sets the "entity_type" field.
-func (m *SubscriptionLineItemMutation) SetEntityType(s string) {
-	m.entity_type = &s
+func (m *SubscriptionLineItemMutation) SetEntityType(tliet types.InvoiceLineItemEntityType) {
+	m.entity_type = &tliet
 }
 
 // EntityType returns the value of the "entity_type" field in the mutation.
-func (m *SubscriptionLineItemMutation) EntityType() (r string, exists bool) {
+func (m *SubscriptionLineItemMutation) EntityType() (r types.InvoiceLineItemEntityType, exists bool) {
 	v := m.entity_type
 	if v == nil {
 		return
@@ -47987,7 +47987,7 @@ func (m *SubscriptionLineItemMutation) EntityType() (r string, exists bool) {
 // OldEntityType returns the old "entity_type" field's value of the SubscriptionLineItem entity.
 // If the SubscriptionLineItem object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionLineItemMutation) OldEntityType(ctx context.Context) (v string, err error) {
+func (m *SubscriptionLineItemMutation) OldEntityType(ctx context.Context) (v types.InvoiceLineItemEntityType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldEntityType is only allowed on UpdateOne operations")
 	}
@@ -48092,12 +48092,12 @@ func (m *SubscriptionLineItemMutation) ResetPriceID() {
 }
 
 // SetPriceType sets the "price_type" field.
-func (m *SubscriptionLineItemMutation) SetPriceType(s string) {
-	m.price_type = &s
+func (m *SubscriptionLineItemMutation) SetPriceType(tt types.PriceType) {
+	m.price_type = &tt
 }
 
 // PriceType returns the value of the "price_type" field in the mutation.
-func (m *SubscriptionLineItemMutation) PriceType() (r string, exists bool) {
+func (m *SubscriptionLineItemMutation) PriceType() (r types.PriceType, exists bool) {
 	v := m.price_type
 	if v == nil {
 		return
@@ -48108,7 +48108,7 @@ func (m *SubscriptionLineItemMutation) PriceType() (r string, exists bool) {
 // OldPriceType returns the old "price_type" field's value of the SubscriptionLineItem entity.
 // If the SubscriptionLineItem object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionLineItemMutation) OldPriceType(ctx context.Context) (v *string, err error) {
+func (m *SubscriptionLineItemMutation) OldPriceType(ctx context.Context) (v *types.PriceType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldPriceType is only allowed on UpdateOne operations")
 	}
@@ -48458,12 +48458,12 @@ func (m *SubscriptionLineItemMutation) ResetCurrency() {
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (m *SubscriptionLineItemMutation) SetBillingPeriod(s string) {
-	m.billing_period = &s
+func (m *SubscriptionLineItemMutation) SetBillingPeriod(tp types.BillingPeriod) {
+	m.billing_period = &tp
 }
 
 // BillingPeriod returns the value of the "billing_period" field in the mutation.
-func (m *SubscriptionLineItemMutation) BillingPeriod() (r string, exists bool) {
+func (m *SubscriptionLineItemMutation) BillingPeriod() (r types.BillingPeriod, exists bool) {
 	v := m.billing_period
 	if v == nil {
 		return
@@ -48474,7 +48474,7 @@ func (m *SubscriptionLineItemMutation) BillingPeriod() (r string, exists bool) {
 // OldBillingPeriod returns the old "billing_period" field's value of the SubscriptionLineItem entity.
 // If the SubscriptionLineItem object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionLineItemMutation) OldBillingPeriod(ctx context.Context) (v string, err error) {
+func (m *SubscriptionLineItemMutation) OldBillingPeriod(ctx context.Context) (v types.BillingPeriod, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldBillingPeriod is only allowed on UpdateOne operations")
 	}
@@ -48494,12 +48494,12 @@ func (m *SubscriptionLineItemMutation) ResetBillingPeriod() {
 }
 
 // SetInvoiceCadence sets the "invoice_cadence" field.
-func (m *SubscriptionLineItemMutation) SetInvoiceCadence(s string) {
-	m.invoice_cadence = &s
+func (m *SubscriptionLineItemMutation) SetInvoiceCadence(tc types.InvoiceCadence) {
+	m.invoice_cadence = &tc
 }
 
 // InvoiceCadence returns the value of the "invoice_cadence" field in the mutation.
-func (m *SubscriptionLineItemMutation) InvoiceCadence() (r string, exists bool) {
+func (m *SubscriptionLineItemMutation) InvoiceCadence() (r types.InvoiceCadence, exists bool) {
 	v := m.invoice_cadence
 	if v == nil {
 		return
@@ -48510,7 +48510,7 @@ func (m *SubscriptionLineItemMutation) InvoiceCadence() (r string, exists bool) 
 // OldInvoiceCadence returns the old "invoice_cadence" field's value of the SubscriptionLineItem entity.
 // If the SubscriptionLineItem object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SubscriptionLineItemMutation) OldInvoiceCadence(ctx context.Context) (v string, err error) {
+func (m *SubscriptionLineItemMutation) OldInvoiceCadence(ctx context.Context) (v types.InvoiceCadence, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldInvoiceCadence is only allowed on UpdateOne operations")
 	}
@@ -49513,7 +49513,7 @@ func (m *SubscriptionLineItemMutation) SetField(name string, value ent.Value) er
 		m.SetEntityID(v)
 		return nil
 	case subscriptionlineitem.FieldEntityType:
-		v, ok := value.(string)
+		v, ok := value.(types.InvoiceLineItemEntityType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -49534,7 +49534,7 @@ func (m *SubscriptionLineItemMutation) SetField(name string, value ent.Value) er
 		m.SetPriceID(v)
 		return nil
 	case subscriptionlineitem.FieldPriceType:
-		v, ok := value.(string)
+		v, ok := value.(types.PriceType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -49590,14 +49590,14 @@ func (m *SubscriptionLineItemMutation) SetField(name string, value ent.Value) er
 		m.SetCurrency(v)
 		return nil
 	case subscriptionlineitem.FieldBillingPeriod:
-		v, ok := value.(string)
+		v, ok := value.(types.BillingPeriod)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBillingPeriod(v)
 		return nil
 	case subscriptionlineitem.FieldInvoiceCadence:
-		v, ok := value.(string)
+		v, ok := value.(types.InvoiceCadence)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -59781,14 +59781,14 @@ type WalletMutation struct {
 	metadata        *map[string]string
 	balance         *decimal.Decimal
 	credit_balance  *decimal.Decimal
-	wallet_status   *string
+	wallet_status   *types.WalletStatus
 	auto_topup      **types.AutoTopup
-	wallet_type     *string
+	wallet_type     *types.WalletType
 	conversion_rate *decimal.Decimal
 	_config         *types.WalletConfig
-	alert_config    **types.AlertConfig
+	alert_config    *types.AlertConfig
 	alert_enabled   *bool
-	alert_state     *string
+	alert_state     *types.AlertState
 	clearedFields   map[string]struct{}
 	done            bool
 	oldValue        func(context.Context) (*Wallet, error)
@@ -60482,12 +60482,12 @@ func (m *WalletMutation) ResetCreditBalance() {
 }
 
 // SetWalletStatus sets the "wallet_status" field.
-func (m *WalletMutation) SetWalletStatus(s string) {
-	m.wallet_status = &s
+func (m *WalletMutation) SetWalletStatus(ts types.WalletStatus) {
+	m.wallet_status = &ts
 }
 
 // WalletStatus returns the value of the "wallet_status" field in the mutation.
-func (m *WalletMutation) WalletStatus() (r string, exists bool) {
+func (m *WalletMutation) WalletStatus() (r types.WalletStatus, exists bool) {
 	v := m.wallet_status
 	if v == nil {
 		return
@@ -60498,7 +60498,7 @@ func (m *WalletMutation) WalletStatus() (r string, exists bool) {
 // OldWalletStatus returns the old "wallet_status" field's value of the Wallet entity.
 // If the Wallet object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletMutation) OldWalletStatus(ctx context.Context) (v string, err error) {
+func (m *WalletMutation) OldWalletStatus(ctx context.Context) (v types.WalletStatus, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldWalletStatus is only allowed on UpdateOne operations")
 	}
@@ -60567,12 +60567,12 @@ func (m *WalletMutation) ResetAutoTopup() {
 }
 
 // SetWalletType sets the "wallet_type" field.
-func (m *WalletMutation) SetWalletType(s string) {
-	m.wallet_type = &s
+func (m *WalletMutation) SetWalletType(tt types.WalletType) {
+	m.wallet_type = &tt
 }
 
 // WalletType returns the value of the "wallet_type" field in the mutation.
-func (m *WalletMutation) WalletType() (r string, exists bool) {
+func (m *WalletMutation) WalletType() (r types.WalletType, exists bool) {
 	v := m.wallet_type
 	if v == nil {
 		return
@@ -60583,7 +60583,7 @@ func (m *WalletMutation) WalletType() (r string, exists bool) {
 // OldWalletType returns the old "wallet_type" field's value of the Wallet entity.
 // If the Wallet object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletMutation) OldWalletType(ctx context.Context) (v string, err error) {
+func (m *WalletMutation) OldWalletType(ctx context.Context) (v types.WalletType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldWalletType is only allowed on UpdateOne operations")
 	}
@@ -60688,12 +60688,12 @@ func (m *WalletMutation) ResetConfig() {
 }
 
 // SetAlertConfig sets the "alert_config" field.
-func (m *WalletMutation) SetAlertConfig(tc *types.AlertConfig) {
+func (m *WalletMutation) SetAlertConfig(tc types.AlertConfig) {
 	m.alert_config = &tc
 }
 
 // AlertConfig returns the value of the "alert_config" field in the mutation.
-func (m *WalletMutation) AlertConfig() (r *types.AlertConfig, exists bool) {
+func (m *WalletMutation) AlertConfig() (r types.AlertConfig, exists bool) {
 	v := m.alert_config
 	if v == nil {
 		return
@@ -60704,7 +60704,7 @@ func (m *WalletMutation) AlertConfig() (r *types.AlertConfig, exists bool) {
 // OldAlertConfig returns the old "alert_config" field's value of the Wallet entity.
 // If the Wallet object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletMutation) OldAlertConfig(ctx context.Context) (v *types.AlertConfig, err error) {
+func (m *WalletMutation) OldAlertConfig(ctx context.Context) (v types.AlertConfig, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldAlertConfig is only allowed on UpdateOne operations")
 	}
@@ -60786,12 +60786,12 @@ func (m *WalletMutation) ResetAlertEnabled() {
 }
 
 // SetAlertState sets the "alert_state" field.
-func (m *WalletMutation) SetAlertState(s string) {
-	m.alert_state = &s
+func (m *WalletMutation) SetAlertState(ts types.AlertState) {
+	m.alert_state = &ts
 }
 
 // AlertState returns the value of the "alert_state" field in the mutation.
-func (m *WalletMutation) AlertState() (r string, exists bool) {
+func (m *WalletMutation) AlertState() (r types.AlertState, exists bool) {
 	v := m.alert_state
 	if v == nil {
 		return
@@ -60802,7 +60802,7 @@ func (m *WalletMutation) AlertState() (r string, exists bool) {
 // OldAlertState returns the old "alert_state" field's value of the Wallet entity.
 // If the Wallet object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletMutation) OldAlertState(ctx context.Context) (v string, err error) {
+func (m *WalletMutation) OldAlertState(ctx context.Context) (v types.AlertState, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldAlertState is only allowed on UpdateOne operations")
 	}
@@ -61148,7 +61148,7 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 		m.SetCreditBalance(v)
 		return nil
 	case wallet.FieldWalletStatus:
-		v, ok := value.(string)
+		v, ok := value.(types.WalletStatus)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -61162,7 +61162,7 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 		m.SetAutoTopup(v)
 		return nil
 	case wallet.FieldWalletType:
-		v, ok := value.(string)
+		v, ok := value.(types.WalletType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -61183,7 +61183,7 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 		m.SetConfig(v)
 		return nil
 	case wallet.FieldAlertConfig:
-		v, ok := value.(*types.AlertConfig)
+		v, ok := value.(types.AlertConfig)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -61197,7 +61197,7 @@ func (m *WalletMutation) SetField(name string, value ent.Value) error {
 		m.SetAlertEnabled(v)
 		return nil
 	case wallet.FieldAlertState:
-		v, ok := value.(string)
+		v, ok := value.(types.AlertState)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -61454,21 +61454,21 @@ type WalletTransactionMutation struct {
 	environment_id        *string
 	wallet_id             *string
 	customer_id           *string
-	_type                 *string
+	_type                 *types.TransactionType
 	amount                *decimal.Decimal
 	credit_amount         *decimal.Decimal
 	credit_balance_before *decimal.Decimal
 	credit_balance_after  *decimal.Decimal
-	reference_type        *string
+	reference_type        *types.WalletTxReferenceType
 	reference_id          *string
 	description           *string
 	metadata              *map[string]string
-	transaction_status    *string
+	transaction_status    *types.TransactionStatus
 	expiry_date           *time.Time
 	credits_available     *decimal.Decimal
 	currency              *string
 	idempotency_key       *string
-	transaction_reason    *string
+	transaction_reason    *types.TransactionReason
 	priority              *int
 	addpriority           *int
 	clearedFields         map[string]struct{}
@@ -61958,12 +61958,12 @@ func (m *WalletTransactionMutation) ResetCustomerID() {
 }
 
 // SetType sets the "type" field.
-func (m *WalletTransactionMutation) SetType(s string) {
-	m._type = &s
+func (m *WalletTransactionMutation) SetType(tt types.TransactionType) {
+	m._type = &tt
 }
 
 // GetType returns the value of the "type" field in the mutation.
-func (m *WalletTransactionMutation) GetType() (r string, exists bool) {
+func (m *WalletTransactionMutation) GetType() (r types.TransactionType, exists bool) {
 	v := m._type
 	if v == nil {
 		return
@@ -61974,7 +61974,7 @@ func (m *WalletTransactionMutation) GetType() (r string, exists bool) {
 // OldType returns the old "type" field's value of the WalletTransaction entity.
 // If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletTransactionMutation) OldType(ctx context.Context) (v string, err error) {
+func (m *WalletTransactionMutation) OldType(ctx context.Context) (v types.TransactionType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldType is only allowed on UpdateOne operations")
 	}
@@ -62138,12 +62138,12 @@ func (m *WalletTransactionMutation) ResetCreditBalanceAfter() {
 }
 
 // SetReferenceType sets the "reference_type" field.
-func (m *WalletTransactionMutation) SetReferenceType(s string) {
-	m.reference_type = &s
+func (m *WalletTransactionMutation) SetReferenceType(ttrt types.WalletTxReferenceType) {
+	m.reference_type = &ttrt
 }
 
 // ReferenceType returns the value of the "reference_type" field in the mutation.
-func (m *WalletTransactionMutation) ReferenceType() (r string, exists bool) {
+func (m *WalletTransactionMutation) ReferenceType() (r types.WalletTxReferenceType, exists bool) {
 	v := m.reference_type
 	if v == nil {
 		return
@@ -62154,7 +62154,7 @@ func (m *WalletTransactionMutation) ReferenceType() (r string, exists bool) {
 // OldReferenceType returns the old "reference_type" field's value of the WalletTransaction entity.
 // If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletTransactionMutation) OldReferenceType(ctx context.Context) (v string, err error) {
+func (m *WalletTransactionMutation) OldReferenceType(ctx context.Context) (v types.WalletTxReferenceType, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldReferenceType is only allowed on UpdateOne operations")
 	}
@@ -62334,12 +62334,12 @@ func (m *WalletTransactionMutation) ResetMetadata() {
 }
 
 // SetTransactionStatus sets the "transaction_status" field.
-func (m *WalletTransactionMutation) SetTransactionStatus(s string) {
-	m.transaction_status = &s
+func (m *WalletTransactionMutation) SetTransactionStatus(ts types.TransactionStatus) {
+	m.transaction_status = &ts
 }
 
 // TransactionStatus returns the value of the "transaction_status" field in the mutation.
-func (m *WalletTransactionMutation) TransactionStatus() (r string, exists bool) {
+func (m *WalletTransactionMutation) TransactionStatus() (r types.TransactionStatus, exists bool) {
 	v := m.transaction_status
 	if v == nil {
 		return
@@ -62350,7 +62350,7 @@ func (m *WalletTransactionMutation) TransactionStatus() (r string, exists bool) 
 // OldTransactionStatus returns the old "transaction_status" field's value of the WalletTransaction entity.
 // If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletTransactionMutation) OldTransactionStatus(ctx context.Context) (v string, err error) {
+func (m *WalletTransactionMutation) OldTransactionStatus(ctx context.Context) (v types.TransactionStatus, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTransactionStatus is only allowed on UpdateOne operations")
 	}
@@ -62553,12 +62553,12 @@ func (m *WalletTransactionMutation) ResetIdempotencyKey() {
 }
 
 // SetTransactionReason sets the "transaction_reason" field.
-func (m *WalletTransactionMutation) SetTransactionReason(s string) {
-	m.transaction_reason = &s
+func (m *WalletTransactionMutation) SetTransactionReason(tr types.TransactionReason) {
+	m.transaction_reason = &tr
 }
 
 // TransactionReason returns the value of the "transaction_reason" field in the mutation.
-func (m *WalletTransactionMutation) TransactionReason() (r string, exists bool) {
+func (m *WalletTransactionMutation) TransactionReason() (r types.TransactionReason, exists bool) {
 	v := m.transaction_reason
 	if v == nil {
 		return
@@ -62569,7 +62569,7 @@ func (m *WalletTransactionMutation) TransactionReason() (r string, exists bool) 
 // OldTransactionReason returns the old "transaction_reason" field's value of the WalletTransaction entity.
 // If the WalletTransaction object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *WalletTransactionMutation) OldTransactionReason(ctx context.Context) (v string, err error) {
+func (m *WalletTransactionMutation) OldTransactionReason(ctx context.Context) (v types.TransactionReason, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTransactionReason is only allowed on UpdateOne operations")
 	}
@@ -62958,7 +62958,7 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 		m.SetCustomerID(v)
 		return nil
 	case wallettransaction.FieldType:
-		v, ok := value.(string)
+		v, ok := value.(types.TransactionType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -62993,7 +62993,7 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 		m.SetCreditBalanceAfter(v)
 		return nil
 	case wallettransaction.FieldReferenceType:
-		v, ok := value.(string)
+		v, ok := value.(types.WalletTxReferenceType)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -63021,7 +63021,7 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 		m.SetMetadata(v)
 		return nil
 	case wallettransaction.FieldTransactionStatus:
-		v, ok := value.(string)
+		v, ok := value.(types.TransactionStatus)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -63056,7 +63056,7 @@ func (m *WalletTransactionMutation) SetField(name string, value ent.Value) error
 		m.SetIdempotencyKey(v)
 		return nil
 	case wallettransaction.FieldTransactionReason:
-		v, ok := value.(string)
+		v, ok := value.(types.TransactionReason)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

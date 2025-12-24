@@ -30,6 +30,9 @@ type WalletOperation struct {
 	ExpiryDate        *int                        `json:"expiry_date,omitempty"` // YYYYMMDD format
 	Priority          *int                        `json:"priority,omitempty"`    // lower number means higher priority
 	TransactionReason types.TransactionReason     `json:"transaction_reason,omitempty"`
+	// For Expiry Credits, this is the ID of the parent credit transaction
+	// so that we can use the same credits for the expiry debit transaction
+	ParentCreditTxID string `json:"-"`
 }
 
 func (w *WalletOperation) Validate() error {

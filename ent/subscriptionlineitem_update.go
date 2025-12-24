@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -125,15 +126,15 @@ func (sliu *SubscriptionLineItemUpdate) SetNillablePriceID(s *string) *Subscript
 }
 
 // SetPriceType sets the "price_type" field.
-func (sliu *SubscriptionLineItemUpdate) SetPriceType(s string) *SubscriptionLineItemUpdate {
-	sliu.mutation.SetPriceType(s)
+func (sliu *SubscriptionLineItemUpdate) SetPriceType(tt types.PriceType) *SubscriptionLineItemUpdate {
+	sliu.mutation.SetPriceType(tt)
 	return sliu
 }
 
 // SetNillablePriceType sets the "price_type" field if the given value is not nil.
-func (sliu *SubscriptionLineItemUpdate) SetNillablePriceType(s *string) *SubscriptionLineItemUpdate {
-	if s != nil {
-		sliu.SetPriceType(*s)
+func (sliu *SubscriptionLineItemUpdate) SetNillablePriceType(tt *types.PriceType) *SubscriptionLineItemUpdate {
+	if tt != nil {
+		sliu.SetPriceType(*tt)
 	}
 	return sliu
 }
@@ -273,15 +274,15 @@ func (sliu *SubscriptionLineItemUpdate) SetNillableCurrency(s *string) *Subscrip
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (sliu *SubscriptionLineItemUpdate) SetBillingPeriod(s string) *SubscriptionLineItemUpdate {
-	sliu.mutation.SetBillingPeriod(s)
+func (sliu *SubscriptionLineItemUpdate) SetBillingPeriod(tp types.BillingPeriod) *SubscriptionLineItemUpdate {
+	sliu.mutation.SetBillingPeriod(tp)
 	return sliu
 }
 
 // SetNillableBillingPeriod sets the "billing_period" field if the given value is not nil.
-func (sliu *SubscriptionLineItemUpdate) SetNillableBillingPeriod(s *string) *SubscriptionLineItemUpdate {
-	if s != nil {
-		sliu.SetBillingPeriod(*s)
+func (sliu *SubscriptionLineItemUpdate) SetNillableBillingPeriod(tp *types.BillingPeriod) *SubscriptionLineItemUpdate {
+	if tp != nil {
+		sliu.SetBillingPeriod(*tp)
 	}
 	return sliu
 }
@@ -551,13 +552,18 @@ func (sliu *SubscriptionLineItemUpdate) check() error {
 			return &ValidationError{Name: "price_id", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.price_id": %w`, err)}
 		}
 	}
+	if v, ok := sliu.mutation.PriceType(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "price_type", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.price_type": %w`, err)}
+		}
+	}
 	if v, ok := sliu.mutation.Currency(); ok {
 		if err := subscriptionlineitem.CurrencyValidator(v); err != nil {
 			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.currency": %w`, err)}
 		}
 	}
 	if v, ok := sliu.mutation.BillingPeriod(); ok {
-		if err := subscriptionlineitem.BillingPeriodValidator(v); err != nil {
+		if err := subscriptionlineitem.BillingPeriodValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_period", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.billing_period": %w`, err)}
 		}
 	}
@@ -877,15 +883,15 @@ func (sliuo *SubscriptionLineItemUpdateOne) SetNillablePriceID(s *string) *Subsc
 }
 
 // SetPriceType sets the "price_type" field.
-func (sliuo *SubscriptionLineItemUpdateOne) SetPriceType(s string) *SubscriptionLineItemUpdateOne {
-	sliuo.mutation.SetPriceType(s)
+func (sliuo *SubscriptionLineItemUpdateOne) SetPriceType(tt types.PriceType) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.SetPriceType(tt)
 	return sliuo
 }
 
 // SetNillablePriceType sets the "price_type" field if the given value is not nil.
-func (sliuo *SubscriptionLineItemUpdateOne) SetNillablePriceType(s *string) *SubscriptionLineItemUpdateOne {
-	if s != nil {
-		sliuo.SetPriceType(*s)
+func (sliuo *SubscriptionLineItemUpdateOne) SetNillablePriceType(tt *types.PriceType) *SubscriptionLineItemUpdateOne {
+	if tt != nil {
+		sliuo.SetPriceType(*tt)
 	}
 	return sliuo
 }
@@ -1025,15 +1031,15 @@ func (sliuo *SubscriptionLineItemUpdateOne) SetNillableCurrency(s *string) *Subs
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (sliuo *SubscriptionLineItemUpdateOne) SetBillingPeriod(s string) *SubscriptionLineItemUpdateOne {
-	sliuo.mutation.SetBillingPeriod(s)
+func (sliuo *SubscriptionLineItemUpdateOne) SetBillingPeriod(tp types.BillingPeriod) *SubscriptionLineItemUpdateOne {
+	sliuo.mutation.SetBillingPeriod(tp)
 	return sliuo
 }
 
 // SetNillableBillingPeriod sets the "billing_period" field if the given value is not nil.
-func (sliuo *SubscriptionLineItemUpdateOne) SetNillableBillingPeriod(s *string) *SubscriptionLineItemUpdateOne {
-	if s != nil {
-		sliuo.SetBillingPeriod(*s)
+func (sliuo *SubscriptionLineItemUpdateOne) SetNillableBillingPeriod(tp *types.BillingPeriod) *SubscriptionLineItemUpdateOne {
+	if tp != nil {
+		sliuo.SetBillingPeriod(*tp)
 	}
 	return sliuo
 }
@@ -1316,13 +1322,18 @@ func (sliuo *SubscriptionLineItemUpdateOne) check() error {
 			return &ValidationError{Name: "price_id", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.price_id": %w`, err)}
 		}
 	}
+	if v, ok := sliuo.mutation.PriceType(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "price_type", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.price_type": %w`, err)}
+		}
+	}
 	if v, ok := sliuo.mutation.Currency(); ok {
 		if err := subscriptionlineitem.CurrencyValidator(v); err != nil {
 			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.currency": %w`, err)}
 		}
 	}
 	if v, ok := sliuo.mutation.BillingPeriod(); ok {
-		if err := subscriptionlineitem.BillingPeriodValidator(v); err != nil {
+		if err := subscriptionlineitem.BillingPeriodValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_period", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.billing_period": %w`, err)}
 		}
 	}

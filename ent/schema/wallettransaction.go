@@ -45,7 +45,8 @@ func (WalletTransaction) Fields() []ent.Field {
 			Optional(),
 		field.String("type").
 			Default(string(types.TransactionTypeCredit)).
-			NotEmpty(),
+			NotEmpty().
+			GoType(types.TransactionType("")),
 		field.Other("amount", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,9)",
@@ -75,7 +76,8 @@ func (WalletTransaction) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			Optional(),
+			Optional().
+			GoType(types.WalletTxReferenceType("")),
 		field.String("reference_id").
 			Optional(),
 		field.String("description").
@@ -89,7 +91,8 @@ func (WalletTransaction) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			Default(string(types.TransactionStatusPending)),
+			Default(string(types.TransactionStatusPending)).
+			GoType(types.TransactionStatus("")),
 		field.Time("expiry_date").
 			SchemaType(map[string]string{
 				"postgres": "timestamp",
@@ -122,7 +125,8 @@ func (WalletTransaction) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			Immutable().
-			Default(string(types.TransactionReasonFreeCredit)),
+			Default(string(types.TransactionReasonFreeCredit)).
+			GoType(types.TransactionReason("")),
 		field.Int("priority").
 			Optional().
 			Nillable().

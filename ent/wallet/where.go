@@ -7,6 +7,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -131,13 +132,15 @@ func CreditBalance(v decimal.Decimal) predicate.Wallet {
 }
 
 // WalletStatus applies equality check predicate on the "wallet_status" field. It's identical to WalletStatusEQ.
-func WalletStatus(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldEQ(FieldWalletStatus, v))
+func WalletStatus(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldEQ(FieldWalletStatus, vc))
 }
 
 // WalletType applies equality check predicate on the "wallet_type" field. It's identical to WalletTypeEQ.
-func WalletType(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldEQ(FieldWalletType, v))
+func WalletType(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldEQ(FieldWalletType, vc))
 }
 
 // ConversionRate applies equality check predicate on the "conversion_rate" field. It's identical to ConversionRateEQ.
@@ -151,8 +154,9 @@ func AlertEnabled(v bool) predicate.Wallet {
 }
 
 // AlertState applies equality check predicate on the "alert_state" field. It's identical to AlertStateEQ.
-func AlertState(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldEQ(FieldAlertState, v))
+func AlertState(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldEQ(FieldAlertState, vc))
 }
 
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
@@ -961,68 +965,87 @@ func CreditBalanceLTE(v decimal.Decimal) predicate.Wallet {
 }
 
 // WalletStatusEQ applies the EQ predicate on the "wallet_status" field.
-func WalletStatusEQ(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldEQ(FieldWalletStatus, v))
+func WalletStatusEQ(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldEQ(FieldWalletStatus, vc))
 }
 
 // WalletStatusNEQ applies the NEQ predicate on the "wallet_status" field.
-func WalletStatusNEQ(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldNEQ(FieldWalletStatus, v))
+func WalletStatusNEQ(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldNEQ(FieldWalletStatus, vc))
 }
 
 // WalletStatusIn applies the In predicate on the "wallet_status" field.
-func WalletStatusIn(vs ...string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldIn(FieldWalletStatus, vs...))
+func WalletStatusIn(vs ...types.WalletStatus) predicate.Wallet {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Wallet(sql.FieldIn(FieldWalletStatus, v...))
 }
 
 // WalletStatusNotIn applies the NotIn predicate on the "wallet_status" field.
-func WalletStatusNotIn(vs ...string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldNotIn(FieldWalletStatus, vs...))
+func WalletStatusNotIn(vs ...types.WalletStatus) predicate.Wallet {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Wallet(sql.FieldNotIn(FieldWalletStatus, v...))
 }
 
 // WalletStatusGT applies the GT predicate on the "wallet_status" field.
-func WalletStatusGT(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldGT(FieldWalletStatus, v))
+func WalletStatusGT(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldGT(FieldWalletStatus, vc))
 }
 
 // WalletStatusGTE applies the GTE predicate on the "wallet_status" field.
-func WalletStatusGTE(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldGTE(FieldWalletStatus, v))
+func WalletStatusGTE(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldGTE(FieldWalletStatus, vc))
 }
 
 // WalletStatusLT applies the LT predicate on the "wallet_status" field.
-func WalletStatusLT(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldLT(FieldWalletStatus, v))
+func WalletStatusLT(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldLT(FieldWalletStatus, vc))
 }
 
 // WalletStatusLTE applies the LTE predicate on the "wallet_status" field.
-func WalletStatusLTE(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldLTE(FieldWalletStatus, v))
+func WalletStatusLTE(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldLTE(FieldWalletStatus, vc))
 }
 
 // WalletStatusContains applies the Contains predicate on the "wallet_status" field.
-func WalletStatusContains(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldContains(FieldWalletStatus, v))
+func WalletStatusContains(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldContains(FieldWalletStatus, vc))
 }
 
 // WalletStatusHasPrefix applies the HasPrefix predicate on the "wallet_status" field.
-func WalletStatusHasPrefix(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldHasPrefix(FieldWalletStatus, v))
+func WalletStatusHasPrefix(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldHasPrefix(FieldWalletStatus, vc))
 }
 
 // WalletStatusHasSuffix applies the HasSuffix predicate on the "wallet_status" field.
-func WalletStatusHasSuffix(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldHasSuffix(FieldWalletStatus, v))
+func WalletStatusHasSuffix(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldHasSuffix(FieldWalletStatus, vc))
 }
 
 // WalletStatusEqualFold applies the EqualFold predicate on the "wallet_status" field.
-func WalletStatusEqualFold(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldEqualFold(FieldWalletStatus, v))
+func WalletStatusEqualFold(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldEqualFold(FieldWalletStatus, vc))
 }
 
 // WalletStatusContainsFold applies the ContainsFold predicate on the "wallet_status" field.
-func WalletStatusContainsFold(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldContainsFold(FieldWalletStatus, v))
+func WalletStatusContainsFold(v types.WalletStatus) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldContainsFold(FieldWalletStatus, vc))
 }
 
 // AutoTopupIsNil applies the IsNil predicate on the "auto_topup" field.
@@ -1036,68 +1059,87 @@ func AutoTopupNotNil() predicate.Wallet {
 }
 
 // WalletTypeEQ applies the EQ predicate on the "wallet_type" field.
-func WalletTypeEQ(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldEQ(FieldWalletType, v))
+func WalletTypeEQ(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldEQ(FieldWalletType, vc))
 }
 
 // WalletTypeNEQ applies the NEQ predicate on the "wallet_type" field.
-func WalletTypeNEQ(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldNEQ(FieldWalletType, v))
+func WalletTypeNEQ(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldNEQ(FieldWalletType, vc))
 }
 
 // WalletTypeIn applies the In predicate on the "wallet_type" field.
-func WalletTypeIn(vs ...string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldIn(FieldWalletType, vs...))
+func WalletTypeIn(vs ...types.WalletType) predicate.Wallet {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Wallet(sql.FieldIn(FieldWalletType, v...))
 }
 
 // WalletTypeNotIn applies the NotIn predicate on the "wallet_type" field.
-func WalletTypeNotIn(vs ...string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldNotIn(FieldWalletType, vs...))
+func WalletTypeNotIn(vs ...types.WalletType) predicate.Wallet {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Wallet(sql.FieldNotIn(FieldWalletType, v...))
 }
 
 // WalletTypeGT applies the GT predicate on the "wallet_type" field.
-func WalletTypeGT(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldGT(FieldWalletType, v))
+func WalletTypeGT(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldGT(FieldWalletType, vc))
 }
 
 // WalletTypeGTE applies the GTE predicate on the "wallet_type" field.
-func WalletTypeGTE(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldGTE(FieldWalletType, v))
+func WalletTypeGTE(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldGTE(FieldWalletType, vc))
 }
 
 // WalletTypeLT applies the LT predicate on the "wallet_type" field.
-func WalletTypeLT(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldLT(FieldWalletType, v))
+func WalletTypeLT(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldLT(FieldWalletType, vc))
 }
 
 // WalletTypeLTE applies the LTE predicate on the "wallet_type" field.
-func WalletTypeLTE(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldLTE(FieldWalletType, v))
+func WalletTypeLTE(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldLTE(FieldWalletType, vc))
 }
 
 // WalletTypeContains applies the Contains predicate on the "wallet_type" field.
-func WalletTypeContains(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldContains(FieldWalletType, v))
+func WalletTypeContains(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldContains(FieldWalletType, vc))
 }
 
 // WalletTypeHasPrefix applies the HasPrefix predicate on the "wallet_type" field.
-func WalletTypeHasPrefix(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldHasPrefix(FieldWalletType, v))
+func WalletTypeHasPrefix(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldHasPrefix(FieldWalletType, vc))
 }
 
 // WalletTypeHasSuffix applies the HasSuffix predicate on the "wallet_type" field.
-func WalletTypeHasSuffix(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldHasSuffix(FieldWalletType, v))
+func WalletTypeHasSuffix(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldHasSuffix(FieldWalletType, vc))
 }
 
 // WalletTypeEqualFold applies the EqualFold predicate on the "wallet_type" field.
-func WalletTypeEqualFold(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldEqualFold(FieldWalletType, v))
+func WalletTypeEqualFold(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldEqualFold(FieldWalletType, vc))
 }
 
 // WalletTypeContainsFold applies the ContainsFold predicate on the "wallet_type" field.
-func WalletTypeContainsFold(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldContainsFold(FieldWalletType, v))
+func WalletTypeContainsFold(v types.WalletType) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldContainsFold(FieldWalletType, vc))
 }
 
 // ConversionRateEQ applies the EQ predicate on the "conversion_rate" field.
@@ -1181,58 +1223,75 @@ func AlertEnabledNotNil() predicate.Wallet {
 }
 
 // AlertStateEQ applies the EQ predicate on the "alert_state" field.
-func AlertStateEQ(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldEQ(FieldAlertState, v))
+func AlertStateEQ(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldEQ(FieldAlertState, vc))
 }
 
 // AlertStateNEQ applies the NEQ predicate on the "alert_state" field.
-func AlertStateNEQ(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldNEQ(FieldAlertState, v))
+func AlertStateNEQ(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldNEQ(FieldAlertState, vc))
 }
 
 // AlertStateIn applies the In predicate on the "alert_state" field.
-func AlertStateIn(vs ...string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldIn(FieldAlertState, vs...))
+func AlertStateIn(vs ...types.AlertState) predicate.Wallet {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Wallet(sql.FieldIn(FieldAlertState, v...))
 }
 
 // AlertStateNotIn applies the NotIn predicate on the "alert_state" field.
-func AlertStateNotIn(vs ...string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldNotIn(FieldAlertState, vs...))
+func AlertStateNotIn(vs ...types.AlertState) predicate.Wallet {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Wallet(sql.FieldNotIn(FieldAlertState, v...))
 }
 
 // AlertStateGT applies the GT predicate on the "alert_state" field.
-func AlertStateGT(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldGT(FieldAlertState, v))
+func AlertStateGT(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldGT(FieldAlertState, vc))
 }
 
 // AlertStateGTE applies the GTE predicate on the "alert_state" field.
-func AlertStateGTE(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldGTE(FieldAlertState, v))
+func AlertStateGTE(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldGTE(FieldAlertState, vc))
 }
 
 // AlertStateLT applies the LT predicate on the "alert_state" field.
-func AlertStateLT(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldLT(FieldAlertState, v))
+func AlertStateLT(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldLT(FieldAlertState, vc))
 }
 
 // AlertStateLTE applies the LTE predicate on the "alert_state" field.
-func AlertStateLTE(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldLTE(FieldAlertState, v))
+func AlertStateLTE(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldLTE(FieldAlertState, vc))
 }
 
 // AlertStateContains applies the Contains predicate on the "alert_state" field.
-func AlertStateContains(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldContains(FieldAlertState, v))
+func AlertStateContains(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldContains(FieldAlertState, vc))
 }
 
 // AlertStateHasPrefix applies the HasPrefix predicate on the "alert_state" field.
-func AlertStateHasPrefix(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldHasPrefix(FieldAlertState, v))
+func AlertStateHasPrefix(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldHasPrefix(FieldAlertState, vc))
 }
 
 // AlertStateHasSuffix applies the HasSuffix predicate on the "alert_state" field.
-func AlertStateHasSuffix(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldHasSuffix(FieldAlertState, v))
+func AlertStateHasSuffix(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldHasSuffix(FieldAlertState, vc))
 }
 
 // AlertStateIsNil applies the IsNil predicate on the "alert_state" field.
@@ -1246,13 +1305,15 @@ func AlertStateNotNil() predicate.Wallet {
 }
 
 // AlertStateEqualFold applies the EqualFold predicate on the "alert_state" field.
-func AlertStateEqualFold(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldEqualFold(FieldAlertState, v))
+func AlertStateEqualFold(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldEqualFold(FieldAlertState, vc))
 }
 
 // AlertStateContainsFold applies the ContainsFold predicate on the "alert_state" field.
-func AlertStateContainsFold(v string) predicate.Wallet {
-	return predicate.Wallet(sql.FieldContainsFold(FieldAlertState, v))
+func AlertStateContainsFold(v types.AlertState) predicate.Wallet {
+	vc := string(v)
+	return predicate.Wallet(sql.FieldContainsFold(FieldAlertState, vc))
 }
 
 // And groups predicates with the AND operator between them.

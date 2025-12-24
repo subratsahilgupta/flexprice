@@ -1102,6 +1102,11 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{InvoiceLineItemsColumns[24], InvoiceLineItemsColumns[25]},
 			},
+			{
+				Name:    "invoicelineitem_subscription_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{InvoiceLineItemsColumns[9], InvoiceLineItemsColumns[2]},
+			},
 		},
 	}
 	// InvoiceSequencesColumns holds the columns for the "invoice_sequences" table.
@@ -1563,8 +1568,8 @@ var (
 		{Name: "billing_cycle", Type: field.TypeString, Default: "anniversary"},
 		{Name: "commitment_amount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,6)"}},
 		{Name: "overage_factor", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,6)"}},
-		{Name: "payment_behavior", Type: field.TypeEnum, Enums: []string{"allow_incomplete", "default_incomplete", "error_if_incomplete", "default_active"}, Default: "default_active"},
-		{Name: "collection_method", Type: field.TypeEnum, Enums: []string{"charge_automatically", "send_invoice"}, Default: "charge_automatically"},
+		{Name: "payment_behavior", Type: field.TypeString, Default: "default_active", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "collection_method", Type: field.TypeString, Default: "charge_automatically", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "gateway_payment_method_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "customer_timezone", Type: field.TypeString, Default: "UTC"},
 		{Name: "proration_behavior", Type: field.TypeString, Default: "none"},
@@ -1691,6 +1696,11 @@ var (
 				Name:    "subscriptionlineitem_start_date_end_date",
 				Unique:  false,
 				Columns: []*schema.Column{SubscriptionLineItemsColumns[24], SubscriptionLineItemsColumns[25]},
+			},
+			{
+				Name:    "subscriptionlineitem_subscription_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionLineItemsColumns[34], SubscriptionLineItemsColumns[2]},
 			},
 		},
 	}
@@ -2034,7 +2044,7 @@ var (
 		{Name: "wallet_type", Type: field.TypeString, Default: "PRE_PAID", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "conversion_rate", Type: field.TypeOther, Default: "1", SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
 		{Name: "config", Type: field.TypeJSON, Nullable: true},
-		{Name: "alert_config", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "alert_config", Type: field.TypeJSON, Nullable: true},
 		{Name: "alert_enabled", Type: field.TypeBool, Nullable: true, Default: true},
 		{Name: "alert_state", Type: field.TypeString, Nullable: true, Default: "ok", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}

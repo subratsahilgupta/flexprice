@@ -510,6 +510,13 @@ func (r *CreatePriceRequest) Validate() error {
 		}
 	}
 
+	// if price type is usage and entity type is addon, throw an error
+	if r.Type == types.PRICE_TYPE_USAGE && r.EntityType == types.PRICE_ENTITY_TYPE_ADDON {
+		return ierr.NewError("Usage based price cannot be added to an addon").
+			WithHint("Usage based price cannot be added to an addon").
+			Mark(ierr.ErrValidation)
+	}
+
 	return nil
 }
 
@@ -743,6 +750,10 @@ func (r *UpdatePriceRequest) ToCreatePriceRequest(existingPrice *price.Price) Cr
 	createReq.MeterID = existingPrice.MeterID
 	createReq.ParentPriceID = existingPrice.GetRootPriceID()
 	createReq.DisplayName = existingPrice.DisplayName
+
+	if existingPrice.MinQuantity != nil {
+		createReq.MinQuantity = lo.ToPtr(existingPrice.MinQuantity.IntPart())
+	}
 
 	// GroupID is the id of the group to update the price in
 	if r.GroupID != "" {

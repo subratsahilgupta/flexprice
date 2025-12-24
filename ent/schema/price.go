@@ -66,7 +66,8 @@ func (Price) Fields() []ent.Field {
 				"postgres": "varchar(20)",
 			}).
 			NotEmpty().
-			Default(string(types.PRICE_UNIT_TYPE_FIAT)),
+			Default(string(types.PRICE_UNIT_TYPE_FIAT)).
+			GoType(types.PriceUnitType("")),
 
 		// price_unit_id is the id of the price unit
 		field.String("price_unit_id").
@@ -120,13 +121,15 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
-			NotEmpty(),
+			NotEmpty().
+			GoType(types.PriceType("")),
 
 		field.String("billing_period").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
-			NotEmpty(),
+			NotEmpty().
+			GoType(types.BillingPeriod("")),
 
 		field.Int("billing_period_count").
 			NonNegative(),
@@ -135,20 +138,23 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
-			NotEmpty(),
+			NotEmpty().
+			GoType(types.BillingModel("")),
 
 		field.String("billing_cadence").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
-			NotEmpty(),
+			NotEmpty().
+			GoType(types.BillingCadence("")),
 
 		field.String("invoice_cadence").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
 			Optional(). // TODO: Remove this once we have migrated all the data
-			Immutable(),
+			Immutable().
+			GoType(types.InvoiceCadence("")),
 
 		field.Int("trial_period").
 			Default(0).
@@ -168,8 +174,8 @@ func (Price) Fields() []ent.Field {
 				"postgres": "varchar(20)",
 			}).
 			Optional().
-			Nillable(),
-
+			Nillable().
+			GoType(types.BillingTier("")),
 		field.JSON("tiers", []*types.PriceTier{}).
 			Optional(),
 
@@ -199,7 +205,8 @@ func (Price) Fields() []ent.Field {
 			Immutable().
 			Nillable().
 			Default(string(types.PRICE_ENTITY_TYPE_PLAN)).
-			Optional(),
+			Optional().
+			GoType(types.PriceEntityType("")),
 
 		field.String("entity_id").
 			SchemaType(map[string]string{

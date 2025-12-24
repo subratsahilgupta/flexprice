@@ -1519,6 +1519,11 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 		filter.QueryFilter = types.NewDefaultQueryFilter()
 	}
 
+	// Validate expand fields
+	if err := filter.GetExpand().Validate(types.SubscriptionExpandConfig); err != nil {
+		return nil, err
+	}
+
 	// Resolve external customer ID to internal customer ID if provided
 	if filter.ExternalCustomerID != "" {
 		s.Logger.Debugw("resolving external customer ID",
@@ -1632,10 +1637,6 @@ func (s *subscriptionService) ListSubscriptions(ctx context.Context, filter *typ
 		customerService := NewCustomerService(s.ServiceParams)
 		customerFilter := types.NewNoLimitCustomerFilter()
 		customerFilter.CustomerIDs = uniqueCustomerIDs
-		if filter != nil && filter.Expand != nil {
-			s.Logger.Debugw("passing expand filters to customer service", "expand", filter.Expand)
-			customerFilter.Expand = filter.Expand // pass on the filters to next layer
-		}
 
 		customerResponse, err := customerService.GetCustomers(ctx, customerFilter)
 		if err != nil {
@@ -3387,7 +3388,7 @@ func (s *subscriptionService) addAddonToSubscription(
 		return nil, err
 	}
 
-	if len(activeAddons) > 0 {
+	if activeAddons != nil && len(activeAddons.Items) > 0 {
 		return nil, ierr.NewError("addon is already added to subscription").
 			WithHint("Cannot add addon to subscription that already has an active instance").
 			WithReportableDetails(map[string]interface{}{
@@ -3532,16 +3533,26 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 			Mark(ierr.ErrValidation)
 	}
 
-	// If end date is not provided, set it to now
-	if req.EffectiveFrom == nil {
-		now := time.Now().UTC()
-		req.EffectiveFrom = &now
+	// get cancel at date from subscription
+	var effectiveEndDate *time.Time
+
+	if association.EntityType == types.AddonAssociationEntityTypeSubscription {
+		sub, err := s.SubRepo.Get(ctx, association.EntityID)
+		if err != nil {
+			return err
+		}
+
+		effectiveEndDate = lo.ToPtr(sub.CurrentPeriodEnd)
 	}
 
-	association.AddonStatus = types.AddonStatusCancelled
-	association.CancellationReason = req.Reason
-	association.CancelledAt = req.EffectiveFrom
-	association.EndDate = req.EffectiveFrom
+	endReason := "Cancelled by API"
+	if req.Reason != "" {
+		endReason = req.Reason
+	}
+
+	association.CancellationReason = endReason
+	association.CancelledAt = effectiveEndDate
+	association.EndDate = effectiveEndDate
 
 	// Get line items to terminate
 	lineItemFilter := types.NewSubscriptionLineItemFilter()
@@ -3559,7 +3570,7 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 			return err
 		}
 
-		deleteReq := dto.DeleteSubscriptionLineItemRequest{EffectiveFrom: req.EffectiveFrom}
+		deleteReq := dto.DeleteSubscriptionLineItemRequest{EffectiveFrom: effectiveEndDate}
 		for _, lineItem := range lineItems {
 			if _, err := s.DeleteSubscriptionLineItem(ctx, lineItem.ID, deleteReq); err != nil {
 				return err
@@ -4626,6 +4637,7 @@ func (s *subscriptionService) GetSubscriptionEntitlements(ctx context.Context, s
 		EntityID:   subscriptionID,
 		EntityType: types.AddonAssociationEntityTypeSubscription,
 		StartDate:  &sub.CurrentPeriodStart,
+		EndDate:    &sub.CurrentPeriodEnd,
 	})
 	if err != nil {
 		return nil, ierr.WithError(err).
@@ -4637,8 +4649,11 @@ func (s *subscriptionService) GetSubscriptionEntitlements(ctx context.Context, s
 	}
 
 	// Step 3: Extract unique addon IDs
-	addonIDs := lo.Uniq(lo.Map(activeAddons, func(assoc *dto.AddonAssociationResponse, _ int) string {
-		return assoc.AddonID
+	addonIDs := lo.Uniq(lo.Map(activeAddons.Items, func(assoc *dto.AddonAssociationResponse, _ int) string {
+		if assoc != nil {
+			return assoc.AddonID
+		}
+		return ""
 	}))
 
 	// Step 4: Fetch addon entitlements if any addons exist
@@ -5084,4 +5099,16 @@ func (s *subscriptionService) ListByCustomerID(ctx context.Context, customerID s
 	}
 
 	return subscriptions, nil
+}
+
+func (s *subscriptionService) GetActiveAddonAssociations(ctx context.Context, subscriptionID string) (*dto.ListAddonAssociationsResponse, error) {
+	addonService := NewAddonService(s.ServiceParams)
+	associations, err := addonService.GetActiveAddonAssociation(ctx, dto.GetActiveAddonAssociationRequest{
+		EntityID:   subscriptionID,
+		EntityType: types.AddonAssociationEntityTypeSubscription,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return associations, nil
 }

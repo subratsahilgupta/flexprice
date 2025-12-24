@@ -134,15 +134,15 @@ func (pu *PriceUpdate) SetNillableDisplayAmount(s *string) *PriceUpdate {
 }
 
 // SetPriceUnitType sets the "price_unit_type" field.
-func (pu *PriceUpdate) SetPriceUnitType(s string) *PriceUpdate {
-	pu.mutation.SetPriceUnitType(s)
+func (pu *PriceUpdate) SetPriceUnitType(tut types.PriceUnitType) *PriceUpdate {
+	pu.mutation.SetPriceUnitType(tut)
 	return pu
 }
 
 // SetNillablePriceUnitType sets the "price_unit_type" field if the given value is not nil.
-func (pu *PriceUpdate) SetNillablePriceUnitType(s *string) *PriceUpdate {
-	if s != nil {
-		pu.SetPriceUnitType(*s)
+func (pu *PriceUpdate) SetNillablePriceUnitType(tut *types.PriceUnitType) *PriceUpdate {
+	if tut != nil {
+		pu.SetPriceUnitType(*tut)
 	}
 	return pu
 }
@@ -248,29 +248,29 @@ func (pu *PriceUpdate) ClearConversionRate() *PriceUpdate {
 }
 
 // SetType sets the "type" field.
-func (pu *PriceUpdate) SetType(s string) *PriceUpdate {
-	pu.mutation.SetType(s)
+func (pu *PriceUpdate) SetType(tt types.PriceType) *PriceUpdate {
+	pu.mutation.SetType(tt)
 	return pu
 }
 
 // SetNillableType sets the "type" field if the given value is not nil.
-func (pu *PriceUpdate) SetNillableType(s *string) *PriceUpdate {
-	if s != nil {
-		pu.SetType(*s)
+func (pu *PriceUpdate) SetNillableType(tt *types.PriceType) *PriceUpdate {
+	if tt != nil {
+		pu.SetType(*tt)
 	}
 	return pu
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (pu *PriceUpdate) SetBillingPeriod(s string) *PriceUpdate {
-	pu.mutation.SetBillingPeriod(s)
+func (pu *PriceUpdate) SetBillingPeriod(tp types.BillingPeriod) *PriceUpdate {
+	pu.mutation.SetBillingPeriod(tp)
 	return pu
 }
 
 // SetNillableBillingPeriod sets the "billing_period" field if the given value is not nil.
-func (pu *PriceUpdate) SetNillableBillingPeriod(s *string) *PriceUpdate {
-	if s != nil {
-		pu.SetBillingPeriod(*s)
+func (pu *PriceUpdate) SetNillableBillingPeriod(tp *types.BillingPeriod) *PriceUpdate {
+	if tp != nil {
+		pu.SetBillingPeriod(*tp)
 	}
 	return pu
 }
@@ -297,29 +297,29 @@ func (pu *PriceUpdate) AddBillingPeriodCount(i int) *PriceUpdate {
 }
 
 // SetBillingModel sets the "billing_model" field.
-func (pu *PriceUpdate) SetBillingModel(s string) *PriceUpdate {
-	pu.mutation.SetBillingModel(s)
+func (pu *PriceUpdate) SetBillingModel(tm types.BillingModel) *PriceUpdate {
+	pu.mutation.SetBillingModel(tm)
 	return pu
 }
 
 // SetNillableBillingModel sets the "billing_model" field if the given value is not nil.
-func (pu *PriceUpdate) SetNillableBillingModel(s *string) *PriceUpdate {
-	if s != nil {
-		pu.SetBillingModel(*s)
+func (pu *PriceUpdate) SetNillableBillingModel(tm *types.BillingModel) *PriceUpdate {
+	if tm != nil {
+		pu.SetBillingModel(*tm)
 	}
 	return pu
 }
 
 // SetBillingCadence sets the "billing_cadence" field.
-func (pu *PriceUpdate) SetBillingCadence(s string) *PriceUpdate {
-	pu.mutation.SetBillingCadence(s)
+func (pu *PriceUpdate) SetBillingCadence(tc types.BillingCadence) *PriceUpdate {
+	pu.mutation.SetBillingCadence(tc)
 	return pu
 }
 
 // SetNillableBillingCadence sets the "billing_cadence" field if the given value is not nil.
-func (pu *PriceUpdate) SetNillableBillingCadence(s *string) *PriceUpdate {
-	if s != nil {
-		pu.SetBillingCadence(*s)
+func (pu *PriceUpdate) SetNillableBillingCadence(tc *types.BillingCadence) *PriceUpdate {
+	if tc != nil {
+		pu.SetBillingCadence(*tc)
 	}
 	return pu
 }
@@ -357,15 +357,15 @@ func (pu *PriceUpdate) ClearFilterValues() *PriceUpdate {
 }
 
 // SetTierMode sets the "tier_mode" field.
-func (pu *PriceUpdate) SetTierMode(s string) *PriceUpdate {
-	pu.mutation.SetTierMode(s)
+func (pu *PriceUpdate) SetTierMode(tt types.BillingTier) *PriceUpdate {
+	pu.mutation.SetTierMode(tt)
 	return pu
 }
 
 // SetNillableTierMode sets the "tier_mode" field if the given value is not nil.
-func (pu *PriceUpdate) SetNillableTierMode(s *string) *PriceUpdate {
-	if s != nil {
-		pu.SetTierMode(*s)
+func (pu *PriceUpdate) SetNillableTierMode(tt *types.BillingTier) *PriceUpdate {
+	if tt != nil {
+		pu.SetTierMode(*tt)
 	}
 	return pu
 }
@@ -598,17 +598,17 @@ func (pu *PriceUpdate) check() error {
 		}
 	}
 	if v, ok := pu.mutation.PriceUnitType(); ok {
-		if err := price.PriceUnitTypeValidator(v); err != nil {
+		if err := price.PriceUnitTypeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "price_unit_type", err: fmt.Errorf(`ent: validator failed for field "Price.price_unit_type": %w`, err)}
 		}
 	}
 	if v, ok := pu.mutation.GetType(); ok {
-		if err := price.TypeValidator(v); err != nil {
+		if err := price.TypeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Price.type": %w`, err)}
 		}
 	}
 	if v, ok := pu.mutation.BillingPeriod(); ok {
-		if err := price.BillingPeriodValidator(v); err != nil {
+		if err := price.BillingPeriodValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_period", err: fmt.Errorf(`ent: validator failed for field "Price.billing_period": %w`, err)}
 		}
 	}
@@ -618,13 +618,18 @@ func (pu *PriceUpdate) check() error {
 		}
 	}
 	if v, ok := pu.mutation.BillingModel(); ok {
-		if err := price.BillingModelValidator(v); err != nil {
+		if err := price.BillingModelValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_model", err: fmt.Errorf(`ent: validator failed for field "Price.billing_model": %w`, err)}
 		}
 	}
 	if v, ok := pu.mutation.BillingCadence(); ok {
-		if err := price.BillingCadenceValidator(v); err != nil {
+		if err := price.BillingCadenceValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_cadence", err: fmt.Errorf(`ent: validator failed for field "Price.billing_cadence": %w`, err)}
+		}
+	}
+	if v, ok := pu.mutation.TierMode(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "tier_mode", err: fmt.Errorf(`ent: validator failed for field "Price.tier_mode": %w`, err)}
 		}
 	}
 	return nil
@@ -946,15 +951,15 @@ func (puo *PriceUpdateOne) SetNillableDisplayAmount(s *string) *PriceUpdateOne {
 }
 
 // SetPriceUnitType sets the "price_unit_type" field.
-func (puo *PriceUpdateOne) SetPriceUnitType(s string) *PriceUpdateOne {
-	puo.mutation.SetPriceUnitType(s)
+func (puo *PriceUpdateOne) SetPriceUnitType(tut types.PriceUnitType) *PriceUpdateOne {
+	puo.mutation.SetPriceUnitType(tut)
 	return puo
 }
 
 // SetNillablePriceUnitType sets the "price_unit_type" field if the given value is not nil.
-func (puo *PriceUpdateOne) SetNillablePriceUnitType(s *string) *PriceUpdateOne {
-	if s != nil {
-		puo.SetPriceUnitType(*s)
+func (puo *PriceUpdateOne) SetNillablePriceUnitType(tut *types.PriceUnitType) *PriceUpdateOne {
+	if tut != nil {
+		puo.SetPriceUnitType(*tut)
 	}
 	return puo
 }
@@ -1060,29 +1065,29 @@ func (puo *PriceUpdateOne) ClearConversionRate() *PriceUpdateOne {
 }
 
 // SetType sets the "type" field.
-func (puo *PriceUpdateOne) SetType(s string) *PriceUpdateOne {
-	puo.mutation.SetType(s)
+func (puo *PriceUpdateOne) SetType(tt types.PriceType) *PriceUpdateOne {
+	puo.mutation.SetType(tt)
 	return puo
 }
 
 // SetNillableType sets the "type" field if the given value is not nil.
-func (puo *PriceUpdateOne) SetNillableType(s *string) *PriceUpdateOne {
-	if s != nil {
-		puo.SetType(*s)
+func (puo *PriceUpdateOne) SetNillableType(tt *types.PriceType) *PriceUpdateOne {
+	if tt != nil {
+		puo.SetType(*tt)
 	}
 	return puo
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (puo *PriceUpdateOne) SetBillingPeriod(s string) *PriceUpdateOne {
-	puo.mutation.SetBillingPeriod(s)
+func (puo *PriceUpdateOne) SetBillingPeriod(tp types.BillingPeriod) *PriceUpdateOne {
+	puo.mutation.SetBillingPeriod(tp)
 	return puo
 }
 
 // SetNillableBillingPeriod sets the "billing_period" field if the given value is not nil.
-func (puo *PriceUpdateOne) SetNillableBillingPeriod(s *string) *PriceUpdateOne {
-	if s != nil {
-		puo.SetBillingPeriod(*s)
+func (puo *PriceUpdateOne) SetNillableBillingPeriod(tp *types.BillingPeriod) *PriceUpdateOne {
+	if tp != nil {
+		puo.SetBillingPeriod(*tp)
 	}
 	return puo
 }
@@ -1109,29 +1114,29 @@ func (puo *PriceUpdateOne) AddBillingPeriodCount(i int) *PriceUpdateOne {
 }
 
 // SetBillingModel sets the "billing_model" field.
-func (puo *PriceUpdateOne) SetBillingModel(s string) *PriceUpdateOne {
-	puo.mutation.SetBillingModel(s)
+func (puo *PriceUpdateOne) SetBillingModel(tm types.BillingModel) *PriceUpdateOne {
+	puo.mutation.SetBillingModel(tm)
 	return puo
 }
 
 // SetNillableBillingModel sets the "billing_model" field if the given value is not nil.
-func (puo *PriceUpdateOne) SetNillableBillingModel(s *string) *PriceUpdateOne {
-	if s != nil {
-		puo.SetBillingModel(*s)
+func (puo *PriceUpdateOne) SetNillableBillingModel(tm *types.BillingModel) *PriceUpdateOne {
+	if tm != nil {
+		puo.SetBillingModel(*tm)
 	}
 	return puo
 }
 
 // SetBillingCadence sets the "billing_cadence" field.
-func (puo *PriceUpdateOne) SetBillingCadence(s string) *PriceUpdateOne {
-	puo.mutation.SetBillingCadence(s)
+func (puo *PriceUpdateOne) SetBillingCadence(tc types.BillingCadence) *PriceUpdateOne {
+	puo.mutation.SetBillingCadence(tc)
 	return puo
 }
 
 // SetNillableBillingCadence sets the "billing_cadence" field if the given value is not nil.
-func (puo *PriceUpdateOne) SetNillableBillingCadence(s *string) *PriceUpdateOne {
-	if s != nil {
-		puo.SetBillingCadence(*s)
+func (puo *PriceUpdateOne) SetNillableBillingCadence(tc *types.BillingCadence) *PriceUpdateOne {
+	if tc != nil {
+		puo.SetBillingCadence(*tc)
 	}
 	return puo
 }
@@ -1169,15 +1174,15 @@ func (puo *PriceUpdateOne) ClearFilterValues() *PriceUpdateOne {
 }
 
 // SetTierMode sets the "tier_mode" field.
-func (puo *PriceUpdateOne) SetTierMode(s string) *PriceUpdateOne {
-	puo.mutation.SetTierMode(s)
+func (puo *PriceUpdateOne) SetTierMode(tt types.BillingTier) *PriceUpdateOne {
+	puo.mutation.SetTierMode(tt)
 	return puo
 }
 
 // SetNillableTierMode sets the "tier_mode" field if the given value is not nil.
-func (puo *PriceUpdateOne) SetNillableTierMode(s *string) *PriceUpdateOne {
-	if s != nil {
-		puo.SetTierMode(*s)
+func (puo *PriceUpdateOne) SetNillableTierMode(tt *types.BillingTier) *PriceUpdateOne {
+	if tt != nil {
+		puo.SetTierMode(*tt)
 	}
 	return puo
 }
@@ -1423,17 +1428,17 @@ func (puo *PriceUpdateOne) check() error {
 		}
 	}
 	if v, ok := puo.mutation.PriceUnitType(); ok {
-		if err := price.PriceUnitTypeValidator(v); err != nil {
+		if err := price.PriceUnitTypeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "price_unit_type", err: fmt.Errorf(`ent: validator failed for field "Price.price_unit_type": %w`, err)}
 		}
 	}
 	if v, ok := puo.mutation.GetType(); ok {
-		if err := price.TypeValidator(v); err != nil {
+		if err := price.TypeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Price.type": %w`, err)}
 		}
 	}
 	if v, ok := puo.mutation.BillingPeriod(); ok {
-		if err := price.BillingPeriodValidator(v); err != nil {
+		if err := price.BillingPeriodValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_period", err: fmt.Errorf(`ent: validator failed for field "Price.billing_period": %w`, err)}
 		}
 	}
@@ -1443,13 +1448,18 @@ func (puo *PriceUpdateOne) check() error {
 		}
 	}
 	if v, ok := puo.mutation.BillingModel(); ok {
-		if err := price.BillingModelValidator(v); err != nil {
+		if err := price.BillingModelValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_model", err: fmt.Errorf(`ent: validator failed for field "Price.billing_model": %w`, err)}
 		}
 	}
 	if v, ok := puo.mutation.BillingCadence(); ok {
-		if err := price.BillingCadenceValidator(v); err != nil {
+		if err := price.BillingCadenceValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_cadence", err: fmt.Errorf(`ent: validator failed for field "Price.billing_cadence": %w`, err)}
+		}
+	}
+	if v, ok := puo.mutation.TierMode(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "tier_mode", err: fmt.Errorf(`ent: validator failed for field "Price.tier_mode": %w`, err)}
 		}
 	}
 	return nil

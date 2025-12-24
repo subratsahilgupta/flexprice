@@ -364,20 +364,6 @@ func (h *WalletHandler) UpdateWallet(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.FromWallet(updated))
 }
 
-// DebitWallet godoc
-// @Summary Debit a wallet
-// @Description Debit a wallet by debiting credits from a wallet
-// @Tags Wallets
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param id path string true "Wallet ID"
-// @Param request body dto.ManualBalanceDebitRequest true "Debit wallet request"
-// @Success 200 {object} dto.WalletResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /wallets/{id}/debit [post]
 func (h *WalletHandler) ManualBalanceDebit(c *gin.Context) {
 	walletID := c.Param("id")
 	if walletID == "" {

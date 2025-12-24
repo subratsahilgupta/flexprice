@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/ent"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -49,10 +50,10 @@ func (i *InvoiceLineItem) FromEnt(e *ent.InvoiceLineItem) *InvoiceLineItem {
 		CustomerID:       e.CustomerID,
 		SubscriptionID:   e.SubscriptionID,
 		EntityID:         e.EntityID,
-		EntityType:       e.EntityType,
+		EntityType:       lo.ToPtr(string(lo.FromPtr(e.EntityType))),
 		PlanDisplayName:  e.PlanDisplayName,
 		PriceID:          e.PriceID,
-		PriceType:        e.PriceType,
+		PriceType:        lo.ToPtr(string(lo.FromPtr(e.PriceType))),
 		MeterID:          e.MeterID,
 		MeterDisplayName: e.MeterDisplayName,
 		PriceUnitID:      e.PriceUnitID,

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 const (
@@ -123,13 +124,13 @@ var (
 	// WalletIDValidator is a validator for the "wallet_id" field. It is called by the builders before save.
 	WalletIDValidator func(string) error
 	// DefaultType holds the default value on creation for the "type" field.
-	DefaultType string
+	DefaultType types.TransactionType
 	// TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	TypeValidator func(string) error
 	// DefaultTransactionStatus holds the default value on creation for the "transaction_status" field.
-	DefaultTransactionStatus string
+	DefaultTransactionStatus types.TransactionStatus
 	// DefaultTransactionReason holds the default value on creation for the "transaction_reason" field.
-	DefaultTransactionReason string
+	DefaultTransactionReason types.TransactionReason
 )
 
 // OrderOption defines the ordering options for the WalletTransaction queries.

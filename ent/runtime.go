@@ -739,7 +739,7 @@ func init() {
 	// entitlementDescEntityType is the schema descriptor for entity_type field.
 	entitlementDescEntityType := entitlementFields[1].Descriptor()
 	// entitlement.DefaultEntityType holds the default value on creation for the entity_type field.
-	entitlement.DefaultEntityType = entitlementDescEntityType.Default.(string)
+	entitlement.DefaultEntityType = types.EntitlementEntityType(entitlementDescEntityType.Default.(string))
 	// entitlementDescFeatureID is the schema descriptor for feature_id field.
 	entitlementDescFeatureID := entitlementFields[3].Descriptor()
 	// entitlement.FeatureIDValidator is a validator for the "feature_id" field. It is called by the builders before save.
@@ -954,11 +954,11 @@ func init() {
 	// invoiceDescInvoiceStatus is the schema descriptor for invoice_status field.
 	invoiceDescInvoiceStatus := invoiceFields[4].Descriptor()
 	// invoice.DefaultInvoiceStatus holds the default value on creation for the invoice_status field.
-	invoice.DefaultInvoiceStatus = invoiceDescInvoiceStatus.Default.(string)
+	invoice.DefaultInvoiceStatus = types.InvoiceStatus(invoiceDescInvoiceStatus.Default.(string))
 	// invoiceDescPaymentStatus is the schema descriptor for payment_status field.
 	invoiceDescPaymentStatus := invoiceFields[5].Descriptor()
 	// invoice.DefaultPaymentStatus holds the default value on creation for the payment_status field.
-	invoice.DefaultPaymentStatus = invoiceDescPaymentStatus.Default.(string)
+	invoice.DefaultPaymentStatus = types.PaymentStatus(invoiceDescPaymentStatus.Default.(string))
 	// invoiceDescCurrency is the schema descriptor for currency field.
 	invoiceDescCurrency := invoiceFields[6].Descriptor()
 	// invoice.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
@@ -1306,7 +1306,7 @@ func init() {
 	// priceDescPriceUnitType is the schema descriptor for price_unit_type field.
 	priceDescPriceUnitType := priceFields[5].Descriptor()
 	// price.DefaultPriceUnitType holds the default value on creation for the price_unit_type field.
-	price.DefaultPriceUnitType = priceDescPriceUnitType.Default.(string)
+	price.DefaultPriceUnitType = types.PriceUnitType(priceDescPriceUnitType.Default.(string))
 	// price.PriceUnitTypeValidator is a validator for the "price_unit_type" field. It is called by the builders before save.
 	price.PriceUnitTypeValidator = priceDescPriceUnitType.Validators[0].(func(string) error)
 	// priceDescPriceUnitAmount is the schema descriptor for price_unit_amount field.
@@ -1344,7 +1344,7 @@ func init() {
 	// priceDescEntityType is the schema descriptor for entity_type field.
 	priceDescEntityType := priceFields[28].Descriptor()
 	// price.DefaultEntityType holds the default value on creation for the entity_type field.
-	price.DefaultEntityType = priceDescEntityType.Default.(string)
+	price.DefaultEntityType = types.PriceEntityType(priceDescEntityType.Default.(string))
 	// priceDescStartDate is the schema descriptor for start_date field.
 	priceDescStartDate := priceFields[31].Descriptor()
 	// price.DefaultStartDate holds the default value on creation for the start_date field.
@@ -1589,7 +1589,7 @@ func init() {
 	// subscriptionDescSubscriptionStatus is the schema descriptor for subscription_status field.
 	subscriptionDescSubscriptionStatus := subscriptionFields[4].Descriptor()
 	// subscription.DefaultSubscriptionStatus holds the default value on creation for the subscription_status field.
-	subscription.DefaultSubscriptionStatus = subscriptionDescSubscriptionStatus.Default.(string)
+	subscription.DefaultSubscriptionStatus = types.SubscriptionStatus(subscriptionDescSubscriptionStatus.Default.(string))
 	// subscriptionDescCurrency is the schema descriptor for currency field.
 	subscriptionDescCurrency := subscriptionFields[5].Descriptor()
 	// subscription.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
@@ -1633,17 +1633,25 @@ func init() {
 	// subscriptionDescPauseStatus is the schema descriptor for pause_status field.
 	subscriptionDescPauseStatus := subscriptionFields[21].Descriptor()
 	// subscription.DefaultPauseStatus holds the default value on creation for the pause_status field.
-	subscription.DefaultPauseStatus = subscriptionDescPauseStatus.Default.(string)
+	subscription.DefaultPauseStatus = types.PauseStatus(subscriptionDescPauseStatus.Default.(string))
 	// subscriptionDescBillingCycle is the schema descriptor for billing_cycle field.
 	subscriptionDescBillingCycle := subscriptionFields[23].Descriptor()
 	// subscription.DefaultBillingCycle holds the default value on creation for the billing_cycle field.
-	subscription.DefaultBillingCycle = subscriptionDescBillingCycle.Default.(string)
+	subscription.DefaultBillingCycle = types.BillingCycle(subscriptionDescBillingCycle.Default.(string))
 	// subscription.BillingCycleValidator is a validator for the "billing_cycle" field. It is called by the builders before save.
 	subscription.BillingCycleValidator = subscriptionDescBillingCycle.Validators[0].(func(string) error)
 	// subscriptionDescOverageFactor is the schema descriptor for overage_factor field.
 	subscriptionDescOverageFactor := subscriptionFields[25].Descriptor()
 	// subscription.DefaultOverageFactor holds the default value on creation for the overage_factor field.
 	subscription.DefaultOverageFactor = subscriptionDescOverageFactor.Default.(decimal.Decimal)
+	// subscriptionDescPaymentBehavior is the schema descriptor for payment_behavior field.
+	subscriptionDescPaymentBehavior := subscriptionFields[26].Descriptor()
+	// subscription.DefaultPaymentBehavior holds the default value on creation for the payment_behavior field.
+	subscription.DefaultPaymentBehavior = types.PaymentBehavior(subscriptionDescPaymentBehavior.Default.(string))
+	// subscriptionDescCollectionMethod is the schema descriptor for collection_method field.
+	subscriptionDescCollectionMethod := subscriptionFields[27].Descriptor()
+	// subscription.DefaultCollectionMethod holds the default value on creation for the collection_method field.
+	subscription.DefaultCollectionMethod = types.CollectionMethod(subscriptionDescCollectionMethod.Default.(string))
 	// subscriptionDescCustomerTimezone is the schema descriptor for customer_timezone field.
 	subscriptionDescCustomerTimezone := subscriptionFields[29].Descriptor()
 	// subscription.DefaultCustomerTimezone holds the default value on creation for the customer_timezone field.
@@ -1651,7 +1659,7 @@ func init() {
 	// subscriptionDescProrationBehavior is the schema descriptor for proration_behavior field.
 	subscriptionDescProrationBehavior := subscriptionFields[30].Descriptor()
 	// subscription.DefaultProrationBehavior holds the default value on creation for the proration_behavior field.
-	subscription.DefaultProrationBehavior = subscriptionDescProrationBehavior.Default.(string)
+	subscription.DefaultProrationBehavior = types.ProrationBehavior(subscriptionDescProrationBehavior.Default.(string))
 	// subscription.ProrationBehaviorValidator is a validator for the "proration_behavior" field. It is called by the builders before save.
 	subscription.ProrationBehaviorValidator = subscriptionDescProrationBehavior.Validators[0].(func(string) error)
 	// subscriptionDescEnableTrueUp is the schema descriptor for enable_true_up field.
@@ -1698,7 +1706,7 @@ func init() {
 	// subscriptionlineitemDescEntityType is the schema descriptor for entity_type field.
 	subscriptionlineitemDescEntityType := subscriptionlineitemFields[4].Descriptor()
 	// subscriptionlineitem.DefaultEntityType holds the default value on creation for the entity_type field.
-	subscriptionlineitem.DefaultEntityType = subscriptionlineitemDescEntityType.Default.(string)
+	subscriptionlineitem.DefaultEntityType = types.InvoiceLineItemEntityType(subscriptionlineitemDescEntityType.Default.(string))
 	// subscriptionlineitemDescPriceID is the schema descriptor for price_id field.
 	subscriptionlineitemDescPriceID := subscriptionlineitemFields[6].Descriptor()
 	// subscriptionlineitem.PriceIDValidator is a validator for the "price_id" field. It is called by the builders before save.
@@ -2140,11 +2148,11 @@ func init() {
 	// walletDescWalletStatus is the schema descriptor for wallet_status field.
 	walletDescWalletStatus := walletFields[8].Descriptor()
 	// wallet.DefaultWalletStatus holds the default value on creation for the wallet_status field.
-	wallet.DefaultWalletStatus = walletDescWalletStatus.Default.(string)
+	wallet.DefaultWalletStatus = types.WalletStatus(walletDescWalletStatus.Default.(string))
 	// walletDescWalletType is the schema descriptor for wallet_type field.
 	walletDescWalletType := walletFields[10].Descriptor()
 	// wallet.DefaultWalletType holds the default value on creation for the wallet_type field.
-	wallet.DefaultWalletType = walletDescWalletType.Default.(string)
+	wallet.DefaultWalletType = types.WalletType(walletDescWalletType.Default.(string))
 	// walletDescAlertEnabled is the schema descriptor for alert_enabled field.
 	walletDescAlertEnabled := walletFields[14].Descriptor()
 	// wallet.DefaultAlertEnabled holds the default value on creation for the alert_enabled field.
@@ -2152,7 +2160,7 @@ func init() {
 	// walletDescAlertState is the schema descriptor for alert_state field.
 	walletDescAlertState := walletFields[15].Descriptor()
 	// wallet.DefaultAlertState holds the default value on creation for the alert_state field.
-	wallet.DefaultAlertState = walletDescAlertState.Default.(string)
+	wallet.DefaultAlertState = types.AlertState(walletDescAlertState.Default.(string))
 	wallettransactionMixin := schema.WalletTransaction{}.Mixin()
 	wallettransactionMixinFields0 := wallettransactionMixin[0].Fields()
 	_ = wallettransactionMixinFields0
@@ -2189,15 +2197,15 @@ func init() {
 	// wallettransactionDescType is the schema descriptor for type field.
 	wallettransactionDescType := wallettransactionFields[3].Descriptor()
 	// wallettransaction.DefaultType holds the default value on creation for the type field.
-	wallettransaction.DefaultType = wallettransactionDescType.Default.(string)
+	wallettransaction.DefaultType = types.TransactionType(wallettransactionDescType.Default.(string))
 	// wallettransaction.TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	wallettransaction.TypeValidator = wallettransactionDescType.Validators[0].(func(string) error)
 	// wallettransactionDescTransactionStatus is the schema descriptor for transaction_status field.
 	wallettransactionDescTransactionStatus := wallettransactionFields[12].Descriptor()
 	// wallettransaction.DefaultTransactionStatus holds the default value on creation for the transaction_status field.
-	wallettransaction.DefaultTransactionStatus = wallettransactionDescTransactionStatus.Default.(string)
+	wallettransaction.DefaultTransactionStatus = types.TransactionStatus(wallettransactionDescTransactionStatus.Default.(string))
 	// wallettransactionDescTransactionReason is the schema descriptor for transaction_reason field.
 	wallettransactionDescTransactionReason := wallettransactionFields[17].Descriptor()
 	// wallettransaction.DefaultTransactionReason holds the default value on creation for the transaction_reason field.
-	wallettransaction.DefaultTransactionReason = wallettransactionDescTransactionReason.Default.(string)
+	wallettransaction.DefaultTransactionReason = types.TransactionReason(wallettransactionDescTransactionReason.Default.(string))
 }

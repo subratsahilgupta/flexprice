@@ -155,15 +155,15 @@ func (ilic *InvoiceLineItemCreate) SetNillableEntityID(s *string) *InvoiceLineIt
 }
 
 // SetEntityType sets the "entity_type" field.
-func (ilic *InvoiceLineItemCreate) SetEntityType(s string) *InvoiceLineItemCreate {
-	ilic.mutation.SetEntityType(s)
+func (ilic *InvoiceLineItemCreate) SetEntityType(tliet types.InvoiceLineItemEntityType) *InvoiceLineItemCreate {
+	ilic.mutation.SetEntityType(tliet)
 	return ilic
 }
 
 // SetNillableEntityType sets the "entity_type" field if the given value is not nil.
-func (ilic *InvoiceLineItemCreate) SetNillableEntityType(s *string) *InvoiceLineItemCreate {
-	if s != nil {
-		ilic.SetEntityType(*s)
+func (ilic *InvoiceLineItemCreate) SetNillableEntityType(tliet *types.InvoiceLineItemEntityType) *InvoiceLineItemCreate {
+	if tliet != nil {
+		ilic.SetEntityType(*tliet)
 	}
 	return ilic
 }
@@ -197,15 +197,15 @@ func (ilic *InvoiceLineItemCreate) SetNillablePriceID(s *string) *InvoiceLineIte
 }
 
 // SetPriceType sets the "price_type" field.
-func (ilic *InvoiceLineItemCreate) SetPriceType(s string) *InvoiceLineItemCreate {
-	ilic.mutation.SetPriceType(s)
+func (ilic *InvoiceLineItemCreate) SetPriceType(tt types.PriceType) *InvoiceLineItemCreate {
+	ilic.mutation.SetPriceType(tt)
 	return ilic
 }
 
 // SetNillablePriceType sets the "price_type" field if the given value is not nil.
-func (ilic *InvoiceLineItemCreate) SetNillablePriceType(s *string) *InvoiceLineItemCreate {
-	if s != nil {
-		ilic.SetPriceType(*s)
+func (ilic *InvoiceLineItemCreate) SetNillablePriceType(tt *types.PriceType) *InvoiceLineItemCreate {
+	if tt != nil {
+		ilic.SetPriceType(*tt)
 	}
 	return ilic
 }
@@ -488,6 +488,11 @@ func (ilic *InvoiceLineItemCreate) check() error {
 	if v, ok := ilic.mutation.CustomerID(); ok {
 		if err := invoicelineitem.CustomerIDValidator(v); err != nil {
 			return &ValidationError{Name: "customer_id", err: fmt.Errorf(`ent: validator failed for field "InvoiceLineItem.customer_id": %w`, err)}
+		}
+	}
+	if v, ok := ilic.mutation.PriceType(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "price_type", err: fmt.Errorf(`ent: validator failed for field "InvoiceLineItem.price_type": %w`, err)}
 		}
 	}
 	if _, ok := ilic.mutation.Amount(); !ok {

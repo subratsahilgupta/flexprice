@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -173,7 +174,7 @@ var (
 	// DisplayAmountValidator is a validator for the "display_amount" field. It is called by the builders before save.
 	DisplayAmountValidator func(string) error
 	// DefaultPriceUnitType holds the default value on creation for the "price_unit_type" field.
-	DefaultPriceUnitType string
+	DefaultPriceUnitType types.PriceUnitType
 	// PriceUnitTypeValidator is a validator for the "price_unit_type" field. It is called by the builders before save.
 	PriceUnitTypeValidator func(string) error
 	// DefaultPriceUnitAmount holds the default value on creation for the "price_unit_amount" field.
@@ -193,7 +194,7 @@ var (
 	// DefaultTrialPeriod holds the default value on creation for the "trial_period" field.
 	DefaultTrialPeriod int
 	// DefaultEntityType holds the default value on creation for the "entity_type" field.
-	DefaultEntityType string
+	DefaultEntityType types.PriceEntityType
 	// DefaultStartDate holds the default value on creation for the "start_date" field.
 	DefaultStartDate func() time.Time
 )

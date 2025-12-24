@@ -57,19 +57,19 @@ func (t *Transaction) ToEnt() *ent.WalletTransaction {
 		ID:                  t.ID,
 		WalletID:            t.WalletID,
 		CustomerID:          t.CustomerID,
-		Type:                string(t.Type),
+		Type:                t.Type,
 		Amount:              t.Amount,
 		CreditAmount:        t.CreditAmount,
 		CreditBalanceBefore: t.CreditBalanceBefore,
 		CreditBalanceAfter:  t.CreditBalanceAfter,
-		TransactionStatus:   string(t.TxStatus),
-		ReferenceType:       string(t.ReferenceType),
+		TransactionStatus:   t.TxStatus,
+		ReferenceType:       t.ReferenceType,
 		ReferenceID:         t.ReferenceID,
 		Description:         t.Description,
 		Metadata:            t.Metadata,
 		ExpiryDate:          t.ExpiryDate,
 		CreditsAvailable:    t.CreditsAvailable,
-		TransactionReason:   string(t.TransactionReason),
+		TransactionReason:   t.TransactionReason,
 		Priority:            t.Priority,
 		Currency:            lo.ToPtr(t.Currency),
 		EnvironmentID:       t.EnvironmentID,
@@ -92,11 +92,11 @@ func TransactionFromEnt(e *ent.WalletTransaction) *Transaction {
 		ID:                  e.ID,
 		WalletID:            e.WalletID,
 		CustomerID:          e.CustomerID,
-		Type:                types.TransactionType(e.Type),
+		Type:                e.Type,
 		Amount:              e.Amount,
 		CreditAmount:        e.CreditAmount,
-		TxStatus:            types.TransactionStatus(e.TransactionStatus),
-		ReferenceType:       types.WalletTxReferenceType(e.ReferenceType),
+		TxStatus:            e.TransactionStatus,
+		ReferenceType:       e.ReferenceType,
 		ReferenceID:         e.ReferenceID,
 		Description:         e.Description,
 		Metadata:            types.Metadata(e.Metadata),
@@ -105,7 +105,7 @@ func TransactionFromEnt(e *ent.WalletTransaction) *Transaction {
 		CreditBalanceBefore: e.CreditBalanceBefore,
 		CreditBalanceAfter:  e.CreditBalanceAfter,
 		Currency:            lo.FromPtrOr(e.Currency, ""),
-		TransactionReason:   types.TransactionReason(e.TransactionReason),
+		TransactionReason:   e.TransactionReason,
 		Priority:            e.Priority,
 		EnvironmentID:       e.EnvironmentID,
 		BaseModel: types.BaseModel{
@@ -144,4 +144,14 @@ type CreditTopupsExportData struct {
 	ReferenceID         string
 	TransactionReason   types.TransactionReason
 	CreatedAt           time.Time
+}
+
+// CreditUsageExportData represents the joined data for credit usage export
+type CreditUsageExportData struct {
+	CustomerID         string
+	CustomerName       string
+	CustomerExternalID string
+	CurrentBalance     decimal.Decimal
+	RealtimeBalance    decimal.Decimal
+	NumberOfWallets    int
 }

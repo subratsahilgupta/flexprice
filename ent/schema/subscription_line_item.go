@@ -55,7 +55,8 @@ func (SubscriptionLineItem) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			Default(string(types.InvoiceLineItemEntityTypePlan)).
-			Immutable(),
+			Immutable().
+			GoType(types.InvoiceLineItemEntityType("")),
 		field.String("plan_display_name").
 			Optional().
 			Nillable(),
@@ -69,7 +70,8 @@ func (SubscriptionLineItem) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			Optional().
-			Nillable(),
+			Nillable().
+			GoType(types.PriceType("")),
 		field.String("meter_id").
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
@@ -108,13 +110,15 @@ func (SubscriptionLineItem) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			NotEmpty(),
+			NotEmpty().
+			GoType(types.BillingPeriod("")),
 		field.String("invoice_cadence").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
 			Immutable().
-			Optional(), // TODO: Remove this once we have migrated all the data
+			Optional().
+			GoType(types.InvoiceCadence("")), // TODO: Remove this once we have migrated all the data
 		field.Int("trial_period").
 			Default(0),
 		field.Time("start_date").
@@ -190,5 +194,6 @@ func (SubscriptionLineItem) Indexes() []ent.Index {
 		index.Fields("tenant_id", "environment_id", "price_id", "status"),
 		index.Fields("tenant_id", "environment_id", "meter_id", "status"),
 		index.Fields("start_date", "end_date"),
+		index.Fields("subscription_id", "status"),
 	}
 }

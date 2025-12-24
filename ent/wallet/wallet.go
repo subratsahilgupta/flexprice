@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -119,13 +120,13 @@ var (
 	// DefaultBalance holds the default value on creation for the "balance" field.
 	DefaultBalance decimal.Decimal
 	// DefaultWalletStatus holds the default value on creation for the "wallet_status" field.
-	DefaultWalletStatus string
+	DefaultWalletStatus types.WalletStatus
 	// DefaultWalletType holds the default value on creation for the "wallet_type" field.
-	DefaultWalletType string
+	DefaultWalletType types.WalletType
 	// DefaultAlertEnabled holds the default value on creation for the "alert_enabled" field.
 	DefaultAlertEnabled bool
 	// DefaultAlertState holds the default value on creation for the "alert_state" field.
-	DefaultAlertState string
+	DefaultAlertState types.AlertState
 )
 
 // OrderOption defines the ordering options for the Wallet queries.

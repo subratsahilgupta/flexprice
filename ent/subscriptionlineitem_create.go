@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -140,15 +141,15 @@ func (slic *SubscriptionLineItemCreate) SetNillableEntityID(s *string) *Subscrip
 }
 
 // SetEntityType sets the "entity_type" field.
-func (slic *SubscriptionLineItemCreate) SetEntityType(s string) *SubscriptionLineItemCreate {
-	slic.mutation.SetEntityType(s)
+func (slic *SubscriptionLineItemCreate) SetEntityType(tliet types.InvoiceLineItemEntityType) *SubscriptionLineItemCreate {
+	slic.mutation.SetEntityType(tliet)
 	return slic
 }
 
 // SetNillableEntityType sets the "entity_type" field if the given value is not nil.
-func (slic *SubscriptionLineItemCreate) SetNillableEntityType(s *string) *SubscriptionLineItemCreate {
-	if s != nil {
-		slic.SetEntityType(*s)
+func (slic *SubscriptionLineItemCreate) SetNillableEntityType(tliet *types.InvoiceLineItemEntityType) *SubscriptionLineItemCreate {
+	if tliet != nil {
+		slic.SetEntityType(*tliet)
 	}
 	return slic
 }
@@ -174,15 +175,15 @@ func (slic *SubscriptionLineItemCreate) SetPriceID(s string) *SubscriptionLineIt
 }
 
 // SetPriceType sets the "price_type" field.
-func (slic *SubscriptionLineItemCreate) SetPriceType(s string) *SubscriptionLineItemCreate {
-	slic.mutation.SetPriceType(s)
+func (slic *SubscriptionLineItemCreate) SetPriceType(tt types.PriceType) *SubscriptionLineItemCreate {
+	slic.mutation.SetPriceType(tt)
 	return slic
 }
 
 // SetNillablePriceType sets the "price_type" field if the given value is not nil.
-func (slic *SubscriptionLineItemCreate) SetNillablePriceType(s *string) *SubscriptionLineItemCreate {
-	if s != nil {
-		slic.SetPriceType(*s)
+func (slic *SubscriptionLineItemCreate) SetNillablePriceType(tt *types.PriceType) *SubscriptionLineItemCreate {
+	if tt != nil {
+		slic.SetPriceType(*tt)
 	}
 	return slic
 }
@@ -278,21 +279,21 @@ func (slic *SubscriptionLineItemCreate) SetCurrency(s string) *SubscriptionLineI
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (slic *SubscriptionLineItemCreate) SetBillingPeriod(s string) *SubscriptionLineItemCreate {
-	slic.mutation.SetBillingPeriod(s)
+func (slic *SubscriptionLineItemCreate) SetBillingPeriod(tp types.BillingPeriod) *SubscriptionLineItemCreate {
+	slic.mutation.SetBillingPeriod(tp)
 	return slic
 }
 
 // SetInvoiceCadence sets the "invoice_cadence" field.
-func (slic *SubscriptionLineItemCreate) SetInvoiceCadence(s string) *SubscriptionLineItemCreate {
-	slic.mutation.SetInvoiceCadence(s)
+func (slic *SubscriptionLineItemCreate) SetInvoiceCadence(tc types.InvoiceCadence) *SubscriptionLineItemCreate {
+	slic.mutation.SetInvoiceCadence(tc)
 	return slic
 }
 
 // SetNillableInvoiceCadence sets the "invoice_cadence" field if the given value is not nil.
-func (slic *SubscriptionLineItemCreate) SetNillableInvoiceCadence(s *string) *SubscriptionLineItemCreate {
-	if s != nil {
-		slic.SetInvoiceCadence(*s)
+func (slic *SubscriptionLineItemCreate) SetNillableInvoiceCadence(tc *types.InvoiceCadence) *SubscriptionLineItemCreate {
+	if tc != nil {
+		slic.SetInvoiceCadence(*tc)
 	}
 	return slic
 }
@@ -588,6 +589,11 @@ func (slic *SubscriptionLineItemCreate) check() error {
 			return &ValidationError{Name: "price_id", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.price_id": %w`, err)}
 		}
 	}
+	if v, ok := slic.mutation.PriceType(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "price_type", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.price_type": %w`, err)}
+		}
+	}
 	if _, ok := slic.mutation.Quantity(); !ok {
 		return &ValidationError{Name: "quantity", err: errors.New(`ent: missing required field "SubscriptionLineItem.quantity"`)}
 	}
@@ -603,8 +609,13 @@ func (slic *SubscriptionLineItemCreate) check() error {
 		return &ValidationError{Name: "billing_period", err: errors.New(`ent: missing required field "SubscriptionLineItem.billing_period"`)}
 	}
 	if v, ok := slic.mutation.BillingPeriod(); ok {
-		if err := subscriptionlineitem.BillingPeriodValidator(v); err != nil {
+		if err := subscriptionlineitem.BillingPeriodValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_period", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.billing_period": %w`, err)}
+		}
+	}
+	if v, ok := slic.mutation.InvoiceCadence(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "invoice_cadence", err: fmt.Errorf(`ent: validator failed for field "SubscriptionLineItem.invoice_cadence": %w`, err)}
 		}
 	}
 	if _, ok := slic.mutation.TrialPeriod(); !ok {

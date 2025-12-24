@@ -7,6 +7,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -172,7 +173,7 @@ var (
 	// CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
 	CustomerIDValidator func(string) error
 	// DefaultEntityType holds the default value on creation for the "entity_type" field.
-	DefaultEntityType string
+	DefaultEntityType types.InvoiceLineItemEntityType
 	// PriceIDValidator is a validator for the "price_id" field. It is called by the builders before save.
 	PriceIDValidator func(string) error
 	// DefaultQuantity holds the default value on creation for the "quantity" field.
