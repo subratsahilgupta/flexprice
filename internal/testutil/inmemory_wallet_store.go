@@ -239,7 +239,7 @@ func (s *InMemoryWalletStore) UpdateWalletStatus(ctx context.Context, id string,
 }
 
 // FindEligibleCredits finds eligible credits for a wallet
-func (s *InMemoryWalletStore) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int) ([]*wallet.Transaction, error) {
+func (s *InMemoryWalletStore) FindEligibleCredits(ctx context.Context, walletID string, requiredAmount decimal.Decimal, pageSize int, periodEnd time.Time) ([]*wallet.Transaction, error) {
 	var allCredits []*wallet.Transaction
 
 	// Get all eligible credits first
