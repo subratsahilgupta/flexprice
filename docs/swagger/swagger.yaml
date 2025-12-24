@@ -126,8 +126,6 @@ definitions:
     properties:
       addon_id:
         type: string
-      end_date:
-        type: string
       metadata:
         additionalProperties: true
         type: object
@@ -143,8 +141,6 @@ definitions:
     properties:
       addon_id:
         type: string
-      end_date:
-        type: string
       metadata:
         additionalProperties: true
         type: object
@@ -155,6 +151,8 @@ definitions:
     type: object
   dto.AddonAssociationResponse:
     properties:
+      addon:
+        $ref: '#/definitions/dto.AddonResponse'
       addon_id:
         type: string
       addon_status:
@@ -184,6 +182,8 @@ definitions:
         type: string
       status:
         $ref: '#/definitions/types.Status'
+      subscription:
+        $ref: '#/definitions/dto.SubscriptionResponse'
       tenant_id:
         type: string
       updated_at:
@@ -3593,30 +3593,6 @@ definitions:
     - email
     - password
     type: object
-  dto.ManualBalanceDebitRequest:
-    properties:
-      credits:
-        description: credits is the number of credits to debit from the wallet
-        type: string
-      description:
-        description: description to add any specific details about the transaction
-        type: string
-      idempotency_key:
-        description: idempotency_key is a unique key for the transaction
-        type: string
-      metadata:
-        allOf:
-        - $ref: '#/definitions/types.Metadata'
-        description: metadata is a map of key-value pairs to store any additional
-          information about the transaction
-      transaction_reason:
-        allOf:
-        - $ref: '#/definitions/types.TransactionReason'
-        description: transaction_reason is the reason for the transaction
-    required:
-    - idempotency_key
-    - transaction_reason
-    type: object
   dto.MeterResponse:
     properties:
       aggregation:
@@ -4138,8 +4114,6 @@ definitions:
   dto.RemoveAddonRequest:
     properties:
       addon_association_id:
-        type: string
-      effective_from:
         type: string
       reason:
         type: string
@@ -7881,11 +7855,13 @@ definitions:
     - events
     - invoice
     - credit_topups
+    - credit_usage
     type: string
     x-enum-varnames:
     - ScheduledTaskEntityTypeEvents
     - ScheduledTaskEntityTypeInvoice
     - ScheduledTaskEntityTypeCreditTopups
+    - ScheduledTaskEntityTypeCreditUsage
   types.ScheduledTaskInterval:
     enum:
     - custom
@@ -14095,6 +14071,41 @@ paths:
       summary: Activate draft subscription
       tags:
       - Subscriptions
+  /subscriptions/{id}/addons/associations:
+    get:
+      description: Get active addon associations for a subscription
+      parameters:
+      - description: Subscription ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.AddonAssociationResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get active addon associations
+      tags:
+      - Subscriptions
   /subscriptions/{id}/cancel:
     post:
       consumes:
@@ -15881,47 +15892,6 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get wallet balance
-      tags:
-      - Wallets
-  /wallets/{id}/debit:
-    post:
-      consumes:
-      - application/json
-      description: Debit a wallet by debiting credits from a wallet
-      parameters:
-      - description: Wallet ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Debit wallet request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/dto.ManualBalanceDebitRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/dto.WalletResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Debit a wallet
       tags:
       - Wallets
   /wallets/{id}/terminate:
