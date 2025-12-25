@@ -113,6 +113,11 @@ var commands = []Command{
 		Description: "Generate credit usage report for customers in a tenant/environment",
 		Run:         internal.GenerateCreditUsageReport,
 	},
+	{
+		Name:        "import-features",
+		Description: "Import features from a CSV file",
+		Run:         internal.ImportFeatures,
+	},
 }
 
 // runBulkReprocessEventsCommand wraps the bulk reprocess events with command line parameters
