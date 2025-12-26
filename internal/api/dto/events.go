@@ -333,6 +333,11 @@ type UsageAnalyticPoint struct {
 	Usage      decimal.Decimal `json:"usage" swaggertype:"string"`
 	Cost       decimal.Decimal `json:"cost" swaggertype:"string"`
 	EventCount uint64          `json:"event_count"` // Number of events in this time window
+
+	// Commitment breakdown (only populated for windowed commitments)
+	ComputedCommitmentUtilizedAmount decimal.Decimal `json:"computed_commitment_utilized_amount,omitempty" swaggertype:"string"`
+	ComputedOverageAmount            decimal.Decimal `json:"computed_overage_amount,omitempty" swaggertype:"string"`
+	ComputedTrueUpAmount             decimal.Decimal `json:"computed_true_up_amount,omitempty" swaggertype:"string"`
 }
 
 type GetMonitoringDataRequest struct {
