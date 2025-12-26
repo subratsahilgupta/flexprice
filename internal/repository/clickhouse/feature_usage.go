@@ -1009,11 +1009,17 @@ func (r *FeatureUsageRepository) getMaxBucketTotals(ctx context.Context, params 
 
 // getMaxBucketPointsForGroup calculates time series points for a specific group
 func (r *FeatureUsageRepository) getMaxBucketPointsForGroup(ctx context.Context, params *events.UsageAnalyticsParams, featureInfo *events.MaxBucketFeatureInfo, group *events.DetailedUsageAnalytic) ([]events.UsageAnalyticPoint, error) {
-	// Build window expression based on request window size
-	windowExpr := r.formatWindowSize(featureInfo.BucketSize, params.BillingAnchor)
+	// Build window expressions: bucket size for inner aggregation, request window size for outer aggregation
+	bucketWindowExpr := r.formatWindowSize(featureInfo.BucketSize, nil)
 
-	// For MAX with bucket features, we need to first get max within each bucket,
-	// then aggregate those maxes within the request window
+	// For bucketed features, use the larger of params.WindowSize or bucket_size
+	// This ensures we don't generate points at a granularity smaller than the bucket size
+	effectiveWindowSize := params.WindowSize.Max(featureInfo.BucketSize)
+	requestWindowExpr := r.formatWindowSize(effectiveWindowSize, params.BillingAnchor)
+
+	// For MAX with bucket features, we need to:
+	// 1. First get max within each bucket (feature's bucket_size)
+	// 2. Then aggregate those bucket maxes within the request window (params.WindowSize)
 	// This version filters by the specific group's attributes (source, properties, etc.)
 
 	// Build inner query with filters
@@ -1032,7 +1038,7 @@ func (r *FeatureUsageRepository) getMaxBucketPointsForGroup(ctx context.Context,
 		AND feature_id = ?
 		AND timestamp >= ?
 		AND timestamp < ?
-		AND sign != 0`, r.formatWindowSize(featureInfo.BucketSize, nil), windowExpr)
+		AND sign != 0`, bucketWindowExpr, requestWindowExpr)
 
 	queryParams := []interface{}{
 		params.TenantID,
@@ -1100,28 +1106,11 @@ func (r *FeatureUsageRepository) getMaxBucketPointsForGroup(ctx context.Context,
 		}
 	}
 
-	// Complete the inner query with GROUP BY
-	innerQuery += " GROUP BY bucket_start, window_start"
+	// Complete the query with GROUP BY and ORDER BY
+	// Return bucket-level points with window metadata for service-layer merging
+	innerQuery += " GROUP BY bucket_start, window_start ORDER BY bucket_start"
 
-	// Build the complete query with CTE
-	query := fmt.Sprintf(`
-		WITH bucket_maxes AS (
-			%s
-		)
-		SELECT
-			window_start as timestamp,
-			sum(bucket_max) as usage,
-			max(bucket_max) as max_usage,
-			argMax(bucket_latest, window_start) as latest_usage,
-			sum(bucket_count_unique) as count_unique_usage,
-			sum(event_count) as event_count
-		FROM bucket_maxes
-	`, innerQuery)
-
-	// Add GROUP BY and ORDER BY clauses
-	query += " GROUP BY window_start ORDER BY window_start"
-
-	rows, err := r.store.GetConn().Query(ctx, query, queryParams...)
+	rows, err := r.store.GetConn().Query(ctx, innerQuery, queryParams...)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to execute MAX bucket points query").
@@ -1137,15 +1126,17 @@ func (r *FeatureUsageRepository) getMaxBucketPointsForGroup(ctx context.Context,
 	var points []events.UsageAnalyticPoint
 	for rows.Next() {
 		var point events.UsageAnalyticPoint
-		var timestamp time.Time
+		var bucketStart time.Time
+		var windowStart time.Time
 
+		// MAX bucket query returns: bucket_start, window_start, bucket_max, bucket_latest, bucket_count_unique, event_count
 		err := rows.Scan(
-			&timestamp,
-			&point.Usage,
-			&point.MaxUsage,
-			&point.LatestUsage,
-			&point.CountUniqueUsage,
-			&point.EventCount,
+			&bucketStart,
+			&windowStart,
+			&point.MaxUsage,         // bucket_max
+			&point.LatestUsage,      // bucket_latest
+			&point.CountUniqueUsage, // bucket_count_unique
+			&point.EventCount,       // event_count
 		)
 		if err != nil {
 			return nil, ierr.WithError(err).
@@ -1153,8 +1144,10 @@ func (r *FeatureUsageRepository) getMaxBucketPointsForGroup(ctx context.Context,
 				Mark(ierr.ErrDatabase)
 		}
 
-		point.Timestamp = timestamp
-		point.Cost = decimal.Zero // Will be calculated in enrichment
+		point.Timestamp = bucketStart   // Actual bucket timestamp
+		point.WindowStart = windowStart // Request window this bucket belongs to
+		point.Usage = point.MaxUsage    // For MAX, usage equals the max value
+		point.Cost = decimal.Zero       // Will be calculated in service layer
 		points = append(points, point)
 	}
 
@@ -1421,11 +1414,17 @@ func (r *FeatureUsageRepository) getSumBucketTotals(ctx context.Context, params 
 
 // getSumBucketPointsForGroup calculates time series points for a specific SUM bucket group
 func (r *FeatureUsageRepository) getSumBucketPointsForGroup(ctx context.Context, params *events.UsageAnalyticsParams, featureInfo *events.SumBucketFeatureInfo, group *events.DetailedUsageAnalytic) ([]events.UsageAnalyticPoint, error) {
-	// Build window expression based on request window size
-	windowExpr := r.formatWindowSize(featureInfo.BucketSize, params.BillingAnchor)
+	// Build window expressions: bucket size for inner aggregation, request window size for outer aggregation
+	bucketWindowExpr := r.formatWindowSize(featureInfo.BucketSize, nil)
 
-	// For SUM with bucket features, we need to first sum values within each bucket,
-	// then aggregate those sums within the request window
+	// For bucketed features, use the larger of params.WindowSize or bucket_size
+	// This ensures we don't generate points at a granularity smaller than the bucket size
+	effectiveWindowSize := params.WindowSize.Max(featureInfo.BucketSize)
+	requestWindowExpr := r.formatWindowSize(effectiveWindowSize, params.BillingAnchor)
+
+	// For SUM with bucket features, we need to:
+	// 1. First sum values within each bucket (feature's bucket_size)
+	// 2. Then aggregate those bucket sums within the request window (params.WindowSize)
 	// This version filters by the specific group's attributes (source, properties, etc.)
 
 	// Build inner query with filters
@@ -1444,7 +1443,7 @@ func (r *FeatureUsageRepository) getSumBucketPointsForGroup(ctx context.Context,
 		AND feature_id = ?
 		AND timestamp >= ?
 		AND timestamp < ?
-		AND sign != 0`, r.formatWindowSize(featureInfo.BucketSize, nil), windowExpr)
+		AND sign != 0`, bucketWindowExpr, requestWindowExpr)
 
 	queryParams := []interface{}{
 		params.TenantID,
@@ -1512,28 +1511,11 @@ func (r *FeatureUsageRepository) getSumBucketPointsForGroup(ctx context.Context,
 		}
 	}
 
-	// Complete the inner query with GROUP BY
-	innerQuery += " GROUP BY bucket_start, window_start"
+	// Complete the query with GROUP BY and ORDER BY
+	// Return bucket-level points with window metadata for service-layer merging
+	innerQuery += " GROUP BY bucket_start, window_start ORDER BY bucket_start"
 
-	// Build the complete query with CTE
-	query := fmt.Sprintf(`
-		WITH bucket_sums AS (
-			%s
-		)
-		SELECT
-			window_start as timestamp,
-			sum(bucket_sum) as usage,
-			max(bucket_sum) as max_usage,
-			argMax(bucket_latest, window_start) as latest_usage,
-			sum(bucket_count_unique) as count_unique_usage,
-			sum(event_count) as event_count
-		FROM bucket_sums
-	`, innerQuery)
-
-	// Add GROUP BY and ORDER BY clauses
-	query += " GROUP BY window_start ORDER BY window_start"
-
-	rows, err := r.store.GetConn().Query(ctx, query, queryParams...)
+	rows, err := r.store.GetConn().Query(ctx, innerQuery, queryParams...)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to execute SUM bucket points query").
@@ -1549,15 +1531,17 @@ func (r *FeatureUsageRepository) getSumBucketPointsForGroup(ctx context.Context,
 	var points []events.UsageAnalyticPoint
 	for rows.Next() {
 		var point events.UsageAnalyticPoint
-		var timestamp time.Time
+		var bucketStart time.Time
+		var windowStart time.Time
 
+		// SUM bucket query returns: bucket_start, window_start, bucket_sum, bucket_latest, bucket_count_unique, event_count
 		err := rows.Scan(
-			&timestamp,
-			&point.Usage,
-			&point.MaxUsage,
-			&point.LatestUsage,
-			&point.CountUniqueUsage,
-			&point.EventCount,
+			&bucketStart,
+			&windowStart,
+			&point.Usage,            // bucket_sum
+			&point.LatestUsage,      // bucket_latest
+			&point.CountUniqueUsage, // bucket_count_unique
+			&point.EventCount,       // event_count
 		)
 		if err != nil {
 			return nil, ierr.WithError(err).
@@ -1565,8 +1549,10 @@ func (r *FeatureUsageRepository) getSumBucketPointsForGroup(ctx context.Context,
 				Mark(ierr.ErrDatabase)
 		}
 
-		point.Timestamp = timestamp
-		point.Cost = decimal.Zero // Will be calculated in enrichment
+		point.Timestamp = bucketStart   // Actual bucket timestamp
+		point.WindowStart = windowStart // Request window this bucket belongs to
+		point.MaxUsage = point.Usage    // For SUM, max equals the sum value
+		point.Cost = decimal.Zero       // Will be calculated in service layer
 		points = append(points, point)
 	}
 
