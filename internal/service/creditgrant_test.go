@@ -148,23 +148,21 @@ func (s *CreditGrantServiceTestSuite) TestCreateSubscriptionWithOnetimeCreditGra
 	// Create one-time credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "One-time Credit Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
 		Credits:        decimal.NewFromInt(100),
 		Cadence:        types.CreditGrantCadenceOneTime,
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "onetime"},
 	}
 
+	creditGrantReq.SubscriptionID = &s.testData.subscription.ID
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
 	s.NoError(err)
 	s.NotNil(creditGrantResp)
 	s.Equal(types.CreditGrantCadenceOneTime, creditGrantResp.CreditGrant.Cadence)
-
-	// Apply the credit grant to subscription
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, s.testData.subscription, types.Metadata{})
-	s.NoError(err)
 
 	// Verify credit grant application was created
 	filter := &types.CreditGrantApplicationFilter{
@@ -186,7 +184,7 @@ func (s *CreditGrantServiceTestSuite) TestCreateSubscriptionWithRecurringCreditG
 	// Create recurring credit grant with no expiry
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Recurring Credit Grant - No Expiry",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
 		Credits:        decimal.NewFromInt(50),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
@@ -194,17 +192,17 @@ func (s *CreditGrantServiceTestSuite) TestCreateSubscriptionWithRecurringCreditG
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "recurring_no_expiry"},
 	}
 
+	creditGrantReq.SubscriptionID = &s.testData.subscription.ID
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
 	s.NoError(err)
 	s.NotNil(creditGrantResp)
 	s.Equal(types.CreditGrantCadenceRecurring, creditGrantResp.CreditGrant.Cadence)
 
-	// Apply the credit grant to subscription
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, s.testData.subscription, types.Metadata{})
-	s.NoError(err)
+	// No need to call ApplyCreditGrant, it's handled by initializeCreditGrantWorkflow via CreateCreditGrant
 
 	// Verify credit grant application was created for current period
 	filter := &types.CreditGrantApplicationFilter{
@@ -240,7 +238,7 @@ func (s *CreditGrantServiceTestSuite) TestCreateSubscriptionWithRecurringCreditG
 	// Create recurring credit grant with billing cycle expiry
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Recurring Credit Grant - With Expiry",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
 		Credits:        decimal.NewFromInt(25),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
@@ -248,18 +246,18 @@ func (s *CreditGrantServiceTestSuite) TestCreateSubscriptionWithRecurringCreditG
 		ExpirationType: types.CreditGrantExpiryTypeBillingCycle,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "recurring_with_expiry"},
 	}
 
+	creditGrantReq.SubscriptionID = &s.testData.subscription.ID
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
 	s.NoError(err)
 	s.NotNil(creditGrantResp)
 	s.Equal(types.CreditGrantCadenceRecurring, creditGrantResp.CreditGrant.Cadence)
 	s.Equal(types.CreditGrantExpiryTypeBillingCycle, creditGrantResp.CreditGrant.ExpirationType)
 
-	// Apply the credit grant to subscription
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, s.testData.subscription, types.Metadata{})
-	s.NoError(err)
+	// No need to call ApplyCreditGrant, it's handled by initializeCreditGrantWorkflow via CreateCreditGrant
 
 	// Verify credit grant application was created
 	filter := &types.CreditGrantApplicationFilter{
@@ -289,7 +287,7 @@ func (s *CreditGrantServiceTestSuite) TestWeeklyGrantMonthlySubscription() {
 	// Create weekly recurring credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Weekly Credit Grant - Monthly Subscription",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
 		Credits:        decimal.NewFromInt(15),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_WEEKLY),
@@ -297,16 +295,16 @@ func (s *CreditGrantServiceTestSuite) TestWeeklyGrantMonthlySubscription() {
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "weekly_grant_monthly_sub"},
 	}
 
+	creditGrantReq.SubscriptionID = &s.testData.subscription.ID
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
 	s.NoError(err)
 	s.Equal(types.CREDIT_GRANT_PERIOD_WEEKLY, lo.FromPtr(creditGrantResp.CreditGrant.Period))
 
-	// Apply the credit grant to subscription (subscription is monthly)
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, s.testData.subscription, types.Metadata{})
-	s.NoError(err)
+	// No need to call ApplyCreditGrant, it's handled by initializeCreditGrantWorkflow via CreateCreditGrant
 
 	// Verify applications created
 	filter := &types.CreditGrantApplicationFilter{
@@ -354,7 +352,7 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyGrantWeeklySubscription() {
 	// Create monthly recurring credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Monthly Credit Grant - Weekly Subscription",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
 		Credits:        decimal.NewFromInt(60),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
@@ -362,16 +360,16 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyGrantWeeklySubscription() {
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "monthly_grant_weekly_sub"},
 	}
 
+	creditGrantReq.SubscriptionID = &weeklySubscription.ID
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
 	s.NoError(err)
 	s.Equal(types.CREDIT_GRANT_PERIOD_MONTHLY, lo.FromPtr(creditGrantResp.CreditGrant.Period))
 
-	// Apply the credit grant to weekly subscription
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, weeklySubscription, types.Metadata{})
-	s.NoError(err)
+	// No need to call ApplyCreditGrant, it's handled by initializeCreditGrantWorkflow via CreateCreditGrant
 
 	// Verify applications created
 	filter := &types.CreditGrantApplicationFilter{
@@ -401,14 +399,14 @@ func (s *CreditGrantServiceTestSuite) TestProcessScheduledCreditGrantApplication
 	// Create a recurring credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Scheduled Credit Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &s.testData.subscription.ID,
 		Credits:        decimal.NewFromInt(75),
-		Cadence:        types.CreditGrantCadenceRecurring,
-		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
-		PeriodCount:    lo.ToPtr(1),
+		Cadence:        types.CreditGrantCadenceOneTime,
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "scheduled_processing"},
 	}
 
@@ -460,12 +458,14 @@ func (s *CreditGrantServiceTestSuite) TestCreditGrantApplicationDefaultProcessin
 	// Create a basic credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Basic Credit Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &s.testData.subscription.ID,
 		Credits:        decimal.NewFromInt(40),
 		Cadence:        types.CreditGrantCadenceOneTime,
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "default_processing"},
 	}
 
@@ -511,12 +511,14 @@ func (s *CreditGrantServiceTestSuite) TestFailedCreditGrantApplicationRetry() {
 	// Create a credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Retry Credit Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &s.testData.subscription.ID,
 		Credits:        decimal.NewFromInt(30),
 		Cadence:        types.CreditGrantCadenceOneTime,
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "retry_processing"},
 	}
 
@@ -584,7 +586,7 @@ func (s *CreditGrantServiceTestSuite) TestSubscriptionEndPreventsNextPeriodCGA()
 	// Create recurring credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Ending Subscription Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
 		Credits:        decimal.NewFromInt(50),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
@@ -592,15 +594,15 @@ func (s *CreditGrantServiceTestSuite) TestSubscriptionEndPreventsNextPeriodCGA()
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "ending_subscription"},
 	}
 
+	creditGrantReq.SubscriptionID = &subscriptionWithEnd.ID
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
 	s.NoError(err)
 
-	// Apply credit grant
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, subscriptionWithEnd, types.Metadata{})
-	s.NoError(err)
+	// No need to call ApplyCreditGrant, it's handled by initializeCreditGrantWorkflow via CreateCreditGrant
 
 	// Check applications created
 	filter := &types.CreditGrantApplicationFilter{
@@ -648,6 +650,42 @@ func (s *CreditGrantServiceTestSuite) TestErrorScenarios() {
 		s.True(ierr.IsNotFound(err))
 	})
 
+	s.Run("Anchor Before Start Date", func() {
+		startDate := time.Now().Add(24 * time.Hour)
+		anchorDate := time.Now() // Before start date
+		creditGrantReq := dto.CreateCreditGrantRequest{
+			Name:              "Invalid Anchor Grant",
+			Scope:             types.CreditGrantScopeSubscription,
+			SubscriptionID:    &s.testData.subscription.ID,
+			Credits:           decimal.NewFromInt(50),
+			Cadence:           types.CreditGrantCadenceOneTime,
+			ExpirationType:    types.CreditGrantExpiryTypeNever,
+			StartDate:         &startDate,
+			CreditGrantAnchor: &anchorDate,
+			PlanID:            &s.testData.plan.ID,
+		}
+
+		_, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
+		s.Error(err)
+		s.Contains(err.Error(), "credit_grant_anchor cannot be before start_date")
+	})
+
+	s.Run("Missing Start Date", func() {
+		creditGrantReq := dto.CreateCreditGrantRequest{
+			Name:           "Missing Start Date Grant",
+			Scope:          types.CreditGrantScopeSubscription,
+			SubscriptionID: &s.testData.subscription.ID,
+			Credits:        decimal.NewFromInt(50),
+			Cadence:        types.CreditGrantCadenceOneTime,
+			ExpirationType: types.CreditGrantExpiryTypeNever,
+			PlanID:         &s.testData.plan.ID,
+		}
+
+		_, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
+		s.Error(err)
+		s.Contains(err.Error(), "start_date is required")
+	})
+
 	s.Run("Get Non-existent Credit Grant", func() {
 		_, err := s.creditGrantService.GetCreditGrant(s.GetContext(), "non_existent_id")
 		s.Error(err)
@@ -660,12 +698,14 @@ func (s *CreditGrantServiceTestSuite) TestUpdateCreditGrant() {
 	// Create a credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Update Test Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &s.testData.subscription.ID,
 		Credits:        decimal.NewFromInt(35),
 		Cadence:        types.CreditGrantCadenceOneTime,
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"original": "value"},
 	}
 
@@ -689,12 +729,14 @@ func (s *CreditGrantServiceTestSuite) TestDeleteCreditGrant() {
 	// Create a credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Delete Test Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &s.testData.subscription.ID,
 		Credits:        decimal.NewFromInt(45),
 		Cadence:        types.CreditGrantCadenceOneTime,
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 	}
 
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
@@ -715,7 +757,7 @@ func (s *CreditGrantServiceTestSuite) TestWeeklyCreditGrantPeriodDates() {
 	// Create weekly recurring credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Weekly Period Test Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
 		Credits:        decimal.NewFromInt(20),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_WEEKLY),
@@ -723,15 +765,15 @@ func (s *CreditGrantServiceTestSuite) TestWeeklyCreditGrantPeriodDates() {
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "weekly_period_dates"},
 	}
 
+	creditGrantReq.SubscriptionID = &s.testData.subscription.ID
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
 	s.NoError(err)
 
-	// Apply the credit grant to subscription
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, s.testData.subscription, types.Metadata{})
-	s.NoError(err)
+	// No need to call ApplyCreditGrant, it's handled by initializeCreditGrantWorkflow via CreateCreditGrant
 
 	// Verify applications and their period dates
 	filter := &types.CreditGrantApplicationFilter{
@@ -792,7 +834,8 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 	// Create monthly recurring credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Monthly Period Test Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &s.testData.subscription.ID,
 		Credits:        decimal.NewFromInt(100),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
@@ -800,14 +843,11 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "monthly_period_dates"},
 	}
 
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
-	s.NoError(err)
-
-	// Apply the credit grant to subscription
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, s.testData.subscription, types.Metadata{})
 	s.NoError(err)
 
 	// Verify applications and their period dates
@@ -871,7 +911,8 @@ func (s *CreditGrantServiceTestSuite) TestYearlyCreditGrantPeriodDates() {
 	// Create yearly recurring credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Yearly Period Test Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &s.testData.subscription.ID,
 		Credits:        decimal.NewFromInt(1200),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_ANNUAL),
@@ -879,14 +920,11 @@ func (s *CreditGrantServiceTestSuite) TestYearlyCreditGrantPeriodDates() {
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "yearly_period_dates"},
 	}
 
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
-	s.NoError(err)
-
-	// Apply the credit grant to subscription
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, s.testData.subscription, types.Metadata{})
 	s.NoError(err)
 
 	// Verify applications and their period dates
@@ -950,7 +988,8 @@ func (s *CreditGrantServiceTestSuite) TestMultiplePeriodCountDates() {
 	// Create bi-weekly credit grant (every 2 weeks)
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Bi-Weekly Period Test Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &s.testData.subscription.ID,
 		Credits:        decimal.NewFromInt(40),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_WEEKLY),
@@ -958,14 +997,11 @@ func (s *CreditGrantServiceTestSuite) TestMultiplePeriodCountDates() {
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &s.testData.now,
 		Metadata:       types.Metadata{"test": "bi_weekly_period_dates"},
 	}
 
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
-	s.NoError(err)
-
-	// Apply the credit grant to subscription
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, s.testData.subscription, types.Metadata{})
 	s.NoError(err)
 
 	// Verify applications and their period dates
@@ -1050,7 +1086,8 @@ func (s *CreditGrantServiceTestSuite) TestPeriodDatesAlignmentWithGrantCreationD
 	// Create monthly recurring credit grant
 	creditGrantReq := dto.CreateCreditGrantRequest{
 		Name:           "Alignment Test Grant",
-		Scope:          types.CreditGrantScopePlan,
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &testSubscription.ID,
 		Credits:        decimal.NewFromInt(50),
 		Cadence:        types.CreditGrantCadenceRecurring,
 		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
@@ -1058,14 +1095,11 @@ func (s *CreditGrantServiceTestSuite) TestPeriodDatesAlignmentWithGrantCreationD
 		ExpirationType: types.CreditGrantExpiryTypeNever,
 		Priority:       lo.ToPtr(1),
 		PlanID:         &s.testData.plan.ID,
+		StartDate:      &specificTime,
 		Metadata:       types.Metadata{"test": "alignment_dates"},
 	}
 
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
-	s.NoError(err)
-
-	// Apply the credit grant to subscription
-	err = s.creditGrantService.ApplyCreditGrant(s.GetContext(), creditGrantResp.CreditGrant, testSubscription, types.Metadata{})
 	s.NoError(err)
 
 	// Verify applications and their period dates

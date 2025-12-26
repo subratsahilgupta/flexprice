@@ -648,10 +648,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 					}).
 					Mark(ierr.ErrValidation)
 			}
-
-			if err := grant.Validate(); err != nil {
-				return err
-			}
 		}
 	}
 

@@ -103,6 +103,24 @@ func (c *CreditGrant) Validate() error {
 		}
 	}
 
+	if c.Scope == types.CreditGrantScopeSubscription && c.StartDate == nil {
+		return ierr.NewError("start_date is required for subscription-scoped grants").
+			WithHint("Please provide a start date for the credit grant").
+			Mark(ierr.ErrValidation)
+	}
+
+	if c.CreditGrantAnchor != nil && c.StartDate != nil {
+		if c.CreditGrantAnchor.Before(*c.StartDate) {
+			return ierr.NewError("credit_grant_anchor cannot be before start_date").
+				WithHint("The anchor date must be on or after the start date").
+				WithReportableDetails(map[string]interface{}{
+					"start_date":          c.StartDate,
+					"credit_grant_anchor": c.CreditGrantAnchor,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	return nil
 }
 
