@@ -465,7 +465,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 	// IMPORTANT: For recurring grants, expiry should be calculated from when the credit is actually granted,
 	// not from subscription start date. This ensures each grant has its own expiry timeline.
 	var expiryDate *time.Time
-	scheduledFor := cga.ScheduledFor
+	effectiveDate := cga.PeriodStart
 
 	if grant.ExpirationType == types.CreditGrantExpiryTypeNever {
 		expiryDate = nil
@@ -477,16 +477,16 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 			// This ensures recurring grants each have their own expiry timeline
 			switch lo.FromPtr(grant.ExpirationDurationUnit) {
 			case types.CreditGrantExpiryDurationUnitDays:
-				expiry := scheduledFor.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration))
+				expiry := effectiveDate.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration))
 				expiryDate = lo.ToPtr(expiry)
 			case types.CreditGrantExpiryDurationUnitWeeks:
-				expiry := scheduledFor.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration)*7)
+				expiry := effectiveDate.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration)*7)
 				expiryDate = lo.ToPtr(expiry)
 			case types.CreditGrantExpiryDurationUnitMonths:
-				expiry := scheduledFor.AddDate(0, lo.FromPtr(grant.ExpirationDuration), 0)
+				expiry := effectiveDate.AddDate(0, lo.FromPtr(grant.ExpirationDuration), 0)
 				expiryDate = lo.ToPtr(expiry)
 			case types.CreditGrantExpiryDurationUnitYears:
-				expiry := scheduledFor.AddDate(lo.FromPtr(grant.ExpirationDuration), 0, 0)
+				expiry := effectiveDate.AddDate(lo.FromPtr(grant.ExpirationDuration), 0, 0)
 				expiryDate = lo.ToPtr(expiry)
 			default:
 				return ierr.NewError("invalid expiration duration unit").
