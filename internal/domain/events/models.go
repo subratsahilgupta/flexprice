@@ -71,10 +71,11 @@ type DetailedUsageAnalytic struct {
 
 // UsageAnalyticPoint represents a data point in a time series
 type UsageAnalyticPoint struct {
-	Timestamp  time.Time
-	Usage      decimal.Decimal `swaggertype:"string"`
-	Cost       decimal.Decimal `swaggertype:"string"`
-	EventCount uint64          // Number of events in this time window
+	Timestamp   time.Time
+	WindowStart time.Time       // For bucketed features: which request window this bucket belongs to
+	Usage       decimal.Decimal `swaggertype:"string"`
+	Cost        decimal.Decimal `swaggertype:"string"`
+	EventCount  uint64          // Number of events in this time window
 
 	// All aggregation values for this time point
 	MaxUsage         decimal.Decimal `swaggertype:"string"` // MAX(qty_total * sign)

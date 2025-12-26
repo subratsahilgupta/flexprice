@@ -1686,11 +1686,40 @@ func (s *featureUsageTrackingService) calculateBucketedCost(ctx context.Context,
 			cost = priceService.CalculateBucketedCost(ctx, price, bucketedValues)
 		}
 
-		// Calculate cost for each point (standard calculation, points don't reflect commitment/overage breakdown easily)
-		// Note: Points cost sum might not equal TotalCost when commitment is involved
-		for i := range item.Points {
-			pointCost := priceService.CalculateCost(ctx, price, s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationMax))
-			item.Points[i].Cost = pointCost
+		// Calculate cost for each point
+		// For windowed commitments, we should apply commitment at each point level
+		// For non-windowed or no commitment, calculate standard costs
+		if item.SubLineItemID != "" {
+			lineItem := data.SubscriptionLineItems[item.SubLineItemID]
+			if lineItem != nil && lineItem.HasCommitment() && lineItem.CommitmentWindowed {
+				// Apply commitment at each point (window) level
+				commitmentCalc := newCommitmentCalculator(s.Logger, priceService)
+				for i := range item.Points {
+					pointUsage := s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationMax)
+					// Apply commitment to this single point/window
+					pointCost, _, err := commitmentCalc.applyWindowCommitmentToLineItem(
+						ctx, lineItem, []decimal.Decimal{pointUsage}, price)
+					if err != nil {
+						s.Logger.Warnw("failed to apply window commitment to point",
+							"error", err, "point_index", i, "line_item_id", lineItem.ID)
+						// Fallback to standard calculation
+						pointCost = priceService.CalculateCost(ctx, price, pointUsage)
+					}
+					item.Points[i].Cost = pointCost
+				}
+			} else {
+				// Standard calculation for non-windowed or no commitment
+				for i := range item.Points {
+					pointCost := priceService.CalculateCost(ctx, price, s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationMax))
+					item.Points[i].Cost = pointCost
+				}
+			}
+		} else {
+			// No line item, standard calculation
+			for i := range item.Points {
+				pointCost := priceService.CalculateCost(ctx, price, s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationMax))
+				item.Points[i].Cost = pointCost
+			}
 		}
 	} else {
 		// Treat total usage as single bucket
@@ -1742,10 +1771,40 @@ func (s *featureUsageTrackingService) calculateSumWithBucketCost(ctx context.Con
 		}
 
 		// Calculate cost for each point (bucket)
-		for i := range item.Points {
-			pointUsage := s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationSum)
-			pointCost := priceService.CalculateCost(ctx, price, pointUsage)
-			item.Points[i].Cost = pointCost
+		// For windowed commitments, apply commitment at each point level
+		if item.SubLineItemID != "" {
+			lineItem := data.SubscriptionLineItems[item.SubLineItemID]
+			if lineItem != nil && lineItem.HasCommitment() && lineItem.CommitmentWindowed {
+				// Apply commitment at each point (window) level
+				commitmentCalc := newCommitmentCalculator(s.Logger, priceService)
+				for i := range item.Points {
+					pointUsage := s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationSum)
+					// Apply commitment to this single point/window
+					pointCost, _, err := commitmentCalc.applyWindowCommitmentToLineItem(
+						ctx, lineItem, []decimal.Decimal{pointUsage}, price)
+					if err != nil {
+						s.Logger.Warnw("failed to apply window commitment to point",
+							"error", err, "point_index", i, "line_item_id", lineItem.ID)
+						// Fallback to standard calculation
+						pointCost = priceService.CalculateCost(ctx, price, pointUsage)
+					}
+					item.Points[i].Cost = pointCost
+				}
+			} else {
+				// Standard calculation for non-windowed or no commitment
+				for i := range item.Points {
+					pointUsage := s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationSum)
+					pointCost := priceService.CalculateCost(ctx, price, pointUsage)
+					item.Points[i].Cost = pointCost
+				}
+			}
+		} else {
+			// No line item, standard calculation
+			for i := range item.Points {
+				pointUsage := s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationSum)
+				pointCost := priceService.CalculateCost(ctx, price, pointUsage)
+				item.Points[i].Cost = pointCost
+			}
 		}
 	} else {
 		// Treat total usage as single bucket if no points available
@@ -2294,24 +2353,9 @@ func (s *featureUsageTrackingService) ToGetUsageAnalyticsResponseDTO(ctx context
 			}
 		}
 
-		// Set window size: always use meter's bucket size if bucketed, otherwise use request window size
-		if analytic.MeterID != "" {
-			if meter, ok := data.Meters[analytic.MeterID]; ok {
-				if meter.HasBucketSize() {
-					// For bucketed meters, always use the meter's bucket size
-					item.WindowSize = meter.Aggregation.BucketSize
-				} else {
-					// For non-bucketed meters, use the request window size
-					item.WindowSize = req.WindowSize
-				}
-			} else {
-				// Meter not found in data, fall back to request window size
-				item.WindowSize = req.WindowSize
-			}
-		} else {
-			// No meter ID, use request window size
-			item.WindowSize = req.WindowSize
-		}
+		// Set window size: Now always use request window size since bucketed features
+		// merge their points to match the request window size
+		item.WindowSize = req.WindowSize
 
 		if expandMap["feature"] && analytic.FeatureID != "" {
 			if feature, ok := data.Features[analytic.FeatureID]; ok {
