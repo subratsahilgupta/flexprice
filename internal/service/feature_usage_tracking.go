@@ -2371,9 +2371,26 @@ func (s *featureUsageTrackingService) ToGetUsageAnalyticsResponseDTO(ctx context
 			}
 		}
 
-		// Set window size: Now always use request window size since bucketed features
-		// merge their points to match the request window size
-		item.WindowSize = req.WindowSize
+		// Set window size in response:
+		// - For bucketed features: show the feature's bucket size (underlying granularity)
+		// - For non-bucketed features: show the request window size
+		if analytic.MeterID != "" {
+			if meter, ok := data.Meters[analytic.MeterID]; ok {
+				if meter.HasBucketSize() {
+					// Bucketed feature: show bucket size
+					item.WindowSize = meter.Aggregation.BucketSize
+				} else {
+					// Non-bucketed feature: show request window size
+					item.WindowSize = req.WindowSize
+				}
+			} else {
+				// Meter not found, default to request window size
+				item.WindowSize = req.WindowSize
+			}
+		} else {
+			// No meter ID, use request window size
+			item.WindowSize = req.WindowSize
+		}
 
 		if expandMap["feature"] && analytic.FeatureID != "" {
 			if feature, ok := data.Features[analytic.FeatureID]; ok {
