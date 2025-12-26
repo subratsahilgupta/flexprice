@@ -1531,11 +1531,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 
 	// Set credits available based on transaction type
 	if req.Type == types.TransactionTypeCredit {
-		if tx.CreditBalanceAfter.LessThanOrEqual(decimal.Zero) {
-			tx.CreditsAvailable = decimal.Zero
-		} else {
-			tx.CreditsAvailable = req.CreditAmount
-		}
+		tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditBalanceAfter)
 	} else {
 		tx.CreditsAvailable = decimal.Zero
 	}
