@@ -473,8 +473,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 
 	if grant.ExpirationType == types.CreditGrantExpiryTypeDuration {
 		if grant.ExpirationDurationUnit != nil && grant.ExpirationDuration != nil && lo.FromPtr(grant.ExpirationDuration) > 0 {
-			// Calculate expiry from current time (when grant is being applied), not subscription start
-			// This ensures recurring grants each have their own expiry timeline
+
 			switch lo.FromPtr(grant.ExpirationDurationUnit) {
 			case types.CreditGrantExpiryDurationUnitDays:
 				expiry := effectiveDate.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration))
