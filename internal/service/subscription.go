@@ -1101,103 +1101,28 @@ func (s *subscriptionService) handleCreditGrants(
 		"credit_grants_count", len(creditGrantRequests))
 
 	// Create and apply credit grants
+
+	startDate := subscription.StartDate
+	if subscription.TrialEnd != nil {
+		startDate = lo.FromPtr(subscription.TrialEnd)
+	}
+
 	for _, grantReq := range creditGrantRequests {
 		// Ensure subscription ID is set and scope is SUBSCRIPTION
-		grantReq.SubscriptionID = &subscription.ID
+		grantReq.SubscriptionID = lo.ToPtr(subscription.ID)
 		grantReq.Scope = types.CreditGrantScopeSubscription
+		grantReq.StartDate = lo.ToPtr(startDate)
+		grantReq.EndDate = subscription.EndDate
 
-		// Create credit grant in DB
-		createdGrant, err := creditGrantService.CreateCreditGrant(ctx, grantReq)
+		// Use subscription start date as the anchor for the credit grant chain
+		grantReq.CreditGrantAnchor = lo.ToPtr(startDate)
+
+		// Create credit grant: this now triggers initializeCreditGrantWorkflow
+		// which handles creation, anchor calculation, and eager application
+		_, err := creditGrantService.CreateCreditGrant(ctx, grantReq)
 		if err != nil {
-			return ierr.WithError(err).
-				WithHint("Failed to create credit grant for subscription").
-				WithReportableDetails(map[string]interface{}{
-					"subscription_id": subscription.ID,
-					"grant_name":      grantReq.Name,
-				}).
-				Mark(ierr.ErrDatabase)
+			return err
 		}
-
-		// Check subscription status before applying credit grant
-		// Incomplete subscriptions should defer credit grants until they become active
-		stateHandler := NewSubscriptionStateHandler(subscription, createdGrant.CreditGrant)
-		action, err := stateHandler.DetermineCreditGrantAction()
-		if err != nil {
-			return ierr.WithError(err).
-				WithHint("Failed to determine credit grant action").
-				WithReportableDetails(map[string]interface{}{
-					"subscription_id":     subscription.ID,
-					"grant_id":            createdGrant.ID,
-					"subscription_status": subscription.SubscriptionStatus,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-
-		// Only apply credit grant if subscription status allows it
-		// For incomplete subscriptions, the grant will be deferred and applied later
-		// when the subscription becomes active (via scheduled application processing)
-		metadata := types.Metadata{
-			"created_during": "subscription_creation",
-			"grant_name":     createdGrant.Name,
-		}
-
-		if action == StateActionApply {
-			// Apply the credit grant using the new simplified method
-			err = creditGrantService.ApplyCreditGrant(
-				ctx,
-				createdGrant.CreditGrant,
-				subscription,
-				metadata,
-			)
-
-			if err != nil {
-				return ierr.WithError(err).
-					WithHint("Failed to apply credit grant for subscription").
-					WithReportableDetails(map[string]interface{}{
-						"subscription_id": subscription.ID,
-						"grant_id":        createdGrant.ID,
-						"grant_name":      createdGrant.Name,
-					}).
-					Mark(ierr.ErrDatabase)
-			}
-		} else if action == StateActionDefer || action == StateActionSkip {
-			// For deferred/skipped actions, create a CGA so it can be processed later
-			// when the subscription becomes active (via scheduled application processing)
-			// This ensures the credit grant will be applied when the subscription status changes
-			_, err = creditGrantService.CreateScheduledCreditGrantApplication(
-				ctx,
-				createdGrant.CreditGrant,
-				subscription,
-				metadata,
-			)
-
-			if err != nil {
-				return ierr.WithError(err).
-					WithHint("Failed to create scheduled credit grant application").
-					WithReportableDetails(map[string]interface{}{
-						"subscription_id": subscription.ID,
-						"grant_id":        createdGrant.ID,
-						"grant_name":      createdGrant.Name,
-						"action":          action,
-					}).
-					Mark(ierr.ErrDatabase)
-			}
-
-			s.Logger.Infow("credit grant scheduled for later processing during subscription creation",
-				"subscription_id", subscription.ID,
-				"grant_id", createdGrant.ID,
-				"subscription_status", subscription.SubscriptionStatus,
-				"action", action)
-		} else if action == StateActionCancel {
-			// For cancelled actions, don't create a CGA as the subscription is cancelled
-			// and credits should not be applied
-			s.Logger.Infow("credit grant cancelled during subscription creation",
-				"subscription_id", subscription.ID,
-				"grant_id", createdGrant.ID,
-				"subscription_status", subscription.SubscriptionStatus,
-				"action", action)
-		}
-
 	}
 
 	return nil
@@ -1440,9 +1365,9 @@ func (s *subscriptionService) CancelSubscription(
 			return err
 		}
 
-		// Step 8: Cancel future credit grants
+		// Step 8: Void future credit grants
 		creditGrantService := NewCreditGrantService(s.ServiceParams)
-		err = creditGrantService.CancelFutureCreditGrantsOfSubscription(ctx, subscription.ID)
+		err = creditGrantService.CancelFutureSubscriptionGrants(ctx, subscription.ID)
 		if err != nil {
 			return err
 		}
@@ -3763,7 +3688,7 @@ func (s *subscriptionService) processPendingCreditGrantsForSubscription(ctx cont
 		}
 
 		// Apply the credit grant to wallet
-		err = creditGrantService.ApplyCreditGrantToWallet(ctx, creditGrant.CreditGrant, sub, cga)
+		err = creditGrantService.ProcessCreditGrantApplication(ctx, cga.ID)
 		if err != nil {
 			s.Logger.Errorw("failed to apply credit grant to wallet",
 				"application_id", cga.ID,

@@ -55,15 +55,12 @@ const (
 type SubscriptionStatus string
 
 const (
-	SubscriptionStatusActive            SubscriptionStatus = "active"
-	SubscriptionStatusPaused            SubscriptionStatus = "paused"
-	SubscriptionStatusCancelled         SubscriptionStatus = "cancelled"
-	SubscriptionStatusIncomplete        SubscriptionStatus = "incomplete"
-	SubscriptionStatusIncompleteExpired SubscriptionStatus = "incomplete_expired"
-	SubscriptionStatusPastDue           SubscriptionStatus = "past_due"
-	SubscriptionStatusTrialing          SubscriptionStatus = "trialing"
-	SubscriptionStatusUnpaid            SubscriptionStatus = "unpaid"
-	SubscriptionStatusDraft             SubscriptionStatus = "draft"
+	SubscriptionStatusActive     SubscriptionStatus = "active"
+	SubscriptionStatusPaused     SubscriptionStatus = "paused"
+	SubscriptionStatusCancelled  SubscriptionStatus = "cancelled"
+	SubscriptionStatusIncomplete SubscriptionStatus = "incomplete"
+	SubscriptionStatusTrialing   SubscriptionStatus = "trialing"
+	SubscriptionStatusDraft      SubscriptionStatus = "draft"
 )
 
 func (s SubscriptionStatus) String() string {
@@ -76,11 +73,7 @@ func (s SubscriptionStatus) Validate() error {
 		SubscriptionStatusPaused,
 		SubscriptionStatusCancelled,
 		SubscriptionStatusIncomplete,
-		SubscriptionStatusIncompleteExpired,
-		SubscriptionStatusPastDue,
 		SubscriptionStatusTrialing,
-		SubscriptionStatusUnpaid,
-		SubscriptionStatusIncompleteExpired,
 		SubscriptionStatusDraft,
 	}
 

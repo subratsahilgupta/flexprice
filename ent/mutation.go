@@ -12120,6 +12120,9 @@ type CreditGrantMutation struct {
 	priority                 *int
 	addpriority              *int
 	metadata                 *map[string]string
+	start_date               *time.Time
+	end_date                 *time.Time
+	credit_grant_anchor      *time.Time
 	clearedFields            map[string]struct{}
 	plan                     *string
 	clearedplan              bool
@@ -13160,6 +13163,153 @@ func (m *CreditGrantMutation) ResetMetadata() {
 	delete(m.clearedFields, creditgrant.FieldMetadata)
 }
 
+// SetStartDate sets the "start_date" field.
+func (m *CreditGrantMutation) SetStartDate(t time.Time) {
+	m.start_date = &t
+}
+
+// StartDate returns the value of the "start_date" field in the mutation.
+func (m *CreditGrantMutation) StartDate() (r time.Time, exists bool) {
+	v := m.start_date
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartDate returns the old "start_date" field's value of the CreditGrant entity.
+// If the CreditGrant object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreditGrantMutation) OldStartDate(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartDate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartDate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartDate: %w", err)
+	}
+	return oldValue.StartDate, nil
+}
+
+// ClearStartDate clears the value of the "start_date" field.
+func (m *CreditGrantMutation) ClearStartDate() {
+	m.start_date = nil
+	m.clearedFields[creditgrant.FieldStartDate] = struct{}{}
+}
+
+// StartDateCleared returns if the "start_date" field was cleared in this mutation.
+func (m *CreditGrantMutation) StartDateCleared() bool {
+	_, ok := m.clearedFields[creditgrant.FieldStartDate]
+	return ok
+}
+
+// ResetStartDate resets all changes to the "start_date" field.
+func (m *CreditGrantMutation) ResetStartDate() {
+	m.start_date = nil
+	delete(m.clearedFields, creditgrant.FieldStartDate)
+}
+
+// SetEndDate sets the "end_date" field.
+func (m *CreditGrantMutation) SetEndDate(t time.Time) {
+	m.end_date = &t
+}
+
+// EndDate returns the value of the "end_date" field in the mutation.
+func (m *CreditGrantMutation) EndDate() (r time.Time, exists bool) {
+	v := m.end_date
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEndDate returns the old "end_date" field's value of the CreditGrant entity.
+// If the CreditGrant object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreditGrantMutation) OldEndDate(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEndDate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEndDate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEndDate: %w", err)
+	}
+	return oldValue.EndDate, nil
+}
+
+// ClearEndDate clears the value of the "end_date" field.
+func (m *CreditGrantMutation) ClearEndDate() {
+	m.end_date = nil
+	m.clearedFields[creditgrant.FieldEndDate] = struct{}{}
+}
+
+// EndDateCleared returns if the "end_date" field was cleared in this mutation.
+func (m *CreditGrantMutation) EndDateCleared() bool {
+	_, ok := m.clearedFields[creditgrant.FieldEndDate]
+	return ok
+}
+
+// ResetEndDate resets all changes to the "end_date" field.
+func (m *CreditGrantMutation) ResetEndDate() {
+	m.end_date = nil
+	delete(m.clearedFields, creditgrant.FieldEndDate)
+}
+
+// SetCreditGrantAnchor sets the "credit_grant_anchor" field.
+func (m *CreditGrantMutation) SetCreditGrantAnchor(t time.Time) {
+	m.credit_grant_anchor = &t
+}
+
+// CreditGrantAnchor returns the value of the "credit_grant_anchor" field in the mutation.
+func (m *CreditGrantMutation) CreditGrantAnchor() (r time.Time, exists bool) {
+	v := m.credit_grant_anchor
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditGrantAnchor returns the old "credit_grant_anchor" field's value of the CreditGrant entity.
+// If the CreditGrant object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreditGrantMutation) OldCreditGrantAnchor(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditGrantAnchor is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditGrantAnchor requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditGrantAnchor: %w", err)
+	}
+	return oldValue.CreditGrantAnchor, nil
+}
+
+// ClearCreditGrantAnchor clears the value of the "credit_grant_anchor" field.
+func (m *CreditGrantMutation) ClearCreditGrantAnchor() {
+	m.credit_grant_anchor = nil
+	m.clearedFields[creditgrant.FieldCreditGrantAnchor] = struct{}{}
+}
+
+// CreditGrantAnchorCleared returns if the "credit_grant_anchor" field was cleared in this mutation.
+func (m *CreditGrantMutation) CreditGrantAnchorCleared() bool {
+	_, ok := m.clearedFields[creditgrant.FieldCreditGrantAnchor]
+	return ok
+}
+
+// ResetCreditGrantAnchor resets all changes to the "credit_grant_anchor" field.
+func (m *CreditGrantMutation) ResetCreditGrantAnchor() {
+	m.credit_grant_anchor = nil
+	delete(m.clearedFields, creditgrant.FieldCreditGrantAnchor)
+}
+
 // ClearPlan clears the "plan" edge to the Plan entity.
 func (m *CreditGrantMutation) ClearPlan() {
 	m.clearedplan = true
@@ -13248,7 +13398,7 @@ func (m *CreditGrantMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CreditGrantMutation) Fields() []string {
-	fields := make([]string, 0, 20)
+	fields := make([]string, 0, 23)
 	if m.tenant_id != nil {
 		fields = append(fields, creditgrant.FieldTenantID)
 	}
@@ -13309,6 +13459,15 @@ func (m *CreditGrantMutation) Fields() []string {
 	if m.metadata != nil {
 		fields = append(fields, creditgrant.FieldMetadata)
 	}
+	if m.start_date != nil {
+		fields = append(fields, creditgrant.FieldStartDate)
+	}
+	if m.end_date != nil {
+		fields = append(fields, creditgrant.FieldEndDate)
+	}
+	if m.credit_grant_anchor != nil {
+		fields = append(fields, creditgrant.FieldCreditGrantAnchor)
+	}
 	return fields
 }
 
@@ -13357,6 +13516,12 @@ func (m *CreditGrantMutation) Field(name string) (ent.Value, bool) {
 		return m.Priority()
 	case creditgrant.FieldMetadata:
 		return m.Metadata()
+	case creditgrant.FieldStartDate:
+		return m.StartDate()
+	case creditgrant.FieldEndDate:
+		return m.EndDate()
+	case creditgrant.FieldCreditGrantAnchor:
+		return m.CreditGrantAnchor()
 	}
 	return nil, false
 }
@@ -13406,6 +13571,12 @@ func (m *CreditGrantMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldPriority(ctx)
 	case creditgrant.FieldMetadata:
 		return m.OldMetadata(ctx)
+	case creditgrant.FieldStartDate:
+		return m.OldStartDate(ctx)
+	case creditgrant.FieldEndDate:
+		return m.OldEndDate(ctx)
+	case creditgrant.FieldCreditGrantAnchor:
+		return m.OldCreditGrantAnchor(ctx)
 	}
 	return nil, fmt.Errorf("unknown CreditGrant field %s", name)
 }
@@ -13555,6 +13726,27 @@ func (m *CreditGrantMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetMetadata(v)
 		return nil
+	case creditgrant.FieldStartDate:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartDate(v)
+		return nil
+	case creditgrant.FieldEndDate:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEndDate(v)
+		return nil
+	case creditgrant.FieldCreditGrantAnchor:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditGrantAnchor(v)
+		return nil
 	}
 	return fmt.Errorf("unknown CreditGrant field %s", name)
 }
@@ -13657,6 +13849,15 @@ func (m *CreditGrantMutation) ClearedFields() []string {
 	if m.FieldCleared(creditgrant.FieldMetadata) {
 		fields = append(fields, creditgrant.FieldMetadata)
 	}
+	if m.FieldCleared(creditgrant.FieldStartDate) {
+		fields = append(fields, creditgrant.FieldStartDate)
+	}
+	if m.FieldCleared(creditgrant.FieldEndDate) {
+		fields = append(fields, creditgrant.FieldEndDate)
+	}
+	if m.FieldCleared(creditgrant.FieldCreditGrantAnchor) {
+		fields = append(fields, creditgrant.FieldCreditGrantAnchor)
+	}
 	return fields
 }
 
@@ -13703,6 +13904,15 @@ func (m *CreditGrantMutation) ClearField(name string) error {
 		return nil
 	case creditgrant.FieldMetadata:
 		m.ClearMetadata()
+		return nil
+	case creditgrant.FieldStartDate:
+		m.ClearStartDate()
+		return nil
+	case creditgrant.FieldEndDate:
+		m.ClearEndDate()
+		return nil
+	case creditgrant.FieldCreditGrantAnchor:
+		m.ClearCreditGrantAnchor()
 		return nil
 	}
 	return fmt.Errorf("unknown CreditGrant nullable field %s", name)
@@ -13771,6 +13981,15 @@ func (m *CreditGrantMutation) ResetField(name string) error {
 		return nil
 	case creditgrant.FieldMetadata:
 		m.ResetMetadata()
+		return nil
+	case creditgrant.FieldStartDate:
+		m.ResetStartDate()
+		return nil
+	case creditgrant.FieldEndDate:
+		m.ResetEndDate()
+		return nil
+	case creditgrant.FieldCreditGrantAnchor:
+		m.ResetCreditGrantAnchor()
 		return nil
 	}
 	return fmt.Errorf("unknown CreditGrant field %s", name)
