@@ -199,14 +199,6 @@ func (s *creditGrantService) CreateCreditGrant(ctx context.Context, req dto.Crea
 }
 
 func (s *creditGrantService) InitializeCreditGrantWorkflow(ctx context.Context, cg creditgrant.CreditGrant) (*creditgrant.CreditGrant, error) {
-	// 2. Determine initial anchor and dates for the first CGA
-	// Use CreditGrantAnchor if provided, otherwise fallback to StartDate or CreatedAt
-	anchor := cg.CreatedAt
-	if cg.CreditGrantAnchor != nil {
-		anchor = lo.FromPtr(cg.CreditGrantAnchor)
-	} else if cg.StartDate != nil {
-		anchor = lo.FromPtr(cg.StartDate)
-	}
 
 	// 3. Calculate period for the first application
 	periodStart := lo.FromPtr(cg.StartDate)
@@ -263,7 +255,7 @@ func (s *creditGrantService) InitializeCreditGrantWorkflow(ctx context.Context, 
 	}
 
 	// 6. Eager application: if the grant is due now or in the past, process it immediately
-	if anchor.Before(time.Now()) || anchor.Equal(time.Now()) {
+	if cg.CreditGrantAnchor.Before(time.Now()) || cg.CreditGrantAnchor.Equal(time.Now()) {
 		// Use a background context or a sub-context to avoid blocking the main creation if processing fails
 		// Though for initialization, we might want it to be synchronous if it fails due to validation
 		if err := s.processScheduledApplication(ctx, cga); err != nil {
@@ -828,15 +820,9 @@ func CalculateNextCreditGrantPeriod(grant creditgrant.CreditGrant, nextPeriodSta
 		return time.Time{}, time.Time{}, err
 	}
 
-	// Use CreditGrantAnchor if provided for anchor calculation, otherwise fallback to CreatedAt
-	anchor := grant.CreatedAt
-	if grant.CreditGrantAnchor != nil {
-		anchor = lo.FromPtr(grant.CreditGrantAnchor)
-	}
-
 	// Calculate next period end using the anchor for consistent cycle calculation
 	// We pass nil for subscriptionEndDate because we handle that at a higher level during application
-	nextPeriodEnd, err := types.NextBillingDate(nextPeriodStart, anchor, lo.FromPtr(grant.PeriodCount), billingPeriod, nil)
+	nextPeriodEnd, err := types.NextBillingDate(nextPeriodStart, lo.FromPtr(grant.CreditGrantAnchor), lo.FromPtr(grant.PeriodCount), billingPeriod, nil)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}

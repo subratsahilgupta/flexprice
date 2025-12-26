@@ -112,7 +112,7 @@ func (r *CreateCreditGrantRequest) Validate() error {
 				}).
 				Mark(errors.ErrValidation)
 		}
-		// Billing anchor cannot be before start date
+		// Credit grant anchor cannot be before start date
 		if r.CreditGrantAnchor != nil && r.StartDate != nil && r.CreditGrantAnchor.Before(*r.StartDate) {
 			return errors.NewError("credit_grant_anchor cannot be before start_date").
 				WithHint("Credit grant anchor must be on or after the start date").
