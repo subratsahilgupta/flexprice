@@ -1011,7 +1011,11 @@ func (r *FeatureUsageRepository) getMaxBucketTotals(ctx context.Context, params 
 func (r *FeatureUsageRepository) getMaxBucketPointsForGroup(ctx context.Context, params *events.UsageAnalyticsParams, featureInfo *events.MaxBucketFeatureInfo, group *events.DetailedUsageAnalytic) ([]events.UsageAnalyticPoint, error) {
 	// Build window expressions: bucket size for inner aggregation, request window size for outer aggregation
 	bucketWindowExpr := r.formatWindowSize(featureInfo.BucketSize, nil)
-	requestWindowExpr := r.formatWindowSize(params.WindowSize, params.BillingAnchor)
+
+	// For bucketed features, use the larger of params.WindowSize or bucket_size
+	// This ensures we don't generate points at a granularity smaller than the bucket size
+	effectiveWindowSize := params.WindowSize.Max(featureInfo.BucketSize)
+	requestWindowExpr := r.formatWindowSize(effectiveWindowSize, params.BillingAnchor)
 
 	// For MAX with bucket features, we need to:
 	// 1. First get max within each bucket (feature's bucket_size)
@@ -1412,7 +1416,11 @@ func (r *FeatureUsageRepository) getSumBucketTotals(ctx context.Context, params 
 func (r *FeatureUsageRepository) getSumBucketPointsForGroup(ctx context.Context, params *events.UsageAnalyticsParams, featureInfo *events.SumBucketFeatureInfo, group *events.DetailedUsageAnalytic) ([]events.UsageAnalyticPoint, error) {
 	// Build window expressions: bucket size for inner aggregation, request window size for outer aggregation
 	bucketWindowExpr := r.formatWindowSize(featureInfo.BucketSize, nil)
-	requestWindowExpr := r.formatWindowSize(params.WindowSize, params.BillingAnchor)
+
+	// For bucketed features, use the larger of params.WindowSize or bucket_size
+	// This ensures we don't generate points at a granularity smaller than the bucket size
+	effectiveWindowSize := params.WindowSize.Max(featureInfo.BucketSize)
+	requestWindowExpr := r.formatWindowSize(effectiveWindowSize, params.BillingAnchor)
 
 	// For SUM with bucket features, we need to:
 	// 1. First sum values within each bucket (feature's bucket_size)
