@@ -782,8 +782,8 @@ func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, gr
 
 	// check if this cga is valid for the next period
 	// for this subscription, is the next period end after the subscription end?
-	if subscription.EndDate != nil && nextPeriodEnd.After(lo.FromPtr(subscription.EndDate)) {
-		s.Logger.Infow("Next period end is after subscription end, skipping", "grant_id", grant.ID, "subscription_id", subscription.ID)
+	if grant.EndDate != nil && nextPeriodEnd.After(lo.FromPtr(grant.EndDate)) {
+		s.Logger.Infow("Next period end is after grant end, skipping", "grant_id", grant.ID, "subscription_id", subscription.ID)
 		return nil
 	}
 
