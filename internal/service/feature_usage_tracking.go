@@ -1697,7 +1697,7 @@ func (s *featureUsageTrackingService) calculateBucketedCost(ctx context.Context,
 				for i := range item.Points {
 					pointUsage := s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationMax)
 					// Apply commitment to this single point/window
-					pointCost, _, err := commitmentCalc.applyWindowCommitmentToLineItem(
+					pointCost, commitmentInfo, err := commitmentCalc.applyWindowCommitmentToLineItem(
 						ctx, lineItem, []decimal.Decimal{pointUsage}, price)
 					if err != nil {
 						s.Logger.Warnw("failed to apply window commitment to point",
@@ -1706,6 +1706,12 @@ func (s *featureUsageTrackingService) calculateBucketedCost(ctx context.Context,
 						pointCost = priceService.CalculateCost(ctx, price, pointUsage)
 					}
 					item.Points[i].Cost = pointCost
+					// Extract commitment fields if available
+					if commitmentInfo != nil {
+						item.Points[i].ComputedCommitmentUtilizedAmount = commitmentInfo.ComputedCommitmentUtilizedAmount
+						item.Points[i].ComputedOverageAmount = commitmentInfo.ComputedOverageAmount
+						item.Points[i].ComputedTrueUpAmount = commitmentInfo.ComputedTrueUpAmount
+					}
 				}
 			} else {
 				// Standard calculation for non-windowed or no commitment
@@ -1721,6 +1727,9 @@ func (s *featureUsageTrackingService) calculateBucketedCost(ctx context.Context,
 				item.Points[i].Cost = pointCost
 			}
 		}
+
+		// Merge bucket-level points into request window-level points
+		item.Points = s.mergeBucketPointsByWindow(item.Points, types.AggregationMax)
 	} else {
 		// Treat total usage as single bucket
 		if item.MaxUsage.IsPositive() {
@@ -1780,7 +1789,7 @@ func (s *featureUsageTrackingService) calculateSumWithBucketCost(ctx context.Con
 				for i := range item.Points {
 					pointUsage := s.getCorrectUsageValueForPoint(item.Points[i], types.AggregationSum)
 					// Apply commitment to this single point/window
-					pointCost, _, err := commitmentCalc.applyWindowCommitmentToLineItem(
+					pointCost, commitmentInfo, err := commitmentCalc.applyWindowCommitmentToLineItem(
 						ctx, lineItem, []decimal.Decimal{pointUsage}, price)
 					if err != nil {
 						s.Logger.Warnw("failed to apply window commitment to point",
@@ -1789,6 +1798,12 @@ func (s *featureUsageTrackingService) calculateSumWithBucketCost(ctx context.Con
 						pointCost = priceService.CalculateCost(ctx, price, pointUsage)
 					}
 					item.Points[i].Cost = pointCost
+					// Extract commitment fields if available
+					if commitmentInfo != nil {
+						item.Points[i].ComputedCommitmentUtilizedAmount = commitmentInfo.ComputedCommitmentUtilizedAmount
+						item.Points[i].ComputedOverageAmount = commitmentInfo.ComputedOverageAmount
+						item.Points[i].ComputedTrueUpAmount = commitmentInfo.ComputedTrueUpAmount
+					}
 				}
 			} else {
 				// Standard calculation for non-windowed or no commitment
@@ -1806,6 +1821,9 @@ func (s *featureUsageTrackingService) calculateSumWithBucketCost(ctx context.Con
 				item.Points[i].Cost = pointCost
 			}
 		}
+
+		// Merge bucket-level points into request window-level points
+		item.Points = s.mergeBucketPointsByWindow(item.Points, types.AggregationSum)
 	} else {
 		// Treat total usage as single bucket if no points available
 		totalUsage := s.getCorrectUsageValue(item, types.AggregationSum)
@@ -2389,10 +2407,13 @@ func (s *featureUsageTrackingService) ToGetUsageAnalyticsResponseDTO(ctx context
 				// Use the correct usage value based on aggregation type
 				correctUsage := s.getCorrectUsageValueForPoint(point, analytic.AggregationType)
 				item.Points = append(item.Points, dto.UsageAnalyticPoint{
-					Timestamp:  point.Timestamp,
-					Usage:      correctUsage,
-					Cost:       point.Cost,
-					EventCount: point.EventCount,
+					Timestamp:                        point.Timestamp,
+					Usage:                            correctUsage,
+					Cost:                             point.Cost,
+					EventCount:                       point.EventCount,
+					ComputedCommitmentUtilizedAmount: point.ComputedCommitmentUtilizedAmount,
+					ComputedOverageAmount:            point.ComputedOverageAmount,
+					ComputedTrueUpAmount:             point.ComputedTrueUpAmount,
 				})
 			}
 		}
@@ -2711,4 +2732,80 @@ func (s *featureUsageTrackingService) applyLineItemCommitment(
 
 	s.Logger.Warnw("failed to apply commitment", "error", err, "line_item_id", lineItem.ID)
 	return rawCost
+}
+
+func (s *featureUsageTrackingService) mergeBucketPointsByWindow(points []events.UsageAnalyticPoint, aggregationType types.AggregationType) []events.UsageAnalyticPoint {
+	if len(points) == 0 {
+		return points
+	}
+
+	// Check if points have WindowStart set (bucketed features)
+	if points[0].WindowStart.IsZero() {
+		// Not bucketed, return as-is
+		return points
+	}
+
+	// Group points by WindowStart
+	windowGroups := make(map[time.Time][]events.UsageAnalyticPoint)
+	for _, point := range points {
+		windowGroups[point.WindowStart] = append(windowGroups[point.WindowStart], point)
+	}
+
+	// Merge each window group
+	mergedPoints := make([]events.UsageAnalyticPoint, 0, len(windowGroups))
+	for windowStart, bucketPoints := range windowGroups {
+		merged := events.UsageAnalyticPoint{
+			Timestamp:                        windowStart, // Use window start as the timestamp
+			WindowStart:                      windowStart,
+			Cost:                             decimal.Zero,
+			EventCount:                       0,
+			ComputedCommitmentUtilizedAmount: decimal.Zero,
+			ComputedOverageAmount:            decimal.Zero,
+			ComputedTrueUpAmount:             decimal.Zero,
+		}
+
+		// Aggregate values from all buckets in this window
+		for _, bucket := range bucketPoints {
+			merged.Cost = merged.Cost.Add(bucket.Cost)
+			merged.EventCount += bucket.EventCount
+			merged.ComputedCommitmentUtilizedAmount = merged.ComputedCommitmentUtilizedAmount.Add(bucket.ComputedCommitmentUtilizedAmount)
+			merged.ComputedOverageAmount = merged.ComputedOverageAmount.Add(bucket.ComputedOverageAmount)
+			merged.ComputedTrueUpAmount = merged.ComputedTrueUpAmount.Add(bucket.ComputedTrueUpAmount)
+		}
+
+		// For usage, aggregation depends on type
+		if aggregationType == types.AggregationMax {
+			// For MAX, take the maximum usage across all buckets
+			maxUsage := decimal.Zero
+			for _, bucket := range bucketPoints {
+				if bucket.MaxUsage.GreaterThan(maxUsage) {
+					maxUsage = bucket.MaxUsage
+				}
+			}
+			merged.Usage = maxUsage
+			merged.MaxUsage = maxUsage
+		} else {
+			// For SUM, sum all bucket usages
+			sumUsage := decimal.Zero
+			for _, bucket := range bucketPoints {
+				sumUsage = sumUsage.Add(bucket.Usage)
+			}
+			merged.Usage = sumUsage
+			merged.MaxUsage = sumUsage
+		}
+
+		// Take latest usage from the last bucket in time
+		for _, bucket := range bucketPoints {
+			merged.LatestUsage = bucket.LatestUsage // Will end up with the last one
+		}
+
+		mergedPoints = append(mergedPoints, merged)
+	}
+
+	// Sort by timestamp
+	sort.Slice(mergedPoints, func(i, j int) bool {
+		return mergedPoints[i].Timestamp.Before(mergedPoints[j].Timestamp)
+	})
+
+	return mergedPoints
 }

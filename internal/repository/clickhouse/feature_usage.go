@@ -1125,14 +1125,14 @@ func (r *FeatureUsageRepository) getMaxBucketPointsForGroup(ctx context.Context,
 		var bucketStart time.Time
 		var windowStart time.Time
 
+		// MAX bucket query returns: bucket_start, window_start, bucket_max, bucket_latest, bucket_count_unique, event_count
 		err := rows.Scan(
 			&bucketStart,
 			&windowStart,
-			&point.Usage,
-			&point.MaxUsage,
-			&point.LatestUsage,
-			&point.CountUniqueUsage,
-			&point.EventCount,
+			&point.MaxUsage,         // bucket_max
+			&point.LatestUsage,      // bucket_latest
+			&point.CountUniqueUsage, // bucket_count_unique
+			&point.EventCount,       // event_count
 		)
 		if err != nil {
 			return nil, ierr.WithError(err).
@@ -1142,6 +1142,7 @@ func (r *FeatureUsageRepository) getMaxBucketPointsForGroup(ctx context.Context,
 
 		point.Timestamp = bucketStart   // Actual bucket timestamp
 		point.WindowStart = windowStart // Request window this bucket belongs to
+		point.Usage = point.MaxUsage    // For MAX, usage equals the max value
 		point.Cost = decimal.Zero       // Will be calculated in service layer
 		points = append(points, point)
 	}
@@ -1525,14 +1526,14 @@ func (r *FeatureUsageRepository) getSumBucketPointsForGroup(ctx context.Context,
 		var bucketStart time.Time
 		var windowStart time.Time
 
+		// SUM bucket query returns: bucket_start, window_start, bucket_sum, bucket_latest, bucket_count_unique, event_count
 		err := rows.Scan(
 			&bucketStart,
 			&windowStart,
-			&point.Usage,
-			&point.MaxUsage,
-			&point.LatestUsage,
-			&point.CountUniqueUsage,
-			&point.EventCount,
+			&point.Usage,            // bucket_sum
+			&point.LatestUsage,      // bucket_latest
+			&point.CountUniqueUsage, // bucket_count_unique
+			&point.EventCount,       // event_count
 		)
 		if err != nil {
 			return nil, ierr.WithError(err).
@@ -1542,6 +1543,7 @@ func (r *FeatureUsageRepository) getSumBucketPointsForGroup(ctx context.Context,
 
 		point.Timestamp = bucketStart   // Actual bucket timestamp
 		point.WindowStart = windowStart // Request window this bucket belongs to
+		point.MaxUsage = point.Usage    // For SUM, max equals the sum value
 		point.Cost = decimal.Zero       // Will be calculated in service layer
 		points = append(points, point)
 	}

@@ -77,6 +77,11 @@ type UsageAnalyticPoint struct {
 	Cost        decimal.Decimal `swaggertype:"string"`
 	EventCount  uint64          // Number of events in this time window
 
+	// Commitment breakdown (for windowed commitments)
+	ComputedCommitmentUtilizedAmount decimal.Decimal `swaggertype:"string"` // Amount of commitment utilized
+	ComputedOverageAmount            decimal.Decimal `swaggertype:"string"` // Overage charge amount
+	ComputedTrueUpAmount             decimal.Decimal `swaggertype:"string"` // True-up amount charged
+
 	// All aggregation values for this time point
 	MaxUsage         decimal.Decimal `swaggertype:"string"` // MAX(qty_total * sign)
 	LatestUsage      decimal.Decimal `swaggertype:"string"` // argMax(qty_total, timestamp)
