@@ -1678,7 +1678,16 @@ func (s *featureUsageTrackingService) calculateBucketedCost(ctx context.Context,
 			lineItem := data.SubscriptionLineItems[item.SubLineItemID]
 
 			if lineItem != nil && lineItem.HasCommitment() {
-				cost = s.applyLineItemCommitment(ctx, priceService, item, lineItem, price, bucketedValues, decimal.Zero)
+				// For windowed commitments, skip aggregate cost calculation
+				// as we'll apply commitment per-point and sum the results
+				if lineItem.CommitmentWindowed {
+					// Don't apply commitment at aggregate level for windowed commitments
+					// Cost will be calculated from sum of point costs after merging
+					cost = decimal.Zero
+				} else {
+					// Non-windowed commitment: apply at aggregate level
+					cost = s.applyLineItemCommitment(ctx, priceService, item, lineItem, price, bucketedValues, decimal.Zero)
+				}
 			} else {
 				cost = priceService.CalculateBucketedCost(ctx, price, bucketedValues)
 			}
@@ -1730,6 +1739,19 @@ func (s *featureUsageTrackingService) calculateBucketedCost(ctx context.Context,
 
 		// Merge bucket-level points into request window-level points
 		item.Points = s.mergeBucketPointsByWindow(item.Points, types.AggregationMax)
+
+		// For windowed commitments, calculate total cost from merged point costs
+		if item.SubLineItemID != "" {
+			lineItem := data.SubscriptionLineItems[item.SubLineItemID]
+			if lineItem != nil && lineItem.HasCommitment() && lineItem.CommitmentWindowed {
+				// Sum all point costs to get total
+				totalFromPoints := decimal.Zero
+				for _, point := range item.Points {
+					totalFromPoints = totalFromPoints.Add(point.Cost)
+				}
+				cost = totalFromPoints
+			}
+		}
 	} else {
 		// Treat total usage as single bucket
 		if item.MaxUsage.IsPositive() {
@@ -1767,11 +1789,19 @@ func (s *featureUsageTrackingService) calculateSumWithBucketCost(ctx context.Con
 		// Check for line item commitment
 		if item.SubLineItemID != "" {
 			// Find the line item
-
 			lineItem := data.SubscriptionLineItems[item.SubLineItemID]
 
 			if lineItem != nil && lineItem.HasCommitment() {
-				cost = s.applyLineItemCommitment(ctx, priceService, item, lineItem, price, bucketedValues, decimal.Zero)
+				// For windowed commitments, skip aggregate cost calculation
+				// as we'll apply commitment per-point and sum the results
+				if lineItem.CommitmentWindowed {
+					// Don't apply commitment at aggregate level for windowed commitments
+					// Cost will be calculated from sum of point costs after merging
+					cost = decimal.Zero
+				} else {
+					// Non-windowed commitment: apply at aggregate level
+					cost = s.applyLineItemCommitment(ctx, priceService, item, lineItem, price, bucketedValues, decimal.Zero)
+				}
 			} else {
 				cost = priceService.CalculateBucketedCost(ctx, price, bucketedValues)
 			}
@@ -1824,6 +1854,19 @@ func (s *featureUsageTrackingService) calculateSumWithBucketCost(ctx context.Con
 
 		// Merge bucket-level points into request window-level points
 		item.Points = s.mergeBucketPointsByWindow(item.Points, types.AggregationSum)
+
+		// For windowed commitments, calculate total cost from merged point costs
+		if item.SubLineItemID != "" {
+			lineItem := data.SubscriptionLineItems[item.SubLineItemID]
+			if lineItem != nil && lineItem.HasCommitment() && lineItem.CommitmentWindowed {
+				// Sum all point costs to get total
+				totalFromPoints := decimal.Zero
+				for _, point := range item.Points {
+					totalFromPoints = totalFromPoints.Add(point.Cost)
+				}
+				cost = totalFromPoints
+			}
+		}
 	} else {
 		// Treat total usage as single bucket if no points available
 		totalUsage := s.getCorrectUsageValue(item, types.AggregationSum)
@@ -2811,9 +2854,15 @@ func (s *featureUsageTrackingService) mergeBucketPointsByWindow(points []events.
 			merged.MaxUsage = sumUsage
 		}
 
-		// Take latest usage from the last bucket in time
-		for _, bucket := range bucketPoints {
-			merged.LatestUsage = bucket.LatestUsage // Will end up with the last one
+		// Find the chronologically latest bucket to get LatestUsage
+		var latestBucket *events.UsageAnalyticPoint
+		for i := range bucketPoints {
+			if latestBucket == nil || bucketPoints[i].Timestamp.After(latestBucket.Timestamp) {
+				latestBucket = &bucketPoints[i]
+			}
+		}
+		if latestBucket != nil {
+			merged.LatestUsage = latestBucket.LatestUsage
 		}
 
 		mergedPoints = append(mergedPoints, merged)
