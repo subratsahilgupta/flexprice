@@ -560,6 +560,17 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		if err := r.validateShouldAllowProrationOnStartDate(r); err != nil {
 			return err
 		}
+
+		// Validate that proration and entitlement overrides are not both enabled
+		if len(r.OverrideEntitlements) > 0 {
+			return ierr.NewError("cannot enable proration with custom entitlement overrides").
+				WithHint("Proration automatically calculates entitlements. Remove override_entitlements or disable proration.").
+				WithReportableDetails(map[string]interface{}{
+					"proration_behavior":          r.ProrationBehavior,
+					"override_entitlements_count": len(r.OverrideEntitlements),
+				}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 
 	if r.BillingPeriodCount < 1 {
