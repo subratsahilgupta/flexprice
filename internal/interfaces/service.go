@@ -31,6 +31,8 @@ type PaymentService interface {
 	ListPayments(ctx context.Context, filter *types.PaymentFilter) (*dto.ListPaymentsResponse, error)
 	UpdatePayment(ctx context.Context, id string, req dto.UpdatePaymentRequest) (*dto.PaymentResponse, error)
 	DeletePayment(ctx context.Context, id string) error
+	GetPaymentByGatewayTrackingID(ctx context.Context, gatewayTrackingID, gateway string) (*dto.PaymentResponse, error)
+	PaymentExistsByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (bool, error)
 }
 
 // InvoiceService defines the interface for invoice operations
@@ -121,6 +123,11 @@ type SubscriptionService interface {
 
 	// ListByCustomerID retrieves all active subscriptions for a customer
 	ListByCustomerID(ctx context.Context, customerID string) ([]*subscription.Subscription, error)
+
+	// ActivateDraftSubscription activates a draft subscription with a new start date
+	ActivateDraftSubscription(ctx context.Context, subID string, req dto.ActivateDraftSubscriptionRequest) (*dto.SubscriptionResponse, error)
+
+	GetActiveAddonAssociations(ctx context.Context, subscriptionID string) (*dto.ListAddonAssociationsResponse, error)
 }
 
 type ServiceDependencies struct {

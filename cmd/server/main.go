@@ -18,6 +18,7 @@ import (
 	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
+	kafkaPubsub "github.com/flexprice/flexprice/internal/pubsub/kafka"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/pyroscope"
 	"github.com/flexprice/flexprice/internal/rbac"
@@ -126,6 +127,7 @@ func main() {
 			repository.NewEventRepository,
 			repository.NewProcessedEventRepository,
 			repository.NewFeatureUsageRepository,
+			repository.NewCostSheetUsageRepository,
 			repository.NewMeterRepository,
 			repository.NewUserRepository,
 			repository.NewAuthRepository,
@@ -176,6 +178,13 @@ func main() {
 	// Webhook module (must be initialised before services)
 	opts = append(opts, webhook.Module)
 
+	// Provide Wallet Balance Alert PubSub
+	opts = append(opts,
+		fx.Provide(
+			provideWalletBalanceAlertPubSub,
+		),
+	)
+
 	// Service layer
 	opts = append(opts,
 		fx.Provide(
@@ -184,6 +193,7 @@ func main() {
 			integration.NewFactory,
 			syncExport.NewExportService,
 			service.NewServiceParams,
+			service.NewOAuthService,
 			service.NewTenantService,
 			service.NewAuthService,
 			service.NewUserService,
@@ -194,6 +204,7 @@ func main() {
 			service.NewEventPostProcessingService,
 			service.NewEventConsumptionService,
 			service.NewFeatureUsageTrackingService,
+			service.NewCostSheetUsageTrackingService,
 			service.NewPriceService,
 			service.NewCustomerService,
 			service.NewPlanService,
@@ -223,6 +234,8 @@ func main() {
 			service.NewAlertLogsService,
 			service.NewGroupService,
 			service.NewScheduledTaskService,
+			service.NewWalletPaymentService,
+			service.NewWalletBalanceAlertService,
 		),
 	)
 
@@ -295,6 +308,8 @@ func provideHandlers(
 	db postgres.IClient,
 	scheduledTaskService service.ScheduledTaskService,
 	rbacService *rbac.RBACService,
+	oauthService service.OAuthService,
+	costsheetUsageTrackingService service.CostSheetUsageTrackingService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, featureUsageTrackingService, cfg, logger),
@@ -324,7 +339,7 @@ func provideHandlers(
 		CronInvoice:              cron.NewInvoiceHandler(invoiceService, subscriptionService, connectionService, tenantService, environmentService, integrationFactory, logger),
 		CreditGrant:              v1.NewCreditGrantHandler(creditGrantService, logger),
 		Costsheet:                v1.NewCostsheetHandler(costsheetService, logger),
-		RevenueAnalytics:         v1.NewRevenueAnalyticsHandler(revenueAnalyticsService, cfg, logger),
+		RevenueAnalytics:         v1.NewRevenueAnalyticsHandler(revenueAnalyticsService, costsheetUsageTrackingService, cfg, logger),
 		CronCreditGrant:          cron.NewCreditGrantCronHandler(creditGrantService, logger),
 		CreditNote:               v1.NewCreditNoteHandler(creditNoteService, logger),
 		Connection:               v1.NewConnectionHandler(connectionService, logger),
@@ -339,6 +354,7 @@ func provideHandlers(
 		ScheduledTask:            v1.NewScheduledTaskHandler(scheduledTaskService, logger),
 		AlertLogsHandler:         v1.NewAlertLogsHandler(alertLogsService, customerService, walletService, featureService, logger),
 		RBAC:                     v1.NewRBACHandler(rbacService, userService, logger),
+		OAuth:                    v1.NewOAuthHandler(oauthService, cfg.OAuth.RedirectURI, logger),
 		CronKafkaLagMonitoring:   cron.NewKafkaLagMonitoringHandler(logger, eventService),
 	}
 }
@@ -410,6 +426,8 @@ func startServer(
 	eventPostProcessingSvc service.EventPostProcessingService,
 	eventConsumptionSvc service.EventConsumptionService,
 	featureUsageSvc service.FeatureUsageTrackingService,
+	costSheetUsageSvc service.CostSheetUsageTrackingService,
+	walletBalanceAlertSvc service.WalletBalanceAlertService,
 	params service.ServiceParams,
 ) {
 	mode := cfg.Deployment.Mode
@@ -425,14 +443,14 @@ func startServer(
 		startAPIServer(lc, r, cfg, log)
 
 		// Register all handlers and start router once
-		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, cfg, true)
+		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, costSheetUsageSvc, walletBalanceAlertSvc, cfg, true)
 		startRouter(lc, router, log)
 		startTemporalWorker(lc, temporalService, params)
 	case types.ModeAPI:
 		startAPIServer(lc, r, cfg, log)
 
 		// Register all handlers and start router once (no event consumption)
-		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, cfg, false)
+		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, costSheetUsageSvc, walletBalanceAlertSvc, cfg, false)
 		startRouter(lc, router, log)
 
 	case types.ModeTemporalWorker:
@@ -443,7 +461,7 @@ func startServer(
 		}
 
 		// Register all handlers and start router once
-		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, cfg, true)
+		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, costSheetUsageSvc, walletBalanceAlertSvc, cfg, true)
 		startRouter(lc, router, log)
 	default:
 		log.Fatalf("Unknown deployment mode: %s", mode)
@@ -508,6 +526,8 @@ func registerRouterHandlers(
 	eventPostProcessingSvc service.EventPostProcessingService,
 	eventConsumptionSvc service.EventConsumptionService,
 	featureUsageSvc service.FeatureUsageTrackingService,
+	costSheetUsageSvc service.CostSheetUsageTrackingService,
+	walletBalanceAlertSvc service.WalletBalanceAlertService,
 	cfg *config.Configuration,
 	includeProcessingHandlers bool,
 ) {
@@ -520,9 +540,12 @@ func registerRouterHandlers(
 		// Register handlers
 		eventConsumptionSvc.RegisterHandler(router, cfg)
 		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
-		eventPostProcessingSvc.RegisterHandler(router, cfg)
+		// eventPostProcessingSvc.RegisterHandler(router, cfg)
 		featureUsageSvc.RegisterHandler(router, cfg)
 		featureUsageSvc.RegisterHandlerLazy(router, cfg)
+		costSheetUsageSvc.RegisterHandler(router, cfg)
+		costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
+		walletBalanceAlertSvc.RegisterHandler(router, cfg)
 	}
 }
 
@@ -546,4 +569,20 @@ func startRouter(
 			return router.Close()
 		},
 	})
+}
+
+func provideWalletBalanceAlertPubSub(
+	cfg *config.Configuration,
+	logger *logger.Logger,
+) types.WalletBalanceAlertPubSub {
+	pubSub, err := kafkaPubsub.NewPubSubFromConfig(
+		cfg,
+		logger,
+		cfg.WalletBalanceAlert.ConsumerGroup,
+	)
+	if err != nil {
+		logger.Fatalw("failed to create pubsub for wallet alerts", "error", err)
+		return types.WalletBalanceAlertPubSub{}
+	}
+	return types.WalletBalanceAlertPubSub{PubSub: pubSub}
 }

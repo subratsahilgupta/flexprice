@@ -25,6 +25,12 @@ type Cache interface {
 
 	// Flush removes all items from the cache
 	Flush(ctx context.Context)
+
+	// ForceCacheGet retrieves a value from the cache without checking if the cache is enabled
+	ForceCacheGet(ctx context.Context, key string) (interface{}, bool)
+
+	// ForceCacheSet adds a value to the cache without checking if the cache is enabled
+	ForceCacheSet(ctx context.Context, key string, value interface{}, expiration time.Duration)
 }
 
 // Predefined cache key prefixes for different entity types
@@ -57,6 +63,8 @@ const (
 	PrefixConnection               = "connection:v1:"
 	PrefixSettings                 = "settings:v1:"
 	PrefixSubscriptionLineItem     = "subscription_line_item:v1:"
+	PrefixWalletAlertThrottle      = "wallet_alert_throttle:v1:"
+	PrefixCostsheet                = "costsheet:v1:"
 )
 
 // GenerateKey creates a cache key from a prefix and a set of parameters

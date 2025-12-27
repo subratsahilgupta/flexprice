@@ -13,10 +13,12 @@ import (
 	"github.com/flexprice/flexprice/ent/couponapplication"
 	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/creditgrant"
+	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/ent/subscriptionlineitem"
 	"github.com/flexprice/flexprice/ent/subscriptionpause"
 	"github.com/flexprice/flexprice/ent/subscriptionphase"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -144,15 +146,15 @@ func (sc *SubscriptionCreate) SetPlanID(s string) *SubscriptionCreate {
 }
 
 // SetSubscriptionStatus sets the "subscription_status" field.
-func (sc *SubscriptionCreate) SetSubscriptionStatus(s string) *SubscriptionCreate {
-	sc.mutation.SetSubscriptionStatus(s)
+func (sc *SubscriptionCreate) SetSubscriptionStatus(ts types.SubscriptionStatus) *SubscriptionCreate {
+	sc.mutation.SetSubscriptionStatus(ts)
 	return sc
 }
 
 // SetNillableSubscriptionStatus sets the "subscription_status" field if the given value is not nil.
-func (sc *SubscriptionCreate) SetNillableSubscriptionStatus(s *string) *SubscriptionCreate {
-	if s != nil {
-		sc.SetSubscriptionStatus(*s)
+func (sc *SubscriptionCreate) SetNillableSubscriptionStatus(ts *types.SubscriptionStatus) *SubscriptionCreate {
+	if ts != nil {
+		sc.SetSubscriptionStatus(*ts)
 	}
 	return sc
 }
@@ -304,14 +306,14 @@ func (sc *SubscriptionCreate) SetNillableTrialEnd(t *time.Time) *SubscriptionCre
 }
 
 // SetBillingCadence sets the "billing_cadence" field.
-func (sc *SubscriptionCreate) SetBillingCadence(s string) *SubscriptionCreate {
-	sc.mutation.SetBillingCadence(s)
+func (sc *SubscriptionCreate) SetBillingCadence(tc types.BillingCadence) *SubscriptionCreate {
+	sc.mutation.SetBillingCadence(tc)
 	return sc
 }
 
 // SetBillingPeriod sets the "billing_period" field.
-func (sc *SubscriptionCreate) SetBillingPeriod(s string) *SubscriptionCreate {
-	sc.mutation.SetBillingPeriod(s)
+func (sc *SubscriptionCreate) SetBillingPeriod(tp types.BillingPeriod) *SubscriptionCreate {
+	sc.mutation.SetBillingPeriod(tp)
 	return sc
 }
 
@@ -350,15 +352,15 @@ func (sc *SubscriptionCreate) SetMetadata(m map[string]string) *SubscriptionCrea
 }
 
 // SetPauseStatus sets the "pause_status" field.
-func (sc *SubscriptionCreate) SetPauseStatus(s string) *SubscriptionCreate {
-	sc.mutation.SetPauseStatus(s)
+func (sc *SubscriptionCreate) SetPauseStatus(ts types.PauseStatus) *SubscriptionCreate {
+	sc.mutation.SetPauseStatus(ts)
 	return sc
 }
 
 // SetNillablePauseStatus sets the "pause_status" field if the given value is not nil.
-func (sc *SubscriptionCreate) SetNillablePauseStatus(s *string) *SubscriptionCreate {
-	if s != nil {
-		sc.SetPauseStatus(*s)
+func (sc *SubscriptionCreate) SetNillablePauseStatus(ts *types.PauseStatus) *SubscriptionCreate {
+	if ts != nil {
+		sc.SetPauseStatus(*ts)
 	}
 	return sc
 }
@@ -378,15 +380,15 @@ func (sc *SubscriptionCreate) SetNillableActivePauseID(s *string) *SubscriptionC
 }
 
 // SetBillingCycle sets the "billing_cycle" field.
-func (sc *SubscriptionCreate) SetBillingCycle(s string) *SubscriptionCreate {
-	sc.mutation.SetBillingCycle(s)
+func (sc *SubscriptionCreate) SetBillingCycle(tc types.BillingCycle) *SubscriptionCreate {
+	sc.mutation.SetBillingCycle(tc)
 	return sc
 }
 
 // SetNillableBillingCycle sets the "billing_cycle" field if the given value is not nil.
-func (sc *SubscriptionCreate) SetNillableBillingCycle(s *string) *SubscriptionCreate {
-	if s != nil {
-		sc.SetBillingCycle(*s)
+func (sc *SubscriptionCreate) SetNillableBillingCycle(tc *types.BillingCycle) *SubscriptionCreate {
+	if tc != nil {
+		sc.SetBillingCycle(*tc)
 	}
 	return sc
 }
@@ -420,29 +422,29 @@ func (sc *SubscriptionCreate) SetNillableOverageFactor(d *decimal.Decimal) *Subs
 }
 
 // SetPaymentBehavior sets the "payment_behavior" field.
-func (sc *SubscriptionCreate) SetPaymentBehavior(sb subscription.PaymentBehavior) *SubscriptionCreate {
-	sc.mutation.SetPaymentBehavior(sb)
+func (sc *SubscriptionCreate) SetPaymentBehavior(tb types.PaymentBehavior) *SubscriptionCreate {
+	sc.mutation.SetPaymentBehavior(tb)
 	return sc
 }
 
 // SetNillablePaymentBehavior sets the "payment_behavior" field if the given value is not nil.
-func (sc *SubscriptionCreate) SetNillablePaymentBehavior(sb *subscription.PaymentBehavior) *SubscriptionCreate {
-	if sb != nil {
-		sc.SetPaymentBehavior(*sb)
+func (sc *SubscriptionCreate) SetNillablePaymentBehavior(tb *types.PaymentBehavior) *SubscriptionCreate {
+	if tb != nil {
+		sc.SetPaymentBehavior(*tb)
 	}
 	return sc
 }
 
 // SetCollectionMethod sets the "collection_method" field.
-func (sc *SubscriptionCreate) SetCollectionMethod(sm subscription.CollectionMethod) *SubscriptionCreate {
-	sc.mutation.SetCollectionMethod(sm)
+func (sc *SubscriptionCreate) SetCollectionMethod(tm types.CollectionMethod) *SubscriptionCreate {
+	sc.mutation.SetCollectionMethod(tm)
 	return sc
 }
 
 // SetNillableCollectionMethod sets the "collection_method" field if the given value is not nil.
-func (sc *SubscriptionCreate) SetNillableCollectionMethod(sm *subscription.CollectionMethod) *SubscriptionCreate {
-	if sm != nil {
-		sc.SetCollectionMethod(*sm)
+func (sc *SubscriptionCreate) SetNillableCollectionMethod(tm *types.CollectionMethod) *SubscriptionCreate {
+	if tm != nil {
+		sc.SetCollectionMethod(*tm)
 	}
 	return sc
 }
@@ -476,15 +478,43 @@ func (sc *SubscriptionCreate) SetNillableCustomerTimezone(s *string) *Subscripti
 }
 
 // SetProrationBehavior sets the "proration_behavior" field.
-func (sc *SubscriptionCreate) SetProrationBehavior(s string) *SubscriptionCreate {
-	sc.mutation.SetProrationBehavior(s)
+func (sc *SubscriptionCreate) SetProrationBehavior(tb types.ProrationBehavior) *SubscriptionCreate {
+	sc.mutation.SetProrationBehavior(tb)
 	return sc
 }
 
 // SetNillableProrationBehavior sets the "proration_behavior" field if the given value is not nil.
-func (sc *SubscriptionCreate) SetNillableProrationBehavior(s *string) *SubscriptionCreate {
+func (sc *SubscriptionCreate) SetNillableProrationBehavior(tb *types.ProrationBehavior) *SubscriptionCreate {
+	if tb != nil {
+		sc.SetProrationBehavior(*tb)
+	}
+	return sc
+}
+
+// SetEnableTrueUp sets the "enable_true_up" field.
+func (sc *SubscriptionCreate) SetEnableTrueUp(b bool) *SubscriptionCreate {
+	sc.mutation.SetEnableTrueUp(b)
+	return sc
+}
+
+// SetNillableEnableTrueUp sets the "enable_true_up" field if the given value is not nil.
+func (sc *SubscriptionCreate) SetNillableEnableTrueUp(b *bool) *SubscriptionCreate {
+	if b != nil {
+		sc.SetEnableTrueUp(*b)
+	}
+	return sc
+}
+
+// SetInvoicingCustomerID sets the "invoicing_customer_id" field.
+func (sc *SubscriptionCreate) SetInvoicingCustomerID(s string) *SubscriptionCreate {
+	sc.mutation.SetInvoicingCustomerID(s)
+	return sc
+}
+
+// SetNillableInvoicingCustomerID sets the "invoicing_customer_id" field if the given value is not nil.
+func (sc *SubscriptionCreate) SetNillableInvoicingCustomerID(s *string) *SubscriptionCreate {
 	if s != nil {
-		sc.SetProrationBehavior(*s)
+		sc.SetInvoicingCustomerID(*s)
 	}
 	return sc
 }
@@ -583,6 +613,11 @@ func (sc *SubscriptionCreate) AddCouponApplications(c ...*CouponApplication) *Su
 		ids[i] = c[i].ID
 	}
 	return sc.AddCouponApplicationIDs(ids...)
+}
+
+// SetInvoicingCustomer sets the "invoicing_customer" edge to the Customer entity.
+func (sc *SubscriptionCreate) SetInvoicingCustomer(c *Customer) *SubscriptionCreate {
+	return sc.SetInvoicingCustomerID(c.ID)
 }
 
 // Mutation returns the SubscriptionMutation object of the builder.
@@ -696,6 +731,10 @@ func (sc *SubscriptionCreate) defaults() {
 		v := subscription.DefaultProrationBehavior
 		sc.mutation.SetProrationBehavior(v)
 	}
+	if _, ok := sc.mutation.EnableTrueUp(); !ok {
+		v := subscription.DefaultEnableTrueUp
+		sc.mutation.SetEnableTrueUp(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -736,6 +775,11 @@ func (sc *SubscriptionCreate) check() error {
 	if _, ok := sc.mutation.SubscriptionStatus(); !ok {
 		return &ValidationError{Name: "subscription_status", err: errors.New(`ent: missing required field "Subscription.subscription_status"`)}
 	}
+	if v, ok := sc.mutation.SubscriptionStatus(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "subscription_status", err: fmt.Errorf(`ent: validator failed for field "Subscription.subscription_status": %w`, err)}
+		}
+	}
 	if _, ok := sc.mutation.Currency(); !ok {
 		return &ValidationError{Name: "currency", err: errors.New(`ent: missing required field "Subscription.currency"`)}
 	}
@@ -763,7 +807,7 @@ func (sc *SubscriptionCreate) check() error {
 		return &ValidationError{Name: "billing_cadence", err: errors.New(`ent: missing required field "Subscription.billing_cadence"`)}
 	}
 	if v, ok := sc.mutation.BillingCadence(); ok {
-		if err := subscription.BillingCadenceValidator(v); err != nil {
+		if err := subscription.BillingCadenceValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_cadence", err: fmt.Errorf(`ent: validator failed for field "Subscription.billing_cadence": %w`, err)}
 		}
 	}
@@ -771,7 +815,7 @@ func (sc *SubscriptionCreate) check() error {
 		return &ValidationError{Name: "billing_period", err: errors.New(`ent: missing required field "Subscription.billing_period"`)}
 	}
 	if v, ok := sc.mutation.BillingPeriod(); ok {
-		if err := subscription.BillingPeriodValidator(v); err != nil {
+		if err := subscription.BillingPeriodValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_period", err: fmt.Errorf(`ent: validator failed for field "Subscription.billing_period": %w`, err)}
 		}
 	}
@@ -784,11 +828,16 @@ func (sc *SubscriptionCreate) check() error {
 	if _, ok := sc.mutation.PauseStatus(); !ok {
 		return &ValidationError{Name: "pause_status", err: errors.New(`ent: missing required field "Subscription.pause_status"`)}
 	}
+	if v, ok := sc.mutation.PauseStatus(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "pause_status", err: fmt.Errorf(`ent: validator failed for field "Subscription.pause_status": %w`, err)}
+		}
+	}
 	if _, ok := sc.mutation.BillingCycle(); !ok {
 		return &ValidationError{Name: "billing_cycle", err: errors.New(`ent: missing required field "Subscription.billing_cycle"`)}
 	}
 	if v, ok := sc.mutation.BillingCycle(); ok {
-		if err := subscription.BillingCycleValidator(v); err != nil {
+		if err := subscription.BillingCycleValidator(string(v)); err != nil {
 			return &ValidationError{Name: "billing_cycle", err: fmt.Errorf(`ent: validator failed for field "Subscription.billing_cycle": %w`, err)}
 		}
 	}
@@ -796,7 +845,7 @@ func (sc *SubscriptionCreate) check() error {
 		return &ValidationError{Name: "payment_behavior", err: errors.New(`ent: missing required field "Subscription.payment_behavior"`)}
 	}
 	if v, ok := sc.mutation.PaymentBehavior(); ok {
-		if err := subscription.PaymentBehaviorValidator(v); err != nil {
+		if err := v.Validate(); err != nil {
 			return &ValidationError{Name: "payment_behavior", err: fmt.Errorf(`ent: validator failed for field "Subscription.payment_behavior": %w`, err)}
 		}
 	}
@@ -804,7 +853,7 @@ func (sc *SubscriptionCreate) check() error {
 		return &ValidationError{Name: "collection_method", err: errors.New(`ent: missing required field "Subscription.collection_method"`)}
 	}
 	if v, ok := sc.mutation.CollectionMethod(); ok {
-		if err := subscription.CollectionMethodValidator(v); err != nil {
+		if err := v.Validate(); err != nil {
 			return &ValidationError{Name: "collection_method", err: fmt.Errorf(`ent: validator failed for field "Subscription.collection_method": %w`, err)}
 		}
 	}
@@ -815,9 +864,12 @@ func (sc *SubscriptionCreate) check() error {
 		return &ValidationError{Name: "proration_behavior", err: errors.New(`ent: missing required field "Subscription.proration_behavior"`)}
 	}
 	if v, ok := sc.mutation.ProrationBehavior(); ok {
-		if err := subscription.ProrationBehaviorValidator(v); err != nil {
+		if err := subscription.ProrationBehaviorValidator(string(v)); err != nil {
 			return &ValidationError{Name: "proration_behavior", err: fmt.Errorf(`ent: validator failed for field "Subscription.proration_behavior": %w`, err)}
 		}
+	}
+	if _, ok := sc.mutation.EnableTrueUp(); !ok {
+		return &ValidationError{Name: "enable_true_up", err: errors.New(`ent: missing required field "Subscription.enable_true_up"`)}
 	}
 	return nil
 }
@@ -983,11 +1035,11 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 		_node.OverageFactor = &value
 	}
 	if value, ok := sc.mutation.PaymentBehavior(); ok {
-		_spec.SetField(subscription.FieldPaymentBehavior, field.TypeEnum, value)
+		_spec.SetField(subscription.FieldPaymentBehavior, field.TypeString, value)
 		_node.PaymentBehavior = value
 	}
 	if value, ok := sc.mutation.CollectionMethod(); ok {
-		_spec.SetField(subscription.FieldCollectionMethod, field.TypeEnum, value)
+		_spec.SetField(subscription.FieldCollectionMethod, field.TypeString, value)
 		_node.CollectionMethod = value
 	}
 	if value, ok := sc.mutation.GatewayPaymentMethodID(); ok {
@@ -1001,6 +1053,10 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 	if value, ok := sc.mutation.ProrationBehavior(); ok {
 		_spec.SetField(subscription.FieldProrationBehavior, field.TypeString, value)
 		_node.ProrationBehavior = value
+	}
+	if value, ok := sc.mutation.EnableTrueUp(); ok {
+		_spec.SetField(subscription.FieldEnableTrueUp, field.TypeBool, value)
+		_node.EnableTrueUp = value
 	}
 	if nodes := sc.mutation.LineItemsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -1096,6 +1152,23 @@ func (sc *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec)
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := sc.mutation.InvoicingCustomerIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   subscription.InvoicingCustomerTable,
+			Columns: []string{subscription.InvoicingCustomerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(customer.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.InvoicingCustomerID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

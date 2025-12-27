@@ -88,7 +88,7 @@ func (s *InMemoryFeatureUsageStore) IsDuplicate(ctx context.Context, subscriptio
 }
 
 // GetDetailedUsageAnalytics provides usage analytics
-func (s *InMemoryFeatureUsageStore) GetDetailedUsageAnalytics(ctx context.Context, params *events.UsageAnalyticsParams, maxBucketFeatures map[string]*events.MaxBucketFeatureInfo) ([]*events.DetailedUsageAnalytic, error) {
+func (s *InMemoryFeatureUsageStore) GetDetailedUsageAnalytics(ctx context.Context, params *events.UsageAnalyticsParams, maxBucketFeatures map[string]*events.MaxBucketFeatureInfo, sumBucketFeatures map[string]*events.SumBucketFeatureInfo) ([]*events.DetailedUsageAnalytic, error) {
 	return []*events.DetailedUsageAnalytic{}, nil
 }
 
@@ -133,4 +133,13 @@ func (s *InMemoryFeatureUsageStore) GetUsageForMaxMetersWithBuckets(ctx context.
 		Results: make([]events.UsageResult, 0),
 		Value:   decimal.NewFromInt(0),
 	}, nil
+}
+
+func (s *InMemoryFeatureUsageStore) GetFeatureUsageByEventIDs(ctx context.Context, eventIDs []string) ([]*events.FeatureUsage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*events.FeatureUsage
+
+	return result, nil
 }

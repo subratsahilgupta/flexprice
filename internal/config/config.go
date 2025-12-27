@@ -16,32 +16,36 @@ import (
 )
 
 type Configuration struct {
-	Deployment               DeploymentConfig               `validate:"required"`
-	Server                   ServerConfig                   `validate:"required"`
-	Auth                     AuthConfig                     `validate:"required"`
-	Kafka                    KafkaConfig                    `validate:"required"`
-	ClickHouse               ClickHouseConfig               `validate:"required"`
-	Logging                  LoggingConfig                  `validate:"required"`
-	Postgres                 PostgresConfig                 `validate:"required"`
-	Sentry                   SentryConfig                   `validate:"required"`
-	Pyroscope                PyroscopeConfig                `validate:"required"`
-	Event                    EventConfig                    `validate:"required"`
-	DynamoDB                 DynamoDBConfig                 `validate:"required"`
-	Temporal                 TemporalConfig                 `validate:"required"`
-	Webhook                  Webhook                        `validate:"omitempty"`
-	Secrets                  SecretsConfig                  `validate:"required"`
-	Billing                  BillingConfig                  `validate:"omitempty"`
-	S3                       S3Config                       `validate:"required"`
-	Cache                    CacheConfig                    `validate:"required"`
-	EventProcessing          EventProcessingConfig          `mapstructure:"event_processing" validate:"required"`
-	EventProcessingLazy      EventProcessingLazyConfig      `mapstructure:"event_processing_lazy" validate:"required"`
-	EventPostProcessing      EventPostProcessingConfig      `mapstructure:"event_post_processing" validate:"required"`
-	FeatureUsageTracking     FeatureUsageTrackingConfig     `mapstructure:"feature_usage_tracking" validate:"required"`
-	FeatureUsageTrackingLazy FeatureUsageTrackingLazyConfig `mapstructure:"feature_usage_tracking_lazy" validate:"required"`
-	EnvAccess                EnvAccessConfig                `mapstructure:"env_access" json:"env_access" validate:"omitempty"`
-	FeatureFlag              FeatureFlagConfig              `mapstructure:"feature_flag" validate:"required"`
-	Email                    EmailConfig                    `mapstructure:"email" validate:"required"`
-	RBAC                     RBACConfig                     `mapstructure:"rbac" validate:"omitempty"`
+	Deployment                 DeploymentConfig                 `validate:"required"`
+	Server                     ServerConfig                     `validate:"required"`
+	Auth                       AuthConfig                       `validate:"required"`
+	Kafka                      KafkaConfig                      `validate:"required"`
+	ClickHouse                 ClickHouseConfig                 `validate:"required"`
+	Logging                    LoggingConfig                    `validate:"required"`
+	Postgres                   PostgresConfig                   `validate:"required"`
+	Sentry                     SentryConfig                     `validate:"required"`
+	Pyroscope                  PyroscopeConfig                  `validate:"required"`
+	Event                      EventConfig                      `validate:"required"`
+	DynamoDB                   DynamoDBConfig                   `validate:"required"`
+	Temporal                   TemporalConfig                   `validate:"required"`
+	Webhook                    Webhook                          `validate:"omitempty"`
+	Secrets                    SecretsConfig                    `validate:"required"`
+	Billing                    BillingConfig                    `validate:"omitempty"`
+	S3                         S3Config                         `validate:"required"`
+	Cache                      CacheConfig                      `validate:"required"`
+	EventProcessing            EventProcessingConfig            `mapstructure:"event_processing" validate:"required"`
+	EventProcessingLazy        EventProcessingLazyConfig        `mapstructure:"event_processing_lazy" validate:"required"`
+	CostSheetUsageTracking     CostSheetUsageTrackingConfig     `mapstructure:"costsheet_usage_tracking" validate:"required"`
+	CostSheetUsageTrackingLazy CostSheetUsageTrackingLazyConfig `mapstructure:"costsheet_usage_tracking_lazy" validate:"required"`
+	EventPostProcessing        EventPostProcessingConfig        `mapstructure:"event_post_processing" validate:"required"`
+	FeatureUsageTracking       FeatureUsageTrackingConfig       `mapstructure:"feature_usage_tracking" validate:"required"`
+	FeatureUsageTrackingLazy   FeatureUsageTrackingLazyConfig   `mapstructure:"feature_usage_tracking_lazy" validate:"required"`
+	EnvAccess                  EnvAccessConfig                  `mapstructure:"env_access" json:"env_access" validate:"omitempty"`
+	FeatureFlag                FeatureFlagConfig                `mapstructure:"feature_flag" validate:"required"`
+	Email                      EmailConfig                      `mapstructure:"email" validate:"required"`
+	RBAC                       RBACConfig                       `mapstructure:"rbac" validate:"omitempty"`
+	OAuth                      OAuthConfig                      `mapstructure:"oauth" validate:"required"`
+	WalletBalanceAlert         WalletBalanceAlertConfig         `mapstructure:"wallet_balance_alert" validate:"required"`
 }
 
 type CacheConfig struct {
@@ -218,6 +222,13 @@ type FeatureUsageTrackingLazyConfig struct {
 	ConsumerGroupBackfill string `mapstructure:"consumer_group_backfill" default:"v1_feature_tracking_service_lazy_backfill"`
 }
 
+type WalletBalanceAlertConfig struct {
+	// Rate limit in messages consumed per second
+	Topic         string `mapstructure:"topic" default:"wallet_alert"`
+	RateLimit     int64  `mapstructure:"rate_limit" default:"1"`
+	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_wallet_alert_service"`
+}
+
 type EnvAccessConfig struct {
 	UserEnvMapping map[string]map[string][]string `mapstructure:"user_env_mapping" json:"user_env_mapping" validate:"omitempty"`
 }
@@ -241,6 +252,17 @@ type EmailConfig struct {
 	FromAddress  string `mapstructure:"from_address" validate:"omitempty"`
 	ReplyTo      string `mapstructure:"reply_to" validate:"omitempty"`
 	CalendarURL  string `mapstructure:"calendar_url" validate:"omitempty"`
+}
+type CostSheetUsageTrackingConfig struct {
+	Topic         string `mapstructure:"topic" default:"events"`
+	RateLimit     int64  `mapstructure:"rate_limit" default:"1"`
+	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_costsheet_usage_tracking_service"`
+}
+
+type CostSheetUsageTrackingLazyConfig struct {
+	Topic         string `mapstructure:"topic" default:"events_lazy"`
+	RateLimit     int64  `mapstructure:"rate_limit" default:"1"`
+	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_costsheet_usage_tracking_service_lazy"`
 }
 
 func NewConfig() (*Configuration, error) {
@@ -378,4 +400,11 @@ func (c PostgresConfig) HasSeparateReader() bool {
 
 type RBACConfig struct {
 	RolesConfigPath string `mapstructure:"roles_config_path" json:"roles_config_path"`
+}
+
+// OAuthConfig holds generic OAuth configuration for multiple providers
+type OAuthConfig struct {
+	// Base redirect URI - provider-specific paths may be appended
+	// Example: "https://admin-dev.flexprice.io/tools/integrations/oauth/callback"
+	RedirectURI string `mapstructure:"redirect_uri" validate:"required,url"`
 }

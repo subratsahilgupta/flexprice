@@ -7,6 +7,39 @@ import (
 	"github.com/samber/lo"
 )
 
+// InvoiceBilling determines which customer should receive invoices for a subscription
+type InvoiceBilling string
+
+const (
+	// InvoiceBillingInvoiceToParent - Invoices are sent to the parent customer
+	InvoiceBillingInvoiceToParent InvoiceBilling = "invoice_to_parent"
+
+	// InvoiceBillingInvoiceToSelf - Invoices are sent to the subscription's customer
+	InvoiceBillingInvoiceToSelf InvoiceBilling = "invoice_to_self"
+)
+
+func (i InvoiceBilling) String() string {
+	return string(i)
+}
+
+func (i InvoiceBilling) Validate() error {
+	allowed := []InvoiceBilling{
+		InvoiceBillingInvoiceToParent,
+		InvoiceBillingInvoiceToSelf,
+	}
+
+	if i != "" && !lo.Contains(allowed, i) {
+		return ierr.NewError("invalid invoice billing").
+			WithHint("Invalid invoice billing").
+			WithReportableDetails(map[string]any{
+				"invoice_billing": i,
+				"allowed_values":  allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
 // SubscriptionLineItemEntityType is the type of the source of a subscription line item
 // It is optional and can be used to differentiate between plan and addon line items
 type SubscriptionLineItemEntityType string
@@ -22,14 +55,12 @@ const (
 type SubscriptionStatus string
 
 const (
-	SubscriptionStatusActive            SubscriptionStatus = "active"
-	SubscriptionStatusPaused            SubscriptionStatus = "paused"
-	SubscriptionStatusCancelled         SubscriptionStatus = "cancelled"
-	SubscriptionStatusIncomplete        SubscriptionStatus = "incomplete"
-	SubscriptionStatusIncompleteExpired SubscriptionStatus = "incomplete_expired"
-	SubscriptionStatusPastDue           SubscriptionStatus = "past_due"
-	SubscriptionStatusTrialing          SubscriptionStatus = "trialing"
-	SubscriptionStatusUnpaid            SubscriptionStatus = "unpaid"
+	SubscriptionStatusActive     SubscriptionStatus = "active"
+	SubscriptionStatusPaused     SubscriptionStatus = "paused"
+	SubscriptionStatusCancelled  SubscriptionStatus = "cancelled"
+	SubscriptionStatusIncomplete SubscriptionStatus = "incomplete"
+	SubscriptionStatusTrialing   SubscriptionStatus = "trialing"
+	SubscriptionStatusDraft      SubscriptionStatus = "draft"
 )
 
 func (s SubscriptionStatus) String() string {
@@ -42,12 +73,11 @@ func (s SubscriptionStatus) Validate() error {
 		SubscriptionStatusPaused,
 		SubscriptionStatusCancelled,
 		SubscriptionStatusIncomplete,
-		SubscriptionStatusIncompleteExpired,
-		SubscriptionStatusPastDue,
 		SubscriptionStatusTrialing,
-		SubscriptionStatusUnpaid,
+		SubscriptionStatusDraft,
 	}
-	if !lo.Contains(allowed, s) {
+
+	if s != "" && !lo.Contains(allowed, s) {
 		return ierr.NewError("invalid subscription status").
 			WithHint("Invalid subscription status").
 			WithReportableDetails(map[string]any{
@@ -87,7 +117,8 @@ func (p PaymentBehavior) Validate() error {
 		PaymentBehaviorErrorIfIncomplete,
 		PaymentBehaviorDefaultActive,
 	}
-	if !lo.Contains(allowed, p) {
+
+	if p != "" && !lo.Contains(allowed, p) {
 		return ierr.NewError("invalid payment behavior").
 			WithHint("Invalid payment behavior").
 			WithReportableDetails(map[string]any{
@@ -119,7 +150,8 @@ func (c CollectionMethod) Validate() error {
 		CollectionMethodChargeAutomatically,
 		CollectionMethodSendInvoice,
 	}
-	if !lo.Contains(allowed, c) {
+
+	if c != "" && !lo.Contains(allowed, c) {
 		return ierr.NewError("invalid collection method").
 			WithHint("Invalid collection method").
 			WithReportableDetails(map[string]any{
@@ -164,7 +196,7 @@ func (s PauseStatus) Validate() error {
 		PauseStatusCancelled,
 	}
 
-	if !lo.Contains(allowed, s) {
+	if s != "" && !lo.Contains(allowed, s) {
 		return ierr.NewError("invalid pause status").
 			WithHint("Invalid pause status").
 			WithReportableDetails(map[string]any{
@@ -188,6 +220,10 @@ type SubscriptionFilter struct {
 	SubscriptionIDs []string `json:"subscription_ids,omitempty" form:"subscription_ids"`
 	// CustomerID filters by customer ID
 	CustomerID string `json:"customer_id,omitempty" form:"customer_id"`
+	// ExternalCustomerID filters by external customer ID
+	ExternalCustomerID string `json:"external_customer_id,omitempty" form:"external_customer_id"`
+	// InvoicingCustomerIDs filters by invoicing customer ID
+	InvoicingCustomerIDs []string `json:"invoicing_customer_ids,omitempty" form:"invoicing_customer_ids"`
 	// PlanID filters by plan ID
 	PlanID string `json:"plan_id,omitempty" form:"plan_id"`
 	// SubscriptionStatus filters by subscription status
@@ -332,7 +368,7 @@ func (s SubscriptionChangeType) String() string {
 }
 
 func (s SubscriptionChangeType) Validate() error {
-	if !lo.Contains(SubscriptionChangeTypeValues, s) {
+	if s != "" && !lo.Contains(SubscriptionChangeTypeValues, s) {
 		return ierr.NewError("invalid subscription change type").
 			WithHint("Subscription change type must be upgrade, downgrade, or lateral").
 			WithReportableDetails(map[string]any{

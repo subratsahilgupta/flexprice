@@ -40,14 +40,6 @@ func (h *SubscriptionStateHandler) DetermineCreditGrantAction() (StateAction, er
 		}
 		return StateActionDefer, nil
 
-	case types.SubscriptionStatusPastDue:
-		// For past due, we defer rather than skip to allow recovery
-		return StateActionDefer, nil
-
-	case types.SubscriptionStatusUnpaid:
-		// Similar to past due - defer for potential recovery
-		return StateActionDefer, nil
-
 	case types.SubscriptionStatusCancelled:
 		// Cancelled subscriptions should not receive new credits
 		return StateActionCancel, nil
@@ -56,9 +48,9 @@ func (h *SubscriptionStateHandler) DetermineCreditGrantAction() (StateAction, er
 		// Defer incomplete subscriptions as they might become active
 		return StateActionDefer, nil
 
-	case types.SubscriptionStatusIncompleteExpired:
-		// Expired incomplete subscriptions should be cancelled
-		return StateActionCancel, nil
+	case types.SubscriptionStatusDraft:
+		// Defer draft subscriptions - credits will be applied when subscription is activated
+		return StateActionDefer, nil
 
 	case types.SubscriptionStatusPaused:
 		// Paused subscriptions should skip credits until resumed

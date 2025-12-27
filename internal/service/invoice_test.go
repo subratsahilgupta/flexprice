@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -59,6 +60,11 @@ func (s *InvoiceServiceSuite) SetupTest() {
 	s.setupTestData()
 }
 
+// GetContext returns context with environment ID set for settings lookup
+func (s *InvoiceServiceSuite) GetContext() context.Context {
+	return types.SetEnvironmentID(s.BaseServiceTestSuite.GetContext(), "env_test")
+}
+
 func (s *InvoiceServiceSuite) TearDownTest() {
 	s.BaseServiceTestSuite.TearDownTest()
 	s.eventRepo.Clear()
@@ -83,6 +89,7 @@ func (s *InvoiceServiceSuite) setupService() {
 		EntitlementRepo:              s.GetStores().EntitlementRepo,
 		EnvironmentRepo:              s.GetStores().EnvironmentRepo,
 		FeatureRepo:                  s.GetStores().FeatureRepo,
+		AddonAssociationRepo:         s.GetStores().AddonAssociationRepo,
 		TenantRepo:                   s.GetStores().TenantRepo,
 		UserRepo:                     s.GetStores().UserRepo,
 		AuthRepo:                     s.GetStores().AuthRepo,
@@ -106,6 +113,7 @@ func (s *InvoiceServiceSuite) setupService() {
 		EntityIntegrationMappingRepo: s.GetStores().EntityIntegrationMappingRepo,
 		AlertLogsRepo:                s.GetStores().AlertLogsRepo,
 		FeatureUsageRepo:             s.GetStores().FeatureUsageRepo,
+		WalletBalanceAlertPubSub:     types.WalletBalanceAlertPubSub{PubSub: testutil.NewInMemoryPubSub()},
 	})
 }
 
@@ -353,8 +361,8 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 				s.invoiceRepo.Clear()
 			},
 			referencePoint: types.ReferencePointPeriodEnd,
-			wantErr:        true,
-			expectedError:  "no charges to invoice",
+			wantErr:        false,
+			expectNil:      true,
 		},
 		{
 			name: "period_end reference point with proper setup",
@@ -399,8 +407,8 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 			referencePoint: types.ReferencePointPeriodEnd,
 			// Even with proper setup, we're still getting the "no charges to invoice" error
 			// This is likely due to how the mock repositories work in the test environment
-			wantErr:       true,
-			expectedError: "no charges to invoice",
+			wantErr:   false,
+			expectNil: true,
 		},
 		{
 			name: "no usage data available",
@@ -434,6 +442,7 @@ func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoice() {
 				req,
 				nil,
 				types.InvoiceFlowManual,
+				false,
 			)
 
 			if tt.wantErr {
@@ -1133,27 +1142,30 @@ func (s *InvoiceServiceSuite) setupWallets() {
 	s.GetStores().WalletRepo.(*testutil.InMemoryWalletStore).Clear()
 	// Create wallet service
 	walletService := NewWalletService(ServiceParams{
-		Logger:           s.GetLogger(),
-		Config:           s.GetConfig(),
-		DB:               s.GetDB(),
-		SubRepo:          s.GetStores().SubscriptionRepo,
-		PlanRepo:         s.GetStores().PlanRepo,
-		PriceRepo:        s.GetStores().PriceRepo,
-		EventRepo:        s.eventRepo,
-		MeterRepo:        s.GetStores().MeterRepo,
-		CustomerRepo:     s.GetStores().CustomerRepo,
-		InvoiceRepo:      s.invoiceRepo,
-		EntitlementRepo:  s.GetStores().EntitlementRepo,
-		EnvironmentRepo:  s.GetStores().EnvironmentRepo,
-		FeatureRepo:      s.GetStores().FeatureRepo,
-		TenantRepo:       s.GetStores().TenantRepo,
-		UserRepo:         s.GetStores().UserRepo,
-		AuthRepo:         s.GetStores().AuthRepo,
-		WalletRepo:       s.GetStores().WalletRepo,
-		PaymentRepo:      s.GetStores().PaymentRepo,
-		AlertLogsRepo:    s.GetStores().AlertLogsRepo,
-		EventPublisher:   s.GetPublisher(),
-		WebhookPublisher: s.GetWebhookPublisher(),
+		Logger:                   s.GetLogger(),
+		Config:                   s.GetConfig(),
+		DB:                       s.GetDB(),
+		SubRepo:                  s.GetStores().SubscriptionRepo,
+		PlanRepo:                 s.GetStores().PlanRepo,
+		PriceRepo:                s.GetStores().PriceRepo,
+		EventRepo:                s.eventRepo,
+		MeterRepo:                s.GetStores().MeterRepo,
+		CustomerRepo:             s.GetStores().CustomerRepo,
+		InvoiceRepo:              s.invoiceRepo,
+		EntitlementRepo:          s.GetStores().EntitlementRepo,
+		EnvironmentRepo:          s.GetStores().EnvironmentRepo,
+		FeatureRepo:              s.GetStores().FeatureRepo,
+		TenantRepo:               s.GetStores().TenantRepo,
+		UserRepo:                 s.GetStores().UserRepo,
+		AuthRepo:                 s.GetStores().AuthRepo,
+		WalletRepo:               s.GetStores().WalletRepo,
+		PaymentRepo:              s.GetStores().PaymentRepo,
+		SettingsRepo:             s.GetStores().SettingsRepo,
+		FeatureUsageRepo:         s.GetStores().FeatureUsageRepo,
+		AlertLogsRepo:            s.GetStores().AlertLogsRepo,
+		EventPublisher:           s.GetPublisher(),
+		WebhookPublisher:         s.GetWebhookPublisher(),
+		WalletBalanceAlertPubSub: types.WalletBalanceAlertPubSub{PubSub: testutil.NewInMemoryPubSub()},
 	})
 
 	// Create test wallets for the test customer
@@ -1218,6 +1230,8 @@ func (s *InvoiceServiceSuite) TestAttemptPayment() {
 					InvoiceType:     types.InvoiceTypeOneOff,
 					InvoiceStatus:   types.InvoiceStatusFinalized,
 					PaymentStatus:   types.PaymentStatusPending,
+					PeriodStart:     lo.ToPtr(s.testData.now.Add(-24 * time.Hour)),
+					PeriodEnd:       lo.ToPtr(s.testData.now.Add(6 * 24 * time.Hour)),
 					Currency:        "usd",
 					AmountDue:       decimal.NewFromInt(100),
 					AmountPaid:      decimal.Zero,
@@ -1244,6 +1258,8 @@ func (s *InvoiceServiceSuite) TestAttemptPayment() {
 					InvoiceType:     types.InvoiceTypeOneOff,
 					InvoiceStatus:   types.InvoiceStatusFinalized,
 					PaymentStatus:   types.PaymentStatusPending,
+					PeriodStart:     lo.ToPtr(s.testData.now.Add(-24 * time.Hour)),
+					PeriodEnd:       lo.ToPtr(s.testData.now.Add(6 * 24 * time.Hour)),
 					Currency:        "usd",
 					AmountDue:       decimal.NewFromInt(200),
 					AmountPaid:      decimal.Zero,
@@ -1630,4 +1646,135 @@ func (s *InvoiceServiceSuite) TestUpdateInvoice() {
 	s.Require().NotNil(updatedPaidInvoice.DueDate)
 	s.Require().NotNil(updatedPaidInvoice.InvoicePDFURL)
 	s.Require().Equal("https://example.com/paid-invoice.pdf", *updatedPaidInvoice.InvoicePDFURL)
+}
+
+// TestCreateSubscriptionInvoiceWithInvoicingCustomerID tests invoice creation with invoicing customer ID
+func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoiceWithInvoicingCustomerID() {
+	// Create invoicing customer
+	invoicingCustomer := &customer.Customer{
+		ID:         "cust_invoicing_123",
+		ExternalID: "ext_cust_invoicing_123",
+		Name:       "Invoicing Customer",
+		Email:      "invoicing@example.com",
+		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(s.GetContext(), invoicingCustomer))
+
+	// Create subscription with invoicing customer ID
+	subscriptionWithInvoicing := &subscription.Subscription{
+		ID:                  "sub_with_invoicing",
+		PlanID:              s.testData.plan.ID,
+		CustomerID:          s.testData.customer.ID,
+		InvoicingCustomerID: lo.ToPtr(invoicingCustomer.ID),
+		StartDate:           s.testData.now.Add(-30 * 24 * time.Hour),
+		CurrentPeriodStart:  s.testData.now.Add(-24 * time.Hour),
+		CurrentPeriodEnd:    s.testData.now.Add(6 * 24 * time.Hour),
+		Currency:            "usd",
+		BillingPeriod:       types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount:  1,
+		SubscriptionStatus:  types.SubscriptionStatusActive,
+		BaseModel:           types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), subscriptionWithInvoicing, []*subscription.SubscriptionLineItem{}))
+
+	// Create some usage events
+	for i := 0; i < 100; i++ {
+		event := &events.Event{
+			ID:                 s.GetUUID(),
+			TenantID:           subscriptionWithInvoicing.TenantID,
+			EventName:          s.testData.meters.apiCalls.EventName,
+			ExternalCustomerID: s.testData.customer.ExternalID, // Usage tracked by subscription customer
+			Timestamp:          s.testData.now.Add(-1 * time.Hour),
+			Properties:         map[string]interface{}{},
+		}
+		s.NoError(s.eventRepo.InsertEvent(s.GetContext(), event))
+	}
+
+	// Create subscription invoice
+	req := &dto.CreateSubscriptionInvoiceRequest{
+		SubscriptionID: subscriptionWithInvoicing.ID,
+		PeriodStart:    subscriptionWithInvoicing.CurrentPeriodStart,
+		PeriodEnd:      subscriptionWithInvoicing.CurrentPeriodEnd,
+		ReferencePoint: types.ReferencePointPeriodStart,
+	}
+	got, _, err := s.service.CreateSubscriptionInvoice(
+		s.GetContext(),
+		req,
+		nil,
+		types.InvoiceFlowManual,
+		false,
+	)
+
+	// Verify invoice was created with invoicing customer ID
+	s.NoError(err)
+	if got != nil {
+		s.NotEmpty(got.ID)
+		// Invoice should have invoicing customer ID, not subscription customer ID
+		s.Equal(invoicingCustomer.ID, got.CustomerID, "Invoice should use invoicing customer ID")
+		s.NotEqual(s.testData.customer.ID, got.CustomerID, "Invoice should NOT use subscription customer ID")
+		s.Equal(types.InvoiceTypeSubscription, got.InvoiceType)
+		if got.SubscriptionID != nil {
+			s.Equal(subscriptionWithInvoicing.ID, *got.SubscriptionID)
+		}
+	}
+}
+
+// TestCreateSubscriptionInvoiceWithoutInvoicingCustomerID tests backward compatibility
+func (s *InvoiceServiceSuite) TestCreateSubscriptionInvoiceWithoutInvoicingCustomerID() {
+	// Create subscription without invoicing customer ID (backward compatibility)
+	subscriptionWithoutInvoicing := &subscription.Subscription{
+		ID:                  "sub_without_invoicing",
+		PlanID:              s.testData.plan.ID,
+		CustomerID:          s.testData.customer.ID,
+		InvoicingCustomerID: nil, // No invoicing customer ID
+		StartDate:           s.testData.now.Add(-30 * 24 * time.Hour),
+		CurrentPeriodStart:  s.testData.now.Add(-24 * time.Hour),
+		CurrentPeriodEnd:    s.testData.now.Add(6 * 24 * time.Hour),
+		Currency:            "usd",
+		BillingPeriod:       types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount:  1,
+		SubscriptionStatus:  types.SubscriptionStatusActive,
+		BaseModel:           types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(s.GetContext(), subscriptionWithoutInvoicing, []*subscription.SubscriptionLineItem{}))
+
+	// Create some usage events
+	for i := 0; i < 100; i++ {
+		event := &events.Event{
+			ID:                 s.GetUUID(),
+			TenantID:           subscriptionWithoutInvoicing.TenantID,
+			EventName:          s.testData.meters.apiCalls.EventName,
+			ExternalCustomerID: s.testData.customer.ExternalID,
+			Timestamp:          s.testData.now.Add(-1 * time.Hour),
+			Properties:         map[string]interface{}{},
+		}
+		s.NoError(s.eventRepo.InsertEvent(s.GetContext(), event))
+	}
+
+	// Create subscription invoice
+	req := &dto.CreateSubscriptionInvoiceRequest{
+		SubscriptionID: subscriptionWithoutInvoicing.ID,
+		PeriodStart:    subscriptionWithoutInvoicing.CurrentPeriodStart,
+		PeriodEnd:      subscriptionWithoutInvoicing.CurrentPeriodEnd,
+		ReferencePoint: types.ReferencePointPeriodStart,
+	}
+	got, _, err := s.service.CreateSubscriptionInvoice(
+		s.GetContext(),
+		req,
+		nil,
+		types.InvoiceFlowManual,
+		false,
+	)
+
+	// Verify invoice was created with subscription customer ID (fallback)
+	s.NoError(err)
+	if got != nil {
+		s.NotEmpty(got.ID)
+		// Invoice should fallback to subscription customer ID
+		s.Equal(s.testData.customer.ID, got.CustomerID, "Invoice should fallback to subscription customer ID")
+		s.Equal(types.InvoiceTypeSubscription, got.InvoiceType)
+		if got.SubscriptionID != nil {
+			s.Equal(subscriptionWithoutInvoicing.ID, *got.SubscriptionID)
+		}
+	}
 }

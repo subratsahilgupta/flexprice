@@ -2,6 +2,7 @@ package types
 
 import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -36,7 +37,8 @@ func (c InvoiceCadence) Validate() error {
 		InvoiceCadenceArrear,
 		InvoiceCadenceAdvance,
 	}
-	if !lo.Contains(allowed, c) {
+
+	if c != "" && !lo.Contains(allowed, c) {
 		return ierr.NewError("invalid invoice cadence").
 			WithHint("Please provide a valid invoice cadence").
 			WithReportableDetails(map[string]any{
@@ -72,7 +74,8 @@ func (f InvoiceFlowType) Validate() error {
 		InvoiceFlowManual,
 		InvoiceFlowCancel,
 	}
-	if !lo.Contains(allowed, f) {
+
+	if f != "" && !lo.Contains(allowed, f) {
 		return ierr.NewError("invalid invoice flow type").
 			WithHint("Please provide a valid invoice flow type").
 			WithReportableDetails(map[string]any{
@@ -105,7 +108,8 @@ func (t InvoiceType) Validate() error {
 		InvoiceTypeOneOff,
 		InvoiceTypeCredit,
 	}
-	if !lo.Contains(allowed, t) {
+
+	if t != "" && !lo.Contains(allowed, t) {
 		return ierr.NewError("invalid invoice type").
 			WithHint("Please provide a valid invoice type").
 			WithReportableDetails(map[string]any{
@@ -138,7 +142,8 @@ func (s InvoiceStatus) Validate() error {
 		InvoiceStatusFinalized,
 		InvoiceStatusVoided,
 	}
-	if !lo.Contains(allowed, s) {
+
+	if s != "" && !lo.Contains(allowed, s) {
 		return ierr.NewError("invalid invoice status").
 			WithHint("Please provide a valid invoice status").
 			WithReportableDetails(map[string]any{
@@ -177,7 +182,8 @@ func (r InvoiceBillingReason) Validate() error {
 		InvoiceBillingReasonProration,
 		InvoiceBillingReasonManual,
 	}
-	if !lo.Contains(allowed, r) {
+
+	if r != "" && !lo.Contains(allowed, r) {
 		return ierr.NewError("invalid invoice billing reason").
 			WithHint("Please provide a valid invoice billing reason").
 			WithReportableDetails(map[string]any{
@@ -248,13 +254,52 @@ const (
 //
 // Note: Sequences reset monthly and are tenant-environment-scoped for isolation.
 type InvoiceConfig struct {
-	InvoiceNumberPrefix        string              `json:"prefix,omitempty"`
-	InvoiceNumberFormat        InvoiceNumberFormat `json:"format,omitempty"`
-	InvoiceNumberStartSequence int                 `json:"start_sequence,omitempty"`
-	InvoiceNumberTimezone      string              `json:"timezone,omitempty"`
-	InvoiceNumberSeparator     string              `json:"separator,omitempty"`
-	InvoiceNumberSuffixLength  int                 `json:"suffix_length,omitempty"`
-	DueDateDays                *int                `json:"due_date_days,omitempty"` // Number of days after period end when payment is due
+	InvoiceNumberPrefix                    string              `json:"prefix,omitempty" validate:"required,min=1"`
+	InvoiceNumberFormat                    InvoiceNumberFormat `json:"format,omitempty" validate:"required"`
+	InvoiceNumberStartSequence             int                 `json:"start_sequence,omitempty" validate:"required,min=0"`
+	InvoiceNumberTimezone                  string              `json:"timezone,omitempty" validate:"required,min=1"`
+	InvoiceNumberSeparator                 string              `json:"separator,omitempty"` // Empty string ("") is valid for no separator
+	InvoiceNumberSuffixLength              int                 `json:"suffix_length,omitempty" validate:"required,min=1,max=10"`
+	DueDateDays                            *int                `json:"due_date_days,omitempty" validate:"omitempty,min=0"` // Number of days after period end when payment is due
+	AutoCompletePurchasedCreditTransaction bool                `json:"auto_complete_purchased_credit_transaction,omitempty"`
+}
+
+// Validate implements SettingConfig interface
+func (c InvoiceConfig) Validate() error {
+	// Validate struct using validation tags
+	if err := validator.ValidateRequest(c); err != nil {
+		return err
+	}
+
+	// Additional custom validation for InvoiceNumberFormat enum
+	validFormats := []InvoiceNumberFormat{
+		InvoiceNumberFormatYYYYMM,
+		InvoiceNumberFormatYYYYMMDD,
+		InvoiceNumberFormatYYMMDD,
+		InvoiceNumberFormatYY,
+		InvoiceNumberFormatYYYY,
+	}
+	valid := false
+	for _, validFormat := range validFormats {
+		if c.InvoiceNumberFormat == validFormat {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return ierr.NewErrorf("invoice_config: 'format' must be one of %v, got %s", validFormats, c.InvoiceNumberFormat).
+			WithHintf("Invoice config format must be one of %v", validFormats).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate timezone directly on the struct
+	if err := ValidateTimezone(c.InvoiceNumberTimezone); err != nil {
+		return ierr.WithError(err).
+			WithHintf("Invalid timezone: %s", c.InvoiceNumberTimezone).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }
 
 // InvoiceFilter represents the filter options for listing invoices

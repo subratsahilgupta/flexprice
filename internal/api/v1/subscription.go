@@ -149,7 +149,46 @@ func (h *SubscriptionHandler) CancelSubscription(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
 
+// @Summary Activate draft subscription
+// @Description Activate a draft subscription with a new start date
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Subscription ID"
+// @Param request body dto.ActivateDraftSubscriptionRequest true "Activate Draft Subscription Request"
+// @Success 200 {object} dto.SubscriptionResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /subscriptions/{id}/activate [post]
+func (h *SubscriptionHandler) ActivateDraftSubscription(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("subscription ID is required").
+			WithHint("Please provide a valid subscription ID").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	var req dto.ActivateDraftSubscriptionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.ActivateDraftSubscription(c.Request.Context(), id, req)
+	if err != nil {
+		h.log.Error("Failed to activate draft subscription", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // @Summary Get usage by subscription
@@ -229,7 +268,7 @@ func (h *SubscriptionHandler) ListSubscriptionsByFilter(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body dto.AddAddonToSubscriptionRequest true "Add Addon Request"
+// @Param request body dto.AddAddonRequest true "Add Addon Request"
 // @Success 200 {object} dto.AddonAssociationResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
@@ -261,7 +300,7 @@ func (h *SubscriptionHandler) AddAddonToSubscription(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param request body dto.RemoveAddonRequest true "Remove Addon Request"
-// @Success 200 {object} gin.H
+// @Success 200 {object} dto.SuccessResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
 // @Router /subscriptions/addon [delete]
@@ -433,6 +472,36 @@ func (h *SubscriptionHandler) GetUpcomingCreditGrantApplications(c *gin.Context)
 	resp, err := h.service.GetUpcomingCreditGrantApplications(c.Request.Context(), req)
 	if err != nil {
 		h.log.Error("Failed to get upcoming credit grant applications", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// @Summary Get active addon associations
+// @Description Get active addon associations for a subscription
+// @Tags Subscriptions
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Subscription ID"
+// @Success 200 {array} dto.AddonAssociationResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /subscriptions/{id}/addons/associations [get]
+func (h *SubscriptionHandler) GetActiveAddonAssociations(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("subscription ID is required").
+			WithHint("Please provide a valid subscription ID").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.GetActiveAddonAssociations(c.Request.Context(), id)
+	if err != nil {
+		h.log.Error("Failed to get active addon associations", "error", err)
 		c.Error(err)
 		return
 	}

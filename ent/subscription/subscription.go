@@ -3,11 +3,11 @@
 package subscription
 
 import (
-	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -90,6 +90,10 @@ const (
 	FieldCustomerTimezone = "customer_timezone"
 	// FieldProrationBehavior holds the string denoting the proration_behavior field in the database.
 	FieldProrationBehavior = "proration_behavior"
+	// FieldEnableTrueUp holds the string denoting the enable_true_up field in the database.
+	FieldEnableTrueUp = "enable_true_up"
+	// FieldInvoicingCustomerID holds the string denoting the invoicing_customer_id field in the database.
+	FieldInvoicingCustomerID = "invoicing_customer_id"
 	// EdgeLineItems holds the string denoting the line_items edge name in mutations.
 	EdgeLineItems = "line_items"
 	// EdgePauses holds the string denoting the pauses edge name in mutations.
@@ -102,6 +106,8 @@ const (
 	EdgeCouponAssociations = "coupon_associations"
 	// EdgeCouponApplications holds the string denoting the coupon_applications edge name in mutations.
 	EdgeCouponApplications = "coupon_applications"
+	// EdgeInvoicingCustomer holds the string denoting the invoicing_customer edge name in mutations.
+	EdgeInvoicingCustomer = "invoicing_customer"
 	// Table holds the table name of the subscription in the database.
 	Table = "subscriptions"
 	// LineItemsTable is the table that holds the line_items relation/edge.
@@ -146,6 +152,13 @@ const (
 	CouponApplicationsInverseTable = "coupon_applications"
 	// CouponApplicationsColumn is the table column denoting the coupon_applications relation/edge.
 	CouponApplicationsColumn = "subscription_id"
+	// InvoicingCustomerTable is the table that holds the invoicing_customer relation/edge.
+	InvoicingCustomerTable = "subscriptions"
+	// InvoicingCustomerInverseTable is the table name for the Customer entity.
+	// It exists in this package in order to avoid circular dependency with the "customer" package.
+	InvoicingCustomerInverseTable = "customers"
+	// InvoicingCustomerColumn is the table column denoting the invoicing_customer relation/edge.
+	InvoicingCustomerColumn = "invoicing_customer_id"
 )
 
 // Columns holds all SQL columns for subscription fields.
@@ -188,6 +201,8 @@ var Columns = []string{
 	FieldGatewayPaymentMethodID,
 	FieldCustomerTimezone,
 	FieldProrationBehavior,
+	FieldEnableTrueUp,
+	FieldInvoicingCustomerID,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -218,7 +233,7 @@ var (
 	// PlanIDValidator is a validator for the "plan_id" field. It is called by the builders before save.
 	PlanIDValidator func(string) error
 	// DefaultSubscriptionStatus holds the default value on creation for the "subscription_status" field.
-	DefaultSubscriptionStatus string
+	DefaultSubscriptionStatus types.SubscriptionStatus
 	// CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	CurrencyValidator func(string) error
 	// DefaultBillingAnchor holds the default value on creation for the "billing_anchor" field.
@@ -240,74 +255,26 @@ var (
 	// DefaultVersion holds the default value on creation for the "version" field.
 	DefaultVersion int
 	// DefaultPauseStatus holds the default value on creation for the "pause_status" field.
-	DefaultPauseStatus string
+	DefaultPauseStatus types.PauseStatus
 	// DefaultBillingCycle holds the default value on creation for the "billing_cycle" field.
-	DefaultBillingCycle string
+	DefaultBillingCycle types.BillingCycle
 	// BillingCycleValidator is a validator for the "billing_cycle" field. It is called by the builders before save.
 	BillingCycleValidator func(string) error
 	// DefaultOverageFactor holds the default value on creation for the "overage_factor" field.
 	DefaultOverageFactor decimal.Decimal
+	// DefaultPaymentBehavior holds the default value on creation for the "payment_behavior" field.
+	DefaultPaymentBehavior types.PaymentBehavior
+	// DefaultCollectionMethod holds the default value on creation for the "collection_method" field.
+	DefaultCollectionMethod types.CollectionMethod
 	// DefaultCustomerTimezone holds the default value on creation for the "customer_timezone" field.
 	DefaultCustomerTimezone string
 	// DefaultProrationBehavior holds the default value on creation for the "proration_behavior" field.
-	DefaultProrationBehavior string
+	DefaultProrationBehavior types.ProrationBehavior
 	// ProrationBehaviorValidator is a validator for the "proration_behavior" field. It is called by the builders before save.
 	ProrationBehaviorValidator func(string) error
+	// DefaultEnableTrueUp holds the default value on creation for the "enable_true_up" field.
+	DefaultEnableTrueUp bool
 )
-
-// PaymentBehavior defines the type for the "payment_behavior" enum field.
-type PaymentBehavior string
-
-// PaymentBehaviorDefaultActive is the default value of the PaymentBehavior enum.
-const DefaultPaymentBehavior = PaymentBehaviorDefaultActive
-
-// PaymentBehavior values.
-const (
-	PaymentBehaviorAllowIncomplete   PaymentBehavior = "allow_incomplete"
-	PaymentBehaviorDefaultIncomplete PaymentBehavior = "default_incomplete"
-	PaymentBehaviorErrorIfIncomplete PaymentBehavior = "error_if_incomplete"
-	PaymentBehaviorDefaultActive     PaymentBehavior = "default_active"
-)
-
-func (pb PaymentBehavior) String() string {
-	return string(pb)
-}
-
-// PaymentBehaviorValidator is a validator for the "payment_behavior" field enum values. It is called by the builders before save.
-func PaymentBehaviorValidator(pb PaymentBehavior) error {
-	switch pb {
-	case PaymentBehaviorAllowIncomplete, PaymentBehaviorDefaultIncomplete, PaymentBehaviorErrorIfIncomplete, PaymentBehaviorDefaultActive:
-		return nil
-	default:
-		return fmt.Errorf("subscription: invalid enum value for payment_behavior field: %q", pb)
-	}
-}
-
-// CollectionMethod defines the type for the "collection_method" enum field.
-type CollectionMethod string
-
-// CollectionMethodChargeAutomatically is the default value of the CollectionMethod enum.
-const DefaultCollectionMethod = CollectionMethodChargeAutomatically
-
-// CollectionMethod values.
-const (
-	CollectionMethodChargeAutomatically CollectionMethod = "charge_automatically"
-	CollectionMethodSendInvoice         CollectionMethod = "send_invoice"
-)
-
-func (cm CollectionMethod) String() string {
-	return string(cm)
-}
-
-// CollectionMethodValidator is a validator for the "collection_method" field enum values. It is called by the builders before save.
-func CollectionMethodValidator(cm CollectionMethod) error {
-	switch cm {
-	case CollectionMethodChargeAutomatically, CollectionMethodSendInvoice:
-		return nil
-	default:
-		return fmt.Errorf("subscription: invalid enum value for collection_method field: %q", cm)
-	}
-}
 
 // OrderOption defines the ordering options for the Subscription queries.
 type OrderOption func(*sql.Selector)
@@ -497,6 +464,16 @@ func ByProrationBehavior(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProrationBehavior, opts...).ToFunc()
 }
 
+// ByEnableTrueUp orders the results by the enable_true_up field.
+func ByEnableTrueUp(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEnableTrueUp, opts...).ToFunc()
+}
+
+// ByInvoicingCustomerID orders the results by the invoicing_customer_id field.
+func ByInvoicingCustomerID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldInvoicingCustomerID, opts...).ToFunc()
+}
+
 // ByLineItemsCount orders the results by line_items count.
 func ByLineItemsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -580,6 +557,13 @@ func ByCouponApplications(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOptio
 		sqlgraph.OrderByNeighborTerms(s, newCouponApplicationsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByInvoicingCustomerField orders the results by invoicing_customer field.
+func ByInvoicingCustomerField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newInvoicingCustomerStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newLineItemsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -620,5 +604,12 @@ func newCouponApplicationsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(CouponApplicationsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, CouponApplicationsTable, CouponApplicationsColumn),
+	)
+}
+func newInvoicingCustomerStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(InvoicingCustomerInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, false, InvoicingCustomerTable, InvoicingCustomerColumn),
 	)
 }
