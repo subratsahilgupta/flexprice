@@ -758,6 +758,14 @@ func (s *prorationService) CalculateAdditiveEntitlementProration(
 	}
 
 	// Step 3: Combine the limits
+	logger.Infow("proration coefficient calculated",
+		"coefficient", oldProration.ProrationCoefficient.String(),
+		"total_days", oldProration.TotalDays,
+		"remaining_days", oldProration.RemainingDays,
+		"period_start", oldPeriodStart,
+		"period_end", periodEnd,
+		"change_date", changeDate)
+
 	combinedResult := &proration.EntitlementProrationResult{
 		ProratedLimits:       make(map[string]int64),
 		EntitlementDetails:   []proration.EntitlementProrationDetail{},
@@ -847,6 +855,15 @@ func (s *prorationService) CalculateAdditiveEntitlementProration(
 			UsageResetPeriod: usageResetPeriod,
 		})
 
+		logger.Infow("combined entitlement for feature",
+			"feature_id", featureID,
+			"old_plan_original_limit", oldOriginal,
+			"old_plan_prorated_limit", oldLimit,
+			"new_plan_original_limit", newOriginal,
+			"new_plan_prorated_limit", newLimit,
+			"combined_limit", combinedLimit,
+			"coefficient", oldProration.ProrationCoefficient.String())
+
 		logger.Debugw("combined entitlement limits",
 			"feature_id", featureID,
 			"old_limit", oldLimit,
@@ -854,7 +871,7 @@ func (s *prorationService) CalculateAdditiveEntitlementProration(
 			"combined_limit", combinedLimit)
 	}
 
-	logger.Infow("additive entitlement proration calculated",
+	logger.Infow("additive entitlement proration calculation completed",
 		"total_features", len(combinedResult.ProratedLimits),
 		"coefficient", combinedResult.ProrationCoefficient.String(),
 		"old_plan_features", len(oldProration.ProratedLimits),

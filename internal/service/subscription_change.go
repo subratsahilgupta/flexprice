@@ -552,6 +552,13 @@ func (s *subscriptionChangeService) createNewSubscription(
 
 	// Handle entitlement proration for subscription changes
 	// This handles both anniversary and calendar billing cycles
+	s.serviceParams.Logger.Infow("checking entitlement proration condition",
+		"req_proration_behavior", req.ProrationBehavior,
+		"expected_value", types.ProrationBehaviorCreateProrations,
+		"will_execute", req.ProrationBehavior == types.ProrationBehaviorCreateProrations,
+		"old_subscription_id", currentSub.ID,
+		"new_subscription_id", newSub.ID)
+
 	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations {
 		if err := s.handleSubscriptionChangeEntitlementProration(
 			ctx,
