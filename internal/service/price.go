@@ -337,6 +337,16 @@ func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceRespo
 		}
 	}
 
+	if price.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM && lo.FromPtr(price.PriceUnitID) != "" {
+		priceUnitService := NewPriceUnitService(s.ServiceParams)
+		priceUnit, err := priceUnitService.GetPriceUnit(ctx, lo.FromPtr(price.PriceUnitID))
+		if err != nil {
+			s.Logger.Warnw("failed to fetch price unit", "price_unit", *price.PriceUnit, "error", err)
+		} else {
+			response.PricingUnit = priceUnit
+		}
+	}
+
 	return response, nil
 }
 
@@ -350,7 +360,7 @@ func (s *priceService) GetPricesByPlanID(ctx context.Context, req dto.GetPricesB
 		WithStatus(types.StatusPublished).
 		WithEntityType(types.PRICE_ENTITY_TYPE_PLAN).
 		WithAllowExpiredPrices(req.AllowExpired).
-		WithExpand(string(types.ExpandMeters) + "," + string(types.ExpandGroups))
+		WithExpand(string(types.ExpandMeters) + "," + string(types.ExpandGroups) + "," + string(types.ExpandPriceUnit))
 
 	response, err := s.GetPrices(ctx, priceFilter)
 	if err != nil {
@@ -481,6 +491,7 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 	var planIDs []string
 	var addonIDs []string
 	var groupIDs []string
+	var priceUnitIDs []string
 
 	// Separate prices by entity type to collect IDs
 	for _, p := range prices {
@@ -491,6 +502,10 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		}
 		if p.GroupID != "" {
 			groupIDs = append(groupIDs, p.GroupID)
+		}
+		// Collect price unit IDs for prices with custom price units
+		if p.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM && lo.FromPtr(p.PriceUnitID) != "" {
+			priceUnitIDs = append(priceUnitIDs, lo.FromPtr(p.PriceUnitID))
 		}
 	}
 
@@ -565,6 +580,30 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		}
 	}
 
+	// If price units are requested to be expanded, fetch price units in bulk
+	var priceUnitsByID map[string]*dto.PriceUnitResponse
+	if filter.GetExpand().Has(types.ExpandPriceUnit) && len(priceUnitIDs) > 0 {
+		// Remove duplicates
+		priceUnitIDs = lo.Uniq(priceUnitIDs)
+
+		priceUnitService := NewPriceUnitService(s.ServiceParams)
+		priceUnitFilter := types.NewNoLimitPriceUnitFilter()
+		priceUnitFilter.PriceUnitIDs = priceUnitIDs
+
+		priceUnitsResponse, err := priceUnitService.ListPriceUnits(ctx, priceUnitFilter)
+		if err != nil {
+			s.Logger.Warnw("failed to fetch price units in bulk", "error", err)
+			// Don't fail the request, just continue without price units
+			priceUnitsByID = make(map[string]*dto.PriceUnitResponse)
+		} else {
+			// Create a map for price unit lookup
+			priceUnitsByID = make(map[string]*dto.PriceUnitResponse, len(priceUnitsResponse.Items))
+			for _, pu := range priceUnitsResponse.Items {
+				priceUnitsByID[pu.PriceUnit.ID] = pu
+			}
+		}
+	}
+
 	// Build response with expanded fields
 	for i, p := range prices {
 		response.Items[i] = &dto.PriceResponse{Price: p}
@@ -594,6 +633,13 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		if filter.GetExpand().Has(types.ExpandGroups) && p.GroupID != "" {
 			if group, ok := groupsByID[p.GroupID]; ok {
 				response.Items[i].Group = group
+			}
+		}
+
+		// Add price unit if requested and available
+		if filter.GetExpand().Has(types.ExpandPriceUnit) && p.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM && lo.FromPtr(p.PriceUnitID) != "" {
+			if priceUnit, ok := priceUnitsByID[lo.FromPtr(p.PriceUnitID)]; ok {
+				response.Items[i].PricingUnit = priceUnit
 			}
 		}
 	}

@@ -104,10 +104,11 @@ type UpdatePriceRequest struct {
 
 type PriceResponse struct {
 	*price.Price
-	Meter *MeterResponse `json:"meter,omitempty"`
-	Plan  *PlanResponse  `json:"plan,omitempty"`
-	Addon *AddonResponse `json:"addon,omitempty"`
-	Group *GroupResponse `json:"group,omitempty"`
+	Meter       *MeterResponse     `json:"meter,omitempty"`
+	Plan        *PlanResponse      `json:"plan,omitempty"`
+	Addon       *AddonResponse     `json:"addon,omitempty"`
+	Group       *GroupResponse     `json:"group,omitempty"`
+	PricingUnit *PriceUnitResponse `json:"pricing_unit,omitempty"`
 }
 
 // ListPricesResponse represents the response for listing prices
