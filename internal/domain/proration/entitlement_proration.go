@@ -327,10 +327,5 @@ func (c *EntitlementProrationCalculator) validateParams(params EntitlementProrat
 			Mark(ierr.ErrValidation)
 	}
 
-	// Default strategy if not set
-	if params.Strategy == "" {
-		params.Strategy = types.StrategySecondBased
-	}
-
 	return nil
 }

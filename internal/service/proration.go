@@ -714,20 +714,11 @@ func (s *prorationService) CalculateAdditiveEntitlementProration(
 	// Determine the period end to use for proration based on billing cycle
 	var periodEnd time.Time
 	if billingCycle == types.BillingCycleCalendar {
-		// For calendar billing, use calendar month end
+		// For calendar billing, use calendar period end
+		// CalculateCalendarBillingAnchor returns the START of the NEXT period,
+		// which is the END of the current period
 		periodEnd = types.CalculateCalendarBillingAnchor(changeDate, billingPeriod)
-		// Add billing period to get end date
-		switch billingPeriod {
-		case types.BILLING_PERIOD_MONTHLY:
-			periodEnd = periodEnd.AddDate(0, 1, 0)
-		case types.BILLING_PERIOD_ANNUAL:
-			periodEnd = periodEnd.AddDate(1, 0, 0)
-		case types.BILLING_PERIOD_QUARTER:
-			periodEnd = periodEnd.AddDate(0, 3, 0)
-		default:
-			periodEnd = periodEnd.AddDate(0, 1, 0)
-		}
-		logger.Debugw("using calendar month end for proration",
+		logger.Debugw("using calendar period end for proration",
 			"period_end", periodEnd)
 	} else {
 		// For anniversary billing, use subscription period end
