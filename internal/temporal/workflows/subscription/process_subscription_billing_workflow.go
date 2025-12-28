@@ -12,14 +12,14 @@ const (
 	// Workflow name - must match the function name
 	WorkflowProcessSubscriptionBilling = "ProcessSubscriptionBillingWorkflow"
 	// Activity names - must match the registered method names
-	ActivityCheckDraftSubscription        = "CheckDraftSubscriptionActivity"
-	ActivityCheckPause                    = "CheckPauseActivity"
-	ActivityCalculatePeriods              = "CalculatePeriodsActivity"
-	ActivityCreateInvoices                = "CreateInvoicesActivity"
-	ActivityUpdateSubscriptionPeriod      = "UpdateCurrentPeriodActivity"
-	ActivityCheckSubscriptionCancellation = "CheckSubscriptionCancellationActivity"
-	ActivitySyncInvoiceToExternalVendor   = "SyncInvoiceToExternalVendorActivity"
-	ActivityAttemptPayment                = "AttemptPaymentActivity"
+	ActivityCheckDraftSubscription = "CheckDraftSubscriptionActivity"
+	ActivityCheckPause             = "CheckPauseActivity"
+	ActivityCalculatePeriods       = "CalculatePeriodsActivity"
+	ActivityCreateInvoices         = "CreateInvoicesActivity"
+	ActivityUpdateCurrentPeriod    = "UpdateCurrentPeriodActivity"
+	ActivityCheckCancellation      = "CheckCancellationActivity"
+	ActivitySyncInvoice            = "SyncInvoiceActivity"
+	ActivityAttemptPayment         = "AttemptPaymentActivity"
 )
 
 // ProcessSubscriptionBillingWorkflow processes a subscription billing workflow
@@ -44,12 +44,7 @@ func ProcessSubscriptionBillingWorkflow(
 	// Validate input
 	if err := input.Validate(); err != nil {
 		logger.Error("Invalid workflow input", "error", err)
-		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
-			Success:     false,
-			Error:       &errorMsg,
-			CompletedAt: workflow.Now(ctx),
-		}, nil
+		return nil, err
 	}
 
 	// Define activity options
@@ -85,12 +80,7 @@ func ProcessSubscriptionBillingWorkflow(
 		logger.Error("Failed to check if subscription is draft",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
-		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
-			Success:     false,
-			Error:       &errorMsg,
-			CompletedAt: workflow.Now(ctx),
-		}, nil
+		return nil, err
 	}
 
 	if draftSubscriptionOutput.IsDraft {
@@ -122,12 +112,7 @@ func ProcessSubscriptionBillingWorkflow(
 		logger.Error("Failed to calculate periods",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
-		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
-			Success:     false,
-			Error:       &errorMsg,
-			CompletedAt: workflow.Now(ctx),
-		}, nil
+		return nil, err
 	}
 	if !periodsOutput.ShouldProcess {
 		logger.Info("No period transitions needed",
@@ -166,12 +151,7 @@ func ProcessSubscriptionBillingWorkflow(
 		logger.Error("Failed to create invoice for period",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
-		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
-			Success:     false,
-			Error:       &errorMsg,
-			CompletedAt: workflow.Now(ctx),
-		}, nil
+		return nil, err
 	}
 
 	// ================================================================================
@@ -187,17 +167,12 @@ func ProcessSubscriptionBillingWorkflow(
 		InvoiceIDs:    createInvoicesOutput.InvoiceIDs,
 	}
 
-	err = workflow.ExecuteActivity(ctx, ActivitySyncInvoiceToExternalVendor, syncInvoicesInput).Get(ctx, &syncInvoicesOutput)
+	err = workflow.ExecuteActivity(ctx, ActivitySyncInvoice, syncInvoicesInput).Get(ctx, &syncInvoicesOutput)
 	if err != nil {
 		logger.Error("Failed to sync invoice to external vendor",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
-		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
-			Success:     false,
-			Error:       &errorMsg,
-			CompletedAt: workflow.Now(ctx),
-		}, nil
+		return nil, err
 	}
 
 	// ================================================================================
@@ -220,12 +195,7 @@ func ProcessSubscriptionBillingWorkflow(
 		logger.Error("Failed to attempt payment for invoices",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
-		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
-			Success:     false,
-			Error:       &errorMsg,
-			CompletedAt: workflow.Now(ctx),
-		}, nil
+		return nil, err
 	}
 
 	// ================================================================================
@@ -241,17 +211,12 @@ func ProcessSubscriptionBillingWorkflow(
 		Period:         periodsOutput.Periods[len(periodsOutput.Periods)-1],
 	}
 
-	err = workflow.ExecuteActivity(ctx, ActivityCheckSubscriptionCancellation, cancelSubscriptionInput).Get(ctx, &cancelSubscriptionOutput)
+	err = workflow.ExecuteActivity(ctx, ActivityCheckCancellation, cancelSubscriptionInput).Get(ctx, &cancelSubscriptionOutput)
 	if err != nil {
 		logger.Error("Failed to cancel subscription",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
-		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
-			Success:     false,
-			Error:       &errorMsg,
-			CompletedAt: workflow.Now(ctx),
-		}, nil
+		return nil, err
 	}
 
 	// ================================================================================
@@ -272,17 +237,12 @@ func ProcessSubscriptionBillingWorkflow(
 		PeriodEnd:      lastPeriod.End,
 	}
 
-	err = workflow.ExecuteActivity(ctx, ActivityUpdateSubscriptionPeriod, updateSubscriptionPeriodInput).Get(ctx, &updateSubscriptionPeriodOutput)
+	err = workflow.ExecuteActivity(ctx, ActivityUpdateCurrentPeriod, updateSubscriptionPeriodInput).Get(ctx, &updateSubscriptionPeriodOutput)
 	if err != nil {
 		logger.Error("Failed to update subscription period",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
-		errorMsg := err.Error()
-		return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{
-			Success:     false,
-			Error:       &errorMsg,
-			CompletedAt: workflow.Now(ctx),
-		}, nil
+		return nil, err
 	}
 
 	return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{

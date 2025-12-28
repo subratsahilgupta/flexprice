@@ -37,6 +37,10 @@ func (s *BillingActivities) CheckDraftSubscriptionActivity(
 		return nil, err
 	}
 
+	// Set context values
+	ctx = types.SetTenantID(ctx, input.TenantID)
+	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+
 	sub, err := s.serviceParams.SubRepo.Get(ctx, input.SubscriptionID)
 	if err != nil {
 		return nil, err
