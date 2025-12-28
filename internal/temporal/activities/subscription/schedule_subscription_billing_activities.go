@@ -38,62 +38,57 @@ func (s *SubscriptionActivities) ScheduleBillingActivity(ctx context.Context, in
 		return nil, err
 	}
 
-	now := time.Now().UTC()
+	// Always take the range of 15 minutes before the current time
+	now := time.Now().UTC().Add(-15 * time.Minute)
 
 	response := &subscriptionModels.ScheduleSubscriptionBillingWorkflowResult{
 		SubscriptionIDs: make([]string, 0),
 	}
 
 	offset := 0
-	for {
-		filter := &types.SubscriptionFilter{
-			QueryFilter: &types.QueryFilter{
-				Limit:  lo.ToPtr(input.BatchSize),
-				Offset: lo.ToPtr(offset),
-				Status: lo.ToPtr(types.StatusPublished),
-			},
-			SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive},
-			TimeRangeFilter: &types.TimeRangeFilter{
-				EndTime: &now,
-			},
-		}
+	filter := &types.SubscriptionFilter{
+		QueryFilter: &types.QueryFilter{
+			Limit:  lo.ToPtr(input.BatchSize),
+			Offset: lo.ToPtr(offset),
+			Status: lo.ToPtr(types.StatusPublished),
+		},
+		SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive},
+		TimeRangeFilter: &types.TimeRangeFilter{
+			EndTime: &now,
+		},
+	}
 
-		subs, err := s.subscriptionService.ListAllTenantSubscriptions(ctx, filter)
+	subs, err := s.subscriptionService.ListAllTenantSubscriptions(ctx, filter)
+	if err != nil {
+		return response, err
+	}
+
+	temporalSvc := temporalService.GetGlobalTemporalService()
+	subItems := subs.Items
+	for _, sub := range subItems {
+		// update context to include the tenant id
+		ctx = context.WithValue(ctx, types.CtxTenantID, sub.TenantID)
+		ctx = context.WithValue(ctx, types.CtxEnvironmentID, sub.EnvironmentID)
+		ctx = context.WithValue(ctx, types.CtxUserID, sub.CreatedBy)
+
+		// Here we need to launch a new workflow to update the billing period
+
+		_, err := temporalSvc.ExecuteWorkflow(
+			ctx,
+			WorkflowProcessSubscriptionBilling,
+			subscriptionModels.ProcessSubscriptionBillingWorkflowInput{
+				SubscriptionID: sub.ID,
+				TenantID:       sub.TenantID,
+				EnvironmentID:  sub.EnvironmentID,
+				UserID:         sub.CreatedBy,
+				PeriodStart:    sub.CurrentPeriodStart,
+				PeriodEnd:      sub.CurrentPeriodEnd,
+			},
+		)
 		if err != nil {
 			return response, err
 		}
-
-		temporalSvc := temporalService.GetGlobalTemporalService()
-		for _, sub := range subs.Items {
-			// update context to include the tenant id
-			ctx = context.WithValue(ctx, types.CtxTenantID, sub.TenantID)
-			ctx = context.WithValue(ctx, types.CtxEnvironmentID, sub.EnvironmentID)
-			ctx = context.WithValue(ctx, types.CtxUserID, sub.CreatedBy)
-
-			// Here we need to launch a new workflow to update the billing period
-
-			_, err := temporalSvc.ExecuteWorkflow(
-				ctx,
-				WorkflowProcessSubscriptionBilling,
-				subscriptionModels.ProcessSubscriptionBillingWorkflowInput{
-					SubscriptionID: sub.ID,
-					TenantID:       sub.TenantID,
-					EnvironmentID:  sub.EnvironmentID,
-					UserID:         sub.CreatedBy,
-					PeriodStart:    sub.CurrentPeriodStart,
-					PeriodEnd:      sub.CurrentPeriodEnd,
-				},
-			)
-			if err != nil {
-				return response, err
-			}
-			response.SubscriptionIDs = append(response.SubscriptionIDs, sub.ID)
-			break
-		}
-		offset += len(subs.Items)
-		if len(subs.Items) < input.BatchSize {
-			break // No more subscriptions to fetch
-		}
+		response.SubscriptionIDs = append(response.SubscriptionIDs, sub.ID)
 	}
 
 	return response, nil

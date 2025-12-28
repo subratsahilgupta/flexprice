@@ -128,6 +128,14 @@ type SubscriptionService interface {
 	ActivateDraftSubscription(ctx context.Context, subID string, req dto.ActivateDraftSubscriptionRequest) (*dto.SubscriptionResponse, error)
 
 	GetActiveAddonAssociations(ctx context.Context, subscriptionID string) (*dto.ListAddonAssociationsResponse, error)
+
+	// Cron methods
+
+	// Calculate Billing Periods for the subscription
+	CalculateBillingPeriods(ctx context.Context, subscriptionID string) ([]dto.Period, error)
+
+	// Create Draft Invoice for the subscription
+	CreateDraftInvoiceForSubscription(ctx context.Context, subscriptioID string, period dto.Period) (*dto.InvoiceResponse, error)
 }
 
 type ServiceDependencies struct {

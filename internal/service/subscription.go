@@ -5056,3 +5056,92 @@ func (s *subscriptionService) GetActiveAddonAssociations(ctx context.Context, su
 	}
 	return associations, nil
 }
+
+// Calculate Billing Periods
+func (s *subscriptionService) CalculateBillingPeriods(ctx context.Context, subscriptionID string) ([]dto.Period, error) {
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	currentStart := sub.CurrentPeriodStart
+	currentEnd := sub.CurrentPeriodEnd
+
+	periods := make([]dto.Period, 0)
+
+	periods = append(periods, dto.Period{
+		Start: currentStart,
+		End:   currentEnd,
+	})
+
+	now := time.Now().UTC()
+
+	for currentEnd.Before(now) {
+		nextStart := currentEnd
+		nextEnd, err := types.NextBillingDate(nextStart, sub.BillingAnchor, sub.BillingPeriodCount, sub.BillingPeriod, sub.EndDate)
+		if err != nil {
+			return nil, err
+		}
+		periods = append(periods, dto.Period{
+			Start: nextStart,
+			End:   nextEnd,
+		})
+
+		if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(nextEnd) {
+			s.Logger.Infow("subscription cancelled at period end",
+				"subscription_id", sub.ID,
+				"cancel_at", sub.CancelAt,
+				"next_end", nextEnd)
+			break
+		}
+
+		// in case of end date reached or next end is equal to current end, we break the loop
+		// nextEnd will be equal to currentEnd in case of end date reached
+		if nextEnd.Equal(currentEnd) {
+			s.Logger.Infow("stopped period generation - reached subscription end date",
+				"subscription_id", sub.ID,
+				"end_date", sub.EndDate,
+				"final_period_end", currentEnd)
+			break
+		}
+
+		currentEnd = nextEnd
+	}
+
+	return periods, nil
+}
+
+// Create Draft Invoice for Subscription
+func (s *subscriptionService) CreateDraftInvoiceForSubscription(ctx context.Context, subscriptionID string, period dto.Period) (*dto.InvoiceResponse, error) {
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	billingService := NewBillingService(s.ServiceParams)
+	invoiceService := NewInvoiceService(s.ServiceParams)
+
+	// Prepare Invoice Request
+	invoiceReq, err := billingService.PrepareSubscriptionInvoiceRequest(
+		ctx,
+		sub,
+		period.Start,
+		period.End,
+		types.ReferencePointPeriodEnd,
+	)
+	if err != nil {
+		return nil, err
+	}
+	// Check if the invoice is zeroAmountInvoice
+	if invoiceReq.Subtotal.IsZero() {
+		return nil, nil
+	}
+
+	// Create Invoice
+	inv, err := invoiceService.CreateInvoice(ctx, *invoiceReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return inv, nil
+}

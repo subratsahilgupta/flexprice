@@ -3,6 +3,7 @@ package subscription
 import (
 	"time"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
@@ -63,6 +64,37 @@ type ProcessSubscriptionBillingWorkflowResult struct {
 	Success     bool      `json:"success"`
 	Error       *string   `json:"error,omitempty"`
 	CompletedAt time.Time `json:"completed_at"`
+}
+
+type CheckDraftSubscriptionAcitvityInput struct {
+	SubscriptionID string `json:"subscription_id"`
+	TenantID       string `json:"tenant_id"`
+	EnvironmentID  string `json:"environment_id"`
+}
+
+// Validate validates the check draft subscription activity input
+func (i *CheckDraftSubscriptionAcitvityInput) Validate() error {
+
+	if i.SubscriptionID == "" {
+		return ierr.NewError("subscription_id is required").
+			WithHint("Subscription ID is required").
+			Mark(ierr.ErrValidation)
+	}
+	if i.TenantID == "" {
+		return ierr.NewError("tenant_id is required").
+			WithHint("Tenant ID is required").
+			Mark(ierr.ErrValidation)
+	}
+	if i.EnvironmentID == "" {
+		return ierr.NewError("environment_id is required").
+			WithHint("Environment ID is required").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+type CheckDraftSubscriptionAcitivityOutput struct {
+	IsDraft bool `json:"is_draft"`
 }
 
 // CheckSubscriptionPauseStatusActivity input
@@ -140,27 +172,18 @@ func (i *CalculatePeriodsActivityInput) Validate() error {
 	return nil
 }
 
-// BillingPeriod represents a single billing period
-type BillingPeriod struct {
-	Start time.Time `json:"start"`
-	End   time.Time `json:"end"`
-}
-
 // CalculatePeriodsActivityOutput represents the output for calculating billing periods
 type CalculatePeriodsActivityOutput struct {
-	Periods        []BillingPeriod `json:"periods"`
-	HasMorePeriods bool            `json:"has_more_periods"`
-	ReachedEndDate bool            `json:"reached_end_date"`
-	FinalPeriodEnd *time.Time      `json:"final_period_end,omitempty"`
+	Periods       []dto.Period `json:"periods"`
+	ShouldProcess bool         `json:"should_process"`
 }
 
 // CreateInvoicesActivityInput represents the input for creating an invoice for a period
 type CreateInvoicesActivityInput struct {
-	SubscriptionID string    `json:"subscription_id"`
-	TenantID       string    `json:"tenant_id"`
-	EnvironmentID  string    `json:"environment_id"`
-	PeriodStart    time.Time `json:"period_start"`
-	PeriodEnd      time.Time `json:"period_end"`
+	SubscriptionID string       `json:"subscription_id"`
+	TenantID       string       `json:"tenant_id"`
+	EnvironmentID  string       `json:"environment_id"`
+	Periods        []dto.Period `json:"periods"`
 }
 
 // Validate validates the create invoices activity input
@@ -180,31 +203,12 @@ func (i *CreateInvoicesActivityInput) Validate() error {
 			WithHint("Environment ID is required").
 			Mark(ierr.ErrValidation)
 	}
-	if i.PeriodStart.IsZero() {
-		return ierr.NewError("period_start is required").
-			WithHint("Period Start is required").
-			Mark(ierr.ErrValidation)
-	}
-	if i.PeriodEnd.IsZero() {
-		return ierr.NewError("period_end is required").
-			WithHint("Period End is required").
-			Mark(ierr.ErrValidation)
-	}
-	if i.PeriodEnd.Before(i.PeriodStart) {
-		return ierr.NewError("period_end must be after period_start").
-			WithHint("Period End must be after Period Start").
-			WithReportableDetails(map[string]any{
-				"period_start": i.PeriodStart,
-				"period_end":   i.PeriodEnd,
-			}).Mark(ierr.ErrValidation)
-	}
 	return nil
 }
 
 // CreateInvoicesActivityOutput represents the output for creating an invoice
 type CreateInvoicesActivityOutput struct {
-	InvoiceID      *string `json:"invoice_id,omitempty"`
-	InvoiceCreated bool    `json:"invoice_created"`
+	InvoiceIDs []string `json:"invoice_ids"`
 }
 
 // UpdateSubscriptionPeriodActivityInput represents the input for updating subscription period
@@ -261,24 +265,13 @@ type UpdateSubscriptionPeriodActivityOutput struct {
 
 // SyncInvoiceToExternalVendorActivityInput represents the input for syncing invoice to external vendor
 type SyncInvoiceToExternalVendorActivityInput struct {
-	InvoiceID      string `json:"invoice_id"`
-	SubscriptionID string `json:"subscription_id"`
-	TenantID       string `json:"tenant_id"`
-	EnvironmentID  string `json:"environment_id"`
+	InvoiceIDs    []string `json:"invoice_ids"`
+	TenantID      string   `json:"tenant_id"`
+	EnvironmentID string   `json:"environment_id"`
 }
 
 // Validate validates the sync invoice to external vendor activity input
 func (i *SyncInvoiceToExternalVendorActivityInput) Validate() error {
-	if i.InvoiceID == "" {
-		return ierr.NewError("invoice_id is required").
-			WithHint("Invoice ID is required").
-			Mark(ierr.ErrValidation)
-	}
-	if i.SubscriptionID == "" {
-		return ierr.NewError("subscription_id is required").
-			WithHint("Subscription ID is required").
-			Mark(ierr.ErrValidation)
-	}
 	if i.TenantID == "" {
 		return ierr.NewError("tenant_id is required").
 			WithHint("Tenant ID is required").
@@ -299,19 +292,14 @@ type SyncInvoiceToExternalVendorActivityOutput struct {
 
 // AttemptPaymentActivityInput represents the input for attempting payment
 type AttemptPaymentActivityInput struct {
-	InvoiceID      string `json:"invoice_id"`
-	SubscriptionID string `json:"subscription_id"`
-	TenantID       string `json:"tenant_id"`
-	EnvironmentID  string `json:"environment_id"`
+	SubscriptionID string   `json:"subscription_id"`
+	TenantID       string   `json:"tenant_id"`
+	EnvironmentID  string   `json:"environment_id"`
+	InvoiceIDs     []string `json:"invoice_ids"`
 }
 
 // Validate validates the attempt payment activity input
 func (i *AttemptPaymentActivityInput) Validate() error {
-	if i.InvoiceID == "" {
-		return ierr.NewError("invoice_id is required").
-			WithHint("Invoice ID is required").
-			Mark(ierr.ErrValidation)
-	}
 	if i.SubscriptionID == "" {
 		return ierr.NewError("subscription_id is required").
 			WithHint("Subscription ID is required").
@@ -337,10 +325,10 @@ type AttemptPaymentActivityOutput struct {
 
 // CheckSubscriptionCancellationActivityInput represents the input for checking subscription cancellation
 type CheckSubscriptionCancellationActivityInput struct {
-	SubscriptionID string    `json:"subscription_id"`
-	TenantID       string    `json:"tenant_id"`
-	EnvironmentID  string    `json:"environment_id"`
-	PeriodEnd      time.Time `json:"period_end"`
+	SubscriptionID string     `json:"subscription_id"`
+	TenantID       string     `json:"tenant_id"`
+	EnvironmentID  string     `json:"environment_id"`
+	Period         dto.Period `json:"period"`
 }
 
 // Validate validates the check subscription cancellation activity input
@@ -360,16 +348,10 @@ func (i *CheckSubscriptionCancellationActivityInput) Validate() error {
 			WithHint("Environment ID is required").
 			Mark(ierr.ErrValidation)
 	}
-	if i.PeriodEnd.IsZero() {
-		return ierr.NewError("period_end is required").
-			WithHint("Period End is required").
-			Mark(ierr.ErrValidation)
-	}
 	return nil
 }
 
 // CheckSubscriptionCancellationActivityOutput represents the output for checking subscription cancellation
 type CheckSubscriptionCancellationActivityOutput struct {
-	ShouldCancel bool       `json:"should_cancel"`
-	CancelledAt  *time.Time `json:"cancelled_at,omitempty"`
+	Success bool `json:"success"`
 }

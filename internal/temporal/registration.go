@@ -183,7 +183,6 @@ func buildWorkerConfig(
 		)
 		activitiesList = append(activitiesList,
 			scheduleBillingActivities.ScheduleBillingActivity,
-			billingActivities.CheckPauseActivity,
 			billingActivities.CalculatePeriodsActivity,
 			billingActivities.CreateInvoicesActivity,
 			billingActivities.UpdateCurrentPeriodActivity,
