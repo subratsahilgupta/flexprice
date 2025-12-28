@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
@@ -30,8 +31,8 @@ func NewBillingActivities(
 // CheckDraftSubscriptionActivity checks if the subscription is draft
 func (s *BillingActivities) CheckDraftSubscriptionActivity(
 	ctx context.Context,
-	input subscriptionModels.CheckDraftSubscriptionAcitvityInput,
-) (*subscriptionModels.CheckDraftSubscriptionAcitivityOutput, error) {
+	input subscriptionModels.CheckDraftSubscriptionActivityInput,
+) (*subscriptionModels.CheckDraftSubscriptionActivityOutput, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
@@ -42,12 +43,12 @@ func (s *BillingActivities) CheckDraftSubscriptionActivity(
 	}
 
 	if sub.SubscriptionStatus == types.SubscriptionStatusDraft {
-		return &subscriptionModels.CheckDraftSubscriptionAcitivityOutput{
+		return &subscriptionModels.CheckDraftSubscriptionActivityOutput{
 			IsDraft: true,
 		}, nil
 	}
 
-	return &subscriptionModels.CheckDraftSubscriptionAcitivityOutput{
+	return &subscriptionModels.CheckDraftSubscriptionActivityOutput{
 		IsDraft: false,
 	}, nil
 }
@@ -103,7 +104,10 @@ func (s *BillingActivities) CreateInvoicesActivity(
 		if err != nil {
 			return nil, err
 		}
-		invoices = append(invoices, invoice.ID)
+		// Skip nil invoices (zero-amount invoices)
+		if invoice != nil {
+			invoices = append(invoices, invoice.ID)
+		}
 	}
 
 	for _, invoice := range invoices {
@@ -230,17 +234,49 @@ func (s *BillingActivities) CheckCancellationActivity(
 		return nil, err
 	}
 
-	if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(input.Period.End) && sub.EndDate != nil && input.Period.End.Equal(*sub.EndDate) {
+	shouldCancel := false
+	var cancelledAt *time.Time
+
+	// Check for cancellation at period end
+	if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(input.Period.End) {
+		shouldCancel = true
+		cancelledAt = sub.CancelAt
+		s.logger.Infow("subscription should be cancelled at period end",
+			"subscription_id", sub.ID,
+			"period_end", input.Period.End,
+			"cancel_at", *sub.CancelAt)
+	}
+
+	// Check if period end matches the subscription end date
+	if sub.EndDate != nil && input.Period.End.Equal(*sub.EndDate) {
+		shouldCancel = true
+		cancelledAt = sub.EndDate
+		s.logger.Infow("subscription reached end date",
+			"subscription_id", sub.ID,
+			"period_end", input.Period.End,
+			"end_date", *sub.EndDate)
+	}
+
+	// Perform cancellation if required
+	if shouldCancel {
 		sub.SubscriptionStatus = types.SubscriptionStatusCancelled
-		sub.CancelledAt = sub.EndDate
+		sub.CancelledAt = cancelledAt
+
 		err := s.serviceParams.DB.WithTx(ctx, func(ctx context.Context) error {
 			return s.serviceParams.SubRepo.Update(ctx, sub)
 		})
 		if err != nil {
+			s.logger.Errorw("failed to cancel subscription",
+				"subscription_id", sub.ID,
+				"error", err)
 			return nil, err
 		}
 
+		s.logger.Infow("subscription cancelled successfully",
+			"subscription_id", sub.ID,
+			"cancelled_at", *cancelledAt)
 	}
+
 	return &subscriptionModels.CheckSubscriptionCancellationActivityOutput{
 		Success: true,
 	}, nil

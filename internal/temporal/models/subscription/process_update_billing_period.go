@@ -66,14 +66,14 @@ type ProcessSubscriptionBillingWorkflowResult struct {
 	CompletedAt time.Time `json:"completed_at"`
 }
 
-type CheckDraftSubscriptionAcitvityInput struct {
+type CheckDraftSubscriptionActivityInput struct {
 	SubscriptionID string `json:"subscription_id"`
 	TenantID       string `json:"tenant_id"`
 	EnvironmentID  string `json:"environment_id"`
 }
 
 // Validate validates the check draft subscription activity input
-func (i *CheckDraftSubscriptionAcitvityInput) Validate() error {
+func (i *CheckDraftSubscriptionActivityInput) Validate() error {
 
 	if i.SubscriptionID == "" {
 		return ierr.NewError("subscription_id is required").
@@ -93,7 +93,7 @@ func (i *CheckDraftSubscriptionAcitvityInput) Validate() error {
 	return nil
 }
 
-type CheckDraftSubscriptionAcitivityOutput struct {
+type CheckDraftSubscriptionActivityOutput struct {
 	IsDraft bool `json:"is_draft"`
 }
 

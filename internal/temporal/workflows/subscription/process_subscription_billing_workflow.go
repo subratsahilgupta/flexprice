@@ -74,8 +74,8 @@ func ProcessSubscriptionBillingWorkflow(
 	logger.Info("Step 1: Checking if subscription is draft",
 		"subscription_id", input.SubscriptionID)
 
-	var draftSubscriptionOutput subscriptionModels.CheckDraftSubscriptionAcitivityOutput
-	draftSubscriptionInput := subscriptionModels.CheckDraftSubscriptionAcitvityInput{
+	var draftSubscriptionOutput subscriptionModels.CheckDraftSubscriptionActivityOutput
+	draftSubscriptionInput := subscriptionModels.CheckDraftSubscriptionActivityInput{
 		SubscriptionID: input.SubscriptionID,
 		TenantID:       input.TenantID,
 		EnvironmentID:  input.EnvironmentID,
@@ -150,13 +150,15 @@ func ProcessSubscriptionBillingWorkflow(
 		"subscription_id", input.SubscriptionID,
 		"periods_to_process", len(periodsOutput.Periods)-1)
 
-	// Create invoice for this period
+	// Create invoice for completed periods (all except last)
+	// The last period becomes the new current period
+	completedPeriods := periodsOutput.Periods[:len(periodsOutput.Periods)-1]
 	var createInvoicesOutput subscriptionModels.CreateInvoicesActivityOutput
 	createInvoicesInput := subscriptionModels.CreateInvoicesActivityInput{
 		SubscriptionID: input.SubscriptionID,
 		TenantID:       input.TenantID,
 		EnvironmentID:  input.EnvironmentID,
-		Periods:        periodsOutput.Periods,
+		Periods:        completedPeriods,
 	}
 
 	err = workflow.ExecuteActivity(ctx, ActivityCreateInvoices, createInvoicesInput).Get(ctx, &createInvoicesOutput)
@@ -259,11 +261,15 @@ func ProcessSubscriptionBillingWorkflow(
 	logger.Info("Step 7: Updating subscription period",
 		"subscription_id", input.SubscriptionID)
 
+	// Update to the new current period (last period from calculated periods)
+	lastPeriod := periodsOutput.Periods[len(periodsOutput.Periods)-1]
 	var updateSubscriptionPeriodOutput subscriptionModels.UpdateSubscriptionPeriodActivityOutput
 	updateSubscriptionPeriodInput := subscriptionModels.UpdateSubscriptionPeriodActivityInput{
 		SubscriptionID: input.SubscriptionID,
 		TenantID:       input.TenantID,
 		EnvironmentID:  input.EnvironmentID,
+		PeriodStart:    lastPeriod.Start,
+		PeriodEnd:      lastPeriod.End,
 	}
 
 	err = workflow.ExecuteActivity(ctx, ActivityUpdateSubscriptionPeriod, updateSubscriptionPeriodInput).Get(ctx, &updateSubscriptionPeriodOutput)
