@@ -1413,3 +1413,27 @@ func (r *GetUpcomingCreditGrantApplicationsRequest) Validate() error {
 
 	return nil
 }
+
+type Period struct {
+	Start time.Time
+	End   time.Time
+}
+
+func (p *Period) Validate() error {
+	if p.Start.IsZero() {
+		return ierr.NewError("start_date is required").
+			WithHint("Please provide a start date").
+			Mark(ierr.ErrValidation)
+	}
+	if p.End.IsZero() {
+		return ierr.NewError("end_date is required").
+			WithHint("Please provide an end date").
+			Mark(ierr.ErrValidation)
+	}
+	if p.Start.After(p.End) {
+		return ierr.NewError("start_date cannot be after end_date").
+			WithHint("Ensure the period start date is on or before the end date").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
