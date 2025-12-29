@@ -135,7 +135,7 @@ type SubscriptionService interface {
 	CalculateBillingPeriods(ctx context.Context, subscriptionID string) ([]dto.Period, error)
 
 	// Create Draft Invoice for the subscription
-	CreateDraftInvoiceForSubscription(ctx context.Context, subscriptioID string, period dto.Period) (*dto.InvoiceResponse, error)
+	CreateDraftInvoiceForSubscription(ctx context.Context, subscriptionID string, period dto.Period) (*dto.InvoiceResponse, error)
 }
 
 type ServiceDependencies struct {

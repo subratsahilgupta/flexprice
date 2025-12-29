@@ -19,12 +19,12 @@ const (
 )
 
 // SubscriptionActivities contains all subscription-related activities
-// When registered with Temporal, methods will be called as "SubscriptionActivities.ScheduleSubscriptionUpdateBillingPeriod"
+// When registered with Temporal, methods will be called as "SubscriptionActivities.ScheduleBillingActivity"
 type SubscriptionActivities struct {
 	subscriptionService service.SubscriptionService
 }
 
-// NewPlanActivities creates a new PlanActivities instance
+// NewSubscriptionActivities creates a new SubscriptionActivities instance
 func NewSubscriptionActivities(subscriptionService service.SubscriptionService) *SubscriptionActivities {
 	return &SubscriptionActivities{
 		subscriptionService: subscriptionService,
