@@ -38,8 +38,7 @@ func (s *SubscriptionActivities) ScheduleBillingActivity(ctx context.Context, in
 		return nil, err
 	}
 
-	// Always take the range of 15 minutes before the current time
-	now := time.Now().UTC().Add(-15 * time.Minute)
+	now := time.Now().UTC()
 
 	response := &subscriptionModels.ScheduleSubscriptionBillingWorkflowResult{
 		SubscriptionIDs: make([]string, 0),
