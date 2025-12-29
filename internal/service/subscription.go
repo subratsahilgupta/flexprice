@@ -1100,6 +1100,80 @@ func (s *subscriptionService) handleCreditGrants(
 		"subscription_id", subscription.ID,
 		"credit_grants_count", len(creditGrantRequests))
 
+	// Here we are passing time.Now() as the billing anchor because we want to calculate the previous billing date from the current date.
+	// This is because the credit grant is created during subscription creation, and we want to calculate the previous billing date from the current date.
+	// This is because
+	previousBillingDate, err := types.PreviousBillingDate(
+		time.Now(),
+		subscription.BillingPeriodCount,
+		subscription.BillingPeriod,
+	)
+
+	if err != nil {
+		s.Logger.Errorw("failed to calculate previous billing date",
+			"subscription_id", subscription.ID,
+			"error", err)
+		return err
+	}
+
+	s.Logger.Infow("previous billing date",
+		"subscription_id", subscription.ID,
+		"previous_billing_date", previousBillingDate)
+
+	// IMPORTANT LIMITATION: Credit Grants with ExpirationType BillingCycle and Backdated Subscriptions
+	//
+	// There is a known issue with credit grants that have ExpirationType set to CreditGrantExpiryTypeBillingCycle
+	// when applied to backdated subscriptions with multiple billing periods.
+	//
+	// Problem Scenario:
+	// - Today is Dec 27, 2025
+	// - Subscription is backdated to start at April 27, 2025 (8 months ago)
+	// - Monthly billing: subscription has 8 periods that need processing
+	// - Credit grant with ExpirationType BillingCycle is created during subscription creation
+	//
+	// The Issue:
+	// 1. At subscription creation, CurrentPeriodEnd might be June 27, 2025 (first period)
+	// 2. Credit grant expiry is set to subscription.CurrentPeriodEnd (June 27, 2025) at grant application time
+	// 3. When UpdateBillingPeriods cron runs, it updates CurrentPeriodEnd to Jan 27, 2026 (current period)
+	// 4. This causes grants that should have expired in previous periods (e.g., June 27) to remain valid
+	//    because their expiry date was set based on the period end at creation time, not the actual
+	//    period when they should expire
+	//
+	// Reverse Issue:
+	// - If UpdateBillingPeriods cron doesn't run before ProcessScheduledCreditGrantApplications cron:
+	//   - Grants scheduled for current period won't be applied because CurrentPeriodEnd hasn't been updated
+	//   - The grant application logic checks against CurrentPeriodEnd which is still at an old period
+	//
+	// Root Cause:
+	// - In ApplyCreditGrantToWallet (creditgrant.go:461), expiry date for BillingCycle type uses:
+	//   expiryDate = &subscription.CurrentPeriodEnd
+	// - This uses the period end at grant application time, not the period end when the grant should expire
+	//
+	// Impact:
+	// - Grants may expire at incorrect times for backdated subscriptions
+	// - Grants may not be applied when they should be if billing period cron hasn't run
+	// - This creates a dependency between UpdateBillingPeriods and ProcessScheduledCreditGrantApplications cron jobs
+	//
+	// Future Fix:
+	// - Expiry date should be calculated based on the actual billing period when the grant is applied,
+	//   not the subscription's CurrentPeriodEnd at grant creation time
+	// - For recurring grants, expiry should be calculated per period based on the period end for that
+	//   specific application, not the subscription's current period end
+	if subscription.StartDate.Before(previousBillingDate) {
+		s.Logger.Infow("subscription start date is before previous billing date, skipping credit grants",
+			"subscription_id", subscription.ID,
+			"start_date", subscription.StartDate,
+			"previous_billing_date", previousBillingDate)
+		return ierr.NewError("subscription start date is before previous billing date").
+			WithHint("You cannot create a credit grant for a subscription that starts before the previous billing date").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id":       subscription.ID,
+				"start_date":            subscription.StartDate,
+				"previous_billing_date": previousBillingDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Create and apply credit grants
 
 	startDate := subscription.StartDate
