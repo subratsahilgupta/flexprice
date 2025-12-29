@@ -311,6 +311,17 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			return err
 		}
 
+		// Handle entitlement proration for calendar billing
+		if req.ProrationBehavior == types.ProrationBehaviorCreateProrations &&
+			sub.BillingCycle == types.BillingCycleCalendar {
+			if err = s.handleEntitlementProration(ctx, sub); err != nil {
+				// Log error but don't fail subscription creation
+				s.Logger.Errorw("failed to create prorated entitlements",
+					"error", err,
+					"subscription_id", sub.ID)
+			}
+		}
+
 		// Create invoice for non-draft subscriptions
 		if req.SubscriptionStatus != types.SubscriptionStatusDraft {
 			paymentParams := dto.NewPaymentParametersFromSubscription(sub.CollectionMethod, sub.PaymentBehavior, sub.GatewayPaymentMethodID).NormalizePaymentParameters()
@@ -1080,6 +1091,56 @@ func (s *subscriptionService) ProcessSubscriptionPriceOverrides(
 			"tiers_override", len(override.Tiers) > 0,
 			"transform_quantity_override", override.TransformQuantity != nil)
 	}
+
+	return nil
+}
+
+// handleEntitlementProration calculates and creates prorated entitlements for calendar billing
+func (s *subscriptionService) handleEntitlementProration(
+	ctx context.Context,
+	sub *subscription.Subscription,
+) error {
+	s.Logger.Infow("handling entitlement proration",
+		"subscription_id", sub.ID,
+		"plan_id", sub.PlanID,
+		"billing_cycle", sub.BillingCycle,
+		"start_date", sub.StartDate,
+		"period_end", sub.CurrentPeriodEnd)
+
+	// Get proration service
+	prorationService := NewProrationService(s.ServiceParams)
+
+	// Calculate entitlement proration
+	prorationResult, err := prorationService.CalculateEntitlementProration(
+		ctx,
+		sub.PlanID,
+		sub.CurrentPeriodStart,
+		sub.CurrentPeriodEnd,
+		sub.StartDate, // Proration date is the start date
+		sub.CustomerTimezone,
+		sub.BillingCycle,
+		sub.BillingAnchor,
+		sub.BillingPeriod,
+		sub.BillingPeriodCount,
+	)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to calculate entitlement proration").
+			Mark(ierr.ErrSystem)
+	}
+
+	// Create prorated entitlements
+	// For prorated subscriptions: start_date = current_period_start, end_date = current_period_end
+	if err = prorationService.CreateProratedEntitlements(ctx, sub.ID, prorationResult, sub.CurrentPeriodStart, sub.CurrentPeriodEnd); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to create prorated entitlements").
+			Mark(ierr.ErrSystem)
+	}
+
+	s.Logger.Infow("entitlement proration completed",
+		"subscription_id", sub.ID,
+		"prorated_count", len(prorationResult.ProratedLimits),
+		"coefficient", prorationResult.ProrationCoefficient.String())
 
 	return nil
 }
@@ -4705,15 +4766,54 @@ func (s *subscriptionService) filterOverriddenEntitlements(
 	subscriptionID string,
 ) []*dto.EntitlementResponse {
 	// Build a map of parent_entitlement_id -> true for quick lookup
+	// Only include subscription entitlements that are currently active (time-based check)
 	s.Logger.Infow("total plan entitlements", "count", len(planEntitlements))
 	s.Logger.Infow("total addon entitlements", "count", len(addonEntitlements))
 	s.Logger.Infow("total subscription entitlements", "count", len(subscriptionEntitlements))
+
+	now := time.Now().UTC()
 	overriddenIDs := make(map[string]bool)
+	activeSubEntitlements := make([]*dto.EntitlementResponse, 0, len(subscriptionEntitlements))
+
 	for _, subEnt := range subscriptionEntitlements {
-		if subEnt.ParentEntitlementID != nil && *subEnt.ParentEntitlementID != "" {
-			overriddenIDs[*subEnt.ParentEntitlementID] = true
+		// Check if this subscription entitlement is currently active
+		isActive := true
+
+		// Check start_date: must be <= now (or NULL)
+		if subEnt.StartDate != nil && subEnt.StartDate.After(now) {
+			isActive = false
+			s.Logger.Debugw("subscription entitlement not yet active",
+				"entitlement_id", subEnt.ID,
+				"start_date", subEnt.StartDate,
+				"now", now)
+		}
+
+		// Check end_date: must be > now (or NULL)
+		if isActive && subEnt.EndDate != nil && !subEnt.EndDate.After(now) {
+			isActive = false
+			s.Logger.Debugw("subscription entitlement expired",
+				"entitlement_id", subEnt.ID,
+				"end_date", subEnt.EndDate,
+				"now", now)
+		}
+
+		// Only use active subscription entitlements for overriding
+		if isActive {
+			activeSubEntitlements = append(activeSubEntitlements, subEnt)
+			if subEnt.ParentEntitlementID != nil && *subEnt.ParentEntitlementID != "" {
+				overriddenIDs[*subEnt.ParentEntitlementID] = true
+			}
+		} else {
+			s.Logger.Infow("skipping inactive subscription entitlement, will use plan entitlement instead",
+				"entitlement_id", subEnt.ID,
+				"parent_entitlement_id", subEnt.ParentEntitlementID,
+				"start_date", subEnt.StartDate,
+				"end_date", subEnt.EndDate)
 		}
 	}
+
+	// Replace subscriptionEntitlements with only active ones
+	subscriptionEntitlements = activeSubEntitlements
 
 	// If no overrides exist, just combine all entitlements
 	if len(overriddenIDs) == 0 {
@@ -4922,6 +5022,8 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 			IsSoftLimit:         parentEnt.IsSoftLimit,
 			DisplayOrder:        parentEnt.DisplayOrder,
 			ParentEntitlementID: &parentEnt.ID,
+			StartDate:           &sub.StartDate, // Set start date to subscription start
+			EndDate:             nil,            // No end date - persists across billing periods
 			EnvironmentID:       parentEnt.EnvironmentID,
 			BaseModel:           types.GetDefaultBaseModel(ctx),
 		}
