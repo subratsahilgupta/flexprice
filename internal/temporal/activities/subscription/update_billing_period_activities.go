@@ -85,9 +85,9 @@ func (s *BillingActivities) CalculatePeriodsActivity(
 	return output, nil
 }
 
-// CreateInvoicesActivity creates and finalizes an invoice for a specific billing period
-// This activity does NOT sync to external vendors or attempt payment - those are handled separately
-func (s *BillingActivities) CreateInvoicesActivity(
+// CreateDraftInvoicesActivity creates draft invoices for specific billing periods
+// This activity does NOT finalize, sync, or attempt payment - those are handled by ProcessInvoiceWorkflow
+func (s *BillingActivities) CreateDraftInvoicesActivity(
 	ctx context.Context,
 	input subscriptionModels.CreateInvoicesActivityInput,
 ) (*subscriptionModels.CreateInvoicesActivityOutput, error) {
@@ -100,7 +100,6 @@ func (s *BillingActivities) CreateInvoicesActivity(
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
 
 	subscriptionService := service.NewSubscriptionService(s.serviceParams)
-	invoiceService := service.NewInvoiceService(s.serviceParams)
 
 	invoices := make([]string, 0)
 	for _, period := range input.Periods {
@@ -111,12 +110,6 @@ func (s *BillingActivities) CreateInvoicesActivity(
 		// Skip nil invoices (zero-amount invoices)
 		if invoice != nil {
 			invoices = append(invoices, invoice.ID)
-		}
-	}
-
-	for _, invoice := range invoices {
-		if err := invoiceService.FinalizeInvoice(ctx, invoice); err != nil {
-			return nil, err
 		}
 	}
 
