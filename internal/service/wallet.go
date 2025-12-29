@@ -1453,13 +1453,16 @@ func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.W
 	}
 
 	if totalAvailable.LessThan(req.CreditAmount) {
-		return ierr.NewError("insufficient balance").
-			WithHint("Insufficient balance to process debit operation").
-			WithReportableDetails(map[string]interface{}{
-				"wallet_id": req.WalletID,
-				"amount":    req.CreditAmount,
-			}).
-			Mark(ierr.ErrInvalidOperation)
+		// if not manual debit, return error
+		if req.TransactionReason != types.TransactionReasonManualBalanceDebit {
+			return ierr.NewError("insufficient balance").
+				WithHint("Insufficient balance to process debit operation").
+				WithReportableDetails(map[string]interface{}{
+					"wallet_id": req.WalletID,
+					"amount":    req.CreditAmount,
+				}).
+				Mark(ierr.ErrInvalidOperation)
+		}
 	}
 
 	// Process debit across credits
@@ -1528,7 +1531,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 
 	// Set credits available based on transaction type
 	if req.Type == types.TransactionTypeCredit {
-		tx.CreditsAvailable = req.CreditAmount
+		tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditBalanceAfter)
 	} else {
 		tx.CreditsAvailable = decimal.Zero
 	}

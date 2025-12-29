@@ -503,8 +503,6 @@ func init() {
 	creditgrant.CadenceValidator = creditgrantDescCadence.Validators[0].(func(string) error)
 	// creditgrantDescExpirationType is the schema descriptor for expiration_type field.
 	creditgrantDescExpirationType := creditgrantFields[9].Descriptor()
-	// creditgrant.DefaultExpirationType holds the default value on creation for the expiration_type field.
-	creditgrant.DefaultExpirationType = types.CreditGrantExpiryType(creditgrantDescExpirationType.Default.(string))
 	// creditgrant.ExpirationTypeValidator is a validator for the "expiration_type" field. It is called by the builders before save.
 	creditgrant.ExpirationTypeValidator = creditgrantDescExpirationType.Validators[0].(func(string) error)
 	// creditgrantDescMetadata is the schema descriptor for metadata field.

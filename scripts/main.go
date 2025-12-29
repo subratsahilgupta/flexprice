@@ -118,6 +118,11 @@ var commands = []Command{
 		Description: "Import features from a CSV file",
 		Run:         internal.ImportFeatures,
 	},
+	{
+		Name:        "migrate-cga",
+		Description: "Migrate existing Credit Grant Applications to new structure (ensure environment_id is set)",
+		Run:         internal.MigrateCGA,
+	},
 }
 
 // runBulkReprocessEventsCommand wraps the bulk reprocess events with command line parameters

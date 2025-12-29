@@ -21,6 +21,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/temporal/models"
 	temporalservice "github.com/flexprice/flexprice/internal/temporal/service"
+
 	"github.com/flexprice/flexprice/internal/types"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	"github.com/samber/lo"
@@ -309,6 +310,17 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 		if err = s.handleSubCoupons(ctx, sub, req, originalPriceToLineItemMap); err != nil {
 			return err
+		}
+
+		// Handle entitlement proration for calendar billing
+		if req.ProrationBehavior == types.ProrationBehaviorCreateProrations &&
+			sub.BillingCycle == types.BillingCycleCalendar {
+			if err = s.handleEntitlementProration(ctx, sub); err != nil {
+				// Log error but don't fail subscription creation
+				s.Logger.Errorw("failed to create prorated entitlements",
+					"error", err,
+					"subscription_id", sub.ID)
+			}
 		}
 
 		// Create invoice for non-draft subscriptions
@@ -1084,6 +1096,56 @@ func (s *subscriptionService) ProcessSubscriptionPriceOverrides(
 	return nil
 }
 
+// handleEntitlementProration calculates and creates prorated entitlements for calendar billing
+func (s *subscriptionService) handleEntitlementProration(
+	ctx context.Context,
+	sub *subscription.Subscription,
+) error {
+	s.Logger.Infow("handling entitlement proration",
+		"subscription_id", sub.ID,
+		"plan_id", sub.PlanID,
+		"billing_cycle", sub.BillingCycle,
+		"start_date", sub.StartDate,
+		"period_end", sub.CurrentPeriodEnd)
+
+	// Get proration service
+	prorationService := NewProrationService(s.ServiceParams)
+
+	// Calculate entitlement proration
+	prorationResult, err := prorationService.CalculateEntitlementProration(
+		ctx,
+		sub.PlanID,
+		sub.CurrentPeriodStart,
+		sub.CurrentPeriodEnd,
+		sub.StartDate, // Proration date is the start date
+		sub.CustomerTimezone,
+		sub.BillingCycle,
+		sub.BillingAnchor,
+		sub.BillingPeriod,
+		sub.BillingPeriodCount,
+	)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to calculate entitlement proration").
+			Mark(ierr.ErrSystem)
+	}
+
+	// Create prorated entitlements
+	// For prorated subscriptions: start_date = current_period_start, end_date = current_period_end
+	if err = prorationService.CreateProratedEntitlements(ctx, sub.ID, prorationResult, sub.CurrentPeriodStart, sub.CurrentPeriodEnd); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to create prorated entitlements").
+			Mark(ierr.ErrSystem)
+	}
+
+	s.Logger.Infow("entitlement proration completed",
+		"subscription_id", sub.ID,
+		"prorated_count", len(prorationResult.ProratedLimits),
+		"coefficient", prorationResult.ProrationCoefficient.String())
+
+	return nil
+}
+
 // handleCreditGrants handles creating and applying credit grants for a subscription
 func (s *subscriptionService) handleCreditGrants(
 	ctx context.Context,
@@ -1100,104 +1162,103 @@ func (s *subscriptionService) handleCreditGrants(
 		"subscription_id", subscription.ID,
 		"credit_grants_count", len(creditGrantRequests))
 
+	// Here we are passing time.Now() as the billing anchor because we want to calculate the previous billing date from the current date.
+	// This is because the credit grant is created during subscription creation, and we want to calculate the previous billing date from the current date.
+	// This is because
+	previousBillingDate, err := types.PreviousBillingDate(
+		time.Now(),
+		subscription.BillingPeriodCount,
+		subscription.BillingPeriod,
+	)
+
+	if err != nil {
+		s.Logger.Errorw("failed to calculate previous billing date",
+			"subscription_id", subscription.ID,
+			"error", err)
+		return err
+	}
+
+	s.Logger.Infow("previous billing date",
+		"subscription_id", subscription.ID,
+		"previous_billing_date", previousBillingDate)
+
+	// IMPORTANT LIMITATION: Credit Grants with ExpirationType BillingCycle and Backdated Subscriptions
+	//
+	// There is a known issue with credit grants that have ExpirationType set to CreditGrantExpiryTypeBillingCycle
+	// when applied to backdated subscriptions with multiple billing periods.
+	//
+	// Problem Scenario:
+	// - Today is Dec 27, 2025
+	// - Subscription is backdated to start at April 27, 2025 (8 months ago)
+	// - Monthly billing: subscription has 8 periods that need processing
+	// - Credit grant with ExpirationType BillingCycle is created during subscription creation
+	//
+	// The Issue:
+	// 1. At subscription creation, CurrentPeriodEnd might be June 27, 2025 (first period)
+	// 2. Credit grant expiry is set to subscription.CurrentPeriodEnd (June 27, 2025) at grant application time
+	// 3. When UpdateBillingPeriods cron runs, it updates CurrentPeriodEnd to Jan 27, 2026 (current period)
+	// 4. This causes grants that should have expired in previous periods (e.g., June 27) to remain valid
+	//    because their expiry date was set based on the period end at creation time, not the actual
+	//    period when they should expire
+	//
+	// Reverse Issue:
+	// - If UpdateBillingPeriods cron doesn't run before ProcessScheduledCreditGrantApplications cron:
+	//   - Grants scheduled for current period won't be applied because CurrentPeriodEnd hasn't been updated
+	//   - The grant application logic checks against CurrentPeriodEnd which is still at an old period
+	//
+	// Root Cause:
+	// - In ApplyCreditGrantToWallet (creditgrant.go:461), expiry date for BillingCycle type uses:
+	//   expiryDate = &subscription.CurrentPeriodEnd
+	// - This uses the period end at grant application time, not the period end when the grant should expire
+	//
+	// Impact:
+	// - Grants may expire at incorrect times for backdated subscriptions
+	// - Grants may not be applied when they should be if billing period cron hasn't run
+	// - This creates a dependency between UpdateBillingPeriods and ProcessScheduledCreditGrantApplications cron jobs
+	//
+	// Future Fix:
+	// - Expiry date should be calculated based on the actual billing period when the grant is applied,
+	//   not the subscription's CurrentPeriodEnd at grant creation time
+	// - For recurring grants, expiry should be calculated per period based on the period end for that
+	//   specific application, not the subscription's current period end
+	if subscription.StartDate.Before(previousBillingDate) {
+		s.Logger.Infow("subscription start date is before previous billing date, skipping credit grants",
+			"subscription_id", subscription.ID,
+			"start_date", subscription.StartDate,
+			"previous_billing_date", previousBillingDate)
+		return ierr.NewError("subscription start date is before previous billing date").
+			WithHint("You cannot create a credit grant for a subscription that starts before the previous billing date").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id":       subscription.ID,
+				"start_date":            subscription.StartDate,
+				"previous_billing_date": previousBillingDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Create and apply credit grants
+
+	startDate := subscription.StartDate
+	if subscription.TrialEnd != nil {
+		startDate = lo.FromPtr(subscription.TrialEnd)
+	}
+
 	for _, grantReq := range creditGrantRequests {
 		// Ensure subscription ID is set and scope is SUBSCRIPTION
-		grantReq.SubscriptionID = &subscription.ID
+		grantReq.SubscriptionID = lo.ToPtr(subscription.ID)
 		grantReq.Scope = types.CreditGrantScopeSubscription
+		grantReq.StartDate = lo.ToPtr(startDate)
+		grantReq.EndDate = subscription.EndDate
 
-		// Create credit grant in DB
-		createdGrant, err := creditGrantService.CreateCreditGrant(ctx, grantReq)
+		// Use subscription start date as the anchor for the credit grant chain
+		grantReq.CreditGrantAnchor = lo.ToPtr(startDate)
+
+		// Create credit grant: this now triggers initializeCreditGrantWorkflow
+		// which handles creation, anchor calculation, and eager application
+		_, err := creditGrantService.CreateCreditGrant(ctx, grantReq)
 		if err != nil {
-			return ierr.WithError(err).
-				WithHint("Failed to create credit grant for subscription").
-				WithReportableDetails(map[string]interface{}{
-					"subscription_id": subscription.ID,
-					"grant_name":      grantReq.Name,
-				}).
-				Mark(ierr.ErrDatabase)
+			return err
 		}
-
-		// Check subscription status before applying credit grant
-		// Incomplete subscriptions should defer credit grants until they become active
-		stateHandler := NewSubscriptionStateHandler(subscription, createdGrant.CreditGrant)
-		action, err := stateHandler.DetermineCreditGrantAction()
-		if err != nil {
-			return ierr.WithError(err).
-				WithHint("Failed to determine credit grant action").
-				WithReportableDetails(map[string]interface{}{
-					"subscription_id":     subscription.ID,
-					"grant_id":            createdGrant.ID,
-					"subscription_status": subscription.SubscriptionStatus,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-
-		// Only apply credit grant if subscription status allows it
-		// For incomplete subscriptions, the grant will be deferred and applied later
-		// when the subscription becomes active (via scheduled application processing)
-		metadata := types.Metadata{
-			"created_during": "subscription_creation",
-			"grant_name":     createdGrant.Name,
-		}
-
-		if action == StateActionApply {
-			// Apply the credit grant using the new simplified method
-			err = creditGrantService.ApplyCreditGrant(
-				ctx,
-				createdGrant.CreditGrant,
-				subscription,
-				metadata,
-			)
-
-			if err != nil {
-				return ierr.WithError(err).
-					WithHint("Failed to apply credit grant for subscription").
-					WithReportableDetails(map[string]interface{}{
-						"subscription_id": subscription.ID,
-						"grant_id":        createdGrant.ID,
-						"grant_name":      createdGrant.Name,
-					}).
-					Mark(ierr.ErrDatabase)
-			}
-		} else if action == StateActionDefer || action == StateActionSkip {
-			// For deferred/skipped actions, create a CGA so it can be processed later
-			// when the subscription becomes active (via scheduled application processing)
-			// This ensures the credit grant will be applied when the subscription status changes
-			_, err = creditGrantService.CreateScheduledCreditGrantApplication(
-				ctx,
-				createdGrant.CreditGrant,
-				subscription,
-				metadata,
-			)
-
-			if err != nil {
-				return ierr.WithError(err).
-					WithHint("Failed to create scheduled credit grant application").
-					WithReportableDetails(map[string]interface{}{
-						"subscription_id": subscription.ID,
-						"grant_id":        createdGrant.ID,
-						"grant_name":      createdGrant.Name,
-						"action":          action,
-					}).
-					Mark(ierr.ErrDatabase)
-			}
-
-			s.Logger.Infow("credit grant scheduled for later processing during subscription creation",
-				"subscription_id", subscription.ID,
-				"grant_id", createdGrant.ID,
-				"subscription_status", subscription.SubscriptionStatus,
-				"action", action)
-		} else if action == StateActionCancel {
-			// For cancelled actions, don't create a CGA as the subscription is cancelled
-			// and credits should not be applied
-			s.Logger.Infow("credit grant cancelled during subscription creation",
-				"subscription_id", subscription.ID,
-				"grant_id", createdGrant.ID,
-				"subscription_status", subscription.SubscriptionStatus,
-				"action", action)
-		}
-
 	}
 
 	return nil
@@ -1440,9 +1501,9 @@ func (s *subscriptionService) CancelSubscription(
 			return err
 		}
 
-		// Step 8: Cancel future credit grants
+		// Step 8: Void future credit grants
 		creditGrantService := NewCreditGrantService(s.ServiceParams)
-		err = creditGrantService.CancelFutureCreditGrantsOfSubscription(ctx, subscription.ID)
+		err = creditGrantService.CancelFutureSubscriptionGrants(ctx, subscription.ID)
 		if err != nil {
 			return err
 		}
@@ -3763,7 +3824,7 @@ func (s *subscriptionService) processPendingCreditGrantsForSubscription(ctx cont
 		}
 
 		// Apply the credit grant to wallet
-		err = creditGrantService.ApplyCreditGrantToWallet(ctx, creditGrant.CreditGrant, sub, cga)
+		err = creditGrantService.ProcessCreditGrantApplication(ctx, cga.ID)
 		if err != nil {
 			s.Logger.Errorw("failed to apply credit grant to wallet",
 				"application_id", cga.ID,
@@ -4706,15 +4767,54 @@ func (s *subscriptionService) filterOverriddenEntitlements(
 	subscriptionID string,
 ) []*dto.EntitlementResponse {
 	// Build a map of parent_entitlement_id -> true for quick lookup
+	// Only include subscription entitlements that are currently active (time-based check)
 	s.Logger.Infow("total plan entitlements", "count", len(planEntitlements))
 	s.Logger.Infow("total addon entitlements", "count", len(addonEntitlements))
 	s.Logger.Infow("total subscription entitlements", "count", len(subscriptionEntitlements))
+
+	now := time.Now().UTC()
 	overriddenIDs := make(map[string]bool)
+	activeSubEntitlements := make([]*dto.EntitlementResponse, 0, len(subscriptionEntitlements))
+
 	for _, subEnt := range subscriptionEntitlements {
-		if subEnt.ParentEntitlementID != nil && *subEnt.ParentEntitlementID != "" {
-			overriddenIDs[*subEnt.ParentEntitlementID] = true
+		// Check if this subscription entitlement is currently active
+		isActive := true
+
+		// Check start_date: must be <= now (or NULL)
+		if subEnt.StartDate != nil && subEnt.StartDate.After(now) {
+			isActive = false
+			s.Logger.Debugw("subscription entitlement not yet active",
+				"entitlement_id", subEnt.ID,
+				"start_date", subEnt.StartDate,
+				"now", now)
+		}
+
+		// Check end_date: must be > now (or NULL)
+		if isActive && subEnt.EndDate != nil && !subEnt.EndDate.After(now) {
+			isActive = false
+			s.Logger.Debugw("subscription entitlement expired",
+				"entitlement_id", subEnt.ID,
+				"end_date", subEnt.EndDate,
+				"now", now)
+		}
+
+		// Only use active subscription entitlements for overriding
+		if isActive {
+			activeSubEntitlements = append(activeSubEntitlements, subEnt)
+			if subEnt.ParentEntitlementID != nil && *subEnt.ParentEntitlementID != "" {
+				overriddenIDs[*subEnt.ParentEntitlementID] = true
+			}
+		} else {
+			s.Logger.Infow("skipping inactive subscription entitlement, will use plan entitlement instead",
+				"entitlement_id", subEnt.ID,
+				"parent_entitlement_id", subEnt.ParentEntitlementID,
+				"start_date", subEnt.StartDate,
+				"end_date", subEnt.EndDate)
 		}
 	}
+
+	// Replace subscriptionEntitlements with only active ones
+	subscriptionEntitlements = activeSubEntitlements
 
 	// If no overrides exist, just combine all entitlements
 	if len(overriddenIDs) == 0 {
@@ -4923,6 +5023,8 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 			IsSoftLimit:         parentEnt.IsSoftLimit,
 			DisplayOrder:        parentEnt.DisplayOrder,
 			ParentEntitlementID: &parentEnt.ID,
+			StartDate:           &sub.StartDate, // Set start date to subscription start
+			EndDate:             nil,            // No end date - persists across billing periods
 			EnvironmentID:       parentEnt.EnvironmentID,
 			BaseModel:           types.GetDefaultBaseModel(ctx),
 		}
@@ -5009,6 +5111,24 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 	return nil
 }
 
+func (s *subscriptionService) ListAllTenantSubscriptions(ctx context.Context, filter *types.SubscriptionFilter) (*dto.ListSubscriptionsResponse, error) {
+	if filter == nil {
+		filter = types.NewNoLimitSubscriptionFilter()
+	}
+	subs, err := s.SubRepo.ListAllTenant(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	response := &dto.ListSubscriptionsResponse{
+		Items: make([]*dto.SubscriptionResponse, len(subs)),
+	}
+	for i, sub := range subs {
+		response.Items[i] = &dto.SubscriptionResponse{
+			Subscription: sub,
+		}
+	}
+	return response, nil
+}
 func (s *subscriptionService) GetUpcomingCreditGrantApplications(ctx context.Context, req *dto.GetUpcomingCreditGrantApplicationsRequest) (*dto.ListCreditGrantApplicationsResponse, error) {
 	// Validate request
 	if err := req.Validate(); err != nil {
@@ -5111,4 +5231,93 @@ func (s *subscriptionService) GetActiveAddonAssociations(ctx context.Context, su
 		return nil, err
 	}
 	return associations, nil
+}
+
+// Calculate Billing Periods
+func (s *subscriptionService) CalculateBillingPeriods(ctx context.Context, subscriptionID string) ([]dto.Period, error) {
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	currentStart := sub.CurrentPeriodStart
+	currentEnd := sub.CurrentPeriodEnd
+
+	periods := make([]dto.Period, 0)
+
+	periods = append(periods, dto.Period{
+		Start: currentStart,
+		End:   currentEnd,
+	})
+
+	now := time.Now().UTC()
+
+	for currentEnd.Before(now) {
+		nextStart := currentEnd
+		nextEnd, err := types.NextBillingDate(nextStart, sub.BillingAnchor, sub.BillingPeriodCount, sub.BillingPeriod, sub.EndDate)
+		if err != nil {
+			return nil, err
+		}
+		periods = append(periods, dto.Period{
+			Start: nextStart,
+			End:   nextEnd,
+		})
+
+		if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(nextEnd) {
+			s.Logger.Infow("subscription cancelled at period end",
+				"subscription_id", sub.ID,
+				"cancel_at", sub.CancelAt,
+				"next_end", nextEnd)
+			break
+		}
+
+		// in case of end date reached or next end is equal to current end, we break the loop
+		// nextEnd will be equal to currentEnd in case of end date reached
+		if nextEnd.Equal(currentEnd) {
+			s.Logger.Infow("stopped period generation - reached subscription end date",
+				"subscription_id", sub.ID,
+				"end_date", sub.EndDate,
+				"final_period_end", currentEnd)
+			break
+		}
+
+		currentEnd = nextEnd
+	}
+
+	return periods, nil
+}
+
+// Create Draft Invoice for Subscription
+func (s *subscriptionService) CreateDraftInvoiceForSubscription(ctx context.Context, subscriptionID string, period dto.Period) (*dto.InvoiceResponse, error) {
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	billingService := NewBillingService(s.ServiceParams)
+	invoiceService := NewInvoiceService(s.ServiceParams)
+
+	// Prepare Invoice Request
+	invoiceReq, err := billingService.PrepareSubscriptionInvoiceRequest(
+		ctx,
+		sub,
+		period.Start,
+		period.End,
+		types.ReferencePointPeriodEnd,
+	)
+	if err != nil {
+		return nil, err
+	}
+	// Check if the invoice is zeroAmountInvoice
+	if invoiceReq.Subtotal.IsZero() {
+		return nil, nil
+	}
+
+	// Create Invoice
+	inv, err := invoiceService.CreateInvoice(ctx, *invoiceReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return inv, nil
 }
