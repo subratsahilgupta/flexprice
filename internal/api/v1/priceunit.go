@@ -165,7 +165,7 @@ func (h *PriceUnitHandler) UpdatePriceUnit(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param id path string true "Price unit ID"
-// @Success 200 {object} gin.H
+// @Success 200 {object} dto.SuccessResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Router /prices/units/{id} [delete]
@@ -199,7 +199,7 @@ func (h *PriceUnitHandler) DeletePriceUnit(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Price unit deleted successfully"})
+	c.JSON(http.StatusOK, dto.SuccessResponse{Message: "Price unit deleted successfully"})
 }
 
 // GetPriceUnit handles getting a price unit by ID
