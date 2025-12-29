@@ -1165,7 +1165,7 @@ func (s *subscriptionService) handleCreditGrants(
 			"start_date", subscription.StartDate,
 			"previous_billing_date", previousBillingDate)
 		return ierr.NewError("subscription start date is before previous billing date").
-			WithHint("You cannot create a credit grant for a subscription that started before the previous billing date.").
+			WithHint("You cannot create a credit grant for a subscription that starts before the previous billing date").
 			WithReportableDetails(map[string]interface{}{
 				"subscription_id":       subscription.ID,
 				"start_date":            subscription.StartDate,
