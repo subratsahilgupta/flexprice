@@ -1102,7 +1102,7 @@ func (s *subscriptionService) handleCreditGrants(
 
 	// Here we are passing time.Now() as the billing anchor because we want to calculate the previous billing date from the current date.
 	// This is because the credit grant is created during subscription creation, and we want to calculate the previous billing date from the current date.
-	// This is becuase
+	// This is because
 	previousBillingDate, err := types.PreviousBillingDate(
 		time.Now(),
 		subscription.BillingPeriodCount,
