@@ -222,26 +222,31 @@ func (r *CreatePriceRequest) Validate() error {
 		return err
 	}
 
-	// 5. Validate price unit config (if CUSTOM)
+	// 5. Validate mutual consistency between PriceUnitType and PriceUnitConfig
+	// This check must be outside any conditional to catch all invalid combinations
+	if r.PriceUnitConfig != nil && r.PriceUnitType != types.PRICE_UNIT_TYPE_CUSTOM {
+		return ierr.NewError("price_unit_type must be CUSTOM when price_unit_config is provided").
+			WithHint("Set price_unit_type to CUSTOM when using price_unit_config").
+			WithReportableDetails(map[string]interface{}{
+				"price_unit_type":       r.PriceUnitType,
+				"has_price_unit_config": true,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	if r.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
 		if r.PriceUnitConfig == nil {
 			return ierr.NewError("price_unit_config is required when using custom pricing unit").
 				WithHint("Price unit config must be provided when using custom pricing units").
+				WithReportableDetails(map[string]interface{}{
+					"price_unit_type":       r.PriceUnitType,
+					"has_price_unit_config": false,
+				}).
 				Mark(ierr.ErrValidation)
 		}
 
 		if err := r.PriceUnitConfig.Validate(); err != nil {
 			return err
-		}
-
-		// Ensure PriceUnitType is set to CUSTOM when PriceUnitConfig is provided
-		if r.PriceUnitType != types.PRICE_UNIT_TYPE_CUSTOM {
-			return ierr.NewError("price_unit_type must be CUSTOM when price_unit_config is provided").
-				WithHint("Set price_unit_type to CUSTOM when using price_unit_config").
-				WithReportableDetails(map[string]interface{}{
-					"price_unit_type": r.PriceUnitType,
-				}).
-				Mark(ierr.ErrValidation)
 		}
 
 		// Validate that tiers are not provided in both places

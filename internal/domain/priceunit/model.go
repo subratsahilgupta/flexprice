@@ -77,7 +77,7 @@ func validateConversionRate(conversionRate decimal.Decimal) error {
 //
 // Rounding strategy: Uses base currency precision to ensure consistent precision in stored values
 // and match industry standards (Stripe, Lago use currency precision).
-func ConvertToFiatCurrencyAmount(ctx context.Context, priceUnitAmount decimal.Decimal, conversionRate decimal.Decimal, baseCurrency string) (decimal.Decimal, error) {
+func ConvertToFiatCurrencyAmount(ctx context.Context, priceUnitAmount decimal.Decimal, conversionRate decimal.Decimal) (decimal.Decimal, error) {
 	// Validate conversion rate
 	if err := validateConversionRate(conversionRate); err != nil {
 		return decimal.Zero, err
@@ -85,7 +85,7 @@ func ConvertToFiatCurrencyAmount(ctx context.Context, priceUnitAmount decimal.De
 
 	// Convert and round to base currency precision
 	result := priceUnitAmount.Mul(conversionRate)
-	return result.Round(int32(types.GetCurrencyPrecision(baseCurrency))), nil
+	return result, nil
 }
 
 // ConvertToPriceUnitAmount converts fiat currency amount to pricing unit.

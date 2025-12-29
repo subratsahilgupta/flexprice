@@ -1292,7 +1292,6 @@ func (s *priceService) applyPriceUnitConversionToPrice(ctx context.Context, p *p
 			ctx,
 			lo.FromPtrOr(p.PriceUnitAmount, decimal.Zero),
 			priceUnit.ConversionRate,
-			priceUnit.BaseCurrency,
 		)
 		if err != nil {
 			return err
@@ -1312,7 +1311,6 @@ func (s *priceService) applyPriceUnitConversionToPrice(ctx context.Context, p *p
 				ctx,
 				tier.UnitAmount,
 				priceUnit.ConversionRate,
-				priceUnit.BaseCurrency,
 			)
 			if err != nil {
 				return err
@@ -1329,7 +1327,6 @@ func (s *priceService) applyPriceUnitConversionToPrice(ctx context.Context, p *p
 					ctx,
 					lo.FromPtrOr(tier.FlatAmount, decimal.Zero),
 					priceUnit.ConversionRate,
-					priceUnit.BaseCurrency,
 				)
 				if err != nil {
 					return err
