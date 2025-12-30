@@ -18,15 +18,16 @@ import (
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 )
 
 // FeatureRow represents a row in the feature CSV file
 type FeatureRow struct {
-	FeatureName      string `json:"feature_name" csv:"feature_name"`
-	EventName        string `json:"event_name" csv:"event_name"`
-	AggregationType  string `json:"aggregation_type" csv:"aggregation_type"`
-	AggregationField string `json:"aggregation_field" csv:"aggregation_field"`
-	PricePerUnit     string `json:"price_per_unit" csv:"price_per_unit"`
+	FeatureName      string          `json:"feature_name" csv:"feature_name"`
+	EventName        string          `json:"event_name" csv:"event_name"`
+	AggregationType  string          `json:"aggregation_type" csv:"aggregation_type"`
+	AggregationField string          `json:"aggregation_field" csv:"aggregation_field"`
+	PricePerUnit     decimal.Decimal `json:"price_per_unit" csv:"price_per_unit" swaggertype:"string"`
 }
 
 // FeatureImportSummary contains statistics about the import process
@@ -141,12 +142,19 @@ func (s *featureImportScript) parseFeatureCSV(filePath string) ([]FeatureRow, er
 			continue
 		}
 
+		// Parse price per unit from string to decimal
+		pricePerUnit, err := decimal.NewFromString(record[4])
+		if err != nil {
+			s.log.Warnw("Failed to parse price per unit, skipping row", "price_string", record[4], "error", err)
+			continue
+		}
+
 		featureRow := FeatureRow{
 			FeatureName:      record[0],
 			EventName:        record[1],
 			AggregationType:  record[2],
 			AggregationField: record[3],
-			PricePerUnit:     record[4],
+			PricePerUnit:     pricePerUnit,
 		}
 
 		featureRows = append(featureRows, featureRow)
@@ -268,7 +276,7 @@ func (s *featureImportScript) processRow(ctx context.Context, row FeatureRow) er
 
 	// Create price
 	priceReq := dto.CreatePriceRequest{
-		Amount:               row.PricePerUnit,
+		Amount:               &row.PricePerUnit,
 		Currency:             "USD",
 		EntityType:           types.PRICE_ENTITY_TYPE_PLAN,
 		EntityID:             s.planID,

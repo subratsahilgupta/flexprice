@@ -290,8 +290,6 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 		BillingPeriod:       params.Subscription.BillingPeriod,
 		InvoiceCadence:      params.Price.InvoiceCadence,
 		TrialPeriod:         params.Price.TrialPeriod,
-		PriceUnitID:         params.Price.PriceUnitID,
-		PriceUnit:           params.Price.PriceUnit,
 		EntityType:          params.EntityType,
 		Metadata:            r.Metadata,
 		SubscriptionPhaseID: r.SubscriptionPhaseID,
@@ -324,6 +322,10 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 				lineItem.Quantity = params.Price.GetDefaultQuantity()
 			}
 		}
+
+		// Copy price unit fields from price to line item
+		lineItem.PriceUnitID = params.Price.PriceUnitID
+		lineItem.PriceUnit = params.Price.PriceUnit
 	} else {
 		lineItem.Quantity = decimal.NewFromInt(1)
 	}
@@ -458,8 +460,6 @@ func (r *UpdateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 		BillingPeriod:    existingLineItem.BillingPeriod,
 		InvoiceCadence:   existingLineItem.InvoiceCadence,
 		TrialPeriod:      existingLineItem.TrialPeriod,
-		PriceUnitID:      existingLineItem.PriceUnitID,
-		PriceUnit:        existingLineItem.PriceUnit,
 		EntityType:       existingLineItem.EntityType,
 		EntityID:         existingLineItem.EntityID,
 		PlanDisplayName:  existingLineItem.PlanDisplayName,

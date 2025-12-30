@@ -138,6 +138,15 @@ type SubscriptionService interface {
 	CreateDraftInvoiceForSubscription(ctx context.Context, subscriptionID string, period dto.Period) (*dto.InvoiceResponse, error)
 }
 
+type PriceUnitService interface {
+	CreatePriceUnit(ctx context.Context, req dto.CreatePriceUnitRequest) (*dto.CreatePriceUnitResponse, error)
+	GetPriceUnit(ctx context.Context, id string) (*dto.PriceUnitResponse, error)
+	GetPriceUnitByCode(ctx context.Context, code string) (*dto.PriceUnitResponse, error)
+	ListPriceUnits(ctx context.Context, filter *types.PriceUnitFilter) (*dto.ListPriceUnitsResponse, error)
+	UpdatePriceUnit(ctx context.Context, id string, req dto.UpdatePriceUnitRequest) (*dto.PriceUnitResponse, error)
+	DeletePriceUnit(ctx context.Context, id string) error
+}
+
 type ServiceDependencies struct {
 	CustomerService                 CustomerService
 	PaymentService                  PaymentService
@@ -145,5 +154,6 @@ type ServiceDependencies struct {
 	PlanService                     PlanService
 	SubscriptionService             SubscriptionService
 	EntityIntegrationMappingService EntityIntegrationMappingService
+	PriceUnitService                PriceUnitService
 	DB                              postgres.IClient
 }
